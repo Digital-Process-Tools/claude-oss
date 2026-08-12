@@ -1,0 +1,68 @@
+---
+description: Add the missing repo furniture — CLAUDE.md, security policy, issue and PR templates.
+allowed-tools: Bash
+---
+
+A maintained repo needs more than a loop pointed at it: a CLAUDE.md so the next agent starts
+oriented, a security policy so a reporter knows where to go, issue and PR templates so a report
+arrives with what it needs. These drift between sibling repos exactly the way the loop itself did —
+one repo ends up with none of it, another with a differently-worded copy.
+
+This is **not** part of `/oss:setup`. Setup writes one untracked local file and changes nothing
+tracked, so it is safe to run anywhere. Scaffolding writes files *into* the repo, which is a real
+change that wants a branch, a diff and a review.
+
+## Show first
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json
+```
+
+Prints one line per file: `create` or `present`. **Nothing is written.** Relay the plan and what each
+generated file would contain before going further — a default that nobody read is not a default, it
+is a surprise.
+
+## Then write
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json --apply
+```
+
+Only missing files are created. **An existing file is never overwritten** — the repo's own
+SECURITY.md is a decision somebody made, and this ships a default. A default must not win against a
+decision.
+
+Do this on a branch, and open a PR. Do not commit generated furniture straight to the default branch:
+these are files everyone reads, and the review is the point.
+
+## Description and topics
+
+Files are only half the furniture. A repo also has a one-line description and a topic list, and both
+are empty by default — an absence nobody notices, because it looks like every other new repo. They
+are also the only thing a person sees before deciding whether to click.
+
+```bash
+gh repo view --json description,repositoryTopics
+```
+
+Feed that to `scaffold.check_metadata` and relay what it reports. It says what is **missing**; it
+never proposes a description or a topic. A generated description is written in the voice of a tool
+that has not read the code, and a guessed topic list is how a repo ends up tagged for something it
+does not do. Write them yourself:
+
+```bash
+gh repo edit --description '...'
+gh repo edit --add-topic a,b,c
+```
+
+## What is deliberately not scaffolded
+
+`.claude/settings.json`. That file registers hooks — writing it means arranging for code to run on
+the machine of everyone who clones the repo. Scaffolding a policy document is a suggestion;
+scaffolding a hook is not. If a repo wants hooks, that is a decision made in the open, in its own PR.
+
+## After
+
+The generated CLAUDE.md carries the repo's default branch and test command from `.oss.json`. If the
+test command was not detected, it says so in the file rather than guessing — replace that paragraph
+by hand. A guess in a CLAUDE.md becomes an instruction to every agent that reads it.
