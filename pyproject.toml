@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `-rs` prints the reason behind every skip. A skipped check is this plugin
+# saying it could not answer, and that third state only pays for itself if the
+# reason reaches a human. Rendered as a bare `s`, a green run with silent skips
+# looks identical to a green run that checked everything.
+addopts = "-rs"
