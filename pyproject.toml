@@ -4,4 +4,27 @@ testpaths = ["tests"]
 # saying it could not answer, and that third state only pays for itself if the
 # reason reaches a human. Rendered as a bare `s`, a green run with silent skips
 # looks identical to a green run that checked everything.
-addopts = "-rs"
+#
+# The floor is a backstop, not the goal. It sits just under what the suite earns
+# today (90%) so a regression trips it, and it is deliberately not raised to the
+# current number -- a floor equal to reality fails on the first honest refactor.
+#
+# doctor.py is driven both in-process and as a subprocess. Coverage cannot see
+# inside the subprocess, so the subprocess suite alone reported 0% for a file it
+# exercises thoroughly. That is this plugin's own defect class -- a measurement
+# claiming absence -- so both routes exist on purpose.
+addopts = "-rs --cov=scripts --cov-report=term-missing --cov-fail-under=85"
+
+[tool.coverage.run]
+# assemble_changelog.py and coverage_gate.py are verbatim copies of the versions
+# maintained in claude-supertool, where they carry their own suites. Measuring them
+# here would drag the floor down to a number that says nothing about this plugin's
+# own code, and re-testing a copy is how the copy quietly stops being one.
+#
+# The tradeoff is stated rather than hidden: if these files are ever EDITED here,
+# they stop being copies and this omission stops being honest. Adopting them
+# properly means bringing their tests across in the same change.
+omit = [
+    "scripts/assemble_changelog.py",
+    "scripts/coverage_gate.py",
+]
