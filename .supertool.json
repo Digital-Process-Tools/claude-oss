@@ -1,0 +1,10 @@
+{
+  "presets": ["git", "github"],
+  "validators": {
+    "py": {
+      "py-syntax": {
+        "cmd": "{python} -m py_compile {file}"
+      }
+    }
+  }
+}
