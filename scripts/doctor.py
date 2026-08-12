@@ -151,6 +151,13 @@ def check_jit_rules(project_dir):
     The matcher reads the index, not the markdown. A rule whose row is missing never
     fires, and a rule that never fires is indistinguishable from one that fired and had
     nothing to say -- so a missing or empty index is a FAIL, not a warning.
+
+    Rules are organised per dimension (vocabulary, paths, tools) and per layer inside
+    it, and **each layer carries its own index**. Checking one index at the root would
+    tell a correctly configured repo that none of its rules run.
+
+    Every layer is reported separately. One indexed layer does not vouch for another:
+    stopping at the first healthy one is how a whole dimension goes quiet unnoticed.
     """
     rules_dir = Path(project_dir) / JIT_RULES_DIR
     if not rules_dir.is_dir():
@@ -161,40 +168,50 @@ def check_jit_rules(project_dir):
         )
         return
 
-    rules = sorted(p for p in rules_dir.rglob("*.md") if p.is_file())
-    if not rules:
+    layers = {}
+    for rule in sorted(rules_dir.rglob("*.md")):
+        if rule.is_file():
+            layers.setdefault(rule.parent, []).append(rule)
+
+    if not layers:
         report("WARN", "{}: directory exists but holds no rules".format(JIT_RULES_DIR))
         return
 
-    index = rules_dir / JIT_INDEX
-    if not index.is_file():
-        report(
-            "FAIL",
-            "{} rule(s) present and no {} -- the matcher reads the index, so none of them "
-            "run, and that is indistinguishable from rules that matched nothing. "
-            "Rebuild the index.".format(len(rules), JIT_INDEX),
-        )
-        return
-    if not index.read_text(encoding="utf-8").strip():
-        report(
-            "FAIL",
-            "{} is empty beside {} rule(s). An empty table is the same silence as a "
-            "missing one, and it is the one that passes an existence check. "
-            "Rebuild the index.".format(JIT_INDEX, len(rules)),
-        )
-        return
+    for layer in sorted(layers):
+        rules = layers[layer]
+        name = layer.relative_to(rules_dir)
+        index = layer / JIT_INDEX
 
-    index_mtime = index.stat().st_mtime
-    newer = [p.name for p in rules if p.stat().st_mtime > index_mtime]
-    if newer:
-        report(
-            "WARN",
-            "{} is stale: {} changed after the last rebuild, so its row says something "
-            "else. Rebuild the index.".format(JIT_INDEX, ", ".join(newer[:3])),
-        )
-        return
+        if not index.is_file():
+            report(
+                "FAIL",
+                "{}: {} rule(s) and no {} -- the matcher reads the index, so none of "
+                "them run, and that is indistinguishable from rules that matched "
+                "nothing. Rebuild the index.".format(name, len(rules), JIT_INDEX),
+            )
+            continue
+        if not index.read_text(encoding="utf-8").strip():
+            report(
+                "FAIL",
+                "{}: {} is empty beside {} rule(s). An empty table is the same silence "
+                "as a missing one, and it is the one that passes an existence check. "
+                "Rebuild the index.".format(name, JIT_INDEX, len(rules)),
+            )
+            continue
 
-    report("OK", "{} rule(s) indexed and current".format(len(rules)))
+        index_mtime = index.stat().st_mtime
+        newer = [p.name for p in rules if p.stat().st_mtime > index_mtime]
+        if newer:
+            report(
+                "WARN",
+                "{}: {} is stale -- {} changed after the last rebuild, so its row says "
+                "something else. Rebuild the index.".format(
+                    name, JIT_INDEX, ", ".join(newer[:3])
+                ),
+            )
+            continue
+
+        report("OK", "{}: {} rule(s) indexed and current".format(name, len(rules)))
 
 
 def main():

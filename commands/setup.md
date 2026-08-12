@@ -51,11 +51,15 @@ plugin. Arriving is not the same as working, and the gap is invisible:
   per-user, and committing it publishes one developer's setup to everyone who clones.
 - **Rules with no built index** never fire, because the matcher reads the index rather than the
   markdown — and a rule that never fires is indistinguishable from one that fired and had nothing to
-  say. Repo rules are shared knowledge and belong in the repo, so they go through `/oss:scaffold` and
-  a pull request, not through this command. Rebuild the index in the same change; a rule whose row is
-  missing is a file that exists and does nothing.
+  say. Rules live per dimension and per layer, and **each layer carries its own index**; rebuild it in
+  the same change that adds a rule, then confirm the row is there.
 
-`/oss:doctor` reports both, with `WARN` for the memory gaps and `FAIL` for a missing or empty index.
+  The rules plugin ships an example per dimension and documents the frontmatter each one takes. Point
+  people at those rather than at a copy — a second explanation of someone else's format is a second
+  thing to keep in step, and it goes stale without anything failing.
+
+`/oss:doctor` reports both, with `WARN` for the memory gaps and `FAIL` for a missing or empty index,
+naming the layer.
 
 ## Then
 

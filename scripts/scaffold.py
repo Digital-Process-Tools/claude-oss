@@ -195,66 +195,6 @@ Including things nobody has filed. An adjacent finding is worth a sentence here 
 when it is out of scope for this change.
 """
 
-FIRST_RULE = '''---
-title: "Writing a rule for this repo"
-description: "How just-in-time rules work here, what earns one, and the shape that pays off. This file is itself a rule -- if it appeared because you asked about writing one, the pipeline works."
-keywords: rule, rules, vocabulary, jit, jit-context, convention, gotcha, write a rule, add a rule
----
-
-## This file is the proof
-
-You are reading it because a keyword above matched. That is the whole mechanism: rules are
-markdown, an index maps keywords to files, and matching text pulls the file into context. Nothing
-loads until something asks for it.
-
-**The index is what the matcher reads, not the markdown.** A file whose row is missing never fires,
-and a rule that never fires looks exactly like a rule that fired and had nothing to say. So after
-adding or renaming any rule, rebuild the index -- and check the row is there rather than assuming
-the rebuild covered it.
-
-## What earns a rule
-
-Three kinds, in the order they pay off:
-
-1. **The thing you looked up twice.** The second lookup is the signal. If it took a search to find
-   and it will be needed again, the search was the cost and the rule is the refund.
-2. **The trap that cost a run.** Not "be careful with X" -- the specific way X fails, and what it
-   looks like when it does. A gotcha nobody wrote down gets rediscovered at full price.
-3. **The exact incantation.** The command with its real flags, the path with its real spelling. If
-   someone still has to guess after reading it, the entry failed.
-
-## What does not earn one
-
-Anything the code already says. A rule restating a function signature rots the day the signature
-changes, and it rots silently, because nothing checks prose against code.
-
-## The shape
-
-Cheat sheet, not reminder. Exact command, exact path, exact pattern -- never "see the docs" or
-"check the config", because the indirection is the part that costs. Write for whoever arrives with
-no context, which within a week is you.
-
-Keywords are how it is found. Include the words someone would type when they have the problem, not
-the words they would use if they already knew the answer.
-
-## A worked example
-
-Bad, because the reader still has to go looking:
-
-> Remember to rebuild the index after changing rules.
-
-Good, because it ends the search:
-
-> After adding, renaming or editing the frontmatter of any rule, rebuild the index -- the matcher
-> reads the index and will not see the file otherwise. Then confirm the row exists; a rebuild that
-> skipped the file and a rebuild that had nothing to do print the same thing.
-
-## Delete this file
-
-Once you have written two real rules, this one has done its job. Leaving it is not harmful; it just
-means the first thing the matcher offers is advice rather than an answer.
-'''
-
 GITIGNORE = """.DS_Store
 
 # Python
@@ -306,10 +246,10 @@ TEMPLATES = {
     ".github/PULL_REQUEST_TEMPLATE.md": lambda config: PULL_REQUEST_TEMPLATE_MD,
     ".github/dependabot.yml": lambda config: DEPENDABOT_YML,
     ".gitignore": lambda config: GITIGNORE,
-    # A seed rule that is itself a rule: it fires when someone asks how to write one,
-    # which makes the pipeline demonstrate itself on first use. An empty rules
-    # directory teaches nothing, and "write some rules" is an instruction nobody acts on.
-    ".claude/jit-context/00-writing-rules.md": lambda config: FIRST_RULE,
+    # No rules seed here. The rules plugin ships its own examples, one per dimension,
+    # and its README documents the frontmatter for each. A copy of that teaching in
+    # this repo is a second copy to keep in step -- which is the drift this plugin
+    # exists to end, reintroduced one layer up.
 }
 
 
