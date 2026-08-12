@@ -31,9 +31,20 @@ file the plugin writes by probing the repo, not in the prose.
 Installing pulls in `supertool`, `remember` and `claude-jit-context` automatically — they are
 declared dependencies and resolve from the same marketplace.
 
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `/oss:setup` | Probes the repo and writes `.oss.json`. Measures; never assumes. |
+| `/oss:triage` | One triage sweep — priority, lane, milestone, and what the board is lying about. |
+| `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
+| `/oss:doctor` | Config, dependencies, clone, worktree root, state file. Exits 0 always. |
+
 ## Status
 
-v0.1.0 is a scaffold. The maintainer loop is being extracted; nothing here manages a repo yet.
+Not yet run against a live repo. The loop, both agents, the config layer and the diagnostic are in
+and tested; what has not happened is a real issue taken from triage through to a merge. Until that
+round-trip is clean twice, treat this as unproven rather than working.
 
 ## Development
 

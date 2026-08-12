@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Content guards asserting no repo slug, clone path, worktree root or maintainer handle appears in
   any skill or agent, and that every document reading a public tracker keeps its untrusted-input
   clause.
+- `scripts/oss_config.py` — reads, validates and derives `.oss.json`. Invents nothing: no labels
+  means empty lists, no milestones means none, an undetectable test command stays `null`. Path
+  containment refuses separators, drive prefixes and traversals before resolving, and returns the one
+  resolved path the caller reuses.
+- `scripts/doctor.py` and its bash launcher. Exit code 0 on every path, `OK`/`WARN`/`FAIL` lines, one
+  `VERDICT`, no colour, and no config value that could be a credential is ever echoed. The launcher
+  proves each interpreter candidate by running it and comparing a sentinel for equality.
+- Commands `/oss:setup`, `/oss:triage`, `/oss:changelog`, `/oss:doctor`, with a guard that every
+  script path they reference exists.
+- `scripts/assemble_changelog.py` and `scripts/coverage_gate.py`, verbatim copies from
+  claude-supertool, omitted from the coverage floor because they are maintained and tested there.
+- Coverage floor at 85%; the suite earns 91%.
 
 ## [0.1.0] - Scaffold
 
