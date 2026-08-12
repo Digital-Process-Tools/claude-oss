@@ -207,6 +207,10 @@ __pycache__/
 .remember/
 .max/
 
+# Machine-specific symlink to a local tool checkout. Committing it would bake one
+# developer's absolute path into every other clone.
+/supertool
+
 # Written by /oss:setup. Config, not truth -- and machine-specific paths live in it.
 .oss.json
 """

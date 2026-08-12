@@ -6,3 +6,6 @@ __pycache__/
 .max/
 .remember/
 .oss.json
+
+# Machine-specific symlink to the local claude-supertool clone.
+/supertool

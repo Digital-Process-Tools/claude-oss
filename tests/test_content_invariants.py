@@ -74,9 +74,9 @@ def test_triager_cannot_write_files():
     grant, not by the prose telling it to behave -- prose is a request, frontmatter
     is the boundary.
     """
-    forbidden = _granted_tools("oss-triager.md") & {"Edit", "Write", "NotebookEdit"}
+    forbidden = _granted_tools("triager.md") & {"Edit", "Write", "NotebookEdit"}
     assert not forbidden, (
-        "oss-triager must not be able to edit files; found {} in its tool grant".format(
+        "triager must not be able to edit files; found {} in its tool grant".format(
             sorted(forbidden)
         )
     )
@@ -88,7 +88,7 @@ def test_agents_read_through_supertool_only():
     for them however the prose is worded. Removing them is what makes the batching
     instruction binding rather than advisory.
     """
-    for agent in ("oss-triager.md", "oss-developer.md"):
+    for agent in ("triager.md", "developer.md"):
         leaked = _granted_tools(agent) & {"Read", "Grep", "Glob"}
         assert not leaked, (
             "{} grants {} -- reads go through supertool via Bash, so these must not be "
@@ -100,9 +100,9 @@ def test_developer_stops_at_a_commit():
     """The publishing clause is unconditional on purpose: a brief phrased as 'do not
     push if something blocks you' is how an agent correctly pushed.
     """
-    text = (REPO_ROOT / "agents" / "oss-developer.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
     for phrase in ("Do not push", "Do not open a PR"):
-        assert phrase in text, "oss-developer.md no longer states: {}".format(phrase)
+        assert phrase in text, "developer.md no longer states: {}".format(phrase)
 
 
 def test_agents_and_skill_treat_forge_content_as_untrusted():

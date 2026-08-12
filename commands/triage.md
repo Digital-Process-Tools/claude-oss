@@ -3,7 +3,7 @@ description: Run one triage sweep over this repo's tracker — priority, lane, m
 allowed-tools: Bash, Agent
 ---
 
-Delegate one sweep to the `oss-triager` agent.
+Delegate one sweep to the `triager` agent.
 
 Read `.oss.json` first for the repo slug. If it is missing, stop and say so — `/oss:setup` writes it.
 

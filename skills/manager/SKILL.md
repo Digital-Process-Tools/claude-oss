@@ -1,5 +1,5 @@
 ---
-name: "oss-manager"
+name: "manager"
 description: "Run an open-source repo as its maintainer: triage the tracker, decide what is worth building, delegate implementation, review hard, merge on green, release. Use when managing a repo you own and merge for."
 version: "0.1.0"
 author: "Digital Process Tools"
@@ -112,7 +112,7 @@ checker that cannot answer must say so, name what went unchecked, and never rend
 
 ## Delegating
 
-Two agent definitions: **`oss-developer` is the hands, `oss-triager` is the board.** Pick by whether
+Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
 the deliverable is a diff or a label. A newly written agent file does not register until a fresh
 session — until then brief `general-purpose` with a pointer to the definition file.
 
@@ -398,7 +398,7 @@ Arm the loop at the end of the first tick, every time, including when this skill
 directly. A skill invocation does not create a loop.
 
 ```
-ScheduleWakeup(delaySeconds=…, prompt="/oss-manager", reason="<what specifically is outstanding>")
+ScheduleWakeup(delaySeconds=…, prompt="/manager", reason="<what specifically is outstanding>")
 ```
 
 Agent completions notify for free — never poll for them. **CI is the only thing that needs a timer**,

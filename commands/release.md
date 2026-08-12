@@ -11,7 +11,7 @@ missing from it. Ask, then write it into the config.
 Load the loop for the judgment behind each gate:
 
 ```
-Skill(oss-manager)
+Skill(manager)
 ```
 
 ## The gates are not configurable

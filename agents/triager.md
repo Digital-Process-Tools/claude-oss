@@ -1,6 +1,6 @@
 ---
-name: oss-triager
-description: Keep a tracker correctly tagged — priority, lane, milestone — and surface issues the board is lying about. Reads the tracker, applies labels, never touches code. The maintainer half is /oss-manager; this is the board.
+name: triager
+description: Keep a tracker correctly tagged — priority, lane, milestone — and surface issues the board is lying about. Reads the tracker, applies labels, never touches code. The maintainer half is /oss:manager; this is the board.
 model: sonnet
 color: yellow
 tools: Bash,TodoWrite

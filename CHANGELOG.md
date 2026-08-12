@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `skills/oss-manager/SKILL.md` — the maintainer loop, carrying process only. Every repo-shaped fact
+- `skills/manager/SKILL.md` — the maintainer loop, carrying process only. Every repo-shaped fact
   reads from `.oss.json` instead of being asserted in prose.
-- `agents/oss-developer.md` and `agents/oss-triager.md`. Neither is granted `Read`/`Grep`/`Glob`:
+- `agents/developer.md` and `agents/triager.md`. Neither is granted `Read`/`Grep`/`Glob`:
   reads go through supertool via `Bash`, which makes the batching instruction binding rather than
   advisory. The triager is additionally denied `Edit`/`Write`.
 - Content guards asserting no repo slug, clone path, worktree root or maintainer handle appears in

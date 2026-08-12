@@ -8,7 +8,7 @@ One pass of the maintainer loop over the repo named in `.oss.json`.
 Load the loop itself first — it carries the judgment this command only sequences:
 
 ```
-Skill(oss-manager)
+Skill(manager)
 ```
 
 ## Order of operations
