@@ -28,7 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   script path they reference exists.
 - `scripts/assemble_changelog.py` and `scripts/coverage_gate.py`, verbatim copies from
   claude-supertool, omitted from the coverage floor because they are maintained and tested there.
-- Coverage floor at 85%; the suite earns 91%.
+- Coverage floor at 85%; the suite earns 92%.
+- `/oss:tick` — one pass of the maintainer loop. State first, board second, finish what is open
+  before starting anything new, one state entry, arm the next tick and keep working in this one.
+- `scripts/oss_state.py` — the tick state file. A corrupt file raises rather than starting fresh; an
+  over-long decision is refused rather than truncated; timestamps are arguments, never a clock read.
+- `/oss:scaffold` and `scripts/scaffold.py` — CLAUDE.md, security policy, code of conduct, issue and
+  PR templates, dependabot. Never overwrites; the plan is the default and writing is opt-in. Also
+  checks the repo's description and topics, and proposes neither.
 
 ## [0.1.0] - Scaffold
 

@@ -35,7 +35,9 @@ declared dependencies and resolve from the same marketplace.
 
 | Command | What it does |
 | --- | --- |
+| `/oss:tick` | One pass of the maintainer loop: board, decide, delegate, review, merge on green. |
 | `/oss:setup` | Probes the repo and writes `.oss.json`. Measures; never assumes. |
+| `/oss:scaffold` | Adds the missing repo furniture. Never overwrites; shows before it writes. |
 | `/oss:triage` | One triage sweep — priority, lane, milestone, and what the board is lying about. |
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
 | `/oss:doctor` | Config, dependencies, clone, worktree root, state file. Exits 0 always. |
