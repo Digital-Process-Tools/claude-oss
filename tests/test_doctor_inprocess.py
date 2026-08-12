@@ -10,6 +10,7 @@ So both: subprocess for the contract, in-process for the branches.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -145,11 +146,30 @@ def test_main_returns_zero_and_ends_on_a_verdict(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out.rstrip().splitlines()[-1].startswith("VERDICT:")
 
 
+def _fully_configured(root):
+    """Everything the doctor checks, present and current.
+
+    Written out rather than stubbed: the point of this test is that `VERDICT: ok`
+    requires every check to pass, so the fixture has to satisfy every check.
+    """
+    (root / "wt").mkdir(exist_ok=True)
+    (root / ".max").mkdir(exist_ok=True)
+    (root / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
+    memory = root / ".remember"
+    memory.mkdir(exist_ok=True)
+    (memory / "identity.md").write_text("who this is\n", encoding="utf-8")
+    rules = root / ".claude" / "jit-context"
+    rules.mkdir(parents=True, exist_ok=True)
+    (rules / "conventions.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
+    index = rules / "00-index.tsv"
+    index.write_text("conventions\tx\n", encoding="utf-8")
+    newer = index.stat().st_mtime + 60
+    os.utime(index, (newer, newer))
+
+
 def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys):
     _config(tmp_path)
-    (tmp_path / "wt").mkdir()
-    (tmp_path / ".max").mkdir()
-    (tmp_path / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
+    _fully_configured(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
     monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)

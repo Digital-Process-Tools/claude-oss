@@ -112,6 +112,91 @@ def check_state_file(project_dir, config):
         report("WARN", "state_file: {} not written yet (first tick will create it)".format(path))
 
 
+MEMORY_DIR = ".remember"
+JIT_RULES_DIR = ".claude/jit-context"
+JIT_INDEX = "00-index.tsv"
+
+
+def check_memory(project_dir):
+    """Is the memory plugin configured, or merely installed?
+
+    Installed-and-unconfigured is the invisible state: it still runs and still saves.
+    What it cannot do is say whose sessions these are.
+    """
+    store = Path(project_dir) / MEMORY_DIR
+    if not store.is_dir():
+        report(
+            "WARN",
+            "{}: no memory store in this project. The remember plugin is installed as a "
+            "dependency but has nothing here yet; it will create one on first save.".format(
+                MEMORY_DIR
+            ),
+        )
+        return
+    identity = list(store.glob("identity*.md"))
+    if not identity:
+        report(
+            "WARN",
+            "{}: no identity file. Sessions are being saved without recording whose they "
+            "are, which looks like a working setup because saving is the half that "
+            "works.".format(MEMORY_DIR),
+        )
+        return
+    report("OK", "memory store configured ({})".format(identity[0].name))
+
+
+def check_jit_rules(project_dir):
+    """Rules on disk are not rules in effect.
+
+    The matcher reads the index, not the markdown. A rule whose row is missing never
+    fires, and a rule that never fires is indistinguishable from one that fired and had
+    nothing to say -- so a missing or empty index is a FAIL, not a warning.
+    """
+    rules_dir = Path(project_dir) / JIT_RULES_DIR
+    if not rules_dir.is_dir():
+        report(
+            "WARN",
+            "{}: no rules for this repo. Project conventions are not being injected; "
+            "nothing is broken, but nothing is being carried either.".format(JIT_RULES_DIR),
+        )
+        return
+
+    rules = sorted(p for p in rules_dir.rglob("*.md") if p.is_file())
+    if not rules:
+        report("WARN", "{}: directory exists but holds no rules".format(JIT_RULES_DIR))
+        return
+
+    index = rules_dir / JIT_INDEX
+    if not index.is_file():
+        report(
+            "FAIL",
+            "{} rule(s) present and no {} -- the matcher reads the index, so none of them "
+            "run, and that is indistinguishable from rules that matched nothing. "
+            "Rebuild the index.".format(len(rules), JIT_INDEX),
+        )
+        return
+    if not index.read_text(encoding="utf-8").strip():
+        report(
+            "FAIL",
+            "{} is empty beside {} rule(s). An empty table is the same silence as a "
+            "missing one, and it is the one that passes an existence check. "
+            "Rebuild the index.".format(JIT_INDEX, len(rules)),
+        )
+        return
+
+    index_mtime = index.stat().st_mtime
+    newer = [p.name for p in rules if p.stat().st_mtime > index_mtime]
+    if newer:
+        report(
+            "WARN",
+            "{} is stale: {} changed after the last rebuild, so its row says something "
+            "else. Rebuild the index.".format(JIT_INDEX, ", ".join(newer[:3])),
+        )
+        return
+
+    report("OK", "{} rule(s) indexed and current".format(len(rules)))
+
+
 def main():
     project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -133,6 +218,11 @@ def main():
         check_directory("clone", config.get("clone"))
         check_directory("worktree_root", config.get("worktree_root"))
         check_state_file(project_dir, config)
+
+    # Declared dependencies install automatically; they do not configure themselves,
+    # and the unconfigured state is the one that still appears to work.
+    check_memory(project_dir)
+    check_jit_rules(project_dir)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
     warns = sum(1 for state, _ in FINDINGS if state == "WARN")

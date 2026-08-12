@@ -195,6 +195,22 @@ Including things nobody has filed. An adjacent finding is worth a sentence here 
 when it is out of scope for this change.
 """
 
+GITIGNORE = """.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.coverage
+.pytest_cache/
+
+# Per-developer working state, never shared
+.remember/
+.max/
+
+# Written by /oss:setup. Config, not truth -- and machine-specific paths live in it.
+.oss.json
+"""
+
 DEPENDABOT_YML = """version: 2
 updates:
   - package-ecosystem: github-actions
@@ -229,6 +245,7 @@ TEMPLATES = {
     ".github/ISSUE_TEMPLATE/config.yml": lambda config: ISSUE_CONFIG_YML,
     ".github/PULL_REQUEST_TEMPLATE.md": lambda config: PULL_REQUEST_TEMPLATE_MD,
     ".github/dependabot.yml": lambda config: DEPENDABOT_YML,
+    ".gitignore": lambda config: GITIGNORE,
 }
 
 

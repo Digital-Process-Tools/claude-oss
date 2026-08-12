@@ -32,7 +32,27 @@ REQUIRED_KEYS = {
     "state_file",
 }
 
-OPTIONAL_KEYS = {"milestones", "notes"}
+OPTIONAL_KEYS = {"milestones", "notes", "release"}
+
+# What a repo does when it releases differs, so it is configured. What must NEVER be
+# configured is the gate list -- default branch green at leg level, nothing mid-review,
+# security audit passed, every version site bumped, the tag verified on the remote. A
+# gate that can be switched off is switched off on the day it is inconvenient, which is
+# the day it existed for. Keys that look like gates are refused, not ignored: an ignored
+# key reads as an accepted setting.
+RELEASE_KEYS = {"tag_pattern", "commit_subject", "merge_method", "triggers"}
+MERGE_METHODS = {"squash", "merge", "rebase"}
+TRIGGER_KEYS = {"merged_prs", "soak_hours"}
+
+VERSION_PLACEHOLDER = "{version}"
+
+# Tag schemes we can recognise from tags that already exist. Anything else stays null:
+# guessing `v{version}` against a repo tagging `rel-1.2` opens a second tag namespace
+# nobody notices until a release goes missing from it.
+TAG_SCHEMES = [
+    (re.compile(r"^v\d+\.\d+\.\d+$"), "v{version}"),
+    (re.compile(r"^\d+\.\d+\.\d+$"), "{version}"),
+]
 
 # Keys whose value may honestly be null. `test_command` is null when the probe could
 # not tell what runs the tests, and `changelog_dir` is null when the repo has not
@@ -136,7 +156,70 @@ def validate(config):
         if field in config and not isinstance(config[field], list):
             problems.append("{}: expected a list".format(field))
 
+    if "release" in config:
+        problems.extend(_validate_release(config["release"]))
+
     return problems
+
+
+def _validate_release(release):
+    """Validate the release block. Null fields are allowed and mean 'not observed'."""
+    if not isinstance(release, dict):
+        return ["release: expected an object, got {}".format(type(release).__name__)]
+
+    problems = []
+
+    for key in sorted(set(release) - RELEASE_KEYS):
+        problems.append(
+            "release.{}: unknown key. The release gates are not configurable -- green at "
+            "leg level, nothing mid-review, audit passed, every version site bumped, tag "
+            "verified on the remote -- so a key that reads like one is refused rather "
+            "than ignored.".format(key)
+        )
+
+    for key in ("tag_pattern", "commit_subject"):
+        value = release.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or VERSION_PLACEHOLDER not in value:
+            problems.append(
+                "release.{}: must contain {}, got {!r}. Without it every release "
+                "produces the same string, and the second one collides with the "
+                "first.".format(key, VERSION_PLACEHOLDER, value)
+            )
+
+    merge_method = release.get("merge_method")
+    if merge_method is not None and merge_method not in MERGE_METHODS:
+        problems.append(
+            "release.merge_method: expected one of {}, got {!r}".format(
+                ", ".join(sorted(MERGE_METHODS)), merge_method
+            )
+        )
+
+    triggers = release.get("triggers")
+    if triggers is not None:
+        if not isinstance(triggers, dict):
+            problems.append("release.triggers: expected an object")
+        else:
+            for key in sorted(set(triggers) - TRIGGER_KEYS):
+                problems.append("release.triggers.{}: unknown key".format(key))
+            for key in sorted(TRIGGER_KEYS & set(triggers)):
+                value = triggers[key]
+                if value is not None and not isinstance(value, int):
+                    problems.append(
+                        "release.triggers.{}: expected a number, got {!r}".format(key, value)
+                    )
+
+    return problems
+
+
+def _infer_tag_pattern(tags):
+    """Derive the tag spelling from tags that exist, or None when none are recognised."""
+    for tag in tags or []:
+        for pattern, template in TAG_SCHEMES:
+            if pattern.match(str(tag)):
+                return template
+    return None
 
 
 def build(probe):
@@ -184,6 +267,20 @@ def build(probe):
         "milestones": list(probe.get("milestones") or []),
         "ci": {"required_checks": len(jobs)},
         "state_file": ".max/{}-watch.json".format(repo_name) if repo_name else ".max/oss-watch.json",
+        "release": {
+            # Both derived from what the repo already does. Null means the probe could
+            # not tell, and /oss:release refuses on a null rather than inventing one.
+            "tag_pattern": _infer_tag_pattern(probe.get("tags")),
+            "merge_method": probe.get("merge_method"),
+            # Not observable, and cosmetic: the subject line is written by whoever cuts
+            # the release. Left null so it is a decision rather than a house style
+            # arriving from a tool that has never read this repo's history.
+            "commit_subject": None,
+            # These two ARE defaults rather than measurements, and deliberately so: the
+            # loop states them as decisions to be overridden, and they sit in the file
+            # where they can be seen and argued with.
+            "triggers": {"merged_prs": 10, "soak_hours": 48},
+        },
     }
 
 
