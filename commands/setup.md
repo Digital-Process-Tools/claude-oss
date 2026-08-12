@@ -41,6 +41,22 @@ Write it to `.oss.json` in the repo root, and add it to `.git/info/exclude` rath
 — the target repo's tracked files must not change. Confirm afterwards that `git status` is still
 clean.
 
+## The dependencies install themselves; they do not configure themselves
+
+`supertool`, `remember` and `claude-jit-context` are declared dependencies, so they arrive with the
+plugin. Arriving is not the same as working, and the gap is invisible:
+
+- **Memory with no identity** still runs and still saves. What it cannot do is record whose sessions
+  these are. Fix it where the memory store lives — **never in the target repo**: identity is
+  per-user, and committing it publishes one developer's setup to everyone who clones.
+- **Rules with no built index** never fire, because the matcher reads the index rather than the
+  markdown — and a rule that never fires is indistinguishable from one that fired and had nothing to
+  say. Repo rules are shared knowledge and belong in the repo, so they go through `/oss:scaffold` and
+  a pull request, not through this command. Rebuild the index in the same change; a rule whose row is
+  missing is a file that exists and does nothing.
+
+`/oss:doctor` reports both, with `WARN` for the memory gaps and `FAIL` for a missing or empty index.
+
 ## Then
 
 Run `/oss:doctor` and relay the verdict. Setup that has not been verified is a claim.
