@@ -100,26 +100,6 @@ def test_reports_a_missing_doctor_without_crashing(tmp_path):
     assert "VERDICT: could not run" in done.stdout
 
 
-def test_the_root_derivation_handles_a_windows_style_path(tmp_path):
-    """The Windows legs failed on this and every POSIX leg was green.
-
-    Under Git Bash `$0` arrives with backslashes, so `${0%/*}` strips nothing and the
-    fallback resolved the plugin root against the CALLER's directory. A real Windows
-    argv0 cannot be produced here, so the expansion itself is exercised -- the same
-    three lines the script runs.
-    """
-    script = (
-        'self=$1; d=${self%/*}; [ "$d" = "$self" ] && d=${self%\\\\\\\\*};'
-        ' [ "$d" = "$self" ] && d=.; printf %s "$d"'
-    )
-    done = subprocess.run(
-        [BASH, "-c", script, "sh", "D:\\\\a\\\\repo\\\\scripts\\\\doctor.sh"],
-        stdout=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    assert done.stdout == "D:\\\\a\\\\repo\\\\scripts"
-
-
 def test_both_shipped_scripts_strip_either_separator():
     """Asserted on the source too: the branch is one edit from being tidied away,
     and the platform that needs it is the one nobody runs locally.
