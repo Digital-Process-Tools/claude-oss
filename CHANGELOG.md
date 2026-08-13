@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/oss:scaffold` and `scripts/scaffold.py` — CLAUDE.md, security policy, code of conduct, issue and
   PR templates, dependabot. Never overwrites; the plan is the default and writing is opt-in. Also
   checks the repo's description and topics, and proposes neither.
+- `bin/oss-workspace` registers the channel consumer itself, at local MCP scope, resolving its path
+  from `installed_plugins.json` rather than by globbing the plugin cache — a glob answers with
+  whichever version sorts last, which is a version the session is not running. The channel flag is
+  now passed only when that registration held: naming an unregistered server refuses the launch
+  outright, and a session with no board beats no session.
+
+### Fixed
+
+- `bin/oss-workspace` put its prompt after `--dangerously-load-development-channels`, which is
+  variadic and swallowed it, so the first real use of the launcher died on
+  `entries must be tagged: /oss:tick` instead of opening anything. The prompt now goes first and the
+  flag last.
 
 ## [0.1.0] - Scaffold
 

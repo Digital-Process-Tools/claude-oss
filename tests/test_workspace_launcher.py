@@ -9,7 +9,9 @@ Every test runs the real script with a stub `claude` on PATH that records its ar
 launcher tested by reading it is a launcher nobody has run.
 """
 
+import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -28,25 +30,80 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _stub_claude(bindir, argv_log):
-    """A `claude` that records argv and exits 0, so exec is observable."""
-    path = bindir / "claude"
-    path.write_text(
-        '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a" >> "{}"; done\nexit 0\n'.format(argv_log),
-        encoding="utf-8",
-    )
+def _executable(path, text):
+    path.write_text(text, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return path
 
 
-def run(cwd, args=(), with_claude=True):
+def _stub_claude(bindir, argv_log):
+    """A `claude` that records argv and exits 0, so exec is observable.
+
+    `claude mcp ...` is answered rather than recorded: those calls are the script
+    probing and configuring, not the session it opens, and mixing them into the
+    argv log makes every assertion about the launch read the wrong list. The probe
+    reports "not registered", so the registration path is the one under test.
+    """
+    return _executable(
+        bindir / "claude",
+        '#!/bin/sh\n'
+        'if [ "${1:-}" = "mcp" ]; then\n'
+        '    [ "${2:-}" = "add" ] && exit 0\n'
+        '    exit 1\n'
+        'fi\n'
+        'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
+        'exit 0\n',
+    )
+
+
+def _with_channel_consumer(home, bindir):
+    """Plant what the script needs to register a channel: a `bun`, and a supertool
+    plugin whose install path holds the consumer.
+
+    The path is read from installed_plugins.json rather than globbed out of the
+    cache, so the fixture writes that registry -- a glob answers with whichever
+    version sorts last, and that is a version the session is not running.
+    """
+    _executable(bindir / "bun", "#!/bin/sh\nexit 0\n")
+    install = home / ".claude" / "plugins" / "cache" / "dpt-plugins" / "supertool" / "9.9.9"
+    consumer = install / "notifiers" / "claude-channel" / "channel.ts"
+    consumer.parent.mkdir(parents=True)
+    consumer.write_text("// stub\n", encoding="utf-8")
+    registry = home / ".claude" / "plugins" / "installed_plugins.json"
+    registry.write_text(
+        json.dumps({
+            "version": 2,
+            "plugins": {
+                "supertool@dpt-plugins": [
+                    {"scope": "user", "installPath": str(install), "version": "9.9.9"}
+                ]
+            },
+        }),
+        encoding="utf-8",
+    )
+    return consumer
+
+
+def run(cwd, args=(), with_claude=True, with_channel=False):
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
     argv_log = Path(cwd) / "argv.txt"
     if with_claude:
         _stub_claude(bindir, argv_log)
 
+    # HOME is pinned for the same reason PATH is: the consumer is looked up under
+    # the user's real ~/.claude, so an unpinned HOME decides the channel assertions
+    # by whether the developer running the suite happens to have supertool
+    # installed -- green on the author's machine, red on a contributor's.
+    home = Path(cwd) / "_home"
+    (home / ".claude" / "plugins").mkdir(parents=True, exist_ok=True)
+    if with_channel:
+        _with_channel_consumer(home, bindir)
+
     env = dict(os.environ)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    env.pop("SUPERTOOL_WATCH_NAME", None)
     # Minimal PATH, deliberately: with the real claude reachable, the "missing
     # claude" case found it and EXECUTED it -- a test suite that launches a live
     # agent session in a temp directory. Only the stub and the system utilities
@@ -121,12 +178,46 @@ def test_not_appending_the_prompt_is_said_out_loud(tmp_path):
     assert "not appended" in done.stderr.lower()
 
 
-def test_the_watch_channel_flag_is_passed(tmp_path):
+def test_the_watch_channel_flag_is_passed_once_the_consumer_is_registered(tmp_path):
     """Without it the pollers still spawn and still emit and nothing reads them: a
     board that looks armed and delivers nothing.
     """
-    _, argv = run(_repo(tmp_path))
+    _, argv = run(_repo(tmp_path), with_channel=True)
     assert any("development-channels" in a for a in argv)
+    assert "server:oss-channel" in argv
+
+
+def test_the_prompt_precedes_the_channel_flag(tmp_path):
+    """The flag is variadic, so a positional written after it is read as one of its
+    values and the launch is REFUSED, not degraded:
+
+        --dangerously-load-development-channels entries must be tagged: /oss:tick
+
+    which is how this script failed the first time it was run for real.
+    """
+    _, argv = run(_repo(tmp_path), with_channel=True)
+    assert argv.index("/oss:tick") < argv.index("--dangerously-load-development-channels")
+
+
+def test_no_consumer_means_no_flag_rather_than_no_session(tmp_path):
+    """`--dangerously-load-development-channels server:NAME` resolves CONFIGURED
+    servers only and refuses the launch outright when the name is not one. So a
+    session that cannot have a channel opens without one and is told which half is
+    missing; the alternative is no session at all.
+    """
+    done, argv = run(_repo(tmp_path))
+    assert argv, done.stderr
+    assert not any("development-channels" in a for a in argv)
+    assert "channel consumer was not found" in done.stderr
+
+
+def test_registering_the_consumer_is_said_out_loud(tmp_path):
+    """It writes to the user's MCP config. Something that edits your config without
+    saying so is something you cannot undo, so the removal command is named.
+    """
+    done, _ = run(_repo(tmp_path), with_channel=True)
+    assert "registered MCP server oss-channel" in done.stderr
+    assert "claude mcp remove oss-channel -s local" in done.stderr
 
 
 def test_it_survives_being_run_through_a_symlink(tmp_path):
@@ -191,5 +282,11 @@ def test_the_script_is_posix_sh_not_bash(tmp_path):
     """It runs on whatever the user has, including Git Bash and a stock macOS shell."""
     text = LAUNCHER.read_text(encoding="utf-8")
     assert text.startswith("#!/bin/sh")
-    for bashism in ("[[", "declare ", "local ", "function "):
-        assert bashism not in text, bashism
+    # Matched at statement position rather than as a substring. `local ` occurs
+    # inside `claude mcp add -s local ...` and inside prose about local scope, and
+    # a substring check calls both a bashism. A test that is wrong in the direction
+    # of stopping you is still wrong, and it gets edited around rather than heeded.
+    for bashism in ("declare", "local", "function"):
+        offender = re.search(r"^\s*%s\s" % bashism, text, re.MULTILINE)
+        assert offender is None, "%s: %r" % (bashism, offender.group(0))
+    assert re.search(r"\[\[", text) is None, "[[ is bash test syntax"
