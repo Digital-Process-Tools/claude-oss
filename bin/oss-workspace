@@ -132,13 +132,16 @@ fi
 # macOS's /bin/sh parsed it and every local run stayed green.
 watch_name=""
 if [ -n "$python_bin" ]; then
-watch_name=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' 2>/dev/null || true
+watch_name=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' || true
 import json, sys
 
 try:
     with open(sys.argv[1], encoding="utf-8") as handle:
         doc = json.load(handle)
-except (OSError, ValueError):
+except (OSError, ValueError) as err:
+    sys.stderr.write(
+        "oss-workspace: %s could not be read (%s), so no channel name was exported "
+        "and this session is on the default channel\n" % (sys.argv[1], type(err).__name__))
     raise SystemExit(0)
 
 ops = doc.get("ops") if isinstance(doc, dict) else None
@@ -180,27 +183,44 @@ fi
 # shipped once in scripts/doctor.py.
 channel_script=""
 if [ -n "$python_bin" ]; then
-channel_script=$("$python_bin" - <<'FIND_CONSUMER' 2>/dev/null || true
+channel_script=$("$python_bin" - <<'FIND_CONSUMER' || true
 import json, os, sys
 
+# Each dead end names itself. "Not found" with no reason is the shape that
+# reports a confident wrong answer -- an absent registry, a supertool that is not
+# installed and an install path that no longer holds the consumer are three
+# different problems with three different remedies, and one message for all three
+# sends everybody to the wrong one.
 registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
 try:
     with open(registry, encoding="utf-8") as handle:
         doc = json.load(handle)
-except (OSError, ValueError):
+except (OSError, ValueError) as err:
+    sys.stderr.write("oss-workspace: %s could not be read (%s)\n" % (registry, type(err).__name__))
     raise SystemExit(0)
 
-for key, entries in (doc.get("plugins") or {}).items():
-    if key.split("@")[0] != "supertool":
-        continue
-    for entry in entries or []:
-        path = entry.get("installPath")
-        if not path:
-            continue
-        candidate = os.path.join(path, "notifiers", "claude-channel", "channel.ts")
-        if os.path.isfile(candidate):
-            print(candidate)
-            raise SystemExit(0)
+installs = [
+    entry.get("installPath")
+    for key, entries in (doc.get("plugins") or {}).items()
+    if key.split("@")[0] == "supertool"
+    for entry in entries or []
+    if entry.get("installPath")
+]
+if not installs:
+    sys.stderr.write(
+        "oss-workspace: %s lists no supertool install, so the channel consumer it "
+        "ships has nowhere to be read from\n" % registry)
+    raise SystemExit(0)
+
+for path in installs:
+    candidate = os.path.join(path, "notifiers", "claude-channel", "channel.ts")
+    if os.path.isfile(candidate):
+        print(candidate)
+        raise SystemExit(0)
+
+sys.stderr.write(
+    "oss-workspace: supertool is installed at %s but holds no "
+    "notifiers/claude-channel/channel.ts\n" % ", ".join(installs))
 FIND_CONSUMER
 )
 fi

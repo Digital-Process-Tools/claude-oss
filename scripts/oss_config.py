@@ -14,6 +14,8 @@ Python 3.9 compatible: no match statements, no `X | Y` annotations.
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -328,6 +330,24 @@ def verify_test_command(command, cwd, timeout=120):
     """
     if not command:
         return {"state": "none", "detail": "no test command detected; nothing to verify"}
+
+    # The runner is resolved before anything runs, because the shell's own
+    # "command not found" code is not portable: POSIX shells answer 127, cmd.exe
+    # answers 9009, and on a GitHub Windows runner it answered neither -- so a
+    # runner that was never installed reported as a suite that ran and failed,
+    # which is the one confusion these states exist to prevent. Only for a plain
+    # command: with an operator in it the first word is not the whole story, and a
+    # shell builtin resolves to no file at all.
+    if not any(token in command for token in ("&&", "||", "|", ";", ">", "<", "$(", "`")):
+        try:
+            words = shlex.split(command, posix=os.name != "nt")
+        except ValueError:
+            words = []
+        if words and shutil.which(words[0]) is None:
+            return {
+                "state": "not-found",
+                "detail": "{!r}: {!r} is not on PATH".format(command, words[0]),
+            }
 
     try:
         done = subprocess.run(
