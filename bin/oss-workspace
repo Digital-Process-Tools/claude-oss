@@ -126,7 +126,13 @@ fi
 # environment, which is what carries the name to the consumer. Exactly one
 # distinct name is exported; disagreeing op blocks are a state this script cannot
 # resolve, so it says so and exports nothing.
-watch_name=$([ -n "$python_bin" ] && "$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' 2>/dev/null || true
+# The guard is an `if` and not `[ -n "$x" ] && ...` inside the substitution: a
+# heredoc opened by the right-hand side of `&&` and then followed by `|| true` is
+# a syntax error under bash -- `syntax error near unexpected token ||` -- while
+# macOS's /bin/sh parsed it and every local run stayed green.
+watch_name=""
+if [ -n "$python_bin" ]; then
+watch_name=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' 2>/dev/null || true
 import json, sys
 
 try:
@@ -151,6 +157,7 @@ elif names:
         "supertool 'channel:health'\n" % ", ".join(names))
 READ_NAME
 )
+fi
 
 # An exported value is the one a running poller already captured, and moving the
 # paths underneath a live fleet is a documented failure. So an export wins — and
@@ -171,7 +178,9 @@ fi
 # cache keeps every version ever installed, so a glob answers with whichever
 # sorts last and reports a version this session is not running. That exact bug
 # shipped once in scripts/doctor.py.
-channel_script=$([ -n "$python_bin" ] && "$python_bin" - <<'FIND_CONSUMER' 2>/dev/null || true
+channel_script=""
+if [ -n "$python_bin" ]; then
+channel_script=$("$python_bin" - <<'FIND_CONSUMER' 2>/dev/null || true
 import json, os, sys
 
 registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
@@ -194,6 +203,7 @@ for key, entries in (doc.get("plugins") or {}).items():
             raise SystemExit(0)
 FIND_CONSUMER
 )
+fi
 
 channel_ready=0
 if [ -z "$channel_script" ]; then
