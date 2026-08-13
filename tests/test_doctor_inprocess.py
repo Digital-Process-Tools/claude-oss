@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
+import scaffold  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -167,9 +168,27 @@ def _fully_configured(root):
     os.utime(index, (newer, newer))
 
 
+def _dependencies_current(monkeypatch):
+    """Every declared dependency installed and matching what is published.
+
+    Stubbed at the fetch boundary rather than by replacing check_freshness: the
+    judging stays real, so this test still covers how a freshness finding reaches
+    the verdict.
+    """
+    names = doctor.declared_dependencies()
+    monkeypatch.setattr(
+        doctor,
+        "installed_dependencies",
+        lambda n: ({name: "1.0.0" for name in names}, {name: None for name in names}),
+    )
+    monkeypatch.setattr(doctor, "published_versions", lambda repos: {n: "1.0.0" for n in names})
+
+
 def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys):
-    _config(tmp_path)
+    config = _config(tmp_path)
     _fully_configured(tmp_path)
+    scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
+    _dependencies_current(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
     monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)

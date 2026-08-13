@@ -29,6 +29,11 @@ try:
 except ImportError:  # pragma: no cover - the module sits beside this file
     oss_config = None
 
+try:
+    import scaffold
+except ImportError:  # pragma: no cover - the module sits beside this file
+    scaffold = None
+
 FINDINGS = []
 
 
@@ -214,6 +219,217 @@ def check_jit_rules(project_dir):
         report("OK", "{}: {} rule(s) indexed and current".format(name, len(rules)))
 
 
+def compare_versions(installed, latest):
+    """`current` / `behind` / `ahead` / `unknown`.
+
+    Numeric comparison, because `"0.9.0" > "0.10.0"` lexically -- a string compare
+    calls a stale install current for exactly the versions where it matters. Anything
+    unparseable is `unknown` rather than a guess: reporting `behind` would send someone
+    to run an update that changes nothing.
+    """
+
+    def parse(value):
+        if not isinstance(value, str):
+            return None
+        parts = value.split(".")
+        if not parts or not all(part.isdigit() for part in parts):
+            return None
+        return tuple(int(part) for part in parts)
+
+    left, right = parse(installed), parse(latest)
+    if left is None or right is None:
+        return "unknown"
+    if left == right:
+        return "current"
+    return "behind" if left < right else "ahead"
+
+
+def dependency_findings(installed, latest, declared=None):
+    """Judge each dependency. Pure: the fetching lives in its caller.
+
+    Nothing here updates anything. A tool that changes underneath a running session
+    changes behaviour mid-flight, and the runtime already owns installation.
+    """
+    names = sorted(set(declared or []) | set(installed) | set(latest))
+    findings = []
+    for name in names:
+        have, want = installed.get(name), latest.get(name)
+        if have is None:
+            findings.append(
+                {
+                    "name": name,
+                    "state": "missing",
+                    "detail": "{}: declared but not installed. Run `claude plugin install "
+                    "{}@dpt-plugins`, then /reload-plugins.".format(name, name),
+                }
+            )
+            continue
+        state = compare_versions(have, want)
+        if state == "behind":
+            detail = (
+                "{}: {} installed, {} published. Run `claude plugin update {}` then "
+                "/reload-plugins, or enable auto-update for the marketplace.".format(
+                    name, have, want, name
+                )
+            )
+        elif state == "unknown":
+            detail = (
+                "{}: {} installed; the published version could not be read, so this "
+                "says nothing about whether it is current.".format(name, have)
+            )
+        elif state == "ahead":
+            detail = "{}: {} installed, {} published — running unreleased code.".format(
+                name, have, want
+            )
+        else:
+            detail = "{}: {}".format(name, have)
+        findings.append({"name": name, "state": state, "detail": detail})
+    return findings
+
+
+def owned_drift(repo_root, config, plugin_root=None):
+    """Compare the files this plugin owns in a repo against what it ships today.
+
+    `/oss:scaffold` replaces them on every run -- but an update to the plugin does not
+    run the command, so a repo scaffolded months ago still holds the old copies. This
+    is the check that makes that visible rather than assumed.
+    """
+    root = Path(repo_root)
+    plugin_root = Path(plugin_root or SCRIPT_DIR.parent)
+
+    # Without a usable plugin root there is nothing to compare against, and every
+    # answer would be a statement about this checkout rather than about the repo.
+    if not (plugin_root / "scripts").is_dir():
+        return [
+            {
+                "path": name,
+                "state": "unknown",
+                "detail": "{}: the plugin's own files could not be read at {}, so no "
+                "comparison was made".format(name, plugin_root),
+            }
+            for name in sorted(scaffold.OWNED)
+        ]
+
+    findings = []
+    for name in sorted(scaffold.OWNED):
+        target = root / name
+        try:
+            shipped = scaffold.render_owned(name, config, plugin_root)
+        except (OSError, scaffold.ScaffoldError) as exc:
+            findings.append(
+                {
+                    "path": name,
+                    "state": "unknown",
+                    "detail": "{}: could not render the shipped version ({})".format(
+                        name, type(exc).__name__
+                    ),
+                }
+            )
+            continue
+
+        if not target.is_file():
+            findings.append(
+                {
+                    "path": name,
+                    "state": "absent",
+                    "detail": "{}: not in this repo. Run /oss:scaffold.".format(name),
+                }
+            )
+            continue
+
+        if target.read_text(encoding="utf-8") == shipped:
+            findings.append({"path": name, "state": "current", "detail": name})
+        else:
+            findings.append(
+                {
+                    "path": name,
+                    "state": "drifted",
+                    "detail": "{}: differs from the version the plugin ships. Run "
+                    "/oss:scaffold to replace it -- this file is ours, so nothing you "
+                    "wrote is at risk.".format(name),
+                }
+            )
+    return findings
+
+
+def declared_dependencies():
+    manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
+    try:
+        raw = json.loads(manifest.read_text(encoding="utf-8")).get("dependencies") or []
+    except (OSError, ValueError):
+        return []
+    return [d if isinstance(d, str) else d.get("name") for d in raw if d]
+
+
+def installed_dependencies(names):
+    """Installed version and origin repo per dependency, from the installed manifests.
+
+    The repo comes out of each plugin's OWN manifest rather than a table in here: a
+    hardcoded name-to-repo map is one more per-repo fact living in shared code, and it
+    would be wrong the first time a plugin moved.
+
+    Every failure is silent by design and surfaces as `unknown` upstream -- this is a
+    diagnostic, and a network or layout change must not stop it printing.
+    """
+    versions, repos = {}, {}
+    root = Path(os.path.expanduser("~/.claude/plugins/cache"))
+    for name in names:
+        for manifest in sorted(root.glob("*/{}/*/.claude-plugin/plugin.json".format(name))):
+            try:
+                doc = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            versions[name] = doc.get("version")
+            repos[name] = doc.get("repository")
+    return versions, repos
+
+
+def published_versions(repos):
+    """Latest published version per dependency, read off each repo's default branch."""
+    latest = {}
+    for name, url in repos.items():
+        latest[name] = None
+        if not url or shutil.which("gh") is None:
+            continue
+        slug = str(url).rstrip("/").replace("https://github.com/", "")
+        try:
+            done = subprocess.run(
+                ["gh", "api", "repos/{}/contents/.claude-plugin/plugin.json".format(slug),
+                 "--jq", ".content"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True,
+                timeout=25,
+            )
+            if done.returncode != 0:
+                continue
+            import base64
+
+            decoded = base64.b64decode(done.stdout.strip()).decode("utf-8")
+            latest[name] = json.loads(decoded).get("version")
+        except Exception:  # noqa: BLE001 - a diagnostic never dies on a probe
+            continue
+    return latest
+
+
+def check_freshness(project_dir, config):
+    """Report, never update. A tool that changes underneath a running session changes
+    behaviour mid-flight, and the runtime already owns installation.
+    """
+    names = declared_dependencies()
+    if not names:
+        report("WARN", "no dependencies declared in the manifest; nothing to compare")
+    else:
+        installed, repos = installed_dependencies(names)
+        for finding in dependency_findings(installed, published_versions(repos), declared=names):
+            report("OK" if finding["state"] == "current" else "WARN", finding["detail"])
+
+    if config is None or scaffold is None:
+        return
+    for finding in owned_drift(project_dir, config):
+        report("OK" if finding["state"] == "current" else "WARN", finding["detail"])
+
+
 def main():
     project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
@@ -240,6 +456,7 @@ def main():
     # and the unconfigured state is the one that still appears to work.
     check_memory(project_dir)
     check_jit_rules(project_dir)
+    check_freshness(project_dir, config)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
     warns = sum(1 for state, _ in FINDINGS if state == "WARN")
