@@ -32,6 +32,25 @@ Only missing files are created. **An existing file is never overwritten** — th
 SECURITY.md is a decision somebody made, and this ships a default. A default must not win against a
 decision.
 
+## The rule layer is the exception, and deliberately so
+
+The same run also installs `.claude/jit-context/<dimension>/01-oss/` — rules about this plugin's own
+artifacts, so the fragment convention arrives when someone opens `changelog.d/` rather than sitting
+in a command doc read at a moment when it does not apply.
+
+**That layer is replaced wholesale every time.** Layers are the ownership boundary: `00-manual/`
+belongs to whoever maintains the repo and is never read or written here, and `01-oss/` belongs to
+this plugin. Owning it outright is what makes updates safe — a rule we stop shipping disappears
+instead of surviving with nobody maintaining it, and nothing a human wrote is ever at risk, because
+nothing a human wrote lives there.
+
+Write your own rules in `00-manual/`. If you want to change one of ours, copy it there and edit the
+copy; the next install will not fight you for it.
+
+A symlink into the plugin checkout would have been simpler and is refused by the rules engine on
+purpose — git carries symlinks, so a clone would need only one committed link to point rules at
+anything on the machine.
+
 Do this on a branch, and open a PR. Do not commit generated furniture straight to the default branch:
 these are files everyone reads, and the review is the point.
 

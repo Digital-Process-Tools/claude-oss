@@ -30,6 +30,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import oss_config  # noqa: E402
+import oss_rules  # noqa: E402
 
 
 class ScaffoldError(Exception):
@@ -426,7 +427,20 @@ def _main(argv=None):
     written = apply(args.root, config)
     for path in written:
         print("created  {}".format(path))
-    print("WROTE: {} file(s)".format(len(written)))
+
+    # Two different contracts, so they are reported apart. Templates are defaults and
+    # never overwrite; the rule layer is ours and is replaced wholesale, which is only
+    # safe because nothing a human wrote lives in it.
+    rules = oss_rules.install(args.root)
+    for path in rules:
+        # os.path.relpath, not Path.relative_to: install() returns paths built from the
+        # root as GIVEN, and `--root .` is how the command invokes it. relative_to()
+        # against a resolved root then raises on a path that is perfectly correct.
+        print("replaced {}".format(os.path.relpath(str(path), str(args.root))))
+
+    print("WROTE: {} template(s), replaced {} file(s) in the {} rule layer".format(
+        len(written), len(rules), oss_rules.LAYER
+    ))
     return 0
 
 

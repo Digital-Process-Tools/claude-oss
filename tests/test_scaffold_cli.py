@@ -95,6 +95,30 @@ def test_an_invalid_config_refuses_before_writing_anything(tmp_path, capsys):
     assert not (tmp_path / "CLAUDE.md").exists()
 
 
+def test_apply_works_with_a_relative_root(tmp_path, monkeypatch, capsys):
+    """`--root .` is how the command invokes this, and it was broken while every test
+    passed: they all handed in an absolute tmp_path, so the one form that ships was the
+    one form never exercised. Found by running the tool on this repo, not by the suite.
+    """
+    config = _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert scaffold._main(["--root", ".", "--config", str(config), "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "01-oss" in out
+    assert (tmp_path / ".claude" / "jit-context" / "paths" / "01-oss" / "00-index.tsv").is_file()
+
+
+def test_apply_replaces_the_rule_layer_and_says_so(tmp_path, capsys):
+    """Templates and rules have opposite contracts, so the output must not blur them:
+    one is never overwritten, the other always is.
+    """
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+    out = capsys.readouterr().out
+    assert "replaced" in out
+    assert "rule layer" in out
+
+
 def test_the_generated_claude_md_names_the_configured_repo(tmp_path):
     config = _write_config(tmp_path, repo="acme/widget", default_branch="trunk")
     scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
