@@ -292,6 +292,32 @@ def build(probe):
     }
 
 
+def ensure_worktree_root(config):
+    """Create the worktree root if it is missing. Returns what happened.
+
+    The rule this sits under: **create containers, never content.** An empty directory
+    asserts nothing, so making one is free and removes a permanent warning. A file
+    asserts something -- an identity file claims who somebody is, a state file claims a
+    tick happened -- and inventing either is how a default becomes a lie.
+
+    A path occupied by a file is refused rather than replaced: deleting somebody else's
+    file to make room is not a default, it is a loss.
+    """
+    value = config.get("worktree_root")
+    if not value:
+        return "unset"
+    path = Path(os.path.expanduser(str(value)))
+    if path.is_dir():
+        return "present"
+    if path.exists():
+        return "blocked"
+    try:
+        path.mkdir(parents=True)
+    except OSError:
+        return "blocked"
+    return "created"
+
+
 def verify_test_command(command, cwd, timeout=120):
     """Run the detected test command and say what happened.
 

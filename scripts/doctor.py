@@ -122,13 +122,42 @@ JIT_RULES_DIR = ".claude/jit-context"
 JIT_INDEX = "00-index.tsv"
 
 
+MEMORY_CONFIG_DIR = ".claude/remember"
+
+
+def memory_layout(project_dir):
+    """Where the memory plugin keeps its config and its saved sessions.
+
+    Two different places, and conflating them was a real bug here: identity.md lives
+    beside config.json in `.claude/remember/`, while sessions go to the `data_dir` that
+    config names (`.remember` by default). This checker looked for identity inside the
+    DATA dir, so it reported "no identity" on every correctly configured repo -- and I
+    believed it about two of our own before someone said they were surprised.
+    """
+    root = Path(project_dir)
+    config_dir = root / MEMORY_CONFIG_DIR
+    data_dir = root / MEMORY_DIR
+    try:
+        doc = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+        if isinstance(doc, dict) and doc.get("data_dir"):
+            data_dir = root / str(doc["data_dir"])
+    except (OSError, ValueError):
+        pass
+    return config_dir, data_dir
+
+
 def check_memory(project_dir):
     """Is the memory plugin configured, or merely installed?
 
     Installed-and-unconfigured is the invisible state: it still runs and still saves.
-    What it cannot do is say whose sessions these are.
+    What is missing is the identity file, which records who the AGENT is in this repo
+    and is injected at session start. Without it the loop still works and starts every
+    session as nobody in particular.
+
+    Not scaffolded silently. An identity asserts values and a voice, and writing one
+    into somebody else's repository picks a persona they did not choose.
     """
-    store = Path(project_dir) / MEMORY_DIR
+    config_dir, store = memory_layout(project_dir)
     if not store.is_dir():
         report(
             "WARN",
@@ -138,13 +167,21 @@ def check_memory(project_dir):
             ),
         )
         return
-    identity = list(store.glob("identity*.md"))
+    # identity.md, specifically. An earlier version of this accepted core-memories.md
+    # too, because two of our own repos have no identity.md and the warning was
+    # inconvenient -- which is widening a check until a real gap disappears. Core
+    # memories are what the agent LEARNED; identity is who it is, and it is the file
+    # injected at session start. They are not substitutes.
+    # Beside config.json, not in the data dir. `.remember/` holds saved sessions.
+    identity = sorted(config_dir.glob("identity*.md"))
     if not identity:
         report(
             "WARN",
-            "{}: no identity file. Sessions are being saved without recording whose they "
-            "are, which looks like a working setup because saving is the half that "
-            "works.".format(MEMORY_DIR),
+            "{}: no identity.md. It records who the AGENT is here -- name, voice, working "
+            "style -- and is injected at session start, so without it every session "
+            "begins as nobody in particular. Saving still works, which is exactly what "
+            "makes the gap invisible. Seed it from the memory plugin's "
+            "identity.example.md and edit it.".format(MEMORY_DIR),
         )
         return
     report("OK", "memory store configured ({})".format(identity[0].name))

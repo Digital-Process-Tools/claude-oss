@@ -8,6 +8,7 @@ exactly like a rule that fired and had nothing to say.
 So these are checks, not assumptions, and each has three outcomes rather than two.
 """
 
+import json
 import os
 import sys
 import time
@@ -45,20 +46,54 @@ def test_a_project_with_no_memory_store_warns_with_the_fix(tmp_path):
     assert "remember" in _messages()
 
 
-def test_a_memory_store_without_an_identity_is_reported(tmp_path):
-    """Saved sessions nobody has told it whose they are still look like a working
-    setup, because saving is the part that works.
+def _memory(root, identity=True, data_dir=".remember"):
+    """The real layout: config and identity in `.claude/remember/`, sessions in the
+    `data_dir` that config names.
+
+    Conflating the two was a live bug. This checker looked for identity inside the DATA
+    directory, so it reported "no identity" for every correctly configured repo -- and
+    I relayed that about two of our own before somebody said they were surprised.
     """
-    (tmp_path / ".remember").mkdir()
+    config_dir = root / ".claude" / "remember"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.json").write_text(
+        json.dumps({"data_dir": data_dir}), encoding="utf-8"
+    )
+    if identity:
+        (config_dir / "identity.md").write_text("who the agent is\n", encoding="utf-8")
+    (root / data_dir).mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+def test_a_memory_store_without_an_identity_is_reported(tmp_path):
+    """Sessions save fine without one, which is what makes the gap invisible."""
+    _memory(tmp_path, identity=False)
     doctor.check_memory(tmp_path)
     assert _states() == ["WARN"]
     assert "identity" in _messages().lower()
 
 
 def test_a_configured_memory_store_is_ok(tmp_path):
-    store = tmp_path / ".remember"
-    store.mkdir()
-    (store / "identity.md").write_text("who this is\n", encoding="utf-8")
+    _memory(tmp_path)
+    doctor.check_memory(tmp_path)
+    assert _states() == ["OK"]
+
+
+def test_identity_is_looked_for_beside_the_config_not_in_the_data_dir(tmp_path):
+    """The bug this fixes, from both sides: identity in the data dir must NOT satisfy
+    the check, and identity beside config.json must.
+    """
+    _memory(tmp_path, identity=False)
+    (tmp_path / ".remember" / "identity.md").write_text("wrong place\n", encoding="utf-8")
+    doctor.check_memory(tmp_path)
+    assert _states() == ["WARN"]
+
+
+def test_a_custom_data_dir_from_the_config_is_honoured(tmp_path):
+    """`data_dir` is configurable, so a hardcoded `.remember` reports a missing store
+    for a repo that has one.
+    """
+    _memory(tmp_path, data_dir="memory-store")
     doctor.check_memory(tmp_path)
     assert _states() == ["OK"]
 
