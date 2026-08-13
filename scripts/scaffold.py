@@ -304,6 +304,151 @@ def render_to(repo_root, relative_path, body):
     return resolved
 
 
+OWNED_DIR = ".oss"
+
+# Repeated in every owned file, because that is where somebody about to edit one is
+# looking. A prohibition with no alternative gets ignored by whoever needs the change,
+# so it names the way out.
+OWNED_NOTE = (
+    "Managed by the oss plugin. This file is OVERWRITTEN every time /oss:scaffold runs, "
+    "so an edit here is lost at the next update. To change what it does, copy it "
+    "somewhere outside " + OWNED_DIR + "/ and point at your copy."
+)
+
+OWNED_README = """# __DIR__/ — files the oss plugin owns
+
+Everything in this directory is **ours**: written by `/oss:scaffold` and **replaced
+wholesale** on every run — an edit here is **overwritten** at the next update.
+
+The plugin distinguishes three kinds of file in your repository, and that distinction is
+why this directory exists at all:
+
+| Kind | Where | On update |
+| --- | --- | --- |
+| **Yours** | everywhere else | never read, never written |
+| **Defaults** | `SECURITY.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/`, … | created once when absent, then yours forever — never overwritten |
+| **Ours** | this directory | replaced every time, so fixes actually reach you |
+
+To change something here, copy it out and point your own config at the copy.
+
+## The one exception
+
+`.github/workflows/oss-changelog.yml` is ours too and is replaced the same way. It
+cannot live in here: a forge reads workflows only from `.github/workflows/` itself —
+subdirectories are not supported and a symlink there fails outright. So it keeps the
+`oss-` prefix and carries the same note in its own header.
+
+## What is here
+
+- `assemble_changelog.py` — validates changelog fragments and folds them into
+  `CHANGELOG.md` at release time. It lives in your repository rather than in the plugin
+  because CI checks out your repository and nothing else.
+"""
+
+CHANGELOG_WORKFLOW = """name: oss changelog
+
+on:
+  pull_request:
+
+jobs:
+  fragment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Fragments parse and name a real section
+        run: python3 __DIR__/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
+
+      # A change to what this project DOES must say so where users read it.
+      - name: A user-visible change carries a fragment
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        # Through env, never interpolated into the script body: a ${{ }} expansion is
+        # textual substitution, so whatever it carries becomes shell source, and a ref
+        # is attacker-influenced on a fork pull request.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          changed=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+          fragments=$(printf '%s\\n' "$changed" | grep -E '^__FRAGMENTS__/[0-9]+\\..+\\.md$' || true)
+
+          if [ -n "$fragments" ]; then
+            echo "Fragment present:"
+            printf '%s\\n' "$fragments"
+            exit 0
+          fi
+          echo "No changelog fragment in this pull request." >&2
+          echo "Add __FRAGMENTS__/<issue>.<section>.md, or label the pull request" >&2
+          echo "'no-changelog' when the change is genuinely invisible to users." >&2
+          exit 1
+"""
+
+
+def _wrap(text, width=76):
+    lines = []
+    current = ""
+    for word in text.split():
+        candidate = (current + " " + word).strip()
+        if len(candidate) > width and current:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _note_comment():
+    return "".join("# {}\n".format(line) for line in _wrap(OWNED_NOTE)) + "\n"
+
+
+def _owned_readme(config, plugin_root):
+    return OWNED_README.replace("__DIR__", OWNED_DIR)
+
+
+def _owned_workflow(config, plugin_root):
+    body = CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR).replace(
+        "__FRAGMENTS__", config.get("changelog_dir") or "changelog.d"
+    )
+    return _note_comment() + body
+
+
+def _owned_assembler(config, plugin_root):
+    """Copied from the plugin's own file at write time.
+
+    Not duplicated into a template string: two copies of 1164 lines drift, and only one
+    of them is the copy anybody runs tests against.
+    """
+    body = (Path(plugin_root) / "scripts" / "assemble_changelog.py").read_text(encoding="utf-8")
+    shebang = ""
+    if body.startswith("#!"):
+        shebang, _, body = body.partition("\n")
+        shebang += "\n"
+    return shebang + _note_comment() + body
+
+
+# path -> renderer(config, plugin_root). Replaced on every apply.
+OWNED = {
+    OWNED_DIR + "/README.md": _owned_readme,
+    OWNED_DIR + "/assemble_changelog.py": _owned_assembler,
+    ".github/workflows/oss-changelog.yml": _owned_workflow,
+}
+
+
+def render_owned(name, config, plugin_root=None):
+    if name not in OWNED:
+        raise ScaffoldError(
+            "unknown owned file: {!r}. Known: {}".format(name, ", ".join(sorted(OWNED)))
+        )
+    return OWNED[name](config, plugin_root or SCRIPT_DIR.parent)
+
+
 def plan(repo_root, config):
     """What would be written, and what is already there. This is the whole answer."""
     problems = oss_config.validate(config)
@@ -325,18 +470,39 @@ def plan(repo_root, config):
                 ),
             }
         )
+
+    for name in sorted(OWNED):
+        entries.append(
+            {
+                "path": name,
+                "action": "replace",
+                "reason": "ours; replaced on every run so fixes reach the repo",
+            }
+        )
     return entries
 
 
-def apply(repo_root, config):
-    """Write only what is missing. Returns the paths written, newest run first empty."""
-    written = []
+def apply(repo_root, config, plugin_root=None):
+    """Write the defaults that are missing, and replace everything we own.
+
+    Two contracts in one pass, deliberately: they are always applied together, and
+    keeping them apart would let a repo end up with our workflow and not the script
+    it calls. The return value keeps them distinct so the caller can report which
+    was which -- "created" and "replaced" mean different things to whoever reads it.
+    """
+    created = []
     for entry in plan(repo_root, config):
         if entry["action"] != "create":
             continue
         render_to(repo_root, entry["path"], render(entry["path"], config))
-        written.append(entry["path"])
-    return written
+        created.append(entry["path"])
+
+    replaced = []
+    for name in sorted(OWNED):
+        render_to(repo_root, name, render_owned(name, config, plugin_root))
+        replaced.append(name)
+
+    return {"created": created, "replaced": replaced}
 
 
 MIN_TOPICS = 3
@@ -476,9 +642,12 @@ def _main(argv=None):
         ))
         return 0
 
-    written = apply(args.root, config)
-    for path in written:
+    result = apply(args.root, config)
+    for path in result["created"]:
         print("created  {}".format(path))
+    for path in result["replaced"]:
+        print("ours     {}  (replaced)".format(path))
+    written = result["created"] + result["replaced"]
 
     # Two different contracts, so they are reported apart. Templates are defaults and
     # never overwrite; the rule layer is ours and is replaced wholesale, which is only

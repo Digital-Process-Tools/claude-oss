@@ -751,9 +751,18 @@ def _rewrite_links(lines: List[str], version: str
 # from 0.20.0 on is cut by the assembler, which writes the ref as it goes — and
 # `tests/test_changelog_link_refs_918.py` refuses anything at or above that floor
 # being added here.
-UNTAGGED_RELEASES = frozenset({
-    "0.19.0", "0.18.0", "0.17.0", "0.16.0", "0.15.0", "0.14.0", "0.11.0",
-})
+#
+# EMPTIED ON VENDORING. Upstream this set lists ITS OWN untagged releases, and the
+# copy arrived here still naming 0.11.0 through 0.19.0 -- versions this repo has
+# never had. The audit duly reported nine findings about another project's release
+# history, in a tool whose whole purpose is to catch exactly that kind of confident
+# wrong statement.
+#
+# It is per-repo state and does not belong in a shared tool. A repo that needs the
+# declaration should carry it in its own config rather than in a vendored script,
+# and until that exists an empty set means "no version is declared untagged", which
+# is true of every repo by default.
+UNTAGGED_RELEASES = frozenset()
 
 _COMPARE_HREF_RE = re.compile(r"/compare/v(?P<version>\d+\.\d+\.\d+)\.\.\.HEAD$")
 

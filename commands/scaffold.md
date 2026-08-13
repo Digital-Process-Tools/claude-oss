@@ -32,6 +32,26 @@ Only missing files are created. **An existing file is never overwritten** — th
 SECURITY.md is a decision somebody made, and this ships a default. A default must not win against a
 decision.
 
+## Three contracts, and the repo can see which is which
+
+| Kind | Where | On update |
+| --- | --- | --- |
+| **Yours** | everywhere else | never read, never written |
+| **Defaults** | `SECURITY.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/`, … | created once when absent, then yours forever |
+| **Ours** | `.oss/`, plus `.github/workflows/oss-changelog.yml` | replaced every run, so fixes reach the repo |
+
+`.oss/README.md` states that table inside the repo, which is where somebody about to
+edit a generated file is actually looking. Every owned file repeats it in its own header
+and names the way out: copy it somewhere outside `.oss/` and point at your copy.
+
+The workflow is the one owned file that cannot live in `.oss/` — a forge reads workflows
+only from `.github/workflows/` itself, subdirectories are unsupported and a symlink there
+fails outright. Hence the `oss-` prefix, so it is still obvious in a directory listing.
+
+`.oss/assemble_changelog.py` ships into the repo rather than being called from the
+plugin because CI checks out the repo and nothing else: a workflow calling a plugin path
+is a red build on day one.
+
 ## The rule layer is the exception, and deliberately so
 
 The same run also installs `.claude/jit-context/<dimension>/01-oss/` — rules about this plugin's own

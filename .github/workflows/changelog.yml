@@ -1,0 +1,61 @@
+name: changelog
+
+on:
+  pull_request:
+
+# The tool was vendored long before this gate existed, so the policy was written
+# down in a command doc and enforced by nobody. A convention with no check is a
+# convention until the first busy afternoon.
+jobs:
+  fragment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Paths are passed explicitly. The script derives its default root from its
+      # own location, which assumes it lives in .github/scripts/ -- it does not
+      # here, and it will not in any repo this plugin is pointed at either.
+      - name: Fragments parse and name a real section
+        run: |
+          python3 scripts/assemble_changelog.py --check \
+            --dir changelog.d --changelog CHANGELOG.md
+
+      # A PR that changes what the plugin DOES must say so where users read it.
+      # Docs, tests and CI changes are exempt by construction: the paths below are
+      # the ones a user can observe from outside.
+      - name: A user-visible change carries a fragment
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        # Passed through env, never interpolated into the script body: a `${{ }}`
+        # expansion is textual substitution, so anything it carries becomes shell
+        # source. A ref is attacker-influenced on a fork PR.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          changed=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+          product=$(printf '%s\n' "$changed" | grep -E '^(scripts/|skills/|agents/|commands/|bin/|\.claude-plugin/)' || true)
+          fragments=$(printf '%s\n' "$changed" | grep -E '^changelog\.d/[0-9]+\..+\.md$' || true)
+
+          if [ -z "$product" ]; then
+            echo "No user-visible paths changed — no fragment required."
+            exit 0
+          fi
+          if [ -n "$fragments" ]; then
+            echo "Fragment present:"
+            printf '%s\n' "$fragments"
+            exit 0
+          fi
+
+          echo "This PR changes what the plugin does:" >&2
+          printf '%s\n' "$product" >&2
+          echo >&2
+          echo "Add changelog.d/<issue>.<section>.md, or label the PR 'no-changelog' if" >&2
+          echo "the change is genuinely invisible to users. Sections are the Keep a" >&2
+          echo "Changelog headings, lowercased: added, changed, deprecated, removed," >&2
+          echo "fixed, security." >&2
+          exit 1

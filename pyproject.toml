@@ -16,14 +16,17 @@ testpaths = ["tests"]
 addopts = "-rs --cov=scripts --cov-report=term-missing --cov-fail-under=85"
 
 [tool.coverage.run]
-# assemble_changelog.py and coverage_gate.py are verbatim copies of the versions
-# maintained in claude-supertool, where they carry their own suites. Measuring them
-# here would drag the floor down to a number that says nothing about this plugin's
-# own code, and re-testing a copy is how the copy quietly stops being one.
+# assemble_changelog.py and coverage_gate.py came from claude-supertool, where they
+# carry their own suites. Measuring them here would drag the floor down to a number
+# that says nothing about this plugin's own code.
 #
-# The tradeoff is stated rather than hidden: if these files are ever EDITED here,
-# they stop being copies and this omission stops being honest. Adopting them
-# properly means bringing their tests across in the same change.
+# NO LONGER VERBATIM, and that was the stated condition for this omission being
+# honest. assemble_changelog.py now diverges in exactly one place: UNTAGGED_RELEASES
+# is emptied. It arrived listing 0.11.0 through 0.19.0 -- another repo's untagged
+# releases -- and reported nine findings about a release history this project has
+# never had. The divergence is one constant, guarded by a test, and the debt is
+# named rather than filed away: adopting these properly means bringing their suites
+# across.
 omit = [
     "scripts/assemble_changelog.py",
     "scripts/coverage_gate.py",

@@ -46,9 +46,11 @@ def _config(**overrides):
 
 def test_every_template_is_planned_on_an_empty_repo(tmp_path):
     plan = scaffold.plan(tmp_path, _config())
-    assert plan, "no templates -- the checks below would vacuously pass"
-    assert all(entry["action"] == "create" for entry in plan)
-    assert {entry["path"] for entry in plan} == set(scaffold.TEMPLATES)
+    assert plan, "no entries -- the checks below would vacuously pass"
+    defaults = {e["path"] for e in plan if e["action"] == "create"}
+    assert defaults == set(scaffold.TEMPLATES)
+    owned = {e["path"] for e in plan if e["action"] == "replace"}
+    assert owned == set(scaffold.OWNED)
 
 
 def test_an_existing_file_is_reported_present_never_overwritten(tmp_path):
@@ -62,7 +64,7 @@ def test_an_existing_file_is_reported_present_never_overwritten(tmp_path):
 
 def test_apply_writes_only_the_missing_files(tmp_path):
     (tmp_path / "SECURITY.md").write_text("keep me\n", encoding="utf-8")
-    written = scaffold.apply(tmp_path, _config())
+    written = scaffold.apply(tmp_path, _config())["created"]
     assert "SECURITY.md" not in written
     assert (tmp_path / "SECURITY.md").read_text(encoding="utf-8") == "keep me\n"
     assert "CLAUDE.md" in written
@@ -74,11 +76,15 @@ def test_apply_creates_parent_directories(tmp_path):
     assert (tmp_path / ".github" / "ISSUE_TEMPLATE" / "bug_report.md").is_file()
 
 
-def test_apply_is_idempotent(tmp_path):
+def test_a_second_apply_creates_no_defaults_but_still_replaces_ours(tmp_path):
+    """Idempotent for defaults, deliberately not for the files we own -- that is the
+    contract that lets an update reach a repo at all.
+    """
     first = scaffold.apply(tmp_path, _config())
     second = scaffold.apply(tmp_path, _config())
-    assert first
-    assert second == []
+    assert first["created"]
+    assert second["created"] == []
+    assert second["replaced"] == sorted(scaffold.OWNED)
 
 
 def test_apply_refuses_a_config_that_does_not_validate(tmp_path):
