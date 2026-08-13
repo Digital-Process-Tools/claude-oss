@@ -176,11 +176,8 @@ def _dependencies_current(monkeypatch):
     the verdict.
     """
     names = doctor.declared_dependencies()
-    monkeypatch.setattr(
-        doctor,
-        "installed_dependencies",
-        lambda n: ({name: "1.0.0" for name in names}, {name: None for name in names}),
-    )
+    monkeypatch.setattr(doctor, "active_versions", lambda n: {name: "1.0.0" for name in names})
+    monkeypatch.setattr(doctor, "dependency_repositories", lambda n: {})
     monkeypatch.setattr(doctor, "published_versions", lambda repos: {n: "1.0.0" for n in names})
 
 

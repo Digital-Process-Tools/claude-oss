@@ -361,17 +361,53 @@ def declared_dependencies():
     return [d if isinstance(d, str) else d.get("name") for d in raw if d]
 
 
-def installed_dependencies(names):
-    """Installed version and origin repo per dependency, from the installed manifests.
+INSTALL_RECORD = "~/.claude/plugins/installed_plugins.json"
 
-    The repo comes out of each plugin's OWN manifest rather than a table in here: a
-    hardcoded name-to-repo map is one more per-repo fact living in shared code, and it
-    would be wrong the first time a plugin moved.
 
-    Every failure is silent by design and surfaces as `unknown` upstream -- this is a
-    diagnostic, and a network or layout change must not stop it printing.
+def active_versions(names, record=None):
+    """The version actually enabled, per dependency, from the install record.
+
+    NOT from the cache directory listing. The first live run of this check reported
+    `supertool 0.22.0 installed` while 0.40.0 was active, and `remember 0.13.0` -- a
+    version not even in that marketplace's cache. Old versions stay unpacked on disk,
+    more than one marketplace can carry the same plugin name, and a glob across them
+    returns whichever sorts last. The listing says what was ever unpacked; the record
+    says what is running.
+
+    An unreadable record yields nothing rather than a fallback guess: every dependency
+    then reports `missing`, which is loud, where a guessed version is quietly wrong.
     """
-    versions, repos = {}, {}
+    path = Path(record or os.path.expanduser(INSTALL_RECORD))
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    if not isinstance(plugins, dict):
+        return {}
+
+    found = {}
+    for key, entries in plugins.items():
+        name = key.split("@", 1)[0]
+        if name not in names or not isinstance(entries, list):
+            continue
+        # One entry per scope; take the highest, which is the one that wins at load.
+        versions = [e.get("version") for e in entries if isinstance(e, dict) and e.get("version")]
+        for version in versions:
+            if name not in found or compare_versions(found[name], version) == "behind":
+                found[name] = version
+    return found
+
+
+def dependency_repositories(names):
+    """Origin repo per dependency, read from each plugin's own installed manifest.
+
+    Sourced from the artifact rather than a name-to-repo table in here: a hardcoded map
+    is one more per-repo fact living in shared code, and it is wrong the first time a
+    plugin moves.
+    """
+    repos = {}
     root = Path(os.path.expanduser("~/.claude/plugins/cache"))
     for name in names:
         for manifest in sorted(root.glob("*/{}/*/.claude-plugin/plugin.json".format(name))):
@@ -379,9 +415,9 @@ def installed_dependencies(names):
                 doc = json.loads(manifest.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            versions[name] = doc.get("version")
-            repos[name] = doc.get("repository")
-    return versions, repos
+            if doc.get("repository"):
+                repos[name] = doc["repository"]
+    return repos
 
 
 def published_versions(repos):
@@ -420,7 +456,8 @@ def check_freshness(project_dir, config):
     if not names:
         report("WARN", "no dependencies declared in the manifest; nothing to compare")
     else:
-        installed, repos = installed_dependencies(names)
+        installed = active_versions(names)
+        repos = dependency_repositories(names)
         for finding in dependency_findings(installed, published_versions(repos), declared=names):
             report("OK" if finding["state"] == "current" else "WARN", finding["detail"])
 

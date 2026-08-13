@@ -9,6 +9,7 @@ not **current**. A version comparison that could not reach the forge, or an owne
 that could not be rendered, must never render as up to date.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -111,6 +112,63 @@ def test_every_declared_dependency_is_reported():
     """
     findings = doctor.dependency_findings({}, {}, declared=["supertool", "remember"])
     assert {f["name"] for f in findings} == {"supertool", "remember"}
+
+
+# --------------------------------------------------------------- installed record
+
+
+def test_the_active_version_comes_from_the_install_record(tmp_path):
+    """Not from the cache directory listing.
+
+    The first live run reported `supertool 0.22.0 installed` while the active install
+    was 0.40.0, and `remember 0.13.0` -- a version not even in that marketplace's
+    cache. Old versions stay on disk, several marketplaces can carry the same plugin
+    name, and a glob over all of them returns whichever sorts last. The record says
+    which one is actually enabled; the directory listing says what was ever unpacked.
+    """
+    record = tmp_path / "installed_plugins.json"
+    record.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "supertool@dpt-plugins": [{"version": "0.40.0", "installPath": "/x"}],
+                    "remember@dpt-plugins": [{"version": "0.20.0", "installPath": "/y"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    active = doctor.active_versions(["supertool", "remember"], record=record)
+    assert active == {"supertool": "0.40.0", "remember": "0.20.0"}
+
+
+def test_a_plugin_absent_from_the_record_is_not_installed(tmp_path):
+    record = tmp_path / "installed_plugins.json"
+    record.write_text(json.dumps({"plugins": {}}), encoding="utf-8")
+    assert doctor.active_versions(["supertool"], record=record) == {}
+
+
+def test_an_unreadable_record_yields_nothing_rather_than_a_guess(tmp_path):
+    """Empty here means every dependency reports `missing`, which is loud. A guess
+    from the cache would report a version nobody is running.
+    """
+    record = tmp_path / "installed_plugins.json"
+    record.write_text("{ broken", encoding="utf-8")
+    assert doctor.active_versions(["supertool"], record=record) == {}
+
+
+def test_the_newest_entry_wins_when_a_plugin_is_recorded_twice(tmp_path):
+    """The record holds a list per plugin -- one entry per scope."""
+    record = tmp_path / "installed_plugins.json"
+    record.write_text(
+        json.dumps(
+            {"plugins": {"supertool@dpt-plugins": [
+                {"version": "0.9.0"}, {"version": "0.40.0"}]}}
+        ),
+        encoding="utf-8",
+    )
+    assert doctor.active_versions(["supertool"], record=record) == {"supertool": "0.40.0"}
 
 
 # ------------------------------------------------------------------- owned drift
