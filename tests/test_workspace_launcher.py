@@ -15,6 +15,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -106,9 +107,17 @@ def run(cwd, args=(), with_claude=True, with_channel=False):
     env.pop("SUPERTOOL_WATCH_NAME", None)
     # Minimal PATH, deliberately: with the real claude reachable, the "missing
     # claude" case found it and EXECUTED it -- a test suite that launches a live
-    # agent session in a temp directory. Only the stub and the system utilities
-    # the script needs are on PATH here.
-    env["PATH"] = os.pathsep.join([str(bindir), "/usr/bin", "/bin"])
+    # agent session in a temp directory. Only the stub, the interpreter and the
+    # system utilities the script needs are on PATH here.
+    #
+    # The interpreter's directory is on it because the launcher needs a python to
+    # read the channel name and find the consumer. `/usr/bin` and `/bin` are Git
+    # Bash's on Windows and hold no python at all, so pinning to those alone
+    # starved the launcher of one -- it then said so correctly, and the channel
+    # assertions failed against a fixture problem wearing a product bug's clothes.
+    env["PATH"] = os.pathsep.join(
+        [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
+    )
     done = subprocess.run(
         [BASH, str(LAUNCHER), *args],
         cwd=str(cwd),
@@ -232,7 +241,9 @@ def test_it_survives_being_run_through_a_symlink(tmp_path):
     bindir.mkdir(exist_ok=True)
     _stub_claude(bindir, repo / "argv.txt")
     env = dict(os.environ)
-    env["PATH"] = os.pathsep.join([str(bindir), "/usr/bin", "/bin"])
+    env["PATH"] = os.pathsep.join(
+        [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
+    )
 
     done = subprocess.run(
         [BASH, str(link)],
