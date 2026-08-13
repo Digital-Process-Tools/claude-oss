@@ -21,7 +21,12 @@ set -u
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
     PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 else
+    # Both separators. Under Git Bash `$0` arrives as `D:\a\repo\scripts\doctor.sh`,
+    # where `${0%/*}` strips nothing, falls through to `.`, and resolves the plugin
+    # root against the CALLER's directory -- a confident answer about the wrong tree.
+    # Found by the Windows leg on the first CI run; every POSIX leg was green.
     _self_dir="${0%/*}"
+    [ "$_self_dir" = "$0" ] && _self_dir="${0%\\*}"
     [ "$_self_dir" = "$0" ] && _self_dir="."
     PLUGIN_ROOT="$(cd "${_self_dir}/.." && pwd)"
 fi

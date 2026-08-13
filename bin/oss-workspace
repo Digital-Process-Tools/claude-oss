@@ -40,7 +40,15 @@ while [ -L "$self" ]; do
         *)  self=$(dirname "$self")/$link ;;
     esac
 done
-plugin_root=$(cd -- "$(dirname -- "$self")/.." && pwd -P)
+# `dirname` splits on `/` only. Under Git Bash `$0` arrives as
+# `D:\a\repo\bin\oss-workspace`, so dirname answers `.` and the root resolves
+# against the caller's directory instead — confidently, and wrongly. Strip either
+# separator ourselves. The same shape failed the Windows leg in scripts/doctor.sh;
+# here nothing downstream reads the value yet, which is why it was silent.
+self_dir=${self%/*}
+[ "$self_dir" = "$self" ] && self_dir=${self%\\*}
+[ "$self_dir" = "$self" ] && self_dir=.
+plugin_root=$(cd -- "$self_dir/.." && pwd -P)
 export OSS_PLUGIN_ROOT="$plugin_root"
 
 if ! command -v claude >/dev/null 2>&1; then
