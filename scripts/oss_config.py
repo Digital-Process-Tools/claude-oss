@@ -352,9 +352,11 @@ def verify_test_command(command, cwd, timeout=120):
         return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
 
     tail = (done.stdout or "").strip().splitlines()[-1:] or [""]
-    # 127 is the shell's own "command not found", which is a different problem from a
-    # suite that ran and failed.
-    if done.returncode == 127:
+    # 127 is the POSIX shell's own "command not found", and 9009 is cmd.exe's, which
+    # is a different problem from a suite that ran and failed. Reading only 127 makes
+    # every missing runner on Windows report as a failing suite -- the exact confusion
+    # between "install this" and "fix this" the states exist to prevent.
+    if done.returncode in (127, 9009):
         return {
             "state": "not-found",
             "detail": "{!r}: command not found ({})".format(command, tail[0]),

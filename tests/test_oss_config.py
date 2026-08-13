@@ -6,6 +6,7 @@ than one that finds none, because an invented label reads as a measurement.
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -171,9 +172,15 @@ def test_probe_output_validates():
 
 # --------------------------------------------------------------- test verification
 
-PASSES = "python3 -c pass"
-FAILS = "python3 -c 'raise SystemExit(3)'"
-SLEEPS = "python3 -c 'import time; time.sleep(5)'"
+# The interpreter running the suite, not the name `python3`: Windows ships
+# `python` and no `python3`, so the hardcoded name was not a slow suite or a
+# broken one but a command that does not exist -- which made the timeout and
+# not-found cases both report `failed` and hid the states they exist to tell
+# apart. Quoting matters too: cmd.exe does not strip single quotes.
+PY = subprocess.list2cmdline([sys.executable])
+PASSES = PY + " -c pass"
+FAILS = PY + ' -c "raise SystemExit(3)"'
+SLEEPS = PY + ' -c "import time; time.sleep(5)"' 
 
 
 def test_a_working_command_verifies_ok(tmp_path):
