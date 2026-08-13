@@ -143,6 +143,23 @@ def test_probe_detects_the_test_command_from_files():
     assert bash["test_command"] == "bash tests/run-all.sh"
 
 
+def test_a_plain_unittest_layout_is_detected():
+    """Found by running the probe on a real repo: tests/test_*.py with no pyproject
+    reported `null`, which is honest and still a miss -- the tests are right there.
+    Marker-based detection only sees the markers somebody thought of.
+    """
+    config = oss_config.build(_probe(files=["tests/test_window_spread.py", "README.md"]))
+    assert config["test_command"] == "python3 -m unittest discover -s tests"
+
+
+def test_pyproject_wins_over_a_bare_tests_directory():
+    """Both markers present is the common case, and pytest is the more specific claim."""
+    config = oss_config.build(
+        _probe(files=["pyproject.toml", "tests/test_thing.py", "README.md"])
+    )
+    assert config["test_command"] == "pytest"
+
+
 def test_probe_leaves_the_test_command_unknown_rather_than_guessing():
     config = oss_config.build(_probe(files=["README.md"]))
     assert config["test_command"] is None
@@ -150,6 +167,46 @@ def test_probe_leaves_the_test_command_unknown_rather_than_guessing():
 
 def test_probe_output_validates():
     assert oss_config.validate(oss_config.build(_probe())) == []
+
+
+# --------------------------------------------------------------- test verification
+
+PASSES = "python3 -c pass"
+FAILS = "python3 -c 'raise SystemExit(3)'"
+SLEEPS = "python3 -c 'import time; time.sleep(5)'"
+
+
+def test_a_working_command_verifies_ok(tmp_path):
+    """Detection infers from a marker file; this measures. A command that does not run
+    is a confident wrong config, and setup is where that should be caught rather than
+    by the first agent told to use it.
+    """
+    assert oss_config.verify_test_command(PASSES, tmp_path)["state"] == "ok"
+
+
+def test_a_failing_command_is_reported_not_silently_kept(tmp_path):
+    result = oss_config.verify_test_command(FAILS, tmp_path)
+    assert result["state"] == "failed"
+    assert "3" in result["detail"]
+
+
+def test_a_command_that_does_not_exist_is_its_own_state(tmp_path):
+    """A missing runner and a failing suite have different remedies."""
+    result = oss_config.verify_test_command("definitely-not-a-real-binary", tmp_path)
+    assert result["state"] == "not-found"
+
+
+def test_a_slow_command_times_out_rather_than_hanging_setup(tmp_path):
+    """Setup must not sit on somebody full suite. A timeout is unverified, which is not
+    the same as broken -- calling it broken sends them to debug a suite that is slow.
+    """
+    result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+    assert "unverified" in result["detail"].lower()
+
+
+def test_a_null_command_is_nothing_to_verify(tmp_path):
+    assert oss_config.verify_test_command(None, tmp_path)["state"] == "none"
 
 
 # ------------------------------------------------------------------ path containment

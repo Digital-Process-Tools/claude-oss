@@ -14,6 +14,7 @@ Python 3.9 compatible: no match statements, no `X | Y` annotations.
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -239,6 +240,13 @@ def build(probe):
         if marker in files:
             test_command = command
             break
+    if test_command is None and any(
+        f.startswith("tests/") and f.endswith(".py") and "test" in f.rsplit("/", 1)[-1]
+        for f in files
+    ):
+        # A plain unittest layout: no manifest to key on, tests plainly present. Found
+        # by probing a real repo that reported null while its tests sat in tests/.
+        test_command = "python3 -m unittest discover -s tests"
 
     version_sites = [
         site
@@ -281,6 +289,53 @@ def build(probe):
             # where they can be seen and argued with.
             "triggers": {"merged_prs": 10, "soak_hours": 48},
         },
+    }
+
+
+def verify_test_command(command, cwd, timeout=120):
+    """Run the detected test command and say what happened.
+
+    Detection reads a marker file and infers; this executes and measures. The states
+    differ in remedy, so they are kept apart: `failed` is a suite to fix, `not-found`
+    is a runner to install, and `timeout` is **unverified** rather than broken --
+    reporting broken would send someone to debug a suite that is merely slow.
+    """
+    if not command:
+        return {"state": "none", "detail": "no test command detected; nothing to verify"}
+
+    try:
+        done = subprocess.run(
+            command,
+            shell=True,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "state": "timeout",
+            "detail": "{!r} did not finish within {}s, so it is unverified -- which is "
+            "not the same as broken.".format(command, timeout),
+        }
+    except OSError as exc:
+        return {"state": "not-found", "detail": "{!r} would not start ({})".format(command, exc)}
+
+    if done.returncode == 0:
+        return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
+
+    tail = (done.stdout or "").strip().splitlines()[-1:] or [""]
+    # 127 is the shell's own "command not found", which is a different problem from a
+    # suite that ran and failed.
+    if done.returncode == 127:
+        return {
+            "state": "not-found",
+            "detail": "{!r}: command not found ({})".format(command, tail[0]),
+        }
+    return {
+        "state": "failed",
+        "detail": "{!r} exited {} -- {}".format(command, done.returncode, tail[0]),
     }
 
 

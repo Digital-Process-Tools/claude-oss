@@ -32,6 +32,28 @@ The rules that matter, all enforced by `scripts/oss_config.py`:
 - **An undetectable test command stays `null`.** `null` is an honest "I could not tell"; a guess is
   a wrong instruction with an agent attached.
 
+## Verify the test command before writing it
+
+Detection reads a marker file and infers. **Run it.** A detected command that does not
+work is a confident wrong config, and the next thing to find out is an agent that was
+told to use it.
+
+```bash
+python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/scripts'); import oss_config, json; print(json.dumps(oss_config.verify_test_command('<detected>', '.')))"
+```
+
+Four states, each with a different remedy — relay which one:
+
+| State | Means |
+| --- | --- |
+| `ok` | ran and passed; write it |
+| `failed` | the suite ran and did not pass. The command is probably right and the repo is red; say both |
+| `not-found` | the runner is not installed here. Nothing to conclude about the suite |
+| `timeout` | **unverified**, not broken. Saying broken sends somebody to debug a suite that is merely slow |
+
+Write the command on `ok`. On anything else, say what happened and let the human
+decide — a `null` they chose beats a value they did not.
+
 ## Show, then write
 
 Print the derived config and what each value was derived *from*, then ask before writing. A config
