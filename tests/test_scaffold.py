@@ -9,6 +9,7 @@ never overwrites, it shows before it writes, and a file that already exists is
 reported as present rather than quietly replaced.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -91,6 +92,55 @@ def test_plan_refuses_to_escape_the_repo_root(tmp_path):
     """
     with pytest.raises(scaffold.ScaffoldError):
         scaffold.render_to(tmp_path, "../escape.md", "x")
+
+
+# ---------------------------------------------------------------------------- radar
+
+
+def test_a_repo_with_no_supertool_config_has_nothing_to_report(tmp_path):
+    """Nothing there means the template creates one with radar already on, so there
+    is no finding to make.
+    """
+    assert scaffold.check_radar(tmp_path) == []
+
+
+def test_an_existing_config_without_radar_tiers_is_reported(tmp_path):
+    (tmp_path / ".supertool.json").write_text('{"presets": ["git"]}', encoding="utf-8")
+    findings = scaffold.check_radar(tmp_path)
+    assert findings and findings[0]["state"] == "no-tiers"
+    assert "radar_tiers" in findings[0]["detail"]
+
+
+def test_an_existing_config_with_radar_tiers_is_clean(tmp_path):
+    (tmp_path / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    assert scaffold.check_radar(tmp_path) == []
+
+
+def test_an_unreadable_config_is_unknown_not_off(tmp_path):
+    """The third state. Reporting "no radar" for a file we could not parse would send
+    someone to add a block that is already there.
+    """
+    (tmp_path / ".supertool.json").write_text("{ broken", encoding="utf-8")
+    findings = scaffold.check_radar(tmp_path)
+    assert findings and findings[0]["state"] == "unreadable"
+
+
+def test_the_shipped_config_turns_radar_on(tmp_path):
+    """The point of shipping it: a managed repo has a board the first time someone
+    opens it, rather than after they discover the op exists.
+    """
+    scaffold.apply(tmp_path, _config())
+    assert scaffold.check_radar(tmp_path) == []
+    written = json.loads((tmp_path / ".supertool.json").read_text(encoding="utf-8"))
+    assert written["ops"]["radar"]["radar_tiers"]
+
+
+def test_an_existing_supertool_config_is_never_replaced(tmp_path):
+    (tmp_path / ".supertool.json").write_text('{"presets": ["mine"]}', encoding="utf-8")
+    scaffold.apply(tmp_path, _config())
+    assert "mine" in (tmp_path / ".supertool.json").read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- render

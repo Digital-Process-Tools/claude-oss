@@ -1,0 +1,98 @@
+#!/bin/sh
+# Open a maintainer session over the repository you are standing in.
+#
+# Clone a repo, run this, work. That is the whole promise, so everything it needs
+# is either derived here or reported as missing — nothing is assumed to be set up.
+#
+# The working directory is the selection and is left exactly where the caller put
+# it: this opens THEIR repo, not this plugin's checkout. The plugin root is
+# resolved from the script's own location so a symlink into a bin directory works
+# from anywhere:
+#
+#     ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
+#
+# Two things about the session that are not the default:
+#
+#   * Without the development-channel flag, watch pollers still spawn and still
+#     emit and nothing reads them — a board that looks armed and delivers nothing.
+#     Check `supertool 'channel:health'` before trusting a green board.
+#   * `claude` reads only its FIRST positional as the prompt and silently ignores
+#     later ones, and a variadic option swallows whatever follows it. So the
+#     prompt is appended ONLY when there is nothing else to pass, and when it is
+#     not, that is said rather than dropped.
+set -eu
+
+# A user's CDPATH can make `cd relative` land somewhere else entirely and print
+# where it went. Cleared once here rather than prefixed onto each cd, which reads
+# as a typo and is flagged as one.
+CDPATH=
+
+CHANNEL_FLAG="--dangerously-load-development-channels"
+CHANNEL_SERVER="server:claude-channel"
+
+# `dirname "$0"` on a symlink gives the link's directory, not the checkout.
+# `readlink -f` is not portable to macOS's stock readlink, so walk it.
+self=$0
+while [ -L "$self" ]; do
+    link=$(readlink "$self")
+    case $link in
+        /*) self=$link ;;
+        *)  self=$(dirname "$self")/$link ;;
+    esac
+done
+plugin_root=$(cd -- "$(dirname -- "$self")/.." && pwd -P)
+export OSS_PLUGIN_ROOT="$plugin_root"
+
+if ! command -v claude >/dev/null 2>&1; then
+    echo "oss-workspace: claude is not on PATH, so there is no session to open." >&2
+    exit 1
+fi
+
+if ! command -v git >/dev/null 2>&1; then
+    echo "oss-workspace: git is not on PATH." >&2
+    exit 1
+fi
+
+# The directory IS the selection. Opening a session over something that is not a
+# repository would produce a board about nothing, so it is refused by name.
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "oss-workspace: $(pwd) is not a git work tree." >&2
+    echo "  Stand in the repository you want to maintain and run this again." >&2
+    exit 1
+fi
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# A tick against a repo with no config would run on guessed values, and a guessed
+# default branch merges into the wrong place confidently. So the first session
+# after a clone goes to setup instead.
+if [ -f "$repo_root/.oss.json" ]; then
+    prompt="/oss:tick"
+else
+    prompt="/oss:setup"
+    echo "oss-workspace: no .oss.json in $repo_root — starting with /oss:setup" \
+         "rather than a tick, which would otherwise run on guessed values." >&2
+fi
+
+# The flag makes this session ABLE to receive channel events. It does not create a
+# board: `radar` reads its tiers from this repo's own .supertool.json, and a fresh
+# clone has none. Reporting "armed" when only half of that holds is the defect this
+# whole plugin is about, so the state is stated rather than assumed.
+if [ ! -f "$repo_root/.supertool.json" ]; then
+    echo "oss-workspace: no .supertool.json here, so there are no radar tiers and no board to watch. The session still runs, and ops needing a preset will say so." >&2
+elif ! grep -q radar "$repo_root/.supertool.json" 2>/dev/null; then
+    echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
+fi
+
+if [ "$#" -eq 0 ]; then
+    exec claude "$CHANNEL_FLAG" "$CHANNEL_SERVER" "$prompt"
+fi
+
+# The third state. Placing our prompt after the caller's arguments hands `claude`
+# a word it throws away; placing it first throws away the caller's own prompt.
+# Neither is worth doing quietly, so it is not appended and the reason is stated.
+echo "oss-workspace: arguments were passed through, so $prompt was NOT appended —" \
+     "claude reads only its first positional as the prompt. Run $prompt inside the" \
+     "session, or start it with no arguments." >&2
+exec claude "$CHANNEL_FLAG" "$CHANNEL_SERVER" "$@"

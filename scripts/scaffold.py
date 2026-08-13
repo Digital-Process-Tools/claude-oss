@@ -216,6 +216,21 @@ __pycache__/
 .oss.json
 """
 
+# Radar on by default: a managed repo should have a board the first time someone
+# opens it, not after they discover the op exists. Tiers are the smallest useful
+# set -- open pull requests -- and the presets are the two the loop actually calls.
+SUPERTOOL_JSON = """{
+  "presets": ["git", "github"],
+  "ops": {
+    "radar": {
+      "radar_tiers": {
+        "gh-prs": {}
+      }
+    }
+  }
+}
+"""
+
 DEPENDABOT_YML = """version: 2
 updates:
   - package-ecosystem: github-actions
@@ -251,6 +266,7 @@ TEMPLATES = {
     ".github/PULL_REQUEST_TEMPLATE.md": lambda config: PULL_REQUEST_TEMPLATE_MD,
     ".github/dependabot.yml": lambda config: DEPENDABOT_YML,
     ".gitignore": lambda config: GITIGNORE,
+    ".supertool.json": lambda config: SUPERTOOL_JSON,
     # No rules seed here. The rules plugin ships its own examples, one per dimension,
     # and its README documents the frontmatter for each. A copy of that teaching in
     # this repo is a second copy to keep in step -- which is the drift this plugin
@@ -390,6 +406,40 @@ def check_metadata(probe):
     return findings
 
 
+def check_radar(repo_root):
+    """Is a board configured, or only the ability to receive one?
+
+    `.supertool.json` is never overwritten -- an existing one is the repo's own. So
+    when it is there and declares no radar tiers, the missing block is named rather
+    than merged in: a config file edited behind someone's back is worse than a board
+    they have to turn on.
+    """
+    path = Path(repo_root) / ".supertool.json"
+    if not path.exists():
+        return []
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [
+            {
+                "state": "unreadable",
+                "detail": ".supertool.json could not be read ({}) -- radar state unknown, "
+                "which is not the same as radar being off".format(type(exc).__name__),
+            }
+        ]
+    tiers = ((doc.get("ops") or {}).get("radar") or {}).get("radar_tiers")
+    if tiers:
+        return []
+    return [
+        {
+            "state": "no-tiers",
+            "detail": 'no radar tiers in .supertool.json, so a session can receive '
+            'channel events and nothing publishes any. Add: '
+            '"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}',
+        }
+    ]
+
+
 def _main(argv=None):
     import argparse
 
@@ -418,6 +468,8 @@ def _main(argv=None):
     if not args.apply:
         for entry in entries:
             print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
+        for finding in check_radar(args.root):
+            print("radar    {}".format(finding["detail"]))
         print("PLAN: {} to create, {} already present".format(
             sum(1 for e in entries if e["action"] == "create"),
             sum(1 for e in entries if e["action"] == "present"),

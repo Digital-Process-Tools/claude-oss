@@ -31,6 +31,30 @@ file the plugin writes by probing the repo, not in the prose.
 Installing pulls in `supertool`, `remember` and `claude-jit-context` automatically — they are
 declared dependencies and resolve from the same marketplace.
 
+## After cloning a repo you maintain
+
+```
+cd the-repo
+oss-workspace
+```
+
+That opens a session over the repo you are standing in, with the maintainer loop already running — or
+with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
+into the wrong place confidently.
+
+It does **not** set up a board. The session is started able to receive watch-channel events, but
+`radar` reads its tiers from that repo's own `.supertool.json`, and a fresh clone has none. The
+launcher says which of the two is missing rather than reporting the session as armed — a channel
+nobody publishes to looks exactly like a quiet board.
+
+Install the launcher once:
+
+```
+ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
+```
+
+The working directory is the selection: it opens *that* repo, never this plugin's checkout.
+
 ## Commands
 
 | Command | What it does |
