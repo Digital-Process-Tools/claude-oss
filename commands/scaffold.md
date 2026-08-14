@@ -54,6 +54,19 @@ Only missing files are created. **An existing file is never overwritten** — th
 SECURITY.md is a decision somebody made, and this ships a default. A default must not win against a
 decision.
 
+The owned changelog trio follows the same rule from a different direction: before writing it, the
+run looks for a changelog gate this repo already runs under a different name — another workflow
+mentioning `assemble_changelog`, naming the fragment directory, or referencing the `no-changelog`
+label; or an `assemble_changelog*` file anywhere in the tree. A hit **declines** the trio instead of
+writing it, and prints why, next to a `changelog` finding that names what it found. Two gates
+checking the same thing on every pull request — two jobs both named `fragment`, two assemblers, a
+check count that moves by one with nothing pointing at it — is not a corrected default, it is the
+defect #86 and #105 both filed. `--force-owned` writes the trio anyway, for a maintainer who checked
+the match by hand and decided it is not a real conflict; nothing here creates that decision for you.
+A workflow that could not be read counts the same as one that matched — the direction that matters is
+never writing a second gate on top of a working one, so an unreadable file is treated as a possible
+collision rather than a clean repo.
+
 The full list, so a plan line is never the first time you hear of a file:
 
 | File | What it is |
@@ -154,7 +167,7 @@ previewable before it is written with
 
 ## What the run reports and will not do for you
 
-Four checks run after the file list — `radar`, `label`, `ci`, `tests` — each naming
+Five checks run after the file list — `radar`, `label`, `ci`, `tests`, `changelog` — each naming
 something measured and left alone, and each printing a line only when it has something to
 say. They are printed before writing as well as after, so nothing in them is a surprise. A
 line that is absent means that check came back clean — never that it did not run, which is
@@ -228,6 +241,13 @@ cross-platform behaviour would be actively misleading. The input to the *report*
 measured — `test_command` was executed and observed to pass — which is why it is stated
 insistently and still not acted on.
 
+`changelog` — this repo already runs a changelog gate under a different name, so the owned trio
+was **declined**: not written, and named as such in the plan (`decline` rather than `replace`) as
+well as here. Detected the same way as everywhere else in this file — measured, three states, never
+a guessed absence — from another workflow mentioning `assemble_changelog`, the fragment directory, or
+the `no-changelog` label, or an `assemble_changelog*` file anywhere in the tree. `--force-owned`
+overrides it. See "Only missing files are created" above for the full contract.
+
 `/oss:doctor` repeats the last two on every run.
 
 ## The rule layer is the exception, and deliberately so
@@ -248,6 +268,13 @@ copy; the next install will not fight you for it.
 A symlink into the plugin checkout would have been simpler and is refused by the rules engine on
 purpose — git carries symlinks, so a clone would need only one committed link to point rules at
 anything on the machine.
+
+**This layer does not read the `changelog` finding.** It is installed unconditionally by `apply()`,
+regardless of whether the owned changelog trio was written or declined, so a repo whose gate this run
+declined still gets `01-oss` rules describing `.oss/assemble_changelog.py` and `changelog.d/` — machinery
+that, in that repo, is not there. #105 named this: a rule describing absent machinery is worse than no
+rule. Out of scope for this change (`scripts/oss_rules.py` is a different lane); noted here so it is
+not read as settled.
 
 Do this on a branch, and open a PR. Do not commit generated furniture straight to the default branch:
 these are files everyone reads, and the review is the point.

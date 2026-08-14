@@ -329,10 +329,10 @@ def test_show_lists_the_fragments_readme_among_what_it_would_create(tmp_path):
 # introduces it -- for a reason that has nothing to do with the change.
 
 
-def _with_workflow(root, body="name: ci\n"):
+def _with_workflow(root, body="name: ci\n", name="ci.yml"):
     directory = root / ".github" / "workflows"
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "ci.yml").write_text(body, encoding="utf-8")
+    (directory / name).write_text(body, encoding="utf-8")
 
 
 def test_the_fragment_directory_the_workflow_polices_is_planned(tmp_path):
@@ -906,6 +906,147 @@ def test_scaffold_writes_no_test_workflow(tmp_path):
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     workflows = sorted(p.name for p in (tmp_path / ".github" / "workflows").iterdir())
     assert workflows == ["oss-changelog.yml"]
+
+
+# ------------------------------------------- collision with an existing changelog gate
+#
+# #86 / #105: `present` used to be computed per path, not per function. A repo that
+# already assembles its own changelog under a different name got a second gate on top
+# of it -- two jobs named `fragment`, two assemblers, a check count that moved by one
+# with nothing pointing at it.
+
+
+def test_a_repo_with_no_gate_is_clean(tmp_path):
+    """Positive control: nothing installed, nothing detected, the trio still planned
+    as replace. Pair with the collision tests below or "declines" would pass on a
+    harness that detects nothing at all."""
+    assert scaffold.check_changelog_gate(tmp_path, _config()) == []
+    paths = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
+    for name in scaffold.OWNED:
+        assert paths[name] == "replace"
+
+
+def test_another_workflow_running_the_assembler_is_detected(tmp_path):
+    _with_workflow(
+        tmp_path,
+        "name: changelog\njobs:\n  fragment:\n    steps:\n      - run: python3 "
+        ".github/scripts/assemble_changelog.py --check --dir changelog.d\n",
+        name="changelog.yml",
+    )
+    findings = scaffold.check_changelog_gate(tmp_path, _config())
+    assert findings and findings[0]["state"] == "found"
+
+
+def test_an_assembler_file_under_a_different_name_is_also_detected(tmp_path):
+    """Second signal from #86: a file named assemble_changelog*, with no workflow
+    text this scan would otherwise match on."""
+    scripts = tmp_path / ".github" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "assemble_changelog.py").write_text("# ours\n", encoding="utf-8")
+    findings = scaffold.check_changelog_gate(tmp_path, _config())
+    assert findings and findings[0]["state"] == "found"
+
+
+def test_the_no_changelog_label_reference_in_another_workflow_is_also_detected(tmp_path):
+    """Third signal: a workflow that already gates on the same escape-hatch label."""
+    _with_workflow(
+        tmp_path,
+        "name: gate\njobs:\n  check:\n    steps:\n      - if: "
+        "\"!contains(github.event.pull_request.labels.*.name, 'no-changelog')\"\n"
+        "        run: echo needs a fragment\n",
+        name="gate.yml",
+    )
+    findings = scaffold.check_changelog_gate(tmp_path, _config())
+    assert findings and findings[0]["state"] == "found"
+
+
+def test_our_own_generated_workflow_is_not_mistaken_for_someone_elses_gate(tmp_path):
+    """Positive control for the detector itself: re-scaffolding an already scaffolded
+    repo must not detect our own file as somebody else's gate, or the trio could
+    never be replaced again."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert scaffold.check_changelog_gate(tmp_path, _config()) == []
+
+
+def test_an_unreadable_workflow_is_unknown_not_none(tmp_path, monkeypatch):
+    """Third state: an unreadable workflow is not the same as no other workflow at
+    all, and must not render as "none found"."""
+    _with_workflow(tmp_path, "name: mystery\n", name="mystery.yml")
+    real_read_text = Path.read_text
+
+    def _boom(self, *args, **kwargs):
+        if self.name == "mystery.yml":
+            raise OSError("permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _boom)
+    findings = scaffold.check_changelog_gate(tmp_path, _config())
+    assert findings and findings[0]["state"] == "unknown"
+
+
+def test_plan_declines_the_owned_trio_when_a_gate_already_exists(tmp_path):
+    _with_workflow(
+        tmp_path,
+        "name: changelog\njobs:\n  fragment:\n    steps:\n      - run: python3 "
+        ".github/scripts/assemble_changelog.py --check\n",
+        name="changelog.yml",
+    )
+    paths = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
+    for name in scaffold.OWNED:
+        assert paths[name] == "decline", name
+
+
+def test_apply_does_not_write_the_owned_trio_when_a_gate_already_exists(tmp_path):
+    _with_workflow(
+        tmp_path,
+        "name: changelog\njobs:\n  fragment:\n    steps:\n      - run: python3 "
+        ".github/scripts/assemble_changelog.py --check\n",
+        name="changelog.yml",
+    )
+    result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert result["replaced"] == []
+    assert result["declined"] == sorted(scaffold.OWNED)
+    assert not (tmp_path / ".oss" / "assemble_changelog.py").exists()
+    assert not (tmp_path / ".github" / "workflows" / "oss-changelog.yml").exists()
+
+
+def test_apply_still_writes_ours_on_a_repo_with_no_existing_gate(tmp_path):
+    """Positive control for the assertion above: declining is not the default state
+    -- a repo with nothing already there still gets the trio."""
+    result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert result["replaced"] == sorted(scaffold.OWNED)
+    assert result["declined"] == []
+
+
+def test_an_unreadable_workflow_also_blocks_writing_the_trio(tmp_path, monkeypatch):
+    """The unknown state must not render as safe to write either -- the risk here is
+    one-directional (writing a second gate), so it is treated like a found collision,
+    not like none."""
+    _with_workflow(tmp_path, "name: mystery\n", name="mystery.yml")
+    real_read_text = Path.read_text
+
+    def _boom(self, *args, **kwargs):
+        if self.name == "mystery.yml":
+            raise OSError("permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _boom)
+    result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert result["declined"] == sorted(scaffold.OWNED)
+
+
+def test_force_owned_writes_the_trio_anyway(tmp_path):
+    """The explicit override for a maintainer who checked by hand and decided the
+    detected match is not a real conflict."""
+    _with_workflow(
+        tmp_path,
+        "name: changelog\njobs:\n  fragment:\n    steps:\n      - run: python3 "
+        ".github/scripts/assemble_changelog.py --check\n",
+        name="changelog.yml",
+    )
+    result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT, force_owned=True)
+    assert result["replaced"] == sorted(scaffold.OWNED)
+    assert result["declined"] == []
 
 
 # ------------------------------------------------- finding the config from a worktree

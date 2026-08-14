@@ -704,38 +704,66 @@ def plan(repo_root, config):
             }
         )
 
+    gate_state, gate_detail = _detect_changelog_gate(repo_root, config)
     for name in sorted(OWNED):
-        entries.append(
-            {
-                "path": name,
-                "action": "replace",
-                "reason": "ours; replaced on every run so fixes reach the repo",
-            }
-        )
+        if gate_state in ("found", "unknown"):
+            entries.append(
+                {
+                    "path": name,
+                    "action": "decline",
+                    "reason": (
+                        "a changelog gate already runs under a different name ({}); "
+                        "not written. Pass --force-owned to override.".format(gate_detail)
+                    ),
+                }
+            )
+        else:
+            entries.append(
+                {
+                    "path": name,
+                    "action": "replace",
+                    "reason": "ours; replaced on every run so fixes reach the repo",
+                }
+            )
     return entries
 
 
-def apply(repo_root, config, plugin_root=None):
+def apply(repo_root, config, plugin_root=None, force_owned=False):
     """Write the defaults that are missing, and replace everything we own.
 
     Two contracts in one pass, deliberately: they are always applied together, and
     keeping them apart would let a repo end up with our workflow and not the script
     it calls. The return value keeps them distinct so the caller can report which
-    was which -- "created" and "replaced" mean different things to whoever reads it.
+    was which -- "created", "replaced" and "declined" mean different things to
+    whoever reads it.
+
+    ``force_owned`` writes the owned changelog trio even when
+    ``_detect_changelog_gate`` found, or could not rule out, a gate already running
+    under a different name -- the explicit override for a maintainer who checked by
+    hand and decided the match is not a real conflict. Silence is not that decision;
+    passing the flag is, the same way editing SECURITY.md by hand is what turns a
+    default into a decision nothing here overwrites.
     """
     created = []
-    for entry in plan(repo_root, config):
-        if entry["action"] != "create":
-            continue
-        render_to(repo_root, entry["path"], render(entry["path"], config))
-        created.append(entry["path"])
-
     replaced = []
-    for name in sorted(OWNED):
-        render_to(repo_root, name, render_owned(name, config, plugin_root))
-        replaced.append(name)
+    declined = []
+    for entry in plan(repo_root, config):
+        if entry["action"] == "create":
+            render_to(repo_root, entry["path"], render(entry["path"], config))
+            created.append(entry["path"])
+        elif entry["action"] == "replace":
+            render_to(repo_root, entry["path"], render_owned(entry["path"], config, plugin_root))
+            replaced.append(entry["path"])
+        elif entry["action"] == "decline":
+            if force_owned:
+                render_to(
+                    repo_root, entry["path"], render_owned(entry["path"], config, plugin_root)
+                )
+                replaced.append(entry["path"])
+            else:
+                declined.append(entry["path"])
 
-    return {"created": created, "replaced": replaced}
+    return {"created": created, "replaced": replaced, "declined": declined}
 
 
 def show(repo_root, config, path=None, plugin_root=None):
@@ -1180,6 +1208,117 @@ def _workflow_texts(repo_root):
     return texts
 
 
+CHANGELOG_GATE_FILENAME_HINT = "assemble_changelog"
+
+
+def _detect_changelog_gate(repo_root, config):
+    """Is a changelog gate already running under a different name?
+
+    Returns ``(state, detail)``. Three states, and the pair that matters is "found"
+    and "unknown" behaving identically to their caller: writing our trio on top of a
+    gate that is already there is the failure this plugin cannot have (two jobs named
+    ``fragment``, two assemblers, a check count moved with nothing pointing at it), and
+    a false "found" only costs a maintainer one look and ``--force-owned``. The risk is
+    one-directional, so both an unreadable workflow and a matched one lean the same
+    way -- unlike ``check_changelog_label``, where "could not look" and "found" print
+    the same reminder but change nothing about what gets written.
+
+    Signals, each a reason to stop and ask rather than a proof: another workflow
+    mentioning ``assemble_changelog``, naming the fragment directory as a path
+    component, or referencing the ``no-changelog`` escape-hatch label; or a file
+    anywhere in the repo named ``assemble_changelog*``. Our own generated workflow
+    (``oss-changelog.yml``) and our own owned directory (``.oss/``) are excluded by
+    name, or re-scaffolding an already-scaffolded repo would detect its own gate as
+    somebody else's and the trio could never be replaced again.
+    """
+    root = Path(repo_root)
+    try:
+        fragments = fragments_dir(config)
+    except ScaffoldError:
+        fragments = DEFAULT_FRAGMENTS_DIR
+    dir_marker = "/" + fragments.strip("/") + "/"
+
+    signals = []
+    unreadable = []
+    for path in _workflow_files(root):
+        if path.name == "oss-changelog.yml":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            unreadable.append(str(path.relative_to(root)))
+            continue
+        if (
+            CHANGELOG_GATE_FILENAME_HINT in text
+            or dir_marker in text
+            or CHANGELOG_ESCAPE_LABEL in text
+        ):
+            signals.append(str(path.relative_to(root)))
+
+    # Directories a scan has no business walking into: git's own object store, our
+    # own owned directory (excluded for the same reason the workflow filter excludes
+    # oss-changelog.yml), and the dependency/build trees a real JS or Python repo
+    # accumulates -- an unbounded rglob through node_modules or a virtualenv costs
+    # real time for a filename search that will never match inside them.
+    _RGLOB_SKIP_DIRS = frozenset(
+        (OWNED_DIR, ".git", "node_modules", "vendor", ".venv", "venv", "dist", "build")
+    )
+    try:
+        for candidate in root.rglob(CHANGELOG_GATE_FILENAME_HINT + "*"):
+            if not candidate.is_file():
+                continue
+            rel = candidate.relative_to(root)
+            if rel.parts and rel.parts[0] in _RGLOB_SKIP_DIRS:
+                continue
+            signals.append(str(rel))
+    except OSError:
+        unreadable.append("(repository tree walk)")
+
+    if signals:
+        return "found", "already present: {}".format(", ".join(sorted(set(signals))))
+    if unreadable:
+        return "unknown", "could not read: {}".format(", ".join(sorted(set(unreadable))))
+    return "none", ""
+
+
+def check_changelog_gate(repo_root, config):
+    """Would the owned changelog trio sit on top of a gate this repo already runs?
+
+    Same three-state contract as ``check_changelog_label``, and the same reason: an
+    unchecked repo is not a clean one. What differs is that this one changes what
+    ``apply`` actually does -- see ``_detect_changelog_gate`` and ``plan``.
+    """
+    state, detail = _detect_changelog_gate(repo_root, config)
+    if state == "found":
+        return [
+            {
+                "state": "found",
+                "detail": (
+                    "this repo already runs a changelog gate under a different name "
+                    "({}). The owned changelog trio ({dir}/README.md, "
+                    "{dir}/assemble_changelog.py, .github/workflows/oss-changelog.yml) "
+                    "was NOT written -- two gates checking the same thing would both "
+                    "run on every pull request, with two jobs named 'fragment'. Pass "
+                    "--force-owned to write ours anyway once you have confirmed this "
+                    "is not a real conflict.".format(detail, dir=OWNED_DIR)
+                ),
+            }
+        ]
+    if state == "unknown":
+        return [
+            {
+                "state": "unknown",
+                "detail": (
+                    "could not determine whether this repo already runs a changelog "
+                    "gate under a different name ({}) -- which is not the same as it "
+                    "having none. The owned changelog trio was NOT written. Check by "
+                    "hand, then pass --force-owned to write ours anyway.".format(detail)
+                ),
+            }
+        ]
+    return []
+
+
 def check_ci(repo_root, config):
     """What `ci.required_checks` says, now that a workflow has been installed.
 
@@ -1334,6 +1473,8 @@ def _print_findings(repo_root, config):
     names, reason = _forge_label_names(repo_root, config)
     for finding in check_changelog_label(names, reason=reason):
         print("label    {}".format(finding["detail"]))
+    for finding in check_changelog_gate(repo_root, config):
+        print("changelog {}".format(finding["detail"]))
 
 
 def _main(argv=None):
@@ -1346,6 +1487,14 @@ def _main(argv=None):
         "--apply",
         action="store_true",
         help="write the missing files (default is to print the plan and write nothing)",
+    )
+    parser.add_argument(
+        "--force-owned",
+        action="store_true",
+        help=(
+            "write the owned changelog trio even when a changelog gate is already "
+            "detected under a different name (see the 'changelog' finding)"
+        ),
     )
     parser.add_argument(
         "--show",
@@ -1400,17 +1549,27 @@ def _main(argv=None):
         for entry in entries:
             print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
         _print_findings(args.root, config)
-        print("PLAN: {} to create, {} already present".format(
+        declined_count = sum(1 for e in entries if e["action"] == "decline")
+        summary = "PLAN: {} to create, {} already present".format(
             sum(1 for e in entries if e["action"] == "create"),
             sum(1 for e in entries if e["action"] == "present"),
-        ))
+        )
+        if declined_count:
+            summary += ", {} declined (already covered elsewhere)".format(declined_count)
+        print(summary)
         return 0
 
-    result = apply(args.root, config)
+    result = apply(args.root, config, force_owned=args.force_owned)
     for path in result["created"]:
         print("created  {}".format(path))
     for path in result["replaced"]:
         print("ours     {}  (replaced)".format(path))
+    for path in result["declined"]:
+        print(
+            "declined {}  (a changelog gate is already detected under a different "
+            "name -- see the 'changelog' finding below; --force-owned writes it "
+            "anyway)".format(path)
+        )
     written = result["created"] + result["replaced"]
 
     # Two different contracts, so they are reported apart. Templates are defaults and
