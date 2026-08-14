@@ -217,8 +217,10 @@ def test_the_refusal_is_about_the_flags_not_about_a_missing_root(tmp_path):
     root, script_path = _repo(tmp_path, "scripts")
     result = _fold(root, script_path)
     combined = (result.stdout + result.stderr).lower()
+    # `!= SKIPPED` alone is satisfied by a fold that succeeded, which is the
+    # bug: pin the code that says a refusal happened, then pin which refusal.
+    assert result.returncode == REFUSED, combined
     assert "could not find the repository root" not in combined, combined
-    assert result.returncode != SKIPPED, combined
 
 
 def test_the_refusal_spells_no_path_separator(tmp_path):
@@ -228,6 +230,11 @@ def test_the_refusal_spells_no_path_separator(tmp_path):
     into the receipt reads as wrong advice on Windows, and a POSIX literal
     baked into an assertion fails there against a correct script."""
     root, script_path = _repo(tmp_path, "scripts")
+    inspected = 0
     for line in _fold(root, script_path).stdout.splitlines():
         if "--dir" in line or "--changelog" in line:
+            inspected += 1
             assert "changelog.d/" not in line, line
+    # Without this the loop body never runs against a fold that succeeded
+    # instead of refusing, and the test passes having evaluated nothing.
+    assert inspected, "the refusal named no flags to inspect"
