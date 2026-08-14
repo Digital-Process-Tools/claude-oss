@@ -748,3 +748,143 @@ def test_scaffold_writes_no_test_workflow(tmp_path):
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     workflows = sorted(p.name for p in (tmp_path / ".github" / "workflows").iterdir())
     assert workflows == ["oss-changelog.yml"]
+
+
+# ------------------------------------------------- finding the config from a worktree
+
+
+def _git(args, cwd):
+    done = subprocess.run(
+        ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t"] + args,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert done.returncode == 0, "git {}: {}".format(" ".join(args), done.stdout)
+    return done.stdout
+
+
+def _clone_with_worktree(tmp_path):
+    """A real clone and a real git worktree of it.
+
+    Not a subdirectory dressed up as one: a worktree's `.git` is a *file* pointing at
+    the clone's git dir, and a walk upward that works on a plain subdirectory can
+    still fail here.
+    """
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _git(["init", "-q"], clone)
+    _git(["symbolic-ref", "HEAD", "refs/heads/main"], clone)
+    (clone / "README.md").write_text("seed\n", encoding="utf-8")
+    _git(["add", "README.md"], clone)
+    _git(["commit", "-qm", "seed"], clone)
+    worktree = tmp_path / "wt" / "53"
+    _git(["worktree", "add", "-q", "-b", "fix/53", str(worktree)], clone)
+    assert (worktree / ".git").is_file(), "fixture is not a worktree"
+    return clone, worktree
+
+
+def _write_config(directory, **overrides):
+    project, local = oss_config.split(_config(**overrides))
+    (directory / oss_config.CONFIG_NAME).write_text(json.dumps(project), encoding="utf-8")
+    (directory / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+
+
+def test_a_worktree_reads_the_clones_config_instead_of_reporting_none(
+    tmp_path, monkeypatch, capsys
+):
+    """The documented invocation, run where a developer actually stands."""
+    clone, worktree = _clone_with_worktree(tmp_path)
+    _write_config(clone)
+    monkeypatch.chdir(worktree)
+
+    assert scaffold._main(["--root", ".", "--config", ".oss.json"]) == 0
+    out = capsys.readouterr().out
+    assert "Run /oss:setup" not in out, "the wrong remedy for a repo that has a config"
+    assert str(clone) in out, "where the config came from is not printed"
+
+
+def test_a_config_in_the_worktree_still_wins(tmp_path, monkeypatch):
+    """Positive control for the search above: it must not reach past a local file."""
+    clone, worktree = _clone_with_worktree(tmp_path)
+    _write_config(clone, repo="owner/clone-half")
+    _write_config(worktree, repo="owner/worktree-half")
+    monkeypatch.chdir(worktree)
+
+    resolved, origin, _ = oss_config.resolve_config_path(".oss.json")
+    assert origin == "here"
+    assert Path(resolved).resolve().parent == worktree.resolve()
+
+
+def test_no_config_anywhere_does_not_read_like_one_found_in_the_clone(
+    tmp_path, monkeypatch, capsys
+):
+    """Third state. The clone was checked and has none -- say so, and say where."""
+    clone, worktree = _clone_with_worktree(tmp_path)
+    monkeypatch.chdir(worktree)
+
+    assert scaffold._main(["--root", ".", "--config", ".oss.json"]) == 1
+    out = capsys.readouterr().out
+    assert "Run /oss:setup" in out, "here the remedy really is to write one"
+    assert str(clone) in out, "a search naming no clone reads as a search that did not run"
+
+
+def test_a_directory_in_no_repository_says_it_could_not_look(tmp_path, monkeypatch, capsys):
+    """The state this repo is named after: git could not answer, so the message must
+    not claim there is no enclosing clone."""
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    monkeypatch.chdir(loose)
+
+    assert scaffold._main(["--root", ".", "--config", ".oss.json"]) == 1
+    out = capsys.readouterr().out
+    assert "Run /oss:setup" in out
+    assert "No enclosing clone could be checked" in out, "an unanswerable search must say so"
+    assert "Not in the enclosing clone" not in out, (
+        "a search that could not run must not render as a search that came back empty"
+    )
+
+
+def test_standing_in_the_clone_itself_says_so_rather_than_naming_it(
+    tmp_path, monkeypatch, capsys
+):
+    """A clone is its own enclosing clone. Reporting "not in the enclosing clone at
+    <here>" would send the reader looking one directory up for a directory they are
+    already standing in."""
+    clone, _ = _clone_with_worktree(tmp_path)
+    monkeypatch.chdir(clone)
+
+    assert scaffold._main(["--root", ".", "--config", ".oss.json"]) == 1
+    out = capsys.readouterr().out
+    assert "This directory is the clone" in out
+    assert "Not in the enclosing clone" not in out
+
+
+def test_the_three_origins_are_distinguishable(tmp_path, monkeypatch):
+    clone, worktree = _clone_with_worktree(tmp_path)
+    monkeypatch.chdir(worktree)
+
+    resolved, origin, detail = oss_config.resolve_config_path(".oss.json")
+    assert (resolved, origin) == (None, "missing")
+    assert str(clone) in detail
+
+    _write_config(clone)
+    resolved, origin, _ = oss_config.resolve_config_path(".oss.json")
+    assert origin == "clone"
+    assert Path(resolved).resolve() == (clone / oss_config.CONFIG_NAME).resolve()
+
+    _write_config(worktree)
+    _, origin, _ = oss_config.resolve_config_path(".oss.json")
+    assert origin == "here"
+
+
+def test_an_absolute_config_path_is_never_widened(tmp_path, monkeypatch):
+    """A path somebody typed in full is an answer, not a starting point."""
+    clone, worktree = _clone_with_worktree(tmp_path)
+    _write_config(clone)
+    monkeypatch.chdir(worktree)
+
+    resolved, origin, detail = oss_config.resolve_config_path(worktree / ".oss.json")
+    assert (resolved, origin) == (None, "missing")
+    assert str(clone) not in detail
