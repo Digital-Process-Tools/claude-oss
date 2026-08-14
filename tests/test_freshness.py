@@ -401,7 +401,15 @@ def test_a_crlf_checkout_of_an_owned_file_is_not_drift(tmp_path):
     real signal gets ignored."""
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     target = tmp_path / ".oss" / "README.md"
-    target.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+    # The plugin writes with Path.write_text and no newline= argument, so on Windows
+    # the scaffolded copy is ALREADY CRLF. Converting again would produce \r\r\n --
+    # genuine corruption, not a git checkout, and the assertion below would then be
+    # measuring the wrong thing. Normalise to LF first so the fixture is the same
+    # file on every platform.
+    lf = target.read_bytes().replace(b"\r\n", b"\n")
+    target.write_bytes(lf.replace(b"\n", b"\r\n"))
+    on_disk = target.read_bytes()
+    assert b"\r\n" in on_disk and b"\r\r" not in on_disk, on_disk[:200]
     findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
     assert findings[".oss/README.md"]["state"] == "current", findings[".oss/README.md"]
 
