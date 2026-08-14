@@ -112,8 +112,17 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-The changelog gate has never run on a real pull request — pushing to `main` does not trigger it. No
-issue has gone triage → developer → merge. `/oss:setup`'s probe half is prose rather than code, and
-`v0.1.0` is not tagged, so `--check-links` reports a missing link ref.
+Three of the four claims that stood here are now false, which is why they are being rewritten rather
+than kept: the changelog gate runs on every pull request and has done so on each one this release
+carries, the tracker has gone issue → developer → review → merge repeatedly, and `/oss:setup`'s probe
+is code rather than prose since `--probe` landed.
+
+What remains unproven is the part that matters most. **No repo other than this one has been taken
+through `/oss:setup` → `/oss:scaffold` → a first merged pull request end to end.** Every claim about a
+*scaffolded* repo therefore rests on tests and scratch runs, not on a repo somebody maintains — and
+this release ships four fixes to exactly that path, each found by reading rather than by using it.
+
+The owned files also only reach an already-scaffolded repo when someone re-runs `/oss:scaffold`
+there, and nothing tells them to.
 
 Treat this as tested, not proven.
