@@ -321,6 +321,14 @@ def _toml_section_version(text, section):
     return False
 
 
+# A version constant at module scope in a root-level Python file -- the shape a
+# single-file CLI package uses instead of a manifest field. Filed against #85: a repo
+# shipping `_supertool.py` carried its version in `VERSION = "0.43.0"` at column zero,
+# and the fixed manifest whitelist below had nowhere to put it, so a release from the
+# derived config bumped every candidate but that one.
+_PY_VERSION_CONST_RE = re.compile(r"""(?m)^(?:__version__|VERSION)\s*=\s*["'](.+?)["']""")
+
+
 def _version_state(path, kind):
     try:
         text = Path(path).read_text(encoding="utf-8")
@@ -339,7 +347,21 @@ def _version_state(path, kind):
         return "none"
     if kind.startswith("toml:"):
         return "version" if _toml_section_version(text, kind.split(":", 1)[1]) else "none"
+    if kind == "py-const":
+        match = _PY_VERSION_CONST_RE.search(text)
+        return "version" if match and VERSION_RE.search(match.group(1)) else "none"
     return "version" if VERSION_RE.search(text) else "none"
+
+
+def _root_python_modules(files):
+    """Root-level `.py` files only -- a version-shaped constant three directories
+    deep is someone's test fixture or a vendored copy, not the package version, and
+    scanning the whole tree trades one false negative for a false-positive machine.
+    """
+    return [
+        name for name in files
+        if isinstance(name, str) and "/" not in name and name.endswith(".py")
+    ]
 
 
 def inspect_version_sites(root, files):
@@ -349,12 +371,18 @@ def inspect_version_sites(root, files):
     on repos where it holds no version at all and `/oss:release` was told to bump a
     file with nothing to bump. Reading the file is the difference between a candidate
     and a site.
+
+    The fixed manifest list is not the whole candidate set: a root-level Python
+    module carrying a module-scope `VERSION` or `__version__` constant is measured
+    the same way (#85).
     """
     root = Path(root)
     evidence = {}
     for candidate, kind in VERSION_CANDIDATES:
         if candidate in files:
             evidence[candidate] = _version_state(root / candidate, kind)
+    for name in _root_python_modules(files):
+        evidence[name] = _version_state(root / name, "py-const")
     return evidence
 
 
@@ -390,7 +418,10 @@ def probe_problems(probe):
     evidence = probe.get("version_evidence")
     files = probe.get("files")
     if isinstance(evidence, dict) and isinstance(files, list):
-        for candidate, _ in VERSION_CANDIDATES:
+        candidates = list(VERSION_CANDIDATES) + [
+            (name, "py-const") for name in _root_python_modules(files)
+        ]
+        for candidate, _ in candidates:
             if candidate not in files:
                 continue
             state = evidence.get(candidate)
@@ -902,6 +933,8 @@ def build(probe):
         candidate
         for candidate, _ in VERSION_CANDIDATES
         if candidate in files and evidence.get(candidate) == "version"
+    ] + [
+        name for name in _root_python_modules(files) if evidence.get(name) == "version"
     ]
 
     classified = classify_labels(labels)
@@ -1360,13 +1393,16 @@ def gather(root):
     return probe, []
 
 
-def _report_probe_notes(probe):
-    """Say what the probe saw and could not classify. Neither is a failure.
+def _report_probe_notes(probe, config):
+    """Say what the probe saw and could not classify, and what the config only
+    guessed. None of these is a failure.
 
-    Both are absences the tool produced rather than absences in the world, and both
-    are invisible in the config: unclassified labels leave `priority: []`, and an
-    unreadable candidate leaves it off `version_sites`. Silence there reads as a
-    measurement, so the difference is stated here instead.
+    The first two are absences the tool produced rather than absences in the world:
+    unclassified labels leave `priority: []`, and an unreadable candidate leaves it
+    off `version_sites`. The second two are the opposite shape and the one #85 was
+    filed over -- a value that *was* produced, at exit 0, that reads exactly like a
+    measurement and is not one. Silence in either direction reads as a measurement,
+    so both are stated here instead.
     """
     unclassified = classify_labels(probe.get("labels") or [])["unclassified"]
     if unclassified:
@@ -1388,6 +1424,44 @@ def _report_probe_notes(probe):
             "NOTE could not read, so not claimed as version sites: {}".format(
                 ", ".join(unreadable)
             ),
+            file=sys.stderr,
+        )
+
+    # `required_checks` counts workflow *job declarations*, read structurally out of
+    # `.github/workflows/*`. A build matrix, a reusable workflow call, or an
+    # organisation/app-level check (CodeQL, a bot) is invisible to that count and can
+    # put the real number of check runs well above it -- #113 is what trusting the
+    # unflagged number looks like once it is on disk (3 vs 14). A `0` already reads as
+    # visibly unset and needs no repeat of the same caveat.
+    required_checks = (config.get("ci") or {}).get("required_checks")
+    if probe.get("workflow_jobs") and required_checks:
+        print(
+            "NOTE ci.required_checks: {} counts job declarations, not check runs. A "
+            "build matrix, a reusable workflow, or an org/app-level check multiplies "
+            "or adds to this invisibly -- verify against `gh pr checks` on a recent "
+            "PR before treating it as a merge gate.".format(required_checks),
+            file=sys.stderr,
+        )
+
+    # worktree_root and state_file have no filesystem signal to measure against on a
+    # repo being set up for the first time: nothing has been cloned into a worktree
+    # root yet, and no state file has been written. Both are a naming-convention
+    # guess -- <clone>-wt, .max/<repo>-watch.json -- and #85 was filed on a repo where
+    # neither guess matched the real, already-onboarded layout.
+    worktree_root = config.get("worktree_root")
+    if worktree_root:
+        print(
+            "NOTE worktree_root: {!r} is a guess from a naming convention, not "
+            "something measured on disk. If this repo has been onboarded before, "
+            "check the real path before trusting it.".format(worktree_root),
+            file=sys.stderr,
+        )
+    state_file = config.get("state_file")
+    if state_file:
+        print(
+            "NOTE state_file: {!r} is a guess from a naming convention, not "
+            "something measured on disk. If this repo has been onboarded before, "
+            "check the real path before trusting it.".format(state_file),
             file=sys.stderr,
         )
 
@@ -1467,7 +1541,7 @@ def _main(argv=None):
         for line in str(exc).splitlines():
             print("FAIL {}".format(line), file=sys.stderr)
         return 1
-    _report_probe_notes(probe)
+    _report_probe_notes(probe, config)
     problems = validate(config)
     for problem in problems:
         print("FAIL derived config: {}".format(problem), file=sys.stderr)

@@ -495,6 +495,36 @@ def test_a_candidate_that_could_not_be_read_is_not_asserted_as_a_site():
     assert config["version_sites"] == []
 
 
+def test_a_root_level_python_module_carrying_a_version_constant_is_a_site():
+    """The exact miss #85 was filed against: a single-file CLI's version constant
+    lives beside the code (`_supertool.py: VERSION = "0.43.0"`), not in a manifest,
+    and the fixed manifest whitelist had nowhere to put it -- so a release from this
+    config bumped four files and left the fifth, the one the release assertion
+    actually checks.
+    """
+    config = oss_config.build(
+        _probe(
+            files=["pyproject.toml", "_thing.py"],
+            version_evidence={"pyproject.toml": "none", "_thing.py": "version"},
+        )
+    )
+    assert "_thing.py" in config["version_sites"]
+
+
+def test_a_nested_python_module_is_not_treated_as_a_version_site():
+    """Root only. A version-shaped constant three directories deep is someone's test
+    fixture or a vendored copy, not the package version -- scanning the whole tree
+    would trade one false negative for a false-positive machine.
+    """
+    config = oss_config.build(
+        _probe(
+            files=["pyproject.toml", "pkg/nested.py"],
+            version_evidence={"pyproject.toml": "none", "pkg/nested.py": "version"},
+        )
+    )
+    assert "pkg/nested.py" not in config["version_sites"]
+
+
 def test_the_node_and_rust_manifests_are_candidates():
     """TEST_COMMANDS knew about both; version_sites did not, so a Node release was
     told to bump README.md and never told about package.json (#10).
@@ -555,6 +585,28 @@ def test_a_candidate_listed_but_absent_from_disk_is_unreadable_not_absent(tmp_pa
     assert oss_config.inspect_version_sites(tmp_path, ["README.md"]) == {
         "README.md": "unreadable"
     }
+
+
+def test_a_root_python_module_with_a_version_constant_is_measured_not_guessed(tmp_path):
+    (tmp_path / "_thing.py").write_text(
+        'import sys\n\nVERSION = "0.43.0"\n\ndef main():\n    pass\n', encoding="utf-8"
+    )
+    (tmp_path / "dunder.py").write_text('__version__ = "1.2.3"\n', encoding="utf-8")
+    (tmp_path / "neither.py").write_text('MIN_PYTHON = "3.9.0"\n', encoding="utf-8")
+    evidence = oss_config.inspect_version_sites(
+        tmp_path, ["_thing.py", "dunder.py", "neither.py"]
+    )
+    assert evidence["_thing.py"] == "version"
+    assert evidence["dunder.py"] == "version"
+    assert evidence["neither.py"] == "none"
+
+
+def test_a_nested_python_module_is_never_inspected_at_all(tmp_path):
+    """Root only, symmetrically at the measurement layer too."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "nested.py").write_text('VERSION = "9.9.9"\n', encoding="utf-8")
+    evidence = oss_config.inspect_version_sites(tmp_path, ["pkg/nested.py"])
+    assert evidence == {}
 
 
 # ----------------------------------------------------------------------- the labels
