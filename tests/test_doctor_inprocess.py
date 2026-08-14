@@ -252,6 +252,69 @@ def test_a_root_that_does_not_exist_never_widens_to_the_cwds_clone(tmp_path, mon
     assert any("enclosing clone" in m for _, m in doctor.FINDINGS), doctor.FINDINGS
 
 
+def test_the_clone_is_only_searched_with_a_path_the_clone_can_answer(tmp_path, monkeypatch):
+    """`resolve_config_path` appends the relative path AS GIVEN to the clone.
+
+    So only a bare `.oss.json` asks the clone for `<clone>/.oss.json`. Any relative path
+    carrying directory components asks it for `<clone>/a/b/.oss.json`, which is not
+    where a config lives -- and that path is what `os.path.relpath` returns whenever the
+    project dir is not the current directory, or whenever it reaches this process
+    unresolved while `os.getcwd()` is resolved. On macOS the second happens by default:
+    `/tmp` is a symlink to `/private/tmp`, so a caller holding the `/tmp` spelling gets a
+    five-level `../../../../..` relpath and the clone is asked a question about a
+    directory that does not exist. Reported as `not found` with the file sitting in the
+    clone all along -- the #53 defect, reintroduced by the fix for it.
+    """
+    real = tmp_path / "real"
+    (real / "sub").mkdir(parents=True)
+    subprocess.check_call(["git", "init", "-q", str(real)])
+    _config(real)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+
+    monkeypatch.chdir(link / "sub")
+    doctor.check_config(link / "sub")
+    assert any("enclosing clone" in m for _, m in doctor.FINDINGS), doctor.FINDINGS
+    assert not any(state == "FAIL" for state, _ in doctor.FINDINGS), doctor.FINDINGS
+
+    # Positive control for the negative above: pointed somewhere with no config at all,
+    # this must still FAIL, or "no FAIL" is a statement about a dead code path.
+    doctor.FINDINGS.clear()
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    monkeypatch.chdir(bare)
+    doctor.check_config(bare)
+    assert any(state == "FAIL" for state, _ in doctor.FINDINGS), doctor.FINDINGS
+
+
+def test_a_project_dir_that_is_not_cwd_says_the_clone_was_not_searched(tmp_path):
+    """The third state for the widening itself.
+
+    It cannot run when the project dir is not the directory this process stands in, and
+    "not found, run /oss:setup" is the wrong advice inside a worktree -- #53's whole
+    point. So the run says the clone was not searched rather than implying it was.
+    """
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    doctor.check_config(elsewhere)
+    assert any("not searched" in m for _, m in doctor.FINDINGS), doctor.FINDINGS
+
+
+def test_help_exits_zero_and_is_not_a_diagnostic_run(tmp_path):
+    """--help prints usage and no VERDICT. That is the one non-diagnostic mode, and the
+    exit code -- the thing callers branch on -- is still 0.
+    """
+    done = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "doctor.py"), "--help"],
+        cwd=str(tmp_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert done.returncode == 0, done.stdout
+    assert "--root" in done.stdout
+
+
 # --- #63: --root -----------------------------------------------------------------
 
 
@@ -266,6 +329,24 @@ def test_root_flag_wins_over_the_environment(tmp_path):
 def test_root_flag_agreeing_with_the_environment_is_not_a_disagreement(tmp_path):
     _, findings = doctor.resolve_project_dir(str(tmp_path), str(tmp_path), str(tmp_path))
     assert not any("disagree" in m for _, m in findings)
+
+
+def test_two_spellings_of_the_same_directory_do_not_disagree(tmp_path, monkeypatch):
+    """`--root .` beside a CLAUDE_PROJECT_DIR naming the same place is not a conflict.
+
+    Comparing Path objects makes it one: `Path(".") != Path("/abs/path")` however the
+    same directory both are. A warning that fires on agreement is the noise that gets a
+    real disagreement scrolled past.
+    """
+    monkeypatch.chdir(tmp_path)
+    _, findings = doctor.resolve_project_dir(".", str(tmp_path), str(tmp_path))
+    assert not any("disagree" in m for _, m in findings), findings
+
+    # Positive control, same fixture: a genuinely different directory must still warn.
+    other = tmp_path / "other"
+    other.mkdir()
+    _, findings = doctor.resolve_project_dir(".", str(other), str(tmp_path))
+    assert any("disagree" in m for _, m in findings), findings
 
 
 def test_the_environment_is_used_when_no_root_is_given(tmp_path):

@@ -5,7 +5,9 @@ Contract, and every line of it is load-bearing:
 * **Exit code 0, always.** A diagnostic must print its findings, not fail to run.
 * **Three states: OK / WARN / FAIL.** WARN is "the check ran and could not answer".
   A check that cannot answer must never render as a check that found nothing.
-* **One VERDICT line, last.** Greppable, so a human can paste the tail.
+* **One VERDICT line, last.** Greppable, so a human can paste the tail. This holds for
+  every diagnostic run. ``--help`` is the one invocation that is not one: it prints
+  usage and no VERDICT, and still exits 0.
 * **No colour.** Git Bash renders escapes as noise, and this output gets pasted.
 * **Never echo a value that could be a credential** -- name the key, print nothing.
 
@@ -72,34 +74,55 @@ NO_SCAFFOLD = (
 )
 
 
-def config_search_path(project_dir):
-    """The path handed to ``oss_config``, relative to cwd whenever that is expressible.
+def same_directory(left, right):
+    """Do two spellings name one directory? Symlinks resolved, never compared as text.
 
-    `resolve_config_path` deliberately never widens an absolute path: one typed in full
-    is an answer, not a starting point. Doctor's path is not typed by anyone -- it is
-    derived from cwd or from --root -- so handed the absolute form the ``clone`` origin
-    is unreachable, and a doctor run from inside a git worktree reports the config
-    missing while it sits in the clone one directory away, which is the case #53 was
-    about. Measured against this repo's own worktree, not reasoned: the absolute form
-    answers ``missing``, the relative form answers ``clone``.
+    `os.getcwd()` is resolved by the kernel and a path handed in on the command line is
+    not, so on macOS `/tmp` and `/private/tmp` are the same directory under two names --
+    and `Path(".") != Path("/abs")` however identical the two are.
     """
-    absolute = Path(project_dir) / oss_config.CONFIG_NAME
+    try:
+        return os.path.samefile(str(left), str(right))
+    except OSError:
+        return os.path.abspath(str(left)) == os.path.abspath(str(right))
+
+
+def config_search_path(project_dir):
+    """``(path handed to oss_config, whether the clone will be searched)``.
+
+    `resolve_config_path` deliberately never widens an absolute path -- one typed in
+    full is an answer, not a starting point -- and it widens a relative one by appending
+    it TO THE CLONE, exactly as given. Both halves matter here:
+
+    * The absolute form makes the ``clone`` origin unreachable, so a doctor run from
+      inside a git worktree reports the config missing while it sits in the clone one
+      directory away. That is the case #53 was about, and it is why anything is passed
+      relatively at all. Measured against this repo's own worktree: absolute answers
+      ``missing``, ``.oss.json`` answers ``clone``.
+    * Only a BARE name widens correctly. `<clone>/.oss.json` is where a config lives;
+      `<clone>/sub/.oss.json`, which is what any relative path carrying directory
+      components asks for, is not. `os.path.relpath` returns exactly such a path
+      whenever the project dir is not the current directory -- and also when it merely
+      reaches this process under a different spelling of it, which on macOS is the
+      default, `/tmp` being a symlink to `/private/tmp`. That produced a five-level
+      `../../../../..` search and a `not found` for a file sitting in the clone.
+
+    So the bare name is used only when the project dir IS the current directory, proved
+    with `samefile` rather than by comparing strings. Otherwise the absolute path, no
+    widening -- and the second element of the return says so, because a search that was
+    not made must not be reported as a search that found nothing.
+    """
+    absolute = os.path.abspath(str(Path(project_dir) / oss_config.CONFIG_NAME))
     if not Path(project_dir).is_dir():
         # The widening starts its git query from `.` when the directory the path points
         # into does not exist, so a --root that is not there searched the CALLER's clone
         # and named it in the finding: "Not in the enclosing clone at <somewhere else>
-        # either". A sentence about a repository nobody asked about, in a report about
-        # one that does not exist. Absolute here means no widening and no such sentence,
-        # and it has to be made absolute rather than merely joined: `--root nope` is
-        # relative, and a relative path is exactly what gets widened.
-        return os.path.abspath(str(absolute))
-    try:
-        return os.path.relpath(str(absolute))
-    except (ValueError, OSError):
-        # Different drives on Windows raise rather than returning the absolute form,
-        # and a deleted cwd makes getcwd fail. Either way the absolute path still works;
-        # only the widening is lost, and it is announced as such by whatever follows.
-        return str(absolute)
+        # either". A sentence about a repository nobody asked about, inside a report
+        # about one that does not exist.
+        return absolute, False
+    if same_directory(project_dir, os.getcwd()):
+        return oss_config.CONFIG_NAME, True
+    return absolute, False
 
 
 def check_config(project_dir):
@@ -107,17 +130,30 @@ def check_config(project_dir):
         report("FAIL", "scripts/oss_config.py could not be imported; config was not checked")
         return None
     display = Path(os.path.abspath(str(Path(project_dir) / oss_config.CONFIG_NAME)))
-    search = config_search_path(project_dir)
+    search, widened = config_search_path(project_dir)
     config, problems, origin, resolved = oss_config.load_from(search)
     if config is None:
         prefix = "{}: ".format(search)
         for problem in problems:
-            # load_from names the path it was given, which is the relative form above.
+            # load_from names the path it was given, which may be the bare file name.
             # This output gets pasted somewhere the cwd is not known, so say the
             # absolute one.
             if problem.startswith(prefix):
                 problem = "{}: {}".format(display, problem[len(prefix):])
             report("FAIL", problem)
+        if not widened:
+            # The third state for the search itself. `Run /oss:setup to write it` is
+            # wrong advice inside a worktree, whose config belongs in the clone, and
+            # a clone that was never looked in must not read as a clone with nothing
+            # in it.
+            report(
+                "WARN",
+                "the enclosing clone was not searched for {}, because this run was "
+                "pointed at {} rather than standing in it. If that is a git worktree, "
+                "its config lives in the clone and this says nothing about it.".format(
+                    oss_config.CONFIG_NAME, project_dir
+                ),
+            )
         return None
     if origin == "clone":
         report(
@@ -913,7 +949,7 @@ def resolve_project_dir(root, env_value, cwd):
     if root:
         chosen = Path(os.path.expanduser(str(root)))
         findings.append(("OK", "project dir: {} (--root)".format(chosen)))
-        if env_value and Path(os.path.expanduser(str(env_value))) != chosen:
+        if env_value and not same_directory(os.path.expanduser(str(env_value)), chosen):
             findings.append(
                 (
                     "WARN",

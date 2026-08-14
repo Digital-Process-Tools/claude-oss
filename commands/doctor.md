@@ -32,9 +32,14 @@ was absent, so nothing below them is evidence either way. `clone` and `worktree_
 one person's disk and live in the untracked `.oss.local.json`, not in the committed `.oss.json`, so
 that is the file to look in when one of them is wrong.
 
-If `.oss.json` is missing, the fix is `/oss:setup`. Offer it; do not run it unasked. If instead the
-report says `.oss.json read from the enclosing clone`, nothing is wrong: you are standing in a
-worktree and the config lives in the clone, which is where it belongs. Do not write a second one.
+If `.oss.json` is missing, the fix is `/oss:setup`. Offer it; do not run it unasked — **unless** the
+report also says `the enclosing clone was not searched`. That line means the run was pointed at a
+tree it was not standing in, so the clone was never consulted and a worktree's config could be
+sitting there untouched. Re-run from inside the tree before offering to write anything.
+
+If instead the report says `.oss.json read from the enclosing clone`, nothing is wrong: you are
+standing in a worktree and the config lives in the clone, which is where it belongs. Do not write a
+second one.
 
 Two of the warnings are about CI rather than about setup, and neither is cosmetic:
 
