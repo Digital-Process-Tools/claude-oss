@@ -78,6 +78,9 @@ if ! PYTHON=$(find_python); then
     exit 0
 fi
 
+# Arguments are forwarded, not dropped: `--root` is unreachable through the command
+# surface otherwise, and a flag that only works when you bypass the launcher is a flag
+# nobody has.
 # shellcheck disable=SC2086
-$PYTHON "$DOCTOR"
+$PYTHON "$DOCTOR" "$@"
 exit 0

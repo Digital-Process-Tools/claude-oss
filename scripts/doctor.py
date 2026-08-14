@@ -5,13 +5,16 @@ Contract, and every line of it is load-bearing:
 * **Exit code 0, always.** A diagnostic must print its findings, not fail to run.
 * **Three states: OK / WARN / FAIL.** WARN is "the check ran and could not answer".
   A check that cannot answer must never render as a check that found nothing.
-* **One VERDICT line, last.** Greppable, so a human can paste the tail.
+* **One VERDICT line, last.** Greppable, so a human can paste the tail. This holds for
+  every diagnostic run. ``--help`` is the one invocation that is not one: it prints
+  usage and no VERDICT, and still exits 0.
 * **No colour.** Git Bash renders escapes as noise, and this output gets pasted.
 * **Never echo a value that could be a credential** -- name the key, print nothing.
 
 Python 3.9 compatible.
 """
 
+import argparse
 import json
 import os
 import shutil
@@ -53,16 +56,111 @@ def plugin_version():
         return "unreadable"
 
 
+NO_CONFIG = "not checked -- .oss.json was not found, so there was nothing to check it against"
+
+
+def unmeasured(label, reason=NO_CONFIG):
+    """The third state, said out loud.
+
+    A check that was skipped and a check that found nothing print the same thing --
+    nothing -- unless one of them says which it was. Every caller of this prints a line
+    where the code used to `return` in silence.
+    """
+    report("WARN", "{}: {}".format(label, reason))
+
+
+NO_SCAFFOLD = (
+    "not checked -- scripts/scaffold.py could not be imported, and the comparison lives there"
+)
+
+
+def same_directory(left, right):
+    """Do two spellings name one directory? Symlinks resolved, never compared as text.
+
+    `os.getcwd()` is resolved by the kernel and a path handed in on the command line is
+    not, so on macOS `/tmp` and `/private/tmp` are the same directory under two names --
+    and `Path(".") != Path("/abs")` however identical the two are.
+    """
+    try:
+        return os.path.samefile(str(left), str(right))
+    except OSError:
+        return os.path.abspath(str(left)) == os.path.abspath(str(right))
+
+
+def config_search_path(project_dir):
+    """``(path handed to oss_config, whether the clone will be searched)``.
+
+    `resolve_config_path` deliberately never widens an absolute path -- one typed in
+    full is an answer, not a starting point -- and it widens a relative one by appending
+    it TO THE CLONE, exactly as given. Both halves matter here:
+
+    * The absolute form makes the ``clone`` origin unreachable, so a doctor run from
+      inside a git worktree reports the config missing while it sits in the clone one
+      directory away. That is the case #53 was about, and it is why anything is passed
+      relatively at all. Measured against this repo's own worktree: absolute answers
+      ``missing``, ``.oss.json`` answers ``clone``.
+    * Only a BARE name widens correctly. `<clone>/.oss.json` is where a config lives;
+      `<clone>/sub/.oss.json`, which is what any relative path carrying directory
+      components asks for, is not. `os.path.relpath` returns exactly such a path
+      whenever the project dir is not the current directory -- and also when it merely
+      reaches this process under a different spelling of it, which on macOS is the
+      default, `/tmp` being a symlink to `/private/tmp`. That produced a five-level
+      `../../../../..` search and a `not found` for a file sitting in the clone.
+
+    So the bare name is used only when the project dir IS the current directory, proved
+    with `samefile` rather than by comparing strings. Otherwise the absolute path, no
+    widening -- and the second element of the return says so, because a search that was
+    not made must not be reported as a search that found nothing.
+    """
+    absolute = os.path.abspath(str(Path(project_dir) / oss_config.CONFIG_NAME))
+    if not Path(project_dir).is_dir():
+        # The widening starts its git query from `.` when the directory the path points
+        # into does not exist, so a --root that is not there searched the CALLER's clone
+        # and named it in the finding: "Not in the enclosing clone at <somewhere else>
+        # either". A sentence about a repository nobody asked about, inside a report
+        # about one that does not exist.
+        return absolute, False
+    if same_directory(project_dir, os.getcwd()):
+        return oss_config.CONFIG_NAME, True
+    return absolute, False
+
+
 def check_config(project_dir):
-    path = project_dir / ".oss.json"
     if oss_config is None:
         report("FAIL", "scripts/oss_config.py could not be imported; config was not checked")
         return None
-    config, problems = oss_config.load(path)
+    display = Path(os.path.abspath(str(Path(project_dir) / oss_config.CONFIG_NAME)))
+    search, widened = config_search_path(project_dir)
+    config, problems, origin, resolved = oss_config.load_from(search)
     if config is None:
+        prefix = "{}: ".format(search)
         for problem in problems:
+            # load_from names the path it was given, which may be the bare file name.
+            # This output gets pasted somewhere the cwd is not known, so say the
+            # absolute one.
+            if problem.startswith(prefix):
+                problem = "{}: {}".format(display, problem[len(prefix):])
             report("FAIL", problem)
+        if not widened:
+            # The third state for the search itself. `Run /oss:setup to write it` is
+            # wrong advice inside a worktree, whose config belongs in the clone, and
+            # a clone that was never looked in must not read as a clone with nothing
+            # in it.
+            report(
+                "WARN",
+                "the enclosing clone was not searched for {}, because this run was "
+                "pointed at {} rather than standing in it. If that is a git worktree, "
+                "its config lives in the clone and this says nothing about it.".format(
+                    oss_config.CONFIG_NAME, project_dir
+                ),
+            )
         return None
+    if origin == "clone":
+        report(
+            "OK",
+            ".oss.json read from the enclosing clone at {}, not from this directory. "
+            "Every path it names is relative to that clone.".format(resolved.parent),
+        )
     if problems:
         for problem in problems:
             # Problems name keys, never values: `problem` is built from key names
@@ -94,7 +192,10 @@ def check_tool(name, probe):
         report("WARN", "{}: present but returned {}".format(name, done.returncode))
 
 
-def check_directory(label, value):
+def check_directory(label, value, config_found=True):
+    if not config_found:
+        unmeasured(label)
+        return
     if not value:
         report("WARN", "{}: not set in config; cannot check it".format(label))
         return
@@ -106,6 +207,9 @@ def check_directory(label, value):
 
 
 def check_state_file(project_dir, config):
+    if config is None:
+        unmeasured("state_file")
+        return
     value = config.get("state_file")
     if not value:
         report("WARN", "state_file: not set in config")
@@ -745,7 +849,11 @@ def check_ci_enforcement(project_dir, config):
     A merge gate that passes because nothing ran is the worst of the three states: it
     reads exactly like a gate that passed because everything was checked.
     """
-    if config is None or scaffold is None:
+    if config is None:
+        unmeasured("CI enforcement")
+        return
+    if scaffold is None:
+        unmeasured("CI enforcement", NO_SCAFFOLD)
         return
 
     findings = scaffold.check_test_ci(project_dir, config)
@@ -776,22 +884,130 @@ def check_freshness(project_dir, config):
         for finding in dependency_findings(installed, published_versions(repos), declared=names):
             report("OK" if finding["state"] == "current" else "WARN", finding["detail"])
 
-    if config is None or scaffold is None:
+    if config is None:
+        unmeasured("owned files")
+        return
+    if scaffold is None:
+        unmeasured("owned files", NO_SCAFFOLD)
         return
     for state, message in owned_drift_summary(owned_drift(project_dir, config)):
         report(state, message)
 
 
-def main():
-    project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+class _Parser(argparse.ArgumentParser):
+    """argparse exits 2 on a bad flag. This one refuses to, because a mistyped argument
+    must still produce a report -- exit 0 and one VERDICT line is the contract, and a
+    usage message on stderr with neither is the diagnostic failing to run.
+    """
 
-    report("OK", "oss plugin version {}".format(plugin_version()))
+    def error(self, message):  # pragma: no cover - exercised through parse_args
+        raise ValueError(message)
+
+
+def parse_args(argv):
+    """``(root, problems)``. Never exits and never raises."""
+    parser = _Parser(
+        prog="doctor.py",
+        description="Diagnose an oss-managed repo. Always exits 0.",
+    )
+    parser.add_argument(
+        "--root",
+        default=None,
+        help="the repo to diagnose. Wins over CLAUDE_PROJECT_DIR and over the current "
+        "directory; a path that is not a directory is reported, not raised.",
+    )
+    try:
+        return parser.parse_args(list(argv)).root, []
+    except ValueError as exc:
+        return None, [
+            "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
+            "directory, so the tree below may not be the one you meant.".format(exc)
+        ]
+
+
+def resolve_project_dir(root, env_value, cwd):
+    """Which tree this run is about, as ``(path, [(state, message), ...])``.
+
+    Precedence is decided here rather than defaulted, in this order:
+
+    ``--root``   wins outright. It is the only one of the three that somebody typed on
+                 purpose, for this run.
+    env          ``CLAUDE_PROJECT_DIR``, which is the previous behaviour and stays the
+                 answer whenever no flag is given.
+    cwd          last, and announced as a guess -- the source most likely to be wrong
+                 and the least likely to say so, because a `cd` persists.
+
+    A flag disagreeing with the environment is reported even though the flag wins. The
+    disagreement is itself the finding: it is the shape in which somebody reads a
+    well-formed answer about a repository they did not ask about.
+
+    Nothing here raises. A root that is not a directory is a finding and the run
+    continues, which is what makes every config-dependent check below report itself
+    unmeasured rather than the process dying with no VERDICT line.
+    """
+    findings = []
+    if root:
+        chosen = Path(os.path.expanduser(str(root)))
+        findings.append(("OK", "project dir: {} (--root)".format(chosen)))
+        if env_value and not same_directory(os.path.expanduser(str(env_value)), chosen):
+            findings.append(
+                (
+                    "WARN",
+                    "--root and CLAUDE_PROJECT_DIR disagree. CLAUDE_PROJECT_DIR names "
+                    "{}, --root won, and nothing below is about that other tree.".format(
+                        Path(os.path.expanduser(str(env_value)))
+                    ),
+                )
+            )
+        if not chosen.is_dir():
+            findings.append(
+                (
+                    "FAIL",
+                    "--root {}: not a directory, so there is nothing here to "
+                    "diagnose. Every check below reports itself unmeasured.".format(chosen),
+                )
+            )
+        elif not (chosen / ".git").exists():
+            # `.git` is a file in a worktree and a directory in a clone, so this asks
+            # whether it exists rather than what kind of thing it is.
+            findings.append(
+                (
+                    "WARN",
+                    "--root {}: no .git here, so this is not a git repository or its "
+                    "checkout is elsewhere. Findings below may not be about the tree "
+                    "you meant.".format(chosen),
+                )
+            )
+        return chosen, findings
+
+    if env_value:
+        chosen = Path(os.path.expanduser(str(env_value)))
+        return chosen, [("OK", "project dir: {}".format(chosen))]
+
     # CLAUDE_PROJECT_DIR reaches hooks, not the Bash tool, so this is often a guess.
     # Say that it is one rather than presenting it as resolved.
-    if not os.environ.get("CLAUDE_PROJECT_DIR"):
-        report("WARN", "project dir guessed from cwd: {}".format(project_dir))
-    else:
-        report("OK", "project dir: {}".format(project_dir))
+    chosen = Path(cwd)
+    return chosen, [("WARN", "project dir guessed from cwd: {}".format(chosen))]
+
+
+def main(argv=None):
+    """``argv`` defaults to nothing, NOT to ``sys.argv``.
+
+    This module is imported and called in-process by its own suite, and reading the
+    host's argv there made doctor parse pytest's command line and report every test
+    path as an unrecognised argument. A library entry point does not get to read the
+    process's arguments; the script entry point at the bottom passes them in.
+    """
+    root, arg_problems = parse_args([] if argv is None else argv)
+    project_dir, resolution = resolve_project_dir(
+        root, os.environ.get("CLAUDE_PROJECT_DIR"), os.getcwd()
+    )
+
+    report("OK", "oss plugin version {}".format(plugin_version()))
+    for problem in arg_problems:
+        report("FAIL", problem)
+    for state, message in resolution:
+        report(state, message)
 
     config = check_config(project_dir)
 
@@ -799,11 +1015,15 @@ def main():
     check_tool("supertool", ["supertool", "version"])
     check_tool("git", ["git", "--version"])
 
-    if config is not None:
-        check_directory("clone", config.get("clone"))
-        check_directory("worktree_root", config.get("worktree_root"))
-        check_state_file(project_dir, config)
-        check_ci_enforcement(project_dir, config)
+    # Passed through even when the config is None: each of these prints its own
+    # "not checked" line, and skipping the call would restore the silence #62 is about.
+    found = config is not None
+    check_directory("clone", config.get("clone") if found else None, config_found=found)
+    check_directory(
+        "worktree_root", config.get("worktree_root") if found else None, config_found=found
+    )
+    check_state_file(project_dir, config)
+    check_ci_enforcement(project_dir, config)
 
     # Declared dependencies install automatically; they do not configure themselves,
     # and the unconfigured state is the one that still appears to work.
@@ -827,4 +1047,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
