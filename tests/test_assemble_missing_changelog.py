@@ -36,6 +36,9 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - The first release.
+
+[Unreleased]: https://github.com/o/r/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/o/r/releases/tag/v0.1.0
 """
 
 

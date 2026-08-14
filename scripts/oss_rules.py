@@ -101,6 +101,17 @@ def changelog_fragments(assembler, fragments_dir):
             "```bash\n"
             "python3 {} --check --check-links --dir '{}' --changelog CHANGELOG.md\n"
             "```\n"
+            "\n"
+            "`--check-links` refuses when a `## [x.y.z]` section has no link reference "
+            "definition. If the\n"
+            "version it names was never tagged, the missing link is the correct state: there "
+            "is no release\n"
+            "page to point at, and a `releases/tag/vX.Y.Z` URL written for one is a 404 that "
+            "renders as a\n"
+            "working link. Declare it rather than writing it — add `--untagged X.Y.Z` "
+            "(comma-separated for\n"
+            "several) to the command above and to every CI leg that runs it, so the two "
+            "cannot disagree.\n"
         ).format(assembler, fragments_dir)
     else:
         # Named as a third state rather than filled with a guess. No path appears here on

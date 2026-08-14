@@ -287,3 +287,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Plugin manifest, Community License, cross-platform CI matrix (3 OS x Python 3.9-3.12).
 - Version guard tying `.claude-plugin/plugin.json` to the newest CHANGELOG release and the README badge.
+
+<!--
+0.1.0 has no link reference on purpose. It was never tagged and has no release
+page -- `git ls-remote --tags` and `gh release list` both name v0.2.0 and
+nothing else -- so `releases/tag/v0.1.0` would be a 404 that renders as a
+working link, which is the failure the audit exists to catch rather than one to
+commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
+.github/workflows/changelog.yml and in the command that runs it by hand (#93).
+-->
+
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.2.0

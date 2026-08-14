@@ -48,6 +48,28 @@ jobs:
         run: |
           python3 scripts/assemble_changelog.py --check
 
+      # The gate that did not exist. `--check-links` has been implemented the
+      # whole time and no leg ever called it, so its findings were printed only
+      # when somebody typed the command -- and a check nothing calls reports
+      # exactly what a clean file reports. Two releases shipped with every
+      # `## [x.y.z]` heading rendering as literal bracketed text (#93).
+      #
+      # It also catches the failure a "does a definition exist" check cannot:
+      # an `[Unreleased]` left comparing from a tag two releases back, which
+      # resolves, returns a real diff, and shows shipped work as pending.
+      #
+      # `--untagged 0.1.0`: that section was never tagged and has no release
+      # page, so a `releases/tag/v0.1.0` link would be a 404 that reads as a
+      # working one. Declared here rather than in the script, which is vendored
+      # into repositories whose release history is not ours. Remove it if
+      # v0.1.0 is ever tagged; leaving it stale is caught by the audit itself,
+      # which reports a declaration with no matching section.
+      #
+      # No --dir/--changelog, for the reason the step above gives.
+      - name: Every release heading links somewhere true
+        run: |
+          python3 scripts/assemble_changelog.py --check-links --untagged 0.1.0
+
       # A PR that changes what the plugin DOES must say so where users read it.
       # Docs, tests and CI changes are exempt by construction: the paths below are
       # the ones a user can observe from outside.
