@@ -21,6 +21,7 @@ suite. Without it, `x-enforced` is a claim about a checker, asserted by the chec
 own documentation, which is this repo's own defect class wearing a different hat.
 """
 
+import io
 import json
 import re
 import subprocess
@@ -354,3 +355,33 @@ def test_a_dangling_ref_is_an_error_rather_than_a_traceback(tmp_path, capsys):
     report.write_text(json.dumps({"x": 1}), encoding="utf-8")
     assert report_schema.main([str(report), "--schema", str(broken_schema)]) == 1
     assert "unusable" in capsys.readouterr().err
+
+def test_output_survives_a_console_that_cannot_represent_the_report(tmp_path, monkeypatch):
+    """A cp1252 console must not kill the run at the print.
+
+    Every line printed can echo the report -- a path, an enum value, a finding's
+    sentence. On Windows that text is encoded with the console's codepage, where one
+    accented character raises UnicodeEncodeError and ends the process after the
+    validation it was reporting already ran. Reproduced here with an ASCII stream,
+    which fails the same way for the same reason.
+    """
+    # The offending value has to reach the output, or this test passes whether or not
+    # anything guards the print. An enum violation echoes the value it rejected.
+    broken = _example()
+    broken["review"]["classes"]["items"][0]["state"] = "passé"
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(broken), encoding="utf-8")
+
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="ascii")
+    monkeypatch.setattr(sys, "stdout", stream)
+    assert report_schema.main([str(path)]) == 1
+    stream.flush()
+    written = stream.buffer.getvalue().decode("ascii")
+    assert "INVALID" in written
+
+
+def test_the_ascii_control_would_otherwise_have_raised():
+    """The positive control: the stream used above really is the hostile one."""
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="ascii")
+    with pytest.raises(UnicodeEncodeError):
+        print("naïve", file=stream)

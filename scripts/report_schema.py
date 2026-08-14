@@ -240,6 +240,23 @@ def validate_file(path, schema=None):
     return validate(report, schema)
 
 
+def _line(stream, text):
+    """Print without letting the console's codepage kill the run.
+
+    Everything printed here can echo the report: a path, an enum value, a finding's
+    sentence. Output is encoded with the console's codepage, not the file's, and on
+    Windows that is typically cp1252 -- where one accented character raises
+    UnicodeEncodeError and ends the process at the print, after the validation the
+    print was reporting already happened. A mangled character beats a dead process.
+    """
+    try:
+        print(text, file=stream)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "ascii"
+        safe = text.encode(encoding, "backslashreplace").decode(encoding, "replace")
+        print(safe, file=stream)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Validate an agent report.")
     parser.add_argument("reports", nargs="+", help="report JSON files")
@@ -249,7 +266,7 @@ def main(argv=None):
     try:
         schema = load_schema(args.schema)
     except (OSError, ValueError) as exc:
-        print("cannot load the schema: {}".format(exc), file=sys.stderr)
+        _line(sys.stderr, "cannot load the schema: {}".format(exc))
         return 1
 
     failed = False
@@ -259,15 +276,15 @@ def main(argv=None):
         except ValueError as exc:
             # A broken schema, not a broken report. It must not surface as a traceback
             # and it must never surface as a report with nothing wrong with it.
-            print("the schema itself is unusable: {}".format(exc), file=sys.stderr)
+            _line(sys.stderr, "the schema itself is unusable: {}".format(exc))
             return 1
         if errors:
             failed = True
-            print("INVALID {}".format(report))
+            _line(sys.stdout, "INVALID {}".format(report))
             for error in errors:
-                print("  {}".format(error))
+                _line(sys.stdout, "  {}".format(error))
         else:
-            print("ok {}".format(report))
+            _line(sys.stdout, "ok {}".format(report))
     return 1 if failed else 0
 
 
