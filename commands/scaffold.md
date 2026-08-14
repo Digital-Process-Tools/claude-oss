@@ -269,3 +269,14 @@ scaffolding a hook is not. If a repo wants hooks, that is a decision made in the
 The generated CLAUDE.md carries the repo's default branch and test command from `.oss.json`. If the
 test command was not detected, it says so in the file rather than guessing — replace that paragraph
 by hand. A guess in a CLAUDE.md becomes an instruction to every agent that reads it.
+
+## Then name the next step
+
+Once the furniture is in place, **`/oss:tick`** is the command it was put there for: one pass of the
+maintainer loop — read the board, decide, delegate, review, merge on green. The templates, the policy
+and the changelog gate are all things the loop assumes and none of them run anything by themselves.
+
+Name it whatever the scaffold run reported, including a run where every file was already `present`.
+`/oss:setup` closes by naming `/oss:scaffold` for the same reason: each command in this chain is
+correct about itself and says nothing about what follows it, so a maintainer who stops here sees no
+failure at all — a furnished repo, a clean run, and a loop nobody started.

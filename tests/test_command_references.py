@@ -79,6 +79,7 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
 # --------------------------------------------------------------------------- #
 
 SETUP_MD = REPO_ROOT / "commands" / "setup.md"
+SCAFFOLD_MD = REPO_ROOT / "commands" / "scaffold.md"
 README_MD = REPO_ROOT / "README.md"
 
 # Mentions no command, no settings file and no subject for identity.md.
@@ -101,6 +102,10 @@ def _points_at_an_identity_example(text):
 
 def _names_scaffold_as_the_next_step(text):
     return "/oss:scaffold" in text and bool(re.search(r"tracked file", text, re.I))
+
+
+def _names_tick_as_the_next_step(text):
+    return "/oss:tick" in text and bool(re.search(r"furniture is in place", text, re.I))
 
 
 def _names_the_settings_file_for_the_merge_rule(text):
@@ -138,21 +143,29 @@ SETUP_FACTS = [
     ("the harness gate is the fourth", _says_the_harness_gate_is_a_fourth_one, r"fourth"),
 ]
 
+SCAFFOLD_FACTS = [
+    ("tick is the next step", _names_tick_as_the_next_step, r"/oss:tick|furniture is in place"),
+]
+
 README_FACTS = [
     ("scaffold is in the launcher path", _names_scaffold_as_the_next_step, r"/oss:scaffold|tracked file"),
 ]
 
-ALL_FACTS = SETUP_FACTS + README_FACTS
+ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + README_FACTS
+
+# (file, label, predicate, pattern whose lines carry the fact) for every carried fact,
+# so a new surface joins both the real-file assertion and its deletion control at once.
+CARRIED = (
+    [(SETUP_MD,) + fact for fact in SETUP_FACTS]
+    + [(SCAFFOLD_MD,) + fact for fact in SCAFFOLD_FACTS]
+    + [(README_MD,) + fact for fact in README_FACTS]
+)
+CARRIED_IDS = ["{}: {}".format(entry[0].name, entry[1]) for entry in CARRIED]
 
 
-@pytest.mark.parametrize("label,predicate,_pattern", SETUP_FACTS, ids=[f[0] for f in SETUP_FACTS])
-def test_setup_carries_the_fact(label, predicate, _pattern):
-    assert predicate(SETUP_MD.read_text(encoding="utf-8")), "commands/setup.md: {}".format(label)
-
-
-@pytest.mark.parametrize("label,predicate,_pattern", README_FACTS, ids=[f[0] for f in README_FACTS])
-def test_readme_carries_the_fact(label, predicate, _pattern):
-    assert predicate(README_MD.read_text(encoding="utf-8")), "README.md: {}".format(label)
+@pytest.mark.parametrize("path,label,predicate,_pattern", CARRIED, ids=CARRIED_IDS)
+def test_the_surface_carries_the_fact(path, label, predicate, _pattern):
+    assert predicate(path.read_text(encoding="utf-8")), "{}: {}".format(path.name, label)
 
 
 @pytest.mark.parametrize("label,predicate,_pattern", ALL_FACTS, ids=[f[0] for f in ALL_FACTS])
@@ -160,6 +173,57 @@ def test_a_silent_file_fails_every_prose_predicate(label, predicate, _pattern):
     """The negative control. Without it, every assertion above also passes on a
     file that says nothing about the subject at all."""
     assert not predicate(SILENT), "{}: predicate passes on a file that says nothing".format(label)
+
+
+# --------------------------------------------------------------------------- #
+# The chain, not its edges.
+#
+# Each command doc is correct about itself. What nothing checked is that a
+# maintainer following one surface end to end arrives where a maintainer
+# following another one does: setup names scaffold, scaffold names tick. An
+# edge asserted on its own passes while the chain still stops one link short.
+# --------------------------------------------------------------------------- #
+
+# (this command, its doc, the command it must hand off to, the predicate for that)
+CHAIN = [
+    ("/oss:setup", SETUP_MD, "/oss:scaffold", _names_scaffold_as_the_next_step),
+    ("/oss:scaffold", SCAFFOLD_MD, "/oss:tick", _names_tick_as_the_next_step),
+]
+
+
+def _broken_links(texts):
+    """Which links do not hand off. `texts` maps a command to the prose of its doc."""
+    return [
+        "{} does not name {} as the next step".format(source, target)
+        for source, _path, target, predicate in CHAIN
+        if not predicate(texts[source])
+    ]
+
+
+def _chain_texts():
+    return {source: path.read_text(encoding="utf-8") for source, path, _target, _p in CHAIN}
+
+
+def test_the_chain_is_wired_end_to_end():
+    assert CHAIN, "no chain links declared -- this test would pass on an empty list"
+    broken = _broken_links(_chain_texts())
+    assert not broken, (
+        "the documented path stops short:\n  "
+        + "\n  ".join(broken)
+        + "\nEach doc being correct about itself is what makes this invisible."
+    )
+
+
+def test_a_chain_with_a_missing_link_is_caught():
+    """The positive control for the detector above, in the same fixture set. Its
+    assertion also passes when `_broken_links` can never report anything -- so the
+    reporting half is shown firing, both on a wholly silent chain and on a real one
+    with exactly one link removed."""
+    assert len(_broken_links({source: SILENT for source, *_ in CHAIN})) == len(CHAIN)
+
+    partial = _chain_texts()
+    partial["/oss:scaffold"] = SILENT
+    assert _broken_links(partial) == ["/oss:scaffold does not name /oss:tick as the next step"]
 
 
 # A count of agents written out in prose is a fact about the filesystem, duplicated.
@@ -215,9 +279,9 @@ def test_a_disagreeing_count_is_actually_caught():
     assert [count for count in stated if count != 3] == [2]
 
 
-@pytest.mark.parametrize("label,predicate,pattern", SETUP_FACTS, ids=[f[0] for f in SETUP_FACTS])
-def test_deleting_the_carrying_lines_fails_the_predicate(label, predicate, pattern):
+@pytest.mark.parametrize("path,label,predicate,pattern", CARRIED, ids=CARRIED_IDS)
+def test_deleting_the_carrying_lines_fails_the_predicate(path, label, predicate, pattern):
     """The targeted control: the real file minus the lines carrying the fact. A
     predicate still passing here is matching something incidental."""
-    mutated = _without_lines_matching(SETUP_MD.read_text(encoding="utf-8"), pattern)
+    mutated = _without_lines_matching(path.read_text(encoding="utf-8"), pattern)
     assert not predicate(mutated), "{}: predicate passes with its own lines deleted".format(label)

@@ -209,3 +209,114 @@ def test_drift_is_never_reported_as_current_when_it_cannot_be_rendered(tmp_path)
     """
     findings = doctor.owned_drift(tmp_path, _config(), plugin_root=tmp_path / "not-a-plugin")
     assert {f["state"] for f in findings} == {"unknown"}
+
+
+# ------------------------------------------------- one gap, one fix, one line
+
+
+def _finding(path, state, detail):
+    return {"path": path, "state": state, "detail": "{}: {}".format(path, detail)}
+
+
+def test_three_files_missing_for_one_reason_report_as_one_finding():
+    """The bug: a repo that was never scaffolded printed three warnings, each ending
+    in `Run /oss:scaffold.` -- one gap with one fix, rendered as three unrelated
+    findings and counted three times in the verdict.
+    """
+    lines = doctor.owned_drift_summary(
+        [_finding(name, "absent", "not in this repo. Run /oss:scaffold.")
+         for name in (".oss/README.md", ".oss/x.py", ".github/workflows/oss-changelog.yml")]
+    )
+    assert len(lines) == 1, lines
+    state, message = lines[0]
+    assert state == "WARN"
+    assert message.count("/oss:scaffold") == 1, message
+    for name in (".oss/README.md", ".oss/x.py", ".github/workflows/oss-changelog.yml"):
+        assert name in message, message
+
+
+def test_different_facts_are_never_folded_into_one_line():
+    """The positive control for the collapsing above. A summary that merged everything
+    would pass the test before this one perfectly. Absent, drifted and unknown have
+    different meanings and the same remedy, and the remedy is not the fact.
+    """
+    lines = doctor.owned_drift_summary(
+        [
+            _finding(".oss/README.md", "absent", "not in this repo. Run /oss:scaffold."),
+            _finding(".oss/x.py", "drifted", "differs from what the plugin ships."),
+            _finding(".github/workflows/oss-changelog.yml", "unknown", "no comparison was made"),
+        ]
+    )
+    assert len(lines) == 3, lines
+    assert {state for state, _ in lines} == {"WARN"}
+    joined = " ".join(message for _, message in lines)
+    assert "not in this repo" in joined and "differs from" in joined
+    assert "no comparison was made" in joined
+
+
+def test_a_check_that_could_not_look_is_never_reported_as_clean():
+    """`unknown` is the third state this repo is named after. Grouping must not turn
+    "I could not compare" into silence, which reads as "current"."""
+    lines = doctor.owned_drift_summary(
+        [_finding(name, "unknown", "no comparison was made")
+         for name in (".oss/README.md", ".oss/x.py")]
+    )
+    assert [state for state, _ in lines] == ["WARN"]
+    assert "no comparison was made" in lines[0][1]
+
+
+def test_current_files_still_report_one_ok_line_each():
+    """The clean repo's output is not the thing being fixed, and a summary that
+    swallowed it would make this test's siblings pass on an empty list."""
+    lines = doctor.owned_drift_summary(
+        [{"path": name, "state": "current", "detail": name}
+         for name in (".oss/README.md", ".oss/x.py")]
+    )
+    assert lines == [("OK", ".oss/README.md"), ("OK", ".oss/x.py")]
+
+
+def test_a_single_missing_file_is_not_dressed_up_as_a_group():
+    lines = doctor.owned_drift_summary(
+        [_finding(".oss/README.md", "absent", "not in this repo. Run /oss:scaffold.")]
+    )
+    assert lines == [("WARN", ".oss/README.md: not in this repo. Run /oss:scaffold.")]
+
+
+def test_grouping_never_reorders_the_report_around_a_clean_file():
+    """Grouping pulls a later file up to an earlier one -- that is the feature. What it
+    must not do is move a clean file ahead of a gap that was listed before it, which is
+    what emitting the OK lines inline and the grouped ones afterwards did.
+    """
+    lines = doctor.owned_drift_summary(
+        [
+            _finding("a.md", "absent", "not in this repo. Run /oss:scaffold."),
+            {"path": "b.md", "state": "current", "detail": "b.md"},
+            _finding("c.md", "absent", "not in this repo. Run /oss:scaffold."),
+        ]
+    )
+    assert lines == [
+        ("WARN", "2 owned files -- a.md, c.md: not in this repo. Run /oss:scaffold."),
+        ("OK", "b.md"),
+    ]
+
+
+def test_a_detail_that_does_not_carry_its_own_path_is_left_alone():
+    """The prefix strip is how two findings are recognised as the same fact. A detail
+    written some other way must still print in full rather than being truncated into
+    something that reads like a different finding."""
+    lines = doctor.owned_drift_summary(
+        [{"path": ".oss/x.py", "state": "drifted", "detail": "no path prefix here"}]
+    )
+    assert lines == [("WARN", ".oss/x.py: no path prefix here")]
+
+
+def test_the_summary_of_a_never_scaffolded_repo_is_one_warning(tmp_path):
+    """End to end against the real finding shapes, not hand-built ones -- the
+    hand-built fixtures above would keep passing if `owned_drift` changed its wording
+    and the two stopped meeting."""
+    lines = doctor.owned_drift_summary(
+        doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    )
+    assert len(lines) == 1, lines
+    assert lines[0][0] == "WARN"
+    assert lines[0][1].count("/oss:scaffold") == 1, lines[0][1]
