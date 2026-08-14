@@ -15,9 +15,9 @@ A maintainer loop written as prose gets copied between repos, and the copies dri
 rule means editing it in three places and remembering the third. Repos that never got the copy run
 no loop at all.
 
-This packages the loop once: one skill, two agents, a handful of commands. Everything that differs
-between repos — default branch, label spellings, version sites, test command — lives in a config
-file the plugin writes by probing the repo, not in the prose.
+This packages the loop once: one skill, the agents it delegates to, a handful of commands.
+Everything that differs between repos — default branch, label spellings, version sites, test
+command — lives in a config file the plugin writes by probing the repo, not in the prose.
 
 ## Install
 
@@ -75,7 +75,7 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 
 ## Status
 
-Not yet run against a live repo. The loop, both agents, the config layer and the diagnostic are in
+Not yet run against a live repo. The loop, its agents, the config layer and the diagnostic are in
 and tested; what has not happened is a real issue taken from triage through to a merge. Until that
 round-trip is clean twice, treat this as unproven rather than working.
 

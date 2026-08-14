@@ -162,6 +162,59 @@ def test_a_silent_file_fails_every_prose_predicate(label, predicate, _pattern):
     assert not predicate(SILENT), "{}: predicate passes on a file that says nothing".format(label)
 
 
+# A count of agents written out in prose is a fact about the filesystem, duplicated.
+# It went stale silently the moment a third agent was drafted, and nothing failed --
+# README said "two agents" and "both agents" while the tree was about to hold three.
+# Either state the count and have it checked, or do not state one.
+AGENT_COUNT_RE = re.compile(r"\b(one|two|three|four|five|both|\d+)\s+agents\b", re.I)
+COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+
+
+def _stated_agent_counts(text):
+    """Every agent count the prose commits to, as integers. `both` means two."""
+    counts = []
+    for match in AGENT_COUNT_RE.finditer(text):
+        word = match.group(1).lower()
+        if word == "both":
+            counts.append(2)
+        elif word in COUNT_WORDS:
+            counts.append(COUNT_WORDS[word])
+        else:
+            counts.append(int(word))
+    return counts
+
+
+def test_the_agent_count_detector_reads_words_and_digits():
+    """The detector before the assertion that leans on it. A regex matching nothing
+    would turn the check below into a check that never looked."""
+    assert _stated_agent_counts("one skill, two agents and both agents, plus 3 agents") == [2, 2, 3]
+    assert _stated_agent_counts("the loop, its agents, the config layer") == []
+
+
+def test_readme_states_no_agent_count_that_disagrees_with_the_tree():
+    """Not "README must say three". A count is optional -- and when it is absent this
+    test is deliberately quiet, because the drift-proof prose is the one that does not
+    duplicate the filesystem. What is forbidden is stating a number that is wrong.
+    """
+    actual = len(sorted((REPO_ROOT / "agents").glob("*.md")))
+    assert actual, "no agents/*.md found -- this check would compare against zero"
+    stated = _stated_agent_counts(README_MD.read_text(encoding="utf-8"))
+    wrong = [count for count in stated if count != actual]
+    assert not wrong, (
+        "README.md commits to {} agent(s) while agents/ holds {}. Either fix the "
+        "number or drop it -- a count in prose is a fact about the filesystem, "
+        "duplicated, and it goes stale without anything failing.".format(wrong, actual)
+    )
+
+
+def test_a_disagreeing_count_is_actually_caught():
+    """The positive control for the test above. Its own assertion passes when README
+    states no count at all, which is also what a broken detector produces -- so the
+    catching half has to be shown firing on a fixture that does disagree."""
+    stated = _stated_agent_counts("This packages the loop once: one skill, two agents.")
+    assert [count for count in stated if count != 3] == [2]
+
+
 @pytest.mark.parametrize("label,predicate,pattern", SETUP_FACTS, ids=[f[0] for f in SETUP_FACTS])
 def test_deleting_the_carrying_lines_fails_the_predicate(label, predicate, pattern):
     """The targeted control: the real file minus the lines carrying the fact. A
