@@ -139,22 +139,44 @@ previewable before it is written with
 
 ## What the run reports and will not do for you
 
-Three lines after the file list, each naming something measured and left alone. They are
-printed before writing as well as after, so nothing in them is a surprise.
+Up to three lines after the file list, each naming something measured and left alone.
+They are printed before writing as well as after, so nothing in them is a surprise. A
+line that is absent means that check came back clean — never that it did not run, which
+is why every check here says so when it could not look.
 
 `label` — the generated workflow names `no-changelog` as the escape hatch for a change
-users cannot see. That label is **not created**. Writing a file into a checkout is a
-change somebody reads in a diff and reverts; creating a label changes their repository on
-the forge, from a command they ran to write files. Create it once, yourself:
+users cannot see, and the run **checks whether the label exists**. Three answers, and the
+third is the point of the check:
+
+- **absent** — the line says so outright: the gate is installed and cannot be waived, on
+  this pull request or any other, until the label exists.
+- **present** — nothing is printed. There is no reminder to skim past.
+- **not looked** — the line names *what stopped it*: `gh` is not on PATH, `.oss.json` has
+  no `repo`, the checkout's `origin` is not that repo, or `gh` exited unauthenticated. An
+  unchecked label is not an absent one, and neither is a pass.
+
+The read is read-only, and it is gated on local facts before any network call: `gh` on
+PATH, and `git remote get-url origin` naming the repo `.oss.json` does. `--root` can be
+any directory, and a file-writing tool should not fire a request about whatever slug a
+config happens to carry.
+
+The label is still **not created**. The trade is not "intrusive versus restrained" — a
+gate installed without its hatch is an incomplete install, and that objection is correct.
+It is that every other thing this command produces is a file in a checkout: previewable
+with `--show` before it exists, visible in a diff, revertible with git. A label has none
+of the three, and `--apply` has no undo for it. Making `--apply` write to the forge would
+also make it fail where scaffolding is most useful — an unauthenticated machine, a fork
+you cannot administer — turning a working file write into a half-finished run.
+
+So the affordance gap the check closes is the one that actually bit: nobody learned the
+label was missing until the first pull request that needed it. Now the scaffold run says
+it, at scaffold time, next to the command:
 
 ```bash
-gh label list | grep no-changelog
 gh label create no-changelog --description "Change is invisible to users"
 ```
 
-Feed a real label list to `scaffold.check_changelog_label` if you want the state rather
-than the reminder — it answers `missing`, or nothing, or `unknown` when the list could
-not be read. An unchecked label is not an absent one.
+One command, once, and the `label` line goes quiet.
 
 `ci` — `.oss.json` now describes a repo with no CI, because `ci.required_checks` was
 derived before this run installed a workflow. **The value is not rewritten.** Counting

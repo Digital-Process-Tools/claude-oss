@@ -23,6 +23,8 @@ Python 3.9 compatible.
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -847,17 +849,96 @@ _LABEL_COMMANDS = (
 )
 
 
-def check_changelog_label(labels):
+def _forge_label_names(repo_root, config):
+    """Return ``(names, reason)`` -- the repo's label names, or ``None`` and why not.
+
+    Read-only. Nothing here creates or changes anything on the forge; the point is
+    only to stop the report guessing. Every arm that cannot answer returns a reason,
+    because an unknown with no reason attached reads exactly like an unknown nobody
+    attempted -- and this repo is named after that confusion.
+
+    The read is gated on the checkout in front of us actually being the repo
+    ``.oss.json`` names. `--root` is any directory, and firing a network call about
+    whatever slug a config file happens to carry -- from a tool whose job is writing
+    files -- would be a surprise. Both halves of the gate are local: `gh` on PATH, and
+    `git remote get-url origin` naming the configured repo.
+    """
+    repo = config.get("repo")
+    if not repo:
+        return None, "no repo in .oss.json, so there is nothing to ask the forge about"
+    if shutil.which("gh") is None:
+        return None, "gh is not on PATH, so the forge could not be asked"
+
+    ok, origin, detail = _run(["git", "-C", str(repo_root), "remote", "get-url", "origin"])
+    if not ok:
+        return None, (
+            "{} has no readable origin remote ({}), so it was not assumed to be {}".format(
+                repo_root, detail, repo
+            )
+        )
+    seen = origin.strip().lower()
+    if seen.endswith(".git"):
+        seen = seen[: -len(".git")]
+    if repo.lower() not in seen:
+        return None, "origin here is {}, not {}, so the forge was not asked".format(
+            origin.strip() or "empty", repo
+        )
+
+    ok, out, detail = _run(
+        ["gh", "label", "list", "--repo", repo, "--limit", "200", "--json", "name"]
+    )
+    if not ok:
+        return None, "{} (gh unavailable or unauthenticated)".format(detail)
+    try:
+        parsed = json.loads(out)
+    except ValueError as exc:
+        return None, "gh label list did not return JSON ({})".format(type(exc).__name__)
+    if not isinstance(parsed, list):
+        return None, "gh label list returned {}, not a list".format(type(parsed).__name__)
+    return [entry.get("name") for entry in parsed if isinstance(entry, dict)], ""
+
+
+def _run(command):
+    """Return ``(ok, stdout, detail)``. ``detail`` is why not, when not."""
+    try:
+        done = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=20,
+        )
+    except OSError as exc:
+        return False, "", "{} would not start ({})".format(command[0], type(exc).__name__)
+    except subprocess.TimeoutExpired:
+        return False, "", "{} did not answer within 20s".format(command[0])
+    if done.returncode != 0:
+        lines = (done.stderr or "").strip().splitlines()
+        return (
+            False,
+            "",
+            "{} exited {}: {}".format(
+                " ".join(command[:3]), done.returncode, lines[-1] if lines else "no output"
+            ),
+        )
+    return True, done.stdout, ""
+
+
+def check_changelog_label(labels, reason=None):
     """Does the escape hatch the generated workflow names actually exist?
 
     ``labels`` is the repo's label names as the forge reports them, or ``None`` when
-    they could not be read -- which is a third state and is reported as one. "We did
-    not ask" is not "it is not there".
+    they could not be read -- which is a third state and is reported as one, carrying
+    ``reason`` so the line says what stopped it. "We did not ask" is not "it is not
+    there", and neither of them is "it is there".
 
     Never created here, and that is the line this file holds everywhere: a template is
-    a file in a checkout, visible in a diff and revertable. A label is a change to
-    somebody's repository on the forge, made by a command they ran to write files. So
-    the label is named, with the command, and the decision stays theirs.
+    a file in a checkout, visible in a diff, previewable with ``--show`` and revertable
+    with git. A label has none of those three -- it is a change to somebody's
+    repository on the forge, made by a command they ran to write files, and ``--apply``
+    has no undo for it. So the label is named, with the command, and the decision stays
+    theirs. What changed is that the naming is now a measurement: absent is reported as
+    absent, at scaffold time, rather than the same reminder printed either way.
     """
     if labels is None:
         return [
@@ -865,9 +946,11 @@ def check_changelog_label(labels):
                 "state": "unknown",
                 "detail": (
                     "the generated changelog workflow names the '{}' label as its escape "
-                    "hatch, and whether the repo has that label cannot be read from here. "
+                    "hatch, and whether the repo has that label could not be read: {}. "
                     "An unchecked label is not an absent one. {}".format(
-                        CHANGELOG_ESCAPE_LABEL, _LABEL_COMMANDS
+                        CHANGELOG_ESCAPE_LABEL,
+                        reason or "no reason recorded",
+                        _LABEL_COMMANDS,
                     )
                 ),
             }
@@ -1056,9 +1139,12 @@ def _print_findings(repo_root, config):
         print("ci       {}".format(finding["detail"]))
     for finding in check_test_ci(repo_root, config):
         print("tests    {}".format(finding["detail"]))
-    # No forge access from here, so the honest state is the unknown one -- which
-    # still carries the label's name and the command that creates it.
-    for finding in check_changelog_label(None):
+    # Read the label list rather than assuming it. The state was always three-valued;
+    # what used to happen here was a hardcoded None, so `missing` could not be reached
+    # in a real run and every scaffold printed the identical reminder. The read is
+    # read-only and degrades to `unknown` with the reason, never to silence.
+    names, reason = _forge_label_names(repo_root, config)
+    for finding in check_changelog_label(names, reason=reason):
         print("label    {}".format(finding["detail"]))
 
 
