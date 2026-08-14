@@ -949,15 +949,20 @@ def _inert_lines(lines, suffix):
     prose would under-report, and that is the failure this whole check exists to stop.
     """
     flags = []
-    fenced = False
+    fence = None
     for raw in lines:
         line = raw.strip()
         if suffix == ".md":
-            if line.startswith("```") or line.startswith("~~~"):
-                fenced = not fenced
+            # Only the marker that opened a fence can close it. Toggling on either
+            # marker let a literal ``` inside a ~~~ block close the tracker early, and
+            # the real terminator then re-opened it -- every line after that classified
+            # inside out, which turns prose into "behaviour" and code into "cosmetic".
+            opener = line[:3] if line[:3] in ("```", "~~~") else None
+            if opener and (fence is None or opener == fence):
+                fence = opener if fence is None else None
                 flags.append(True)
             else:
-                flags.append(not fenced)
+                flags.append(fence is None)
             continue
         if suffix in HASH_COMMENT_SUFFIXES:
             flags.append(not line or line.startswith("#"))
@@ -966,7 +971,29 @@ def _inert_lines(lines, suffix):
     return flags
 
 
-def _section_at(lines, index, suffix):
+def _yaml_literal_lines(lines):
+    """True where a line is block-scalar *content* rather than YAML.
+
+    Everything indented under `run: |` is shell. A step that echoes `status: pending`
+    is not declaring a key, and reading it as one names a path the document does not
+    have -- a confident answer about a structure nobody wrote.
+    """
+    literal = [False] * len(lines)
+    block_indent = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if block_indent is not None:
+            if not stripped or indent > block_indent:
+                literal[i] = True
+                continue
+            block_indent = None
+        if re.search(r":\s*[|>][+-]?\d*\s*$", line):
+            block_indent = indent
+    return literal
+
+
+def _section_at(lines, index, suffix, literal=None):
     """The name of the region a changed line sits in -- what the maintainer needs.
 
     A YAML key path (`on.pull_request.types`), a Python definition, a Markdown
@@ -988,14 +1015,16 @@ def _section_at(lines, index, suffix):
                 return match.group(2)
         return ""
     if suffix in (".yml", ".yaml"):
+        if literal is None:
+            literal = _yaml_literal_lines(lines)
         parts = []
         depth = len(line) - len(line.lstrip())
-        own = re.match(r"^\s*-?\s*([\w.-]+):", line)
+        own = None if literal[index] else re.match(r"^\s*-?\s*([\w.-]+):", line)
         if own:
             parts.append(own.group(1))
         for i in range(index - 1, -1, -1):
             candidate = lines[i]
-            if not candidate.strip() or candidate.strip().startswith("#"):
+            if not candidate.strip() or candidate.strip().startswith("#") or literal[i]:
                 continue
             indent = len(candidate) - len(candidate.lstrip())
             if indent >= depth:
@@ -1031,20 +1060,26 @@ def owned_effect(current_text, shipped_text, path):
     if theirs == ours:
         return {"kind": "same", "sections": []}
 
-    inert = {id(theirs): _inert_lines(theirs, suffix), id(ours): _inert_lines(ours, suffix)}
+    yaml = suffix in (".yml", ".yaml")
+    # (lines, inert flags, block-scalar flags), computed once per side rather than per
+    # changed line -- and carried explicitly, because looking the flags back up by the
+    # identity of the list they belong to is a correctness argument nobody should have
+    # to reconstruct.
+    theirs_side = (theirs, _inert_lines(theirs, suffix), _yaml_literal_lines(theirs) if yaml else None)
+    ours_side = (ours, _inert_lines(ours, suffix), _yaml_literal_lines(ours) if yaml else None)
+
     sections = []
     behavioural = False
     matcher = difflib.SequenceMatcher(None, theirs, ours, autojunk=False)
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             continue
-        for lines, start, stop in ((theirs, i1, i2), (ours, j1, j2)):
-            flags = inert[id(lines)]
+        for (lines, flags, literal), start, stop in ((theirs_side, i1, i2), (ours_side, j1, j2)):
             for index in range(start, stop):
                 if flags[index]:
                     continue
                 behavioural = True
-                name = _section_at(lines, index, suffix)
+                name = _section_at(lines, index, suffix, literal)
                 if name and name not in sections:
                     sections.append(name)
     if not behavioural:
@@ -1057,7 +1092,14 @@ def owned_effect(current_text, shipped_text, path):
         for section in sections
         if not any(other != section and other.startswith(section + ".") for other in sections)
     ]
-    return {"kind": "behaviour", "sections": kept[:MAX_EFFECT_SECTIONS]}
+    # Truncation that does not say it truncated is this repo's own defect: a list of
+    # four reads as the whole answer whether or not four was all there was, and the
+    # region that got cut is as likely as any to be the one worth re-running for.
+    return {
+        "kind": "behaviour",
+        "sections": kept[:MAX_EFFECT_SECTIONS],
+        "more": max(0, len(kept) - MAX_EFFECT_SECTIONS),
+    }
 
 
 def _drift_detail(name, effect):
@@ -1080,7 +1122,11 @@ def _drift_detail(name, effect):
             "{}: re-running /oss:scaffold would change comments and prose only -- "
             "nothing it does changes. {}".format(name, caveat)
         )
-    where = " -- {}".format(", ".join(effect["sections"])) if effect["sections"] else ""
+    named = list(effect["sections"])
+    dropped = effect.get("more", 0)
+    if dropped:
+        named.append("and {} more".format(dropped))
+    where = " -- {}".format(", ".join(named)) if named else ""
     return (
         "{}: re-running /oss:scaffold would change what it does{}. {}".format(
             name, where, caveat

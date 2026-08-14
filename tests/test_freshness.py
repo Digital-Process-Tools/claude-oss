@@ -442,6 +442,60 @@ def test_a_drifted_workflow_says_what_re_running_would_change(tmp_path):
     finding = findings[".github/workflows/oss-changelog.yml"]
     assert finding["state"] == "drifted", finding
     assert "what it does" in finding["detail"], finding["detail"]
+    # Not just the headline: the sentence has to carry a region, or this whole check is
+    # back to announcing that something differs. `jobs.` is the shipped workflow's own
+    # top-level key, so a section walk that stopped returning anything fails here.
+    assert "jobs." in finding["detail"], finding["detail"]
+
+
+def test_a_key_shaped_line_inside_a_run_block_is_not_read_as_a_key():
+    """Everything under `run: |` is shell. A step echoing `status: pending` declares no
+    key, and naming `...run.status` invents a path the document does not have."""
+    # The shell line has to be key-shaped at the start of the line: that is the one the
+    # key regex matches. A fixture whose colon sits inside an `echo` argument never
+    # reproduced this and would have passed against the bug.
+    template = (
+        "jobs:\n  build:\n    steps:\n      - name: go\n        run: |\n"
+        "          status: {}\n"
+    )
+    effect = doctor.owned_effect(template.format("old"), template.format("new"), "w.yml")
+    assert effect["sections"] == ["jobs.build.steps.name.run"], effect
+
+
+def test_a_backtick_fence_inside_a_tilde_fence_does_not_desync_the_tracker():
+    """Only the marker that opened a fence closes it. Toggling on either one classified
+    every line after such a block inside out -- prose as behaviour, code as prose.
+
+    The inner marker has to start its line, for the same reason as the test above: the
+    tracker only ever looked at the first three characters, so a fixture that indented
+    or prefixed it reproduced nothing.
+    """
+    template = (
+        "# Title\n\n~~~\n```markdown\n~~~\n\nProse that {} the same meaning.\n"
+    )
+    effect = doctor.owned_effect(template.format("keeps"), template.format("holds"), "r.md")
+    assert effect["kind"] == "cosmetic", effect
+
+
+def test_a_truncated_section_list_says_it_was_truncated():
+    """Four names read as the whole answer whether or not four was all there was, and
+    the region that got cut is as likely as any to be the one worth re-running for."""
+    def doc(marker):
+        return "".join(
+            "job{}:\n  runs-on: {}\n".format(n, marker) for n in range(doctor.MAX_EFFECT_SECTIONS + 3)
+        )
+    effect = doctor.owned_effect(doc("old"), doc("new"), "w.yml")
+    assert len(effect["sections"]) == doctor.MAX_EFFECT_SECTIONS, effect
+    assert effect["more"] == 3, effect
+    assert "and 3 more" in doctor._drift_detail("w.yml", effect)
+
+
+def test_a_complete_section_list_does_not_claim_there_is_more():
+    """The positive control for the line above: a summary that always appended "and N
+    more" would pass the truncation test and lie about every smaller change."""
+    effect = doctor.owned_effect("a:\n  b: 1\n", "a:\n  b: 2\n", "w.yml")
+    assert effect["more"] == 0, effect
+    assert "more" not in doctor._drift_detail("w.yml", effect)
 
 
 def test_a_cosmetically_drifted_owned_file_says_so_instead(tmp_path):
