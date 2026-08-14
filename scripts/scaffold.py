@@ -842,11 +842,22 @@ WORKFLOW_DIR = ".github/workflows"
 
 CHANGELOG_ESCAPE_LABEL = "no-changelog"
 
-_LABEL_COMMANDS = (
-    "Check with `gh label list`; create it with `gh label create "
+_LABEL_CREATE_COMMAND = (
+    "`gh label create "
     + CHANGELOG_ESCAPE_LABEL
     + ' --description "Change is invisible to users"`.'
 )
+
+# Said when the run measured the absence: it already looked, so it only says what to do.
+_LABEL_CREATE = "Create it with " + _LABEL_CREATE_COMMAND
+
+# Said when the run could not look. Telling somebody to check a list this run just read
+# would be advice the sentence it is appended to contradicts.
+_LABEL_COMMANDS = "Check with `gh label list`; create it with " + _LABEL_CREATE_COMMAND
+
+# How many labels one read asks for. A page that comes back full is not evidence of
+# absence -- see the truncation arm in _forge_label_names.
+_LABEL_PAGE = 500
 
 
 def _forge_label_names(repo_root, config):
@@ -876,16 +887,22 @@ def _forge_label_names(repo_root, config):
                 repo_root, detail, repo
             )
         )
-    seen = origin.strip().lower()
+    # Anchored, not a substring test. `owner/hello` occurs inside
+    # `owner/hello-world`, and a loose match would send the query to a repo this
+    # checkout is not -- an accidental match read as a confirmed one, which is the
+    # same defect as an unknown read as a pass, only pointed the other way. The two
+    # separators are all a remote URL uses before the slug: `/` for https, `:` for ssh.
+    seen = origin.strip().lower().rstrip("/")
     if seen.endswith(".git"):
         seen = seen[: -len(".git")]
-    if repo.lower() not in seen:
+    wanted = repo.lower()
+    if not (seen.endswith("/" + wanted) or seen.endswith(":" + wanted)):
         return None, "origin here is {}, not {}, so the forge was not asked".format(
             origin.strip() or "empty", repo
         )
 
     ok, out, detail = _run(
-        ["gh", "label", "list", "--repo", repo, "--limit", "200", "--json", "name"]
+        ["gh", "label", "list", "--repo", repo, "--limit", str(_LABEL_PAGE), "--json", "name"]
     )
     if not ok:
         return None, "{} (gh unavailable or unauthenticated)".format(detail)
@@ -895,6 +912,14 @@ def _forge_label_names(repo_root, config):
         return None, "gh label list did not return JSON ({})".format(type(exc).__name__)
     if not isinstance(parsed, list):
         return None, "gh label list returned {}, not a list".format(type(parsed).__name__)
+    if len(parsed) >= _LABEL_PAGE:
+        # A full page is not a complete list. Reporting `missing` off a truncated read
+        # would be this module's own defect class: the label may be on the page nobody
+        # fetched, and "not in what we saw" would render as "not in the repo".
+        return None, (
+            "gh returned {} labels, the whole page asked for, so the list may be "
+            "truncated and a label absent from it may still exist".format(len(parsed))
+        )
     return [entry.get("name") for entry in parsed if isinstance(entry, dict)], ""
 
 
@@ -912,6 +937,10 @@ def _run(command):
         return False, "", "{} would not start ({})".format(command[0], type(exc).__name__)
     except subprocess.TimeoutExpired:
         return False, "", "{} did not answer within 20s".format(command[0])
+    except UnicodeDecodeError:
+        # Not an OSError, so it would otherwise escape and take the whole run with it.
+        # Every caller here is contracted to degrade to a reason, never to a traceback.
+        return False, "", "{} produced output this locale could not decode".format(command[0])
     if done.returncode != 0:
         lines = (done.stderr or "").strip().splitlines()
         return (
@@ -964,7 +993,7 @@ def check_changelog_label(labels, reason=None):
                 "the generated changelog workflow names '{}' as the way to say a change is "
                 "invisible to users, and no such label exists in this repo -- so the check "
                 "it guards cannot be waived, on this pull request or any other. {}".format(
-                    CHANGELOG_ESCAPE_LABEL, _LABEL_COMMANDS
+                    CHANGELOG_ESCAPE_LABEL, _LABEL_CREATE
                 )
             ),
         }

@@ -20,6 +20,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json
 
 Prints one line per file: `create` or `present`. **Nothing is written.**
 
+The plan runs the same four checks the apply does, and one of them — `label` — reads the
+repo's label list from the forge. So the preview is read-only but no longer strictly
+offline: it can make one `gh` call, capped at 20 seconds, and it says so in the line when
+it could not. That is the price of the preview reporting the same thing the apply will.
+
 That names the plan but not the content, and the content is what actually needs a look. Get it with
 `--show`:
 
@@ -139,10 +144,14 @@ previewable before it is written with
 
 ## What the run reports and will not do for you
 
-Up to three lines after the file list, each naming something measured and left alone.
-They are printed before writing as well as after, so nothing in them is a surprise. A
-line that is absent means that check came back clean — never that it did not run, which
-is why every check here says so when it could not look.
+Four checks run after the file list — `radar`, `label`, `ci`, `tests` — each naming
+something measured and left alone, and each printing a line only when it has something to
+say. They are printed before writing as well as after, so nothing in them is a surprise. A
+line that is absent means that check came back clean — never that it did not run, which is
+why every check here says so when it could not look.
+
+`radar` — `.supertool.json` defines no radar tiers, so a session can receive channel
+events and nothing publishes any. The line carries the block to add.
 
 `label` — the generated workflow names `no-changelog` as the escape hatch for a change
 users cannot see, and the run **checks whether the label exists**. Three answers, and the

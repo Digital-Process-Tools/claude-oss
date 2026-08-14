@@ -485,12 +485,18 @@ def test_the_cli_names_why_it_could_not_look_rather_than_passing(tmp_path, monke
 # ------------------------------------------------------------------- the forge seam
 
 
-def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(tmp_path):
+def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(tmp_path, monkeypatch):
     """The read is gated on the checkout in front of us actually being that repo.
 
     Without the gate, scaffolding any directory fires a network call about whatever
     slug .oss.json happens to name -- including every temp directory in this suite.
+
+    `gh` is pinned present so this measures the git gate rather than whether the
+    machine running the suite happens to have gh installed: without the pin, a
+    contributor without gh sees this fail on the PATH arm, whose reason has nothing
+    to do with the property being asserted.
     """
+    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
     assert "owner/name" in reason
@@ -574,6 +580,77 @@ def test_gh_json_that_is_not_a_list_is_unknown(tmp_path, monkeypatch):
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
     assert "not a list" in reason
+
+
+def test_an_origin_whose_slug_merely_starts_with_the_configured_one_is_refused(
+    tmp_path, monkeypatch
+):
+    """`owner/name` occurs inside `owner/name-fork`, and a substring test would match.
+
+    The failure that guards against is quieter than a mismatch: the query goes to a
+    real repo that is not this one and the answer comes back looking authoritative.
+    """
+    _pin_forge(monkeypatch, "https://github.com/owner/name-fork.git", (True, "[]", ""))
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "owner/name-fork" in reason
+
+
+def test_an_ssh_origin_is_matched_on_the_colon(tmp_path, monkeypatch):
+    """The positive control for the case above: anchoring must not reject a real match."""
+    _pin_forge(monkeypatch, "git@github.com:owner/name.git", (True, "[]", ""))
+    names, _ = scaffold._forge_label_names(tmp_path, _config())
+    assert names == []
+
+
+def test_an_origin_with_a_trailing_slash_still_matches(tmp_path, monkeypatch):
+    _pin_forge(monkeypatch, "https://github.com/owner/name/", (True, "[]", ""))
+    names, _ = scaffold._forge_label_names(tmp_path, _config())
+    assert names == []
+
+
+def test_a_full_page_of_labels_is_unknown_rather_than_a_verdict(tmp_path, monkeypatch):
+    """A truncated read reporting `missing` is this module's own defect class.
+
+    The label may sit on the page nobody fetched, and "not in what we saw" would
+    render as "not in the repo".
+    """
+    page = json.dumps([{"name": "l{}".format(n)} for n in range(scaffold._LABEL_PAGE)])
+    _pin_forge(monkeypatch, "https://github.com/owner/name", (True, page, ""))
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "truncated" in reason
+    assert scaffold.check_changelog_label(names, reason=reason)[0]["state"] == "unknown"
+
+
+def test_one_short_of_a_full_page_is_a_real_answer(tmp_path, monkeypatch):
+    """The positive control: the truncation guard must not swallow every read."""
+    page = json.dumps([{"name": "l{}".format(n)} for n in range(scaffold._LABEL_PAGE - 1)])
+    _pin_forge(monkeypatch, "https://github.com/owner/name", (True, page, ""))
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is not None and reason == ""
+    assert scaffold.check_changelog_label(names)[0]["state"] == "missing"
+
+
+def test_a_measured_absence_does_not_tell_you_to_go_and_check():
+    """The run just read the list. Repeating "check with gh label list" contradicts it."""
+    detail = scaffold.check_changelog_label(["bug"])[0]["detail"]
+    assert "gh label create" in detail
+    assert "gh label list" not in detail
+    unknown = scaffold.check_changelog_label(None, reason="gh is not on PATH")[0]["detail"]
+    assert "gh label list" in unknown
+
+
+def test_output_that_cannot_be_decoded_is_a_reason_not_a_traceback(monkeypatch):
+    """UnicodeDecodeError is not an OSError, so it would otherwise escape _run."""
+
+    def boom(*args, **kwargs):
+        raise UnicodeDecodeError("utf-8", bytes([255]), 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(scaffold.subprocess, "run", boom)
+    ok, out, detail = scaffold._run(["gh", "label", "list"])
+    assert ok is False
+    assert "decode" in detail
 
 
 # --------------------------------------------------------------- required checks
