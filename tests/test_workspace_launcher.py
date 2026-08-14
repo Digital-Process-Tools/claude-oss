@@ -37,24 +37,81 @@ def _executable(path, text):
     return path
 
 
-def _stub_claude(bindir, argv_log):
+def _stub_claude(bindir, argv_log, mcp_get=None):
     """A `claude` that records argv and exits 0, so exec is observable.
 
-    `claude mcp ...` is answered rather than recorded: those calls are the script
-    probing and configuring, not the session it opens, and mixing them into the
-    argv log makes every assertion about the launch read the wrong list. The probe
-    reports "not registered", so the registration path is the one under test.
+    `claude mcp ...` is answered rather than recorded in the argv log: those calls
+    are the script probing and configuring, not the session it opens, and mixing
+    them into the argv log makes every assertion about the launch read the wrong
+    list. They go to a log of their own instead, because whether a stale
+    registration was re-pointed is only visible in what the script asked
+    `claude mcp` to do -- the launch argv looks identical either way.
+
+    `mcp_get` is the text `claude mcp get` prints. None makes it exit non-zero the
+    way it does when nothing is registered yet, so the first-registration path is
+    the one under test.
     """
+    mcp_log = bindir / "mcp.txt"
+    get_file = bindir / "mcp_get.txt"
+    if mcp_get is None:
+        if get_file.exists():
+            get_file.unlink()
+    else:
+        get_file.write_text(mcp_get, encoding="utf-8")
     return _executable(
         bindir / "claude",
         '#!/bin/sh\n'
         'if [ "${1:-}" = "mcp" ]; then\n'
-        '    [ "${2:-}" = "add" ] && exit 0\n'
-        '    exit 1\n'
+        '    for a in "$@"; do printf "%s\\n" "$a" >> "' + str(mcp_log) + '"; done\n'
+        '    printf "%s\\n" "--" >> "' + str(mcp_log) + '"\n'
+        '    if [ "${2:-}" = "get" ]; then\n'
+        '        [ -f "' + str(get_file) + '" ] || exit 1\n'
+        '        cat "' + str(get_file) + '"\n'
+        '        exit 0\n'
+        '    fi\n'
+        '    exit 0\n'
         'fi\n'
         'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
         'exit 0\n',
     )
+
+
+def _mcp_get_output(args, command="bun"):
+    """What `claude mcp get NAME` prints for a local-scope stdio entry, copied from
+    claude 2.1.219 rather than imagined. Only Command and Args carry the comparison;
+    the neighbouring lines are kept so a parser leaning on them is exercised too.
+    """
+    return (
+        "oss-channel:\n"
+        "  Scope: Local config (private to you in this project)\n"
+        "  Status: Connected\n"
+        "  Type: stdio\n"
+        "  Command: %s\n"
+        "  Args: %s\n"
+        "  Environment:\n" % (command, args)
+    )
+
+
+def _consumer_path(cwd):
+    """Where `_with_channel_consumer` plants the consumer, which is the path the
+    launcher has to end up registered against.
+    """
+    return (
+        Path(cwd) / "_home" / ".claude" / "plugins" / "cache" / "dpt-plugins"
+        / "supertool" / "9.9.9" / "notifiers" / "claude-channel" / "channel.ts"
+    )
+
+
+def _mcp_calls(cwd):
+    """Every `claude mcp ...` invocation the launcher made, as a list of argv lists."""
+    log = Path(cwd) / "_stubbin" / "mcp.txt"
+    if not log.exists():
+        return []
+    return [
+        call.strip().split("\n")
+        for call in log.read_text(encoding="utf-8").split("--\n")
+        if call.strip()
+    ]
 
 
 def _with_channel_consumer(home, bindir):
@@ -85,12 +142,12 @@ def _with_channel_consumer(home, bindir):
     return consumer
 
 
-def run(cwd, args=(), with_claude=True, with_channel=False):
+def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None):
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
     argv_log = Path(cwd) / "argv.txt"
     if with_claude:
-        _stub_claude(bindir, argv_log)
+        _stub_claude(bindir, argv_log, mcp_get=mcp_get)
 
     # HOME is pinned for the same reason PATH is: the consumer is looked up under
     # the user's real ~/.claude, so an unpinned HOME decides the channel assertions
@@ -226,6 +283,82 @@ def test_registering_the_consumer_is_said_out_loud(tmp_path):
     """
     done, _ = run(_repo(tmp_path), with_channel=True)
     assert "registered MCP server oss-channel" in done.stderr
+    assert "claude mcp remove oss-channel -s local" in done.stderr
+
+
+def test_a_registration_pointing_at_a_dead_path_is_re_pointed(tmp_path):
+    """`claude mcp add` stores an absolute, version-pinned path -- the installPath out
+    of installed_plugins.json -- and the plugin cache drops the old version directory
+    on auto-update. The entry outlives the file, so `claude mcp get` still answers 0;
+    measured against claude 2.1.219, a registration whose target does not exist gets
+    exit 0 and a "Failed to connect" status. Testing presence therefore reports a
+    board that is armed and delivers nothing, which is the exact state the launcher's
+    own header exists to prevent.
+    """
+    repo = _repo(tmp_path)
+    stale = "/home/x/.claude/plugins/cache/dpt-plugins/supertool/0.1.0/notifiers/claude-channel/channel.ts"
+    done, argv = run(repo, with_channel=True, mcp_get=_mcp_get_output(stale))
+
+    calls = _mcp_calls(repo)
+    assert ["mcp", "remove", "oss-channel", "-s", "local"] in calls, done.stderr
+    assert [
+        "mcp", "add", "-s", "local", "oss-channel", "bun", str(_consumer_path(repo))
+    ] in calls, done.stderr
+    assert "server:oss-channel" in argv
+
+
+def test_the_replaced_path_and_its_replacement_are_both_named(tmp_path):
+    """A silent re-point is the other half of the same defect: the config changed
+    under the user and the output holds no way to find out what it used to be.
+    """
+    repo = _repo(tmp_path)
+    stale = "/gone/supertool/0.1.0/notifiers/claude-channel/channel.ts"
+    done, _ = run(repo, with_channel=True, mcp_get=_mcp_get_output(stale))
+    assert stale in done.stderr
+    assert str(_consumer_path(repo)) in done.stderr
+    assert "claude mcp remove oss-channel -s local" in done.stderr
+
+
+def test_a_registration_that_already_matches_is_left_alone(tmp_path):
+    """The guard against the fix over-firing. A remove-and-add on every launch churns
+    the user's MCP config for nothing, which is why presence was the test to begin
+    with; comparing is meant to replace that test, not the idempotence it bought.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(
+        repo, with_channel=True, mcp_get=_mcp_get_output(str(_consumer_path(repo)))
+    )
+    verbs = [call[1] for call in _mcp_calls(repo) if len(call) > 1]
+    assert "add" not in verbs, done.stderr
+    assert "remove" not in verbs, done.stderr
+    assert "server:oss-channel" in argv
+
+
+def test_a_registration_whose_path_cannot_be_resolved_is_not_counted_as_ready(tmp_path):
+    """The third state. With no working python, or a registry that cannot be read,
+    there is no resolved path to compare the registration against -- and "it cannot be
+    checked" is not "it is fine". The message must not blame a missing consumer
+    either: the consumer may well be installed and merely unread.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, mcp_get=_mcp_get_output("/gone/channel.ts"))
+    assert not any("development-channels" in a for a in argv), done.stderr
+    assert "could not be resolved" in done.stderr
+
+
+def test_a_registration_that_cannot_be_parsed_is_not_counted_as_ready(tmp_path):
+    """`claude mcp get`'s output shape is nobody's contract. When the Command and Args
+    lines are not in it, where the entry points is unknown -- and an unknown reported
+    as armed is the defect itself, not a tolerable fallback.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(
+        repo,
+        with_channel=True,
+        mcp_get="oss-channel:\n  Scope: Local config\n  Status: Connected\n",
+    )
+    assert not any("development-channels" in a for a in argv), done.stderr
+    assert "unknown" in done.stderr
     assert "claude mcp remove oss-channel -s local" in done.stderr
 
 
