@@ -214,8 +214,12 @@ def _read_config(path):
     the range comes back unscoped with the path in the reason, never a traceback and
     never a silent scope. What is lost is only *which* of the two sentences the reader
     gets. Recovering it needs a Windows fixture that can produce a distinguishable
-    failure -- a directory this process cannot traverse (EACCES) is the other case with
-    the same shape -- which is CI work rather than something this function can fix.
+    failure. The POSIX half of that -- a directory this process cannot traverse
+    (EACCES) -- is no longer only reasoned: it goes through the plain `OSError` arm
+    below, not this branch, and `test_an_eacces_parent_directory_is_measured_not_assumed`
+    measures a real chmod 000 on every non-root POSIX run and gets `PermissionError`,
+    distinguishable from a plain absence. The Windows half named above is still open,
+    and still CI work rather than something this function can fix.
     """
     try:
         raw = path.read_text(encoding="utf-8")
@@ -246,7 +250,12 @@ def _read_config(path):
         # with the values when the OS distinguished nothing. If some Windows
         # configuration does populate `winerror`, that test starts asserting on its
         # own -- and if none ever does, the skip is the standing record of why this
-        # is still here.
+        # is still here. The POSIX EACCES fixture added alongside it does not touch
+        # this branch either: `PermissionError` never subclasses `FileNotFoundError`,
+        # so it never reaches this `except` at all -- it is caught, and correctly
+        # classified, by the plain `OSError` arm below. That measurement narrows the
+        # open question to Windows alone; it gives no evidence for deleting this
+        # branch, so it stays.
         if getattr(exc, "winerror", None) in _WINERROR_COULD_NOT_LOOK:
             return None, "{0} could not be read ({1})".format(
                 path, "winerror {0}".format(exc.winerror)

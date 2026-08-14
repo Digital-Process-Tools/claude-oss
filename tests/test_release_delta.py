@@ -993,6 +993,63 @@ def test_an_over_long_name_in_a_directory_that_exists_is_measured_not_assumed(tm
     )
 
 
+def test_an_eacces_parent_directory_is_measured_not_assumed(tmp_path):
+    """The other case the same shape names: a directory this process cannot traverse.
+
+    The issue's item 2. chmod 000 on the parent removes execute permission, so a
+    lookup inside it should answer "you may not look" (PermissionError) rather than
+    "there is nothing here" (FileNotFoundError) -- the distinguishable failure the
+    over-long-name fixture above could not reliably produce on this platform.
+
+    Skipped as root: root ignores the directory mode bits entirely, the read would
+    succeed (or fail for an unrelated reason), and a test that passes under root
+    while proving nothing about anyone else is exactly the defect class this repo is
+    named after -- an absence produced by the harness, read as an absence in the
+    world. Skipped off POSIX for the same reason from the other side: chmod 000 does
+    not deny access the same way there, so the fixture would not be testing what it
+    says it tests.
+    """
+    if os.name != "posix":
+        pytest.skip("chmod 000 does not deny access on this platform")
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip(
+            "running as root, which ignores the directory mode bits -- this "
+            "fixture would pass without exercising the denial at all"
+        )
+
+    module = _module()
+    denied = tmp_path / "denied"
+    denied.mkdir()
+    config = denied / CONFIG_NAME
+    config.write_text(
+        json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
+    )
+    original_mode = denied.stat().st_mode
+
+    denied.chmod(0o000)
+    try:
+        _assert_classified_only_if_the_os_said_something(
+            module._scope(str(tmp_path), None, str(config))["scope_reason"],
+            _raw_error(str(config)),
+            _raw_error(str(tmp_path / "no-such-file.json")),
+            "a config under a directory with no execute permission",
+        )
+
+        scope = module._scope(str(tmp_path), None, str(config))
+        assert scope["scope"] is None, "the gate stays unscoped whatever the OS said"
+        assert str(config) in scope["scope_reason"], (
+            "the reason lost the path it names"
+        )
+
+        payload = module.compute(str(tmp_path), None, str(config))
+        assert payload["scope"] is None
+        assert module.receipt(payload), "a receipt is produced whatever the path was"
+    finally:
+        # Restored unconditionally so tmp_path's own cleanup -- which walks and
+        # removes this directory -- does not itself fail on the mode this test set.
+        denied.chmod(original_mode)
+
+
 def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
     tmp_path,
 ):
