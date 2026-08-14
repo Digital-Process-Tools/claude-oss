@@ -170,6 +170,14 @@ def _fully_configured(root):
     (memory_config / "config.json").write_text('{"data_dir": ".remember"}', encoding="utf-8")
     (root / ".remember").mkdir(exist_ok=True)
     (root / ".remember" / "identity.md").write_text("who the agent is\n", encoding="utf-8")
+    # A project-scope allow rule naming the merge op. Written in the project rather
+    # than left to the real home directory: a check whose OK depends on whose laptop
+    # the suite runs on is not a check.
+    (root / ".claude").mkdir(parents=True, exist_ok=True)
+    (root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"permissions": {"allow": ["Bash(./supertool 'gh-pr-merge:*')"]}}),
+        encoding="utf-8",
+    )
     rules = root / ".claude" / "jit-context"
     rules.mkdir(parents=True, exist_ok=True)
     (rules / "conventions.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
@@ -228,3 +236,161 @@ def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys)
     (tmp_path / "wt").mkdir()
     doctor.main()
     assert "VERDICT: usable with gaps" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# The merge permission.
+#
+# doctor reads settings files for an allow rule. That is a file read, not a
+# probe of the harness, so the three states are about the RULE and never about
+# the decision: present, absent, and could-not-look. The third one is why these
+# are three tests and not two -- an unreadable settings file that rendered as
+# "no rule" would send someone to add a rule they already have.
+# --------------------------------------------------------------------------- #
+
+
+def _settings(path, allow=None, deny=None):
+    permissions = {}
+    if allow is not None:
+        permissions["allow"] = allow
+    if deny is not None:
+        permissions["deny"] = deny
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"permissions": permissions}), encoding="utf-8")
+    return path
+
+
+def _isolated_home(tmp_path):
+    """No settings anywhere in it. Without this every test below would be asking
+    about the machine it happens to run on."""
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    return home
+
+
+def test_settings_candidates_survive_an_unresolvable_home(tmp_path, monkeypatch):
+    """doctor exits 0 always. A machine with no HOME/USERPROFILE must lose user
+    scope, not the whole run."""
+    def _boom():
+        raise RuntimeError("no home directory")
+
+    monkeypatch.setattr(doctor.Path, "home", staticmethod(_boom))
+    candidates = doctor.settings_candidates(tmp_path)
+    assert len(candidates) == 2
+    assert all(str(tmp_path) in str(path) for path in candidates)
+    # And the check above it still answers rather than raising.
+    assert doctor.merge_permission_state(tmp_path)[0] == "absent"
+
+
+def test_merge_permission_state_present(tmp_path):
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+    )
+    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "present"
+
+
+def test_merge_permission_state_absent_when_no_settings_exist(tmp_path):
+    """Absent is not unknown. Nothing to read and unable to read are opposite
+    findings with opposite remedies."""
+    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "absent"
+
+
+def test_merge_permission_state_absent_when_rules_name_other_ops(tmp_path):
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(./supertool 'gh-pr:*')", "Bash(git status)"],
+    )
+    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "absent"
+
+
+def test_merge_permission_state_unknown_when_settings_are_malformed(tmp_path):
+    path = tmp_path / ".claude" / "settings.local.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+    state, detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "unknown"
+    # str(path), not a POSIX literal: the separator is a backslash on Windows.
+    assert str(path) in detail
+
+
+def test_merge_permission_state_unknown_when_a_settings_file_cannot_be_opened(tmp_path):
+    """The OSError arm, distinct from the JSON one. A directory where a file is
+    expected raises IsADirectoryError on POSIX and PermissionError on Windows;
+    both are OSError, which is what the check has to catch."""
+    (tmp_path / ".claude" / "settings.local.json").mkdir(parents=True)
+    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "unknown"
+
+
+def test_a_readable_rule_beats_an_unreadable_neighbour(tmp_path):
+    """Unknown means the question could not be answered. A rule that WAS read
+    answers it, whatever the file beside it did."""
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text("{not json", encoding="utf-8")
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+    )
+    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "present"
+
+
+def test_a_deny_rule_is_not_read_as_permission(tmp_path):
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        deny=["Bash(./supertool 'gh-pr-merge:*')"],
+    )
+    state, detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "denied"
+    assert "deny" in detail
+
+
+def test_a_rule_in_the_home_settings_counts(tmp_path):
+    """The rule can live in user scope. Ignoring that would WARN at a maintainer
+    who already arranged it -- and the fix they would then apply is a duplicate."""
+    home = _isolated_home(tmp_path)
+    _settings(home / ".claude" / "settings.json", allow=["Bash(./supertool 'gh-pr-merge:*')"])
+    state, _detail = doctor.merge_permission_state(tmp_path, home=home)
+    assert state == "present"
+
+
+def test_check_merge_permission_ok_does_not_promise_the_merge_will_run(tmp_path, capsys):
+    """The whole judgment of this check. An OK saying "the merge is permitted"
+    is a file read presented as a probe of the harness -- the absence-read-as-fact
+    this plugin is named after, one layer out."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+    )
+    doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
+    out = capsys.readouterr().out
+    assert out.startswith("OK ")
+    assert "not a probe" in out
+    assert doctor.FINDINGS[-1][0] == "OK"
+
+
+def test_check_merge_permission_warns_and_names_the_file_to_add_it_to(tmp_path, capsys):
+    doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert ".claude/settings.local.json" in out
+    # The WARN must not overclaim either: a rule is not the only thing that can
+    # allow the call, so "no rule found" is not "the merge will be denied".
+    assert "not the only thing" in out
+
+
+def test_check_merge_permission_says_it_could_not_look(tmp_path, capsys):
+    """The unknown arm reaching the report. Untested, it renders as a pass the
+    first time it fires."""
+    path = tmp_path / ".claude" / "settings.local.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+    doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "could not" in out
+    assert "no rule" not in out

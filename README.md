@@ -42,6 +42,13 @@ That opens a session over the repo you are standing in, with the maintainer loop
 with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
 into the wrong place confidently.
 
+Setup is not the whole onboarding. It deliberately writes nothing tracked, which is what makes it
+safe to run anywhere and also what leaves the repo half-furnished — configured, and still without a
+CLAUDE.md, a security policy, issue templates or a changelog gate. **`/oss:scaffold` is the second
+step**, and it is separate because it writes tracked files: they want a branch, a diff and a review.
+A repo that goes straight from setup to ticking never fails; it just runs the loop against furniture
+nobody added.
+
 It does **not** set up a board. The session is started able to receive watch-channel events, but
 `radar` reads its tiers from that repo's own `.supertool.json`, and a fresh clone has none. The
 launcher says which of the two is missing rather than reporting the session as armed — a channel

@@ -126,8 +126,15 @@ stray file.
 `supertool`, `remember` and `claude-jit-context` are declared dependencies, so they arrive with the
 plugin. Arriving is not the same as working, and the gap is invisible:
 
-- **Memory with no identity** still runs and still saves. What it cannot do is record whose sessions
-  these are. The file goes at `<repo>/.remember/identity.md`, and the reason it is safe there is
+- **Memory with no identity** still runs and still saves. What it cannot do is record
+  **who the agent is** in this repo — its name, voice, values, and what it has learned here.
+  That is the subject of the file: not the human maintainer, not their name or org or role. A file
+  describing the human is a well-formed answer to the wrong question: it is written, `git status`
+  stays clean, and every check in the loop reports the identity gap as closed. The memory plugin
+  ships an `identity.example.md` — seed from that and edit it, rather than reconstructing the format
+  from a second description here.
+
+  The file goes at `<repo>/.remember/identity.md`, and the reason it is safe there is
   measured rather than assumed: the memory plugin writes a `.gitignore` containing `*` into that
   directory when it creates it, so the store is untracked by construction and seeding identity
   publishes nothing.
@@ -151,6 +158,57 @@ plugin. Arriving is not the same as working, and the gap is invisible:
 `/oss:doctor` reports both, with `WARN` for the memory gaps and `FAIL` for a missing or empty index,
 naming the layer.
 
+## Settle the merge permission now, not at the merge
+
+`gh-pr-merge` is the only op the loop uses that writes, and the harness's permission layer decides
+whether it may run. If nobody has told the harness about it, the first time anyone finds out is at
+the merge step — gates all satisfied, review already spent, nothing to do but stop. **Ask the
+maintainer to add the rule; do not write it for them.** A permission grant arranged without asking
+is the tool deciding on an irreversible action, which is not this command's job.
+
+The rule goes in `.claude/settings.local.json`, not `.claude/settings.json`, for the same reason
+`.oss.json` and `.oss.local.json` split: it carries an absolute path off one person's disk. That
+file is machine scope and untracked; committing it publishes one laptop's layout to everyone who
+clones, and it would be wrong for all of them.
+
+Matching is on the **literal command string**, so a rule has to cover how the call is actually
+spelled — and the loop spells it two ways:
+
+| Where the call runs | How the binary is spelled |
+| --- | --- |
+| the clone | `./supertool` |
+| a worktree | an absolute path to that same binary — `./supertool` does not resolve there |
+
+A rule written for one spelling does not cover the other, and the loop uses both within a single
+tick. The rule itself is a `Bash(...)` allow entry naming the binary and the op; the quickest way to
+get it exactly right is to let the harness's own permission prompt or `/permissions` write it, then
+confirm it landed in `.claude/settings.local.json` rather than the tracked file.
+
+Two more literal-string traps, each worth a round trip to rediscover:
+
+- `gh-pr-merge:N:squash` and `gh-pr-merge:N:squash|force` are **different strings**. Approving the
+  first does not carry to the second, and the second is the one that merges — without `|force` the
+  op previews and writes nothing.
+- A rule is one input to the decision, not the decision. An entry that matches does not guarantee
+  the call is permitted, and no entry does not guarantee it is refused.
+
+**The harness permission is a separate, fourth gate**, sitting in front of supertool's own three
+opt-outs (`|force` per call, `SUPERTOOL_NO_PUBLISH_CONFIRM=1` per environment, `no_publish_confirm`
+per project). Say this out loud at setup, because the obvious move when a merge comes back denied is
+to widen a supertool setting — and that setting was never the thing refusing. `/oss:doctor` reports
+which of the three states this is in: a rule naming the op is present, none is, or the settings
+files could not be read.
+
 ## Then
 
 Run `/oss:doctor` and relay the verdict. Setup that has not been verified is a claim.
+
+Then name **`/oss:scaffold`** as the next step, whatever the verdict says. Setup writes nothing
+tracked, which is exactly what makes it safe to run anywhere and also why it leaves the repo
+half-furnished: config on disk, and no CLAUDE.md, no security policy, no issue templates, no
+changelog gate. Scaffold is separate because it writes tracked files, and tracked files want a
+branch, a diff and a review rather than a command that has already run.
+
+Say it even when doctor reports no gaps. A repo scaffolded before the owned files existed has no
+warning to trigger on, and a maintainer who stops here sees no failure at all — they see a clean
+setup run against a repo the loop assumes is furnished.
