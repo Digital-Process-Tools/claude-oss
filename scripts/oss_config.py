@@ -37,6 +37,25 @@ REQUIRED_KEYS = {
 
 OPTIONAL_KEYS = {"milestones", "notes", "release"}
 
+# The config is two files because its keys have two different owners (#34).
+#
+# `.oss.json` is the *project's* answer: the repo slug, the tag spelling, what runs the
+# tests, which files carry the version. Those are reviewed like any other repo fact and
+# must be the same for everyone, so the file is tracked.
+#
+# `.oss.local.json` is *this machine's* answer: three keys, all of them a directory on
+# one person's disk. It is git-excluded and never shared.
+#
+# The split was not cosmetic. Setup used to write one file and exclude it, so the whole
+# `release` block lived on a single laptop. A second maintainer running /oss:release had
+# no `tag_pattern`, the documented remedy for that is stop-and-ask, and a repo tagging
+# `v1.2.3` can come back with `1.2.4` -- the second tag namespace this module warns
+# about, opened by the tool that warns about it.
+CONFIG_NAME = ".oss.json"
+LOCAL_CONFIG_NAME = ".oss.local.json"
+
+LOCAL_KEYS = {"clone", "worktree_root", "state_file"}
+
 # What a repo does when it releases differs, so it is configured. What must NEVER be
 # configured is the gate list -- default branch green at leg level, nothing mid-review,
 # security audit passed, every version site bumped, the tag verified on the remote. A
@@ -67,6 +86,21 @@ TAG_SCHEMES = [
 NULLABLE_KEYS = {"test_command", "changelog_dir"}
 
 KNOWN_KEYS = REQUIRED_KEYS | OPTIONAL_KEYS
+PROJECT_KEYS = KNOWN_KEYS - LOCAL_KEYS
+
+# The one nullable release key that gets a default rather than a stop (#34).
+#
+# The two nullable keys in the release block are deliberately not symmetric, and the
+# asymmetry is the point rather than an oversight: a wrong commit subject is cosmetic and
+# revisable in the next commit, while a wrong tag opens a namespace that exists forever.
+# So `commit_subject` resolves to a stated default and `tag_pattern` stops and asks. What
+# was wrong before was not the asymmetry -- it was that only one of the two said anything,
+# so a null `commit_subject` reached an agent that invented a subject line.
+#
+# `{version}`, not `{tag}`: `_validate_release` refuses any subject without the {version}
+# placeholder, so a default spelled the obvious way would be rejected by this same module.
+DEFAULT_COMMIT_SUBJECT = "chore(release): {version}"
+RELEASE_DEFAULTS = {"commit_subject": DEFAULT_COMMIT_SUBJECT}
 
 # A config file is committed. Nothing in it may look like a credential, and an
 # unfamiliar key that does is refused rather than ignored -- ignoring it is how a
@@ -345,26 +379,108 @@ def probe_problems(probe):
     return problems
 
 
-def load(path):
-    """Return ``(config, problems)``.
+def local_config_path(path):
+    """The machine half that sits beside a given project config."""
+    return Path(path).parent / LOCAL_CONFIG_NAME
 
-    ``config`` is None when the file could not be read or parsed. Problems are
-    sentences, not codes -- they are printed to a human by `doctor`.
+
+def split(config):
+    """Partition a config into ``(project, local)``.
+
+    An unknown key goes to the project half on purpose. It is a typo or an undeclared
+    schema change, and `validate` names it there; hidden in an untracked file it would
+    be one maintainer's private mystery.
+    """
+    project = dict((key, value) for key, value in config.items() if key not in LOCAL_KEYS)
+    local = dict((key, value) for key, value in config.items() if key in LOCAL_KEYS)
+    return project, local
+
+
+def _read_json_object(path):
+    """``(document, problem)``. A file that is simply absent is neither."""
+    path = Path(path)
+    if not path.is_file():
+        return None, None
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, "{}: could not read ({})".format(path, exc)
+    try:
+        document = json.loads(raw)
+    except ValueError as exc:
+        return None, "{}: could not parse as JSON ({})".format(path, exc)
+    if not isinstance(document, dict):
+        return None, "{}: could not parse as a JSON object".format(path)
+    return document, None
+
+
+def _scope_problems(project, local, local_exists):
+    """Where a key sits, as opposed to whether its value is any good.
+
+    `validate` sees only the merged config and so cannot tell the two halves apart. This
+    is the only place that can, and every finding here names the remedy: a scope problem
+    that merely says "wrong" is a file the maintainer leaves exactly as it is.
+    """
+    problems = []
+
+    for key in sorted(LOCAL_KEYS & set(project)):
+        problems.append(
+            "{}: machine-scoped key in the committed config. It names a directory on one "
+            "person's disk, so it belongs in {}. Run `oss_config.py --split` to move it; "
+            "the config still loads meanwhile.".format(key, LOCAL_CONFIG_NAME)
+        )
+
+    if local:
+        for key in sorted(PROJECT_KEYS & set(local)):
+            problems.append(
+                "{}: project-scoped key overridden in {}. The committed value wins -- a "
+                "project fact that differs per machine is how two maintainers cut two "
+                "different releases from one repo.".format(key, LOCAL_CONFIG_NAME)
+            )
+    elif not local_exists and (LOCAL_KEYS - set(project)):
+        problems.append(
+            "{} is missing, so this machine has no {}. Run /oss:setup here -- the "
+            "committed config is the project's half and never carries these.".format(
+                LOCAL_CONFIG_NAME, ", ".join(sorted(LOCAL_KEYS - set(project)))
+            )
+        )
+
+    return problems
+
+
+def load(path):
+    """Return ``(config, problems)`` for the two config halves taken together.
+
+    ``config`` is the merge of the tracked project file and the git-excluded machine
+    file, so every caller downstream keeps seeing one dictionary and the split stays a
+    fact about storage. It is None only when the project half could not be read.
+
+    Problems are sentences, not codes -- they are printed to a human by `doctor`.
     """
     path = Path(path)
     if not path.is_file():
         return None, ["{}: not found. Run /oss:setup to write it.".format(path)]
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return None, ["{}: could not read ({})".format(path, exc)]
-    try:
-        config = json.loads(raw)
-    except ValueError as exc:
-        return None, ["{}: could not parse as JSON ({})".format(path, exc)]
-    if not isinstance(config, dict):
-        return None, ["{}: could not parse as a JSON object".format(path)]
-    return config, validate(config)
+    project, problem = _read_json_object(path)
+    if problem is not None:
+        return None, [problem]
+
+    local_path = local_config_path(path)
+    local_exists = local_path.is_file()
+    local, local_problem = _read_json_object(local_path)
+
+    problems = []
+    if local_problem is not None:
+        problems.append(local_problem)
+        local = None
+
+    config = dict(project)
+    for key, value in sorted((local or {}).items()):
+        if key not in PROJECT_KEYS:
+            config[key] = value
+
+    problems.extend(_scope_problems(project, local, local_exists))
+    problems.extend(validate(config))
+    return config, problems
 
 
 def validate(config):
@@ -474,6 +590,22 @@ def _validate_release(release):
     return problems
 
 
+def release_commit_subject(config):
+    """The subject line the release commit is made with.
+
+    Null in the config is honest -- the probe cannot observe a house style it has never
+    seen -- but a null still has to become a string before anything commits, and the
+    only thing downstream of an undefined null is an agent writing whatever it likes.
+    """
+    release = config.get("release")
+    if not isinstance(release, dict):
+        release = {}
+    value = release.get("commit_subject")
+    if value is None:
+        return DEFAULT_COMMIT_SUBJECT
+    return value
+
+
 def _infer_tag_pattern(tags):
     """Derive the tag spelling from tags that exist, or None when none are recognised."""
     for tag in tags or []:
@@ -565,6 +697,81 @@ def build(probe):
             "triggers": {"merged_prs": 10, "soak_hours": 48},
         },
     }
+
+
+def _write_json(path, document):
+    Path(path).write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+
+def _repoint_git_exclude(root):
+    """Exclude the machine half, stop excluding the project half.
+
+    The exclusion is half the defect: `.git/info/exclude` is not copied by `git clone`,
+    so the second maintainer inherits neither the file nor the reason it was hidden.
+    Doing this by hand is the per-maintainer decision this whole change removes.
+    """
+    exclude = Path(root) / ".git" / "info" / "exclude"
+    if not exclude.is_file():
+        return [
+            "no .git/info/exclude here, so the exclusion was not touched -- make sure "
+            "{} is ignored before committing anything".format(LOCAL_CONFIG_NAME)
+        ]
+    before = exclude.read_text(encoding="utf-8")
+    kept = [line for line in before.splitlines() if line.strip() != CONFIG_NAME]
+    if LOCAL_CONFIG_NAME not in [line.strip() for line in kept]:
+        kept.append(LOCAL_CONFIG_NAME)
+    after = "\n".join(kept) + "\n"
+    if after == before:
+        return []
+    exclude.write_text(after, encoding="utf-8")
+    return [
+        ".git/info/exclude: {} excluded, {} no longer".format(LOCAL_CONFIG_NAME, CONFIG_NAME)
+    ]
+
+
+def split_config_file(path):
+    """Migrate a combined config in place. Returns ``(problems, notes)``.
+
+    Same command for both audiences, deliberately: the repo that already has a combined
+    `.oss.json` and the fresh `/oss:setup` that has just written one run the identical
+    step, so there is one migration to get right rather than a migration and a happy
+    path that drift.
+
+    Idempotent. A project half with no machine keys and a machine half already on disk is
+    an already-split repo, and re-running must not rewrite either file -- a migration you
+    are afraid to repeat is one nobody runs twice, including after a bad merge.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return ["{}: not found. Run /oss:setup to write it.".format(path)], []
+    document, problem = _read_json_object(path)
+    if problem is not None:
+        return [problem], []
+
+    project, local = split(document)
+    target = local_config_path(path)
+    notes = []
+
+    if not local and target.is_file():
+        notes.append("{}: already split; no key moved.".format(path.name))
+    else:
+        _write_json(target, local)
+        _write_json(path, project)
+        notes.append(
+            "{}: {} machine-scoped key(s) -- {}".format(
+                target.name, len(local), ", ".join(sorted(local)) or "none"
+            )
+        )
+        notes.append(
+            "{}: {} project-scoped key(s), now safe to track".format(path.name, len(project))
+        )
+
+    notes.extend(_repoint_git_exclude(path.parent))
+    notes.append(
+        "git add {} -- committing the project half is the point, and it is the one step "
+        "this script leaves to you".format(path.name)
+    )
+    return [], notes
 
 
 def ensure_worktree_root(config):
@@ -908,6 +1115,14 @@ def _main(argv=None):
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--validate", metavar="PATH", help="validate an existing .oss.json")
     group.add_argument(
+        "--split",
+        metavar="PATH",
+        help="split a combined .oss.json into the tracked project half and the "
+        "git-excluded {} beside it, and repoint .git/info/exclude. Idempotent".format(
+            LOCAL_CONFIG_NAME
+        ),
+    )
+    group.add_argument(
         "--probe",
         metavar="REPO",
         help="measure a repo directory and write a probe as JSON on stdout "
@@ -927,6 +1142,14 @@ def _main(argv=None):
             print("FAIL {}".format(problem))
         if config is not None and not problems:
             print("OK {} validates".format(args.validate))
+        return 1 if problems else 0
+
+    if args.split:
+        problems, notes = split_config_file(args.split)
+        for problem in problems:
+            print("FAIL {}".format(problem))
+        for note in notes:
+            print("OK {}".format(note))
         return 1 if problems else 0
 
     if args.probe:

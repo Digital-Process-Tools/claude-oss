@@ -173,3 +173,50 @@ def test_the_derived_release_block_validates():
 
 def test_the_derived_block_validates_on_a_bare_repo_too():
     assert oss_config.validate(oss_config.build(_probe(tags=[], merge_method=None))) == []
+
+
+# ------------------------------------------------------------------- a null commit_subject
+#
+# #34, second half. Both nullable release keys now have written behaviour, and they
+# differ on purpose: a wrong subject line is cosmetic and revisable in the next commit,
+# a wrong tag is a second namespace that is permanent. So `commit_subject` gets a plugin
+# default and `tag_pattern` keeps stop-and-ask -- the fault was never the asymmetry, it
+# was that only one of the two said anything at all.
+
+
+def test_a_null_commit_subject_resolves_to_the_plugin_default():
+    """The value the probe honestly could not observe still has to become a string
+    before anything commits. Before this, the agent wrote whatever it felt like, which
+    is a house style arriving from a tool that has never read the repo history.
+    """
+    config = _valid()
+    config["release"] = _release(commit_subject=None)
+    assert oss_config.release_commit_subject(config) == oss_config.DEFAULT_COMMIT_SUBJECT
+
+
+def test_a_configured_commit_subject_wins_over_the_default():
+    config = _valid()
+    config["release"] = _release(commit_subject="ship {version}")
+    assert oss_config.release_commit_subject(config) == "ship {version}"
+
+
+def test_a_config_with_no_release_block_still_gets_the_default():
+    assert oss_config.release_commit_subject(_valid()) == oss_config.DEFAULT_COMMIT_SUBJECT
+
+
+def test_the_default_commit_subject_survives_the_validator_that_guards_the_key():
+    """The obvious spelling of this default is `chore(release): {tag}`, and it is wrong:
+    `_validate_release` requires the {version} placeholder, so a default written that way
+    would be refused by the same module that emits it -- and only on the first repo that
+    wrote it into its config.
+    """
+    config = _valid()
+    config["release"] = _release(commit_subject=oss_config.DEFAULT_COMMIT_SUBJECT)
+    assert oss_config.validate(config) == []
+
+
+def test_only_the_cosmetic_nullable_key_has_a_default():
+    """tag_pattern must have none. A default here is the second tag namespace this whole
+    module is arranged to avoid, so its absence is asserted rather than assumed.
+    """
+    assert set(oss_config.RELEASE_DEFAULTS) == {"commit_subject"}

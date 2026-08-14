@@ -17,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCTOR = REPO_ROOT / "scripts" / "doctor.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import oss_config  # noqa: E402
+
 
 def run(cwd):
     return subprocess.run(
@@ -146,5 +148,9 @@ def _write_config(root, overrides=None, extra=None):
     }
     config.update(overrides or {})
     config.update(extra or {})
-    (root / ".oss.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    project, local = oss_config.split(config)
+    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local, indent=2), encoding="utf-8"
+    )
     return config

@@ -81,14 +81,45 @@ Four states, each with a different remedy — relay which one:
 Write the command on `ok`. On anything else, say what happened and let the human
 decide — a `null` they chose beats a value they did not.
 
-## Show, then write
+## Show, then write — two files, not one
 
 Print the derived config and what each value was derived *from*, then ask before writing. A config
 the user has not seen is a set of assumptions nobody reviewed.
 
-Write it to `.oss.json` in the repo root, and add it to `.git/info/exclude` rather than `.gitignore`
-— the target repo's tracked files must not change. Confirm afterwards that `git status` is still
-clean.
+Write the derived config to `.oss.json` in the repo root, then split it:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --split .oss.json
+```
+
+That leaves two files, and which key goes where is the plugin's decision rather than each
+maintainer's:
+
+| File | Scope | Keys | Git |
+| --- | --- | --- | --- |
+| `.oss.json` | the project | `repo`, `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`, `ci`, `milestones`, `release` | **tracked** — `git add` it and commit it in review |
+| `.oss.local.json` | this machine | `clone`, `worktree_root`, `state_file` | git-excluded, never shared |
+
+The reason the release block cannot stay local: `/oss:release` reads `tag_pattern`, `merge_method`,
+`commit_subject`, `version_sites`, `changelog_dir` and `triggers`, and every one of them is a fact
+about the repo. Held in one untracked file, the second maintainer to cut a release has none of them,
+is asked for `tag_pattern` by the command's own stop-and-ask, and can answer differently. A repo
+tagged `v1.2.3` then acquires `1.2.4` — the second tag namespace this plugin warns about, opened by
+the plugin. `.git/info/exclude` is also not copied by `git clone`, so a fresh clone inherits neither
+the file nor the exclusion.
+
+`--split` repoints `.git/info/exclude` for you: `.oss.local.json` in, `.oss.json` out. It never runs
+`git add` — the project half is meant to be reviewed, so committing it stays a human act. It is
+idempotent, so it is also the migration for a repo that already has a combined `.oss.json`: run it
+once and commit the result.
+
+**A second maintainer on a repo that already has a committed `.oss.json`** runs this same command
+unchanged. `--split` writes their `.oss.local.json` and rewrites the project half in place; review
+that diff before committing, because a project half that changed is a finding about the repo rather
+than about their laptop.
+
+Confirm afterwards that `git status` shows `.oss.json` and nothing else — no `.oss.local.json`, no
+stray file.
 
 ## The dependencies install themselves; they do not configure themselves
 

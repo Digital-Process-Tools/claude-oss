@@ -13,8 +13,10 @@ job ends at a commit and a report.
 
 ## Where you work
 
-Read `.oss.json` in the repo you were pointed at. It names `repo`, `default_branch`, `clone`,
-`worktree_root`, `branch_pattern`, `test_command`, `docs_targets` and `changelog_dir`.
+Read the config in the repo you were pointed at. It is two files: the tracked `.oss.json` names
+`repo`, `default_branch`, `branch_pattern`, `test_command`, `docs_targets` and `changelog_dir`,
+and the git-excluded `.oss.local.json` beside it names `clone`, `worktree_root` and `state_file` —
+the three values that are a path on one machine and nobody else's.
 
 **Re-derive those facts rather than trusting the file.** Config is a starting point, not a
 measurement — `git symbolic-ref refs/remotes/origin/HEAD` and `git remote -v` cost one call between
@@ -142,7 +144,7 @@ Not worth carrying in the report.
 Write that material to `<worktree_root>/notes/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.md` — a
 sibling of the numbered worktree directories, not inside any of them. Outside every worktree, it
 can never enter the diff and needs no `.gitignore` entry in the target repo, for the same reason
-`.oss.json` itself is excluded via `.git/info/exclude` rather than committed. The timestamp is not
+`.oss.local.json` is excluded via `.git/info/exclude` rather than committed. The timestamp is not
 decoration: a stale note from a previous run of the same branch reads exactly like the current
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.

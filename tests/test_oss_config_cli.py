@@ -34,8 +34,10 @@ def _valid(root):
         "ci": {"required_checks": 0},
         "state_file": ".max/oss-watch.json",
     }
-    path = root / ".oss.json"
-    path.write_text(json.dumps(config), encoding="utf-8")
+    project, local = oss_config.split(config)
+    path = root / oss_config.CONFIG_NAME
+    path.write_text(json.dumps(project), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
     return path
 
 

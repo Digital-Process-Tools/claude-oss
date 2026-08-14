@@ -11,7 +11,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import oss_config  # noqa: E402
 import scaffold  # noqa: E402
+
+
+def _write_halves(root, config):
+    """Write the two-file shape /oss:setup produces, and return the project half's path."""
+    project, local = oss_config.split(config)
+    path = root / oss_config.CONFIG_NAME
+    path.write_text(json.dumps(project), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    return path
 
 
 def _write_config(root, **overrides):
@@ -30,9 +40,7 @@ def _write_config(root, **overrides):
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides)
-    path = root / ".oss.json"
-    path.write_text(json.dumps(config), encoding="utf-8")
-    return path
+    return _write_halves(root, config)
 
 
 def test_the_default_run_writes_nothing(tmp_path, capsys):

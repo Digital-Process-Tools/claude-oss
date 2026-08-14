@@ -4,9 +4,20 @@ allowed-tools: Bash, Agent, Skill
 ---
 
 Read `.oss.json`'s `release` block for what this repo does: `tag_pattern`, `commit_subject`,
-`merge_method`, `triggers`. **If `tag_pattern` is null, stop.** The probe could not tell how this
-repo tags, and inventing one opens a second tag namespace nobody notices until a release goes
-missing from it. Ask, then write it into the config.
+`merge_method`, `triggers`. It is the tracked half of the config, so it is the same block for every
+maintainer; the git-excluded `.oss.local.json` beside it holds only this machine's paths and nothing
+release reads.
+
+Two of those keys may be null, and they are handled differently on purpose:
+
+- **`tag_pattern: null` — stop.** The probe could not tell how this repo tags, and inventing one
+  opens a second tag namespace nobody notices until a release goes missing from it. Ask, then write
+  it into the config. A wrong tag is permanent.
+- **`commit_subject: null` — use `chore(release): {version}`.** That is the plugin's default, not a
+  line for you to compose: a subject invented per release is an absence the tool produced, rendered
+  as a value. Substitute the version being released. Nothing to ask about, because a wrong subject
+  line is cosmetic and the next commit fixes it — which is exactly why this one gets a default and
+  `tag_pattern` does not.
 
 Load the loop for the judgment behind each gate:
 
@@ -40,8 +51,8 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
 
 ## Then
 
-Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject`, and
-tag. Then **verify the tag exists on the remote**:
+Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject` —
+or with `chore(release): {version}` when it is null, per the rule above — and tag. Then **verify the tag exists on the remote**:
 
 ```bash
 git ls-remote --tags origin <tag>

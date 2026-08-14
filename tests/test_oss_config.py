@@ -367,9 +367,17 @@ def test_resolve_returns_one_resolved_path_the_caller_can_reuse(tmp_path):
 
 
 def test_written_config_reloads_identically(tmp_path):
+    """`build` derives one dictionary, `/oss:setup` stores it as two files, and `load`
+    puts it back together. The round trip has to be exact in both directions or the
+    split has quietly dropped or renamed something (#34).
+    """
     config = oss_config.build(_probe())
-    path = tmp_path / ".oss.json"
-    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    project, local = oss_config.split(config)
+    path = tmp_path / oss_config.CONFIG_NAME
+    path.write_text(json.dumps(project, indent=2) + "\n", encoding="utf-8")
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local, indent=2) + "\n", encoding="utf-8"
+    )
     reloaded, problems = oss_config.load(path)
     assert problems == []
     assert reloaded == config

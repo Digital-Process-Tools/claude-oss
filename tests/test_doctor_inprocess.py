@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
+import oss_config  # noqa: E402
 import scaffold  # noqa: E402
 
 
@@ -46,7 +47,11 @@ def _config(root, **overrides):
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides)
-    (root / ".oss.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    project, local = oss_config.split(config)
+    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local, indent=2), encoding="utf-8"
+    )
     return config
 
 
