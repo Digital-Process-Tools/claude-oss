@@ -67,11 +67,18 @@ _PROBE = (
 
 
 def _python3_shim():
-    """A fallback `python3` for a platform that ships the interpreter under another
+    """A `python3` that is the interpreter running these tests, for a shell to find.
+
+    It answers two things at once. A platform may ship the interpreter under another
     name -- Windows installs `python.exe`, and whether a `python3.exe` sits beside it
-    is a fact about one installer rather than about the platform. It goes AFTER the
-    real interpreter directory on PATH, so it only ever fills a genuine gap and can
-    never shadow a working `python3` with a shim that does not run.
+    is a fact about one installer rather than about the platform -- and the extracted
+    step should run under the interpreter the suite is running under rather than
+    whichever one the machine puts first.
+
+    One file in its own directory, so pinning it moves nothing else. That it actually
+    runs, and runs the right interpreter, is asserted below rather than assumed: a
+    shim that does not start would otherwise turn into a skip that reads like a
+    platform limit.
     """
     directory = tempfile.mkdtemp(prefix="oss-gate-shim-")
     atexit.register(shutil.rmtree, directory, True)
@@ -99,11 +106,16 @@ def _companion_dirs(shell):
     if not shell:
         return []
     home = Path(shell).resolve().parent
-    found = []
-    for candidate in (home, home.parent / "usr" / "bin", home.parent / "mingw64" / "bin",
-                      home.parent / "bin"):
-        if candidate.is_dir() and str(candidate) not in found:
-            found.append(str(candidate))
+    found = [str(home)] if home.is_dir() else []
+    # Ancestors, not just the parent: the shell can be `<root>/bin/bash.exe` or
+    # `<root>/usr/bin/bash.exe`, and assuming the first spells `<root>` as `<root>/usr`
+    # for the second -- putting the search one directory too high, which is a mistake
+    # this repository has already made once in the changelog assembler.
+    for root in list(home.parents)[:3]:
+        for rel in ("usr/bin", "mingw64/bin", "bin"):
+            candidate = root.joinpath(*rel.split("/"))
+            if candidate.is_dir() and str(candidate) not in found:
+                found.append(str(candidate))
     return found
 
 
@@ -122,10 +134,13 @@ def _child_env(shell=None, **extra):
     probe turns into a red step.
     """
     env = dict(os.environ)
+    # The shim directory holds one file, `python3`, so putting it first pins the
+    # interpreter WITHOUT moving which git, grep or sed the script reaches. Prepending
+    # the interpreter's own directory instead would have pinned all four, and a venv
+    # or conda prefix carrying its own `git` would have been used without anything
+    # saying so.
     env["PATH"] = os.pathsep.join(
-        [str(Path(sys.executable).parent), _SHIM_DIR]
-        + _companion_dirs(shell)
-        + [env.get("PATH", "")]
+        [_SHIM_DIR] + _companion_dirs(shell) + [env.get("PATH", "")]
     )
     env.update(extra)
     return env
@@ -237,14 +252,22 @@ def _shell_report(attempts):
 SHELL_REPORT = _shell_report(_ATTEMPTS)
 
 
-pytestmark = pytest.mark.skipif(BASH is None, reason=SHELL_REPORT)
-
-
 def _require(tool):
-    """A shell can be usable and still not reach what a given step calls. Skipping on
-    that is the third state again, one level down, and it says which tool and which
-    shell rather than leaving a step that never ran looking like a step that passed.
+    """Deliberately not a module-level `pytestmark`.
+
+    A blanket skip on `BASH is None` would take the probe's OWN controls down with
+    the steps that need a shell -- and those controls are the only thing standing
+    between "no usable shell here" and "the probe has quietly started rejecting
+    everything, everywhere". A skip that hides its own alarm is the defect this file
+    is fixing, one level down. So the tests that read the rendered text and the tests
+    that measure the probe always run, and only the ones that start a shell skip.
+
+    A shell can also be usable and still not reach what a given step calls, so the
+    reason names which tool and which shell rather than leaving a step that never ran
+    looking like a step that passed.
     """
+    if BASH is None:
+        pytest.skip(SHELL_REPORT)
     if tool not in BASH_REACHED:
         pytest.skip(
             "the shell found ({}) cannot reach {}; it reached: {}".format(
@@ -309,6 +332,12 @@ def _gate_script():
 
 
 def _git(repo, *args):
+    # The fixture repositories are built by this process, not by the extracted step,
+    # so `git` missing here is a third state of its own -- and without this it would
+    # arrive as a spawn error from deep inside a fixture, which reads like the gate
+    # crashing. Every fixture funnels through this one call.
+    if shutil.which("git") is None:
+        pytest.skip("git is not on PATH, so there is no repository to run the gate over")
     return subprocess.run(
         ["git", "-C", str(repo)] + list(args),
         stdout=subprocess.PIPE,
@@ -417,8 +446,89 @@ def test_the_probe_rejects_a_spawnable_binary_that_is_not_a_shell():
 
 def test_the_probe_accepts_the_shell_it_chose():
     """The must-fire half again, this time through a real spawn."""
+    _require("shell")
     tools, note = _probe_shell(BASH)
     assert "shell" in tools, note
+
+
+def test_the_probe_accepts_anything_this_test_independently_confirms_is_a_shell():
+    """The alarm on the alarm, and the reason none of this is a module-level skip.
+
+    A probe that started rejecting everything would make every step below SKIP -- on
+    every platform, quietly, with the gate never executed and CI green. So each
+    candidate is checked here by a measure the probe does not use: a shell, and only a
+    shell, exits 7 when told to. Anything that passes that must pass the probe.
+    """
+    confirmed = []
+    for candidate in _bash_candidates():
+        try:
+            done = subprocess.run(
+                [candidate, "-c", "exit 7"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                errors="replace",
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if done.returncode != 7:
+            continue
+        confirmed.append(candidate)
+        tools, note = _probe_shell(candidate)
+        assert "shell" in tools, (
+            "{} runs shell scripts, and the probe rejected it: {}".format(candidate, note)
+        )
+    if not confirmed:
+        pytest.skip("nothing on this machine behaves like a shell. " + SHELL_REPORT)
+    assert BASH is not None, (
+        "a working shell was confirmed here and the file still chose none: " + SHELL_REPORT
+    )
+
+
+def test_the_shell_runs_the_interpreter_that_is_running_these_tests():
+    """The shim is load-bearing on any platform without a `python3` of its own, and a
+    shim that does not start would show up as a skip that reads like a platform limit.
+    Measured rather than assumed."""
+    _require("python3")
+    done = subprocess.run(
+        [BASH, "-c", "python3 -c 'import sys; print(sys.prefix)'"],
+        env=_child_env(BASH),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        errors="replace",
+    )
+    assert done.returncode == 0, done.stdout
+    assert done.stdout.strip() == sys.prefix, (
+        "the shell reached a different interpreter: " + done.stdout
+    )
+
+
+def test_the_tools_beside_a_shell_are_found_from_either_install_layout(tmp_path):
+    """Git for Windows keeps `grep` and `sed` in the installation's own `usr/bin`,
+    which is neither beside `bash.exe` nor one directory above it. Deriving the root
+    from the shell's parent alone works for `<root>/bin/bash` and silently searches
+    `<root>/usr/usr/bin` for `<root>/usr/bin/bash` -- one directory too high, found by
+    review."""
+    root = tmp_path / "Git"
+    for rel in ("bin", "usr/bin", "mingw64/bin"):
+        (root / rel).mkdir(parents=True)
+    for layout in ("bin/bash", "usr/bin/bash"):
+        shell = root / layout
+        shell.write_text("#!/bin/sh\n", encoding="utf-8")
+        found = _companion_dirs(str(shell))
+        for expected in ("usr/bin", "mingw64/bin", "bin"):
+            # Resolved, because the derivation resolves and a temp directory is a
+            # symlink on macOS -- a comparison against the unresolved path would fail
+            # for a reason that has nothing to do with the layout under test.
+            assert str(root.resolve().joinpath(*expected.split("/"))) in found, (
+                "{}: {} missing from {}".format(layout, expected, found)
+            )
+
+
+def test_no_shell_means_no_companion_directories_rather_than_a_guess():
+    assert _companion_dirs(None) == []
 
 
 def test_a_candidate_that_is_not_there_is_reported_rather_than_raised():
