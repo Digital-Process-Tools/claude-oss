@@ -59,6 +59,7 @@ label that does not exist on the repo.
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
 | Filing | `gh-issue-create:@FILE` |
+| Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
 
 The ops are not wrappers. `gh-pr:N:status` returns state, mergeability, conflicts, branch **and the
@@ -171,6 +172,41 @@ Every brief carries these:
 7. **Unconditional publishing clause:** commit, do not push, do not open a PR, do not comment on the
    issue. "Do not push *if* something blocks you" is how one agent correctly pushed.
 
+## What comes back is a file, not a document
+
+An agent replies with **a path and at most two lines**. The work itself is a JSON report it wrote
+outside every worktree, and a forge-ready pull request payload beside it. You read the fields you
+need, when you need them — a report that arrives whole is paid for again on every later turn of the
+session, and most rounds need four of its fields.
+
+`schemas/agent-report.schema.json` carries the fields, their enumerations and a worked example;
+`scripts/report_schema.py` says which of them are enforced and which are convention that nobody
+checks. **Point a brief at those; never copy the field list into one.** A fact living in two documents
+diverges, and a brief is the copy nobody proofreads.
+
+The `developer` definition already asks for both files, so a brief adds nothing about the format —
+only the unconditional publishing clause above, which is unchanged. The agent commits. You push.
+
+## Opening the pull request
+
+Pushing and opening is yours, and it is one read plus one call:
+
+1. **Push the agent's branch.**
+2. **Read the body before you publish it.** Not optional, and it is what makes this a saving rather
+   than a trick: you stop *writing* a document you still have to *read*. A body published unread is
+   your name on text you have not seen. If it is wrong, argue it in the pull request or send it back;
+   do not quietly rewrite it, because the person who did the work writes the record — twice now, a
+   body has carried a correction to the brief that a re-narration had flattened out.
+3. **Hand the payload path to `gh-pr-create:@FILE`.** Not `gh pr create`, and not a body of your own
+   assembled from the report. The op parses the body's closing references with the same reader
+   `gh-pr` uses, so a missing or malformed `Closes #N` is caught at creation instead of after the
+   squash — when the issue quietly stays open and the board reads clean. That is the failure the
+   merge gates already warn about, moved to the earliest point anything can see it.
+
+If `pr_body` says `not-written`, it says why. Then the body is yours, and you are writing it from a
+report rather than from the work. That is the expensive path this exists to avoid, not the routine
+one.
+
 ## Reviewing
 
 **A green suite proves nothing.** Real examples, all from one day in one repo: a filter that did
@@ -207,8 +243,30 @@ loop produces.
 Not on the list, and this is what creeps back: reading the load-bearing function line by line. Across
 four PRs it caught nothing, and it burns the one context that cannot be thrown away.
 
-**A review that did not execute must never render as a review that found nothing.** If the agent is
-gone, or the review could not run, run it yourself.
+**Most of that list is now a query rather than a read**, and the two items that are not are the two
+that matter. The check arithmetic comes from `gh-pr:N:status`, not the report. The review outcome is
+`review.findings` and `review.classes`. Blast radius is `files[].path`. But the premise is yours and
+pre-flight, so no field can settle it — and **the red re-run is still a run**: `tests.command` tells
+you what to type and `tests.red` is the agent's own claim about what it saw, which is the claim the
+re-run exists to test. Reading `tests.red` in place of running it is the exact move the next section
+says has learned nothing.
+
+The list stays closed. `claims`, `adjacent` and `blocked` are not items on it — they are fields you
+open when something else sends you there, which is why the platform table nobody needed this round
+never has to arrive at all.
+
+**A review that did not execute must never render as a review that found nothing.** Structured, those
+two are the same bytes: an empty `findings` list either way. What tells them apart is that every list
+in the report is a survey — a `state` beside its `items` — so `checked` with no items means somebody
+looked and `not-checked` means nobody did and has to say why. **Read the state before the items.** If
+the agent is gone, or the review could not run, run it yourself.
+
+**Structure is easier to accept unread than prose is, and that is this format's whole cost.**
+`"disposition": "refused"` reads identically whether the refusal was argued or lazy; the argument
+lives in `reason`, and that field exists so you keep arguing with findings instead of scanning past
+them. The bullet above is not softened by the format — a load-bearing argued-down finding still gets
+checked, by hand, against the code. Fewer tokens must never become fewer things checked, and this is
+the sentence that decides whether the whole arrangement was worth making.
 
 ### Verify the red, not the green
 
