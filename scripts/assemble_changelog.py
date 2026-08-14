@@ -1175,7 +1175,28 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
                             "CHANGELOG.md untouched".format(directory.name))
         return SKIPPED
 
-    text = changelog.read_text(encoding="utf-8")
+    # Every other failure below answers in one of three states. This read did
+    # not: it raised whatever the filesystem raised, and the commonest case --
+    # the file simply not being there -- is the state a freshly scaffolded repo
+    # is in until somebody writes it, so the traceback landed on the maintainer
+    # least able to tell a bug in this script from a mistake of their own.
+    # `--dry-run` raised identically, which took away the way to find out.
+    # Caught as `OSError`, not `FileNotFoundError`: a directory at that path or
+    # a mode we cannot read is the same answer, we could not read it.
+    try:
+        text = changelog.read_text(encoding="utf-8")
+    except OSError as exc:
+        _receipt("skipped", "cannot read {0}: {1} — nothing was written, "
+                            "nothing consumed".format(changelog, exc),
+                 ["a changelog this script can assemble into needs a "
+                  "`## [Unreleased]` heading and at least one `## [x.y.z]` "
+                  "release heading below it — the newest release section is "
+                  "the anchor the new one is inserted above, and this script "
+                  "will not guess where a release section belongs",
+                  "cutting a first release: seed that anchor with a section "
+                  "for the last tag that predates the file, rather than "
+                  "letting this script invent history it cannot know"])
+        return SKIPPED
     lines = text.splitlines()
 
     try:
