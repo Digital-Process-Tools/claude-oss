@@ -14,6 +14,7 @@ pins the receipt on stdout and the absence of a traceback on stderr, not the
 status.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -92,9 +93,15 @@ def test_dry_run_against_a_missing_changelog_reports_rather_than_raises(tmp_path
 
 
 def test_the_receipt_names_the_file_it_could_not_read(tmp_path):
+    # The receipt renders the path the way the platform spells it, so a literal
+    # `docs/HISTORY.md` here asserts a POSIX separator and fails all four
+    # Windows legs against a script that behaved correctly. `os.path.join` is
+    # the same string on POSIX and the native one on Windows, and it still
+    # fails if the receipt names no file at all.
+    named = os.path.join("docs", "HISTORY.md")
     root, script_path = _repo(tmp_path)
     result = _assemble(root, script_path, "docs/HISTORY.md", "--dry-run")
-    assert "docs/HISTORY.md" in result.stdout, result.stdout
+    assert named in result.stdout, result.stdout
 
 
 def test_the_receipt_says_the_fragments_were_left_alone(tmp_path):
