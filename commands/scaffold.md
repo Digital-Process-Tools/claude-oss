@@ -123,6 +123,16 @@ fails outright. Hence the `oss-` prefix, so it is still obvious in a directory l
 plugin because CI checks out the repo and nothing else: a workflow calling a plugin path
 is a red build on day one.
 
+"Replaced every run" is the whole delivery mechanism for a fix to one of these files, and
+nothing schedules the run. `/oss:doctor` is what closes that gap: its `owned files` lines
+say whether re-running here would change **what a file does** — naming the regions, such as
+`on.pull_request.types` — or only its comments and prose, so the maintainer can tell a
+broken changelog gate from a reworded paragraph before deciding. It does not claim to know
+whether a difference means their copy is old or means somebody edited it; nothing in a
+managed repo records which plugin version wrote the file. Re-running discards a deliberate
+edit either way, which is what the ownership table above already says and what the doctor
+line repeats at the moment it matters.
+
 The generated workflow installs that script's parser before running it. Without the
 install step the checker reports `skipped` and exits non-zero — which is the checker
 being right and the job being red anyway. It is a gap a scaffolded repo cannot see in
