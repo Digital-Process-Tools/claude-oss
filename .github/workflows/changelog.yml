@@ -26,13 +26,14 @@ jobs:
       - name: Install the fragment parser
         run: python3 -m pip install --disable-pip-version-check markdown-it-py
 
-      # Paths are passed explicitly. The script derives its default root from its
-      # own location, which assumes it lives in .github/scripts/ -- it does not
-      # here, and it will not in any repo this plugin is pointed at either.
+      # No --dir/--changelog: the script finds the repo root by walking up
+      # for .git (#20), the same default a human gets running the bare
+      # command from the README. Passing the flags here would let this step
+      # stay green through a regression in that default while every local
+      # invocation broke -- which is how the previous bug went unnoticed.
       - name: Fragments parse and name a real section
         run: |
-          python3 scripts/assemble_changelog.py --check \
-            --dir changelog.d --changelog CHANGELOG.md
+          python3 scripts/assemble_changelog.py --check
 
       # A PR that changes what the plugin DOES must say so where users read it.
       # Docs, tests and CI changes are exempt by construction: the paths below are

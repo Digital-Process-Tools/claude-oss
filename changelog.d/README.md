@@ -31,12 +31,9 @@ python3 scripts/assemble_changelog.py --check-links
 python3 scripts/assemble_changelog.py --version X.Y.Z   # release only: rewrites CHANGELOG.md, deletes fragments
 ```
 
-## Until this repo has a tracker
+## Which number
 
-Fragments are keyed on issue numbers, and this repo has no issues yet. Writing one now would mean
-inventing a number, which is worse than the conflicts fragments exist to prevent — an invented
-reference points somewhere, and later points at someone else's issue.
-
-So `CHANGELOG.md` stays hand-edited under `## [Unreleased]` until the first issue exists, and the
-first fragment is written against a real number. The policy is not aspirational; it is waiting on
-the one input it cannot fabricate.
+GitHub issues and pull requests share one numbering, so `<issue>` above is whichever of the two the
+change is actually filed under — most fragments in this directory are keyed to the pull request
+that shipped the fix, because that is the number that already existed, not a tracking issue opened
+first to have something to key against. Use the real number, whichever kind it is; do not invent one.

@@ -50,7 +50,21 @@ else:
 
 _MD_VERSION = getattr(_markdown_it, "__version__", "unknown")
 
-REPO = Path(__file__).resolve().parents[2]
+def _find_repo_root(start: Path) -> Optional[Path]:
+    """Walk upward from *start* for a `.git` entry -- a directory in an
+    ordinary clone, a file (`gitdir: ...`) inside a worktree. Stops at the
+    first match instead of assuming a fixed number of parents: the script
+    lives at `scripts/` here but is vendored into scaffolded repos as
+    `.oss/assemble_changelog.py`, a different depth, and a hardcoded parent
+    count is the same bug with a different number (#20). Returns None
+    rather than guessing when no `.git` is found anywhere above."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+REPO = _find_repo_root(Path(__file__).resolve().parent)
 
 #: Keep a Changelog 1.1.0, in the order the spec lists them. The order is data,
 #: not a sort: "Added" before "Fixed" is a convention readers rely on, and
@@ -1128,8 +1142,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--version", help="the version being cut, x.y.z")
     parser.add_argument("--date", default=datetime.date.today().isoformat(),
                         help="release date, YYYY-MM-DD (default: today)")
-    parser.add_argument("--changelog", default=str(REPO / "CHANGELOG.md"))
-    parser.add_argument("--dir", dest="directory", default=str(REPO / "changelog.d"))
+    parser.add_argument("--changelog",
+                        default=str(REPO / "CHANGELOG.md") if REPO else None)
+    parser.add_argument("--dir", dest="directory",
+                        default=str(REPO / "changelog.d") if REPO else None)
     parser.add_argument("--dry-run", action="store_true", help="report, write nothing")
     parser.add_argument("--keep", action="store_true", help="do not delete consumed fragments")
     parser.add_argument("--check", action="store_true",
@@ -1140,9 +1156,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="print the fragment count as a bare integer, and nothing else")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    directory = Path(args.directory)
+    def _resolve(value: Optional[str], flag: str) -> Optional[Path]:
+        # No `--dir`/`--changelog` given, and no `.git` found above this
+        # script to derive a default from: say so, rather than composing a
+        # path out of a guess and failing on that instead (#20).
+        if value is None:
+            _receipt("skipped",
+                     "could not find the repository root above {0} "
+                     "(no .git there or in any parent) to derive a default "
+                     "for {1}; pass it explicitly"
+                     .format(Path(__file__).resolve(), flag))
+            return None
+        return Path(value)
 
     if args.count:
+        directory = _resolve(args.directory, "--dir")
+        if directory is None:
+            return SKIPPED
         try:
             print(len(collect(directory)))
         except CannotValidate as exc:
@@ -1156,9 +1186,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return OK
 
     if args.check_links:
-        return check_links(Path(args.changelog))
+        changelog = _resolve(args.changelog, "--changelog")
+        if changelog is None:
+            return SKIPPED
+        return check_links(changelog)
 
     if args.check:
+        directory = _resolve(args.directory, "--dir")
+        if directory is None:
+            return SKIPPED
         return check(directory)
 
     if not args.version:
@@ -1166,7 +1202,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             "(or pass --check / --count for the read-only modes)")
         return REFUSED
 
-    return assemble(Path(args.changelog), directory, args.version, args.date,
+    changelog = _resolve(args.changelog, "--changelog")
+    directory = _resolve(args.directory, "--dir")
+    if changelog is None or directory is None:
+        return SKIPPED
+    return assemble(changelog, directory, args.version, args.date,
                     dry_run=args.dry_run, keep=args.keep)
 
 if __name__ == "__main__":
