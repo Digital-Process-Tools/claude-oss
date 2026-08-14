@@ -63,7 +63,11 @@ separately rather than one list.
   assembler resolving its root one directory too high. The suite passes absolute temp paths; users
   do not.
 - **A green run on your own platform is the weakest evidence available** about the platform it was
-  not run on. Say which cross-platform claims are observed and which are reasoned.
+  not run on. Say which cross-platform claims are observed and which are reasoned. The interpreter is
+  a second axis and it is the easier one to miss: a local suite stayed green for a whole round while
+  CI was red on the same fixture, because `Path.exists()` swallows every `OSError` on 3.14 and raises
+  on 3.11 and 3.13 — and CI runs 3.9–3.12. An observation on the version you happen to have is not an
+  observation on the versions that gate the merge.
 - **Do not tune a test until it passes.** A test that reconstructs shell behaviour inside a
   `bash -c` string measures its own escaping. That one was deleted, not fixed.
 
@@ -92,6 +96,47 @@ separately rather than one list.
   nothing else, which is why owned scripts ship into `.oss/`.
 - **The rules engine refuses symlinked layers.** Git carries symlinks, so a clone could aim rules
   anywhere. Copies into an owned layer are the supported shape.
+- **`MAX_PATH` and `NAME_MAX` pull in opposite directions, so a long-path fixture has to satisfy both
+  by construction.** Windows caps the whole path at 260; POSIX caps each *component* at 255. A fixture
+  on #76 reached its length through four nested directories and failed all four Windows legs at
+  `git init -q: … Filename too long`, before a line of the code under test ran. Moving the same
+  length into one 256-byte component then failed all eight POSIX legs, over by a byte. Each round
+  satisfied the limit it had just been burned by and violated the other — so the rule is not "keep
+  fixture paths short": shortening names until it is green everywhere deletes the case on the one
+  platform where paths are long. Build the length out of many short components, which cannot violate
+  either limit — a construction, rather than an assertion that a construction is safe. If the case
+  genuinely needs the tree on disk, attempt it and skip with the length, the errno and what went
+  untested, so a runner with `LongPathsEnabled` still gets the real test. This is the harness
+  rendering an environment limit as a product verdict, which `agents/auditor.md` puts out of scope
+  under *What this does not check* on the grounds that nothing in a diff predicts runner load. Right
+  for the timeout and network instances; wrong for this one — a fixture composing a 300-character
+  path is a static fact sitting in the diff, and a reader could have caught it.
+- **Do not ask the filesystem a second question to explain why the first one failed.**
+  `release_delta.py`'s `_read_config` (also #76, so grep it there until that merges) called
+  `path.exists()` from inside the `except` that guards the read, to tell an absent config from an
+  unreadable one. `Path.exists()` swallows a short list of errnos and re-raises everything else, so
+  an over-long component — or a directory the process cannot traverse — killed the release gate with a
+  traceback and no receipt, from the line added to make it survive a bad read. The exception already
+  in hand answers it: `FileNotFoundError` is absence, anything else is unreadable, and no version's
+  `exists()` semantics get a vote.
+- **A guard over "did this platform distinguish these two cases?" must ask a control, not a table of
+  error codes.** Windows folds several Win32 codes onto `ENOENT`, so 206 (`ERROR_FILENAME_EXCED_RANGE`)
+  reaches Python as an ordinary `FileNotFoundError`. A branch was written for 206, graded *reasoned*,
+  and CI settled it the way grading it that way is supposed to: an unlookable name arrives as
+  `FileNotFoundError, errno 2, winerror None` — no distinguishing signal at all. The grade was honest
+  and it still cost a round, because the *skip* arm covering "this platform told me nothing" was itself
+  a table (`winerror in (2, 3)`), and a table cannot report a value it does not contain — so no signal
+  fell out of the skip and into the assertion, and reported as a finding. The fix is to measure: open
+  a plainly-missing path of the same shape and compare the two answers. Identical means there is
+  nothing to classify, and it skips carrying both. macOS answers `(OSError, 63, None)` against a
+  control of `(FileNotFoundError, 2, None)` and so asserts; Windows answers its control exactly and
+  so skips. Neither the errno nor the platform is written down anywhere — both are measured.
+  An escape hatch for the unknown that only fires when the platform is informative is this repo's own
+  defect class wearing the third state's clothes.
+- **`pytest.raises(Exception)` does not catch a skip, and the test passes anyway.** pytest's outcome
+  exceptions derive from `BaseException`, so a `pytest.skip` inside the block sails past the `raises`
+  and skips the enclosing test — a green tick over an assertion that never ran, reported as `1 skipped`
+  where nobody reads it. Pin the outcome type when a test's subject is a skip.
 
 ## Layout
 
