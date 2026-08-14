@@ -441,10 +441,29 @@ python3 .oss/assemble_changelog.py --check --dir '__FRAGMENTS__' --changelog CHA
 ```
 """
 
+#: The `types:` list below is #88. The half it cannot fix -- a failed run persisting
+#: on the head sha beside the passing one the label produces -- is
+#: Digital-Process-Tools/claude-supertool#1722, and the reference stays here rather
+#: than in the template body: this string is written into strangers' repositories,
+#: where an issue number in another org's tracker means nothing to the contributor
+#: reading it.
 CHANGELOG_WORKFLOW = """name: oss changelog
 
 on:
   pull_request:
+    # Naming any type replaces GitHub's default set, so the three defaults are
+    # relisted. The two that are not defaults are the point: the gate below tells a
+    # contributor to label the pull request `no-changelog`, and without `labeled`
+    # applying that label starts no run -- a re-run replays the original payload, so
+    # the label is invisible to that too, and the printed remedy changes nothing
+    # until an unrelated push moves the head sha (#88).
+    #
+    # What this does is make a passing run exist. It cannot retract the run that
+    # already failed, and no workflow trigger can: if your merge gate aggregates every
+    # run on the head sha rather than reading the latest one per check name, the old
+    # failure stays visible beside the new pass and the pull request stays red. That
+    # is a property of the gate, not of this file.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # Declared at workflow level rather than per job: every job here only reads the pull
 # request and reports, and a job added later should inherit read-only rather than fall
@@ -486,6 +505,23 @@ jobs:
         # reader of this line should not have to go and find that out (#31).
         run: python3 __DIR__/assemble_changelog.py --check --dir '__FRAGMENTS__' --changelog CHANGELOG.md
 
+      # On every pull request rather than at release time. The link-reference table is
+      # a surface a release leaves behind rather than one it reads, so the run that
+      # discovers it stale must not be the run cutting the tag (#88).
+      - name: CHANGELOG.md's link refs agree with its release headings
+        run: |
+          set -eu
+          # Three states, three exit codes: 0 ok, 1 skipped, 2 refused. Only
+          # `refused` is a finding. `skipped` is what a repository that has not cut a
+          # release yet gets -- no `## [x.y.z]` heading to audit refs against, or no
+          # CHANGELOG.md at all, neither of which the scaffold creates -- and a leg
+          # that reddened every pull request there would be answering a question
+          # nobody could yet make green. The receipt is still printed, so a check
+          # that could not look says so rather than passing silently.
+          status=0
+          python3 __DIR__/assemble_changelog.py --check-links --dir '__FRAGMENTS__' --changelog CHANGELOG.md || status=$?
+          [ "$status" -ne 2 ] || exit 1
+
       # A change to what this project DOES must say so where users read it.
       - name: A user-visible change carries a fragment
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
@@ -495,14 +531,72 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          changed=$(git diff --name-only "origin/$BASE_REF"...HEAD)
-          fragments=$(printf '%s\\n' "$changed" | grep -E '^__FRAGMENTS__/[0-9]+\\..+\\.md$' || true)
-
-          if [ -n "$fragments" ]; then
-            echo "Fragment present:"
-            printf '%s\\n' "$fragments"
+          set -eu
+          range="origin/$BASE_REF...HEAD"
+          changed=$(git diff --name-only "$range")
+          if [ -z "$changed" ]; then
+            echo "changelog: skipped (nothing changed against origin/$BASE_REF)"
             exit 0
           fi
+
+          # `--name-only` on its own lists a DELETION identically to an addition, so
+          # this gate used to be satisfied by REMOVING somebody else's pending
+          # fragment: it went green, announced nothing, dropped an already-approved
+          # entry from the next release, and printed the deleted filename as the
+          # evidence that a fragment was present (#87).
+          #
+          # The two states have to be read apart, and that is two diffs rather than
+          # one flag. `--diff-filter=AM` on the single diff closes the bypass and
+          # turns every RELEASE red, because a release deletes every fragment it
+          # folds into CHANGELOG.md and adds none.
+          pattern='^__FRAGMENTS__/[0-9]+\\..+\\.md$'
+          added=$(git diff --name-only --diff-filter=AM "$range" | grep -E "$pattern" || true)
+          removed=$(git diff --name-only --diff-filter=D "$range" | grep -E "$pattern" || true)
+          assembled=$(printf '%s\\n' "$changed" | grep -Fx 'CHANGELOG.md' || true)
+
+          # Deleting fragments is exactly what a release cut does, so that shape is
+          # named as a pass rather than waved through: deletions WITH a rewritten
+          # CHANGELOG.md. That CHANGELOG.md was rewritten is a claim about the diff,
+          # not proof the entries survived -- the assembler's own entry-balance
+          # refusal is what proves that, and it runs where the file is written.
+          #
+          # This sits above the "was anything added" branch on purpose. Losing a
+          # fragment needs no other change to go with it: `git rm` on one file,
+          # alone, is the plainest instance of the bug and has to be refused here.
+          if [ -n "$removed" ] && [ -z "$assembled" ]; then
+            echo "Changelog fragment(s) deleted without being assembled into CHANGELOG.md:" >&2
+            printf '%s\\n' "$removed" | sed 's/^/  deleted /' >&2
+            echo "Restore them -- a pending entry is otherwise dropped from the next" >&2
+            echo "release, silently. If this is a release cut, it must also write" >&2
+            echo "CHANGELOG.md." >&2
+            exit 1
+          fi
+
+          if [ -n "$added" ]; then
+            echo "Fragment present:"
+            printf '%s\\n' "$added"
+            # A release that also announces something of its own is legitimate and
+            # reaches this line. A receipt printing only the half it added is the
+            # shape this whole step exists to refuse.
+            if [ -n "$removed" ]; then
+              printf '%s\\n' "$removed" | sed 's/^/  consumed /'
+            fi
+            exit 0
+          fi
+
+          if [ -n "$removed" ]; then
+            echo "Release cut: fragment(s) assembled into CHANGELOG.md:"
+            printf '%s\\n' "$removed" | sed 's/^/  consumed /'
+            exit 0
+          fi
+
+          # Every pull request is asked for one, including a docs-only or tests-only
+          # change. The alternative -- exempting paths by regex, as some repositories
+          # do -- needs a list of what is user-visible, and that is a fact about YOUR
+          # repository which this template cannot know: guessing `docs/` and `tests/`
+          # is silent in the dangerous direction for a project whose product is its
+          # documentation. The escape hatch is the label, which a human applies and a
+          # reviewer can see; the `types:` list above is what makes it work at all.
           echo "No changelog fragment in this pull request." >&2
           echo "Add __FRAGMENTS__/<issue>.<section>.md, or label the pull request" >&2
           echo "'no-changelog' when the change is genuinely invisible to users." >&2
