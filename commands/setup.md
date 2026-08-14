@@ -45,11 +45,11 @@ config cannot show:
   reusable workflow call, or an organisation/app-level check (CodeQL, a bot). Any of
   those puts the real number of check runs above what is written. Verify against
   `gh pr checks` on a recent PR before treating this as a merge gate (#85, #113).
-- **`worktree_root` / `state_file` — a guess from a naming convention, not something
-  measured on disk`** — neither has a filesystem signal to measure on a repo being set
-  up for the first time. If the repo has been onboarded before under a different
-  layout, the emitted path is very likely wrong; check what is actually there before
-  trusting it (#85).
+- **`worktree_root: ...` / `state_file: ...` — a guess from a naming convention, not
+  something measured on disk** — neither has a filesystem signal to measure on a repo
+  being set up for the first time. If the repo has been onboarded before under a
+  different layout, the emitted path is very likely wrong; check what is actually
+  there before trusting it (#85).
 
 The rules that matter, all enforced by `scripts/oss_config.py`:
 
