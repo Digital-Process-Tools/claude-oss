@@ -170,9 +170,9 @@ decoration: a stale note from a previous run of the same branch reads exactly li
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.
 
-Not every run needs one. A paragraph belongs in the report as-is; write a note only when something
-genuinely worth keeping would otherwise have to be dropped or would bloat the report past what the
-maintainer needs to decide push / review / bounce.
+Not every run needs one. A finding that fits its own field belongs in the report; write a note only
+when something genuinely worth keeping would otherwise have to be dropped or would be too long for
+any field of the report — the full reviewer exchange, a sweep, an inventory.
 
 The split is unproven until it is checked, so check it: fill `split_cost` with one line on the
 split's cost — roughly how much went to the note versus the report, and whether anything had to be
@@ -187,7 +187,9 @@ or not.
 
 1. Write it beside your note, at `<worktree_root>/reports/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.json`.
    Derive `worktree_root` the same way you derived it to cut the worktree; never write a path you
-   were not given. Outside every worktree, for the same reason the note is.
+   were not given. Outside every worktree, for the same reason the note is. **Flatten the branch
+   name first** — most `branch_pattern`s contain a slash, and a filename built from one silently
+   becomes a directory, so `fix/12` names the file `fix-12-…`. That applies to the note beside it.
 2. Validate it before you hand it over. A report that does not validate is not a report:
 
    ```bash

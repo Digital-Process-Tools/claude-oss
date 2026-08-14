@@ -24,6 +24,7 @@
     "that files matches what the commit actually touched",
     "that every claim needing a grade appears in claims, and that the grades are honest",
     "that summary is two lines rather than a document moved one field to the left",
+    "that summary and split_cost are non-empty at all -- both are required keys of type string, and an empty string satisfies that",
     "that pushed is false, which the contract requires and this validator does not",
     "that the agent writes a report at all -- an agent that ignores this document produces nothing for any assertion to see"
   ],

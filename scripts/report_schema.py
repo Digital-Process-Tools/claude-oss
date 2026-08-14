@@ -29,6 +29,20 @@ from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "agent-report.schema.json"
 
+# Keywords this validator implements. Anything else in a subschema is refused rather
+# than skipped: a `minLength` or a `oneOf` written into the schema and quietly ignored
+# is a constraint that reads as enforced and is not -- a guard nominally on, effectively
+# off, which is the class of defect this whole document exists to make visible.
+_KEYWORDS = {
+    "type", "const", "enum", "required", "properties", "additionalProperties",
+    "items", "$ref", "allOf",
+    # ours
+    "x-items", "x-rule",
+    # annotations, carried for readers and ignored on purpose
+    "$schema", "$id", "$defs", "$comment", "title", "description", "examples",
+    "x-honesty", "x-enforced", "x-convention",
+}
+
 _TYPES = {
     "object": dict,
     "array": list,
@@ -53,7 +67,10 @@ def _resolve(sub, root):
             raise ValueError("only local refs are supported: {}".format(ref))
         node = root
         for part in ref[2:].split("/"):
-            node = node[part]
+            try:
+                node = node[part]
+            except (KeyError, TypeError):
+                raise ValueError("unresolvable ref: {}".format(ref))
         sub = node
         seen += 1
         if seen > 20:
@@ -76,6 +93,14 @@ def _walk(value, sub, root, path, errors, rules):
     sub = _resolve(sub, root)
     if not isinstance(sub, dict):
         return
+
+    unknown = sorted(set(sub) - _KEYWORDS)
+    if unknown:
+        raise ValueError(
+            "schema at {} uses keyword(s) this validator does not implement: {}. "
+            "Implement them or drop them -- silently ignoring one is a constraint that "
+            "reads as enforced and is not.".format(_label(path), ", ".join(unknown))
+        )
 
     for branch in sub.get("allOf", []):
         _walk(value, branch, root, path, errors, rules)
@@ -229,7 +254,13 @@ def main(argv=None):
 
     failed = False
     for report in args.reports:
-        errors = validate_file(report, schema)
+        try:
+            errors = validate_file(report, schema)
+        except ValueError as exc:
+            # A broken schema, not a broken report. It must not surface as a traceback
+            # and it must never surface as a report with nothing wrong with it.
+            print("the schema itself is unusable: {}".format(exc), file=sys.stderr)
+            return 1
         if errors:
             failed = True
             print("INVALID {}".format(report))

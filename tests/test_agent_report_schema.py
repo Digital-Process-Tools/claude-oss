@@ -317,3 +317,40 @@ def test_a_nonlocal_ref_is_refused_rather_than_skipped():
     """A ref this validator cannot follow must not read as a subtree that passed."""
     with pytest.raises(ValueError):
         report_schema.validate({}, {"$ref": "https://example.invalid/other.json"})
+
+# --- what the validator does when the SCHEMA is the broken thing ---------------
+
+
+def test_a_keyword_this_validator_does_not_implement_is_refused_not_skipped():
+    """The finding that a review of this change turned up.
+
+    The checker implements a subset of JSON Schema. A `minLength` or a `oneOf` written
+    into the schema and quietly walked past is a constraint that reads as enforced and
+    is not -- the exact shape of defect the report format exists to make visible, in
+    the checker for the report format.
+    """
+    schema = {
+        "type": "object",
+        "properties": {"x": {"type": "string", "minLength": 5}},
+        "required": ["x"],
+    }
+    with pytest.raises(ValueError) as caught:
+        report_schema.validate({"x": "a"}, schema)
+    assert "minLength" in str(caught.value)
+
+
+def test_the_shipped_schema_uses_only_keywords_the_validator_implements():
+    """The positive control on the refusal above: the real schema must still pass."""
+    assert report_schema.validate(_example()) == []
+
+
+def test_a_dangling_ref_is_an_error_rather_than_a_traceback(tmp_path, capsys):
+    broken_schema = tmp_path / "schema.json"
+    broken_schema.write_text(
+        json.dumps({"type": "object", "properties": {"x": {"$ref": "#/$defs/absent"}}}),
+        encoding="utf-8",
+    )
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"x": 1}), encoding="utf-8")
+    assert report_schema.main([str(report), "--schema", str(broken_schema)]) == 1
+    assert "unusable" in capsys.readouterr().err
