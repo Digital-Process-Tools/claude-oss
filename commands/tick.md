@@ -30,9 +30,9 @@ Skill(manager)
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
    starting.
 
-4. **Take the handback, then push and open the pull request.** An agent replies with a path, not a
-   document: a JSON report you query field by field, and a forge payload it wrote for you. Push its
-   branch, **read the body it wrote**, then hand the path over — one call, no body of your own:
+4. **Take the handback, then push and open the pull request.** An agent replies with a path. Push its
+   branch, read the report's fields as you need them, **read the pull request body it wrote**, then
+   hand that path over — one call, no body of your own:
 
    ```bash
    supertool 'gh-pr-create:@<pr_body.path from the report>'

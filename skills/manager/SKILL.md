@@ -181,7 +181,7 @@ session, and most rounds need four of its fields.
 
 `schemas/agent-report.schema.json` carries the fields, their enumerations and a worked example;
 `scripts/report_schema.py` says which of them are enforced and which are convention that nobody
-checks. **Point a brief at those. Never restate them in one.** A fact living in two documents
+checks. **Point a brief at those; never copy the field list into one.** A fact living in two documents
 diverges, and a brief is the copy nobody proofreads.
 
 The `developer` definition already asks for both files, so a brief adds nothing about the format —
@@ -243,11 +243,16 @@ loop produces.
 Not on the list, and this is what creeps back: reading the load-bearing function line by line. Across
 four PRs it caught nothing, and it burns the one context that cannot be thrown away.
 
-**Every item on that list is answered by a field, so the list is a query rather than a read.** The
-check arithmetic comes from `gh-pr:N:status`, not the report. The review outcome is `review.findings`
-and `review.classes`. The premise is yours and pre-flight, so nothing in the report can settle it.
-Blast radius is `files[].path`. The red re-run is `tests.command` with `tests.red`. `claims`,
-`adjacent` and `blocked` are read when they matter — the platform table nobody needed this round
+**Most of that list is now a query rather than a read**, and the two items that are not are the two
+that matter. The check arithmetic comes from `gh-pr:N:status`, not the report. The review outcome is
+`review.findings` and `review.classes`. Blast radius is `files[].path`. But the premise is yours and
+pre-flight, so no field can settle it — and **the red re-run is still a run**: `tests.command` tells
+you what to type and `tests.red` is the agent's own claim about what it saw, which is the claim the
+re-run exists to test. Reading `tests.red` in place of running it is the exact move the next section
+says has learned nothing.
+
+The list stays closed. `claims`, `adjacent` and `blocked` are not items on it — they are fields you
+open when something else sends you there, which is why the platform table nobody needed this round
 never has to arrive at all.
 
 **A review that did not execute must never render as a review that found nothing.** Structured, those
