@@ -20,15 +20,47 @@ from pathlib import Path
 
 import pytest
 
+import shell_probe
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 
-BASH = shutil.which("bash")
+# The shell is chosen by MEASUREMENT, not by `shutil.which("bash")`. That answers
+# with whatever is called `bash` first, and on a Windows runner that is regularly
+# WSL's `bash.exe` out of System32 -- a real shell that has never heard of the `C:`
+# paths this suite hands it. Every assertion below would then fail as a bug in
+# `oss-workspace`, which is a red leg in a file that never claimed to be about
+# binary resolution.
+#
+# The interpreter is a witness alongside the launcher because `run()` pins it onto
+# the child's PATH by absolute path: a shell that cannot see it starves the launcher
+# of a python, and the channel assertions fail against a fixture problem wearing a
+# product bug's clothes.
+_ATTEMPTS = shell_probe.attempts([LAUNCHER, Path(sys.executable)])
+BASH = shell_probe.pick(_ATTEMPTS)
+SHELL_REPORT = shell_probe.report(_ATTEMPTS)
+
+# `git` is NOT probed, and that is the narrower claim rather than an oversight: it
+# is run by THIS process to `git init` a fixture, never handed to the shell, and
+# nothing in System32 is called `git`. Resolving it by name is measuring the right
+# thing here.
 GIT = shutil.which("git")
 
-pytestmark = pytest.mark.skipif(
-    BASH is None or GIT is None, reason="needs bash and git; on Windows CI this is Git Bash"
-)
+
+def _require_shell():
+    """Deliberately not a module-level `pytestmark`.
+
+    `test_the_script_is_posix_sh_not_bash` reads the launcher's source text and
+    spawns nothing. A file-wide skip took it down with the rest, so a machine with
+    no shell reported a green run that had measured nothing at all.
+    """
+    if BASH is None:
+        pytest.skip(SHELL_REPORT)
+
+
+def _require_git():
+    if GIT is None:
+        pytest.skip("no git on PATH, so no repository can be built to open a session over")
 
 
 def _executable(path, text):
@@ -143,6 +175,7 @@ def _with_channel_consumer(home, bindir):
 
 
 def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None):
+    _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
     argv_log = Path(cwd) / "argv.txt"
@@ -188,6 +221,7 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None):
 
 
 def _repo(tmp_path, with_config=True):
+    _require_git()
     subprocess.run([GIT, "init", "-q", str(tmp_path)], check=True)
     if with_config:
         (tmp_path / ".oss.json").write_text('{"repo": "owner/name"}', encoding="utf-8")
@@ -367,6 +401,7 @@ def test_it_survives_being_run_through_a_symlink(tmp_path):
     directory and not the checkout. Resolving the plugin root from an unwalked $0 is
     the classic way this breaks for everyone except its author.
     """
+    _require_shell()
     repo = _repo(tmp_path)
     link = repo / "linked-oss-workspace"
     link.symlink_to(LAUNCHER)

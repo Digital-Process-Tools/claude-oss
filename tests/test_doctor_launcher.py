@@ -6,28 +6,47 @@ the case the tests have to cover -- with a real stub on PATH, not a mock.
 """
 
 import os
-import shutil
 import stat
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import shell_probe
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = REPO_ROOT / "scripts" / "doctor.sh"
+DOCTOR = REPO_ROOT / "scripts" / "doctor.py"
 
 # Resolved once, absolutely. Several tests below replace PATH to hide the Python
 # interpreter from the launcher; looking bash up through that same PATH would hide
 # bash too, and the failure would read as a launcher bug rather than a test bug.
-BASH = shutil.which("bash")
+#
+# Resolved by MEASUREMENT rather than by `shutil.which("bash")`, which answers with
+# whatever is called `bash` first. On a Windows runner that is regularly WSL's
+# `bash.exe` out of System32: it starts, it is a real shell, and the `C:` path of
+# the launcher means nothing inside it. Every assertion below would then fail as a
+# bug in `doctor.sh`. So each candidate is spawned and asked whether it can see the
+# two files this suite is about to hand it.
+_ATTEMPTS = shell_probe.attempts([LAUNCHER, DOCTOR])
+BASH = shell_probe.pick(_ATTEMPTS)
+SHELL_REPORT = shell_probe.report(_ATTEMPTS)
 
-pytestmark = pytest.mark.skipif(
-    BASH is None,
-    reason="no bash on this machine; on Windows CI this runs under Git Bash",
-)
+
+def _require_shell():
+    """Deliberately not a module-level `pytestmark`.
+
+    Two assertions in this file read a script's source text and spawn nothing. A
+    file-wide skip took them down with the rest, and the branch they protect is the
+    Windows one nobody runs locally -- a check that never ran, rendered exactly like
+    a check that found nothing.
+    """
+    if BASH is None:
+        pytest.skip(SHELL_REPORT)
 
 
 def run(cwd, env=None):
+    _require_shell()
     environment = dict(os.environ)
     environment.update(env or {})
     return subprocess.run(
