@@ -204,6 +204,18 @@ def _read_config(path):
     then stop a release the gate only consults it for a glob. This read is
     deliberately tolerant, and every way it can fail comes back as a *reason the
     range is unscoped* -- never as a refusal.
+
+    KNOWN LIMIT, measured on Windows CI. A config path this process could not look at
+    can be reported here as a config that is not there. Windows answers a 300-character
+    path component with `FileNotFoundError`, errno 2 and no `winerror`, which is
+    byte-for-byte what it answers for a file that is merely missing -- so the two
+    states are one event by the time Python sees them, and no classification in this
+    function can separate them. The consequence is bounded and is the same either way:
+    the range comes back unscoped with the path in the reason, never a traceback and
+    never a silent scope. What is lost is only *which* of the two sentences the reader
+    gets. Recovering it needs a Windows fixture that can produce a distinguishable
+    failure -- a directory this process cannot traverse (EACCES) is the other case with
+    the same shape -- which is CI work rather than something this function can fix.
     """
     try:
         raw = path.read_text(encoding="utf-8")
@@ -221,12 +233,20 @@ def _read_config(path):
         # unreadable -- it is named here so the classification does not depend on
         # which class the mapping chose.
         #
-        # UNMEASURED, and deliberately harmless if wrong: no Windows run has been
-        # observed from the machine this was written on, so this is the mapping table
-        # as documented rather than as seen. If Windows reports 2 or 3 for such a path
-        # instead, this branch never fires and the behaviour is exactly what it was.
-        # `test_a_config_the_filesystem_will_not_look_at_...` measures the code the OS
-        # actually returned and says so rather than asserting a platform it cannot run.
+        # NO INPUT IN THE SUITE IS KNOWN TO REACH THIS BRANCH. It is kept, marked,
+        # rather than deleted or left to look load-bearing. What was measured: on
+        # Windows CI, a config path with a 300-character component arrives as
+        # `FileNotFoundError`, errno 2, `winerror` **None** -- no code at all, so the
+        # branch does not fire and that path is reported as absence. A branch nobody
+        # can trigger and nobody has marked untriggerable is the quiet half of the
+        # defect class this module is about, so: two tests keep the question open
+        # instead of assuming an answer. One drives the classification on constructed
+        # exceptions, so the mapping here is at least exercised; the other measures
+        # what a real over-long name returns on whatever platform is running and skips
+        # with the values when the OS distinguished nothing. If some Windows
+        # configuration does populate `winerror`, that test starts asserting on its
+        # own -- and if none ever does, the skip is the standing record of why this
+        # is still here.
         if getattr(exc, "winerror", None) in _WINERROR_COULD_NOT_LOOK:
             return None, "{0} could not be read ({1})".format(
                 path, "winerror {0}".format(exc.winerror)

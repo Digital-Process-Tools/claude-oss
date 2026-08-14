@@ -25,6 +25,10 @@ from pathlib import Path
 
 import pytest
 
+# The exception `pytest.skip` raises, named once so a test can assert a *skip* rather
+# than "some exception left the call" -- which an AssertionError would satisfy too.
+_SKIPPED = type(pytest.skip.Exception("probe"))
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "release_delta.py"
 
@@ -886,6 +890,109 @@ def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
     assert short["scope_reason"].endswith("read as the last release")
 
 
+def _raw_error(path):
+    """What the operating system says about opening `path`, as three plain values.
+
+    Taken from `open`, not from the module under test, so a test using it is not
+    agreeing with the code it checks. `winerror` exists only on Windows.
+    """
+    try:
+        open(path).close()
+    except OSError as exc:
+        return (type(exc).__name__, exc.errno, getattr(exc, "winerror", None))
+    return None  # pragma: no cover - no caller passes a path that opens
+
+
+def _assert_classified_only_if_the_os_said_something(reason, measured, control, what):
+    """Hold the classification to what this platform actually distinguished.
+
+    `control` is a plainly missing file of the same shape. If the OS answered
+    identically for both, then on this platform "could not look" and "nothing is
+    there" are the same event and no sentence can tell them apart -- so the claim is
+    skipped, carrying both measurements, rather than asserted or quietly dropped.
+
+    No table of error codes appears here on purpose. The predicate this replaced held
+    one, and a table cannot report a value it does not contain.
+    """
+    assert measured is not None, "the fixture path opened, so it tests nothing"
+    if measured == control:
+        pytest.skip(
+            "{0} and a plainly missing file are the same event to this OS ({1}), so "
+            "'could not look' cannot be told from 'nothing is there' here and the "
+            "classification went untested. Everything else in this test ran.".format(
+                what, measured
+            )
+        )
+    assert "could not be read" in reason, (
+        "the OS distinguished {0} from a missing file ({1} against {2}) and the "
+        "classification threw that away -- a check that could not look, reported as "
+        "a check that looked and found nothing".format(what, measured, control)
+    )
+
+
+def test_the_guard_that_decides_whether_the_os_distinguished_anything():
+    """The guard is test infrastructure that got this wrong once, so it is tested.
+
+    Its predecessor decided "the OS distinguished this" from a hardcoded list of
+    Win32 codes, and returned yes for a `winerror` of None -- the value that means
+    the platform said nothing at all. Both arms are exercised here, because a guard
+    that only ever skips and a guard that only ever asserts each pass a suite that
+    checks one of them.
+    """
+    windows = ("FileNotFoundError", 2, None)
+    posix_long = ("OSError", 63, None)
+    absent = ("FileNotFoundError", 2, None)
+
+    # Identical measurements: no claim is available, whatever the reason says.
+    # `pytest.raises(Exception)` would not hold this: pytest's outcome exceptions
+    # derive from BaseException, so the skip would sail past the `raises` block and
+    # skip this test instead -- which is how a test of a skip becomes a green tick
+    # over nothing. Written that way first, and the run said `1 skipped`.
+    with pytest.raises(_SKIPPED) as caught:
+        _assert_classified_only_if_the_os_said_something(
+            "could not be read", windows, absent, "a case"
+        )
+    assert "same event" in str(caught.value) and "2" in str(caught.value)
+
+    # Different measurements: the claim is available and is held to.
+    _assert_classified_only_if_the_os_said_something(
+        "could not be read", posix_long, absent, "a case"
+    )
+    with pytest.raises(AssertionError) as failed:
+        _assert_classified_only_if_the_os_said_something(
+            "there is no .oss.json", posix_long, absent, "a case"
+        )
+    assert "threw that away" in str(failed.value)
+
+
+def test_an_over_long_name_in_a_directory_that_exists_is_measured_not_assumed(tmp_path):
+    """The one input that might reach the `winerror` arm on a real filesystem.
+
+    The long-path case next door puts the length in a directory that does not exist,
+    so Windows can answer "nothing is there" and be telling the truth -- which is what
+    it did (`FileNotFoundError`, errno 2, `winerror` None). Here the parent exists and
+    only the file name is impossible, which is the shape that should draw a more
+    specific answer if the platform has one to give.
+
+    It asserts nothing about which platform does what. It measures, and skips with
+    both measurements when the OS drew no distinction -- which is also the standing
+    evidence for whether `_WINERROR_COULD_NOT_LOOK` is reachable by any real input.
+    """
+    module = _module()
+    impossible = str(tmp_path / ("x" * 300))
+
+    scope = module._scope(str(tmp_path), None, impossible)
+    assert scope["scope"] is None, "the gate stays unscoped whatever the OS said"
+    assert scope["scope_reason"].endswith("read as the last release")
+
+    _assert_classified_only_if_the_os_said_something(
+        scope["scope_reason"],
+        _raw_error(impossible),
+        _raw_error(str(tmp_path / "no-such-file.json")),
+        "a 300-character file name in a directory that exists",
+    )
+
+
 def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
     tmp_path,
 ):
@@ -940,36 +1047,25 @@ def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
     absent = module._scope(str(tmp_path), None, str(tmp_path / CONFIG_NAME))
     assert "there is no" in absent["scope_reason"]
 
-    # Now the long path, classified against what the OS said rather than against what
-    # a platform is assumed to say. The measurement is of the raw open, not of the
-    # module, so agreeing with the module is not built in: if the OS reported anything
-    # more specific than not-found and the module still called it absence, this fails.
-    try:
-        open(unlookable).close()
-    except OSError as exc:
-        raw = exc
-    else:  # pragma: no cover - the fixture path cannot be opened anywhere
-        pytest.fail("the fixture path was openable, so it tests nothing")
-
-    winerror = getattr(raw, "winerror", None)
-    plain_absence = winerror in (2, 3) if winerror is not None else False
-    if isinstance(raw, FileNotFoundError) and plain_absence:
-        pytest.skip(
-            "this platform reported a 300-character component as an ordinary absence "
-            "({0}, errno {1}, winerror {2}), so the OS itself offers nothing to tell "
-            "'could not look' from 'nothing is there' for this path, and the "
-            "classification went untested here. Everything above ran: no traceback, "
-            "unscoped, path kept, consequence intact -- and the absent/unreadable "
-            "pair is asserted just above without needing a long path.".format(
-                type(raw).__name__, raw.errno, winerror
-            )
-        )
-    assert "could not be read" in scope["scope_reason"], (
-        "the OS distinguished this path from a missing file ({0}, errno {1}, winerror "
-        "{2}) and the classification threw that away -- a check that could not look, "
-        "reported as a check that looked and found nothing".format(
-            type(raw).__name__, raw.errno, winerror
-        )
+    # Now the long path. Whether it can be classified at all is decided by comparing
+    # what the OS said about it against what the OS says about a plainly missing file
+    # of the same shape -- both under a parent that does not exist, so length is the
+    # only difference between them. Two identical answers mean the OS distinguished
+    # nothing and there is nothing here to classify.
+    #
+    # The first version of this guard listed the Win32 codes it considered ordinary
+    # instead of measuring a control, and a table cannot report a value it does not
+    # contain: Windows returned `winerror None`, the list said "not an ordinary
+    # absence", and the assertion fired with a message claiming the OS had
+    # distinguished the path while printing the evidence that it had not. A check
+    # that could not look, reporting as a check that looked -- inside the test written
+    # to catch exactly that. The control is the fix: it cannot be wrong about a value
+    # it did not have to predict.
+    _assert_classified_only_if_the_os_said_something(
+        scope["scope_reason"],
+        _raw_error(unlookable),
+        _raw_error(str(tmp_path / "no-such-directory" / CONFIG_NAME)),
+        "a 300-character path component",
     )
 
 
