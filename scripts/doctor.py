@@ -10,6 +10,11 @@ Contract, and every line of it is load-bearing:
   usage and no VERDICT, and still exits 0.
 * **No colour.** Git Bash renders escapes as noise, and this output gets pasted.
 * **Never echo a value that could be a credential** -- name the key, print nothing.
+* **The tree being diagnosed does not get to write the diagnosis.** Every finding goes
+  through ``report()``, which reduces it to one printable ASCII line. The files this
+  script reads -- ``.oss.json``, ``.claude/settings.json`` -- are tracked in a managed
+  repo and a contributor writes them; unflattened, an entry in one forged the VERDICT
+  line above.
 
 Python 3.9 compatible.
 """
@@ -39,10 +44,50 @@ except ImportError:  # pragma: no cover - the module sits beside this file
 
 FINDINGS = []
 
+# Far above any message this file composes -- the only thing that can reach it is
+# foreign text, and a diagnostic line long enough to scroll a terminal is already
+# unreadable. Truncation is marked rather than silent: a finding cut off without
+# saying so is a partial answer rendered as a whole one.
+REPORT_LIMIT = 2000
+
+
+def _one_line(text, limit=200):
+    """Text from outside this script, reduced to one printable ASCII line.
+
+    Adopted verbatim from ``release_delta.py``'s function of the same name, whose
+    reasoning applies here unchanged: a newline in foreign text forges a line of
+    this script's own output, and a control character can rewrite what a terminal
+    has already printed.
+
+    It is a copy rather than an import because both callers are security controls
+    and neither may depend on an import that can fail. ``oss_config`` is imported
+    here under a ``try`` -- a sanitiser living there would be silently absent on
+    exactly the broken installs this script exists to diagnose, which is the
+    check-that-never-ran defect one layer down.
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
 
 def report(state, message):
-    FINDINGS.append((state, message))
-    print("{} {}".format(state, message))
+    """Every finding goes through here, and so does every sanitisation.
+
+    Not at the call sites: the strings that reach this function are built from
+    settings entries, paths, config values and subprocess stderr -- things the
+    audited tree chooses. A sanitiser applied at one of several call sites leaves
+    the next one to rediscover that the tree being diagnosed can write the
+    diagnosis, including the VERDICT line this output is greppable for.
+    """
+    # One character past the limit, so "was it cut" is answered by measurement
+    # rather than by an equality that a message exactly REPORT_LIMIT long also
+    # satisfies -- that reading drops four real characters and then appends an
+    # ellipsis claiming it dropped more.
+    flat = _one_line(message, limit=REPORT_LIMIT + 1)
+    if len(flat) > REPORT_LIMIT:
+        flat = flat[: REPORT_LIMIT - 4] + " ..."
+    FINDINGS.append((state, flat))
+    print("{} {}".format(state, flat))
 
 
 def plugin_version():
@@ -397,6 +442,14 @@ def _permission_entries(data, key):
     return [entry for entry in entries if isinstance(entry, str)]
 
 
+def _entry_count(count, key, path):
+    """`2 allow entries in /path/to/settings.json` -- the count and the file, and
+    nothing the file's author wrote."""
+    return "{} {} {} in {}".format(
+        count, key, "entry" if count == 1 else "entries", path
+    )
+
+
 def merge_permission_state(project_dir, home=None):
     """Is there a settings rule naming the merge op? Four answers, not two.
 
@@ -407,6 +460,13 @@ def merge_permission_state(project_dir, home=None):
 
     A rule that WAS read settles the question, so an unreadable neighbour does not
     drag a found rule back to `unknown`.
+
+    The detail names how many entries matched and which file they are in, never
+    the entry text. The text was never needed -- the question is "is there a rule,
+    and where do I go to change it" -- and printing it handed a tracked,
+    contributor-writable file the ability to write this script's own output
+    lines. Counts and paths answer the question and carry nothing chosen by the
+    tree being diagnosed except a path it already had to be told about.
     """
     unreadable = []
     allowed = []
@@ -422,12 +482,10 @@ def merge_permission_state(project_dir, home=None):
         if not isinstance(data, dict):
             unreadable.append(str(path))
             continue
-        for entry in _permission_entries(data, "allow"):
-            if MERGE_OP in entry:
-                allowed.append("{} in {}".format(entry, path))
-        for entry in _permission_entries(data, "deny"):
-            if MERGE_OP in entry:
-                denied.append("{} in {}".format(entry, path))
+        for key, found in (("allow", allowed), ("deny", denied)):
+            matches = [e for e in _permission_entries(data, key) if MERGE_OP in e]
+            if matches:
+                found.append(_entry_count(len(matches), key, path))
     # Every candidate is read before anything is decided, and deny wins. Returning
     # on the first allow would report `present` while holding, already parsed, a deny
     # rule for the same op -- an OK built on evidence the function had in hand and
