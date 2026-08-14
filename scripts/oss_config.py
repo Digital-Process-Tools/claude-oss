@@ -75,6 +75,45 @@ SECRET_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|credential)",
 
 REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 
+# `changelog_dir` is the one value in this file that becomes shell source. `scaffold.py`
+# substitutes it into a `run:` line of the workflow it writes into somebody else's
+# repository, so a value carrying `$(...)` is a command that runs in their CI -- and this
+# module checked every other key and not that one (#31).
+#
+# The shape is one or more path segments of letters, digits, dot, dash and underscore.
+# That admits `changelog.d`, `news.d` and a nested `docs/changelog.d` -- nesting works,
+# the scaffold creates parent directories -- and admits nothing a shell, a regex or a
+# path resolver reads as an instruction. Tighter than this refuses a legitimate repo to
+# close a hole that quoting already closes; looser is theatre.
+CHANGELOG_DIR_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+
+
+def changelog_dir_problem(value):
+    """Why this `changelog_dir` cannot be used, or None when it is fine.
+
+    Null is fine and means the repo has not adopted fragments. A non-string is not: it
+    used to travel all the way to `str.replace()` and raise a TypeError from inside the
+    renderer, which is a crash wearing the same hat as the gap above.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return (
+            "changelog_dir: expected a relative directory path as a string, or null "
+            "when the repo has no fragment practice; got {!r}.".format(value)
+        )
+    if not CHANGELOG_DIR_RE.match(value) or any(
+        segment in (".", "..") for segment in value.split("/")
+    ):
+        return (
+            "changelog_dir: expected a relative path of plain segments, such as "
+            "'changelog.d' or 'docs/changelog.d'; got {!r}. This value is written into "
+            "a `run:` line of the workflow generated for another repository, so a value "
+            "a shell would read as an instruction is refused rather than quoted and "
+            "hoped about.".format(value)
+        )
+    return None
+
 # Label vocabularies differ per repo and no pattern list covers every convention, so
 # these are widened rather than made exhaustive -- and every label that matches none
 # of them is reported by name. `priority/high` is GitHub's own documented spelling and
@@ -373,6 +412,10 @@ def validate(config):
     for field in ("version_sites", "docs_targets"):
         if field in config and not isinstance(config[field], list):
             problems.append("{}: expected a list".format(field))
+
+    changelog_dir = changelog_dir_problem(config.get("changelog_dir"))
+    if changelog_dir:
+        problems.append(changelog_dir)
 
     if "release" in config:
         problems.extend(_validate_release(config["release"]))

