@@ -227,3 +227,44 @@ def test_show_labels_create_and_replace_differently(tmp_path, capsys):
     assert create_line != replace_line
     assert "create" in create_line
     assert "replace" in replace_line
+
+
+# ------------------------------------------- collision with an existing changelog gate
+
+
+def _with_other_gate(root):
+    directory = root / ".github" / "workflows"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "changelog.yml").write_text(
+        "name: changelog\njobs:\n  fragment:\n    steps:\n      - run: python3 "
+        ".github/scripts/assemble_changelog.py --check\n",
+        encoding="utf-8",
+    )
+
+
+def test_the_plan_reports_a_decline_when_a_gate_already_exists(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config)])
+    out = capsys.readouterr().out
+    assert "decline" in out
+    assert "changelog" in out
+
+
+def test_apply_reports_what_it_declined_and_does_not_write_it(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "declined" in out
+    assert "--force-owned" in out
+    assert not (tmp_path / ".github" / "workflows" / "oss-changelog.yml").exists()
+
+
+def test_force_owned_flag_writes_the_trio_despite_a_detected_gate(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+    assert scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--apply", "--force-owned"]
+    ) == 0
+    assert (tmp_path / ".github" / "workflows" / "oss-changelog.yml").is_file()
