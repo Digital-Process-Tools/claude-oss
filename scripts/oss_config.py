@@ -415,6 +415,19 @@ def _enclosing_clone(start):
     return common.parent, ""
 
 
+def _anchored_elsewhere(given):
+    """Would joining ``given`` onto a base directory throw that base away?
+
+    Only Windows answers yes for a path that is not absolute. `C:x` is drive-relative,
+    and a leading separator with no drive is relative to the current drive's root;
+    pathlib joins both by discarding the left-hand side -- so an explicit `start` would
+    silently revert to the process's own directory, which is the exact leak `start`
+    exists to close. The branch is unreachable on a POSIX leg, so it is measured against
+    `PureWindowsPath` directly rather than through a fixture no POSIX runner can build.
+    """
+    return bool(given.drive or given.root) and not given.is_absolute()
+
+
 def resolve_config_path(path, start=None):
     """Where the project config really is, as ``(resolved, origin, detail)``.
 
@@ -459,6 +472,15 @@ def resolve_config_path(path, start=None):
     """
     given = Path(path)
     base = None if start is None else Path(start)
+    if base is not None and _anchored_elsewhere(given):
+        return (
+            None,
+            "unsearchable",
+            "{} carries an anchor of its own, so it cannot be read relative to {} -- "
+            "joining them would drop {} and search this process's directory instead. "
+            "Pass the path in full, or pass one with no drive and no leading "
+            "separator.".format(given, base, base),
+        )
     here = given if (base is None or given.is_absolute()) else base / given
     if here.is_file():
         return here, "here", ""

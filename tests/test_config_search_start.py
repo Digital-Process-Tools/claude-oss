@@ -9,7 +9,7 @@ in every fixture that existed before this one.
 import json
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -194,6 +194,43 @@ def test_load_from_carries_start_through(tmp_path, monkeypatch):
     assert config is not None, problems
     assert config["repo"] == "owner/asked-about"
     assert Path(resolved).resolve() == (there / oss_config.CONFIG_NAME).resolve()
+
+
+def test_a_path_with_an_anchor_of_its_own_is_refused_rather_than_joined(tmp_path, monkeypatch):
+    """Windows only, and therefore measured rather than reasoned about.
+
+    `PureWindowsPath("D:/start") / "C:x"` is `C:x`: pathlib drops the base when the
+    right-hand side carries an anchor. Under `start` that silently means "search the
+    process's directory after all", which is the one thing `start` exists to prevent, so
+    it is a stated refusal. The predicate is asserted directly because no POSIX runner
+    can build a fixture that reaches this branch.
+    """
+    assert oss_config._anchored_elsewhere(PureWindowsPath("C:x")), "drive-relative"
+    assert oss_config._anchored_elsewhere(PureWindowsPath("/x/.oss.json")), "root-relative"
+    assert PureWindowsPath("D:/start") / PureWindowsPath("C:x") == PureWindowsPath("C:x"), (
+        "pathlib no longer drops the base, so this guard is guarding nothing"
+    )
+
+    # Positive control: the shapes every real caller passes must NOT be refused, or the
+    # guard above is satisfied by a predicate that refuses everything.
+    assert not oss_config._anchored_elsewhere(PurePosixPath(".oss.json"))
+    assert not oss_config._anchored_elsewhere(PurePosixPath("configs/.oss.json"))
+    assert not oss_config._anchored_elsewhere(PureWindowsPath("configs/.oss.json"))
+    assert not oss_config._anchored_elsewhere(PureWindowsPath("C:/full/.oss.json")), (
+        "an absolute path is handled by its own arm, not by this one"
+    )
+    assert not oss_config._anchored_elsewhere(PurePosixPath("/full/.oss.json"))
+
+    # And end-to-end on this platform, where the predicate is false for every spelling:
+    # a start-relative search still works, so the guard cannot have swallowed it.
+    clone = _clone(tmp_path, "clone")
+    _write_config(clone, "owner/still-reachable")
+    (clone / "sub").mkdir()
+    monkeypatch.chdir(tmp_path)
+    _, origin, detail = oss_config.resolve_config_path(
+        oss_config.CONFIG_NAME, start=clone / "sub"
+    )
+    assert origin == "clone", detail
 
 
 def test_an_absolute_path_is_still_an_answer_and_not_a_starting_point(tmp_path, monkeypatch):
