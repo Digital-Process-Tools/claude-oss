@@ -6,6 +6,7 @@ than one that finds none, because an invented label reads as a measurement.
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -92,6 +93,26 @@ def test_load_reports_malformed_json_as_a_finding(tmp_path):
 # ---------------------------------------------------------------------------- probe
 
 
+# The candidates a probe must carry evidence about. Spelled out here rather than
+# imported so a missing constant fails the test that needs it, not every test.
+_CANDIDATES = (
+    ".claude-plugin/plugin.json",
+    "package.json",
+    "Cargo.toml",
+    "pyproject.toml",
+    "CHANGELOG.md",
+    "README.md",
+)
+_CARRIES = {".claude-plugin/plugin.json", "package.json", "Cargo.toml", "CHANGELOG.md"}
+
+
+def _evidence_for(files):
+    """Every candidate present gets a state. A candidate with no state is 'could not
+    answer', and the probe contract refuses it rather than reading it as a negative.
+    """
+    return {f: ("version" if f in _CARRIES else "none") for f in files if f in _CANDIDATES}
+
+
 def _probe(**overrides):
     probe = {
         "repo": "owner/name",
@@ -99,10 +120,14 @@ def _probe(**overrides):
         "labels": ["priority-high", "priority-low", "lane-hooks", "bug"],
         "milestones": ["v0.2.0"],
         "workflow_jobs": ["pytest", "shellcheck"],
-        "files": ["pyproject.toml", "README.md", "CHANGELOG.md", "changelog.d"],
+        "files": ["pyproject.toml", "README.md", "CHANGELOG.md", "changelog.d/1.fixed.md"],
         "clone": "/src/name",
+        "tags": ["v0.2.0"],
+        "merge_method": None,
     }
     probe.update(overrides)
+    if "version_evidence" not in overrides:
+        probe["version_evidence"] = _evidence_for(probe["files"])
     return probe
 
 
@@ -131,6 +156,20 @@ def test_probe_invents_nothing_on_a_bare_repo():
     assert config["ci"]["required_checks"] == 0
     assert config["changelog_dir"] is None
     assert oss_config.validate(config) == []
+
+
+def test_the_changelog_directory_is_found_from_a_file_inside_it():
+    """`git ls-files` prints files, never directories. A membership test for
+    "changelog.d" is therefore never true against a real probe, and every repo would
+    report having adopted no fragments -- the tool's absence read as the repo's.
+    """
+    config = oss_config.build(_probe(files=["changelog.d/12.fixed.md", "README.md"]))
+    assert config["changelog_dir"] == "changelog.d"
+
+
+def test_a_repo_with_no_fragments_still_reports_none():
+    config = oss_config.build(_probe(files=["README.md"]))
+    assert config["changelog_dir"] is None
 
 
 def test_probe_does_not_claim_milestones_that_do_not_exist():
@@ -279,3 +318,288 @@ def test_written_config_reloads_identically(tmp_path):
     reloaded, problems = oss_config.load(path)
     assert problems == []
     assert reloaded == config
+
+
+# -------------------------------------------------------------- the probe contract
+
+
+def test_a_complete_probe_has_nothing_to_report():
+    assert oss_config.probe_problems(_probe()) == []
+
+
+def test_build_refuses_a_missing_key_rather_than_reading_it_as_empty():
+    """`probe.get("files") or []` made a typo'd key and an empty repo identical, so a
+    probe of the wrong shape produced a confident config instead of an error (#1).
+    """
+    probe = _probe()
+    del probe["files"]
+    with pytest.raises(oss_config.ProbeError) as excinfo:
+        oss_config.build(probe)
+    assert "files" in str(excinfo.value)
+
+
+def test_the_refusal_says_where_a_correct_probe_comes_from():
+    probe = _probe()
+    del probe["labels"]
+    with pytest.raises(oss_config.ProbeError) as excinfo:
+        oss_config.build(probe)
+    assert "--probe" in str(excinfo.value)
+
+
+def test_build_refuses_a_key_of_the_wrong_type():
+    with pytest.raises(oss_config.ProbeError) as excinfo:
+        oss_config.build(_probe(files="README.md"))
+    assert "files" in str(excinfo.value)
+
+
+def test_build_refuses_a_candidate_it_was_told_nothing_about():
+    """A candidate present in `files` with no evidence entry is 'could not answer'.
+    Collapsing it into 'carries no version' is the same defect one layer down (#2).
+    """
+    with pytest.raises(oss_config.ProbeError) as excinfo:
+        oss_config.build(_probe(files=["README.md"], version_evidence={}))
+    assert "README.md" in str(excinfo.value)
+
+
+def test_build_refuses_an_evidence_state_it_does_not_know():
+    with pytest.raises(oss_config.ProbeError) as excinfo:
+        oss_config.build(_probe(files=["README.md"], version_evidence={"README.md": "probably"}))
+    assert "probably" in str(excinfo.value)
+
+
+# ------------------------------------------------------------------- version sites
+
+
+def test_a_candidate_that_carries_no_version_is_not_a_version_site():
+    config = oss_config.build(
+        _probe(
+            files=[".claude-plugin/plugin.json", "README.md"],
+            version_evidence={".claude-plugin/plugin.json": "version", "README.md": "none"},
+        )
+    )
+    assert config["version_sites"] == [".claude-plugin/plugin.json"]
+
+
+def test_a_readme_that_does_carry_a_version_is_still_a_version_site():
+    config = oss_config.build(
+        _probe(files=["README.md"], version_evidence={"README.md": "version"})
+    )
+    assert config["version_sites"] == ["README.md"]
+
+
+def test_a_candidate_that_could_not_be_read_is_not_asserted_as_a_site():
+    """Unreadable is 'could not answer'. It is not listed, and it is not silent --
+    the CLI names it -- but it never becomes a claim in the config.
+    """
+    config = oss_config.build(
+        _probe(files=["package.json"], version_evidence={"package.json": "unreadable"})
+    )
+    assert config["version_sites"] == []
+
+
+def test_the_node_and_rust_manifests_are_candidates():
+    """TEST_COMMANDS knew about both; version_sites did not, so a Node release was
+    told to bump README.md and never told about package.json (#10).
+    """
+    node = oss_config.build(
+        _probe(
+            files=["package.json", "README.md"],
+            version_evidence={"package.json": "version", "README.md": "none"},
+        )
+    )
+    assert node["version_sites"] == ["package.json"]
+    rust = oss_config.build(
+        _probe(
+            files=["Cargo.toml", "README.md"],
+            version_evidence={"Cargo.toml": "version", "README.md": "none"},
+        )
+    )
+    assert rust["version_sites"] == ["Cargo.toml"]
+
+
+def test_inspecting_a_tree_says_which_candidates_carry_a_version(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "oss", "version": "0.2.1"}', encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text("# thing\n\nno version anywhere\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text("{ not json at all", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\nversion = "1.4.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\ntestpaths = []\n", encoding="utf-8"
+    )
+    evidence = oss_config.inspect_version_sites(
+        tmp_path,
+        [
+            ".claude-plugin/plugin.json",
+            "README.md",
+            "package.json",
+            "Cargo.toml",
+            "pyproject.toml",
+            "src/main.rs",
+        ],
+    )
+    assert evidence == {
+        ".claude-plugin/plugin.json": "version",
+        "README.md": "none",
+        "package.json": "unreadable",
+        "Cargo.toml": "version",
+        "pyproject.toml": "none",
+    }
+
+
+def test_a_candidate_listed_but_absent_from_disk_is_unreadable_not_absent(tmp_path):
+    """The file list and the tree disagreeing is a fact about the probe, not about
+    the repo, and it must not read as 'this file carries no version'.
+    """
+    assert oss_config.inspect_version_sites(tmp_path, ["README.md"]) == {
+        "README.md": "unreadable"
+    }
+
+
+# ----------------------------------------------------------------------- the labels
+
+
+def test_labels_are_classified_across_the_spellings_in_the_wild():
+    """priority/high is GitHub's own documented convention and matched nothing (#10)."""
+    result = oss_config.classify_labels(
+        ["priority/high", "P1", "area/api", "type:chore", "lane-core", "bug"]
+    )
+    assert result["priority"] == ["priority/high", "P1"]
+    assert result["lanes"] == ["area/api", "type:chore", "lane-core"]
+
+
+def test_labels_that_matched_nothing_are_named_rather_than_dropped():
+    """An empty priority list on a fully labelled board was byte-identical to one on a
+    board with no priorities at all. Naming the misses is what tells them apart.
+    """
+    result = oss_config.classify_labels(["priority/high", "bug", "documentation"])
+    assert result["unclassified"] == ["bug", "documentation"]
+
+
+def test_a_repo_with_no_labels_has_nothing_unclassified():
+    assert oss_config.classify_labels([]) == {"priority": [], "lanes": [], "unclassified": []}
+
+
+def test_a_label_is_classified_once():
+    result = oss_config.classify_labels(["priority/high"])
+    assert result["lanes"] == []
+    assert result["unclassified"] == []
+
+
+# --------------------------------------------------------------------- gathering it
+
+GIT = shutil.which("git")
+needs_git = pytest.mark.skipif(
+    GIT is None, reason="git is not on PATH, so there is no repo to probe"
+)
+
+
+def _git_repo(root, files):
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run([GIT, "init", "-q", str(root)], check=True)
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    subprocess.run([GIT, "-C", str(root), "add", "-A"], check=True)
+
+
+def _fake_gh(root, args):
+    if args[0] == "repo":
+        return (
+            True,
+            {
+                "nameWithOwner": "owner/name",
+                "defaultBranchRef": {"name": "main"},
+                "squashMergeAllowed": True,
+                "mergeCommitAllowed": False,
+                "rebaseMergeAllowed": False,
+            },
+            "",
+        )
+    if args[0] == "label":
+        return True, [{"name": "priority/high"}, {"name": "bug"}], ""
+    return True, [{"title": "v1.0"}], ""
+
+
+@needs_git
+def test_gathering_produces_a_probe_that_build_accepts(tmp_path, monkeypatch):
+    """One implementation of the schema. The probe the command used to assemble by
+    hand -- and got wrong -- now comes from the same code that consumes it (#1).
+    """
+    _git_repo(
+        tmp_path,
+        {
+            "README.md": "# thing\n\nno version here\n",
+            ".claude-plugin/plugin.json": '{"version": "0.2.1"}\n',
+            "tests/test_thing.py": "def test_x():\n    assert True\n",
+            ".github/workflows/ci.yml": (
+                "name: ci\non: push\njobs:\n  unit:\n    runs-on: ubuntu-latest\n"
+                "  lint:\n    runs-on: ubuntu-latest\n"
+            ),
+        },
+    )
+    monkeypatch.setattr(oss_config, "_gh_json", _fake_gh)
+    probe, problems = oss_config.gather(tmp_path)
+    assert problems == []
+    assert "tests/test_thing.py" in probe["files"]
+    assert "tests" not in probe["files"]
+    assert probe["version_evidence"] == {
+        ".claude-plugin/plugin.json": "version",
+        "README.md": "none",
+    }
+    assert len(probe["workflow_jobs"]) == 2
+    assert oss_config.probe_problems(probe) == []
+
+    config = oss_config.build(probe)
+    assert oss_config.validate(config) == []
+    assert config["version_sites"] == [".claude-plugin/plugin.json"]
+    assert config["test_command"] == "python3 -m unittest discover -s tests"
+    assert config["labels"]["priority"] == ["priority/high"]
+    assert config["release"]["merge_method"] == "squash"
+
+
+@needs_git
+def test_gathering_names_the_labels_it_could_not_classify(tmp_path, monkeypatch):
+    _git_repo(tmp_path, {"README.md": "# thing\n"})
+    monkeypatch.setattr(oss_config, "_gh_json", _fake_gh)
+    probe, _ = oss_config.gather(tmp_path)
+    assert oss_config.classify_labels(probe["labels"])["unclassified"] == ["bug"]
+
+
+def test_gathering_a_directory_that_is_not_a_repo_is_a_refusal(tmp_path):
+    """A directory git cannot read must not come back as a repo with no files."""
+    probe, problems = oss_config.gather(tmp_path / "nowhere")
+    assert probe is None
+    assert problems
+
+
+@needs_git
+def test_gathering_refuses_when_the_remote_half_cannot_be_measured(tmp_path, monkeypatch):
+    """Half a probe is the underspecified probe this whole contract exists to stop."""
+    _git_repo(tmp_path, {"README.md": "# thing\n"})
+    monkeypatch.setattr(
+        oss_config, "_gh_json", lambda root, args: (False, None, "gh: not authenticated")
+    )
+    probe, problems = oss_config.gather(tmp_path)
+    assert probe is None
+    assert any("gh" in problem for problem in problems)
+
+
+@needs_git
+def test_a_merge_method_that_cannot_be_told_apart_stays_null(tmp_path, monkeypatch):
+    _git_repo(tmp_path, {"README.md": "# thing\n"})
+
+    def both_allowed(root, args):
+        ok, payload, detail = _fake_gh(root, args)
+        if args[0] == "repo":
+            payload["mergeCommitAllowed"] = True
+        return ok, payload, detail
+
+    monkeypatch.setattr(oss_config, "_gh_json", both_allowed)
+    probe, problems = oss_config.gather(tmp_path)
+    assert problems == []
+    assert probe["merge_method"] is None

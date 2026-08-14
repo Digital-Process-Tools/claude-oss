@@ -60,6 +60,7 @@ def _probe(**overrides):
         "files": [],
         "tags": ["v0.3.0", "v0.2.0", "v0.1.0"],
         "merge_method": "squash",
+        "version_evidence": {},
     }
     probe.update(overrides)
     return probe
