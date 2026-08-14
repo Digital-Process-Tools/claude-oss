@@ -26,6 +26,27 @@ Exit codes, because a shell reads those and never reads prose:
   3   could not run
   2   argparse usage error
 
+And the range has a *scope*, which is a fourth fact rather than a fourth state.
+`git describe --tags --abbrev=0` answers over every tag namespace at once, so in a
+repo that also tags nightlies or release candidates the newest tag of any namespace
+becomes "the last release". The delta then computes fine over a fraction of the real
+range and `could-not-run` never fires -- the script answered, it just answered a
+narrower question than the gate asked. That is this file's own defect class again,
+one level up: not an absence rendered as a value, but a value that is silent about
+what it excluded.
+
+So the glob is derived from `release.tag_pattern` in the repo's own `.oss.json`,
+here, mechanically -- not interpolated into the call by whoever writes the command
+prose, because a value an agent is told to substitute is a value an agent can
+substitute wrongly, and a wrong glob produces a confident receipt over the wrong
+range.
+
+An unscoped range does **not** block. A repo with no `tag_pattern` is common and
+legitimate, and refusing it would trade a quiet reporting gap for a release nobody
+can cut. Every payload therefore carries `scope` and `scope_reason`, and the reason
+is written for the unscoped case: the receipt names it out loud instead of running
+unmatched in silence.
+
 Nothing from inside the delta is echoed. Commit subjects are written by
 contributors, and a receipt that prints one at column 0 lets a commit message
 forge the receipt's own verdict line.
@@ -45,6 +66,21 @@ STATE_COULD_NOT_RUN = "could-not-run"
 
 EXIT_COMPUTABLE = 0
 EXIT_COULD_NOT_RUN = 3
+
+CONFIG_NAME = ".oss.json"
+VERSION_PLACEHOLDER = "{version}"
+
+# Said once and appended to every unscoped reason, because the reason has to carry
+# the consequence and not just the cause. "tag_pattern is null" is a fact about a
+# file; what the reader needs is what it did to the range they are about to audit.
+UNSCOPED_CONSEQUENCE = (
+    "every tag namespace counted, and a nightly or release-candidate tag would be "
+    "read as the last release"
+)
+
+# Wider than the receipt's 200: a scope reason is this file's own sentence plus an
+# absolute path, not a stranger's stderr, and dogfooding truncated it mid-path.
+SCOPE_REASON_LIMIT = 320
 
 
 def _one_line(text, limit=200):
@@ -125,8 +161,169 @@ def _number(repo, *args):
     return int(out)
 
 
-def compute(repo, match=None):
-    """The range state of `repo`. Always returns a payload; never raises."""
+def _one_line_scope(text, room=0):
+    """A scope reason, flattened with room made for the path it names.
+
+    Every scope reason ends in what the range lost, and a path sits in front of it.
+    A fixed cap therefore truncates the *consequence* on a repo checked out a few
+    directories deeper than the one this was written on -- which leaves a reason
+    that names a file and never says what it cost, the same reporting gap this
+    field exists to close. So the cap bounds the sentence and the path is measured
+    rather than budgeted. `room` is that measurement, and the cap still does the job
+    it is actually for: `_one_line` strips the control characters either way.
+    """
+    return _one_line(text, SCOPE_REASON_LIMIT + room)
+
+
+def _unscoped(reason, source=None, room=0):
+    return {
+        "scope": None,
+        "scope_source": source,
+        "scope_reason": _one_line_scope(reason, room),
+    }
+
+
+def _read_config(path):
+    """The repo's own config, or (None, why it could not be used).
+
+    Read here rather than through `oss_config.load`: that module validates the whole
+    file and reports problems, and a config with an unrelated problem in it would
+    then stop a release the gate only consults it for a glob. This read is
+    deliberately tolerant, and every way it can fail comes back as a *reason the
+    range is unscoped* -- never as a refusal.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        if not path.exists():
+            return None, "there is no {0} at {1}".format(CONFIG_NAME, path)
+        return None, "{0} could not be read ({1})".format(path, type(exc).__name__)
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        return None, "{0} could not be read as JSON ({1})".format(path, exc)
+    if not isinstance(data, dict):
+        return None, "{0} is not a JSON object".format(path)
+    return data, None
+
+
+def _scope(repo, match, config):
+    """The tag glob the previous tag is matched against, and why it is that.
+
+    Three outcomes, and the middle one is the reason this function exists rather
+    than a `match or derive(...)` expression at the call site:
+
+      scoped     a glob narrower than `*`, from --match or from the config.
+      unscoped   no glob, with the reason named. Computable, not a failure.
+      unscoped   a glob that derives to `*`, which is unscoped with a value
+                 attached -- reported as unscoped, because passing `*` to
+                 `--match` and passing nothing are the same question.
+    """
+    if match:
+        if match.strip("*") == "":
+            return _unscoped(
+                "--match was given as {0!r}, which matches every tag, so {1}".format(
+                    match, UNSCOPED_CONSEQUENCE
+                ),
+                "--match",
+            )
+        return {
+            "scope": match,
+            "scope_source": "--match",
+            "scope_reason": _one_line_scope(
+                "the previous tag was matched against {0!r}, given with "
+                "--match".format(match)
+            ),
+        }
+    if match is not None:
+        return _unscoped(
+            "--match was given empty, so {0}".format(UNSCOPED_CONSEQUENCE), "--match"
+        )
+
+    # Absolute for the reason line. `--repo .` derives the relative `.oss.json`, and
+    # "there is no .oss.json at .oss.json" tells the reader nothing about which tree
+    # was looked in -- which is the only question they have when a gate says it could
+    # not find their config.
+    path = Path(config) if config else Path(repo) / CONFIG_NAME
+    path = Path(os.path.abspath(str(path)))
+    room = len(str(path))
+    data, why = _read_config(path)
+    if data is None:
+        return _unscoped("{0}, so {1}".format(why, UNSCOPED_CONSEQUENCE), None, room)
+
+    release = data.get("release")
+    if not isinstance(release, dict) or "tag_pattern" not in release:
+        return _unscoped(
+            "release.tag_pattern is absent from {0}: this repo has not said how "
+            "its tags are spelled, so {1}".format(path, UNSCOPED_CONSEQUENCE),
+            CONFIG_NAME,
+            room,
+        )
+
+    pattern = release["tag_pattern"]
+    if pattern is None:
+        return _unscoped(
+            "release.tag_pattern is null in {0}: this repo has not said how its "
+            "tags are spelled, so {1}".format(path, UNSCOPED_CONSEQUENCE),
+            CONFIG_NAME,
+            room,
+        )
+    if not isinstance(pattern, str) or VERSION_PLACEHOLDER not in pattern:
+        return _unscoped(
+            "release.tag_pattern in {0} is {1!r}, which carries no {2}, so no glob "
+            "can be derived from it: {3}".format(
+                path, pattern, VERSION_PLACEHOLDER, UNSCOPED_CONSEQUENCE
+            ),
+            CONFIG_NAME,
+            room,
+        )
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in pattern):
+        # A config value reaching git's argv and this receipt's own lines. It is a
+        # tracked file rather than a stranger's, but a control character in it would
+        # forge a receipt row, and a tag spelled with one is not a tag anybody made.
+        return _unscoped(
+            "release.tag_pattern in {0} carries a control character, so it is not a "
+            "tag spelling: {1}".format(path, UNSCOPED_CONSEQUENCE),
+            CONFIG_NAME,
+            room,
+        )
+
+    glob = pattern.replace(VERSION_PLACEHOLDER, "*")
+    if glob.strip("*") == "":
+        return _unscoped(
+            "release.tag_pattern in {0} is {1!r}, which puts nothing around the "
+            "version, so the glob it derives is {2!r}: {3}".format(
+                path, pattern, glob, UNSCOPED_CONSEQUENCE
+            ),
+            CONFIG_NAME,
+            room,
+        )
+    return {
+        "scope": glob,
+        "scope_source": CONFIG_NAME,
+        "scope_reason": _one_line_scope(
+            "the previous tag was matched against {0!r}, derived from "
+            "release.tag_pattern {1!r} in {2}".format(glob, pattern, path),
+            room,
+        ),
+    }
+
+
+def compute(repo, match=None, config=None):
+    """The range state of `repo`. Always returns a payload; never raises.
+
+    The scope is resolved first and merged into whatever state comes back, so every
+    payload carries the same keys. A consumer that reads `scope` off a `delta` and
+    raises a KeyError on a `could-not-run` stops printing the receipt at the moment
+    it matters most.
+    """
+    scope = _scope(repo, match, config)
+    payload = _compute_range(repo, scope["scope"])
+    payload.update(scope)
+    return payload
+
+
+def _compute_range(repo, match):
     repo = Path(repo)
     if not repo.is_dir():
         return _could_not_run(
@@ -268,6 +465,11 @@ def receipt(payload):
 
     row("reason", payload["reason"])
     row("detail", payload["detail"])
+    # Always printed, in both directions. A scope row that appeared only when a
+    # glob was found would make the unscoped case -- the one worth noticing --
+    # the one that looks like nothing happened.
+    row("scope", payload.get("scope") or "UNSCOPED")
+    row("scope why", payload.get("scope_reason"))
     row("tag", payload["tag"])
     row("range", payload["range"])
     row("head", payload["head"])
@@ -303,8 +505,19 @@ def main(argv=None):
         "--match",
         default=None,
         help=(
-            "glob the previous tag must match, e.g. 'v*'. Without it every tag "
-            "namespace counts, and a nightly tag becomes the last release."
+            "glob the previous tag must match, e.g. 'v*'. Overrides the config. "
+            "Without either, every tag namespace counts and a nightly tag becomes "
+            "the last release -- which the receipt then says, as UNSCOPED."
+        ),
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help=(
+            "config to derive the tag glob from (default: {0} beside --repo). Its "
+            "release.tag_pattern 'v{{version}}' derives the glob 'v*'. A missing, "
+            "unreadable or null pattern leaves the range unscoped and says so; it "
+            "never blocks.".format(CONFIG_NAME)
         ),
     )
     parser.add_argument(
@@ -320,7 +533,7 @@ def main(argv=None):
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
 
-    payload = compute(args.repo, args.match)
+    payload = compute(args.repo, args.match, args.config)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

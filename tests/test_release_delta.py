@@ -332,6 +332,215 @@ def test_the_receipt_and_the_json_agree(tagged):
     assert str(payload["commits"]) in done.stdout
 
 
+# --------------------------------------------------------------- the range is scoped
+#
+# `git describe --tags --abbrev=0` answers over every tag namespace at once. In a
+# repo that also tags nightlies, per-service releases or candidates, the newest tag
+# of any namespace becomes "the last release" and the gate reports `delta` with
+# full confidence over a fraction of the real range. Nothing is missing from that
+# receipt, which is why `could-not-run` never fires: the script answered, it just
+# answered a narrower question than the gate asked.
+#
+# Every case below that asserts the range was scoped correctly is paired, in the
+# same fixture, with the unscoped run that gets it wrong. Without that half the
+# assertions pass on code that never learned to scope anything.
+
+
+@pytest.fixture()
+def two_namespaces(tmp_path):
+    """A release tag, then a *later* nightly tag on top of it.
+
+    Unmatched, `describe` returns the nightly. This is the shape the whole section
+    is about, so it is built once and every case here uses it.
+    """
+    repo = _init(tmp_path / "namespaces")
+    _commit(repo, "a.txt", "first")
+    _git(repo, "tag", "v1.2.0")
+    _commit(repo, "b.txt", "second")
+    _git(repo, "tag", "nightly-2026-08-14")
+    _commit(repo, "c.txt", "third")
+    return repo
+
+
+def _write_config(repo, release):
+    (Path(repo) / ".oss.json").write_text(
+        json.dumps({"repo": "o/r", "default_branch": "main", "release": release}),
+        encoding="utf-8",
+    )
+
+
+def test_an_unscoped_range_anchors_on_a_nightly_tag(two_namespaces):
+    """The defect, stated as a measurement rather than a worry.
+
+    This is the positive control for everything below: it shows the wrong anchor
+    is reachable, so a later assertion that the anchor is `v1.2.0` is evidence of
+    scoping rather than evidence that this repo only has one tag.
+    """
+    code, payload = _payload(two_namespaces)
+    assert payload["state"] == "delta"
+    assert payload["tag"] == "nightly-2026-08-14"
+    assert payload["commits"] == 1, "the unscoped range is a fraction of the real one"
+    assert code == COMPUTABLE
+    assert payload["scope"] is None
+
+
+def test_match_anchors_the_range_on_the_release_namespace(two_namespaces):
+    code, payload = _payload(two_namespaces, "--match", "v*")
+    assert payload["tag"] == "v1.2.0"
+    assert payload["range"] == "v1.2.0..HEAD"
+    assert payload["commits"] == 2
+    assert payload["scope"] == "v*"
+    assert code == COMPUTABLE
+
+
+def test_the_glob_is_derived_from_the_configs_tag_pattern(two_namespaces):
+    """The parameter and the value both existed and were never joined.
+
+    Derived by the script, not interpolated by whoever calls it: a value a command
+    tells an agent to substitute is a value an agent can substitute wrongly, and a
+    wrong glob produces a confident receipt over the wrong range.
+    """
+    _write_config(two_namespaces, {"tag_pattern": "v{version}"})
+    code, payload = _payload(two_namespaces)
+    assert payload["tag"] == "v1.2.0"
+    assert payload["range"] == "v1.2.0..HEAD"
+    assert payload["scope"] == "v*"
+    assert payload["scope_source"] == ".oss.json"
+    assert "tag_pattern" in payload["scope_reason"]
+    assert code == COMPUTABLE
+
+    # The pair. Same repo, same command, config removed: the anchor moves back to
+    # the nightly, so the assertion above is about the config and not the fixture.
+    (Path(two_namespaces) / ".oss.json").unlink()
+    _, unscoped = _payload(two_namespaces)
+    assert unscoped["tag"] == "nightly-2026-08-14"
+    assert unscoped["scope"] is None
+
+
+def test_a_null_tag_pattern_is_named_rather_than_run_silently(two_namespaces):
+    """Unscoped is a fact the receipt must carry, not a refusal.
+
+    A repo with no `tag_pattern` is common and legitimate. Blocking it would trade
+    a quiet reporting gap for a release nobody can cut, so the state is: computable,
+    unscoped, and said so.
+    """
+    _write_config(two_namespaces, {"tag_pattern": None})
+    code, payload = _payload(two_namespaces)
+    assert payload["state"] == "delta", "an unscoped range still computes"
+    assert code == COMPUTABLE, "a null tag_pattern must not block the release"
+    assert payload["scope"] is None
+    assert payload["scope_source"] == ".oss.json"
+    assert "tag_pattern" in payload["scope_reason"]
+    assert "null" in payload["scope_reason"]
+
+    # The pair, in the same fixture: with the key filled in, the same run scopes.
+    _write_config(two_namespaces, {"tag_pattern": "v{version}"})
+    _, scoped = _payload(two_namespaces)
+    assert scoped["scope"] == "v*"
+
+
+def test_an_absent_config_is_named_as_the_reason_the_range_is_unscoped(
+    two_namespaces,
+):
+    code, payload = _payload(two_namespaces)
+    assert code == COMPUTABLE
+    assert payload["scope"] is None
+    assert payload["scope_source"] is None
+    assert ".oss.json" in payload["scope_reason"]
+
+
+def test_a_config_that_will_not_parse_leaves_the_range_unscoped_not_blocked(
+    two_namespaces,
+):
+    """A broken config is a reason the range is unscoped. It is not a reason the
+    delta cannot be computed, and turning it into one blocks a release over a file
+    the gate only consults for a glob.
+    """
+    (Path(two_namespaces) / ".oss.json").write_text("{not json", encoding="utf-8")
+    code, payload = _payload(two_namespaces)
+    assert payload["state"] == "delta"
+    assert code == COMPUTABLE
+    assert payload["scope"] is None
+    assert "JSON" in payload["scope_reason"]
+
+
+def test_a_tag_pattern_that_derives_to_a_bare_star_is_unscoped(two_namespaces):
+    """`{version}` derives the glob `*`, which matches every namespace.
+
+    Passing it to `--match` would be indistinguishable from passing nothing, so
+    reporting it as scoped would be the same silence with a value attached.
+    """
+    _write_config(two_namespaces, {"tag_pattern": "{version}"})
+    code, payload = _payload(two_namespaces)
+    assert code == COMPUTABLE
+    assert payload["scope"] is None
+    assert "{version}" in payload["scope_reason"]
+
+
+def test_an_explicit_match_wins_over_the_config(two_namespaces):
+    _write_config(two_namespaces, {"tag_pattern": "nightly-{version}"})
+    _, payload = _payload(two_namespaces, "--match", "v*")
+    assert payload["scope"] == "v*"
+    assert payload["scope_source"] == "--match"
+    assert payload["tag"] == "v1.2.0"
+
+    # Control: without the flag the same config anchors on the nightly, so the
+    # assertion above is about precedence and not about the config being ignored.
+    _, from_config = _payload(two_namespaces)
+    assert from_config["scope"] == "nightly-*"
+    assert from_config["tag"] == "nightly-2026-08-14"
+
+
+def test_the_receipt_says_the_range_is_unscoped_and_why(two_namespaces):
+    _write_config(two_namespaces, {"tag_pattern": None})
+    done = _run(two_namespaces)
+    assert done.returncode == COMPUTABLE
+    assert "unscoped" in done.stdout.lower()
+    assert "tag_pattern" in done.stdout
+
+    # The pair: scoped, the same receipt names the glob and does not say unscoped.
+    _write_config(two_namespaces, {"tag_pattern": "v{version}"})
+    done = _run(two_namespaces)
+    assert "v*" in done.stdout
+    assert "unscoped" not in done.stdout.lower()
+
+
+def test_a_first_release_under_a_scope_is_still_a_first_release(tmp_path):
+    """A repo whose only tags are nightlies has never made a release.
+
+    Unmatched it reports `delta` against a nightly; matched, the honest answer is
+    `first-release` -- and it must not degrade into `could-not-run`, which would
+    stop a release that is perfectly cuttable.
+    """
+    repo = _init(tmp_path / "nightlies-only")
+    _commit(repo, "a.txt", "first")
+    _git(repo, "tag", "nightly-2026-08-14")
+    _commit(repo, "b.txt", "second")
+
+    code, payload = _payload(repo, "--match", "v*")
+    assert payload["state"] == "first-release"
+    assert payload["range"] == "HEAD"
+    assert code == COMPUTABLE
+
+    _, unscoped = _payload(repo)
+    assert unscoped["state"] == "delta", "the pair: unmatched, the nightly anchors it"
+
+
+def test_the_scope_keys_survive_could_not_run(tmp_path):
+    """Every payload carries the same keys, whatever state it is in.
+
+    A consumer reading `scope` off one state and getting a KeyError on another is
+    how a receipt stops being printed at the moment it matters most.
+    """
+    repo = _init(tmp_path / "unborn")
+    _write_config(repo, {"tag_pattern": "v{version}"})
+    code, payload = _payload(repo)
+    assert payload["state"] == "could-not-run"
+    assert code == COULD_NOT_RUN
+    assert payload["scope"] == "v*"
+    assert payload["scope_reason"]
+
+
 # ------------------------------------------------------------------------ in process
 #
 # The subprocess suite above is the honest one: it drives the script the way
@@ -492,6 +701,122 @@ def test_output_git_cannot_decode_is_could_not_run_rather_than_a_traceback(
     # about the decode and not about the fixture.
     monkeypatch.undo()
     assert module.compute(str(tagged))["state"] == "delta"
+
+
+def test_every_way_a_config_can_fail_leaves_the_range_unscoped_and_says_which(
+    tmp_path,
+):
+    """The arms a healthy subprocess run cannot reach, and the reason each exists.
+
+    Each of these is a *different sentence* on the receipt on purpose. "unscoped"
+    with no cause is the same silence one word longer, and the maintainer reading
+    it has to know whether to fill in a key, fix a file, or ignore it.
+    """
+    module = _module()
+    repo = _init(tmp_path / "arms")
+    config = Path(repo) / ".oss.json"
+
+    def why(match=None):
+        return module._scope(str(repo), match, None)
+
+    config.write_text("[]", encoding="utf-8")
+    scope = why()
+    assert scope["scope"] is None and "not a JSON object" in scope["scope_reason"]
+
+    config.write_text(json.dumps({"release": {}}), encoding="utf-8")
+    scope = why()
+    assert scope["scope"] is None and "absent" in scope["scope_reason"]
+
+    config.write_text(json.dumps({"release": {"tag_pattern": 7}}), encoding="utf-8")
+    scope = why()
+    assert scope["scope"] is None and "{version}" in scope["scope_reason"]
+
+    config.write_text(
+        json.dumps({"release": {"tag_pattern": "v\n{version}"}}), encoding="utf-8"
+    )
+    scope = why()
+    assert scope["scope"] is None
+    assert "control character" in scope["scope_reason"]
+    assert "\n" not in scope["scope_reason"], (
+        "a config value reaching the receipt must not be able to forge a row"
+    )
+
+    # A directory where the file should be: an OSError that is not "absent".
+    config.unlink()
+    config.mkdir()
+    scope = why()
+    assert scope["scope"] is None and "could not be read" in scope["scope_reason"]
+
+    # The pair for all five: the same function, one honest config, scopes.
+    config.rmdir()
+    config.write_text(
+        json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
+    )
+    assert why()["scope"] == "v*"
+
+
+def test_a_match_that_matches_everything_is_reported_as_unscoped(tmp_path):
+    """`--match '*'` and no `--match` ask git the same question.
+
+    Calling the first one scoped would put a value in the receipt where the fact
+    belongs, which is the shape this whole file exists to keep apart.
+    """
+    module = _module()
+    repo = _init(tmp_path / "star")
+
+    starred = module._scope(str(repo), "*", None)
+    assert starred["scope"] is None
+    assert starred["scope_source"] == "--match"
+    assert "every tag" in starred["scope_reason"]
+
+    empty = module._scope(str(repo), "", None)
+    assert empty["scope"] is None and "empty" in empty["scope_reason"]
+
+    # The pair: a glob that excludes something is carried through as given.
+    assert module._scope(str(repo), "v*", None)["scope"] == "v*"
+
+
+def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
+    """Found by running the script on a real checkout, not by reading it.
+
+    The reason ends with the consequence -- what the unscoped range anchored on --
+    and the path sits in front of it. At the receipt's 200-character limit a normal
+    absolute path cut the sentence off mid-directory, leaving a reason that named a
+    file and never said what it cost.
+    """
+    module = _module()
+    deep = tmp_path.joinpath(*["a-fairly-ordinary-directory-name"] * 4)
+    repo = _init(deep / "repo")
+
+    unscoped = module._scope(str(repo), None, None)
+    assert unscoped["scope"] is None
+    assert unscoped["scope_reason"].endswith("read as the last release")
+
+    (Path(repo) / ".oss.json").write_text(
+        json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
+    )
+    scoped = module._scope(str(repo), None, None)
+    assert scoped["scope"] == "v*"
+    assert scoped["scope_reason"].endswith(".oss.json"), (
+        "the scoped reason lost the path it names"
+    )
+
+
+def test_an_explicit_config_path_is_read_instead_of_the_repos_own(tmp_path):
+    module = _module()
+    repo = _init(tmp_path / "elsewhere")
+    (Path(repo) / ".oss.json").write_text(
+        json.dumps({"release": {"tag_pattern": "nightly-{version}"}}), encoding="utf-8"
+    )
+    other = tmp_path / "other.json"
+    other.write_text(
+        json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
+    )
+
+    assert module._scope(str(repo), None, str(other))["scope"] == "v*"
+    # The pair: without --config the repo's own file answers, so the line above is
+    # about the flag and not about either file being the only one present.
+    assert module._scope(str(repo), None, None)["scope"] == "nightly-*"
 
 
 def test_a_path_that_is_not_a_directory_is_could_not_run(tmp_path):

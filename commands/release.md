@@ -47,6 +47,12 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_delta.py" --repo . --json
    ```
 
+   It reads `release.tag_pattern` out of this repo's `.oss.json` itself and derives the tag glob
+   from it — `v{version}` becomes `v*`. **Do not compute that glob and interpolate it into the
+   command.** A value you are told to substitute is a value you can substitute wrongly, and a wrong
+   glob answers confidently about the wrong range. `--match` exists to override the derivation and
+   `--config` to point at another file; neither is part of the normal call.
+
    - **exit 3, `could-not-run`** — no commits, a shallow clone, or tags HEAD cannot reach. That
      **stops the release**. Report the reason it gave; do not spawn the audit over a range you
      picked instead, and do not read the gate as satisfied because nothing objected.
@@ -56,6 +62,15 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      history nobody made.
    - **`delta`** — audit `range`. `commits: 0` is an empty delta, which is computable and is not a
      finding.
+
+   `scope` is a separate fact from the state, and it is not a fourth outcome. **`scope: null`, which
+   the receipt prints as `UNSCOPED`, does not stop anything** — a repo that has not said how its tags
+   are spelled is common, and blocking it trades a reporting gap for a release nobody can cut. It
+   does have to be carried: pass `scope_reason` to the auditor with the payload and repeat it in the
+   release report, because an unscoped range anchors on whatever tag is newest, which in a repo that
+   also tags nightlies or candidates is a fraction of the real delta. When the reason is a null
+   `tag_pattern`, that is the same finding as the stop-and-ask at the top of this file, reaching you
+   from the other direction.
 
    Then, and only for the two computable states:
 
