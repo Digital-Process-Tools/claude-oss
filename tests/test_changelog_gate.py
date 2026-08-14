@@ -19,8 +19,13 @@ this extracts is the block a maintainer reads.
 Python 3.9 compatible.
 """
 
+import atexit
+import os
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -30,6 +35,223 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import scaffold  # noqa: E402
+
+
+# ------------------------------------------------------------ finding a usable shell
+#
+# `subprocess.run(["bash", ...])` is not a question about bash. It is a question about
+# whichever `bash` the machine happened to expose first, and on a GitHub Windows runner
+# that is WSL's `bash.exe` in the system directory -- which CreateProcess reaches before
+# anything on PATH. It spawns, prints "Windows Subsystem for Linux has no installed
+# distributions." in UTF-16, and exits 1. Read as a return code that is the gate
+# failing. It is not: it is the gate never having run, reported as a product verdict.
+#
+# So three states, not two: the gate ran and passed, the gate ran and failed, and no
+# usable shell was available. The third is decided by MEASUREMENT -- every candidate is
+# spawned and asked to behave like a shell -- because WSL's binary is called `bash.exe`
+# too and a name match cannot tell them apart. There is no platform branch below: the
+# same enumeration and the same probe run everywhere, and on POSIX the first candidate
+# is still the `bash` on PATH.
+
+# Asked of every candidate. Each line is its own claim, so a shell that exists but
+# cannot reach one of the tools these steps need says which one. The interpreter check
+# runs the interpreter rather than looking the name up: a `python3` that will not start
+# is the same absence as no `python3` at all.
+_PROBE = (
+    "printf shell\n"
+    "git --version >/dev/null 2>&1 && printf ' git'\n"
+    "python3 -c pass >/dev/null 2>&1 && printf ' python3'\n"
+    "echo x | grep -E x >/dev/null 2>&1 && printf ' grep'\n"
+    "echo x | sed 's/x/y/' >/dev/null 2>&1 && printf ' sed'\n"
+)
+
+
+def _python3_shim():
+    """A fallback `python3` for a platform that ships the interpreter under another
+    name -- Windows installs `python.exe`, and whether a `python3.exe` sits beside it
+    is a fact about one installer rather than about the platform. It goes AFTER the
+    real interpreter directory on PATH, so it only ever fills a genuine gap and can
+    never shadow a working `python3` with a shim that does not run.
+    """
+    directory = tempfile.mkdtemp(prefix="oss-gate-shim-")
+    atexit.register(shutil.rmtree, directory, True)
+    shim = Path(directory) / "python3"
+    shim.write_text(
+        "#!/bin/sh\nexec '{}' \"$@\"\n".format(Path(sys.executable).as_posix()),
+        encoding="utf-8",
+    )
+    shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return directory
+
+
+_SHIM_DIR = _python3_shim()
+
+
+def _companion_dirs(shell):
+    """Where the tools that ship WITH a given shell live, derived from where that
+    shell actually is rather than from an install path guessed for a platform.
+
+    `bash -c` is neither a login nor an interactive shell, so it reads no profile: the
+    PATH it gets is exactly the one handed to it. Under Git for Windows that is the
+    difference between reaching `grep` and `sed` and not -- they sit in the
+    installation's own `usr/bin`, not beside `bash.exe`.
+    """
+    if not shell:
+        return []
+    home = Path(shell).resolve().parent
+    found = []
+    for candidate in (home, home.parent / "usr" / "bin", home.parent / "mingw64" / "bin",
+                      home.parent / "bin"):
+        if candidate.is_dir() and str(candidate) not in found:
+            found.append(str(candidate))
+    return found
+
+
+def _child_env(shell=None, **extra):
+    """The environment every shell started by this file gets.
+
+    Inherited rather than pinned to POSIX literals. The pinned `/usr/bin:/bin` named
+    directories that do not exist on Windows, so even the right shell would have found
+    no git there -- and an env dict stripped of the platform's own variables is not one
+    a Windows runner reliably starts a process with at all. The one thing still pinned
+    is which `python3` wins: the interpreter running the tests, which is what pinning
+    the PATH was for.
+
+    The shell is passed in so a candidate is PROBED with the same environment it will
+    later be RUN with. Probing under a richer PATH than the run gets is how a green
+    probe turns into a red step.
+    """
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join(
+        [str(Path(sys.executable).parent), _SHIM_DIR]
+        + _companion_dirs(shell)
+        + [env.get("PATH", "")]
+    )
+    env.update(extra)
+    return env
+
+
+def _bash_candidates():
+    """Every plausible shell, best-first.
+
+    Nothing here is an install path guessed for a platform: PATH is read, and Git's
+    own shell is derived from where `git` actually is, so a runner that puts Git
+    somewhere unusual is still covered.
+    """
+    seen = []
+
+    def add(path):
+        # A PATH entry does not have to be a well-formed path, and a Windows one
+        # regularly is not. A candidate that cannot even be spelled is not a reason
+        # for the whole file to error out before it has looked at the next one.
+        try:
+            if path and str(path) not in seen and Path(path).is_file():
+                seen.append(str(path))
+        except (OSError, ValueError):
+            pass
+
+    add(os.environ.get("OSS_TEST_BASH"))
+    add(shutil.which("bash"))
+    # Every bash on PATH, not only the first: on Windows the first is WSL's.
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if entry:
+            for name in ("bash", "bash.exe"):
+                add(Path(entry) / name)
+    # Git ships a shell beside itself, and a Windows runner always has Git.
+    git = shutil.which("git")
+    if git:
+        home = Path(git).resolve().parent
+        for base in (home, home.parent):
+            for rel in ("bash", "bash.exe", "bin/bash", "bin/bash.exe",
+                        "usr/bin/bash", "usr/bin/bash.exe"):
+                add(base / rel)
+    return seen
+
+
+def _probe_shell(candidate):
+    """Spawn it and see. Returns (the tools it reached, a line saying what happened)."""
+    try:
+        done = subprocess.run(
+            [str(candidate), "-c", _PROBE],
+            env=_child_env(candidate),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            errors="replace",
+            timeout=120,
+        )
+    except OSError as exc:
+        return (), "not spawnable: {}".format(exc)
+    except subprocess.TimeoutExpired:
+        return (), "spawned and never answered"
+    return _classify(done.returncode, done.stdout)
+
+
+def _classify(returncode, stdout):
+    """The verdict on one answer, split out so it can be tested against the exact
+    reply a Windows runner produced without needing that runner."""
+    # WSL answers in UTF-16; dropping the interleaved NULs is what makes its refusal
+    # readable in the skip reason instead of a wall of nul bytes.
+    said = " ".join((stdout or "").replace("\x00", "").split())
+    if returncode != 0 or "shell" not in said.split():
+        return (), "exit {}: {}".format(returncode, said[:120] or "(said nothing)")
+    return tuple(said.split()), "ok, reached: " + said
+
+
+_ATTEMPTS = [(candidate, _probe_shell(candidate)) for candidate in _bash_candidates()]
+
+
+def _pick_shell(attempts):
+    """The first shell that reached the most of what these steps call.
+
+    Not the first one that started: on a Windows runner the first that starts may be
+    the one that reaches nothing, and a suite run through it would be measuring the
+    machine rather than the gate. `max` keeps the earliest of any tie, so on POSIX the
+    `bash` on PATH is still what runs.
+    """
+    usable = [(c, tools) for c, (tools, _note) in attempts if tools]
+    if not usable:
+        return (None, ())
+    return max(usable, key=lambda pair: len(pair[1]))
+
+
+BASH, BASH_REACHED = _pick_shell(_ATTEMPTS)
+
+# Named so the log says WHICH of the three states happened. A bare "no bash" fires
+# identically on a platform where this is genuinely untestable and on one where the
+# shell was merely looked for in the wrong place, and nobody could tell them apart.
+# `-rs` is in this repo's addopts, so the reason reaches the CI log.
+def _shell_report(attempts):
+    if not attempts:
+        return (
+            "no usable shell: no candidate was found to try. PATH carries no bash, "
+            "and git -- which ships one beside itself -- is at {}.".format(
+                shutil.which("git") or "(nowhere on PATH)"
+            )
+        )
+    return "no usable shell. Spawned each candidate and asked it to behave like one: " + (
+        "; ".join("{} -> {}".format(c, note) for c, (_tools, note) in attempts)
+    )
+
+
+SHELL_REPORT = _shell_report(_ATTEMPTS)
+
+
+pytestmark = pytest.mark.skipif(BASH is None, reason=SHELL_REPORT)
+
+
+def _require(tool):
+    """A shell can be usable and still not reach what a given step calls. Skipping on
+    that is the third state again, one level down, and it says which tool and which
+    shell rather than leaving a step that never ran looking like a step that passed.
+    """
+    if tool not in BASH_REACHED:
+        pytest.skip(
+            "the shell found ({}) cannot reach {}; it reached: {}".format(
+                BASH, tool, " ".join(BASH_REACHED) or "nothing"
+            )
+        )
+
 
 GENERATED_WORKFLOW = ".github/workflows/oss-changelog.yml"
 
@@ -137,14 +359,123 @@ def _pull_request(tmp_path, head_files):
 
 
 def _run_gate(repo):
+    for tool in ("git", "grep", "sed"):
+        _require(tool)
     return subprocess.run(
-        ["bash", "-c", _gate_script()],
+        [BASH, "-c", _gate_script()],
         cwd=str(repo),
-        env={"BASE_REF": "main", "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        env=_child_env(BASH, BASE_REF="main"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
+        errors="replace",
     )
+
+
+# ------------------------------------------------------- the shell probe's own controls
+#
+# The probe decides whether anything below ran at all, so it needs its own matched
+# pair: an answer that must be rejected and an answer that must be accepted. Without
+# the second, a probe that rejected everything would look like a careful probe.
+
+# Byte for byte what a GitHub Windows runner replied when `bash` resolved to WSL's
+# binary: UTF-16, read back through a text pipe, which is where the interleaved NULs
+# in the CI log came from.
+WSL_REFUSAL = (
+    "Windows Subsystem for Linux has no installed distributions.\n"
+    .encode("utf-16-le")
+    .decode("latin-1")
+)
+
+
+def test_the_probe_rejects_the_answer_a_windows_runner_actually_gave():
+    tools, note = _classify(1, WSL_REFUSAL)
+    assert tools == (), note
+    assert "Windows Subsystem for Linux" in note, note
+    assert "\x00" not in note, "the reason is unreadable in the log: " + repr(note)
+
+
+def test_the_probe_accepts_a_shell_that_answers():
+    """The must-fire half of the pair above."""
+    tools, note = _classify(0, "shell git python3")
+    assert tools == ("shell", "git", "python3"), note
+
+
+def test_a_shell_that_exits_clean_but_says_nothing_is_not_read_as_a_pass():
+    """Exit 0 and silence is the shape a broken harness produces, and it must not be
+    the shape a working shell is recognised by."""
+    assert _classify(0, "")[0] == ()
+
+
+def test_the_probe_rejects_a_spawnable_binary_that_is_not_a_shell():
+    """Spawned, not name-matched. The interpreter running these tests starts fine and
+    is not a shell; WSL's binary is called `bash.exe` and is not a shell either, and
+    only one of those two facts is visible in a filename."""
+    tools, note = _probe_shell(sys.executable)
+    assert tools == (), note
+
+
+def test_the_probe_accepts_the_shell_it_chose():
+    """The must-fire half again, this time through a real spawn."""
+    tools, note = _probe_shell(BASH)
+    assert "shell" in tools, note
+
+
+def test_a_candidate_that_is_not_there_is_reported_rather_than_raised():
+    tools, note = _probe_shell(str(REPO_ROOT / "definitely-not-a-shell"))
+    assert tools == ()
+    assert note, "a candidate was dropped without saying why"
+
+
+def test_no_usable_candidate_is_no_shell_at_all_rather_than_a_shell():
+    """The third state itself. Every candidate spawned and none of them a shell has
+    to end as `None`, because falling back to the last one tried would run the suite
+    against WSL and report the result as the gate's verdict."""
+    refused = [("C:/Windows/System32/bash.exe", ((), "exit 1: " + WSL_REFUSAL[:20]))]
+    assert _pick_shell(refused) == (None, ())
+    assert "no usable shell" in _shell_report(refused)
+    assert "System32" in _shell_report(refused)
+
+
+def test_a_usable_shell_below_an_unusable_one_is_still_the_one_chosen():
+    """The must-fire half: rejecting the first candidate must not end the search.
+    This is the Windows runner's exact shape -- WSL first, Git for Windows after."""
+    attempts = [
+        ("C:/Windows/System32/bash.exe", ((), "exit 1: no installed distributions")),
+        ("C:/Program Files/Git/bin/bash.exe", (("shell", "git", "python3"), "ok")),
+    ]
+    assert _pick_shell(attempts)[0] == "C:/Program Files/Git/bin/bash.exe"
+
+
+def test_a_shell_that_reaches_the_tools_beats_one_that_merely_starts():
+    attempts = [
+        ("/first/bash", (("shell",), "ok")),
+        ("/second/bash", (("shell", "git", "python3"), "ok")),
+    ]
+    assert _pick_shell(attempts)[0] == "/second/bash"
+
+
+def test_a_shell_that_reaches_nothing_is_still_better_than_no_shell():
+    """And the tests that need a tool it cannot reach skip by name, rather than the
+    whole file going quiet."""
+    attempts = [("/only/bash", (("shell",), "ok"))]
+    assert _pick_shell(attempts) == ("/only/bash", ("shell",))
+
+
+def test_the_report_with_no_candidate_at_all_says_where_it_looked():
+    report = _shell_report([])
+    assert "no candidate was found to try" in report, report
+    assert "git" in report, report
+
+
+def test_the_report_names_every_candidate_and_what_it_answered():
+    """The skip reason is the whole difference between `no bash` (which would fire
+    identically forever on a platform where this is genuinely untestable) and a line
+    saying what was searched and what each one said."""
+    assert _ATTEMPTS, "not one bash candidate was enumerated on this machine"
+    for candidate, (_tools, note) in _ATTEMPTS:
+        assert candidate in SHELL_REPORT, SHELL_REPORT
+        assert note in SHELL_REPORT, SHELL_REPORT
 
 
 # ------------------------------------------------------------------ positive controls
@@ -332,13 +663,15 @@ def _links_repo(tmp_path, changelog):
 
 
 def _run_links(repo):
+    _require("python3")
     return subprocess.run(
-        ["bash", "-c", _step_script(LINKS_STEP)],
+        [BASH, "-c", _step_script(LINKS_STEP)],
         cwd=str(repo),
-        env={"PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin"},
+        env=_child_env(BASH),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
+        errors="replace",
     )
 
 
