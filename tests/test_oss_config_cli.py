@@ -157,6 +157,59 @@ def test_build_names_a_candidate_it_could_not_read(monkeypatch, capsys):
     assert json.loads(captured.out)["version_sites"] == []
 
 
+def test_build_flags_required_checks_as_a_job_count_not_a_check_count(monkeypatch, capsys):
+    """#85: `required_checks` counts workflow *job declarations*, and a matrix or a
+    reusable workflow multiplies one declaration into many actual check runs -- #113
+    is what trusting the unflagged number looks like once it is on disk (3 vs 14). The
+    note is the fix: the number stays, but it can no longer be mistaken for a count of
+    check runs.
+    """
+    probe = _probe(workflow_jobs=["tests.yml:pytest", "changelog.yml:fragment"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
+    assert oss_config._main(["--build"]) == 0
+    captured = capsys.readouterr()
+    assert "ci.required_checks" in captured.err
+    assert "job declaration" in captured.err
+    assert "gh pr checks" in captured.err
+    assert json.loads(captured.out)["ci"]["required_checks"] == 2
+
+
+def test_build_says_nothing_about_required_checks_when_there_are_no_jobs(monkeypatch, capsys):
+    """The positive control for the note above: a `0` is already visibly unset and
+    does not need the same caveat repeated over it.
+    """
+    probe = _probe(workflow_jobs=[])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
+    assert oss_config._main(["--build"]) == 0
+    captured = capsys.readouterr()
+    assert "ci.required_checks" not in captured.err
+    assert json.loads(captured.out)["ci"]["required_checks"] == 0
+
+
+def test_build_flags_worktree_root_as_a_naming_guess_not_a_measurement(monkeypatch, capsys):
+    """#85: the emitted `<clone>-wt` guess did not exist on the repo it was filed
+    against; the real worktree root was named differently and was one `ls` away.
+    """
+    probe = _probe(clone="/src/name")
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
+    assert oss_config._main(["--build"]) == 0
+    captured = capsys.readouterr()
+    assert "worktree_root" in captured.err
+    assert "guess" in captured.err
+
+
+def test_build_flags_state_file_as_a_naming_guess_not_a_measurement(monkeypatch, capsys):
+    """#85: the emitted `.max/<repo>-watch.json` guess had never existed on the repo
+    it was filed against; the real state file was named differently.
+    """
+    probe = _probe()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
+    assert oss_config._main(["--build"]) == 0
+    captured = capsys.readouterr()
+    assert "state_file" in captured.err
+    assert "guess" in captured.err
+
+
 def test_help_states_the_probe_schema(capsys):
     """The schema was discoverable only by reading the source, so callers guessed and
     the guesses were wrong in a way nothing reported (#1).
