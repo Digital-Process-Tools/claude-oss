@@ -225,8 +225,51 @@ FIND_CONSUMER
 )
 fi
 
+# `claude mcp get` answers 0 for any CONFIGURED server, whether or not the file it
+# names still exists -- measured against claude 2.1.219, an entry pointing at a
+# deleted script gets exit 0 and a "Failed to connect" status. So presence is not
+# readiness. The path `claude mcp add` stores is absolute and version-pinned,
+# because it is the installPath out of installed_plugins.json, and the plugin cache
+# drops the old version directory on auto-update: the registration outlives the
+# file, the flag is still passed, the resolver is still satisfied, and bun starts
+# nothing. That is the armed-and-delivering-nothing state this script's header is
+# about, so where the registration points is read and compared.
+#
+# It is read out of `claude mcp get`'s own output rather than out of ~/.claude.json:
+# the config file's project keys are realpath'd and its layout is nobody's contract,
+# while `get` is the public way to ask. For a local-scope stdio entry it prints
+#
+#     Type: stdio
+#     Command: bun
+#     Args: /abs/path/to/channel.ts
+#
+# That shape is not a contract either -- the same command prints no Command/Args at
+# all for a project-scope entry -- which is why failing to find those lines is its
+# own reported state below and not a silent pass.
+channel_registered=0
+registered_command=""
+registered_args=""
+if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
+    channel_registered=1
+    # `[ \t]` rather than a POSIX character class: a class inside an awk program
+    # still writes a doubled bracket into the file, and the guard that keeps this
+    # script out of bash test syntax matches on the characters, not on the context.
+    # The trailing sub also eats a CR, because Git Bash reading a Windows-built
+    # claude's output is where that difference shows up.
+    registered_command=$(printf '%s\n' "$channel_entry" | awk '/^[ \t]*Command:/ { sub(/^[ \t]*Command:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }')
+    registered_args=$(printf '%s\n' "$channel_entry" | awk '/^[ \t]*Args:/ { sub(/^[ \t]*Args:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }')
+fi
+
 channel_ready=0
-if [ -z "$channel_script" ]; then
+if [ -z "$channel_script" ] && [ "$channel_registered" -eq 1 ]; then
+    # The third state: a registration exists and there is nothing to compare it
+    # against. Blaming a missing consumer here would send someone to reinstall a
+    # plugin that is installed; what failed is the reading, not the install.
+    echo "oss-workspace: MCP server $CHANNEL_SERVER is registered, but the consumer" \
+         "path could not be resolved here, so whether that registration still points" \
+         "at a file that exists cannot be checked. Opening WITHOUT the channel flag:" \
+         "a board that cannot be verified is not a board that is armed." >&2
+elif [ -z "$channel_script" ]; then
     echo "oss-workspace: the supertool plugin's channel consumer was not found in" \
          "installed_plugins.json, so this session opens WITHOUT the channel flag." \
          "Naming an unregistered server refuses the launch outright, which is worse" \
@@ -234,22 +277,51 @@ if [ -z "$channel_script" ]; then
 elif ! command -v bun >/dev/null 2>&1; then
     echo "oss-workspace: bun is not on PATH, so the channel consumer cannot start." \
          "Opening without the channel flag." >&2
-else
+elif [ "$channel_registered" -eq 1 ] && [ -z "$registered_args" ]; then
+    echo "oss-workspace: MCP server $CHANNEL_SERVER is registered, but no Command or" \
+         "Args line could be read out of 'claude mcp get $CHANNEL_SERVER', so where" \
+         "it points is unknown and cannot be compared with $channel_script. Opening" \
+         "WITHOUT the channel flag rather than trusting it. Run" \
+         "claude mcp remove $CHANNEL_SERVER -s local and start again to have it" \
+         "registered from scratch." >&2
+elif [ "$channel_registered" -eq 1 ] \
+     && [ "$registered_command" = "bun" ] \
+     && [ "$registered_args" = "$channel_script" ]; then
     # Registered at LOCAL scope rather than passed as `--mcp-config`: a server
     # loaded from --mcp-config does start and does bind the socket, but the
     # channel resolver reads CONFIGURED servers only and refuses it by name. Local
     # scope is per-project and private, so it does not ship, and the path is
     # absolute so it cannot depend on CLAUDE_PLUGIN_ROOT being set.
     #
-    # Idempotent: `claude mcp get` is the test, and a re-add on every launch would
-    # churn the user's config for nothing.
-    if claude mcp get "$CHANNEL_SERVER" >/dev/null 2>&1; then
+    # Still idempotent, now on the value rather than on the key: an entry that
+    # already names this consumer is left alone, because a remove-and-add on every
+    # launch churns the user's config for nothing.
+    channel_ready=1
+else
+    # `claude mcp add` refuses a name that is already taken -- "MCP server
+    # oss-channel already exists in local config", exit 1 -- rather than replacing
+    # it, so a re-point is a remove followed by an add. The remove is allowed to
+    # fail: `get` resolves across scopes, so an entry someone put at project or user
+    # scope is found here and is NOT ours to delete at local scope. If the add then
+    # collides with it, that lands in the failure branch below and this session opens
+    # without the flag -- which is the honest answer to a name we do not own.
+    if [ "$channel_registered" -eq 1 ]; then
+        claude mcp remove "$CHANNEL_SERVER" -s local >/dev/null 2>&1 || true
+    fi
+    if claude mcp add -s local "$CHANNEL_SERVER" bun "$channel_script" >/dev/null 2>&1; then
         channel_ready=1
-    elif claude mcp add -s local "$CHANNEL_SERVER" bun "$channel_script" >/dev/null 2>&1; then
-        channel_ready=1
-        echo "oss-workspace: registered MCP server $CHANNEL_SERVER at local scope" \
-             "(private to $repo_root) pointing at $channel_script. Remove it with" \
-             "claude mcp remove $CHANNEL_SERVER -s local" >&2
+        if [ "$channel_registered" -eq 1 ]; then
+            echo "oss-workspace: MCP server $CHANNEL_SERVER pointed at" \
+                 "$registered_command $registered_args, which is not the consumer this" \
+                 "session resolved, so it was re-pointed at bun $channel_script. A" \
+                 "version-pinned path outlives the cache directory it names, and a" \
+                 "registration that survives its file is a channel that delivers" \
+                 "nothing. Remove it with claude mcp remove $CHANNEL_SERVER -s local" >&2
+        else
+            echo "oss-workspace: registered MCP server $CHANNEL_SERVER at local scope" \
+                 "(private to $repo_root) pointing at $channel_script. Remove it with" \
+                 "claude mcp remove $CHANNEL_SERVER -s local" >&2
+        fi
     else
         echo "oss-workspace: could not register the MCP server $CHANNEL_SERVER, so" \
              "this session has no channel consumer. Opening without the flag;" \
