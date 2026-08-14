@@ -837,7 +837,14 @@ def release_publish_policy(config):
         value = release.get(key)
         if isinstance(value, bool):
             policy[field] = value
-            policy["stated"] = True
+
+    # `stated` is about `create_release` alone, and deliberately not a union over the
+    # three keys. A repo that set only `draft` has said how it would publish, not
+    # whether to -- and a union here reported that repo as having chosen not to
+    # publish, in those words, which is a decision it never made rendered exactly like
+    # one it did. That is this module's own defect class inside the accessor written
+    # to prevent it.
+    policy["stated"] = isinstance(release.get("create_release"), bool)
 
     return policy
 

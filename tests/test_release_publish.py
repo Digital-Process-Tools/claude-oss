@@ -27,6 +27,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -105,6 +107,64 @@ def test_a_heading_with_no_body_is_empty_and_not_found():
     # Positive control in the same fixture: the harness can see a body when there
     # is one, so `empty` above is a reading and not a broken extractor.
     assert release_publish.notes_section(text, "0.3.0")["state"] == "found"
+
+
+def test_a_heading_shaped_line_inside_a_fence_is_not_a_boundary():
+    """A changelog entry quoting a changelog is not exotic, and a `## [x]` line at
+    column 0 inside a fence read as a real heading truncates the notes there. That is
+    worse than either absence this module reports: not a state, but wrong content
+    returned as `found`, with nothing downstream able to tell.
+    """
+    text = (
+        "# Changelog\n\n"
+        "## [0.3.0] - 2026-08-14\n\n"
+        "- Before the fence.\n\n"
+        "```markdown\n"
+        "## [9.9.9] - not a real release\n"
+        "```\n\n"
+        "- After the fence.\n\n"
+        "## [0.2.0] - 2026-07-01\n\n"
+        "- Older.\n"
+    )
+    found = release_publish.notes_section(text, "0.3.0")
+    assert found["state"] == "found"
+    assert "- Before the fence." in found["body"]
+    # The whole point. Without fence tracking the body stops at the fenced line and
+    # this is the assertion that fails.
+    assert "- After the fence." in found["body"]
+    # Still bounded by the next *real* heading, so the fix did not simply widen it.
+    assert "- Older." not in found["body"]
+    # And the fenced line never becomes a section of its own.
+    assert release_publish.notes_section(text, "9.9.9")["state"] == "missing"
+
+
+def test_a_tilde_fence_closes_only_on_a_tilde_fence():
+    """```` ``` ```` inside a `~~~` block does not close it, and an info string on a
+    closing fence does not either. Both are how a hand-maintained CHANGELOG.md ends
+    up with an extractor that silently disagrees with the renderer above it.
+    """
+    text = (
+        "## [1.0.0]\n\n"
+        "~~~\n"
+        "```\n"
+        "## [8.8.8]\n"
+        "~~~\n\n"
+        "- Real content.\n"
+    )
+    found = release_publish.notes_section(text, "1.0.0")
+    assert found["state"] == "found"
+    assert "- Real content." in found["body"]
+    assert release_publish.notes_section(text, "8.8.8")["state"] == "missing"
+
+
+def test_a_crlf_changelog_extracts_the_same_notes():
+    """Reasoned, not observed: a Windows checkout with `core.autocrlf` writes CRLF,
+    and `notes_section` is a pure function that can be handed the bytes directly.
+    """
+    found = release_publish.notes_section(CHANGELOG.replace("\n", "\r\n"), "0.3.0")
+    assert found["state"] == "found"
+    assert "The thing that was fixed (#58)." in found["body"].replace("\r\n", "\n")
+    assert "An older thing nobody is releasing today." not in found["body"]
 
 
 def test_a_version_with_no_section_is_missing():
@@ -293,6 +353,33 @@ def test_the_publish_policy_defaults_are_the_conservative_ones():
     assert policy["stated"] is False
 
 
+def test_a_sibling_key_does_not_state_a_decision_about_publishing():
+    """`stated` is about `create_release` alone. A repo that set only `draft` has said
+    how it would publish, not whether to -- and a `stated` that unions the three keys
+    reported that repo, in words, as having chosen not to publish. A decision it never
+    made, rendered exactly like one it did.
+    """
+    partial = {"repo": "owner/name", "release": {"draft": True}}
+    policy = oss_config.release_publish_policy(partial)
+    assert policy["create"] is False
+    assert policy["stated"] is False
+    plan = release_publish.plan(
+        config=partial, tag="v0.3.0", notes_path="/tmp/notes.md", gh="gh"
+    )
+    assert plan["state"] == release_publish.STATE_SKIPPED
+    assert "unset" in plan["reason"]
+    # Positive control on the same key: an explicit false does say so, so the reason
+    # above is a reading of the config and not one sentence for every skip.
+    explicit = release_publish.plan(
+        config=_config(create_release=False),
+        tag="v0.3.0",
+        notes_path="/tmp/notes.md",
+        gh="gh",
+    )
+    assert "unset" not in explicit["reason"]
+    assert "false" in explicit["reason"]
+
+
 def test_a_stated_policy_wins_over_the_defaults():
     policy = oss_config.release_publish_policy(
         _config(create_release=True, draft=False, latest=True)
@@ -318,14 +405,27 @@ def test_this_repo_publishes_and_says_so_in_its_own_config():
 # ------------------------------------------------------------------- execution
 
 
+# The fake-gh fixture is a POSIX shebang script, so the tests that spawn it are
+# POSIX-only and say so rather than being quietly absent on the platform they do not
+# run on. Windows honours no shebang, and a `.cmd` shim is not obviously spawnable
+# through `subprocess` with `shell=False` either -- which is the trap, not the
+# inconvenience: an unspawnable fixture raises a spawn error, `execute` reports that
+# as `could-not-create`, and the test asserting `could-not-create` on a *failing gh*
+# then passes for a reason that has nothing to do with gh's exit code. A green leg
+# measuring its own fixture is worse than a named skip.
+#
+# So the three-state behaviour is measured on every platform by
+# `test_execute_tells_the_states_apart_without_any_fake_binary` below, which spawns
+# the running interpreter -- the one executable every leg is guaranteed to have.
+posix_only = pytest.mark.skipif(
+    os.name == "nt",
+    reason="the fake gh is a shebang script; Windows covers execute() via sys.executable",
+)
+
+
 def _fake_gh(tmp_path, exit_code=0):
     """A `gh` that records the argv it was handed. The seam is the process boundary,
     so what the test reads back is the command that really ran.
-
-    Spawned two different ways because there is no one way. Windows honours no
-    shebang, so a chmod +x file with `#!` on line one is not an executable there --
-    it is a spawn error, which would surface as `could-not-create` and let the
-    failure test pass for a reason that has nothing to do with gh's exit code.
     """
     tmp_path.mkdir(parents=True, exist_ok=True)
     record = tmp_path / "argv.json"
@@ -337,13 +437,6 @@ def _fake_gh(tmp_path, exit_code=0):
         "sys.exit({1})\n".format(str(record), exit_code),
         encoding="utf-8",
     )
-    if os.name == "nt":
-        script = tmp_path / "gh.cmd"
-        script.write_text(
-            '@echo off{0}"{1}" "{2}" %*{0}'.format("\r\n", sys.executable, impl),
-            encoding="utf-8",
-        )
-        return script, record
     script = tmp_path / "gh"
     script.write_text(
         "#!{0}\nimport runpy\nrunpy.run_path({1!r}, run_name='__main__')\n".format(
@@ -355,6 +448,34 @@ def _fake_gh(tmp_path, exit_code=0):
     return script, record
 
 
+def test_execute_tells_the_states_apart_without_any_fake_binary(tmp_path):
+    """Every platform, including the ones the shebang fixture cannot reach. The plan
+    is hand-built here -- the one place in this file that does that -- because the
+    subject is `execute`'s reading of an exit code and nothing else.
+    """
+    base = {
+        "state": release_publish.STATE_CREATE,
+        "tag": "v0.3.0",
+        "repo": "owner/name",
+        "draft": False,
+        "latest": True,
+    }
+    ok = dict(base, command=[sys.executable, "-c", "import sys; sys.exit(0)"])
+    bad = dict(
+        base,
+        command=[sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(1)"],
+    )
+    assert release_publish.execute(ok)["state"] == release_publish.STATE_CREATED
+    failed = release_publish.execute(bad)
+    assert failed["state"] == release_publish.STATE_COULD_NOT_CREATE
+    assert "boom" in failed["detail"]
+    # A command that cannot be spawned at all is could-not-create too, and never a
+    # traceback out of a release path.
+    missing = dict(base, command=[str(tmp_path / "no-such-gh"), "release", "create"])
+    assert release_publish.execute(missing)["state"] == release_publish.STATE_COULD_NOT_CREATE
+
+
+@posix_only
 def test_executing_runs_the_command_that_was_planned_verify_tag_and_all(tmp_path):
     script, record = _fake_gh(tmp_path, exit_code=0)
     notes = tmp_path / "notes.md"
@@ -374,6 +495,7 @@ def test_executing_runs_the_command_that_was_planned_verify_tag_and_all(tmp_path
     assert "--latest" in argv
 
 
+@posix_only
 def test_a_failing_call_is_could_not_create_and_never_reads_as_created(tmp_path):
     script, _ = _fake_gh(tmp_path, exit_code=1)
     notes = tmp_path / "notes.md"
@@ -391,6 +513,7 @@ def test_a_failing_call_is_could_not_create_and_never_reads_as_created(tmp_path)
     assert "no such tag" in result["detail"]
 
 
+@posix_only
 def test_executing_a_skipped_plan_creates_nothing(tmp_path):
     script, record = _fake_gh(tmp_path)
     result = release_publish.execute(
@@ -511,6 +634,7 @@ def test_a_missing_changelog_is_could_not_run_and_not_a_traceback(tmp_path):
 # `--execute` is a release path nothing has ever walked.
 
 
+@posix_only
 def test_execute_end_to_end_creates_the_release_and_ran_verify_tag(tmp_path):
     repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
     script, record = _fake_gh(tmp_path / "bin", exit_code=0)
@@ -537,6 +661,7 @@ def test_execute_end_to_end_creates_the_release_and_ran_verify_tag(tmp_path):
     assert "The thing that was fixed (#58)." in notes
 
 
+@posix_only
 def test_execute_reports_could_not_create_when_gh_fails(tmp_path, capsys):
     repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
     script, _ = _fake_gh(tmp_path / "bin", exit_code=1)

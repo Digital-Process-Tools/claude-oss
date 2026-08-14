@@ -67,7 +67,52 @@ CHANGELOG_NAME = "CHANGELOG.md"
 # `## [0.3.0] - 2026-08-14`, and the label is captured whole. Whole rather than a
 # prefix on purpose: `0.3` must not match `## [0.3.0]`, and `0.3.0` must not match
 # `## [0.3.0-rc1]` -- either would announce the wrong release with the right title.
-HEADING_RE = re.compile(r"^##[ \t]+\[([^\]]+)\]", re.MULTILINE)
+#
+# Matched a line at a time rather than with re.MULTILINE over the whole file, because
+# a fenced code block can contain a line shaped exactly like a heading -- a changelog
+# entry quoting a changelog is not exotic. Read as a real boundary, that line
+# truncates the notes at the fence and the release ships with the tail missing. That
+# is worse than either absence this module reports: not a state, but wrong content
+# returned as `found`, and nothing downstream can tell.
+HEADING_RE = re.compile(r"^##[ \t]+\[([^\]]+)\]")
+
+# CommonMark: three or more backticks or tildes, optionally indented up to three
+# spaces. A closing fence is the same character, at least as long, and carries
+# nothing after it.
+FENCE_RE = re.compile(r"^(`{3,}|~{3,})(.*)$")
+
+
+def _headings(text):
+    """Every real `## [label]` heading: (label, body start, heading line start).
+
+    Real means not inside a fenced code block.
+    """
+    found = []
+    fence = None
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        body = line.lstrip(" ")
+        indented = len(line) - len(body)
+        stripped = body.rstrip("\r\n")
+        if indented <= 3:
+            match = FENCE_RE.match(stripped)
+            if match:
+                marker, rest = match.group(1), match.group(2)
+                if fence is None:
+                    # An opening fence's info string may say anything; a closing one
+                    # may not, which is the only thing keeping ```python from closing
+                    # the block it opens.
+                    fence = (marker[0], len(marker))
+                elif marker[0] == fence[0] and len(marker) >= fence[1] and not rest.strip():
+                    fence = None
+                offset += len(line)
+                continue
+        if fence is None and indented == 0:
+            heading = HEADING_RE.match(stripped)
+            if heading:
+                found.append((heading.group(1).strip(), offset + len(line), offset))
+        offset += len(line)
+    return found
 
 
 def _one_line(text, limit=200):
@@ -99,15 +144,13 @@ def notes_section(text, version):
     if not text or not version:
         return {"state": "missing", "body": None, "reason": "no changelog text or no version"}
 
-    headings = list(HEADING_RE.finditer(text))
-    for index, match in enumerate(headings):
-        if match.group(1).strip() != str(version).strip():
+    headings = _headings(text)
+    for index, (label, start, _) in enumerate(headings):
+        if label != str(version).strip():
             continue
         # The body starts after the heading *line*, not after the closing bracket:
         # `## [0.3.0] - 2026-08-14` carries a date that is not part of the notes.
-        line_end = text.find("\n", match.end())
-        start = len(text) if line_end == -1 else line_end + 1
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        end = headings[index + 1][2] if index + 1 < len(headings) else len(text)
         body = text[start:end].strip()
         if not body:
             return {
