@@ -581,6 +581,68 @@ def owned_drift(repo_root, config, plugin_root=None):
     return findings
 
 
+def owned_drift_summary(findings):
+    """Turn per-file findings into one line per distinct fact, naming every file it covers.
+
+    Three owned files absent from a repo is one gap with one fix. Printed per file it
+    was three warnings, each ending in the same `Run /oss:scaffold.`, counted three
+    times in the verdict and read as three unrelated findings.
+
+    Findings are grouped on what they actually say -- the detail with its own path
+    prefix removed -- so identical facts collapse and different ones never do. That
+    keeps the three states apart without the grouping needing to know them: `absent`,
+    `drifted` and `unknown` say different things, and `unknown` is a check that could
+    not look rather than a pass. `current` stays one OK line per file; a clean repo's
+    output is not what was wrong here.
+
+    Lines come out in first-appearance order: a group is emitted where its first member
+    appeared, so grouping only ever pulls a later file up to an earlier one and never
+    reorders the report around it. Emitting the OK lines as they were found and the
+    grouped ones afterwards would have moved every clean file ahead of a gap listed
+    before it, which is a reordering nobody asked for.
+
+    What this deliberately does NOT do is name the next command when there is nothing
+    to report. A line printed regardless of state carries no information, and the rest
+    of this file holds to the opposite rule: a line appears only when a check has
+    something to say, so its absence means clean. The advice belongs on the surface
+    that instructs the work -- `commands/setup.md` names `/oss:scaffold` at its close
+    whatever doctor said, and `commands/scaffold.md` names `/oss:tick` at its own --
+    not in a diagnostic that also runs mid-tick and before a release.
+    """
+    groups = []  # (state, shared text, [paths]), in first-appearance order
+    for finding in findings:
+        detail = finding["detail"]
+        prefix = "{}: ".format(finding["path"])
+        shared = detail[len(prefix):] if detail.startswith(prefix) else detail
+        if shared == finding["path"]:
+            # A detail that is just the path says nothing beyond it -- that is what a
+            # `current` finding carries -- and re-appending it would print it twice.
+            shared = ""
+        # A current file is its own group always: there is no gap to collapse, and
+        # merging clean files would replace a readable list with a count.
+        if finding["state"] != "current":
+            for state, text, paths in groups:
+                if state == finding["state"] and text == shared:
+                    paths.append(finding["path"])
+                    break
+            else:
+                groups.append((finding["state"], shared, [finding["path"]]))
+            continue
+        groups.append((finding["state"], shared, [finding["path"]]))
+
+    lines = []
+    for state, shared, paths in groups:
+        level = "OK" if state == "current" else "WARN"
+        if len(paths) == 1:
+            body = "{}: {}".format(paths[0], shared) if shared else paths[0]
+            lines.append((level, body))
+        else:
+            lines.append(
+                (level, "{} owned files -- {}: {}".format(len(paths), ", ".join(paths), shared))
+            )
+    return lines
+
+
 def declared_dependencies():
     manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
     try:
@@ -716,8 +778,8 @@ def check_freshness(project_dir, config):
 
     if config is None or scaffold is None:
         return
-    for finding in owned_drift(project_dir, config):
-        report("OK" if finding["state"] == "current" else "WARN", finding["detail"])
+    for state, message in owned_drift_summary(owned_drift(project_dir, config)):
+        report(state, message)
 
 
 def main():
