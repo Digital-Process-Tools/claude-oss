@@ -597,6 +597,12 @@ def _read_json_object(path):
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         return None, "{}: could not read ({})".format(path, exc)
+    except ValueError as exc:
+        # `read_text` also raises `UnicodeDecodeError`, a `ValueError`, for a file saved
+        # in another encoding -- cp1252, latin-1, UTF-16. That is a different answer
+        # from the OSError above: the file was found and opened, so this is not a path
+        # or permission problem, and the caller may act on the distinction (#78).
+        return None, "{}: could not decode ({})".format(path, exc)
     try:
         document = json.loads(raw)
     except ValueError as exc:

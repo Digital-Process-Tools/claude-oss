@@ -145,6 +145,41 @@ def test_load_reports_malformed_json_as_a_finding(tmp_path):
     assert problems and any("parse" in p.lower() for p in problems)
 
 
+def test_read_json_object_reports_undecodable_bytes_not_a_crash(tmp_path):
+    """`read_text(encoding="utf-8")` raises `UnicodeDecodeError`, a `ValueError`, not an
+    `OSError` -- so a config saved in another encoding (cp1252, latin-1, UTF-16) must be
+    reported as a finding rather than crash the caller with a traceback. The bytes are
+    written explicitly rather than relying on a platform to produce them, because this
+    bites hardest on Windows and a macOS/Linux run cannot reach it naturally (#78).
+    """
+    bad = tmp_path / "bad.json"
+    bad.write_bytes(b"\x80not-utf8")  # a lone continuation byte: invalid at any position
+    document, problem = oss_config._read_json_object(bad)
+    assert document is None
+    assert problem is not None
+    assert "decode" in problem.lower()
+
+
+def test_read_json_object_distinguishes_undecodable_from_unreadable(tmp_path):
+    """The reason text must say which of the two happened -- a caller may act
+    differently on "the file could not be read" (path, permissions) versus "the file
+    was read and could not be decoded" (encoding). This is also the positive control for
+    the test above: a well-formed sibling file in the same fixture must read cleanly
+    with no problem at all, so the undecodable case is known to be measuring something
+    rather than passing because nothing ran.
+    """
+    bad = tmp_path / "bad.json"
+    bad.write_bytes(b"\x80not-utf8")
+    _, bad_problem = oss_config._read_json_object(bad)
+    assert "could not read" not in bad_problem
+
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({"a": 1}), encoding="utf-8")
+    document, good_problem = oss_config._read_json_object(good)
+    assert document == {"a": 1}
+    assert good_problem is None
+
+
 # ---------------------------------------------------------------------------- probe
 
 
