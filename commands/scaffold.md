@@ -27,12 +27,17 @@ That names the plan but not the content, and the content is what actually needs 
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json --show
 ```
 
-Prints the full body of every file the plan would create — nothing written, same as the plan alone.
-Name one file (`--show CLAUDE.md`) to see just that one, including a file already `present`, when the
-question is what the default itself contains rather than whether it would be written. `--show` and
-`--apply` refuse to run together — show, read it, then apply as a separate step. Relay the plan and
-what each generated file would contain before going further — a default that nobody read is not a
-default, it is a surprise.
+Prints the full body of every file `apply` would actually write — nothing written here, same as the
+plan alone. That covers both halves of `apply`: files it would **create** (a template absent today)
+and files it would **replace** (everything in OWNED — `.oss/README.md`, `.oss/assemble_changelog.py`,
+`.github/workflows/oss-changelog.yml` — rewritten on every single run, whether or not a template is
+missing). Each line says which: a repo that already has every default still gets three `replace`
+lines out of a bare `--show`, because that is the destructive half of `apply` and the one a preview
+is for. Name one file (`--show CLAUDE.md`) to see just that one, including a file already `present`,
+when the question is what the default itself contains rather than whether it would be written.
+`--show` and `--apply` refuse to run together — show, read it, then apply as a separate step. Relay
+the plan and what each generated file would contain before going further — a default that nobody read
+is not a default, it is a surprise.
 
 ## Then write
 

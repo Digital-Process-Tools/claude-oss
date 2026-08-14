@@ -166,3 +166,31 @@ def test_show_of_an_unknown_path_is_a_named_failure(tmp_path, capsys):
     )
     assert result == 1
     assert "FAIL" in capsys.readouterr().out
+
+
+def test_show_includes_owned_files_even_when_every_template_already_exists(tmp_path, capsys):
+    """The sharp case from the coordinator review: with every template already on disk,
+    the bare `--show` this command tells the caller to run must still name the three
+    files `apply` overwrites unconditionally -- printing nothing here reads as "apply
+    would write nothing", which is false.
+    """
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+    result = scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert ".oss/README.md" in out
+    assert ".oss/assemble_changelog.py" in out
+    assert ".github/workflows/oss-changelog.yml" in out
+    assert "nothing to show" not in out
+
+
+def test_show_labels_create_and_replace_differently(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+    out = capsys.readouterr().out
+    create_line = next(line for line in out.splitlines() if "CLAUDE.md" in line)
+    replace_line = next(line for line in out.splitlines() if ".oss/README.md" in line)
+    assert create_line != replace_line
+    assert "create" in create_line
+    assert "replace" in replace_line

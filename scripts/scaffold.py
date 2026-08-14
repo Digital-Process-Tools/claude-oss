@@ -513,27 +513,38 @@ def show(repo_root, config, path=None, plugin_root=None):
     agent's only options were to invent a preview by hand or run ``--apply`` first
     and read the result, which writes before showing (#5).
 
-    ``path=None`` returns every file the plan would actually create -- a file that
-    already exists needs no preview, since the real answer is what is already on
-    disk. A single ``path`` renders it regardless of plan state, known or not: it
-    answers "what would this default contain", which is worth knowing even for a
-    file already present.
+    ``path=None`` covers every file ``apply`` would actually write: both the
+    ``create`` entries (templates absent today) and the ``replace`` entries (the
+    files in OWNED, rewritten on every single run regardless of what is already
+    there). Dropping the OWNED half silently hid the destructive half of apply --
+    a repo with every template already present would then show nothing pending,
+    while apply still overwrote three files right after. Each entry is rendered the
+    same way apply renders it: ``render`` for a create, ``render_owned`` for a
+    replace, so the preview is byte-identical to what gets written.
+
+    A single ``path`` renders it regardless of plan state, known or not: it answers
+    "what would this default contain", which is worth knowing even for a template
+    already present.
     """
     if path is not None:
         if path in TEMPLATES:
-            return [(path, render(path, config))]
+            return [(path, "create", render(path, config))]
         if path in OWNED:
-            return [(path, render_owned(path, config, plugin_root))]
+            return [(path, "replace", render_owned(path, config, plugin_root))]
         raise ScaffoldError(
             "{!r} is not a known template or owned file. Known: {}".format(
                 path, ", ".join(sorted(set(TEMPLATES) | set(OWNED)))
             )
         )
-    return [
-        (entry["path"], render(entry["path"], config))
-        for entry in plan(repo_root, config)
-        if entry["action"] == "create"
-    ]
+    shown = []
+    for entry in plan(repo_root, config):
+        if entry["action"] == "create":
+            shown.append((entry["path"], "create", render(entry["path"], config)))
+        elif entry["action"] == "replace":
+            shown.append(
+                (entry["path"], "replace", render_owned(entry["path"], config, plugin_root))
+            )
+    return shown
 
 
 MIN_TOPICS = 3
@@ -729,11 +740,12 @@ def _main(argv=None):
         except ScaffoldError as exc:
             print("FAIL {}".format(exc))
             return 1
-        for shown_path, body in shown:
-            print("----- {} -----".format(shown_path))
+        for shown_path, action, body in shown:
+            label = "would create" if action == "create" else "would replace (rewritten every run)"
+            print("----- {} ({}) -----".format(shown_path, label))
             print(body)
         if not shown:
-            print("nothing to show -- every file already present")
+            print("nothing to show -- nothing would be written")
         return 0
 
     if not args.apply:
