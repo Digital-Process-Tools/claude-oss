@@ -27,9 +27,44 @@ class RulesError(Exception):
     """The rules could not be installed."""
 
 
+#: The default when the caller has no `changelog_dir` to give. Held against
+#: `scaffold.DEFAULT_FRAGMENTS_DIR` by the suite: two spellings of one default drift, and
+#: the rule would then match a directory the scaffold never creates.
+DEFAULT_FRAGMENTS_DIR = "changelog.d"
+
+#: Where the fragment assembler can be, most-owned first. `.oss/` is the vendored copy
+#: `/oss:scaffold` writes into a managed repo -- CI checks out that repo and nothing else,
+#: so the script has to live there. `scripts/` is where it lives in this plugin's own
+#: repository. A tree holding both is a plugin checkout scaffolded onto itself, and the
+#: owned copy is the one this plugin keeps current.
+#:
+#: Written with forward slashes on every platform. The value ends up in a shell command,
+#: python3 accepts `/` on Windows, and a backslash in Markdown is an escape to whatever
+#: reads it next.
+ASSEMBLER_LOCATIONS = (".oss/assemble_changelog.py", "scripts/assemble_changelog.py")
+
+
+def assembler_path(repo_root):
+    """Where the assembler is **in this tree**, or `None` if it is not in this tree.
+
+    The correct answer differs between this repository and a repository this plugin
+    manages, so it cannot be a constant in shared code -- a constant ships one
+    population's answer to the other, and this template used to ship this repo's (#68).
+
+    `None` is the third state and it is load-bearing. A generator that cannot find the
+    script must not emit a plausible path: the command then fails on first use and reads
+    as the repository being broken rather than as this rule never having looked.
+    """
+    root = Path(repo_root)
+    for relative in ASSEMBLER_LOCATIONS:
+        if (root / relative).is_file():
+            return relative
+    return None
+
+
 CHANGELOG_FRAGMENTS = """---
 title: "Changelog fragments"
-match: changelog.d/
+match: __FRAGMENTS__/
 ---
 
 One file per pull request, so two open PRs never touch the same file. `CHANGELOG.md` is assembled
@@ -46,12 +81,42 @@ read out of context.
 the fragments; an entry written directly into the file is lost at the next release, silently,
 because the fold has no way to know it was meant to stay.
 
-Check before pushing:
+__CHECK__"""
 
-```bash
-python3 scripts/assemble_changelog.py --check --check-links
-```
-"""
+
+def changelog_fragments(assembler, fragments_dir):
+    """The fragment rule, rendered for one tree.
+
+    `assembler` is a repo-relative path or `None`; `fragments_dir` is that repository's
+    fragment directory, which is not `changelog.d` everywhere and is what the rule has to
+    match on or it never fires at all.
+    """
+    if assembler:
+        # Both `--dir` and `--changelog` on every invocation. Given neither, the assembler
+        # derives its own root by walking up for a `.git`, which under a plugin finds the
+        # plugin's repository rather than the one being checked.
+        check = (
+            "Check before pushing:\n"
+            "\n"
+            "```bash\n"
+            "python3 {} --check --check-links --dir '{}' --changelog CHANGELOG.md\n"
+            "```\n"
+        ).format(assembler, fragments_dir)
+    else:
+        # Named as a third state rather than filled with a guess. No path appears here on
+        # purpose: a plausible one is indistinguishable, to whoever runs it, from a path
+        # that was checked.
+        check = (
+            "**The fragment checker could not be located in this repository**, so this rule\n"
+            "names no command. `/oss:scaffold` vendors it; run that and this rule is\n"
+            "rewritten with the invocation. A path guessed here would fail the first time\n"
+            "anybody ran it, and read as this repository being wrong.\n"
+        )
+
+    return CHANGELOG_FRAGMENTS.replace("__FRAGMENTS__", fragments_dir).replace(
+        "__CHECK__", check
+    )
+
 
 OSS_CONFIG = """---
 title: ".oss.json is config, not truth"
@@ -96,16 +161,32 @@ Two refusals worth knowing before editing the file by hand:
   leaves something that still reads as a record.
 """
 
-# dimension -> {filename: body}
-RULES = {
-    "paths": {
-        "changelog-fragments.md": CHANGELOG_FRAGMENTS,
-        "oss-config.md": OSS_CONFIG,
-    },
-    "vocabulary": {
-        "oss-state.md": STATE_FILE,
-    },
-}
+def rules(repo_root=None, fragments_dir=None):
+    """dimension -> {filename: body}, rendered for the tree it is going into.
+
+    `repo_root` is what makes the changelog rule correct in more than one repository: the
+    assembler's path is read off that tree rather than baked in. Called with no root, the
+    changelog rule renders its could-not-locate form -- which is the honest answer to
+    "what do the rules say" asked without a repository to say it about.
+    """
+    return {
+        "paths": {
+            "changelog-fragments.md": changelog_fragments(
+                assembler_path(repo_root) if repo_root is not None else None,
+                fragments_dir or DEFAULT_FRAGMENTS_DIR,
+            ),
+            "oss-config.md": OSS_CONFIG,
+        },
+        "vocabulary": {
+            "oss-state.md": STATE_FILE,
+        },
+    }
+
+
+#: The structural shape -- which rules exist, in which dimension, with what frontmatter.
+#: **Not what any repository receives**: the changelog rule here is the form that names no
+#: command, because nothing has been looked at. `install()` renders per tree.
+RULES = rules()
 
 
 def _frontmatter(body):
@@ -140,30 +221,38 @@ def index_rows(dimension, rules):
     return rows
 
 
-def install(repo_root):
+def install(repo_root, fragments_dir=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
     The layer is removed first: a rule we stopped shipping would otherwise survive an
     update and keep firing with nobody maintaining it.
+
+    The rules are rendered against `repo_root`, not copied from a constant, so the
+    changelog rule names the assembler where **this** repository keeps it. `fragments_dir`
+    is that repository's `changelog_dir`; the caller has it and this module does not.
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
         raise RulesError("{}: not a directory".format(root))
 
     written = []
-    for dimension, rules in RULES.items():
+    # Rendered once, against this tree, before anything is removed.
+    rendered = rules(root, fragments_dir)
+    for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.exists():
             shutil.rmtree(layer)
         layer.mkdir(parents=True)
 
-        for name in sorted(rules):
+        for name in sorted(layer_rules):
             target = layer / name
-            target.write_text(rules[name], encoding="utf-8")
+            target.write_text(layer_rules[name], encoding="utf-8")
             written.append(target)
 
         index = layer / INDEX
-        index.write_text("\n".join(index_rows(dimension, rules)) + "\n", encoding="utf-8")
+        index.write_text(
+            "\n".join(index_rows(dimension, layer_rules)) + "\n", encoding="utf-8"
+        )
         written.append(index)
 
     return written
