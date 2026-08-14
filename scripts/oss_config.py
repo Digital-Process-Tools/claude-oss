@@ -415,45 +415,105 @@ def _enclosing_clone(start):
     return common.parent, ""
 
 
-def resolve_config_path(path):
+def _anchored_elsewhere(given):
+    """Would joining ``given`` onto a base directory throw that base away?
+
+    Only Windows answers yes for a path that is not absolute. `C:x` is drive-relative,
+    and a leading separator with no drive is relative to the current drive's root;
+    pathlib joins both by discarding the left-hand side -- so an explicit `start` would
+    silently revert to the process's own directory, which is the exact leak `start`
+    exists to close. The branch is unreachable on a POSIX leg, so it is measured against
+    `PureWindowsPath` directly rather than through a fixture no POSIX runner can build.
+    """
+    return bool(given.drive or given.root) and not given.is_absolute()
+
+
+def resolve_config_path(path, start=None):
     """Where the project config really is, as ``(resolved, origin, detail)``.
+
+    ``start`` is the directory the question is asked *from*, defaulting to the process's
+    own. A relative ``path`` is read against it and the widening anchors on it, so a
+    caller pointed at a tree it is not standing in -- `/oss:doctor --root` -- can ask
+    the question it means. Without it the only expressible question was about the
+    current directory, and the alternative every caller reached for was to compute a
+    relative path from cwd to the tree: ``os.path.relpath`` returns
+    ``../../../../../clone/sub/.oss.json`` whenever the two differ, or merely arrive
+    under different spellings of one directory, which on macOS is the default. That
+    path is then appended to the clone and answers `not found` for a config sitting in
+    it -- #53's bug reintroduced by the code adopting #53's fix. ``start`` exists so
+    that no caller has to build such a path: nothing here is resolved against cwd.
 
     ``origin`` is one of:
 
-    ``here``     ``path`` exists as given, and nothing else is consulted.
-    ``clone``    absent here, present in the working tree of the enclosing clone. This
-                 is the git-worktree case: `.oss.json` may be git-excluded, so it lives
-                 in the clone and in none of its worktrees, and the developer standing
-                 in a worktree is standing in the same repository.
-    ``missing``  absent, and ``detail`` says how far the search got -- which is not the
-                 same sentence when the clone was checked as when it could not be found.
+    ``here``           ``path`` exists relative to ``start``, and nothing else is
+                       consulted.
+    ``clone``          absent there, present in the working tree of the enclosing clone.
+                       This is the git-worktree case: `.oss.json` may be git-excluded,
+                       so it lives in the clone and in none of its worktrees, and the
+                       developer standing in a worktree is in the same repository.
+    ``missing``        absent, and the widening ran: ``detail`` says how far it got.
+    ``unsearchable``   absent, and the widening could NOT run -- there is no enclosing
+                       clone to search, or git could not be asked whether there is one.
+                       Split out from ``missing`` because "the clone has no config" and
+                       "no clone was searched at all" are the two answers this whole
+                       project exists to keep apart, and prose alone kept them apart
+                       only for readers: a caller branching on ``origin`` saw one value.
 
-    An absolute ``path`` is never widened: a path somebody typed in full is an answer,
-    not a starting point.
+    ``unsearchable`` deliberately does not subdivide further into "git is absent" and
+    "this is no repository". ``_enclosing_clone`` draws the line it can measure -- git
+    answered, or it did not -- and its ``why_not`` carries the rest as prose. Recovering
+    that finer split would mean matching git's stderr text, which is version- and
+    locale-dependent; a state derived from a string match is a state that goes wrong
+    silently, which is the defect, not the fix.
+
+    An absolute ``path`` is never widened, with or without ``start``: a path somebody
+    typed in full is an answer, not a starting point, and it stays ``missing`` because
+    nothing the caller asked about went unsearched.
     """
     given = Path(path)
-    if given.is_file():
-        return given, "here", ""
+    base = None if start is None else Path(start)
+    if base is not None and _anchored_elsewhere(given):
+        return (
+            None,
+            "unsearchable",
+            "{} carries an anchor of its own, so it cannot be read relative to {} -- "
+            "joining them would drop {} and search this process's directory instead. "
+            "Pass the path in full, or pass one with no drive and no leading "
+            "separator.".format(given, base, base),
+        )
+    here = given if (base is None or given.is_absolute()) else base / given
+    if here.is_file():
+        return here, "here", ""
     if given.is_absolute():
         return None, "missing", "Run /oss:setup to write it."
+    if base is not None and not base.is_dir():
+        # An explicit `start` that is not there must never fall back to the process's
+        # directory the way the cwd form does below. That fallback is how a --root at a
+        # path that does not exist came back describing the caller's own repository
+        # (#62), and with `start` the fallback would be silent as well as wrong.
+        return (
+            None,
+            "unsearchable",
+            "{} is not a directory, so it is in no clone that could be searched.".format(base),
+        )
 
     # git is asked from the directory the path points into, but that directory need not
     # exist here -- an excluded `configs/.oss.json` has no `configs/` in the worktree.
     # A non-existent cwd makes the subprocess fail to start, which would be reported as
     # "git could not answer" about a repository git can answer about perfectly well.
-    start = given.parent
-    if not start.is_dir():
-        start = Path(".")
-    clone, why_not = _enclosing_clone(start)
+    probe = here.parent
+    if not probe.is_dir():
+        probe = base if base is not None else Path(".")
+    clone, why_not = _enclosing_clone(probe)
     if clone is None:
         return (
             None,
-            "missing",
+            "unsearchable",
             "No enclosing clone could be checked ({}), so nowhere else was searched. "
             "Run /oss:setup to write it.".format(why_not),
         )
     try:
-        same = clone.samefile(start)
+        same = clone.samefile(probe)
     except OSError:
         same = False
     if same:
@@ -468,14 +528,17 @@ def resolve_config_path(path):
     )
 
 
-def load_from(path):
+def load_from(path, start=None):
     """`load`, plus where the file was found: ``(config, problems, origin, resolved)``.
 
     Callers that print to a human want the origin -- reading the clone's config from a
     worktree is correct and still worth saying out loud, because the config names paths
     that are now one directory away.
+
+    ``start`` is passed straight through to `resolve_config_path`; a caller pointed at a
+    tree it is not standing in names that tree here rather than building a path to it.
     """
-    resolved, origin, detail = resolve_config_path(path)
+    resolved, origin, detail = resolve_config_path(path, start=start)
     if resolved is None:
         return None, ["{}: not found. {}".format(path, detail)], origin, None
     config, problems = load(resolved)
