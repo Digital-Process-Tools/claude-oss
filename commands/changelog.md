@@ -23,6 +23,12 @@ are standing in — and it answers confidently rather than refusing, because it 
 repo. That is harmless for `--check`, which only reads the wrong tree. It is not harmless
 for the fold, which writes to it.
 
+The fold no longer accepts that guess (#67): with either flag missing it exits `2` and
+prints the invocation to run instead. `--check`, `--check-links` and `--count` keep the
+derived default, because a scaffolded repo's CI calls the vendored `.oss/` copy bare and
+that copy's derivation is correct — so passing the flags there is discipline, not a
+requirement, and a wrong tree costs a read rather than a write.
+
 Fragment names must parse, the section must be a real Keep a Changelog heading, and the body must be
 a single top-level list with no headings, no raw HTML and no unclosed fences.
 
@@ -31,6 +37,10 @@ a single top-level list with no headings, no raw HTML and no unclosed fences.
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
 ```
+
+Both flags are **required** here — the fold refuses rather than derive a target, in this copy
+and in the vendored one alike, because nothing on disk distinguishes "the repo this file is
+stored in" from "the repo being released".
 
 This rewrites `CHANGELOG.md` and **deletes the fragments**. Do not run it outside a release you have
 already gated: default branch green at leg level for the exact commit, nothing mid-review, security

@@ -77,9 +77,14 @@ separately rather than one list.
 - **`assemble_changelog.py` derives its root from its own location** by walking up for a `.git`.
   Under a plugin that walk finds **the plugin's own repository**, so a fold given neither `--dir`
   nor `--changelog` rewrites this repo's `CHANGELOG.md` and deletes this repo's fragments, and says
-  it worked — it did find a repo. Always pass both, on every mode. This trap said `.github/scripts/`
-  and a fixed parent count until #65; the derivation changed and the warning beside it did not, so
-  `commands/changelog.md` carried the fix for one shape of the bug and the description of another.
+  it worked — it did find a repo. **Since #67 the fold refuses instead**, exits `2` and prints the
+  invocation to run; the read-only modes keep the derived default, since they only read and the
+  vendored `.oss/` copy derives correctly. The requirement is unconditional across both copies on
+  purpose: which repository the caller *meant* is not on disk, so a detector would be guessing, and
+  a wrong guess writes to a repository nobody named. Still pass both, on every mode. This trap said
+  `.github/scripts/` and a fixed parent count until #65; the derivation changed and the warning
+  beside it did not, so `commands/changelog.md` carried the fix for one shape of the bug and the
+  description of another.
 - **A forge reads workflows only from `.github/workflows/` itself.** Subdirectories are unsupported
   and a symlink there fails outright — hence the `oss-` filename prefix as the only ownership
   signal available.
