@@ -16,10 +16,12 @@ which is a separate decision, not something this command does on the way past.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
 ```
 
-**Always pass `--dir` and `--changelog`.** The script derives its default root from
-its own location, which assumes it lives in the target repo's `.github/scripts/`. It
-lives in the plugin instead, so the default resolves somewhere above whatever repo
-you are in — and it answers confidently rather than refusing.
+**Always pass `--dir` and `--changelog` — on every mode, including the fold below.** With
+neither, the script derives its root by walking up from its own location for a `.git`. It
+lives in the plugin, so that walk lands in **the plugin's own repository**, not the one you
+are standing in — and it answers confidently rather than refusing, because it did find a
+repo. That is harmless for `--check`, which only reads the wrong tree. It is not harmless
+for the fold, which writes to it.
 
 Fragment names must parse, the section must be a real Keep a Changelog heading, and the body must be
 a single top-level list with no headings, no raw HTML and no unclosed fences.
@@ -27,7 +29,7 @@ a single top-level list with no headings, no raw HTML and no unclosed fences.
 ## Fold (release only)
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
 ```
 
 This rewrites `CHANGELOG.md` and **deletes the fragments**. Do not run it outside a release you have
