@@ -793,6 +793,18 @@ def test_a_truncated_finding_says_it_was_truncated(capsys):
     assert capsys.readouterr().out.rstrip("\n") == "WARN " + "y" * 40
 
 
+def test_a_message_exactly_at_the_limit_is_not_marked_truncated(capsys):
+    """The boundary, because the cheap test of "was it cut" -- length equals the
+    limit -- is also true of a message that fit exactly. Read that way, report()
+    drops four real characters and then appends an ellipsis saying it dropped
+    more: a complete finding rendered as a partial one, which is the inverse of
+    the bug the marker exists to prevent."""
+    doctor.report("WARN", "z" * doctor.REPORT_LIMIT)
+    out = capsys.readouterr().out.rstrip("\n")
+    assert out == "WARN " + "z" * doctor.REPORT_LIMIT
+    assert not out.endswith(" ...")
+
+
 def test_the_verdict_line_counts_only_findings_doctor_itself_recorded(tmp_path, capsys):
     """FINDINGS drives the verdict, so a state forged into a message must not be
     countable. It never was -- the state is the first tuple element, not parsed

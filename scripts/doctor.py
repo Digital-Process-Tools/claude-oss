@@ -10,6 +10,11 @@ Contract, and every line of it is load-bearing:
   usage and no VERDICT, and still exits 0.
 * **No colour.** Git Bash renders escapes as noise, and this output gets pasted.
 * **Never echo a value that could be a credential** -- name the key, print nothing.
+* **The tree being diagnosed does not get to write the diagnosis.** Every finding goes
+  through ``report()``, which reduces it to one printable ASCII line. The files this
+  script reads -- ``.oss.json``, ``.claude/settings.json`` -- are tracked in a managed
+  repo and a contributor writes them; unflattened, an entry in one forged the VERDICT
+  line above.
 
 Python 3.9 compatible.
 """
@@ -74,8 +79,12 @@ def report(state, message):
     the next one to rediscover that the tree being diagnosed can write the
     diagnosis, including the VERDICT line this output is greppable for.
     """
-    flat = _one_line(message, limit=REPORT_LIMIT)
-    if len(flat) == REPORT_LIMIT:
+    # One character past the limit, so "was it cut" is answered by measurement
+    # rather than by an equality that a message exactly REPORT_LIMIT long also
+    # satisfies -- that reading drops four real characters and then appends an
+    # ellipsis claiming it dropped more.
+    flat = _one_line(message, limit=REPORT_LIMIT + 1)
+    if len(flat) > REPORT_LIMIT:
         flat = flat[: REPORT_LIMIT - 4] + " ..."
     FINDINGS.append((state, flat))
     print("{} {}".format(state, flat))
