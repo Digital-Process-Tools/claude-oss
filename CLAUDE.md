@@ -87,6 +87,7 @@ separately rather than one list.
 skills/manager/SKILL.md     the loop: process only, no repo facts
 agents/developer.md         one issue, worktree, TDD, stops at a commit
 agents/triager.md           labels only; Bash and TodoWrite, nothing else
+agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
 commands/*.md               /oss:tick setup scaffold triage changelog release doctor
 scripts/oss_config.py       read, validate and derive .oss.json
 scripts/oss_state.py        the tick state file
@@ -96,7 +97,7 @@ scripts/doctor.py           diagnostics; exit 0 always, one VERDICT line
 bin/oss-workspace           open a session over the repo you are standing in
 ```
 
-Neither agent is granted `Read`, `Grep` or `Glob`. Reads go through supertool via `Bash`, which is
+No agent is granted `Read`, `Grep` or `Glob`. Reads go through supertool via `Bash`, which is
 what makes the batching instruction binding rather than advisory. The triager is additionally denied
 `Edit` and `Write` — prose is a request, frontmatter is the boundary.
 

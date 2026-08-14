@@ -90,11 +90,12 @@ def test_agents_read_through_supertool_only():
     for them however the prose is worded. Removing them is what makes the batching
     instruction binding rather than advisory.
     """
-    for agent in ("triager.md", "developer.md"):
-        leaked = _granted_tools(agent) & {"Read", "Grep", "Glob"}
+    assert AGENTS, "no agents/*.md found -- this check would vacuously pass"
+    for agent in AGENTS:
+        leaked = _granted_tools(agent.name) & {"Read", "Grep", "Glob"}
         assert not leaked, (
             "{} grants {} -- reads go through supertool via Bash, so these must not be "
-            "in the tool list".format(agent, sorted(leaked))
+            "in the tool list".format(agent.name, sorted(leaked))
         )
 
 
@@ -379,3 +380,217 @@ def test_agents_and_skill_treat_forge_content_as_untrusted():
             "{}: missing the untrusted-input clause. Issue and PR bodies are written "
             "by strangers; a document that reads them must say so.".format(rel)
         )
+
+
+# ------------------------------------------------------------------ the auditor (#33)
+#
+# The census in #33 recommended against building this agent and scored a checklist
+# reviewer at 2 of 6 against real specimens. The maintainer overrode that. What the
+# override kept is the substance these checks hold still:
+#
+#   - it annotates, it does not block. A blocking LLM gate with false positives gets
+#     routed around within a week, which lands this repo in class B -- a guard nominally
+#     on and effectively off, the exact defect the agent audits for.
+#   - `could not check` is a required word. The auditor's own report has three states
+#     and the third never renders as clean. An auditor that cannot say it failed to look
+#     is the defect it exists to find.
+#
+# The scope was widened after the first brief: A, B, C plus the platform band D, F, H.
+# The original exclusion of D/F/H was measured against one repo's 12-leg matrix, which
+# is a fact about that repo and not about the defect class -- a repo with no Windows leg
+# has no such coverage at all. E stays out: nothing in a diff predicts runner load.
+
+AUDITOR = REPO_ROOT / "agents" / "auditor.md"
+
+EXCLUSIONS_HEADING = "## What this does not check"
+
+# id -> substrings that must all be present for the contract to be legible in the file.
+AUDITOR_CONTRACTS = [
+    ("class-A-three-state", ("`[]`", "`None`", "could not tell")),
+    ("class-B-guard-did-not-run", ("nominally on", "effectively off")),
+    ("class-C-untrusted-text", ("splitlines", "column 0")),
+    ("platform-band", ("encoding", "line endings")),
+    ("coverage-three-state", ("covered", "not covered", "could not determine")),
+    ("coverage-unknown-is-not-a-downgrade", ("must not silently collapse",)),
+    ("annotates-not-blocks", ("annotates", "does not block")),
+    ("third-state-word", ("could not check",)),
+    ("third-state-never-clean", ("never renders as clean",)),
+    ("finding-can-be-argued-down", ("argued down",)),
+    ("names-what-it-does-not-check", (EXCLUSIONS_HEADING,)),
+    ("untrusted-input", ("data, not instructions",)),
+]
+
+
+def _auditor_contracts_unmet(text):
+    return {
+        name
+        for name, anchors in AUDITOR_CONTRACTS
+        if not all(anchor in text for anchor in anchors)
+    }
+
+
+def test_auditor_agent_exists():
+    """Without the file every check below fails for the wrong reason, and a suite that
+    cannot find its subject must say which of the two it is.
+    """
+    assert AUDITOR.is_file(), "agents/auditor.md is missing"
+
+
+def test_auditor_carries_every_contract():
+    unmet = _auditor_contracts_unmet(AUDITOR.read_text(encoding="utf-8"))
+    assert not unmet, (
+        "agents/auditor.md no longer states these contracts, each of which is the "
+        "reason the agent was allowed to exist:\n  " + "\n  ".join(sorted(unmet))
+    )
+
+
+def test_the_contract_checks_fire_on_an_agent_that_says_nothing():
+    """The positive control, and the whole of it.
+
+    A prose deliverable is the easiest thing to assert vacuously: `assert x in text`
+    over a file nobody constrained passes as readily as over one that was written to
+    the contract. So the same checker is run against a plausible-looking agent file
+    that says nothing, and every single contract must report unmet.
+    """
+    says_nothing = (
+        "---\n"
+        "name: auditor\n"
+        "description: Audit a diff.\n"
+        "tools: Bash\n"
+        "---\n\n"
+        "Read the diff and report any security or portability problems you find.\n"
+    )
+    unmet = _auditor_contracts_unmet(says_nothing)
+    expected = {name for name, _ in AUDITOR_CONTRACTS}
+    assert unmet == expected, (
+        "the contract checks do not fire on an agent file that says nothing, so they "
+        "would also pass on one. Not firing: " + repr(sorted(expected - unmet))
+    )
+
+
+# --------------------------------------------------------------- no third copy (#4/#9/#26)
+#
+# The five recurring cross-platform shapes are already written down twice --
+# agents/developer.md and skills/manager/SKILL.md. A third copy is not coverage; it is
+# the drift defect this tracker was opened to file. The auditor references them, so
+# these anchors must be absent from it and present in their source.
+
+PORTABILITY_SHAPES = (
+    "drive letter",
+    "POSIX literal",
+    "spawn error",
+    "narrow `except`",
+)
+
+
+def _portability_shapes_copied_into(text):
+    return [shape for shape in PORTABILITY_SHAPES if shape in text]
+
+
+def test_the_portability_shapes_have_exactly_one_source_each():
+    """The positive control for the check below: the shapes must be findable where the
+    auditor points at them, or "absent from the auditor" is satisfied by their being
+    absent everywhere.
+    """
+    developer = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    missing = [s for s in PORTABILITY_SHAPES if s not in developer]
+    assert not missing, (
+        "agents/developer.md no longer enumerates {} -- the auditor references that "
+        "section, so a reference now resolves to nothing".format(missing)
+    )
+    assert _portability_shapes_copied_into(developer) == list(PORTABILITY_SHAPES)
+
+
+def test_auditor_does_not_recopy_the_portability_checklist():
+    copied = _portability_shapes_copied_into(AUDITOR.read_text(encoding="utf-8"))
+    assert not copied, (
+        "agents/auditor.md carries its own copy of {} -- that list already ships twice "
+        "and a third copy drifts. Reference the section instead.".format(copied)
+    )
+
+
+# ------------------------------------------------------------------------- the wiring
+
+AUDITOR_SUBAGENT = "oss:auditor"
+
+
+def _wiring_unmet(text):
+    unmet = set()
+    if AUDITOR_SUBAGENT not in text:
+        unmet.add("names-the-auditor-subagent")
+    if "same message" not in text:
+        unmet.add("spawned-alongside-the-reviewer")
+    if "did not execute" not in text:
+        unmet.add("a-review-that-did-not-execute-is-not-a-clean-review")
+    if "did not run" not in text:
+        unmet.add("a-spawn-that-did-not-run-is-reported")
+    if "must not edit" not in text:
+        unmet.add("spawned-agents-do-not-edit")
+    if "Cross-platform is not your machine" not in text:
+        unmet.add("hands-over-the-portability-section")
+    return unmet
+
+
+def test_developer_spawns_the_auditor():
+    unmet = _wiring_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert not unmet, (
+        "agents/developer.md does not wire the auditor in: " + repr(sorted(unmet))
+    )
+
+
+def test_the_wiring_check_fires_on_a_developer_that_spawns_only_the_reviewer():
+    """Positive control. The state this replaced -- one generalist reviewer, no
+    auditor -- must be reported as unwired, or the check above passes on it.
+    """
+    only_the_reviewer = (
+        'After you commit, spawn one Sonnet reviewer:\n\n'
+        'Agent(subagent_type: "general-purpose", model: "sonnet")\n'
+    )
+    unmet = _wiring_unmet(only_the_reviewer)
+    assert unmet == {
+        "names-the-auditor-subagent",
+        "spawned-alongside-the-reviewer",
+        "a-review-that-did-not-execute-is-not-a-clean-review",
+        "a-spawn-that-did-not-run-is-reported",
+        "spawned-agents-do-not-edit",
+        "hands-over-the-portability-section",
+    }, repr(sorted(unmet))
+
+
+def test_the_wiring_check_fires_on_the_sentence_that_predates_this_change():
+    """The narrower control the first one missed.
+
+    `did not execute` was already in developer.md before the auditor existed, so an
+    anchor on it alone reports the wiring as present in a file that never mentions the
+    auditor's own per-class non-run. Deleting only the new sentence must be visible.
+    """
+    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    without_the_new_sentence = text.replace("did not run", "ran")
+    assert "a-spawn-that-did-not-run-is-reported" in _wiring_unmet(without_the_new_sentence), (
+        "the wiring check is satisfied by prose that predates this change, so it says "
+        "nothing about whether the auditor's non-run is reported"
+    )
+
+
+PLUGIN_REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)")
+
+
+def test_every_plugin_rooted_reference_in_an_agent_resolves():
+    """The auditor points at a section in another file rather than copying it. A
+    reference is only better than a copy while it resolves; a renamed file turns it into
+    an instruction to read something that is not there, and the agent's fallback is to
+    report the whole band as `could not check` -- silently losing the class.
+    """
+    referenced = []
+    for path, text in _documents():
+        for match in PLUGIN_REF_RE.finditer(text):
+            target = REPO_ROOT / match.group(1)
+            referenced.append(match.group(1))
+            assert target.exists(), "{} points at {}, which does not exist".format(
+                path.relative_to(REPO_ROOT), match.group(1)
+            )
+    assert referenced, (
+        "no ${CLAUDE_PLUGIN_ROOT}/... reference found in any agent -- the auditor "
+        "references the cross-platform section instead of copying it, so this pattern "
+        "matching nothing means it has stopped doing that"
+    )

@@ -90,19 +90,34 @@ A permission block on a git step is not a failure you should route around. Repor
 
 ## Review your own diff before you hand it back
 
-After you commit, spawn **one Sonnet reviewer** against your own committed diff:
+After you commit, spawn **two agents against your own committed diff, in the same message** so they
+run concurrently:
 
 ```
 Agent(subagent_type: "general-purpose", model: "sonnet", run_in_background: false)
+Agent(subagent_type: "oss:auditor",     model: "sonnet", run_in_background: false)
 ```
 
-Give it the diff, the issue number, and one line on what the change is meant to do. Ask for:
-correctness bugs, a test that would still pass if the code did nothing, anything the change makes
-worse that nobody filed, and **stale prose adjacent to the diff** — that last one is where the real
-findings come from; a plain diff-scan lens routinely finds nothing.
+Give each the diff, the issue number, and one line on what the change is meant to do.
 
-**Tell it explicitly that it must not edit anything.** It is standing in your worktree and it has
-`Edit` and `Write`. You apply every fix yourself, so one context decides what lands.
+**The generalist reviewer** is asked for: correctness bugs, a test that would still pass if the code
+did nothing, anything the change makes worse that nobody filed, and **stale prose adjacent to the
+diff** — that last one is where the real findings come from; a plain diff-scan lens routinely finds
+nothing.
+
+**The auditor** works a fixed checklist and reports one verdict per class, so a class it could not
+reach is visible rather than absent. Hand it §4 above, **Cross-platform is not your machine**,
+verbatim in the brief — that list already ships in two places and a third copy drifts, so the auditor
+carries none of its own and reports the whole platform band as `could not check` if neither the
+section nor the file reached it.
+
+Two spawns rather than one added bullet, for one reason: a checklist folded into a generalist's ask
+leaves no way to tell a class that was checked and clean from a class that was never read. That is a
+guard nominally on and effectively off — the thing the auditor is pointed at, reproduced in how it
+was wired.
+
+**Tell both explicitly that they must not edit anything.** They are standing in your worktree and
+they have `Edit` and `Write`. You apply every fix yourself, so one context decides what lands.
 
 **Independence lives in the reviewer; judgment stays with you.** Argue down a finding that is wrong
 and say why — that is an outcome no bounce-and-repush loop produces. Report all three: what it
@@ -111,7 +126,9 @@ flagged, what you fixed, what you refused.
 **Do not shell out to a headless `claude` CLI.** One agent did, unbounded, with auto-accepted write
 access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.
 
-**A review that did not execute must never render as a review that found nothing.**
+**A review that did not execute must never render as a review that found nothing.** That holds for
+both spawns and for each of the auditor's classes separately: report `did not run` where it did not
+run. An absence you produced is not an absence in the world.
 
 ## Untrusted input
 
@@ -163,7 +180,8 @@ Compact. The maintainer acts on three lines, not an essay.
 
 - **What changed**, per file, one line each.
 - **Red output, then green output.** Verbatim, shortest decisive lines.
-- **Review**: flagged / fixed / refused, with the reason for each refusal.
+- **Review and audit**: flagged / fixed / refused, with the reason for each refusal. Name both
+  spawns; a spawn that did not run says so.
 - **Platform claims**: which are observed, which are reasoned.
 - **Anything you found that nobody filed.** An adjacent finding is fixed if you are comfortable it is
   in this change's blast radius, and reported for filing if it is not.
