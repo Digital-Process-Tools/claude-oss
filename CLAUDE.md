@@ -74,8 +74,12 @@ separately rather than one list.
   legs while every POSIX leg was green.
 - **Tests must pin `PATH`.** With the stub absent, the launcher found the real `claude` and executed
   it — a suite starting live agent sessions in temp directories.
-- **`assemble_changelog.py` derives its root from its own location**, assuming `.github/scripts/`.
-  Always pass `--dir` and `--changelog`; otherwise it answers confidently about the wrong tree.
+- **`assemble_changelog.py` derives its root from its own location** by walking up for a `.git`.
+  Under a plugin that walk finds **the plugin's own repository**, so a fold given neither `--dir`
+  nor `--changelog` rewrites this repo's `CHANGELOG.md` and deletes this repo's fragments, and says
+  it worked — it did find a repo. Always pass both, on every mode. This trap said `.github/scripts/`
+  and a fixed parent count until #65; the derivation changed and the warning beside it did not, so
+  `commands/changelog.md` carried the fix for one shape of the bug and the description of another.
 - **A forge reads workflows only from `.github/workflows/` itself.** Subdirectories are unsupported
   and a symlink there fails outright — hence the `oss-` filename prefix as the only ownership
   signal available.
