@@ -282,6 +282,92 @@ def test_developer_notes_convention_is_pinned():
         "developer.md must ask the agent to state what the note/report split cost -- "
         "otherwise the saving this convention exists for is never checked"
     )
+# ------------------------------------------------------------------- config scope (#34)
+
+
+def _oss_config():
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import oss_config
+
+    return oss_config
+
+
+def test_setup_writes_both_halves_and_excludes_only_the_local_one():
+    """#34: setup wrote one file and excluded it, so the `release` block -- tag spelling,
+    merge method, version sites, triggers -- lived on one laptop. A second maintainer
+    re-derived `tag_pattern` by being asked, and a repo tagging v1.2.3 can acquire 1.2.4.
+    """
+    oss_config = _oss_config()
+    text = (REPO_ROOT / "commands" / "setup.md").read_text(encoding="utf-8")
+    assert oss_config.LOCAL_CONFIG_NAME in text, (
+        "setup.md must name the machine-scoped half; without it the maintainer writes "
+        "one file again"
+    )
+    assert "--split" in text, "setup.md must invoke the split; a manual split is per-maintainer"
+
+
+def test_no_document_asks_for_the_project_config_to_be_git_excluded():
+    """The exclusion is the defect. A line that excludes `.oss.json` is the whole bug in
+    one sentence, so it is checked line by line rather than by the file's overall shape.
+    """
+    oss_config = _oss_config()
+    offenders = []
+    for path, text in _executable_documents():
+        for number, line in enumerate(text.splitlines(), 1):
+            if "exclude" not in line:
+                continue
+            if oss_config.CONFIG_NAME in line and oss_config.LOCAL_CONFIG_NAME not in line:
+                offenders.append(
+                    "{}:{}: {}".format(path.relative_to(REPO_ROOT), number, line.strip())
+                )
+    assert not offenders, (
+        "the project half of the config is meant to be committed; excluding it is how "
+        "the release block ended up on one machine: " + "; ".join(offenders)
+    )
+
+
+def test_documents_that_enumerate_the_config_keys_name_both_files():
+    """A key list that does not say which file holds which key sends the reader to the
+    wrong one, and `state_file` is missing from the committed half by design.
+    """
+    oss_config = _oss_config()
+    named = []
+    for path, text in _executable_documents():
+        if "worktree_root" not in text:
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        named.append(rel)
+        assert oss_config.LOCAL_CONFIG_NAME in text, (
+            "{}: enumerates the config keys without naming {}, so a reader looks for "
+            "worktree_root in the committed file and does not find it".format(
+                rel, oss_config.LOCAL_CONFIG_NAME
+            )
+        )
+    assert named, "no document enumerates the config keys -- this check would vacuously pass"
+
+
+def test_release_states_what_to_do_for_every_nullable_release_key():
+    """#34, second half. `tag_pattern: null` got an explicit stop-and-ask; `commit_subject:
+    null` got the sentence "commit with `commit_subject`" and nothing else, so the agent
+    invented a subject line -- an absence the tool produced, rendered as a value.
+
+    The two are still handled differently, and that is defensible: a wrong subject line is
+    revisable, a wrong tag opens a namespace forever. What was not defensible is that only
+    one of them said so.
+    """
+    oss_config = _oss_config()
+    text = (REPO_ROOT / "commands" / "release.md").read_text(encoding="utf-8")
+    assert "`tag_pattern: null` — stop" in text
+    assert oss_config.DEFAULT_COMMIT_SUBJECT in text, (
+        "release.md must state the default subject verbatim, or the agent reaching a "
+        "null commit_subject is back to inventing one"
+    )
+    for key in ("tag_pattern", "commit_subject"):
+        assert key in text, key
+
+
 def test_agents_and_skill_treat_forge_content_as_untrusted():
     """Every document that reads a public tracker states that its contents are data.
     This is the paragraph most likely to be lost in an edit, and the one whose

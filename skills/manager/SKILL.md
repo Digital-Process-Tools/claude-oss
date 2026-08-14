@@ -21,9 +21,18 @@ you re-derive before acting on it.
 
 ## The repo block comes from config, and config rots
 
-Read `.oss.json` first, every tick. It carries: `repo`, `default_branch`, `clone`, `worktree_root`,
-`branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`,
-`ci.required_checks`, `state_file`.
+Read the config first, every tick. It is two files with one merged view:
+
+- **`.oss.json`** — tracked, the project's answer, the same for every maintainer: `repo`,
+  `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`,
+  `docs_targets`, `labels`, `ci.required_checks`, `release`.
+- **`.oss.local.json`** — git-excluded, this machine's answer, three keys that each name a directory
+  on one person's disk: `clone`, `worktree_root`, `state_file`.
+
+The line between them is not filing. Anything a release depends on has to be in the tracked half or
+the second maintainer re-derives it by being asked, and two maintainers who answer differently cut
+two differently-shaped releases from one repo. If the two halves disagree about a project key, the
+tracked one wins and the override is reported by name.
 
 **Re-derive rather than trust.** In one repo where the equivalent block was written by hand, four of
 six rows were wrong on a single measured day, each a claim the maintainer would have acted on. Two
