@@ -505,6 +505,37 @@ def apply(repo_root, config, plugin_root=None):
     return {"created": created, "replaced": replaced}
 
 
+def show(repo_root, config, path=None, plugin_root=None):
+    """Render generated file contents for review, without writing anything.
+
+    ``/oss:scaffold`` promises to relay what a generated file would contain before
+    writing it -- the dry run named the plan but had no way to answer that, so an
+    agent's only options were to invent a preview by hand or run ``--apply`` first
+    and read the result, which writes before showing (#5).
+
+    ``path=None`` returns every file the plan would actually create -- a file that
+    already exists needs no preview, since the real answer is what is already on
+    disk. A single ``path`` renders it regardless of plan state, known or not: it
+    answers "what would this default contain", which is worth knowing even for a
+    file already present.
+    """
+    if path is not None:
+        if path in TEMPLATES:
+            return [(path, render(path, config))]
+        if path in OWNED:
+            return [(path, render_owned(path, config, plugin_root))]
+        raise ScaffoldError(
+            "{!r} is not a known template or owned file. Known: {}".format(
+                path, ", ".join(sorted(set(TEMPLATES) | set(OWNED)))
+            )
+        )
+    return [
+        (entry["path"], render(entry["path"], config))
+        for entry in plan(repo_root, config)
+        if entry["action"] == "create"
+    ]
+
+
 MIN_TOPICS = 3
 MAX_DESCRIPTION = 350
 
@@ -546,30 +577,76 @@ def check_metadata(probe):
             }
         )
 
-    topics = [t for t in (probe.get("topics") or []) if t and t.strip()]
-    if not topics:
-        findings.append(
-            {
-                "field": "topics",
-                "state": "missing",
-                "detail": (
-                    "no topics. Topics are how the repo is found by someone who does not "
-                    "already know its name: gh repo edit --add-topic a,b,c"
-                ),
-            }
-        )
-    elif len(topics) < MIN_TOPICS:
-        findings.append(
-            {
-                "field": "topics",
-                "state": "thin",
-                "detail": "{} topic(s); {} or more is what makes a repo discoverable".format(
-                    len(topics), MIN_TOPICS
-                ),
-            }
-        )
-
+    findings.append(_check_topics(probe))
+    findings = [f for f in findings if f is not None]
     return findings
+
+
+def _check_topics(probe):
+    """Read topics from either shape a probe can carry.
+
+    `gh repo view --json ...repositoryTopics` -- what the command instructs the caller
+    to run -- answers with a list of ``{"name": ...}`` objects under
+    ``repositoryTopics``. A hand-built probe, or an older caller, may instead carry a
+    flat list of strings under ``topics``. Both are read the same way.
+
+    A probe that has neither key, or whose entries are some third shape, is not the
+    same fact as a repo with zero topics: the shape was never checked, so this says
+    so instead of reporting a confident "missing" (#8).
+    """
+    raw = probe.get("repositoryTopics")
+    key_used = "repositoryTopics"
+    if raw is None:
+        raw = probe.get("topics")
+        key_used = "topics"
+    if raw is None:
+        return {
+            "field": "topics",
+            "state": "unknown",
+            "detail": (
+                "probe has neither 'repositoryTopics' nor 'topics' -- topics could not "
+                "be checked, which is not the same as this repo having none. Fetch "
+                "with: gh repo view --json description,repositoryTopics"
+            ),
+        }
+
+    topics = []
+    for item in raw:
+        if isinstance(item, str):
+            name = item
+        elif isinstance(item, dict):
+            name = item.get("name")
+        else:
+            return {
+                "field": "topics",
+                "state": "unknown",
+                "detail": (
+                    "'{}' entries are not strings or {{'name': ...}} objects -- topics "
+                    "could not be checked, which is not the same as this repo having "
+                    "none.".format(key_used)
+                ),
+            }
+        if name and name.strip():
+            topics.append(name.strip())
+
+    if not topics:
+        return {
+            "field": "topics",
+            "state": "missing",
+            "detail": (
+                "no topics. Topics are how the repo is found by someone who does not "
+                "already know its name: gh repo edit --add-topic a,b,c"
+            ),
+        }
+    if len(topics) < MIN_TOPICS:
+        return {
+            "field": "topics",
+            "state": "thin",
+            "detail": "{} topic(s); {} or more is what makes a repo discoverable".format(
+                len(topics), MIN_TOPICS
+            ),
+        }
+    return None
 
 
 def check_radar(repo_root):
@@ -617,6 +694,17 @@ def _main(argv=None):
         action="store_true",
         help="write the missing files (default is to print the plan and write nothing)",
     )
+    parser.add_argument(
+        "--show",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help=(
+            "print the content of generated files without writing anything; "
+            "omit PATH to show every file the plan would create, or name one file"
+        ),
+    )
     args = parser.parse_args(argv)
 
     config, problems = oss_config.load(args.config)
@@ -630,6 +718,23 @@ def _main(argv=None):
     except ScaffoldError as exc:
         print("FAIL {}".format(exc))
         return 1
+
+    if args.show is not None:
+        if args.apply:
+            print("FAIL --show cannot be combined with --apply -- show first, then apply separately")
+            return 1
+        show_path = args.show or None
+        try:
+            shown = show(args.root, config, path=show_path)
+        except ScaffoldError as exc:
+            print("FAIL {}".format(exc))
+            return 1
+        for shown_path, body in shown:
+            print("----- {} -----".format(shown_path))
+            print(body)
+        if not shown:
+            print("nothing to show -- every file already present")
+        return 0
 
     if not args.apply:
         for entry in entries:

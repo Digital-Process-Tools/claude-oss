@@ -125,3 +125,44 @@ def test_the_generated_claude_md_names_the_configured_repo(tmp_path):
     body = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
     assert "acme/widget" in body
     assert "trunk" in body
+
+
+# ------------------------------------------------------------------------------ show
+
+
+def test_show_prints_content_and_writes_nothing(tmp_path, capsys):
+    config = _write_config(tmp_path, repo="acme/widget")
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    out = capsys.readouterr().out
+    assert "CLAUDE.md" in out
+    assert "acme/widget" in out
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_show_one_path_prints_only_that_file(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    assert scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show", "SECURITY.md"]
+    ) == 0
+    out = capsys.readouterr().out
+    assert "Security Policy" in out
+    assert "CLAUDE.md" not in out
+
+
+def test_show_and_apply_together_is_refused_before_writing(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    result = scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show", "--apply"]
+    )
+    assert result == 1
+    assert "FAIL" in capsys.readouterr().out
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_show_of_an_unknown_path_is_a_named_failure(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    result = scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show", "NOT_A_TEMPLATE.md"]
+    )
+    assert result == 1
+    assert "FAIL" in capsys.readouterr().out
