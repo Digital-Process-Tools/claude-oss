@@ -306,8 +306,17 @@ def fragments_dir(config):
     workflow still has to name a directory -- so it names the default, and the
     default is what gets created. Installing a check for a directory nobody made is
     how the scaffold ends up red on its own pull request.
+
+    The shape is re-checked here even though `plan()` validates the whole config first,
+    because this is the funnel every substitution passes through and `render_owned()`
+    reaches it without going near `plan()`. One refusal at the choke point beats each
+    caller remembering (#31).
     """
-    return config.get("changelog_dir") or DEFAULT_FRAGMENTS_DIR
+    value = config.get("changelog_dir")
+    problem = oss_config.changelog_dir_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+    return value or DEFAULT_FRAGMENTS_DIR
 
 
 def _render_fragments_readme(config):
@@ -425,7 +434,7 @@ installs it; your machine is not covered by that, so before pushing:
 
 ```bash
 python3 -m pip install __PACKAGES__
-python3 .oss/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
+python3 .oss/assemble_changelog.py --check --dir '__FRAGMENTS__' --changelog CHANGELOG.md
 ```
 """
 
@@ -434,6 +443,19 @@ CHANGELOG_WORKFLOW = """name: oss changelog
 on:
   pull_request:
 
+# Declared at workflow level rather than per job: every job here only reads the pull
+# request and reports, and a job added later should inherit read-only rather than fall
+# back to the repository default. That default is read/write in a repository whose owner
+# has never changed it, and this workflow runs the vendored assembler from the pull
+# request's own checkout -- so a branch pull request runs contributor Python (#32).
+permissions:
+  contents: read
+
+# The actions below are pinned to major tags, not commit SHAs, and that is a decision.
+# A SHA written into this template ships to every repository scaffolded after it and can
+# only be refreshed by editing the plugin, so it rots into a stale pin the receiving repo
+# cannot see is stale, while a tag keeps receiving upstream fixes. `.github/dependabot.yml`
+# is scaffolded alongside this file and moves the tags where a maintainer can review it.
 jobs:
   fragment:
     runs-on: ubuntu-latest
@@ -457,7 +479,9 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check __PACKAGES__
 
       - name: Fragments parse and name a real section
-        run: python3 __DIR__/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
+        # Quoted, though `changelog_dir` is shape-checked before it gets here: the
+        # reader of this line should not have to go and find that out (#31).
+        run: python3 __DIR__/assemble_changelog.py --check --dir '__FRAGMENTS__' --changelog CHANGELOG.md
 
       # A change to what this project DOES must say so where users read it.
       - name: A user-visible change carries a fragment

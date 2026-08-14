@@ -3,6 +3,19 @@ name: changelog
 on:
   pull_request:
 
+# Declared at workflow level rather than per job: every job here only reads the pull
+# request and reports, and a job added later should inherit read-only rather than fall
+# back to the repository default, which is read/write until somebody changes it. This
+# workflow runs scripts/assemble_changelog.py from the pull request's own checkout, so
+# a branch pull request in this repository runs contributor Python with that token (#32).
+permissions:
+  contents: read
+
+# The actions used below are pinned to major tags rather than commit SHAs. Decided, not
+# missed: .github/dependabot.yml watches github-actions and raises the bumps in the open,
+# and SHA pins here would have to be carried by hand through every action release. The
+# same reasoning is written into the workflow the scaffold generates.
+
 # The tool was vendored long before this gate existed, so the policy was written
 # down in a command doc and enforced by nobody. A convention with no check is a
 # convention until the first busy afternoon.

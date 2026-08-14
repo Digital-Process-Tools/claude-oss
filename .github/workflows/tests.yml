@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Workflow level: both jobs run tests and report, neither writes to the forge, and a job
+# added later inherits read-only instead of the repository default of read/write (#32).
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ${{ matrix.os }}
