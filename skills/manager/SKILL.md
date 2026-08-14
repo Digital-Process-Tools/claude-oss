@@ -409,10 +409,20 @@ Gates, each a call and not a feeling:
    run list is `UNKNOWN`, never a pass.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean → proceed;
-   findings → stop and file; **could not run → stop and say so.** **Two audit rounds, hard cap** — a
+   findings → stop and file, **in round one**; **could not run → stop and say so.** Round two is
+   different and deliberately so: what it finds is filed and the release ships over it.
+   **Two audit rounds, hard cap** — a
    competent audit of any non-trivial delta always finds something, so an unbounded "findings → stop"
    makes every release hostage to diminishing returns. After round two, file the rest against the
    next milestone and ship.
+
+   The gate is performed, not judged: `scripts/release_delta.py` computes the range in three states
+   and `oss:release-auditor` reads it. **`could-not-run` is the script's answer, not yours**, and it
+   stops the release — a shallow clone or a tag HEAD cannot reach is the third outcome, and so is a
+   spawn that never ran. **No tag at all is a `first release`**, which is a named state rather than
+   an empty diff: the delta is the whole history, it gets audited, and it permits the tag. This is
+   the gate the loop stated for months with nothing behind it, so the outcome to distrust is the
+   quiet one.
 4. **Every version site bumped**, swept **unfiltered** — a README is not a `.json` and an allowlist by
    extension cannot see it. A sweep keyed on the *outgoing* version only finds sites that are
    half-bumped; it cannot find one frozen at some third value, which is the one most likely to be

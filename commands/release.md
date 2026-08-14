@@ -39,6 +39,33 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    **Two rounds, hard cap** — a competent audit of any non-trivial delta always finds something, so
    an unbounded "findings, therefore stop" makes every release hostage to diminishing returns. After
    round two, file the rest against the next milestone and ship.
+
+   The range is computed before anyone judges it, because "could not run" is a fact about the
+   repository and not a reading:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_delta.py" --repo . --json
+   ```
+
+   - **exit 3, `could-not-run`** — no commits, a shallow clone, or tags HEAD cannot reach. That
+     **stops the release**. Report the reason it gave; do not spawn the audit over a range you
+     picked instead, and do not read the gate as satisfied because nothing objected.
+   - **`first-release`** — no tag exists, so this is a **first release** and the delta is the whole
+     history reachable from HEAD. A named state, not an empty diff: it is audited like any other
+     range and it permits the release once audited. Inventing a tag so a previous one exists is a
+     history nobody made.
+   - **`delta`** — audit `range`. `commits: 0` is an empty delta, which is computable and is not a
+     finding.
+
+   Then, and only for the two computable states:
+
+   ```
+   Agent(subagent_type: "oss:release-auditor", run_in_background: false)
+   ```
+
+   Hand it the payload verbatim and the round number. It writes nothing and it does not tag. **A
+   spawn that did not run is `could not run`**, never a clean audit — if the agent fails to start or
+   comes back empty, that is the third outcome and the same stop applies.
 4. **Every site in `version_sites` bumped**, swept **unfiltered**:
 
    ```bash

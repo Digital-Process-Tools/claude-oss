@@ -572,6 +572,179 @@ def test_the_wiring_check_fires_on_the_sentence_that_predates_this_change():
     )
 
 
+# ------------------------------------------------- the release auditor (#48)
+#
+# The release gate has said, in two documents, that a security audit of the delta
+# since the last tag must pass, with three outcomes -- and nothing performed it.
+# So the gate's own third outcome was the permanent state and there was no way to
+# notice: nothing ever tried, so nothing ever reported that it could not.
+#
+# This agent is deliberately not agents/auditor.md. They are split by slot: that
+# one reads one PR's diff, annotates, and runs on every PR; this one reads the
+# whole delta since the last tag, blocks, and runs once per release. Two agents
+# whose false-positive costs are opposite -- an argument in a report versus a
+# delayed release -- should not share a definition.
+#
+# What these hold still is the part that makes it a gate rather than an opinion:
+#
+#   - three verdicts, and `could not run` stops the release. Rendering it as clean
+#     is the whole defect the gate was worded against.
+#   - a two-round hard cap. Not a budget: a competent audit of any non-trivial
+#     delta always finds something, so an unbounded "findings, therefore stop"
+#     makes every release hostage to diminishing returns.
+#   - a repo with no previous tag is a *named* state, not an empty diff. An empty
+#     delta and an uncomputable one are the two things this gate keeps apart.
+
+RELEASE_AUDITOR = REPO_ROOT / "agents" / "release-auditor.md"
+
+RELEASE_AUDITOR_CONTRACTS = [
+    ("blocks-rather-than-annotates", ("blocks",)),
+    ("three-outcomes", ("clean", "findings", "could not run")),
+    ("third-outcome-never-clean", ("never renders as",)),
+    ("third-outcome-stops-the-release", ("stops the release",)),
+    ("two-round-hard-cap", ("two rounds", "hard cap")),
+    ("what-happens-after-round-two", ("next milestone",)),
+    ("first-release-is-a-named-state", ("first release",)),
+    ("the-range-is-computed-not-guessed", ("release_delta.py",)),
+    ("reuses-the-class-vocabulary-by-reference", ("agents/auditor.md",)),
+    ("the-delta-is-what-no-per-pr-review-can-see", ("individually clean",)),
+    ("untrusted-input", ("data, not instructions",)),
+    ("writes-nothing", ("writes nothing",)),
+]
+
+
+def _release_auditor_contracts_unmet(text):
+    """Case-folded, because capitalisation is not the contract. "Two rounds" at the
+    head of a sentence and "two rounds" mid-sentence are the same commitment, and a
+    check that distinguishes them fails on a rewrite that changed nothing.
+    """
+    folded = text.lower()
+    return {
+        name
+        for name, anchors in RELEASE_AUDITOR_CONTRACTS
+        if not all(anchor.lower() in folded for anchor in anchors)
+    }
+
+
+def test_release_auditor_agent_exists():
+    assert RELEASE_AUDITOR.is_file(), "agents/release-auditor.md is missing"
+
+
+def test_release_auditor_carries_every_contract():
+    unmet = _release_auditor_contracts_unmet(
+        RELEASE_AUDITOR.read_text(encoding="utf-8")
+    )
+    assert not unmet, (
+        "agents/release-auditor.md no longer states these, each of which is what "
+        "makes it a gate rather than an opinion:\n  " + "\n  ".join(sorted(unmet))
+    )
+
+
+def test_the_release_auditor_contracts_fire_on_an_agent_that_says_nothing():
+    """The positive control. `assert x in text` over prose nobody constrained passes
+    exactly as readily as over prose written to the contract, so the same checker
+    is run against a plausible-looking file that says none of it.
+    """
+    says_nothing = (
+        "---\n"
+        "name: release-auditor\n"
+        "description: Audit a release.\n"
+        "tools: Bash\n"
+        "---\n\n"
+        "Look over everything since the last release and report what you find.\n"
+    )
+    unmet = _release_auditor_contracts_unmet(says_nothing)
+    expected = {name for name, _ in RELEASE_AUDITOR_CONTRACTS}
+    assert unmet == expected, (
+        "the contract checks do not fire on an agent file that says nothing, so "
+        "they would also pass on one. Not firing: "
+        + repr(sorted(expected - unmet))
+    )
+
+
+def test_no_agent_recopies_the_portability_checklist():
+    """The no-third-copy rule is not about one file. Any agent that restates the
+    five shapes makes a third copy, and the copy that drifts is never the one
+    anybody rereads.
+    """
+    offenders = {}
+    for agent in AGENTS:
+        if agent.name == "developer.md":
+            continue
+        copied = _portability_shapes_copied_into(agent.read_text(encoding="utf-8"))
+        if copied:
+            offenders[agent.name] = copied
+    assert not offenders, (
+        "these agents carry their own copy of the cross-platform shapes, which "
+        "already ship twice. Reference the section instead: {}".format(offenders)
+    )
+
+
+# ------------------------------------------------------- the release gate is wired
+
+RELEASE_AUDITOR_SUBAGENT = "oss:release-auditor"
+
+RELEASE_DELTA_SCRIPT = "scripts/release_delta.py"
+
+
+def _release_wiring_unmet(text):
+    unmet = set()
+    if RELEASE_AUDITOR_SUBAGENT not in text:
+        unmet.add("names-the-release-auditor-subagent")
+    if RELEASE_DELTA_SCRIPT not in text:
+        unmet.add("computes-the-range-before-asking-for-a-judgement")
+    if "stops the release" not in text:
+        unmet.add("could-not-run-stops-the-release")
+    if "first release" not in text:
+        unmet.add("a-repo-with-no-tag-has-a-defined-state")
+    return unmet
+
+
+def test_release_command_wires_the_gate_to_something_that_runs():
+    unmet = _release_wiring_unmet(
+        (REPO_ROOT / "commands" / "release.md").read_text(encoding="utf-8")
+    )
+    assert not unmet, (
+        "commands/release.md states the audit gate without wiring it to anything "
+        "that performs it: " + repr(sorted(unmet))
+    )
+
+
+def test_the_release_wiring_check_fires_on_the_gate_as_it_was_stated_before():
+    """The narrow positive control, and it is the actual prior text.
+
+    This paragraph shipped for months and read as a satisfied gate every time a
+    human read it and formed a judgement. Every wiring anchor must report unmet
+    against it, or the check above says nothing about whether anything runs.
+    """
+    the_unwired_gate = (
+        "3. **A security audit of the delta since the last tag passed.** Three "
+        "outcomes: clean, findings, or **could not run**. An audit that did not "
+        "execute must never render as an audit that found nothing. **Two rounds, "
+        "hard cap**.\n"
+    )
+    unmet = _release_wiring_unmet(the_unwired_gate)
+    assert unmet == {
+        "names-the-release-auditor-subagent",
+        "computes-the-range-before-asking-for-a-judgement",
+        "could-not-run-stops-the-release",
+        "a-repo-with-no-tag-has-a-defined-state",
+    }, repr(sorted(unmet))
+
+
+def test_the_skill_and_the_command_agree_that_the_gate_is_performed():
+    """Two documents stated the same gate and neither named a performer. If only
+    one gains the wiring, the other keeps sending its reader to a judgement call.
+    """
+    skill = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+    unmet = _release_wiring_unmet(skill)
+    assert not unmet, (
+        "skills/manager/SKILL.md states the audit gate but does not carry what "
+        "commands/release.md now carries, so its reader is still sent to a "
+        "judgement call: " + repr(sorted(unmet))
+    )
+
+
 PLUGIN_REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)")
 
 

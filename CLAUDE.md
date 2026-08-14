@@ -32,6 +32,9 @@ It bites inside this repo too, repeatedly:
 - The vendored `assemble_changelog.py` arrived listing `0.11.0 … 0.19.0` as untagged — another
   project's release history, reported as nine findings about versions this repo never had.
 - Coverage reported 0% for `doctor.py` while a subprocess suite exercised it thoroughly.
+- The release gate demanded a security audit of the delta since the last tag, in two documents, in
+  those three states — and nothing performed it. Its own third outcome was therefore the permanent
+  state, and unobservable: nothing tried, so nothing reported that it could not.
 
 If you write a checker, ask what it prints when it cannot look.
 
@@ -88,8 +91,10 @@ skills/manager/SKILL.md     the loop: process only, no repo facts
 agents/developer.md         one issue, worktree, TDD, stops at a commit
 agents/triager.md           labels only; Bash and TodoWrite, nothing else
 agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
+agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 commands/*.md               /oss:tick setup scaffold triage changelog release doctor
 scripts/oss_config.py       read, validate and derive .oss.json
+scripts/release_delta.py    the release gate's range: delta / first-release / could-not-run
 scripts/oss_state.py        the tick state file
 scripts/oss_rules.py        the 01-oss rule layer
 scripts/scaffold.py         templates, owned files, repo metadata checks
