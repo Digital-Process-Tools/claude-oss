@@ -14,6 +14,8 @@ Python 3.9 compatible: no match statements, no `X | Y` annotations.
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -329,6 +331,24 @@ def verify_test_command(command, cwd, timeout=120):
     if not command:
         return {"state": "none", "detail": "no test command detected; nothing to verify"}
 
+    # The runner is resolved before anything runs, because the shell's own
+    # "command not found" code is not portable: POSIX shells answer 127, cmd.exe
+    # answers 9009, and on a GitHub Windows runner it answered neither -- so a
+    # runner that was never installed reported as a suite that ran and failed,
+    # which is the one confusion these states exist to prevent. Only for a plain
+    # command: with an operator in it the first word is not the whole story, and a
+    # shell builtin resolves to no file at all.
+    if not any(token in command for token in ("&&", "||", "|", ";", ">", "<", "$(", "`")):
+        try:
+            words = shlex.split(command, posix=os.name != "nt")
+        except ValueError:
+            words = []
+        if words and shutil.which(words[0]) is None:
+            return {
+                "state": "not-found",
+                "detail": "{!r}: {!r} is not on PATH".format(command, words[0]),
+            }
+
     try:
         done = subprocess.run(
             command,
@@ -352,9 +372,11 @@ def verify_test_command(command, cwd, timeout=120):
         return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
 
     tail = (done.stdout or "").strip().splitlines()[-1:] or [""]
-    # 127 is the shell's own "command not found", which is a different problem from a
-    # suite that ran and failed.
-    if done.returncode == 127:
+    # 127 is the POSIX shell's own "command not found", and 9009 is cmd.exe's, which
+    # is a different problem from a suite that ran and failed. Reading only 127 makes
+    # every missing runner on Windows report as a failing suite -- the exact confusion
+    # between "install this" and "fix this" the states exist to prevent.
+    if done.returncode in (127, 9009):
         return {
             "state": "not-found",
             "detail": "{!r}: command not found ({})".format(command, tail[0]),

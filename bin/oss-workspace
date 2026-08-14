@@ -11,15 +11,23 @@
 #
 #     ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
 #
-# Two things about the session that are not the default:
+# Three things about the session are not the default, and each was measured
+# against claude 2.1.219 rather than assumed:
 #
 #   * Without the development-channel flag, watch pollers still spawn and still
-#     emit and nothing reads them — a board that looks armed and delivers nothing.
-#     Check `supertool 'channel:health'` before trusting a green board.
-#   * `claude` reads only its FIRST positional as the prompt and silently ignores
-#     later ones, and a variadic option swallows whatever follows it. So the
-#     prompt is appended ONLY when there is nothing else to pass, and when it is
-#     not, that is said rather than dropped.
+#     emit and nothing reads them — a board that looks armed and delivers
+#     nothing. Check `supertool 'channel:health'` before trusting a green board.
+#   * That flag resolves CONFIGURED MCP servers only, so the consumer is
+#     registered at local scope here. Naming a server that is not registered
+#     refuses the launch outright:
+#         server:oss-channel - no MCP server configured with that name
+#     So the flag is passed ONLY when the registration held. A session with no
+#     channel is worth more than no session.
+#   * `claude` reads only its FIRST positional as the prompt, and a variadic
+#     option swallows whatever follows it. The prompt therefore goes FIRST and
+#     the flag LAST; putting the prompt after the flag ends the launch with
+#         --dangerously-load-development-channels entries must be tagged: /oss:tick
+#     which is exactly how this script failed on its first real use.
 set -eu
 
 # A user's CDPATH can make `cd relative` land somewhere else entirely and print
@@ -28,7 +36,11 @@ set -eu
 CDPATH=
 
 CHANNEL_FLAG="--dangerously-load-development-channels"
-CHANNEL_SERVER="server:claude-channel"
+
+# Deliberately not `claude-channel`: the supertool plugin's own entry keeps that
+# name and keeps failing on an unset CLAUDE_PLUGIN_ROOT, and two servers sharing
+# one name is a collision this script cannot decide the winner of.
+CHANNEL_SERVER="oss-channel"
 
 # `dirname "$0"` on a symlink gives the link's directory, not the checkout.
 # `readlink -f` is not portable to macOS's stock readlink, so walk it.
@@ -43,8 +55,7 @@ done
 # `dirname` splits on `/` only. Under Git Bash `$0` arrives as
 # `D:\a\repo\bin\oss-workspace`, so dirname answers `.` and the root resolves
 # against the caller's directory instead — confidently, and wrongly. Strip either
-# separator ourselves. The same shape failed the Windows leg in scripts/doctor.sh;
-# here nothing downstream reads the value yet, which is why it was silent.
+# separator ourselves. The same shape failed the Windows leg in scripts/doctor.sh.
 self_dir=${self%/*}
 [ "$self_dir" = "$self" ] && self_dir=${self%\\*}
 [ "$self_dir" = "$self" ] && self_dir=.
@@ -93,8 +104,167 @@ elif ! grep -q radar "$repo_root/.supertool.json" 2>/dev/null; then
     echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
 fi
 
+# `python3` by name is a POSIX assumption: Windows ships `python` and no
+# `python3`, and its App Execution Alias makes a `python` that EXISTS and opens a
+# store page instead of running. So each candidate is proved by running it and
+# comparing a sentinel, the same route scripts/doctor.sh already takes.
+python_bin=
+for candidate in python3 python; do
+    if [ "$("$candidate" -c "print(42)" 2>/dev/null)" = "42" ]; then
+        python_bin=$candidate
+        break
+    fi
+done
+if [ -z "$python_bin" ]; then
+    echo "oss-workspace: no working python was found (tried python3, python), so" \
+         "neither the channel name nor the consumer path could be read. This" \
+         "session opens without a channel." >&2
+fi
+
+# The channel NAME is this repo's state and is read from its own .supertool.json,
+# then exported — a stdio MCP server the harness spawns inherits this process's
+# environment, which is what carries the name to the consumer. Exactly one
+# distinct name is exported; disagreeing op blocks are a state this script cannot
+# resolve, so it says so and exports nothing.
+# The guard is an `if` and not `[ -n "$x" ] && ...` inside the substitution: a
+# heredoc opened by the right-hand side of `&&` and then followed by `|| true` is
+# a syntax error under bash -- `syntax error near unexpected token ||` -- while
+# macOS's /bin/sh parsed it and every local run stayed green.
+watch_name=""
+if [ -n "$python_bin" ]; then
+watch_name=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' || true
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        doc = json.load(handle)
+except (OSError, ValueError) as err:
+    sys.stderr.write(
+        "oss-workspace: %s could not be read (%s), so no channel name was exported "
+        "and this session is on the default channel\n" % (sys.argv[1], type(err).__name__))
+    raise SystemExit(0)
+
+ops = doc.get("ops") if isinstance(doc, dict) else None
+names = sorted({
+    block["watch_name"]
+    for block in (ops or {}).values()
+    if isinstance(block, dict) and isinstance(block.get("watch_name"), str)
+    and block["watch_name"]
+})
+if len(names) == 1:
+    print(names[0])
+elif names:
+    sys.stderr.write(
+        "oss-workspace: op blocks disagree about watch_name (%s) — none exported. "
+        "The ops themselves are on different channels; fix that file, then run "
+        "supertool 'channel:health'\n" % ", ".join(names))
+READ_NAME
+)
+fi
+
+# An exported value is the one a running poller already captured, and moving the
+# paths underneath a live fleet is a documented failure. So an export wins — and
+# both values are named, because a name losing quietly is the other half of it.
+if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
+    if [ -n "$watch_name" ] && [ "$watch_name" != "$SUPERTOOL_WATCH_NAME" ]; then
+        echo "oss-workspace: SUPERTOOL_WATCH_NAME is already exported as" \
+             "${SUPERTOOL_WATCH_NAME} and wins; $repo_root/.supertool.json declares" \
+             "$watch_name. The pollers this session spawns follow the export; ops" \
+             "already running elsewhere do not. supertool 'channel:health'" >&2
+    fi
+elif [ -n "$watch_name" ]; then
+    export SUPERTOOL_WATCH_NAME="$watch_name"
+fi
+
+# The consumer ships with the SUPERTOOL plugin, not with this one, and its path
+# is resolved from installed_plugins.json rather than by globbing the cache: the
+# cache keeps every version ever installed, so a glob answers with whichever
+# sorts last and reports a version this session is not running. That exact bug
+# shipped once in scripts/doctor.py.
+channel_script=""
+if [ -n "$python_bin" ]; then
+channel_script=$("$python_bin" - <<'FIND_CONSUMER' || true
+import json, os, sys
+
+# Each dead end names itself. "Not found" with no reason is the shape that
+# reports a confident wrong answer -- an absent registry, a supertool that is not
+# installed and an install path that no longer holds the consumer are three
+# different problems with three different remedies, and one message for all three
+# sends everybody to the wrong one.
+registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+try:
+    with open(registry, encoding="utf-8") as handle:
+        doc = json.load(handle)
+except (OSError, ValueError) as err:
+    sys.stderr.write("oss-workspace: %s could not be read (%s)\n" % (registry, type(err).__name__))
+    raise SystemExit(0)
+
+installs = [
+    entry.get("installPath")
+    for key, entries in (doc.get("plugins") or {}).items()
+    if key.split("@")[0] == "supertool"
+    for entry in entries or []
+    if entry.get("installPath")
+]
+if not installs:
+    sys.stderr.write(
+        "oss-workspace: %s lists no supertool install, so the channel consumer it "
+        "ships has nowhere to be read from\n" % registry)
+    raise SystemExit(0)
+
+for path in installs:
+    candidate = os.path.join(path, "notifiers", "claude-channel", "channel.ts")
+    if os.path.isfile(candidate):
+        print(candidate)
+        raise SystemExit(0)
+
+sys.stderr.write(
+    "oss-workspace: supertool is installed at %s but holds no "
+    "notifiers/claude-channel/channel.ts\n" % ", ".join(installs))
+FIND_CONSUMER
+)
+fi
+
+channel_ready=0
+if [ -z "$channel_script" ]; then
+    echo "oss-workspace: the supertool plugin's channel consumer was not found in" \
+         "installed_plugins.json, so this session opens WITHOUT the channel flag." \
+         "Naming an unregistered server refuses the launch outright, which is worse" \
+         "than a session with no board." >&2
+elif ! command -v bun >/dev/null 2>&1; then
+    echo "oss-workspace: bun is not on PATH, so the channel consumer cannot start." \
+         "Opening without the channel flag." >&2
+else
+    # Registered at LOCAL scope rather than passed as `--mcp-config`: a server
+    # loaded from --mcp-config does start and does bind the socket, but the
+    # channel resolver reads CONFIGURED servers only and refuses it by name. Local
+    # scope is per-project and private, so it does not ship, and the path is
+    # absolute so it cannot depend on CLAUDE_PLUGIN_ROOT being set.
+    #
+    # Idempotent: `claude mcp get` is the test, and a re-add on every launch would
+    # churn the user's config for nothing.
+    if claude mcp get "$CHANNEL_SERVER" >/dev/null 2>&1; then
+        channel_ready=1
+    elif claude mcp add -s local "$CHANNEL_SERVER" bun "$channel_script" >/dev/null 2>&1; then
+        channel_ready=1
+        echo "oss-workspace: registered MCP server $CHANNEL_SERVER at local scope" \
+             "(private to $repo_root) pointing at $channel_script. Remove it with" \
+             "claude mcp remove $CHANNEL_SERVER -s local" >&2
+    else
+        echo "oss-workspace: could not register the MCP server $CHANNEL_SERVER, so" \
+             "this session has no channel consumer. Opening without the flag;" \
+             "supertool 'channel:health' says the same from inside." >&2
+    fi
+fi
+
 if [ "$#" -eq 0 ]; then
-    exec claude "$CHANNEL_FLAG" "$CHANNEL_SERVER" "$prompt"
+    # The prompt goes FIRST and the variadic flag LAST. A positional after the
+    # flag is read as one of its values, and claude refuses the launch rather than
+    # dropping it.
+    if [ "$channel_ready" -eq 1 ]; then
+        exec claude "$prompt" "$CHANNEL_FLAG" "server:$CHANNEL_SERVER"
+    fi
+    exec claude "$prompt"
 fi
 
 # The third state. Placing our prompt after the caller's arguments hands `claude`
@@ -103,4 +273,10 @@ fi
 echo "oss-workspace: arguments were passed through, so $prompt was NOT appended —" \
      "claude reads only its first positional as the prompt. Run $prompt inside the" \
      "session, or start it with no arguments." >&2
-exec claude "$CHANNEL_FLAG" "$CHANNEL_SERVER" "$@"
+
+# The flag trails for the same reason it does above, and it terminates any
+# variadic option the caller passed, being `-`-prefixed.
+if [ "$channel_ready" -eq 1 ]; then
+    exec claude "$@" "$CHANNEL_FLAG" "server:$CHANNEL_SERVER"
+fi
+exec claude "$@"

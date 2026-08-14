@@ -18,6 +18,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The checker parses each fragment with markdown-it-py and refuses to fall
+      # back to text scanning when it is absent -- it reports `skipped` and exits
+      # non-zero rather than claiming anything. So the job has to install it; the
+      # gate was added without this step and its first real run failed on the
+      # parser rather than on a fragment.
+      - name: Install the fragment parser
+        run: python3 -m pip install --disable-pip-version-check markdown-it-py
+
       # Paths are passed explicitly. The script derives its default root from its
       # own location, which assumes it lives in .github/scripts/ -- it does not
       # here, and it will not in any repo this plugin is pointed at either.
