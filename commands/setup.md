@@ -44,7 +44,10 @@ config cannot show:
 The rules that matter, all enforced by `scripts/oss_config.py`:
 
 - **Label spellings come off the repo.** One repo spells it `priority-high`, a sibling spells it
-  `priority:high`. Never write a label name you have not seen in `gh-labels` output.
+  `priority:high`. Never write a label name you have not seen in the probe's `labels`, which holds
+  them as the repo spells them. Not `gh-labels`: that op is provided by a preset, presets load from
+  `.supertool.json`, and the repo being onboarded does not have one — not having it is what makes it
+  a repo to onboard. `--probe` calls `gh` directly for this reason.
 - **A repo with no labels gets empty lists.** Not a plausible default set. An invented value is
   indistinguishable from a measured one once it is on disk, and it will reach a brief with the same
   authority.
@@ -93,8 +96,18 @@ clean.
 plugin. Arriving is not the same as working, and the gap is invisible:
 
 - **Memory with no identity** still runs and still saves. What it cannot do is record whose sessions
-  these are. Fix it where the memory store lives — **never in the target repo**: identity is
-  per-user, and committing it publishes one developer's setup to everyone who clones.
+  these are. The file goes at `<repo>/.remember/identity.md`, and the reason it is safe there is
+  measured rather than assumed: the memory plugin writes a `.gitignore` containing `*` into that
+  directory when it creates it, so the store is untracked by construction and seeding identity
+  publishes nothing.
+
+  **Confirm that before writing, and do not write it anywhere else.** The hazard is real — identity
+  is per-user, and committing it publishes one developer's setup to everyone who clones — but the
+  hazard lives in *tracked* locations. `.claude/` is partly tracked in a scaffolded repo, so an
+  identity file landing there is one `git add .` from being published, and it would not be read
+  anyway: the session-start hook looks in the store, then at the store's parent, then at the
+  plugin's own directory. In a normal install none of those is `<repo>/.claude/remember/`. Check
+  `git status` after writing; the file must not appear.
 - **Rules with no built index** never fire, because the matcher reads the index rather than the
   markdown — and a rule that never fires is indistinguishable from one that fired and had nothing to
   say. Rules live per dimension and per layer, and **each layer carries its own index**; rebuild it in

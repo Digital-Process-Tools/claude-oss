@@ -46,22 +46,33 @@ def test_a_project_with_no_memory_store_warns_with_the_fix(tmp_path):
     assert "remember" in _messages()
 
 
-def _memory(root, identity=True, data_dir=".remember"):
-    """The real layout: config and identity in `.claude/remember/`, sessions in the
-    `data_dir` that config names.
+def _memory(root, identity=True, data_dir=".remember", stray=False, local_install=False):
+    """The real layout: `config.json` in `.claude/remember/`, sessions in the `data_dir`
+    that config names.
 
-    Conflating the two was a live bug. This checker looked for identity inside the DATA
-    directory, so it reported "no identity" for every correctly configured repo -- and
-    I relayed that about two of our own before somebody said they were surprised.
+    identity.md is the part that went round twice. It can live in either directory and
+    both are read -- but by different layouts, and the one this plugin's own dependency
+    install uses is the DATA dir. Measured against the memory plugin's session-start
+    hook: with identity.md in both places it injects the data dir's copy, and with the
+    data dir's copy removed it injects neither, because the config dir is only the
+    plugin's own directory in a LOCAL install and this was not one.
+
+    So `identity=True` seeds the DATA dir, which is what a correctly configured repo
+    looks like. `stray=True` seeds the config dir instead -- present, deliberate-looking
+    and never injected.
     """
     config_dir = root / ".claude" / "remember"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.json").write_text(
         json.dumps({"data_dir": data_dir}), encoding="utf-8"
     )
-    if identity:
-        (config_dir / "identity.md").write_text("who the agent is\n", encoding="utf-8")
     (root / data_dir).mkdir(parents=True, exist_ok=True)
+    if identity:
+        (root / data_dir / "identity.md").write_text("who the agent is\n", encoding="utf-8")
+    if stray:
+        (config_dir / "identity.md").write_text("never injected\n", encoding="utf-8")
+    if local_install:
+        (config_dir / "scripts").mkdir(exist_ok=True)
     return config_dir
 
 
@@ -79,14 +90,75 @@ def test_a_configured_memory_store_is_ok(tmp_path):
     assert _states() == ["OK"]
 
 
-def test_identity_is_looked_for_beside_the_config_not_in_the_data_dir(tmp_path):
-    """The bug this fixes, from both sides: identity in the data dir must NOT satisfy
-    the check, and identity beside config.json must.
+def test_identity_in_the_data_dir_satisfies_the_check(tmp_path):
+    """The data dir is where the session-start hook looks FIRST, so a repo with only
+    this copy is correctly configured and must not be told otherwise.
+
+    This asserts the opposite of what it used to. The old version encoded the belief
+    that the data dir was the wrong place; running the hook says it is the first place
+    it reads, and the only one read in a dependency install.
     """
-    _memory(tmp_path, identity=False)
-    (tmp_path / ".remember" / "identity.md").write_text("wrong place\n", encoding="utf-8")
+    _memory(tmp_path)
+    doctor.check_memory(tmp_path)
+    assert _states() == ["OK"]
+    assert ".remember" in _messages()
+
+
+def test_identity_only_beside_the_config_is_not_a_pass(tmp_path):
+    """The state that reads as configured from every angle except the one that matters.
+
+    Measured, not reasoned: with this exact layout -- `config.json` and `identity.md` in
+    `.claude/remember/`, no plugin installed there -- the memory plugin's session-start
+    hook injects nothing, because it resolves identity against the data dir, the data
+    dir's parent, and the plugin's own directory. None of those is this one.
+
+    Two of our own repos are in this state and the doctor called them configured, which
+    is the tool producing an absence and the reader taking it for the world.
+    """
+    _memory(tmp_path, identity=False, stray=True)
     doctor.check_memory(tmp_path)
     assert _states() == ["WARN"]
+    assert "never read" in _messages()
+
+
+def test_identity_beside_the_config_is_a_pass_when_the_plugin_lives_there(tmp_path):
+    """The positive control for the case above, and the reason it is not simply wrong to
+    keep identity there: in a LOCAL install the plugin's own directory IS
+    `.claude/remember/`, so the third fallback resolves and the file is injected.
+
+    Without this pair the check above would pass just as well against a checker that
+    warned unconditionally.
+    """
+    _memory(tmp_path, identity=False, stray=True, local_install=True)
+    doctor.check_memory(tmp_path)
+    assert _states() == ["OK"]
+
+
+def test_the_data_dir_copy_wins_over_a_stray_one(tmp_path):
+    """Both present is not ambiguous -- the hook reads the data dir first, so the doctor
+    must not report the copy that loses.
+    """
+    _memory(tmp_path, stray=True)
+    doctor.check_memory(tmp_path)
+    assert _states() == ["OK"]
+    assert "never read" not in _messages()
+
+
+def test_the_identity_warning_names_both_directories_it_read(tmp_path):
+    """The failure that made this worth fixing: the warning named `.remember` while the
+    lookup read `.claude/remember`, so doing exactly what it said left it byte-for-byte
+    unchanged and gave no way to tell a wrong path from wrong content.
+
+    A checker that consulted a path must name that path, or its finding cannot be acted
+    on -- which is the same three-states rule the rest of this file is about, applied to
+    the message rather than the verdict.
+    """
+    _memory(tmp_path, identity=False)
+    doctor.check_memory(tmp_path)
+    assert _states() == ["WARN"]
+    message = _messages()
+    for named in (".remember", ".claude/remember"):
+        assert named in message, "the warning does not name {}, which it read".format(named)
 
 
 def test_a_custom_data_dir_from_the_config_is_honoured(tmp_path):

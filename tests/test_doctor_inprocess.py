@@ -156,14 +156,15 @@ def _fully_configured(root):
     (root / "wt").mkdir(exist_ok=True)
     (root / ".max").mkdir(exist_ok=True)
     (root / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
-    # Config and identity live in .claude/remember/; sessions go to the data_dir it
-    # names. The fixture said `.remember/identity.md`, which is the wrong place and is
-    # what let the checker's own bug pass unnoticed.
+    # config.json lives in .claude/remember/; sessions AND identity go to the data_dir
+    # it names. Identity in the config dir is only read when the plugin is installed
+    # there, which this fixture does not do -- so putting it there would describe a repo
+    # whose identity never loads.
     memory_config = root / ".claude" / "remember"
     memory_config.mkdir(parents=True, exist_ok=True)
     (memory_config / "config.json").write_text('{"data_dir": ".remember"}', encoding="utf-8")
-    (memory_config / "identity.md").write_text("who the agent is\n", encoding="utf-8")
     (root / ".remember").mkdir(exist_ok=True)
+    (root / ".remember" / "identity.md").write_text("who the agent is\n", encoding="utf-8")
     rules = root / ".claude" / "jit-context"
     rules.mkdir(parents=True, exist_ok=True)
     (rules / "conventions.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
