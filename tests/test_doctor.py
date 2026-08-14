@@ -101,6 +101,34 @@ def test_a_check_that_cannot_run_reports_skipped_state_not_success(tmp_path):
     assert "clone" in out.lower()
 
 
+def test_a_verified_test_command_no_workflow_runs_is_a_warning(tmp_path):
+    """Green from a changelog check and an org scan says nothing about the tests."""
+    _write_config(tmp_path)
+    # Matched on a phrase, not on "test_command": pytest builds tmp_path from the
+    # test function name, so a substring of the name is present in every path the
+    # doctor prints and would satisfy the search on its own.
+    lines = [ln for ln in run(tmp_path).stdout.splitlines() if "runs it" in ln]
+    assert lines, "the doctor never mentioned the configured test command"
+    assert lines[0].startswith("WARN"), lines[0]
+    assert "pytest" in lines[0]
+
+
+def test_a_test_command_a_workflow_runs_is_not_warned_about(tmp_path):
+    """Positive control: the warning above has an off state."""
+    _write_config(tmp_path)
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "test.yml").write_text(
+        "jobs:\n  t:\n    steps:\n      - run: pytest\n", encoding="utf-8"
+    )
+    offenders = [
+        ln
+        for ln in run(tmp_path).stdout.splitlines()
+        if ln.startswith("WARN") and "runs it" in ln
+    ]
+    assert not offenders, offenders
+
+
 def _write_config(root, overrides=None, extra=None):
     config = {
         "repo": "owner/name",

@@ -103,7 +103,7 @@ and set it in the payload.
 | Kind | Where | On update |
 | --- | --- | --- |
 | **Yours** | everywhere else | never read, never written |
-| **Defaults** | `SECURITY.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/`, … | created once when absent, then yours forever |
+| **Defaults** | `SECURITY.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/`, `changelog.d/README.md`, … | created once when absent, then yours forever |
 | **Ours** | `.oss/`, plus `.github/workflows/oss-changelog.yml` | replaced every run, so fixes reach the repo |
 
 `.oss/README.md` states that table inside the repo, which is where somebody about to
@@ -117,6 +117,69 @@ fails outright. Hence the `oss-` prefix, so it is still obvious in a directory l
 `.oss/assemble_changelog.py` ships into the repo rather than being called from the
 plugin because CI checks out the repo and nothing else: a workflow calling a plugin path
 is a red build on day one.
+
+The generated workflow installs that script's parser before running it. Without the
+install step the checker reports `skipped` and exits non-zero — which is the checker
+being right and the job being red anyway. It is a gap a scaffolded repo cannot see in
+itself: with zero fragments the checker reaches a verdict without needing a parser, so
+the job goes green on the scaffold pull request and only fails on the first real change
+after it. `.oss/README.md` names the same package for running the check on your own
+machine, which CI does not cover.
+
+The fragment directory the workflow polices is created alongside it, holding a
+`changelog.d/README.md` that explains the naming. An absent directory is a *failure* to
+the checker, not an empty one, so a workflow installed without it is red on the pull
+request that installed it. The directory is `changelog_dir` from `.oss.json`, falling back
+to `changelog.d/` when that is null — which is also the directory the generated workflow
+names in that case, so the two cannot drift apart.
+
+That README is a default like any other: created once when absent, never overwritten, and
+previewable before it is written with
+`--show changelog.d/README.md` (or your own fragment directory in place of `changelog.d`).
+
+## What the run reports and will not do for you
+
+Three lines after the file list, each naming something measured and left alone. They are
+printed before writing as well as after, so nothing in them is a surprise.
+
+`label` — the generated workflow names `no-changelog` as the escape hatch for a change
+users cannot see. That label is **not created**. Writing a file into a checkout is a
+change somebody reads in a diff and reverts; creating a label changes their repository on
+the forge, from a command they ran to write files. Create it once, yourself:
+
+```bash
+gh label list | grep no-changelog
+gh label create no-changelog --description "Change is invisible to users"
+```
+
+Feed a real label list to `scaffold.check_changelog_label` if you want the state rather
+than the reminder — it answers `missing`, or nothing, or `unknown` when the list could
+not be read. An unchecked label is not an absent one.
+
+`ci` — `.oss.json` now describes a repo with no CI, because `ci.required_checks` was
+derived before this run installed a workflow. **The value is not rewritten.** Counting
+workflow jobs cannot see a check configured outside the repo — an organisation-level
+required workflow, a branch protection rule, an app posting a status — so re-deriving it
+would swap one unmeasured number for another, and a wrong count on disk is
+indistinguishable from a measured one. Measure it from checks that actually ran:
+
+```bash
+gh api repos/OWNER/NAME/commits/<sha>/check-runs
+```
+
+then set it by hand. A value already set is left alone: that is a decision.
+
+`tests` — if `.oss.json` carries a `test_command`, and no workflow runs it, the run says
+so. A pull request in that repo goes green with its changelog fragment checked and its
+tests not run at all, and `/oss:manager` merges on green — so green there is an absence
+rather than a result. **No test workflow is generated.** The runner, the matrix, the
+language version and whether a failure blocks a merge are all decisions nothing here has
+measured, and a `ubuntu-latest` single-version guess shipped into a repo about
+cross-platform behaviour would be actively misleading. The input to the *report* is
+measured — `test_command` was executed and observed to pass — which is why it is stated
+insistently and still not acted on.
+
+`/oss:doctor` repeats the last two on every run.
 
 ## The rule layer is the exception, and deliberately so
 

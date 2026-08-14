@@ -551,6 +551,30 @@ def published_versions(repos):
     return latest
 
 
+def check_ci_enforcement(project_dir, config):
+    """Does anything in CI run the tests, and does the config still describe the repo?
+
+    A merge gate that passes because nothing ran is the worst of the three states: it
+    reads exactly like a gate that passed because everything was checked.
+    """
+    if config is None or scaffold is None:
+        return
+
+    findings = scaffold.check_test_ci(project_dir, config)
+    if not findings and config.get("test_command"):
+        report(
+            "OK",
+            "test_command '{}' is executed by a workflow in .github/workflows/".format(
+                config["test_command"]
+            ),
+        )
+    for finding in findings:
+        report("WARN", finding["detail"])
+
+    for finding in scaffold.check_ci(project_dir, config):
+        report("WARN", finding["detail"])
+
+
 def check_freshness(project_dir, config):
     """Report, never update. A tool that changes underneath a running session changes
     behaviour mid-flight, and the runtime already owns installation.
@@ -591,6 +615,7 @@ def main():
         check_directory("clone", config.get("clone"))
         check_directory("worktree_root", config.get("worktree_root"))
         check_state_file(project_dir, config)
+        check_ci_enforcement(project_dir, config)
 
     # Declared dependencies install automatically; they do not configure themselves,
     # and the unconfigured state is the one that still appears to work.

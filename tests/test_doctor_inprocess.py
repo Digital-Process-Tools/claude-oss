@@ -188,9 +188,16 @@ def _dependencies_current(monkeypatch):
 
 
 def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys):
-    config = _config(tmp_path)
+    # required_checks is set and a workflow actually runs the test command. A
+    # scaffolded repo without both is the state the doctor now warns about -- the
+    # tests are configured and nothing in CI runs them -- so a clean verdict has to
+    # be built on a repo where that is untrue.
+    config = _config(tmp_path, ci={"required_checks": 2})
     _fully_configured(tmp_path)
     scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
+    (tmp_path / ".github" / "workflows" / "tests.yml").write_text(
+        "jobs:\n  tests:\n    steps:\n      - run: pytest\n", encoding="utf-8"
+    )
     _dependencies_current(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))

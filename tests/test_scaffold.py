@@ -11,6 +11,7 @@ reported as present rather than quietly replaced.
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,7 +49,7 @@ def test_every_template_is_planned_on_an_empty_repo(tmp_path):
     plan = scaffold.plan(tmp_path, _config())
     assert plan, "no entries -- the checks below would vacuously pass"
     defaults = {e["path"] for e in plan if e["action"] == "create"}
-    assert defaults == set(scaffold.TEMPLATES)
+    assert defaults == set(scaffold.templates_for(_config()))
     owned = {e["path"] for e in plan if e["action"] == "replace"}
     assert owned == set(scaffold.OWNED)
 
@@ -177,7 +178,7 @@ def test_claude_md_states_the_untrusted_input_rule():
 
 def test_no_template_hardcodes_a_sibling_repo():
     """The whole point of extracting this was that the copies named their own repo."""
-    for name in scaffold.TEMPLATES:
+    for name in scaffold.templates_for(_config()):
         body = scaffold.render(name, _config())
         for spelling in ("Digital-Process-Tools/claude-", "claude-supertool", "claude-remember"):
             assert spelling not in body, "{} hardcodes {}".format(name, spelling)
@@ -191,7 +192,7 @@ def test_rendering_an_unknown_template_is_an_error_not_an_empty_string():
 def test_every_template_renders_without_a_leftover_placeholder():
     """An unsubstituted placeholder reaching a committed file is silent and permanent."""
     leftover = re.compile(r"\{[a-z_]+\}")
-    for name in scaffold.TEMPLATES:
+    for name in scaffold.templates_for(_config()):
         body = scaffold.render(name, _config())
         found = leftover.search(body)
         assert found is None, "{} still contains {}".format(name, found and found.group(0))
@@ -219,7 +220,7 @@ def test_a_null_config_value_never_reaches_a_rendered_file_as_None():
 def test_show_covers_every_file_that_would_be_created(tmp_path):
     shown = scaffold.show(tmp_path, _config())
     created = {path for path, action, _ in shown if action == "create"}
-    assert created == set(scaffold.TEMPLATES)
+    assert created == set(scaffold.templates_for(_config()))
 
 
 def test_show_covers_every_owned_file_too(tmp_path):
@@ -281,3 +282,220 @@ def test_show_of_an_unknown_path_is_an_error_not_an_empty_list():
 def test_show_can_render_an_owned_file_by_path(tmp_path):
     shown = scaffold.show(tmp_path, _config(), path=".oss/README.md")
     assert shown == [(".oss/README.md", "replace", scaffold.render_owned(".oss/README.md", _config()))]
+
+
+def test_show_renders_the_fragments_readme_by_path(tmp_path):
+    """The two forms of show must agree. The bare form walks plan(), which is
+    config-aware, so a single-path lookup against the module-level TEMPLATES would
+    refuse a file the very same call had just listed as pending.
+    """
+    config = _config()
+    shown = scaffold.show(tmp_path, config, path="changelog.d/README.md")
+    assert shown == [
+        ("changelog.d/README.md", "create", scaffold.render("changelog.d/README.md", config))
+    ]
+
+
+def test_show_follows_the_configured_fragment_directory(tmp_path):
+    config = _config(changelog_dir="news.d")
+    shown = scaffold.show(tmp_path, config, path="news.d/README.md")
+    assert shown[0][0] == "news.d/README.md"
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.show(tmp_path, config, path="changelog.d/README.md")
+
+
+def test_the_unknown_path_error_lists_the_fragments_readme(tmp_path):
+    """The error names what IS known, and a name missing from that list reads as a
+    file the scaffold does not write.
+    """
+    with pytest.raises(scaffold.ScaffoldError) as excinfo:
+        scaffold.show(tmp_path, _config(), path="NOT_A_TEMPLATE.md")
+    assert "changelog.d/README.md" in str(excinfo.value)
+
+
+def test_show_lists_the_fragments_readme_among_what_it_would_create(tmp_path):
+    shown = scaffold.show(tmp_path, _config())
+    created = {path: action for path, action, _ in shown}
+    assert created.get("changelog.d/README.md") == "create"
+
+
+# ------------------------------------------------------------------ fragment dir
+#
+# The scaffold installs a workflow that polices a fragment directory. Until the
+# directory exists in the repo, that workflow is red on the pull request that
+# introduces it -- for a reason that has nothing to do with the change.
+
+
+def _with_workflow(root, body="name: ci\n"):
+    directory = root / ".github" / "workflows"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "ci.yml").write_text(body, encoding="utf-8")
+
+
+def test_the_fragment_directory_the_workflow_polices_is_planned(tmp_path):
+    paths = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
+    assert paths.get("changelog.d/README.md") == "create"
+
+
+def test_the_scaffolded_repo_passes_its_own_fragment_check(tmp_path):
+    """The strongest form of it: run the vendored checker the workflow runs."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(tmp_path / ".oss" / "assemble_changelog.py"),
+            "--check",
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+        ],
+        cwd=str(tmp_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_a_repo_with_no_fragment_practice_gets_the_directory_the_workflow_names(tmp_path):
+    """`changelog_dir` null still yields a workflow naming changelog.d, so that is
+    the directory that has to exist.
+    """
+    scaffold.apply(tmp_path, _config(changelog_dir=None), plugin_root=REPO_ROOT)
+    assert (tmp_path / "changelog.d" / "README.md").is_file()
+    workflow = (tmp_path / ".github" / "workflows" / "oss-changelog.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "changelog.d" in workflow
+
+
+def test_a_custom_fragment_directory_is_the_one_created(tmp_path):
+    scaffold.apply(tmp_path, _config(changelog_dir="news.d"), plugin_root=REPO_ROOT)
+    assert (tmp_path / "news.d" / "README.md").is_file()
+    assert not (tmp_path / "changelog.d").exists()
+
+
+def test_an_existing_fragment_readme_is_never_overwritten(tmp_path):
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "README.md").write_text("ours\n", encoding="utf-8")
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert (tmp_path / "changelog.d" / "README.md").read_text(encoding="utf-8") == "ours\n"
+
+
+# ---------------------------------------------------------------- escape hatch
+
+
+def test_the_escape_hatch_label_is_reported_missing_never_created():
+    """Creating it would mutate the forge from a filesystem tool. Naming it does not."""
+    findings = scaffold.check_changelog_label(["bug", "enhancement"])
+    assert findings and findings[0]["state"] == "missing"
+    assert "no-changelog" in findings[0]["detail"]
+    assert "gh label create" in findings[0]["detail"]
+
+
+def test_an_existing_escape_hatch_label_is_clean():
+    assert scaffold.check_changelog_label(["bug", "no-changelog"]) == []
+
+
+def test_labels_that_could_not_be_listed_are_unknown_not_missing():
+    """The third state. "We could not ask" is not "it is not there"."""
+    findings = scaffold.check_changelog_label(None)
+    assert findings and findings[0]["state"] == "unknown"
+
+
+# --------------------------------------------------------------- required checks
+
+
+def test_required_checks_left_at_zero_beside_a_workflow_is_reported_stale(tmp_path):
+    _with_workflow(tmp_path)
+    findings = scaffold.check_ci(tmp_path, _config(ci={"required_checks": 0}))
+    assert findings and findings[0]["state"] == "stale"
+
+
+def test_the_stale_report_names_the_measured_way_to_get_the_number(tmp_path):
+    """A count of workflow jobs cannot see an org-level check, so the report must
+    not hand back a number -- it names the observation that would settle it.
+    """
+    _with_workflow(tmp_path)
+    detail = scaffold.check_ci(tmp_path, _config(ci={"required_checks": 0}))[0]["detail"]
+    assert "check-runs" in detail
+    assert "organisation" in detail
+
+
+def test_a_maintainer_set_count_is_left_alone(tmp_path):
+    _with_workflow(tmp_path)
+    assert scaffold.check_ci(tmp_path, _config(ci={"required_checks": 4})) == []
+
+
+def test_a_repo_with_no_workflows_has_no_required_checks_finding(tmp_path):
+    assert scaffold.check_ci(tmp_path, _config(ci={"required_checks": 0})) == []
+
+
+def test_an_unreadable_ci_block_is_unknown_not_zero(tmp_path):
+    _with_workflow(tmp_path)
+    config = _config()
+    config.pop("ci")
+    findings = scaffold.check_ci(tmp_path, config)
+    assert findings and findings[0]["state"] == "unreadable"
+
+
+def test_scaffold_never_writes_a_required_checks_number_it_could_not_measure(tmp_path):
+    """A guessed number on disk is indistinguishable from a measured one."""
+    config = _config(ci={"required_checks": 0})
+    scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
+    assert config["ci"]["required_checks"] == 0
+    assert not (tmp_path / ".oss.json").exists()
+
+
+# -------------------------------------------------------------- the tests in CI
+
+
+def test_a_verified_test_command_that_no_workflow_runs_is_reported(tmp_path):
+    _with_workflow(tmp_path, "name: changelog\njobs:\n  fragment:\n    runs-on: ubuntu-latest\n")
+    findings = scaffold.check_test_ci(tmp_path, _config(test_command="pytest"))
+    assert findings and findings[0]["state"] == "unenforced"
+    assert "pytest" in findings[0]["detail"]
+
+
+def test_a_test_command_a_workflow_runs_is_not_reported(tmp_path):
+    """The positive control for the assertion above: it can come back clean."""
+    _with_workflow(tmp_path, "jobs:\n  test:\n    steps:\n      - run: pytest\n")
+    assert scaffold.check_test_ci(tmp_path, _config(test_command="pytest")) == []
+
+
+def test_a_workflow_that_mentions_the_runner_but_not_the_command_is_unclear(tmp_path):
+    """Third state again: something runs unittest, and it is not this command."""
+    _with_workflow(
+        tmp_path,
+        "jobs:\n  test:\n    steps:\n      - run: python3 -m unittest tests.test_one\n",
+    )
+    findings = scaffold.check_test_ci(
+        tmp_path, _config(test_command="python3 -m unittest discover -s tests")
+    )
+    assert findings and findings[0]["state"] == "unclear"
+
+
+def test_no_test_command_reads_differently_from_one_nothing_runs(tmp_path):
+    unknown = scaffold.check_test_ci(tmp_path, _config(test_command=None))
+    unenforced = scaffold.check_test_ci(tmp_path, _config(test_command="pytest"))
+    assert unknown and unknown[0]["state"] == "unknown"
+    assert unenforced and unenforced[0]["state"] == "unenforced"
+    assert unknown[0]["detail"] != unenforced[0]["detail"]
+
+
+def test_the_scaffolded_repo_itself_lands_in_the_unenforced_state(tmp_path):
+    """The whole of it: one workflow installed, and it is not the tests."""
+    scaffold.apply(tmp_path, _config(test_command="pytest"), plugin_root=REPO_ROOT)
+    findings = scaffold.check_test_ci(tmp_path, _config(test_command="pytest"))
+    assert findings and findings[0]["state"] == "unenforced"
+    assert "green" in findings[0]["detail"]
+
+
+def test_scaffold_writes_no_test_workflow(tmp_path):
+    """Report, do not generate: runner, matrix and language version are unmeasured,
+    and a generated wrong answer is read as a measured one.
+    """
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    workflows = sorted(p.name for p in (tmp_path / ".github" / "workflows").iterdir())
+    assert workflows == ["oss-changelog.yml"]

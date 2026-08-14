@@ -255,6 +255,65 @@ def _render_claude_md(config):
     )
 
 
+DEFAULT_FRAGMENTS_DIR = "changelog.d"
+
+FRAGMENTS_README = """# __DIR__/ — changelog fragments
+
+One file per pull request, so two open pull requests never edit the same line of
+`CHANGELOG.md` and stop conflicting on every merge. Fragments are folded into
+`CHANGELOG.md` at release time and deleted.
+
+This directory is created empty, before there is anything to put in it, because
+`.github/workflows/oss-changelog.yml` reads it on every pull request and an absent
+directory is a failure rather than an empty one. The first red build in a repository
+should not be the pull request that installed the check.
+
+## Naming
+
+```
+<issue>.<section>.md
+```
+
+`<section>` is a Keep a Changelog heading, lowercased: `added`, `changed`,
+`deprecated`, `removed`, `fixed`, `security`.
+
+## Body
+
+A single top-level `-` list. No headings, no raw HTML, no unclosed fences. Name the
+issue in the text as well as in the file name — the file name is metadata, and
+metadata does not survive being read out of context.
+
+## Nothing user-visible in this change?
+
+Label the pull request `no-changelog`. **That label is not created for you.** Writing
+a file into a checkout is a change somebody reads in a diff and reverts; creating a
+label changes the repository on the forge, from a tool that was run to write files.
+So it is named here instead, with the command:
+
+```bash
+gh label create no-changelog --description "Change is invisible to users"
+```
+
+Until that label exists the check has no escape hatch, and every pull request needs a
+fragment.
+"""
+
+
+def fragments_dir(config):
+    """The directory the generated workflow polices.
+
+    A null `changelog_dir` means the probe found no fragment practice, and the
+    workflow still has to name a directory -- so it names the default, and the
+    default is what gets created. Installing a check for a directory nobody made is
+    how the scaffold ends up red on its own pull request.
+    """
+    return config.get("changelog_dir") or DEFAULT_FRAGMENTS_DIR
+
+
+def _render_fragments_readme(config):
+    return FRAGMENTS_README.replace("__DIR__", fragments_dir(config))
+
+
 # path -> a callable taking the config and returning the file body.
 TEMPLATES = {
     "CLAUDE.md": _render_claude_md,
@@ -274,13 +333,27 @@ TEMPLATES = {
 }
 
 
+def templates_for(config):
+    """The defaults for THIS repo.
+
+    Config-dependent, unlike ``TEMPLATES``, because one of them is named by the
+    config: the fragment directory the generated workflow checks. It belongs with the
+    defaults rather than with the owned files -- a repo that has written its own
+    README there has made a decision, and a default must not win against one.
+    """
+    templates = dict(TEMPLATES)
+    templates[fragments_dir(config) + "/README.md"] = _render_fragments_readme
+    return templates
+
+
 def render(name, config):
     """Render one template. An unknown name is an error, never an empty string."""
-    if name not in TEMPLATES:
+    templates = templates_for(config)
+    if name not in templates:
         raise ScaffoldError(
-            "unknown template: {!r}. Known: {}".format(name, ", ".join(sorted(TEMPLATES)))
+            "unknown template: {!r}. Known: {}".format(name, ", ".join(sorted(templates)))
         )
-    return TEMPLATES[name](config)
+    return templates[name](config)
 
 
 def render_to(repo_root, relative_path, body):
@@ -343,6 +416,17 @@ subdirectories are not supported and a symlink there fails outright. So it keeps
 - `assemble_changelog.py` — validates changelog fragments and folds them into
   `CHANGELOG.md` at release time. It lives in your repository rather than in the plugin
   because CI checks out your repository and nothing else.
+
+## Running the fragment check yourself
+
+It parses each fragment with __PACKAGES__ and refuses to fall back to scanning the text
+when that is missing — it reports `skipped` and claims nothing. The generated workflow
+installs it; your machine is not covered by that, so before pushing:
+
+```bash
+python3 -m pip install __PACKAGES__
+python3 .oss/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
+```
 """
 
 CHANGELOG_WORKFLOW = """name: oss changelog
@@ -361,6 +445,16 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      # The checker parses each fragment and refuses to fall back to text scanning when
+      # its parser is absent -- it reports `skipped`, claims nothing, and exits non-zero.
+      # Correct of it, and the job is red anyway, so the parser has to be installed here.
+      # This step is easy to leave out and hard to miss the absence of: a freshly
+      # scaffolded repo has no fragments, and with none the checker reaches a verdict
+      # without ever needing a parser. The first pull request that carries a fragment is
+      # the first one that fails, long after the scaffold was verified as working.
+      - name: Install the fragment parser
+        run: python3 -m pip install --disable-pip-version-check __PACKAGES__
 
       - name: Fragments parse and name a real section
         run: python3 __DIR__/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
@@ -408,13 +502,31 @@ def _note_comment():
     return "".join("# {}\n".format(line) for line in _wrap(OWNED_NOTE)) + "\n"
 
 
+#: Import name -> the package that provides it, for the one script this plugin vendors
+#: into a repo. Declared rather than spelled inline in the workflow so a second
+#: dependency has one place to be added, and so the test suite can hold this map against
+#: the guarded imports in `assemble_changelog.py` -- a dependency added there and not
+#: here fails our tests instead of somebody's first pull request (#17).
+ASSEMBLER_DEPENDENCIES = {"markdown_it": "markdown-it-py"}
+
+
+def _assembler_packages():
+    return " ".join(sorted(ASSEMBLER_DEPENDENCIES.values()))
+
+
 def _owned_readme(config, plugin_root):
-    return OWNED_README.replace("__DIR__", OWNED_DIR)
+    return (
+        OWNED_README.replace("__DIR__", OWNED_DIR)
+        .replace("__FRAGMENTS__", fragments_dir(config))
+        .replace("__PACKAGES__", _assembler_packages())
+    )
 
 
 def _owned_workflow(config, plugin_root):
-    body = CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR).replace(
-        "__FRAGMENTS__", config.get("changelog_dir") or "changelog.d"
+    body = (
+        CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR)
+        .replace("__FRAGMENTS__", fragments_dir(config))
+        .replace("__PACKAGES__", _assembler_packages())
     )
     return _note_comment() + body
 
@@ -457,7 +569,7 @@ def plan(repo_root, config):
 
     root = Path(repo_root)
     entries = []
-    for name in sorted(TEMPLATES):
+    for name in sorted(templates_for(config)):
         exists = (root / name).exists()
         entries.append(
             {
@@ -527,13 +639,19 @@ def show(repo_root, config, path=None, plugin_root=None):
     already present.
     """
     if path is not None:
-        if path in TEMPLATES:
+        # templates_for, not TEMPLATES: one default is named by the config -- the
+        # fragment directory README. The bare form below walks plan(), which is
+        # already config-aware, so looking a single path up in the module-level dict
+        # would refuse a file the same call had just listed as pending. Two forms of
+        # one function disagreeing is worse than either of them being wrong.
+        templates = templates_for(config)
+        if path in templates:
             return [(path, "create", render(path, config))]
         if path in OWNED:
             return [(path, "replace", render_owned(path, config, plugin_root))]
         raise ScaffoldError(
             "{!r} is not a known template or owned file. Known: {}".format(
-                path, ", ".join(sorted(set(TEMPLATES) | set(OWNED)))
+                path, ", ".join(sorted(set(templates) | set(OWNED)))
             )
         )
     shown = []
@@ -694,6 +812,232 @@ def check_radar(repo_root):
     ]
 
 
+WORKFLOW_DIR = ".github/workflows"
+
+CHANGELOG_ESCAPE_LABEL = "no-changelog"
+
+_LABEL_COMMANDS = (
+    "Check with `gh label list`; create it with `gh label create "
+    + CHANGELOG_ESCAPE_LABEL
+    + ' --description "Change is invisible to users"`.'
+)
+
+
+def check_changelog_label(labels):
+    """Does the escape hatch the generated workflow names actually exist?
+
+    ``labels`` is the repo's label names as the forge reports them, or ``None`` when
+    they could not be read -- which is a third state and is reported as one. "We did
+    not ask" is not "it is not there".
+
+    Never created here, and that is the line this file holds everywhere: a template is
+    a file in a checkout, visible in a diff and revertable. A label is a change to
+    somebody's repository on the forge, made by a command they ran to write files. So
+    the label is named, with the command, and the decision stays theirs.
+    """
+    if labels is None:
+        return [
+            {
+                "state": "unknown",
+                "detail": (
+                    "the generated changelog workflow names the '{}' label as its escape "
+                    "hatch, and whether the repo has that label cannot be read from here. "
+                    "An unchecked label is not an absent one. {}".format(
+                        CHANGELOG_ESCAPE_LABEL, _LABEL_COMMANDS
+                    )
+                ),
+            }
+        ]
+    if CHANGELOG_ESCAPE_LABEL in set(labels):
+        return []
+    return [
+        {
+            "state": "missing",
+            "detail": (
+                "the generated changelog workflow names '{}' as the way to say a change is "
+                "invisible to users, and no such label exists in this repo -- so the check "
+                "it guards cannot be waived, on this pull request or any other. {}".format(
+                    CHANGELOG_ESCAPE_LABEL, _LABEL_COMMANDS
+                )
+            ),
+        }
+    ]
+
+
+def _workflow_files(repo_root):
+    directory = Path(repo_root) / WORKFLOW_DIR
+    if not directory.is_dir():
+        return []
+    return sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix in (".yml", ".yaml")
+    )
+
+
+def _workflow_texts(repo_root):
+    texts = []
+    for path in _workflow_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return texts
+
+
+def check_ci(repo_root, config):
+    """What `ci.required_checks` says, now that a workflow has been installed.
+
+    **Nothing is written.** The value is derived from workflow jobs, and a job count
+    cannot see a check that arrives from outside the repo -- an organisation-level
+    required workflow, a branch protection rule, an app posting a status. Re-deriving
+    it after the scaffold would swap one number that was never measured for another,
+    and a wrong number on disk is indistinguishable from a measured one. So this names
+    the staleness and the observation that would settle it.
+
+    A value somebody already set is left alone: that is a decision, and the same rule
+    that stops a default overwriting a SECURITY.md stops a guess overwriting a count.
+    """
+    if not _workflow_files(repo_root):
+        return []
+
+    ci = config.get("ci")
+    declared = ci.get("required_checks") if isinstance(ci, dict) else None
+    if not isinstance(declared, int):
+        return [
+            {
+                "state": "unreadable",
+                "detail": (
+                    "ci.required_checks is missing or is not an integer, so what the merge "
+                    "gate should be counting is unknown -- which is not the same as zero."
+                ),
+            }
+        ]
+    if declared:
+        return []
+
+    return [
+        {
+            "state": "stale",
+            "detail": (
+                "ci.required_checks is 0 and {count} workflow file(s) now sit in {dir}/, so "
+                ".oss.json describes a repo with no CI. That file count is not the missing "
+                "number -- the config counts jobs, and neither quantity is the one the merge "
+                "gate needs. It is not re-derived here: counting "
+                "workflow jobs cannot see a check configured outside the repo -- an "
+                "organisation-level required workflow, a branch protection rule, an app "
+                "posting a status -- so the count would be wrong wherever any of those exist. "
+                "Measure it from the checks a commit actually ran, then set it by hand: "
+                "gh api repos/{repo}/commits/<sha>/check-runs".format(
+                    count=len(_workflow_files(repo_root)),
+                    dir=WORKFLOW_DIR,
+                    repo=config.get("repo") or "OWNER/NAME",
+                )
+            ),
+        }
+    ]
+
+
+# Tokens that say how something is run rather than what is run. Skipped when looking
+# for the part of a test command a workflow would have to mention.
+_COMMAND_WRAPPERS = frozenset(
+    ("python", "python3", "py", "npx", "sh", "bash", "uv", "poetry", "pipenv", "run", "exec")
+)
+
+
+def _runner_token(command):
+    for token in command.split():
+        if token.startswith("-") or token in _COMMAND_WRAPPERS:
+            continue
+        return token
+    return None
+
+
+def check_test_ci(repo_root, config):
+    """Is the verified test command wired to anything that gates a merge?
+
+    Three states, because two would be a lie. A pull request is green, or it is red,
+    or **nothing ran** -- and the third reads exactly like the first on the merge
+    screen. A maintainer loop that merges on green, in a repo where CI checks a
+    changelog fragment and never the tests, is merging on an absence.
+
+    No test workflow is generated. The runner, the matrix, the language version and
+    whether a failure blocks a merge are all real decisions, none of them measured
+    here, and every one of them wrong in some repo. The input to *this* is measured:
+    `test_command` was executed and observed to pass when `.oss.json` was written. So
+    it is stated, not fixed.
+    """
+    command = (config.get("test_command") or "").strip()
+    texts = _workflow_texts(repo_root)
+
+    if not command:
+        return [
+            {
+                "state": "unknown",
+                "detail": (
+                    "no test_command in .oss.json, so there is nothing to hold CI against. "
+                    "A repo with neither a command nor a test job is in a smaller hole than "
+                    "one with a verified command and no gate: the gap is visible in the "
+                    "config rather than hidden behind a green pull request."
+                ),
+            }
+        ]
+
+    if any(command in text for text in texts):
+        return []
+
+    token = _runner_token(command)
+    if token and any(token in text for text in texts):
+        return [
+            {
+                "state": "unclear",
+                "detail": (
+                    "test_command '{command}' is not run verbatim by any workflow, though a "
+                    "workflow does mention '{token}'. Whether that is the same suite cannot "
+                    "be told from here -- a third state, and not a pass.".format(
+                        command=command, token=token
+                    )
+                ),
+            }
+        ]
+
+    return [
+        {
+            "state": "unenforced",
+            "detail": (
+                "test_command '{command}' was verified when .oss.json was written and nothing "
+                "in {dir}/ runs it. A pull request that goes green in this repo has had its "
+                "changelog fragment checked and its tests not run at all -- and the maintainer "
+                "loop merges on green, so green here is an absence rather than a result. No "
+                "test workflow is written for you: the runner, the matrix and the language "
+                "version are decisions nothing here has measured. Add one, or say in the pull "
+                "request that the tests were not run in CI.".format(
+                    command=command, dir=WORKFLOW_DIR
+                )
+            ),
+        }
+    ]
+
+
+def _print_findings(repo_root, config):
+    """Everything the scaffold measured but did not act on, in one place.
+
+    Printed by both paths. Before writing it is a warning about what the plan does not
+    cover; after writing it is the list of things the repo still needs and this tool
+    would not do for it.
+    """
+    for finding in check_radar(repo_root):
+        print("radar    {}".format(finding["detail"]))
+    for finding in check_ci(repo_root, config):
+        print("ci       {}".format(finding["detail"]))
+    for finding in check_test_ci(repo_root, config):
+        print("tests    {}".format(finding["detail"]))
+    # No forge access from here, so the honest state is the unknown one -- which
+    # still carries the label's name and the command that creates it.
+    for finding in check_changelog_label(None):
+        print("label    {}".format(finding["detail"]))
+
+
 def _main(argv=None):
     import argparse
 
@@ -751,8 +1095,7 @@ def _main(argv=None):
     if not args.apply:
         for entry in entries:
             print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
-        for finding in check_radar(args.root):
-            print("radar    {}".format(finding["detail"]))
+        _print_findings(args.root, config)
         print("PLAN: {} to create, {} already present".format(
             sum(1 for e in entries if e["action"] == "create"),
             sum(1 for e in entries if e["action"] == "present"),
@@ -775,6 +1118,10 @@ def _main(argv=None):
         # root as GIVEN, and `--root .` is how the command invokes it. relative_to()
         # against a resolved root then raises on a path that is perfectly correct.
         print("replaced {}".format(os.path.relpath(str(path), str(args.root))))
+
+    # After the writes, not before: the stale-config and missing-gate findings are
+    # about the repo as it now stands, which is the state the maintainer has to act on.
+    _print_findings(args.root, config)
 
     print("WROTE: {} template(s), replaced {} file(s) in the {} rule layer".format(
         len(written), len(rules), oss_rules.LAYER
