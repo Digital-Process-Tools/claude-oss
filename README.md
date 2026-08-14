@@ -15,9 +15,9 @@ A maintainer loop written as prose gets copied between repos, and the copies dri
 rule means editing it in three places and remembering the third. Repos that never got the copy run
 no loop at all.
 
-This packages the loop once: one skill, two agents, a handful of commands. Everything that differs
-between repos — default branch, label spellings, version sites, test command — lives in a config
-file the plugin writes by probing the repo, not in the prose.
+This packages the loop once: one skill, the agents it delegates to, a handful of commands.
+Everything that differs between repos — default branch, label spellings, version sites, test
+command — lives in a config file the plugin writes by probing the repo, not in the prose.
 
 ## Install
 
@@ -41,6 +41,13 @@ oss-workspace
 That opens a session over the repo you are standing in, with the maintainer loop already running — or
 with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
 into the wrong place confidently.
+
+Setup is not the whole onboarding. It deliberately writes nothing tracked, which is what makes it
+safe to run anywhere and also what leaves the repo half-furnished — configured, and still without a
+CLAUDE.md, a security policy, issue templates or a changelog gate. **`/oss:scaffold` is the second
+step**, and it is separate because it writes tracked files: they want a branch, a diff and a review.
+A repo that goes straight from setup to ticking never fails; it just runs the loop against furniture
+nobody added.
 
 It does **not** set up a board. The session is started able to receive watch-channel events, but
 `radar` reads its tiers from that repo's own `.supertool.json`, and a fresh clone has none. The
@@ -68,7 +75,7 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 
 ## Status
 
-Not yet run against a live repo. The loop, both agents, the config layer and the diagnostic are in
+Not yet run against a live repo. The loop, its agents, the config layer and the diagnostic are in
 and tested; what has not happened is a real issue taken from triage through to a merge. Until that
 round-trip is clean twice, treat this as unproven rather than working.
 

@@ -253,6 +253,132 @@ def check_memory(project_dir):
     )
 
 
+# The op the maintainer loop merges with. Matching is on the literal command
+# string, so this substring is what an allow rule has to contain in some form --
+# `Bash(./supertool 'gh-pr-merge:*')`, an absolute-path spelling of the same, or
+# a per-call entry naming one exact merge.
+MERGE_OP = "gh-pr-merge"
+MERGE_RULE_FILE = ".claude/settings.local.json"
+
+
+def settings_candidates(project_dir, home=None):
+    """Where a permission rule can live. Project scope first, then user scope --
+    a rule in either one is a rule, and reading only the project's would WARN at
+    a maintainer who already arranged it in their home settings.
+    """
+    candidates = [
+        Path(project_dir) / ".claude" / "settings.json",
+        Path(project_dir) / ".claude" / "settings.local.json",
+    ]
+    if home is None:
+        try:
+            home = Path.home()
+        except RuntimeError:
+            # No HOME / USERPROFILE to resolve. User scope is then unreadable, but
+            # this is a diagnostic: it exits 0 and reports, it does not traceback.
+            return candidates
+    return candidates + [
+        Path(home) / ".claude" / "settings.json",
+        Path(home) / ".claude" / "settings.local.json",
+    ]
+
+
+def _permission_entries(data, key):
+    permissions = data.get("permissions")
+    if not isinstance(permissions, dict):
+        return []
+    entries = permissions.get(key)
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, str)]
+
+
+def merge_permission_state(project_dir, home=None):
+    """Is there a settings rule naming the merge op? Four answers, not two.
+
+    `present` / `denied` / `absent` / `unknown`, and the last one is the reason
+    this is not a boolean. A settings file that could not be parsed produces no
+    matching entry, which looks exactly like a file that was read and had none --
+    and the two send a maintainer to opposite places.
+
+    A rule that WAS read settles the question, so an unreadable neighbour does not
+    drag a found rule back to `unknown`.
+    """
+    unreadable = []
+    allowed = []
+    denied = []
+    for path in settings_candidates(project_dir, home=home):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            unreadable.append(str(path))
+            continue
+        if not isinstance(data, dict):
+            unreadable.append(str(path))
+            continue
+        for entry in _permission_entries(data, "allow"):
+            if MERGE_OP in entry:
+                allowed.append("{} in {}".format(entry, path))
+        for entry in _permission_entries(data, "deny"):
+            if MERGE_OP in entry:
+                denied.append("{} in {}".format(entry, path))
+    # Every candidate is read before anything is decided, and deny wins. Returning
+    # on the first allow would report `present` while holding, already parsed, a deny
+    # rule for the same op -- an OK built on evidence the function had in hand and
+    # dropped, which is worse than not looking.
+    if denied:
+        return "denied", "; ".join(denied)
+    if allowed:
+        return "present", "; ".join(allowed)
+    if unreadable:
+        return "unknown", "; ".join(unreadable)
+    return "absent", ""
+
+
+def check_merge_permission(project_dir, home=None):
+    """Report the rule, and never more than the rule.
+
+    This is a file read, not a probe of the harness. The harness decides at call
+    time and an allowlist entry is one input to that decision -- so `present`
+    cannot promise the merge will run, and `absent` cannot promise it will be
+    denied. Both messages have to carry that limit, or the check becomes the
+    defect it is here to prevent: an OK that reads as a guarantee nobody measured.
+    """
+    state, detail = merge_permission_state(project_dir, home=home)
+    if state == "present":
+        report(
+            "OK",
+            "a settings rule names {} ({}). This is a file read, not a probe of the "
+            "harness: it says the rule exists, not that the merge call will be "
+            "permitted.".format(MERGE_OP, detail),
+        )
+        return
+    if state == "denied":
+        report(
+            "WARN",
+            "the only settings rule naming {} is a deny rule ({}). The merge step will "
+            "stop there.".format(MERGE_OP, detail),
+        )
+        return
+    if state == "unknown":
+        report(
+            "WARN",
+            "could not read {}, so whether a {} rule exists is unknown -- not answered "
+            "as absent, because that would send you to add a rule you may already "
+            "have.".format(detail, MERGE_OP),
+        )
+        return
+    report(
+        "WARN",
+        "no settings rule names {}, so the merge step is the place you would find out. "
+        "Add one to {} (machine scope, untracked) before the first tick. A rule is not "
+        "the only thing that can allow or deny this call, so this is not a prediction "
+        "that the merge will fail.".format(MERGE_OP, MERGE_RULE_FILE),
+    )
+
+
 def check_jit_rules(project_dir):
     """Rules on disk are not rules in effect.
 
@@ -621,6 +747,9 @@ def main():
     # and the unconfigured state is the one that still appears to work.
     check_memory(project_dir)
     check_jit_rules(project_dir)
+    # The merge permission is settled here or it is settled at the merge step,
+    # with the whole review already spent.
+    check_merge_permission(project_dir)
     check_freshness(project_dir, config)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
