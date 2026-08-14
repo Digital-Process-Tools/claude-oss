@@ -1,5 +1,6 @@
 ---
 title: ".oss.json is config, not truth"
+description: "Per-repo settings for the maintainer loop. Re-derive ci.required_checks and labels before acting; null is an answer, not a gap."
 match: \.oss\.json
 ---
 

@@ -11,6 +11,8 @@ are the supported shape.
 """
 
 import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +26,13 @@ import oss_rules  # noqa: E402
 
 def _layer(root, dimension):
     return root / ".claude" / "jit-context" / dimension / oss_rules.LAYER
+
+
+#: Which column of an index row holds the entry FILENAME, per dimension. Measured against
+#: claude-jit-context's `rebuild-tsv.sh` (see scripts/doctor.py's JIT_FILENAME_COLUMN,
+#: which carries the same citation): tools rows are six columns wide with the filename
+#: third; paths and vocabulary are two columns with the filename second.
+FILENAME_COLUMN = {"tools": 2, "paths": 1, "vocabulary": 1}
 
 
 def test_there_are_rules_to_install():
@@ -46,15 +55,21 @@ def test_install_writes_an_index_beside_the_rules(tmp_path):
         assert index.read_text(encoding="utf-8").strip(), "{}: empty index".format(dimension)
 
 
-def test_index_rows_are_pattern_tab_filename(tmp_path):
+def test_index_rows_are_shaped_per_dimension(tmp_path):
+    """Paths and vocabulary are `pattern<TAB>filename`; tools is the six-column shape
+    `rebuild-tsv.sh` writes (see FILENAME_COLUMN above) -- a two-column assertion applied to
+    a tools row would fail on a correctly built index, which is this test's own defect
+    wearing the opposite sign.
+    """
     oss_rules.install(tmp_path)
     for dimension in oss_rules.RULES:
         index = _layer(tmp_path, dimension) / "00-index.tsv"
+        column = FILENAME_COLUMN[dimension]
         for line in index.read_text(encoding="utf-8").splitlines():
             fields = line.split("\t")
-            assert len(fields) == 2, line
+            assert len(fields) == (6 if dimension == "tools" else 2), line
             assert fields[0].strip(), line
-            assert fields[1].endswith(".md"), line
+            assert fields[column].endswith(".md"), line
 
 
 def test_every_indexed_file_exists(tmp_path):
@@ -62,8 +77,9 @@ def test_every_indexed_file_exists(tmp_path):
     oss_rules.install(tmp_path)
     for dimension in oss_rules.RULES:
         layer = _layer(tmp_path, dimension)
+        column = FILENAME_COLUMN[dimension]
         for line in (layer / "00-index.tsv").read_text(encoding="utf-8").splitlines():
-            assert (layer / line.split("\t")[1]).is_file(), line
+            assert (layer / line.split("\t")[column]).is_file(), line
 
 
 def test_every_rule_file_is_indexed(tmp_path):
@@ -71,8 +87,9 @@ def test_every_rule_file_is_indexed(tmp_path):
     oss_rules.install(tmp_path)
     for dimension in oss_rules.RULES:
         layer = _layer(tmp_path, dimension)
+        column = FILENAME_COLUMN[dimension]
         indexed = {
-            line.split("\t")[1]
+            line.split("\t")[column]
             for line in (layer / "00-index.tsv").read_text(encoding="utf-8").splitlines()
         }
         on_disk = {p.name for p in layer.glob("*.md")}
@@ -144,6 +161,152 @@ def test_a_changelog_rule_exists_and_fires_on_the_fragment_directory():
     assert any("changelog" in name for name in oss_rules.RULES["paths"]), rows
     body = [b for n, b in oss_rules.RULES["paths"].items() if "changelog" in n][0]
     assert "changelog.d" in body.split("\n---\n")[0]
+
+
+# --- #109: a description: for every shipped entry, or summary injection has nothing to say ---
+
+
+def test_every_shipped_entry_declares_a_description():
+    """Under `JIT_CONTEXT_INJECT=summary`, a match injects `title:` plus `description:` only.
+    An entry with no `description:` is named and not injected -- the content never reaches a
+    session running that mode. All three population dimensions must carry one, and it must say
+    something: an empty `description: ""` passes a bare substring check while reproducing the
+    exact bug this guards against -- nothing useful injected under summary mode.
+    """
+    for dimension, rules in oss_rules.RULES.items():
+        for name, body in rules.items():
+            block = body.split("\n---\n")[0]
+            line = [ln for ln in block.splitlines() if ln.startswith("description:")]
+            assert line, (dimension, name)
+            value = line[0].split(":", 1)[1].strip().strip('"')
+            assert len(value) > 20, (dimension, name, value)
+
+
+# --- #108: the fragments rule must fire on CHANGELOG.md, the moment its warning applies ------
+
+
+def _awk():
+    return shutil.which("awk") or shutil.which("gawk")
+
+
+def _ere_matches(pattern, subject):
+    """The same test the hook applies: `match(subject, pattern)` under an awk ERE, run for
+    real rather than approximated through Python's `re` -- a PCRE engine accepts syntax an
+    awk ERE refuses or reads differently, so a Python-side pass is not evidence about the
+    hook. `-v` passes both strings so neither is interpolated into the program text.
+    """
+    program = 'BEGIN { print (subject ~ pattern) ? "MATCH" : "NOMATCH" }'
+    result = subprocess.run(
+        [_awk(), "-v", "subject=" + subject, "-v", "pattern=" + pattern, program],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+    return result.stdout.strip() == "MATCH"
+
+
+def test_the_changelog_match_fires_on_changelog_md_and_still_fires_on_a_fragment():
+    """The bug: `match: changelog.d/` never fired on `CHANGELOG.md`, the one moment its main
+    instruction -- do not hand-edit this file -- applies. The widened pattern must fire on
+    both, and a positive control (an unrelated path) must still not fire: a match that hits
+    everything would pass the first half of this test for the wrong reason.
+    """
+    if _awk() is None:
+        pytest.skip("no awk on PATH, so the widened ERE cannot be driven for real")
+    body = oss_rules.RULES["paths"]["changelog-fragments.md"]
+    match_line = [
+        ln for ln in body.split("\n---\n")[0].splitlines() if ln.startswith("match:")
+    ][0]
+    pattern = match_line.split(":", 1)[1].strip()
+
+    assert _ere_matches(pattern, "CHANGELOG.md"), "must fire: opening the file it warns about"
+    assert _ere_matches(pattern, "docs/CHANGELOG.md"), "must fire: nested under a directory too"
+    assert _ere_matches(pattern, "changelog.d/106.added.md"), "must still fire: a fragment"
+    assert not _ere_matches(pattern, "src/CHANGELOG_notes.md"), (
+        "must not fire: this is the positive control -- an unrelated file whose name merely "
+        "contains the word must stay silent, or the pattern is matching everything"
+    )
+
+
+def test_no_awk_escape_that_compiles_to_nothing():
+    """`\\s`, `\\d`, `\\w` and `\\b` compile to the bare letter or a backspace under an awk
+    ERE and match nothing while awk exits 0 -- a silently dead rule. None of the three
+    shipped `match:` patterns may contain one.
+    """
+    for dimension in ("paths", "tools"):
+        for name, body in oss_rules.RULES.get(dimension, {}).items():
+            block = body.split("\n---\n")[0]
+            match_line = [ln for ln in block.splitlines() if ln.startswith("match:")]
+            if not match_line:
+                continue
+            pattern = match_line[0].split(":", 1)[1].strip()
+            for dead in ("\\s", "\\d", "\\w", "\\b"):
+                assert dead not in pattern, (dimension, name, pattern)
+
+
+# --- #106: a tools rule blocking Read, Edit, Write, Glob and Grep in favour of supertool -----
+
+
+def test_tools_dimension_blocks_the_five_native_ops():
+    rules = oss_rules.RULES.get("tools", {})
+    assert rules, "no tools dimension shipped"
+    name, body = next(iter(rules.items()))
+    block = body.split("\n---\n")[0]
+    tool_line = [ln for ln in block.splitlines() if ln.startswith("tool:")][0]
+    tools = set(tool_line.split(":", 1)[1].strip().split("|"))
+    assert tools == {"Read", "Edit", "Write", "Glob", "Grep"}, tools
+    mode_line = [ln for ln in block.splitlines() if ln.startswith("mode:")][0]
+    assert mode_line.split(":", 1)[1].strip() == "block", (
+        "a rule with no exception must block, not remind -- a remind on an absolute rule "
+        "teaches the reader to dismiss it"
+    )
+
+
+def test_tools_rule_names_the_replacement_op():
+    """A block whose message is only 'don't' costs the reader the round trip it was trying
+    to save. The body must name the supertool op that replaces each blocked call.
+    """
+    body = oss_rules.RULES["tools"]["supertool-required.md"]
+    for op in ("read:", "edit:", "write:", "glob:", "grep:"):
+        assert op in body, "no mention of the replacement op '{}'".format(op)
+
+
+def test_tools_index_row_is_the_six_column_shape():
+    """`tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid`, re-derived from
+    claude-jit-context's rebuild-tsv.sh rather than trusted from the issue that named it
+    (#80 found the same list wrong when someone only reasoned about it).
+    """
+    rows = oss_rules.index_rows("tools", oss_rules.RULES["tools"])
+    assert rows
+    for row in rows:
+        fields = row.split("\t")
+        assert len(fields) == 6, row
+        tool, match, filename, mode, require, forbid = fields
+        assert tool == "Read|Edit|Write|Glob|Grep", tool
+        assert match, "empty match -- the row would refuse to load"
+        assert filename == "supertool-required.md", filename
+        assert mode == "block", mode
+
+
+def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():
+    """Driven for real against the actual ERE: the wildcard match must actually match a
+    representative payload for each of the five tools' ordinary calls. (Bash is excluded
+    from the blocked set by the `tool:` field, not by `match:` -- see
+    test_tools_dimension_blocks_the_five_native_ops for that half.)
+    """
+    if _awk() is None:
+        pytest.skip("no awk on PATH, so the tools match cannot be driven for real")
+    body = oss_rules.RULES["tools"]["supertool-required.md"]
+    match_line = [
+        ln for ln in body.split("\n---\n")[0].splitlines() if ln.startswith("match:")
+    ][0]
+    raw = match_line.split(":", 1)[1].strip()
+    # `~` marks this as a real ERE to the hook rather than a substring rule (common.sh);
+    # strip it the same way before driving it through awk directly.
+    pattern = raw[1:] if raw.startswith("~") else raw
+    for payload in ("src/oss_rules.py", "README.md", "*.py", "TODO"):
+        assert _ere_matches(pattern, payload), (pattern, payload)
 
 
 def test_rules_name_no_specific_repo():
@@ -293,7 +456,9 @@ def test_the_fragments_directory_is_the_one_the_repo_uses(tmp_path):
     oss_rules.install(root, fragments_dir="changes")
 
     body = _changelog_rule(root)
-    assert "match: changes/" in body.split("\n---\n")[0], body
+    block = body.split("\n---\n")[0]
+    match_line = [ln for ln in block.splitlines() if ln.startswith("match:")][0]
+    assert "changes/" in match_line, match_line
     assert "changes" in _assembler_command(body)
 
 
