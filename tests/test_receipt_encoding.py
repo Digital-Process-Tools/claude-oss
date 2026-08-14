@@ -19,6 +19,15 @@ It is not the only one Windows uses -- a cp437 or cp850 console has no em dash
 either, and the script carries 76 of them that have shipped green through every
 Windows leg. Widening the bar to ASCII is a repo-wide prose change and a
 separate decision; this checks the encoding that is known to break the build.
+
+**The receipt no longer crashes on a character it cannot print**, so these two
+subprocess tests stopped being able to detect one by watching for a traceback:
+`_line()` degrades the character to a `backslashreplace` escape and the run
+still exits 0. That would have left the static scan as the only thing here that
+could see a new offender, and left these two green for a reason that has
+nothing to do with what they are named after. So each now asserts the receipt
+carries no escape either -- a character cp1252 cannot print still fails them,
+by the degradation it causes rather than by the crash it used to cause.
 """
 
 import os
@@ -124,6 +133,18 @@ def _assemble_on_a_console(root, script_path, version):
     )
 
 
+#: What `backslashreplace` writes in place of a character the console cannot
+#: represent. Its presence in a receipt is the surviving evidence of an
+#: offender, now that one no longer crashes the run.
+ESCAPE = chr(92) + "u"
+
+#: The failure this asserts against, spelled once.
+DEGRADED = ("this receipt holds a character cp1252 cannot print. It no longer "
+            "crashes the run -- it is degraded to an escape and shipped -- so "
+            "the escape is what a Windows maintainer reads instead of the "
+            "sentence:\n")
+
+
 def test_a_first_release_receipt_prints_on_a_cp1252_console(tmp_path):
     root, script_path = _repo(tmp_path, FIRST, "first")
     result = _assemble_on_a_console(root, script_path, "0.1.0")
@@ -131,6 +152,7 @@ def test_a_first_release_receipt_prints_on_a_cp1252_console(tmp_path):
     assert "Traceback" not in result.stderr, result.stderr
     assert result.stdout.startswith("assemble    : ok"), result.stdout + result.stderr
     assert result.returncode == 0
+    assert ESCAPE not in result.stdout, DEGRADED + result.stdout
 
 
 def test_an_ordinary_release_receipt_prints_on_a_cp1252_console(tmp_path):
@@ -143,6 +165,7 @@ def test_an_ordinary_release_receipt_prints_on_a_cp1252_console(tmp_path):
     assert "UnicodeEncodeError" not in result.stderr, result.stderr
     assert result.stdout.startswith("assemble    : ok"), result.stdout + result.stderr
     assert result.returncode == 0
+    assert ESCAPE not in result.stdout, DEGRADED + result.stdout
     # The write half of the failure: the release landed and the fragment was
     # consumed while the exit code said SKIPPED. Assert both halves agree.
     assert "## [0.2.0] - 2026-08-14" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
