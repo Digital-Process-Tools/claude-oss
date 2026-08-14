@@ -199,14 +199,26 @@ def _read_config(path):
     """
     try:
         raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "there is no {0} at {1}".format(CONFIG_NAME, path)
     except (OSError, UnicodeDecodeError) as exc:
+        # Two braces, and the second one is why absence is told from unreadability by
+        # the exception already in hand rather than by a second lookup.
+        #
         # UnicodeDecodeError, not just OSError: it is a ValueError, so a config saved
         # in another encoding -- likeliest on the Windows leg -- would otherwise leave
-        # this function by raising, and take the whole gate with it. The same brace
-        # `_git` puts behind git's output, one file along, and for the same reason: a
-        # promise never to raise has to hold for the case nobody predicted too.
-        if not path.exists():
-            return None, "there is no {0} at {1}".format(CONFIG_NAME, path)
+        # this function by raising, and take the whole gate with it.
+        #
+        # And this used to call `path.exists()` here to choose the sentence. That is a
+        # second filesystem call, made from inside the except, where nothing catches
+        # it -- and `Path.exists()` swallows only a short list of errnos. ENAMETOOLONG
+        # is not on it and neither is EACCES, so a config path with an over-long
+        # component, or one under a directory this process cannot traverse, killed the
+        # gate with a traceback in place of the unscoped range it exists to report.
+        # Worse, the list is a moving target: 3.11 and 3.13 raise where 3.14 returns
+        # False, so the arm a run takes depends on the interpreter. The read already
+        # answered the question; asking the filesystem a second time only added a way
+        # to fail.
         return None, "{0} could not be read ({1})".format(path, type(exc).__name__)
     try:
         data = json.loads(raw)

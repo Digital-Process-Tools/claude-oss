@@ -834,6 +834,22 @@ def test_a_match_that_could_forge_a_receipt_line_is_refused(tmp_path):
     assert module._scope(str(repo), "v*", None)["scope"] == "v*"
 
 
+# Two different limits, and this fixture has now been bitten by each of them from
+# opposite directions:
+#
+#   MAX_PATH  (Windows)  caps the WHOLE path at 260 without LongPathsEnabled.
+#   NAME_MAX  (POSIX)    caps a SINGLE component at 255 bytes.
+#
+# The first version composed four nested directories and failed all four Windows
+# legs. The second put the length into one 256-byte component -- long enough overall,
+# one byte over NAME_MAX -- and failed every POSIX leg. So the length is built here
+# from many *short* components, which cannot violate either: it is a construction, not
+# an assertion that a construction is safe. The assertions below are tripwires on the
+# construction, not the guarantee.
+LONG_PATH_COMPONENT = "ordinary-directory-name"  # 23 bytes, far under NAME_MAX
+LONG_PATH_DEPTH = 14  # ~336 characters of path, far over MAX_PATH and any reason cap
+
+
 def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
     """Found by running the script on a real checkout, not by reading it.
 
@@ -842,19 +858,19 @@ def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
     path cut the sentence off mid-directory, leaving a reason that named a file and
     never said what it cost.
 
-    No directory is created. `_scope` reads a config path and never touches git or
-    the repo, so what the truncation arithmetic needs is a long *string*, not a long
-    *tree* -- and a config that does not exist is one of the states under test here
-    anyway. The first version of this built the length out of four nested directories
-    and failed all four Windows legs on `MAX_PATH` before a line of the code under
-    test ran: the harness rendering an environment limit as a product verdict. It is
-    also the shape that leaves the platform with the longest paths the one platform
-    where this goes unchecked, which is why the length moved into the string rather
-    than the names getting shorter.
+    Nothing is created. `_scope` reads a config path and never touches git or the
+    repo, so what the truncation arithmetic needs is a long *string*; a config that
+    does not exist is one of the states under test here anyway.
     """
     module = _module()
-    long_path = str(tmp_path / ("a-fairly-ordinary-directory-name" * 8) / CONFIG_NAME)
+    long_path = str(
+        tmp_path.joinpath(*[LONG_PATH_COMPONENT] * LONG_PATH_DEPTH) / CONFIG_NAME
+    )
     assert len(long_path) > 260, "the fixture must exceed any fixed reason limit"
+    components = long_path.replace(os.sep, "/").split("/")
+    assert max(len(part) for part in components) < 255, (
+        "a component over NAME_MAX makes this a test of the filesystem"
+    )
 
     unscoped = module._scope(str(tmp_path), None, long_path)
     assert unscoped["scope"] is None
@@ -868,6 +884,45 @@ def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
     # assertion above is about the arithmetic and not about a limit nothing reaches.
     short = module._scope(str(tmp_path), None, str(tmp_path / CONFIG_NAME))
     assert short["scope_reason"].endswith("read as the last release")
+
+
+def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
+    tmp_path,
+):
+    """The second lookup, which was inside the guard against the first.
+
+    `_read_config` caught the read and then called `path.exists()` to tell absence
+    from unreadability -- a second filesystem call, made from inside the except, where
+    nothing catches it. `Path.exists()` swallows only a short list of errnos:
+    ENAMETOOLONG is not on it, and neither is EACCES, so a config path with an
+    over-long component, or one under a directory the process cannot traverse, killed
+    the gate with a traceback in place of the unscoped range it exists to report.
+
+    Observed on this machine, one fixture, three interpreters: 3.11 and 3.13 raise,
+    3.14 returns False. CPython changed `Path.exists()` to swallow every OSError in
+    3.14, which is why a local suite on 3.14 was green while all eight POSIX legs
+    (3.9-3.12) were red -- the local run measured a different interpreter, not a
+    different fixture. The classification now comes from the exception already in
+    hand, so no version's `exists()` semantics can decide whether the gate survives.
+    """
+    module = _module()
+    unlookable = str(tmp_path / ("x" * 300) / CONFIG_NAME)
+
+    scope = module._scope(str(tmp_path), None, unlookable)
+    assert scope["scope"] is None
+    assert unlookable in scope["scope_reason"]
+    assert scope["scope_reason"].endswith("read as the last release")
+
+    payload = module.compute(str(tmp_path), None, unlookable)
+    assert payload["scope"] is None
+    assert module.receipt(payload), "a receipt is produced whatever the path was"
+
+    # The pair, in the same fixture: a path the filesystem WILL look at and finds
+    # nothing at is a different sentence, so the reason above is about the lookup
+    # failing rather than about every absent config reading the same way.
+    absent = module._scope(str(tmp_path), None, str(tmp_path / CONFIG_NAME))
+    assert "there is no" in absent["scope_reason"]
+    assert "could not be read" in scope["scope_reason"]
 
 
 def test_the_scoped_reason_keeps_the_path_of_a_real_deep_checkout(tmp_path):
