@@ -20,5 +20,5 @@ because the fold has no way to know it was meant to stay.
 Check before pushing:
 
 ```bash
-python3 scripts/assemble_changelog.py --check --check-links
+python3 scripts/assemble_changelog.py --check --check-links --dir 'changelog.d' --changelog CHANGELOG.md
 ```
