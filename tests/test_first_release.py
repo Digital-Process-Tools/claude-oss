@@ -232,13 +232,47 @@ def test_a_first_release_without_link_refs_still_cuts_and_says_what_it_did(tmp_p
     assert "0.1.0]:" in result.stdout, result.stdout
 
 
+def test_a_link_ref_block_without_an_unreleased_definition_says_which_it_was(tmp_path):
+    """Second of the three honest-failure branches: a block is there, but the
+    one definition a base URL can come from is not."""
+    root, script_path = _repo(tmp_path, FIRST.replace(
+        "[Unreleased]: https://github.com/o/r/commits/HEAD",
+        "[Keep a Changelog]: https://keepachangelog.com/"))
+    result = _assemble(root, script_path)
+    assert result.returncode == OK, result.stdout + result.stderr
+    assert "## [0.1.0] - 2026-08-14" in _changelog(root)
+    assert "has no `[Unreleased]:` definition" in result.stdout, result.stdout
+    assert "[0.1.0]: <repo>/releases/tag/v0.1.0" in result.stdout, result.stdout
+
+
+def test_an_unreleased_url_with_no_forge_segment_is_named_not_guessed(tmp_path):
+    """Third branch: a definition is there and nothing in it says where the
+    repository root ends, so no URL is invented from it."""
+    root, script_path = _repo(tmp_path, FIRST.replace(
+        "https://github.com/o/r/commits/HEAD", "https://example.invalid/somewhere"))
+    result = _assemble(root, script_path)
+    assert result.returncode == OK, result.stdout + result.stderr
+    assert "https://example.invalid/somewhere" in result.stdout, result.stdout
+    assert "no `/commits/`" in result.stdout, result.stdout
+    # Nothing invented: the definition it could not read is still as it was.
+    assert "[Unreleased]: https://example.invalid/somewhere" in _changelog(root)
+    assert "releases/tag/v0.1.0" not in _changelog(root)
+
+
 def test_a_trailing_section_bounds_the_fold_and_stays_below(tmp_path):
+    """Both boundary candidates are present in this fixture -- a `## Notes`
+    heading and a link-ref block below it -- so the nearer one has to win. If
+    the block won, `## Notes` would be folded into the release; if neither did,
+    the link refs would be."""
     root, script_path = _repo(tmp_path, TRAILING_SECTION)
     result = _assemble(root, script_path)
     assert result.returncode == OK, result.stdout + result.stderr
     lines = _changelog(root).splitlines()
     assert lines.index("## [0.1.0] - 2026-08-14") < lines.index("## Notes")
     assert "folded    1 entry" in result.stdout, result.stdout
+    above_notes, below_notes = _changelog(root).split("## Notes")
+    assert "Prose that is not a release" not in above_notes, above_notes
+    assert "[Unreleased]: " in below_notes, below_notes
 
 
 # --------------------------------------------------------------------------
@@ -271,7 +305,11 @@ def test_no_unreleased_heading_is_refused_with_what_would_decide_it(tmp_path):
     result = _assemble(root, script_path)
     assert result.returncode == REFUSED, result.stdout + result.stderr
     assert result.stdout.startswith("assemble    : refused"), result.stdout
-    assert "## [Unreleased]" in result.stdout, result.stdout
+    # Both refusal branches name `## [Unreleased]`, so that substring alone
+    # cannot tell them apart -- and a pair of conditions transposed would pass
+    # both of these tests. Each pins the clause only its own branch writes.
+    assert "Add a `## [Unreleased]` heading and re-run" in result.stdout, result.stdout
+    assert "headings (lines" not in result.stdout, result.stdout
     # The file and the fragment are untouched -- a refusal that consumed the
     # fragment would lose the entry entirely.
     assert _changelog(root) == NO_UNRELEASED
@@ -282,6 +320,9 @@ def test_two_unreleased_headings_are_refused_as_ambiguous(tmp_path):
     root, script_path = _repo(tmp_path, TWO_UNRELEASED)
     result = _assemble(root, script_path)
     assert result.returncode == REFUSED, result.stdout + result.stderr
-    assert "[Unreleased]" in result.stdout, result.stdout
+    # The other branch's clause, and the line numbers that make it actionable:
+    # "there are two of them" is only useful if it says which two.
+    assert "2 `## [Unreleased]` headings (lines 3, 9)" in result.stdout, result.stdout
+    assert "Leave exactly one" in result.stdout, result.stdout
     assert _changelog(root) == TWO_UNRELEASED
     assert (root / "changelog.d" / "41.added.md").exists()

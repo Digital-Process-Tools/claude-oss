@@ -1061,8 +1061,9 @@ def _first_release_links(lines: List[str], version: str) -> Tuple[str, List[str]
         base = _FORGE_BASE_RE.match(url)
         if not base:
             return ("none — first release: `[Unreleased]` resolves to {0}, "
-                    "which has no `/commits/`, `/compare/`, `/tree/` or "
-                    "`/releases/` segment to take a repository URL from, so "
+                    "which has no `/commits/`, `/commit/`, `/compare/`, "
+                    "`/tree/` or `/releases/` segment to take a repository URL "
+                    "from, so "
                     "nothing was rewritten and `## [{1}]` has no link ref — "
                     "add `[{1}]: <repo>/releases/tag/v{1}`".format(url, version),
                     [])
