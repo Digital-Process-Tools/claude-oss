@@ -119,6 +119,31 @@ def test_apply_replaces_the_rule_layer_and_says_so(tmp_path, capsys):
     assert "rule layer" in out
 
 
+def test_the_plan_names_the_test_gate_that_does_not_exist(tmp_path, capsys):
+    """A verified test command nothing runs is a measurement, so it is stated."""
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config)])
+    out = capsys.readouterr().out
+    assert "pytest" in out
+    assert "runs it" in out
+
+
+def test_apply_reports_the_stale_required_checks_count(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+    out = capsys.readouterr().out
+    assert "required_checks" in out
+    assert "check-runs" in out
+
+
+def test_apply_names_the_escape_hatch_label_it_will_not_create(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+    out = capsys.readouterr().out
+    assert "no-changelog" in out
+    assert "gh label create" in out
+
+
 def test_the_generated_claude_md_names_the_configured_repo(tmp_path):
     config = _write_config(tmp_path, repo="acme/widget", default_branch="trunk")
     scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
