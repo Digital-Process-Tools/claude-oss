@@ -279,6 +279,90 @@ def test_a_disagreeing_count_is_actually_caught():
     assert [count for count in stated if count != 3] == [2]
 
 
+# --------------------------------------------------------------------------- #
+# The assembler is never invoked on a root it had to guess.
+#
+# `assemble_changelog.py` resolves its default root by walking up from its own
+# location for a `.git`. Under a plugin that walk lands in the *plugin's* own
+# repository, not the one the maintainer is standing in -- so a fold with no
+# `--dir`/`--changelog` rewrites the wrong CHANGELOG.md and deletes the wrong
+# fragments, confidently, under a receipt that says it worked.
+#
+# commands/changelog.md stated that rule four lines above a fold command that
+# broke it (#65). Prose stating a rule does not enforce it; this does.
+#
+# The rule is deliberately every mode, not just `--version`. Mode parsing is one
+# more thing to get wrong, and a `--check` against the wrong tree is also an
+# answer about a repository nobody asked about.
+# --------------------------------------------------------------------------- #
+
+ASSEMBLER_LINE_RE = re.compile(r"^\s*(?:python3?|py)\s+\S*assemble_changelog\.py\b.*$")
+
+REQUIRED_ASSEMBLER_FLAGS = ("--dir", "--changelog")
+
+
+def _assembler_invocations(text):
+    """Every `assemble_changelog.py` command line in *text*, as (line number, line)."""
+    return [
+        (number, line.strip())
+        for number, line in enumerate(text.splitlines(), 1)
+        if ASSEMBLER_LINE_RE.match(line)
+    ]
+
+
+def _rootless_assembler_invocations(name, text):
+    """Which of those invocations leave the assembler to guess its root."""
+    offenders = []
+    for number, line in _assembler_invocations(text):
+        missing = [flag for flag in REQUIRED_ASSEMBLER_FLAGS if flag not in line]
+        if missing:
+            offenders.append(
+                "{}:{}: missing {}: {}".format(name, number, " and ".join(missing), line)
+            )
+    return offenders
+
+
+def test_the_assembler_detector_sees_an_invocation_and_its_flags():
+    """The detector before the assertion that leans on it. A regex matching nothing
+    turns the sweep below into a sweep that never looked, and a flag check that never
+    fires turns it into one that looked and could not report."""
+    good = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check --dir d --changelog CHANGELOG.md'
+    bad = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z'
+    assert len(_assembler_invocations(good + "\n" + bad)) == 2
+    assert _assembler_invocations("this paragraph mentions assemble_changelog.py in prose") == []
+
+    # The must-fire half: the flagless fold is reported, and located.
+    offenders = _rootless_assembler_invocations("fixture.md", good + "\n" + bad)
+    assert len(offenders) == 1, offenders
+    assert offenders[0].startswith("fixture.md:2: missing --dir and --changelog: ")
+
+    # The must-not-fire half, in the same fixture. Without it a detector that
+    # flagged every line would still pass the assertion above.
+    assert _rootless_assembler_invocations("fixture.md", good) == []
+
+
+def test_every_documented_assembler_invocation_passes_dir_and_changelog():
+    surfaces = COMMANDS + [REPO_ROOT / "skills" / "manager" / "SKILL.md", README_MD]
+    seen = 0
+    offenders = []
+    for path in surfaces:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        seen += len(_assembler_invocations(text))
+        offenders += _rootless_assembler_invocations(path.name, text)
+
+    assert seen, (
+        "no assemble_changelog.py invocation found in commands/, skills/ or README.md. "
+        "Either the surfaces stopped documenting it, or ASSEMBLER_LINE_RE no longer "
+        "matches how they are written -- a pattern that matched nothing has checked nothing."
+    )
+    assert not offenders, (
+        "these invocations leave the assembler to guess its root, which under a plugin "
+        "is the plugin's own repository:\n  " + "\n  ".join(offenders)
+    )
+
+
 @pytest.mark.parametrize("path,label,predicate,pattern", CARRIED, ids=CARRIED_IDS)
 def test_deleting_the_carrying_lines_fails_the_predicate(path, label, predicate, pattern):
     """The targeted control: the real file minus the lines carrying the fact. A
