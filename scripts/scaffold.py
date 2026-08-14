@@ -1322,7 +1322,12 @@ def _main(argv=None):
     # Two different contracts, so they are reported apart. Templates are defaults and
     # never overwrite; the rule layer is ours and is replaced wholesale, which is only
     # safe because nothing a human wrote lives in it.
-    rules = oss_rules.install(args.root)
+    #
+    # After `apply()`, and that ordering is load-bearing rather than tidy: the changelog
+    # rule names the assembler by reading the tree for it, and on a first-ever scaffold
+    # the vendored copy only exists once `apply()` has written it. Installed first, the
+    # very repo being set up would get the could-not-locate rule (#68).
+    rules = oss_rules.install(args.root, fragments_dir=fragments_dir(config))
     for path in rules:
         # os.path.relpath, not Path.relative_to: install() returns paths built from the
         # root as GIVEN, and `--root .` is how the command invokes it. relative_to()
