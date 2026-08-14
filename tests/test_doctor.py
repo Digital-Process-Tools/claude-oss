@@ -9,6 +9,7 @@ must never render as a check that found nothing.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,10 +21,20 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import oss_config  # noqa: E402
 
 
-def run(cwd):
+def run(cwd, args=(), project_dir=None):
+    """CLAUDE_PROJECT_DIR is scrubbed unless a test asks for it.
+
+    Inherited, it silently redirects every one of these runs at the developer's own
+    repo, and each assertion below would then be about a tree the test never wrote.
+    """
+    env = dict(os.environ)
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    if project_dir is not None:
+        env["CLAUDE_PROJECT_DIR"] = str(project_dir)
     return subprocess.run(
-        [sys.executable, str(DOCTOR)],
+        [sys.executable, str(DOCTOR)] + [str(a) for a in args],
         cwd=str(cwd),
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
@@ -129,6 +140,86 @@ def test_a_test_command_a_workflow_runs_is_not_warned_about(tmp_path):
         if ln.startswith("WARN") and "runs it" in ln
     ]
     assert not offenders, offenders
+
+
+# --- #63: --root, end to end -----------------------------------------------------
+
+
+def test_root_points_the_run_at_another_tree(tmp_path):
+    """The test that could not be written before: point it at a fixture by argument."""
+    target = tmp_path / "target"
+    target.mkdir()
+    _write_config(target)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    done = run(elsewhere, args=["--root", target])
+    assert done.returncode == 0
+    assert str(target) in done.stdout
+    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")], done.stdout
+
+
+def test_a_root_that_is_not_a_repo_is_a_finding_and_still_exits_zero(tmp_path):
+    """The contract survives the flag: exit 0, one VERDICT, no traceback."""
+    absent = tmp_path / "not-there"
+    done = run(tmp_path, args=["--root", absent])
+    assert done.returncode == 0
+    assert "Traceback" not in done.stdout
+    assert [ln for ln in done.stdout.splitlines() if ln.startswith("FAIL") and "directory" in ln]
+    assert len([ln for ln in done.stdout.splitlines() if ln.startswith("VERDICT")]) == 1
+
+
+def test_root_disagreeing_with_the_environment_is_reported(tmp_path):
+    flagged = tmp_path / "flagged"
+    flagged.mkdir()
+    env_dir = tmp_path / "env"
+    env_dir.mkdir()
+    _write_config(flagged)
+
+    done = run(tmp_path, args=["--root", flagged], project_dir=env_dir)
+    assert done.returncode == 0
+    disagreements = [
+        ln for ln in done.stdout.splitlines() if "CLAUDE_PROJECT_DIR" in ln and "WARN" in ln
+    ]
+    assert disagreements, done.stdout
+    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")]
+
+
+def test_the_environment_still_wins_over_cwd_when_no_root_is_given(tmp_path):
+    """Positive control for the pair above: without --root, nothing disagrees."""
+    target = tmp_path / "target"
+    target.mkdir()
+    _write_config(target)
+    done = run(tmp_path, project_dir=target)
+    assert done.returncode == 0
+    assert not [ln for ln in done.stdout.splitlines() if "disagree" in ln]
+    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")], done.stdout
+
+
+# --- #62: unmeasured, end to end -------------------------------------------------
+
+
+CONFIG_DEPENDENT = ("clone", "worktree_root", "state_file", "CI enforcement", "owned files")
+
+
+def test_no_config_leaves_no_config_dependent_check_silent(tmp_path):
+    """Silence is what this looked like before: the checks were skipped without a word."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    lines = run(tmp_path, args=["--root", empty]).stdout.splitlines()
+    for label in CONFIG_DEPENDENT:
+        matched = [ln for ln in lines if ln.startswith("WARN " + label + ":")]
+        assert matched, "{} was silent: {}".format(label, lines)
+        assert "not checked" in matched[0]
+
+
+def test_a_found_config_measures_those_same_checks(tmp_path):
+    """Positive control. Without it, the assertions above pass on a dead harness."""
+    target = tmp_path / "target"
+    target.mkdir()
+    _write_config(target)
+    out = run(tmp_path, args=["--root", target]).stdout
+    assert "not checked" not in out, out
 
 
 def _write_config(root, overrides=None, extra=None):

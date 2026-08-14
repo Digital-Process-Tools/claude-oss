@@ -11,6 +11,7 @@ So both: subprocess for the contract, in-process for the branches.
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -106,6 +107,194 @@ def test_state_file_present_is_ok(tmp_path):
     (tmp_path / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
     doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
     assert doctor.FINDINGS[-1][0] == "OK"
+
+
+# --- #62: the four checks that depend on the config need a third state ------------
+#
+# Each pair below is one test on purpose. An assertion that a check said "not checked"
+# also passes on a harness that produced no output at all, so the measured half sits in
+# the same function and must report normally.
+
+
+def test_check_directory_says_unmeasured_when_the_config_was_not_found(tmp_path):
+    doctor.check_directory("clone", None, config_found=False)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "not checked" in message
+    assert ".oss.json" in message
+
+    doctor.check_directory("clone", str(tmp_path))
+    assert doctor.FINDINGS[-1] == ("OK", "clone: {}".format(tmp_path))
+
+
+def test_check_state_file_says_unmeasured_when_the_config_was_not_found(tmp_path):
+    doctor.check_state_file(tmp_path, None)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "state_file" in message and "not checked" in message
+
+    (tmp_path / ".max").mkdir()
+    (tmp_path / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
+    doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
+    assert doctor.FINDINGS[-1][0] == "OK"
+
+
+def test_check_ci_enforcement_says_unmeasured_when_the_config_was_not_found(tmp_path):
+    doctor.check_ci_enforcement(tmp_path, None)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "not checked" in message
+
+    doctor.FINDINGS.clear()
+    doctor.check_ci_enforcement(tmp_path, _config(tmp_path))
+    assert doctor.FINDINGS, "the measured half of this pair reported nothing at all"
+    assert not any("not checked" in m for _, m in doctor.FINDINGS)
+
+
+def test_check_ci_enforcement_distinguishes_an_unimportable_scaffold(tmp_path, monkeypatch):
+    """Two different reasons a check could not run, and they are not the same sentence."""
+    config = _config(tmp_path)
+    monkeypatch.setattr(doctor, "scaffold", None)
+    doctor.check_ci_enforcement(tmp_path, config)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "scaffold" in message and "not checked" in message
+    assert ".oss.json was not found" not in message
+
+
+def test_check_freshness_says_the_owned_half_was_unmeasured(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
+
+    doctor.check_freshness(tmp_path, None)
+    owned = [m for state, m in doctor.FINDINGS if "owned files" in m]
+    assert owned, "the owned-drift half printed nothing at all"
+    assert "not checked" in owned[-1]
+
+    doctor.FINDINGS.clear()
+    doctor.check_freshness(tmp_path, _config(tmp_path))
+    assert not any("not checked" in m for _, m in doctor.FINDINGS)
+
+
+UNMEASURED_LABELS = ("clone", "worktree_root", "state_file", "CI enforcement", "owned files")
+
+
+def _quiet_main(monkeypatch):
+    """Stub the boundaries that reach the network or the user's home directory.
+
+    main() is the only place the four checks are wired together, so the pairing has to
+    run it -- but not its probes.
+    """
+    monkeypatch.setattr(doctor, "check_tool", lambda *a, **k: None)
+    monkeypatch.setattr(doctor, "check_memory", lambda *a, **k: None)
+    monkeypatch.setattr(doctor, "check_jit_rules", lambda *a, **k: None)
+    monkeypatch.setattr(doctor, "check_merge_permission", lambda *a, **k: None)
+    monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
+
+
+def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_them(
+    tmp_path, monkeypatch, capsys
+):
+    """The pairing #62 asks for, in one fixture.
+
+    Without the second half, "said not checked" is satisfied by a run that said nothing.
+    """
+    _quiet_main(monkeypatch)
+    missing = tmp_path / "missing"
+    missing.mkdir()
+
+    assert doctor.main(["--root", str(missing)]) == 0
+    absent = capsys.readouterr().out
+    for label in UNMEASURED_LABELS:
+        matched = [
+            ln for ln in absent.splitlines() if ln.startswith("WARN " + label + ":")
+        ]
+        assert matched, "no line at all for {}".format(label)
+        assert "not checked" in matched[0], matched[0]
+
+    doctor.FINDINGS.clear()
+    present = tmp_path / "present"
+    present.mkdir()
+    _config(present)
+    assert doctor.main(["--root", str(present)]) == 0
+    found = capsys.readouterr().out
+    assert "not checked" not in found, found
+    for label in ("clone", "worktree_root", "state_file"):
+        assert [ln for ln in found.splitlines() if label + ":" in ln], label
+
+
+def test_a_root_that_does_not_exist_never_widens_to_the_cwds_clone(tmp_path, monkeypatch):
+    """Found by running it, not by reading it.
+
+    `resolve_config_path` widens a relative path to the enclosing clone, and it starts
+    that search from `.` when the directory the path points into does not exist. So a
+    --root at a path that is not there reported the config of whatever repo the caller
+    happened to be standing in -- the exact defect this file is about, one layer up.
+    """
+    clone = tmp_path / "clone"
+    inside = clone / "sub"
+    inside.mkdir(parents=True)
+    subprocess.check_call(["git", "init", "-q", str(clone)])
+    _config(clone)
+    monkeypatch.chdir(inside)
+
+    absent = tmp_path / "nowhere"
+    doctor.check_config(absent)
+    messages = [m for _, m in doctor.FINDINGS]
+    assert messages, "check_config said nothing"
+    assert not any(str(clone) in m for m in messages), messages
+    assert any(str(absent) in m and "not found" in m for m in messages), messages
+
+    # Positive control, same fixture and the same cwd: a project dir that IS inside the
+    # clone must still widen to it. Without this, the assertion above is satisfied by a
+    # widening that was disabled outright.
+    doctor.FINDINGS.clear()
+    doctor.check_config(inside)
+    assert any("enclosing clone" in m for _, m in doctor.FINDINGS), doctor.FINDINGS
+
+
+# --- #63: --root -----------------------------------------------------------------
+
+
+def test_root_flag_wins_over_the_environment(tmp_path):
+    other = tmp_path / "env"
+    other.mkdir()
+    chosen, findings = doctor.resolve_project_dir(str(tmp_path), str(other), str(tmp_path))
+    assert chosen == tmp_path
+    assert any(state == "WARN" and "CLAUDE_PROJECT_DIR" in m for state, m in findings)
+
+
+def test_root_flag_agreeing_with_the_environment_is_not_a_disagreement(tmp_path):
+    _, findings = doctor.resolve_project_dir(str(tmp_path), str(tmp_path), str(tmp_path))
+    assert not any("disagree" in m for _, m in findings)
+
+
+def test_the_environment_is_used_when_no_root_is_given(tmp_path):
+    chosen, findings = doctor.resolve_project_dir(None, str(tmp_path), str(tmp_path / "cwd"))
+    assert chosen == tmp_path
+    assert findings and findings[0][0] == "OK"
+
+
+def test_cwd_is_used_when_neither_is_given_and_says_it_is_a_guess(tmp_path):
+    chosen, findings = doctor.resolve_project_dir(None, None, str(tmp_path))
+    assert chosen == tmp_path
+    assert findings[0][0] == "WARN"
+    assert "guessed" in findings[0][1]
+
+
+def test_a_root_that_is_not_a_directory_is_a_finding_not_a_crash(tmp_path):
+    absent = tmp_path / "nope"
+    chosen, findings = doctor.resolve_project_dir(str(absent), None, str(tmp_path))
+    assert chosen == absent
+    assert any(state == "FAIL" and "not a directory" in m for state, m in findings)
+
+
+def test_a_root_that_is_a_directory_but_not_a_repo_warns(tmp_path):
+    _, findings = doctor.resolve_project_dir(str(tmp_path), None, str(tmp_path))
+    assert any(state == "WARN" and "git repository" in m for state, m in findings)
+
+    (tmp_path / ".git").mkdir()
+    _, findings = doctor.resolve_project_dir(str(tmp_path), None, str(tmp_path))
+    assert not any("git repository" in m for _, m in findings)
 
 
 def test_check_tool_warns_when_absent(monkeypatch):
