@@ -75,8 +75,85 @@ SECRET_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|credential)",
 
 REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 
-PRIORITY_RE = re.compile(r"^priority[-:]")
-LANE_RE = re.compile(r"^lane[-:]")
+# Label vocabularies differ per repo and no pattern list covers every convention, so
+# these are widened rather than made exhaustive -- and every label that matches none
+# of them is reported by name. `priority/high` is GitHub's own documented spelling and
+# used to match nothing, producing an empty priority list on a fully labelled board
+# that read exactly like the measured empty list of a board with none.
+PRIORITY_RES = (
+    re.compile(r"^(?:priority|prio|p)[-:/ ]", re.IGNORECASE),
+    re.compile(r"^p\d+$", re.IGNORECASE),
+)
+LANE_RES = (re.compile(r"^(?:lane|area|type)[-:/ ]", re.IGNORECASE),)
+
+# A version-shaped string. Two-part versions are deliberately not matched: `3.9` in a
+# README is far more often a Python floor than a release.
+VERSION_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
+
+# Files that may carry the version, and how to look. The structured ones get a key
+# lookup because a stray semver anywhere in a manifest is not the version; the prose
+# ones get a regex because there is no key to read.
+VERSION_CANDIDATES = (
+    (".claude-plugin/plugin.json", "json"),
+    ("package.json", "json"),
+    ("Cargo.toml", "toml:package"),
+    ("pyproject.toml", "toml:project"),
+    ("CHANGELOG.md", "text"),
+    ("README.md", "text"),
+)
+
+# Three states, not two. `none` is a measured negative -- the file was read and holds
+# no version -- and dropping it silently is correct. `unreadable` is the tool failing
+# to answer, which is a different fact and is reported rather than folded into `none`.
+VERSION_EVIDENCE_STATES = {"version", "none", "unreadable"}
+
+# The probe schema, in one place, because it had none: the key names were discoverable
+# only by reading this file and the semantics of `files` were written down nowhere. A
+# caller who guessed produced a schema-valid config that was confidently wrong, with no
+# error at any layer. `merge_method` is the one key that may honestly be null.
+PROBE_SCHEMA = (
+    ("repo", (str,), False),
+    ("default_branch", (str,), False),
+    ("clone", (str,), False),
+    ("files", (list,), False),
+    ("tags", (list,), False),
+    ("labels", (list,), False),
+    ("milestones", (list,), False),
+    ("workflow_jobs", (list,), False),
+    ("merge_method", (str,), True),
+    ("version_evidence", (dict,), False),
+)
+
+PROBE_KEYS = tuple(key for key, _, _ in PROBE_SCHEMA)
+
+PROBE_SCHEMA_HELP = """the probe schema
+----------------
+`--probe REPO` measures a repo directory and writes this shape; `--build` reads it.
+There is one implementation of the schema on purpose -- a hand-assembled probe was
+the defect, not the workaround.
+
+  repo              "owner/name"
+  default_branch    "main"
+  clone             absolute path to the local clone
+  files             repo-relative paths exactly as `git ls-files` prints them,
+                    nested ones included. NOT top-level directory entries: the
+                    detectors match on strings like "tests/test_x.py" and
+                    ".claude-plugin/plugin.json", so a list of directory names
+                    silently detects nothing.
+  tags              tag names as `git tag --list` prints them
+  labels            label names as they are spelled on the repo
+  milestones        milestone titles
+  workflow_jobs     job names read out of .github/workflows/*
+  merge_method      "squash" | "merge" | "rebase" | null when more than one is
+                    allowed and the repo has not decided
+  version_evidence  {candidate path: "version" | "none" | "unreadable"} for every
+                    version candidate present in `files`. "none" means read and
+                    carries none; "unreadable" means could not be read, which is
+                    not the same answer and is reported rather than dropped.
+
+Every key is required. Absent is not empty: `probe.get("files") or []` made a
+typo'd key and an empty repo identical, and the config that came out said so with
+the same authority as a measurement."""
 
 # Ordered: the first entry whose marker file is present wins.
 TEST_COMMANDS = [
@@ -89,6 +166,144 @@ TEST_COMMANDS = [
 
 class ContainmentError(Exception):
     """A path derived from config or a branch name tried to leave its root."""
+
+
+class ProbeError(Exception):
+    """The probe handed to `build` is not the shape `build` reads.
+
+    Raised rather than worked around, because the alternative is what this replaced:
+    a missing key read as an empty measurement, and a config nobody could tell apart
+    from a correct one.
+    """
+
+
+def classify_labels(labels):
+    """Sort label names into priority, lane, and *what matched neither*.
+
+    The third list is the point. An empty priority list is a legitimate measurement
+    on a repo with no priority labels, and it is also what a pattern miss produces --
+    the two are byte-identical in the config, so the miss has to be said out loud
+    somewhere else.
+    """
+    classified = {"priority": [], "lanes": [], "unclassified": []}
+    for label in labels or []:
+        name = str(label)
+        if any(pattern.match(name) for pattern in PRIORITY_RES):
+            classified["priority"].append(name)
+        elif any(pattern.match(name) for pattern in LANE_RES):
+            classified["lanes"].append(name)
+        else:
+            classified["unclassified"].append(name)
+    return classified
+
+
+def _toml_section_version(text, section):
+    """True when ``[section]`` in a TOML document carries a version-shaped value.
+
+    A hand-rolled scan rather than a parser: tomllib is 3.11+ and this module is
+    3.9-compatible. It reads one key in one section, which is the whole requirement.
+    """
+    current = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = stripped[1:-1].strip().strip('"')
+            continue
+        if current != section:
+            continue
+        match = re.match(r"""^version\s*=\s*["'](.+?)["']""", stripped)
+        if match and VERSION_RE.search(match.group(1)):
+            return True
+    return False
+
+
+def _version_state(path, kind):
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "unreadable"
+    if kind == "json":
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            return "unreadable"
+        if not isinstance(payload, dict):
+            return "unreadable"
+        value = payload.get("version")
+        if isinstance(value, str) and VERSION_RE.search(value):
+            return "version"
+        return "none"
+    if kind.startswith("toml:"):
+        return "version" if _toml_section_version(text, kind.split(":", 1)[1]) else "none"
+    return "version" if VERSION_RE.search(text) else "none"
+
+
+def inspect_version_sites(root, files):
+    """Say, for every version candidate the repo has, whether it carries a version.
+
+    Existence was being treated as proof, so `README.md` was listed as a version site
+    on repos where it holds no version at all and `/oss:release` was told to bump a
+    file with nothing to bump. Reading the file is the difference between a candidate
+    and a site.
+    """
+    root = Path(root)
+    evidence = {}
+    for candidate, kind in VERSION_CANDIDATES:
+        if candidate in files:
+            evidence[candidate] = _version_state(root / candidate, kind)
+    return evidence
+
+
+def probe_problems(probe):
+    """Return a list of sentences naming everything wrong with a probe."""
+    if not isinstance(probe, dict):
+        return ["probe: expected a JSON object, got {}".format(type(probe).__name__)]
+
+    problems = []
+    for key, types, nullable in PROBE_SCHEMA:
+        if key not in probe:
+            problems.append(
+                "probe: missing key {!r}. Absent is not empty -- a missing key used to "
+                "derive as though the repo had none of it. Produce a probe with "
+                "--probe REPO rather than assembling one.".format(key)
+            )
+            continue
+        value = probe[key]
+        if value is None and nullable:
+            continue
+        if not isinstance(value, types):
+            problems.append(
+                "probe.{}: expected {}, got {!r}. See --help for the schema, or use "
+                "--probe REPO.".format(key, " or ".join(t.__name__ for t in types), value)
+            )
+
+    for key in sorted(set(probe) - set(PROBE_KEYS)):
+        problems.append(
+            "probe.{}: unknown key (typo, or a schema change nobody wrote down). "
+            "--probe REPO writes the shape --build reads.".format(key)
+        )
+
+    evidence = probe.get("version_evidence")
+    files = probe.get("files")
+    if isinstance(evidence, dict) and isinstance(files, list):
+        for candidate, _ in VERSION_CANDIDATES:
+            if candidate not in files:
+                continue
+            state = evidence.get(candidate)
+            if state is None:
+                problems.append(
+                    "probe.version_evidence: nothing recorded for {}, which the probe "
+                    "lists. 'could not answer' is not 'carries no version', so it is "
+                    "refused rather than quietly dropped.".format(candidate)
+                )
+            elif state not in VERSION_EVIDENCE_STATES:
+                problems.append(
+                    "probe.version_evidence[{}]: {!r} is not one of {}".format(
+                        candidate, state, ", ".join(sorted(VERSION_EVIDENCE_STATES))
+                    )
+                )
+
+    return problems
 
 
 def load(path):
@@ -228,11 +443,17 @@ def _infer_tag_pattern(tags):
 def build(probe):
     """Derive a config from what was actually observed on the repo.
 
-    ``probe`` carries only measurements: repo, default_branch, clone, labels,
-    milestones, workflow_jobs, files. Anything absent from the probe comes out as an
-    empty list or None -- never as a default, because the caller cannot tell a default
-    from a finding once it is written to disk.
+    ``probe`` carries only measurements, in the shape `--probe` writes and `--help`
+    documents. A probe that is not that shape raises `ProbeError` instead of deriving
+    around the gap: absent used to read as empty, and the config that came out was
+    indistinguishable from one that had been measured.
+
+    Nothing here invents. Anything the probe measured as empty comes out empty.
     """
+    problems = probe_problems(probe)
+    if problems:
+        raise ProbeError("\n".join(problems))
+
     labels = list(probe.get("labels") or [])
     files = list(probe.get("files") or [])
     jobs = list(probe.get("workflow_jobs") or [])
@@ -250,11 +471,16 @@ def build(probe):
         # by probing a real repo that reported null while its tests sat in tests/.
         test_command = "python3 -m unittest discover -s tests"
 
+    # A candidate the probe read and found a version in. Existence is not evidence:
+    # every repo has a README.md and most of them carry no version anywhere.
+    evidence = probe.get("version_evidence") or {}
     version_sites = [
-        site
-        for site in (".claude-plugin/plugin.json", "CHANGELOG.md", "README.md", "pyproject.toml")
-        if site in files
+        candidate
+        for candidate, _ in VERSION_CANDIDATES
+        if candidate in files and evidence.get(candidate) == "version"
     ]
+
+    classified = classify_labels(labels)
 
     docs_targets = [doc for doc in ("README.md",) if doc in files]
 
@@ -268,12 +494,16 @@ def build(probe):
         "branch_pattern": "fix/{issue}",
         "test_command": test_command,
         "version_sites": version_sites,
-        "changelog_dir": "changelog.d" if "changelog.d" in files else None,
+        # A prefix, not a membership test: `git ls-files` prints files and never the
+        # directories holding them, so asking whether "changelog.d" is in the list is
+        # asking a question the answer can never be yes to.
+        "changelog_dir": (
+            "changelog.d"
+            if any(name.startswith("changelog.d/") for name in files)
+            else None
+        ),
         "docs_targets": docs_targets,
-        "labels": {
-            "priority": [label for label in labels if PRIORITY_RE.match(label)],
-            "lanes": [label for label in labels if LANE_RE.match(label)],
-        },
+        "labels": {"priority": classified["priority"], "lanes": classified["lanes"]},
         "milestones": list(probe.get("milestones") or []),
         "ci": {"required_checks": len(jobs)},
         "state_file": ".max/{}-watch.json".format(repo_name) if repo_name else ".max/oss-watch.json",
@@ -420,22 +650,231 @@ def resolve_worktree(root, target):
     return resolved
 
 
+def _run(command, cwd=None):
+    """Return ``(ok, stdout, detail)``. ``detail`` is why not, when not."""
+    try:
+        done = subprocess.run(
+            command,
+            cwd=str(cwd) if cwd is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+    except OSError as exc:
+        return False, "", "{} would not start ({})".format(command[0], exc)
+    if done.returncode != 0:
+        lines = (done.stderr or "").strip().splitlines()
+        return (
+            False,
+            "",
+            "{} exited {}: {}".format(
+                " ".join(command[:3]), done.returncode, lines[-1] if lines else "no output"
+            ),
+        )
+    return True, done.stdout, ""
+
+
+def _git_lines(root, args):
+    return _run(["git", "-C", str(root)] + list(args))
+
+
+def _gh_json(root, args):
+    """Run gh and parse its JSON. Seam: the tests replace this, not subprocess."""
+    ok, out, detail = _run(["gh"] + list(args), cwd=root)
+    if not ok:
+        return False, None, detail
+    try:
+        return True, json.loads(out), ""
+    except ValueError as exc:
+        return False, None, "gh {} did not return JSON ({})".format(args[0], exc)
+
+
+def _workflow_jobs(root, files):
+    """Job names read out of the workflow files, as ``file:job``.
+
+    A light scan rather than a YAML parse: this module has no third-party imports and
+    the shape being read is two levels deep. A workflow that cannot be read is
+    reported -- counting it as zero jobs would understate the required checks, which
+    is the direction that lets a red leg through.
+    """
+    jobs = []
+    problems = []
+    for rel in sorted(files):
+        if not rel.startswith(".github/workflows/") or not rel.endswith((".yml", ".yaml")):
+            continue
+        try:
+            text = (Path(root) / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            problems.append("could not read {} ({})".format(rel, exc))
+            continue
+        stem = rel.rsplit("/", 1)[-1]
+        in_jobs = False
+        for line in text.splitlines():
+            if re.match(r"^jobs:\s*$", line):
+                in_jobs = True
+                continue
+            if not in_jobs:
+                continue
+            if line.strip() and not line.startswith((" ", "\t")):
+                in_jobs = False
+                continue
+            match = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
+            if match:
+                jobs.append("{}:{}".format(stem, match.group(1)))
+    return jobs, problems
+
+
+def _merge_method(view):
+    """The repo's merge method, or None when more than one is allowed.
+
+    Two allowed methods is not a preference the repo has stated, so there is nothing
+    to measure and null is the answer. /oss:release refuses on a null rather than
+    picking one.
+    """
+    allowed = [
+        name
+        for flag, name in (
+            ("squashMergeAllowed", "squash"),
+            ("mergeCommitAllowed", "merge"),
+            ("rebaseMergeAllowed", "rebase"),
+        )
+        if view.get(flag)
+    ]
+    return allowed[0] if len(allowed) == 1 else None
+
+
+def gather(root):
+    """Measure a repo directory into a probe. Returns ``(probe, problems)``.
+
+    This exists so the schema has exactly one implementation. The slash command used
+    to assemble the probe by hand, got `files` wrong in a way nothing could detect,
+    and the derived config was confidently wrong at every layer.
+
+    A probe is returned only when every field in it was measured. A half-measured
+    probe is the underspecified probe this whole contract exists to refuse, and
+    emitting one with the unmeasured half left empty is exactly the failure --
+    "gh could not be reached" would reach disk spelled `"labels": []`.
+    """
+    root = Path(os.path.expanduser(str(root)))
+
+    ok, out, detail = _git_lines(root, ["ls-files", "-z"])
+    if not ok:
+        return None, ["could not list the files: {}".format(detail)]
+    files = [name for name in out.split("\0") if name]
+
+    ok, out, detail = _git_lines(root, ["tag", "--list"])
+    if not ok:
+        return None, ["could not list the tags: {}".format(detail)]
+    tags = [line.strip() for line in out.splitlines() if line.strip()]
+
+    problems = []
+    ok, view, detail = _gh_json(
+        root,
+        [
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner,defaultBranchRef,squashMergeAllowed,mergeCommitAllowed,"
+            "rebaseMergeAllowed",
+        ],
+    )
+    if not ok or not isinstance(view, dict):
+        return None, ["could not read the repo from gh: {}".format(detail or view)]
+
+    repo = view.get("nameWithOwner")
+    ok, label_rows, detail = _gh_json(root, ["label", "list", "--json", "name", "--limit", "200"])
+    if not ok:
+        problems.append("could not read the labels from gh: {}".format(detail))
+        label_rows = []
+
+    ok, milestone_rows, detail = _gh_json(
+        root, ["api", "repos/{}/milestones".format(repo), "--paginate"]
+    )
+    if not ok:
+        problems.append("could not read the milestones from gh: {}".format(detail))
+        milestone_rows = []
+
+    jobs, job_problems = _workflow_jobs(root, files)
+    problems.extend(job_problems)
+
+    probe = {
+        "repo": repo,
+        "default_branch": (view.get("defaultBranchRef") or {}).get("name"),
+        "clone": str(root.resolve()),
+        "files": files,
+        "tags": tags,
+        "labels": [row.get("name") for row in label_rows or [] if row.get("name")],
+        "milestones": [row.get("title") for row in milestone_rows or [] if row.get("title")],
+        "workflow_jobs": jobs,
+        "merge_method": _merge_method(view),
+        "version_evidence": inspect_version_sites(root, files),
+    }
+    problems.extend(probe_problems(probe))
+    if problems:
+        return None, problems
+    return probe, []
+
+
+def _report_probe_notes(probe):
+    """Say what the probe saw and could not classify. Neither is a failure.
+
+    Both are absences the tool produced rather than absences in the world, and both
+    are invisible in the config: unclassified labels leave `priority: []`, and an
+    unreadable candidate leaves it off `version_sites`. Silence there reads as a
+    measurement, so the difference is stated here instead.
+    """
+    unclassified = classify_labels(probe.get("labels") or [])["unclassified"]
+    if unclassified:
+        print(
+            "NOTE {} of {} labels matched no priority or lane pattern, so they are "
+            "unclassified: {}".format(
+                len(unclassified),
+                len(probe.get("labels") or []),
+                ", ".join(unclassified),
+            ),
+            file=sys.stderr,
+        )
+    unreadable = sorted(
+        name for name, state in (probe.get("version_evidence") or {}).items()
+        if state == "unreadable"
+    )
+    if unreadable:
+        print(
+            "NOTE could not read, so not claimed as version sites: {}".format(
+                ", ".join(unreadable)
+            ),
+            file=sys.stderr,
+        )
+
+
 def _main(argv=None):
     """CLI used by /oss:setup and /oss:doctor.
 
-    `--validate` names every problem and exits non-zero; `--build` reads a probe as
-    JSON on stdin and writes a config to stdout, so the measuring and the deriving
-    stay separable and the derive half is testable without a network.
+    `--validate` names every problem and exits non-zero; `--probe` measures a repo
+    into a probe; `--build` reads a probe as JSON on stdin and writes a config to
+    stdout, so the measuring and the deriving stay separable and the derive half is
+    testable without a network.
     """
     import argparse
 
-    parser = argparse.ArgumentParser(description="Read, validate and derive .oss.json.")
+    parser = argparse.ArgumentParser(
+        description="Read, validate and derive .oss.json.",
+        epilog=PROBE_SCHEMA_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--validate", metavar="PATH", help="validate an existing .oss.json")
     group.add_argument(
+        "--probe",
+        metavar="REPO",
+        help="measure a repo directory and write a probe as JSON on stdout "
+        "(the only sanctioned way to build one -- see the schema below)",
+    )
+    group.add_argument(
         "--build",
         action="store_true",
-        help="read a probe as JSON on stdin, write the derived config to stdout",
+        help="read a probe as JSON on stdin, write the derived config to stdout. "
+        "A probe of the wrong shape is refused, not derived around",
     )
     args = parser.parse_args(argv)
 
@@ -447,12 +886,27 @@ def _main(argv=None):
             print("OK {} validates".format(args.validate))
         return 1 if problems else 0
 
+    if args.probe:
+        probe, problems = gather(args.probe)
+        for problem in problems:
+            print("FAIL {}".format(problem), file=sys.stderr)
+        if probe is None:
+            return 1
+        print(json.dumps(probe, indent=2))
+        return 0
+
     try:
         probe = json.load(sys.stdin)
     except ValueError as exc:
         print("FAIL probe on stdin is not valid JSON ({})".format(exc))
         return 1
-    config = build(probe)
+    try:
+        config = build(probe)
+    except ProbeError as exc:
+        for line in str(exc).splitlines():
+            print("FAIL {}".format(line), file=sys.stderr)
+        return 1
+    _report_probe_notes(probe)
     problems = validate(config)
     for problem in problems:
         print("FAIL derived config: {}".format(problem), file=sys.stderr)

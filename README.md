@@ -60,7 +60,7 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 | Command | What it does |
 | --- | --- |
 | `/oss:tick` | One pass of the maintainer loop: board, decide, delegate, review, merge on green. |
-| `/oss:setup` | Probes the repo and writes `.oss.json`. Measures; never assumes. |
+| `/oss:setup` | Probes the repo and writes `.oss.json`. Measures; never assumes — a version site is a file read and found to carry a version, and every label that matched no pattern is named. |
 | `/oss:scaffold` | Adds the missing repo furniture. Never overwrites; shows before it writes. |
 | `/oss:triage` | One triage sweep — priority, lane, milestone, and what the board is lying about. |
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |

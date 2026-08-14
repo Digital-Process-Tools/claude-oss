@@ -7,19 +7,39 @@ Write `.oss.json` for the repo in the current directory, by **measuring it**, no
 
 ## Probe
 
-Batch these. Every value below is observed; nothing is assumed.
+**Do not assemble the probe by hand.** `--probe` measures the repo and writes it, and
+`--build` reads that and nothing else. One implementation of the schema is the point:
+a hand-written probe listing `files` as top-level directory entries produced
+`test_command: null` and a `version_sites` list with the wrong file in it, and nothing
+at any layer reported a problem.
 
 ```bash
-supertool 'gh-labels' 'ls:.' 'ls:.github/workflows' 'ls:tests'
-gh repo view --json nameWithOwner,defaultBranchRef
-gh api repos/OWNER/REPO/milestones -q '.[].title'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --probe . | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --build
 ```
 
-Then derive the config:
+`--probe` shells out to `git` and `gh` itself. If it cannot measure something it says
+so and writes no probe at all — half a probe is the underspecified probe this replaced.
+Relay the `FAIL` line rather than filling the gap in by hand.
+
+Run the two separately when you want to look at the probe first; `--help` prints the
+full schema, including what `files` and `version_evidence` mean:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --help
 ```
+
+`--build` prints `NOTE` lines on stderr. **Relay them.** They are the absences the
+config cannot show:
+
+- **`N of M labels matched no priority or lane pattern`** — with the names. An empty
+  `priority` list is the honest answer on a repo with no priority labels *and* what a
+  pattern miss produces; the note is the only thing that tells the two apart. If the
+  repo has a priority vocabulary spelled some way the patterns miss, say so — that is
+  a decision for the human, not something to paper over by writing the labels in
+  yourself.
+- **`could not read, so not claimed as version sites`** — a candidate file that could
+  not be read. Not the same as one read and found to hold no version, which is dropped
+  silently and correctly.
 
 The rules that matter, all enforced by `scripts/oss_config.py`:
 
@@ -31,6 +51,10 @@ The rules that matter, all enforced by `scripts/oss_config.py`:
 - **A repo with no milestones does not get milestones.** Say the list is empty.
 - **An undetectable test command stays `null`.** `null` is an honest "I could not tell"; a guess is
   a wrong instruction with an agent attached.
+- **A version site is a file that was read and found to carry a version.** Existence is not
+  evidence. Every repo has a `README.md`, and most of them carry no version anywhere — listing it
+  tells `/oss:release` to bump a file with nothing to bump. `--probe` reads each candidate; you do
+  not need to check them yourself.
 
 ## Verify the test command before writing it
 
