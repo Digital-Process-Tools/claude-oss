@@ -1201,11 +1201,17 @@ def _main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    config, problems = oss_config.load(args.config)
+    config, problems, origin, resolved = oss_config.load_from(args.config)
     if config is None or problems:
         for problem in problems:
             print("FAIL {}".format(problem))
         return 1
+    if origin == "clone":
+        print(
+            "NOTE {}: absent here; read {} from the enclosing clone instead. Running "
+            "/oss:setup here would write a second config rather than find that "
+            "one.".format(args.config, resolved)
+        )
 
     try:
         entries = plan(args.root, config)

@@ -384,6 +384,104 @@ def local_config_path(path):
     return Path(path).parent / LOCAL_CONFIG_NAME
 
 
+def _enclosing_clone(start):
+    """The working tree whose git dir ``start`` shares, as ``(path, why_not)``.
+
+    ``path`` is None whenever the question could not be answered -- git absent, not a
+    repository, a bare repo -- and ``why_not`` then says which, so no caller can print
+    "there is no clone" for "I could not look".
+
+    Git is asked rather than the layout being reconstructed: a worktree's ``.git`` is a
+    *file* pointing into ``<clone>/.git/worktrees/<name>``, and hand-walking that back up
+    is the kind of separator arithmetic that fails on exactly one platform.
+    """
+    ok, out, detail = _run(["git", "rev-parse", "--git-common-dir"], cwd=start)
+    if not ok:
+        return None, detail
+    first = out.strip().splitlines()
+    if not first or not first[0].strip():
+        return None, "git rev-parse --git-common-dir printed nothing"
+    common = Path(first[0].strip())
+    if not common.is_absolute():
+        common = Path(start) / common
+    try:
+        common = common.resolve()
+    except OSError as exc:
+        return None, "{} could not be resolved ({})".format(common, exc)
+    if common.name != ".git":
+        return None, "{} is not a .git directory, so this checkout has no working tree beside it".format(
+            common
+        )
+    return common.parent, ""
+
+
+def resolve_config_path(path):
+    """Where the project config really is, as ``(resolved, origin, detail)``.
+
+    ``origin`` is one of:
+
+    ``here``     ``path`` exists as given, and nothing else is consulted.
+    ``clone``    absent here, present in the working tree of the enclosing clone. This
+                 is the git-worktree case: `.oss.json` may be git-excluded, so it lives
+                 in the clone and in none of its worktrees, and the developer standing
+                 in a worktree is standing in the same repository.
+    ``missing``  absent, and ``detail`` says how far the search got -- which is not the
+                 same sentence when the clone was checked as when it could not be found.
+
+    An absolute ``path`` is never widened: a path somebody typed in full is an answer,
+    not a starting point.
+    """
+    given = Path(path)
+    if given.is_file():
+        return given, "here", ""
+    if given.is_absolute():
+        return None, "missing", "Run /oss:setup to write it."
+
+    # git is asked from the directory the path points into, but that directory need not
+    # exist here -- an excluded `configs/.oss.json` has no `configs/` in the worktree.
+    # A non-existent cwd makes the subprocess fail to start, which would be reported as
+    # "git could not answer" about a repository git can answer about perfectly well.
+    start = given.parent
+    if not start.is_dir():
+        start = Path(".")
+    clone, why_not = _enclosing_clone(start)
+    if clone is None:
+        return (
+            None,
+            "missing",
+            "No enclosing clone could be checked ({}), so nowhere else was searched. "
+            "Run /oss:setup to write it.".format(why_not),
+        )
+    try:
+        same = clone.samefile(start)
+    except OSError:
+        same = False
+    if same:
+        return None, "missing", "This directory is the clone. Run /oss:setup to write it."
+    candidate = clone / given
+    if candidate.is_file():
+        return candidate, "clone", str(clone)
+    return (
+        None,
+        "missing",
+        "Not in the enclosing clone at {} either. Run /oss:setup to write it.".format(clone),
+    )
+
+
+def load_from(path):
+    """`load`, plus where the file was found: ``(config, problems, origin, resolved)``.
+
+    Callers that print to a human want the origin -- reading the clone's config from a
+    worktree is correct and still worth saying out loud, because the config names paths
+    that are now one directory away.
+    """
+    resolved, origin, detail = resolve_config_path(path)
+    if resolved is None:
+        return None, ["{}: not found. {}".format(path, detail)], origin, None
+    config, problems = load(resolved)
+    return config, problems, origin, resolved
+
+
 def split(config):
     """Partition a config into ``(project, local)``.
 
