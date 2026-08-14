@@ -1015,7 +1015,7 @@ def _rewrite_links(lines: List[str], version: str
         base = match.group("base")
         lines[index] = "[Unreleased]: {0}/compare/v{1}...HEAD".format(base, version)
         lines.insert(index + 1, "[{0}]: {1}/releases/tag/v{0}".format(version, base))
-        return ("[Unreleased] → compare/v{0}...HEAD, added [{0}] tag ref".format(version),
+        return ("[Unreleased] -> compare/v{0}...HEAD, added [{0}] tag ref".format(version),
                 [lines[index], lines[index + 1]])
     return None
 
@@ -1070,7 +1070,7 @@ def _first_release_links(lines: List[str], version: str) -> Tuple[str, List[str]
         root = base.group("base")
         lines[index] = "[Unreleased]: {0}/compare/v{1}...HEAD".format(root, version)
         lines.insert(index + 1, "[{0}]: {1}/releases/tag/v{0}".format(version, root))
-        return ("first release: [Unreleased] → compare/v{0}...HEAD (it pointed "
+        return ("first release: [Unreleased] -> compare/v{0}...HEAD (it pointed "
                 "at {1}, there being no earlier tag to compare from), added "
                 "[{0}] tag ref".format(version, url),
                 [lines[index], lines[index + 1]])
@@ -1482,7 +1482,7 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
                        "twice if the next release also consumes them"
                        .format(len(fragments), directory.name))
 
-    _receipt("ok", "{0} fragment(s) → `## [{1}] - {2}` in {3}"
+    _receipt("ok", "{0} fragment(s) -> `## [{1}] - {2}` in {3}"
              .format(len(fragments), version, date, changelog.name), details)
     return OK
 
