@@ -1049,6 +1049,84 @@ def _rewrite_links(lines: List[str], version: str
     return None
 
 
+def _dominant_newline(raw: bytes) -> str:
+    """The line ending the file on disk already uses.
+
+    `read_text` translates every ending to LF on the way in, and text-mode
+    `write_text` translates it back to the *platform's* ending on the way out.
+    So a fold rewrote a CRLF changelog as LF on POSIX and an LF changelog as
+    CRLF on Windows -- a diff of every line in the file, produced by a tool that
+    edited three of them, and invisible in a review that reads the rendered
+    diff. Neither ending is the right one to impose; the file already answered
+    the question and this reads the answer back.
+
+    A file with no ending at all, or a mixture, resolves to LF: it is what the
+    assembled string already holds and what every line this script writes ends
+    with.
+    """
+    crlf = raw.count(b"\r\n")
+    return "\r\n" if crlf and crlf * 2 > raw.count(b"\n") else "\n"
+
+
+def _unwritable_links_refusal(lines: Sequence[str], version: str
+                              ) -> Tuple[str, List[str]]:
+    """Why `_rewrite_links` wrote nothing, for a release that is not the first.
+
+    Reaching here means the fold is about to add a `## [x.y.z]` heading with no
+    link ref behind it: it renders as literal bracketed text, and `[Unreleased]`
+    stays pointed at the previous tag or at nothing. That used to be reported as
+    `links none ... left alone` under an `ok` receipt -- a sentence naming the
+    absence, filed under a state meaning there was nothing to do. Two releases
+    shipped through it.
+
+    A first release goes to `_first_release_links` instead and is *allowed* to
+    write nothing: a repo that has never released has no published table to be
+    consistent with and, in the shapes that function names, nothing on disk to
+    derive a URL from. A repo on its second release has both, so the same
+    absence is a refusal here.
+
+    Nothing is guessed. This script is handed a changelog, not a repository, so
+    the only place a forge URL can come from is the file's own link-ref block;
+    when that cannot supply one, the refusal names which of the three shapes it
+    found, because all three are fixed differently.
+    """
+    span = _link_ref_block(lines, _inert_lines("\n".join(lines)))
+    if span is None:
+        reason = ("CHANGELOG.md has no trailing link-reference block at all, so "
+                  "there is no `[Unreleased]` definition to advance and no "
+                  "repository URL to write `[{0}]` from".format(version))
+    else:
+        start, end = span
+        current = None
+        for index in range(start, end + 1):
+            match = _UNRELEASED_ANY_LINK_RE.match(lines[index])
+            if match:
+                current = match.group("url")
+                break
+        if current is None:
+            reason = ("the trailing link-reference block has no `[Unreleased]:` "
+                      "definition, so there is nothing to advance and no "
+                      "repository URL to write `[{0}]` from".format(version))
+        else:
+            reason = ("`[Unreleased]` resolves to {0}, which is not a "
+                      "`<repo>/compare/vX.Y.Z...HEAD` line — this rewrites that "
+                      "line and will not reshape one it does not recognise"
+                      .format(current))
+    return ("`## [{0}]` would have no link ref and would render as literal "
+            "bracketed text".format(version),
+            ["reason    " + reason,
+             "add       `[Unreleased]: <repo>/compare/v<newest released "
+             "version>...HEAD` as the first line of the block at the bottom of "
+             "CHANGELOG.md, then re-run: this advances it to "
+             "`compare/v{0}...HEAD` and writes `[{0}]: "
+             "<repo>/releases/tag/v{0}` beside it".format(version),
+             "why       a heading with no definition behind it is not a broken "
+             "link, it is text that never looked like one — nobody reviewing "
+             "the rendered page sees a failure to click",
+             "untouched CHANGELOG.md was not written and no fragment was "
+             "consumed"])
+
+
 def _first_release_links(lines: List[str], version: str) -> Tuple[str, List[str]]:
     """What a first release can honestly do to the link-ref table, and say.
 
@@ -1217,8 +1295,22 @@ def audit_link_refs(text: str,
     return findings
 
 
-def check_links(changelog: Path) -> int:
-    """`--check-links`: audit the table, and say which of the three it did."""
+def check_links(changelog: Path,
+                untagged: Optional[AbstractSet[str]] = None) -> int:
+    """`--check-links`: audit the table, and say which of the three it did.
+
+    *untagged* is the caller's `--untagged`, and it is the whole reason that
+    flag exists rather than a constant in this file: which of a repository's
+    release sections were never tagged is a fact about **one** repository, and
+    this script is vendored into many. The constant it replaces arrived in this
+    copy still naming another project's nine versions, and reported nine
+    findings about releases this repository never had.
+
+    `None` means the caller declared nothing, which is not the same as
+    declaring that every section is tagged — but it is the only reading
+    available, and the receipt below says so by naming what was declared.
+    """
+    declared = UNTAGGED_RELEASES if untagged is None else untagged
     try:
         text = changelog.read_text(encoding="utf-8")
     except OSError as exc:
@@ -1226,7 +1318,7 @@ def check_links(changelog: Path) -> int:
                  .format(changelog, exc))
         return SKIPPED
     try:
-        findings = audit_link_refs(text)
+        findings = audit_link_refs(text, declared)
     except CannotValidate as exc:
         _receipt("skipped", "{0}".format(exc))
         return SKIPPED
@@ -1239,8 +1331,11 @@ def check_links(changelog: Path) -> int:
                    "{2}: each has a link ref or is declared untagged, and "
                    "[Unreleased] compares from v{3}"
              .format(len(versions), changelog.name, _MD_VERSION, versions[0]),
-             ["untagged  " + ", ".join(sorted(UNTAGGED_RELEASES & set(versions)))]
-             if UNTAGGED_RELEASES & set(versions) else [])
+             ["untagged  {0} — declared by the caller as having no tag, so no "
+              "`releases/tag/v...` link was expected for "
+              "{1}".format(", ".join(sorted(declared & set(versions))),
+                           "them" if len(declared & set(versions)) > 1 else "it")]
+             if declared & set(versions) else [])
     return OK
 
 
@@ -1416,7 +1511,8 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
     # Caught as `OSError`, not `FileNotFoundError`: a directory at that path or
     # a mode we cannot read is the same answer, we could not read it.
     try:
-        text = changelog.read_text(encoding="utf-8")
+        raw = changelog.read_bytes()
+        text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     except OSError as exc:
         _receipt("skipped", "cannot read {0}: {1} — nothing was written, "
                             "nothing consumed".format(changelog, exc),
@@ -1507,7 +1603,15 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
         links, written_refs = _first_release_links(body, version)
     else:
         rewritten = _rewrite_links(body, version)
-        links, written_refs = rewritten if rewritten else (None, [])
+        if rewritten is None:
+            # Before the write and before a single fragment is consumed. The
+            # heading this fold is about to add would have no link ref behind
+            # it, which is the one outcome the release cannot be corrected into
+            # after the fact without a second commit on top of the tag.
+            summary, why = _unwritable_links_refusal(body, version)
+            _receipt("refused", summary, why)
+            return REFUSED
+        links, written_refs = rewritten
 
     assembled = "\n".join(body) + "\n"
     try:
@@ -1614,7 +1718,13 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
     wrote = False
     removed = 0
     try:
-        changelog.write_text(assembled, encoding="utf-8")
+        # `open(newline=...)`, not `write_text(newline=...)`: the keyword
+        # arrived on `Path.write_text` in 3.10 and this file runs on 3.9.
+        # Without it the platform decides, and the platform is not what the
+        # file on disk already said.
+        with changelog.open("w", encoding="utf-8",
+                            newline=_dominant_newline(raw)) as handle:
+            handle.write(assembled)
         wrote = True
         if not keep:
             for frag in fragments:
@@ -1729,6 +1839,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="validate every fragment name and body; write nothing")
     parser.add_argument("--check-links", dest="check_links", action="store_true",
                         help="audit CHANGELOG.md's link ref table; write nothing")
+    parser.add_argument("--untagged", default=None,
+                        help="comma-separated versions that have a `## [x.y.z]` "
+                             "section but were never tagged, so no "
+                             "`releases/tag/vX.Y.Z` link is expected for them "
+                             "and one written anyway is a 404 that reads as a "
+                             "working link. Per-repository, which is why it is "
+                             "a flag and not a constant in this file")
     parser.add_argument("--count", action="store_true",
                         help="print the fragment count as a bare integer, and nothing else")
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -1813,7 +1930,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         changelog = _resolve(args.changelog, "--changelog", derived_changelog)
         if changelog is None:
             return SKIPPED
-        return check_links(changelog)
+        untagged = None
+        if args.untagged is not None:
+            untagged = frozenset(
+                part.strip() for part in args.untagged.split(",") if part.strip())
+            bad = sorted(v for v in untagged if not _VERSION_RE.match(v))
+            if bad:
+                # Refused, not dropped. A typo silently ignored means the
+                # version it was meant to declare is still expected to have a
+                # link ref, the audit reports a finding about it, and the
+                # maintainer reads that finding as disagreement with a
+                # declaration that was never made.
+                _receipt("refused",
+                         "--untagged {0!r}: {1} is not x.y.z — nothing was "
+                         "audited".format(args.untagged, ", ".join(bad)))
+                return REFUSED
+        return check_links(changelog, untagged)
 
     if args.check:
         directory = _resolve(args.directory, "--dir", derived_dir)

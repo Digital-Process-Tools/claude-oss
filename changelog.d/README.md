@@ -27,7 +27,10 @@ text — the file name is metadata, and metadata does not survive being read out
 
 ```bash
 python3 scripts/assemble_changelog.py --check
-python3 scripts/assemble_changelog.py --check-links
+# `--untagged 0.1.0`: that section was never tagged and has no release page, so no
+# `releases/tag/v0.1.0` link is expected for it. Same declaration the changelog workflow
+# passes; drop it and this refuses (#93).
+python3 scripts/assemble_changelog.py --check-links --untagged 0.1.0
 # Release only: rewrites CHANGELOG.md, deletes fragments. Both flags are required (#67) —
 # the fold will not derive its own target.
 python3 scripts/assemble_changelog.py --version X.Y.Z --dir changelog.d --changelog CHANGELOG.md

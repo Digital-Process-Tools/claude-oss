@@ -210,8 +210,15 @@ class _UnwritableChangelog:
     A shim rather than `chmod`: read-only permission bits are enforced
     differently on Windows and by root, and a fixture that quietly stops
     denying the write turns this test green for the wrong reason. Only the
-    four members `assemble` uses are exposed, so a fifth one appearing is a
-    loud AttributeError rather than a silent pass-through.
+    members `assemble` uses are exposed, so one appearing that is not listed
+    here is a loud AttributeError rather than a silent pass-through -- which is
+    how this shim caught the read moving from `read_text` to `read_bytes` and
+    the write from `write_text` to `open` (#93), rather than passing both
+    through to the real file and denying nothing.
+
+    Both write paths raise. `write_text` is no longer the one `assemble` calls,
+    and leaving it as a pass-through would mean a revert to it made this test
+    green while denying nothing at all.
     """
 
     def __init__(self, path):
@@ -220,6 +227,12 @@ class _UnwritableChangelog:
 
     def read_text(self, **kwargs):
         return self._path.read_text(**kwargs)
+
+    def read_bytes(self):
+        return self._path.read_bytes()
+
+    def open(self, *args, **kwargs):
+        raise OSError(28, "No space left on device")
 
     def write_text(self, *args, **kwargs):
         raise OSError(28, "No space left on device")
