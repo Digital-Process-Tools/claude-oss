@@ -871,3 +871,106 @@ def test_the_console_encoding_check_fires_on_the_checklist_that_missed_it():
         "defect, so they say nothing about the sixth item being there. Not firing: "
         + repr(sorted(expected - unmet))
     )
+
+
+# ------------------------------------------------- Explore reviewer, not general-purpose (#82)
+#
+# A brief telling a `general-purpose` reviewer in prose not to edit is not a tool grant,
+# and it did not hold: twice in one session a reviewer briefed that way had files written
+# under it anyway -- once an unreviewed test reached a commit, once ~90 lines of core were
+# rewritten. `Explore` has no Edit/Write, but it still has Bash -- a complete write path,
+# already used mid-run to redden a concurrently-running suite -- so the fix is three
+# sentences, not one: spawn Explore; still say "do not mutate the tree" because Bash
+# remains; and tell the reader the author's own suite figures may be contaminated by a
+# concurrent reviewer. That third sentence is the one most likely to get dropped.
+
+
+def _explore_reviewer_unmet(text):
+    folded = text.lower()
+    unmet = set()
+    if 'subagent_type: "explore"' not in folded:
+        unmet.add("spawns-explore-not-general-purpose")
+    if 'subagent_type: "general-purpose"' in folded:
+        unmet.add("general-purpose-still-spawned")
+    if "bash" not in folded:
+        unmet.add("still-warns-about-bash")
+    if "contaminat" not in folded:
+        unmet.add("suite-figures-may-be-contaminated")
+    return unmet
+
+
+def test_developer_spawns_explore_not_general_purpose():
+    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    unmet = _explore_reviewer_unmet(text)
+    assert not unmet, (
+        "agents/developer.md does not carry the Explore-reviewer fix: " + repr(sorted(unmet))
+    )
+
+
+def test_the_explore_reviewer_check_fires_on_the_general_purpose_spawn_it_replaced():
+    """Positive control: the state before #82 -- general-purpose spawned, a brief
+    sentence about not editing, nothing about Bash or contamination -- must be
+    reported as unmet, or the check above is checking nothing.
+    """
+    before = (
+        'Agent(subagent_type: "general-purpose", model: "sonnet", run_in_background: false)\n\n'
+        'Tell it explicitly that it must not edit anything. It has Edit and Write.\n'
+    )
+    unmet = _explore_reviewer_unmet(before)
+    assert unmet == {
+        "spawns-explore-not-general-purpose",
+        "general-purpose-still-spawned",
+        "still-warns-about-bash",
+        "suite-figures-may-be-contaminated",
+    }, repr(sorted(unmet))
+
+
+# ------------------------------------------------- reviewer return contract (#84)
+#
+# A reviewer spawn whose final message says only "findings reported above" returns
+# empty to the caller -- everything it wrote before that line is invisible. An empty
+# return currently reads as a clean review. The fix is a paragraph in the reviewer
+# brief (the final message IS the return value; say NO FINDINGS and name what you
+# checked, or say nothing) plus a rule for the caller: treat empty as `did not run`,
+# never as clean.
+
+REVIEWER_RETURN_ANCHORS = [
+    ("final-message-is-the-return-value", ("final message", "return value")),
+    ("no-findings-must-be-said-and-named", ("no findings",)),
+    ("empty-return-is-did-not-run-not-clean", ("empty", "did not run")),
+]
+
+
+def _reviewer_return_unmet(text):
+    folded = text.lower()
+    return {
+        name
+        for name, anchors in REVIEWER_RETURN_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_developer_states_the_reviewer_return_contract():
+    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    unmet = _reviewer_return_unmet(text)
+    assert not unmet, (
+        "agents/developer.md does not carry the reviewer-return contract: " + repr(sorted(unmet))
+    )
+
+
+def test_the_reviewer_return_check_fires_on_a_brief_that_never_states_it():
+    """Positive control: prose that asks for findings and already states the
+    did-not-run rule for a spawn that never ran, but never says the final message
+    IS the return value and never mentions an empty one -- must be reported unmet.
+    """
+    before = (
+        "Give each the diff and ask for findings.\n"
+        "A review that did not execute must never render as a review that found "
+        "nothing. Report did not run where it did not run.\n"
+    )
+    unmet = _reviewer_return_unmet(before)
+    assert unmet == {
+        "final-message-is-the-return-value",
+        "no-findings-must-be-said-and-named",
+        "empty-return-is-did-not-run-not-clean",
+    }, repr(sorted(unmet))

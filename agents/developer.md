@@ -98,16 +98,19 @@ After you commit, spawn **two agents against your own committed diff, in the sam
 run concurrently:
 
 ```
-Agent(subagent_type: "general-purpose", model: "sonnet", run_in_background: false)
-Agent(subagent_type: "oss:auditor",     model: "sonnet", run_in_background: false)
+Agent(subagent_type: "Explore",     model: "sonnet", run_in_background: false)
+Agent(subagent_type: "oss:auditor", model: "sonnet", run_in_background: false)
 ```
 
 Give each the diff, the issue number, and one line on what the change is meant to do.
 
-**The generalist reviewer** is asked for: correctness bugs, a test that would still pass if the code
-did nothing, anything the change makes worse that nobody filed, and **stale prose adjacent to the
+**The reviewer** is asked for: correctness bugs, a test that would still pass if the code did
+nothing, anything the change makes worse that nobody filed, and **stale prose adjacent to the
 diff** — that last one is where the real findings come from; a plain diff-scan lens routinely finds
-nothing.
+nothing. Ask for the answer compact: per finding, the mechanism in one line and the reproduction
+command or its output, severity and class; clean areas named rather than described; retrospectives
+cut, except a genuine disagreement with the brief, which earns full prose because it is usually
+right.
 
 **The auditor** works a fixed checklist and reports one verdict per class, so a class it could not
 reach is visible rather than absent. Hand it §4 above, **Cross-platform is not your machine**,
@@ -120,8 +123,24 @@ leaves no way to tell a class that was checked and clean from a class that was n
 guard nominally on and effectively off — the thing the auditor is pointed at, reproduced in how it
 was wired.
 
-**Tell both explicitly that they must not edit anything.** They are standing in your worktree and
-they have `Edit` and `Write`. You apply every fix yourself, so one context decides what lands.
+**Tell both explicitly that they must not edit anything.** The reviewer is spawned as `Explore`,
+not `general-purpose`, because a tool grant is what binds and a sentence in the brief is not — two
+authors already told a `general-purpose` reviewer in prose not to edit and it edited anyway, once
+landing an unreviewed test on a commit, once rewriting ~90 lines of core. `Explore` carries no
+`Edit`/`Write`, which closes that channel. **It does not close every channel, and the brief must say
+so rather than promise more than it delivers: `Explore` still has `Bash`, a complete write path.**
+Tell it explicitly, in addition, that it must not mutate the tree — a reviewer has already run a
+`git checkout` mid-run to verify a claim and reddened the author's own concurrently-running suite on
+its own new test. **Because of that, read your own suite figures as possibly contaminated by a
+concurrent reviewer**: if a spawn touched the tree while your suite was running, the numbers you
+report may not be the numbers your committed code produces, and a red you cannot otherwise explain
+is worth a clean re-run before you trust it.
+
+**Your final message is the only thing that reaches you — everything a spawn wrote before that line
+is invisible to the caller.** State this in both briefs: the final message IS the return value, and
+if a reviewer found nothing it must say `NO FINDINGS` and name what it checked, because a reply
+ending in "findings reported above" returns empty, and an empty return is indistinguishable from a
+clean one unless the brief forces the reviewer to say which it means.
 
 **Independence lives in the reviewer; judgment stays with you.** Argue down a finding that is wrong
 and say why — that is an outcome no bounce-and-repush loop produces. Report all three under
@@ -131,8 +150,10 @@ and say why — that is an outcome no bounce-and-repush loop produces. Report al
 access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.
 
 **A review that did not execute must never render as a review that found nothing.** That holds for
-both spawns and for each of the auditor's classes separately: report `did not run` where it did not
-run. An absence you produced is not an absence in the world.
+both spawns, for an empty final message from either one — treat it as `did not run`, never as
+clean, and say so in your own report rather than silently omitting the review — and for each of the
+auditor's classes separately: report `did not run` where it did not run. An absence you produced is
+not an absence in the world.
 
 ## Untrusted input
 
