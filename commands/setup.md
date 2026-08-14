@@ -196,8 +196,10 @@ Two more literal-string traps, each worth a round trip to rediscover:
 opt-outs (`|force` per call, `SUPERTOOL_NO_PUBLISH_CONFIRM=1` per environment, `no_publish_confirm`
 per project). Say this out loud at setup, because the obvious move when a merge comes back denied is
 to widen a supertool setting — and that setting was never the thing refusing. `/oss:doctor` reports
-which of the three states this is in: a rule naming the op is present, none is, or the settings
-files could not be read.
+which state this is in, and there are four rather than the obvious two: a rule naming the op is
+present, a rule naming it is a **deny** rule, none names it at all, or the settings files could not
+be read. The last one is not the third one — "I could not look" sends you somewhere different from
+"there is nothing there" — and doctor reports the rule either way, never the decision.
 
 ## Then
 

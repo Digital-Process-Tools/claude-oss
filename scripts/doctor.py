@@ -305,6 +305,7 @@ def merge_permission_state(project_dir, home=None):
     drag a found rule back to `unknown`.
     """
     unreadable = []
+    allowed = []
     denied = []
     for path in settings_candidates(project_dir, home=home):
         if not path.exists():
@@ -319,12 +320,18 @@ def merge_permission_state(project_dir, home=None):
             continue
         for entry in _permission_entries(data, "allow"):
             if MERGE_OP in entry:
-                return "present", "{} in {}".format(entry, path)
+                allowed.append("{} in {}".format(entry, path))
         for entry in _permission_entries(data, "deny"):
             if MERGE_OP in entry:
                 denied.append("{} in {}".format(entry, path))
+    # Every candidate is read before anything is decided, and deny wins. Returning
+    # on the first allow would report `present` while holding, already parsed, a deny
+    # rule for the same op -- an OK built on evidence the function had in hand and
+    # dropped, which is worse than not looking.
     if denied:
         return "denied", "; ".join(denied)
+    if allowed:
+        return "present", "; ".join(allowed)
     if unreadable:
         return "unknown", "; ".join(unreadable)
     return "absent", ""

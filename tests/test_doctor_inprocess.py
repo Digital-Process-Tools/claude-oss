@@ -349,6 +349,35 @@ def test_a_deny_rule_is_not_read_as_permission(tmp_path):
     assert "deny" in detail
 
 
+def test_a_deny_beside_an_allow_is_still_denied(tmp_path):
+    """Deny wins, and the scan reads every candidate before deciding. Returning on
+    the first allow reported `present` while holding an already-parsed deny for the
+    same op -- an OK built on evidence the check dropped."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        deny=["Bash(./supertool 'gh-pr-merge:42:squash|force')"],
+    )
+    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "denied"
+
+
+def test_check_merge_permission_reports_a_deny_rule(tmp_path, capsys):
+    """The fourth arm reaching the report. Only the state function was covered, so
+    a mistake in this branch's severity or wording would have shipped."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        deny=["Bash(./supertool 'gh-pr-merge:*')"],
+    )
+    doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "deny rule" in out
+    # Not escalated to FAIL: this is still a file read, and it cannot prove the
+    # harness will refuse any more than an allow rule proves it will permit.
+    assert "FAIL" not in out
+
+
 def test_a_rule_in_the_home_settings_counts(tmp_path):
     """The rule can live in user scope. Ignoring that would WARN at a maintainer
     who already arranged it -- and the fix they would then apply is a duplicate."""
