@@ -226,7 +226,9 @@ _REMEDY = ("To show one in an entry, put it in a fenced code block at the "
 _NO_PARSER = (
     "markdown-it-py is not importable ({0}), so nothing can be established "
     "about these fragments and nothing is claimed. Install it — "
-    "`pip install markdown-it-py`, or `pip install -e .[dev]` — and run again. "
+    "`pip install markdown-it-py` — and run again; in CI, install it in the "
+    "same job that runs this, because a job that skipped it has not checked "
+    "anything it is about to report on. "
     "There is deliberately no text-scanning fallback: three of them shipped "
     "and all three were bypassed within one audit, so a "
     "fallback here would be the same bug wearing a receipt.")
