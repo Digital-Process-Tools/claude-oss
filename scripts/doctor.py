@@ -541,6 +541,174 @@ def check_merge_permission(project_dir, home=None):
     )
 
 
+JIT_ENTRY_SKIP = "00-README.md"
+
+# The index columns each dimension's builder writes, and where the ENTRY FILENAME sits
+# in them. Measured against claude-jit-context's `rebuild-tsv.sh`, not reasoned about:
+#
+#   tools       tool <TAB> match <TAB> filename <TAB> mode|remind <TAB> require <TAB> forbid
+#   paths       match <TAB> filename
+#   vocabulary  keyword <TAB> filename, one row per keyword
+#
+# #80's report said the tools columns were `tool, match, mode, require, forbid` -- five,
+# with the filename absent. There are six and the filename is the third of them, which is
+# why this table is derived from the builder rather than from the description of it.
+JIT_FILENAME_COLUMN = {"tools": 2, "paths": 1, "vocabulary": 1}
+
+
+def _jit_field(text, field):
+    """`jit_frontmatter()` from claude-jit-context's `common.sh`, in Python.
+
+    Mirrored deliberately, quirks included, because a reader that is merely *similar*
+    produces drift findings that are about this function rather than about the index:
+    the field is matched as a line PREFIX, only SPACES are eaten after the colon,
+    `mode` loses every space, an unterminated frontmatter block keeps reading to EOF
+    exactly as the awk state machine does -- and trailing whitespace is trimmed ONLY
+    on the copy the wrapped-quote test looks at, never on the value returned.
+
+    That last one is not a detail. awk trims into `v`, tests `v`, and prints `$0`, so
+    `match: docs/ ` indexes the trailing space and a reader that trimmed it would
+    derive `docs/`, find no such row, and print "rebuild the index" at a layer whose
+    index is exactly what a rebuild writes -- #80's own defect, one case narrower.
+    """
+    depth = 0
+    for line in text.split("\n"):
+        if line == "---":
+            depth += 1
+            continue
+        if depth != 1 or not line.startswith(field + ":"):
+            continue
+        value = line[len(field) + 1 :].lstrip(" ")
+        if field == "mode":
+            return value.replace(" ", "")
+        trimmed = value.rstrip(" \t\r\n\v\f")
+        if (
+            len(trimmed) >= 2
+            and trimmed[0] == '"'
+            and trimmed[-1] == '"'
+            and '"' not in trimmed[1:-1]
+        ):
+            return trimmed[1:-1]
+        return value
+    return None
+
+
+def _jit_macro(value):
+    """An invocation macro -- `~@invocation git push` -- is EXPANDED into the row, so the
+    index legitimately does not carry the frontmatter's text. Expanding it here would be a
+    second implementation of somebody else's anchor, and a wrong one is a confident wrong
+    answer. Declining is the honest read.
+    """
+    # ONE leading tilde, the way `${raw#\~}` strips one: `~~@invocation ...` is not a
+    # macro to the builder, it is literal text, and declining to check it would report
+    # an entry as unchecked that could have been compared exactly.
+    return (value[1:] if value.startswith("~") else value).startswith("@")
+
+
+def _jit_keywords(value):
+    """The vocabulary normaliser, which is the matcher's: lowercase, every byte outside
+    `[a-z0-9 -]` to a space, collapse, trim. Returns None when it cannot be mirrored --
+    the indexer folds Latin-1 accents to ASCII first, and `detail` derived from `detail`
+    with an accent would come out as two words here and read as drift.
+    """
+    keywords = set()
+    for raw in value.split(","):
+        if any(ord(ch) > 127 for ch in raw):
+            return None
+        lowered = "".join(ch if ch in "abcdefghijklmnopqrstuvwxyz0123456789 -" else " "
+                          for ch in raw.lower())
+        collapsed = " ".join(lowered.split())
+        if collapsed:
+            keywords.add(collapsed)
+    return keywords
+
+
+def jit_index_drift(dimension, entries, index_text):
+    """Do the rows on disk still say what the entries' frontmatter says?
+
+    Returns `(drift, undecidable)`: entry names whose rows provably disagree, and
+    `(name, reason)` pairs for the ones this could not derive at all.
+
+    Two comparisons, and the asymmetry is the point:
+
+    - `tools` and `paths` are compared as SET EQUALITY on the rows naming an entry.
+      Every row those builders write comes from frontmatter and none of them is
+      dropped, so a missing row and an extra row are both proof.
+    - `vocabulary` is compared as a SUBSET -- an indexed keyword the frontmatter can no
+      longer produce is proof, a frontmatter keyword with no row is not. The builder
+      skips generic words against a blacklist that is project-configurable through
+      `config.env`, so equality there would report drift on a correctly built index,
+      which is this check's own defect wearing the opposite sign.
+
+    A row naming an entry that is not on disk is drift in either dimension: deleting a
+    rule leaves its row behind, and the row is what runs.
+    """
+    column = JIT_FILENAME_COLUMN.get(dimension)
+    if column is None:
+        reason = (
+            "this check knows how a tools, paths or vocabulary row is derived and "
+            "'{}' is none of them".format(dimension)
+        )
+        return [], [(name, reason) for name in sorted(entries)]
+
+    by_file = {}
+    for row in index_text.split("\n"):
+        if not row.strip():
+            continue
+        columns = row.split("\t")
+        if len(columns) <= column:
+            continue
+        by_file.setdefault(columns[column], set()).add(row)
+
+    drift = sorted(set(by_file) - set(entries))
+    undecidable = []
+
+    for name in sorted(entries):
+        try:
+            text = entries[name].read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            undecidable.append((name, "the entry file could not be read"))
+            continue
+        indexed = by_file.get(name, set())
+
+        if dimension == "vocabulary":
+            value = _jit_field(text, "keywords")
+            derived = _jit_keywords(value) if value else set()
+            if derived is None:
+                undecidable.append(
+                    (name, "its keywords: carry non-ASCII, which the indexer folds first")
+                )
+                continue
+            if {row.split("\t")[0] for row in indexed} - derived:
+                drift.append(name)
+            continue
+
+        match = _jit_field(text, "match")
+        tool = _jit_field(text, "tool") if dimension == "tools" else "-"
+        if not match or not tool:
+            expected = set()  # the builder writes no row, and neither do we
+        elif _jit_macro(match):
+            undecidable.append(
+                (name, "its match: is an invocation macro, expanded at index time and "
+                       "not expanded here")
+            )
+            continue
+        elif dimension == "tools":
+            expected = {"\t".join([
+                tool, match, name,
+                _jit_field(text, "mode") or "remind",
+                _jit_field(text, "require") or "",
+                _jit_field(text, "forbid") or "",
+            ])}
+        else:
+            expected = {"{}\t{}".format(match, name)}
+
+        if expected != indexed:
+            drift.append(name)
+
+    return sorted(set(drift)), undecidable
+
+
 def check_jit_rules(project_dir):
     """Rules on disk are not rules in effect.
 
@@ -554,6 +722,23 @@ def check_jit_rules(project_dir):
 
     Every layer is reported separately. One indexed layer does not vouch for another:
     stopping at the first healthy one is how a whole dimension goes quiet unnoticed.
+
+    Whether an index is CURRENT is a question about its rows, and it is answered by
+    re-deriving them (#80). It used to be answered from mtime, which measures a proxy:
+    an entry newer than its index was reported as an entry whose "row says something
+    else", in the imperative, on repos where every row was byte-identical to what a
+    rebuild would write. Only frontmatter is indexed, and a body edit moves the
+    timestamp of a file whose row cannot have changed.
+
+    Deriving rather than declining was the choice, and the alternative is worth naming
+    because it is defensible: the index format belongs to `claude-jit-context`, whose
+    `rebuild-tsv.sh` is not reachable from the repo being diagnosed, and a second
+    implementation of somebody else's format drifts. What decided it is that a decline
+    leaves the maintainer with the same mtime and no answer, while the columns that
+    can be derived exactly are derived exactly and the ones that cannot -- an expanded
+    invocation macro, a folded accent, a dimension this does not know -- are declined
+    individually, by name. The blast radius of drift is then one entry reported as
+    unchecked, not a false imperative about the whole layer.
     """
     rules_dir = Path(project_dir) / JIT_RULES_DIR
     if not rules_dir.is_dir():
@@ -586,7 +771,23 @@ def check_jit_rules(project_dir):
                 "nothing. Rebuild the index.".format(name, len(rules), JIT_INDEX),
             )
             continue
-        if not index.read_text(encoding="utf-8").strip():
+        # Read once, and guarded: this used to be an unguarded `read_text` inside the
+        # emptiness test, so an index holding a byte sequence that is not UTF-8 raised
+        # out of a diagnostic whose whole contract is to exit 0 with a VERDICT line.
+        # The tree being diagnosed chooses that file's bytes.
+        dimension = name.parts[0] if name.parts else ""
+        entries = {p.name: p for p in rules if p.name != JIT_ENTRY_SKIP}
+        try:
+            index_text = index.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            report(
+                "WARN",
+                "{}: {} exists and could not be read, so whether its rows are current "
+                "is unknown -- which is not the same as fine.".format(name, JIT_INDEX),
+            )
+            continue
+
+        if not index_text.strip():
             report(
                 "FAIL",
                 "{}: {} is empty beside {} rule(s). An empty table is the same silence "
@@ -595,19 +796,57 @@ def check_jit_rules(project_dir):
             )
             continue
 
+        # mtime is evidence the index MIGHT be stale. It is not evidence that any row
+        # differs -- and the row was what the sentence here used to assert (#80). The
+        # entries carry their own answer, so it is derived rather than inferred, and the
+        # timestamps are demoted to what they are: the reason to look, and the only
+        # evidence left when the derivation declines.
         index_mtime = index.stat().st_mtime
-        newer = [p.name for p in rules if p.stat().st_mtime > index_mtime]
-        if newer:
+        newer = sorted(n for n, p in entries.items() if p.stat().st_mtime > index_mtime)
+
+        drift, undecidable = jit_index_drift(dimension, entries, index_text)
+
+        if drift:
             report(
                 "WARN",
-                "{}: {} is stale -- {} changed after the last rebuild, so its row says "
-                "something else. Rebuild the index.".format(
-                    name, JIT_INDEX, ", ".join(newer[:3])
+                "{}: {} is stale -- its row(s) for {} no longer match those entries' "
+                "frontmatter, so the rule that runs is not the rule as written. "
+                "Rebuild the index.".format(name, JIT_INDEX, ", ".join(drift[:3])),
+            )
+            continue
+
+        # The third state, and it is only a WARN when the timestamps give a reason to
+        # care. Undecidable-and-untouched is not a finding -- a notice that fires on
+        # every layer using an invocation macro would tell its reader nothing -- but it
+        # is never silent either, because a row this could not derive and a row it
+        # derived and matched must not print the same.
+        unchecked = [n for n, _ in undecidable]
+        if unchecked and set(unchecked) & set(newer):
+            first, reason = undecidable[0]
+            report(
+                "WARN",
+                "{}: cannot say whether {} is current. {} changed after the last "
+                "rebuild and could not be derived -- {}. Timestamps are all the "
+                "evidence there is here.".format(
+                    name, JIT_INDEX, ", ".join(sorted(set(unchecked) & set(newer))[:3]),
+                    "{}: {}".format(first, reason),
                 ),
             )
             continue
 
-        report("OK", "{}: {} rule(s) indexed and current".format(name, len(rules)))
+        current = "{}: {} rule(s) indexed, rows match their frontmatter".format(
+            name, len(rules)
+        )
+        if unchecked:
+            current += " ({} not checked -- {}: {})".format(
+                len(unchecked), unchecked[0], undecidable[0][1]
+            )
+        if newer:
+            current += (
+                "; {} entry file(s) changed after the index was written, and every row "
+                "{} holds is derived from frontmatter".format(len(newer), JIT_INDEX)
+            )
+        report("OK", current)
 
 
 def compare_versions(installed, latest):
