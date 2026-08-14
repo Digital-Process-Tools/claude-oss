@@ -115,8 +115,9 @@ def test_the_receipt_says_the_fragments_were_left_alone(tmp_path):
 def test_the_receipt_says_what_the_file_needs(tmp_path):
     """A missing anchor gets a sentence explaining what it will not guess. The
     missing file is worse off -- the maintainer has to work out that a usable
-    changelog needs a prior release heading to insert above -- so the receipt
-    states it instead of leaving it to the source."""
+    changelog needs a `## [Unreleased]` heading, with or without a release
+    heading below it -- so the receipt states it instead of leaving it to the
+    source."""
     root, script_path = _repo(tmp_path)
     result = _assemble(root, script_path, "CHANGELOG.md", "--dry-run")
     assert "## [Unreleased]" in result.stdout, result.stdout

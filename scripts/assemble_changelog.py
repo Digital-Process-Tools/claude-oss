@@ -99,6 +99,23 @@ _UNRELEASED_LINK_RE = re.compile(  # anchored-ok: matched per line of CHANGELOG.
 #: the block cannot capture the rewrite.
 _LINK_REF_RE = re.compile(r"^ {0,3}\[[^\]]+\]:\s*\S")
 
+#: Any `[Unreleased]` definition, whatever it points at. A repo that has never
+#: released cannot have a `compare/vX...HEAD` line — there is no earlier tag to
+#: compare from — so `_UNRELEASED_LINK_RE` matches nothing on a first release
+#: and the base URL has to come from whatever the definition does hold.
+#: Anchored at column 0 for the same reason that one is: this is a line the
+#: assembler rewrites, and an indented look-alike inside the block must not
+#: capture the rewrite.
+_UNRELEASED_ANY_LINK_RE = re.compile(r"^\[Unreleased\]:\s*(?P<url>\S+)\s*$")
+
+#: The repository URL under a forge path. `commits/HEAD` is what Keep a
+#: Changelog's own template writes for a project with no releases; the others
+#: are what hand-written files carry. A URL with none of these segments is not
+#: something to guess a base from, and that case is reported rather than
+#: patched over.
+_FORGE_BASE_RE = re.compile(
+    r"^(?P<base>\S+?)/(?:commits|commit|compare|tree|releases)(?:/\S*)?\Z")
+
 #: The guard and the reader are the same parser now.
 #:
 #: Three rounds of hand-written Markdown scanning produced three bypasses, and
@@ -874,6 +891,68 @@ def _anchor(headings: Sequence[Tuple[int, str, str]]) -> int:
     )
 
 
+def _first_release_anchor(lines: Sequence[str],
+                          headings: Sequence[Tuple[int, str, str]],
+                          inert: Set[int]) -> int:
+    """Where a *first* release section goes, when there is no release to
+    insert above. Raises when the file's shape cannot defend a position.
+
+    Reached only when `_anchor` raised, which happens only when the document
+    holds no `## [x.y.z]` heading at all. A repo that has released has an
+    unambiguous insertion point and keeps using it; this relaxation is for the
+    one cut where the anchor cannot exist yet, and the alternative it replaces
+    was a maintainer hand-writing a release section for a version that never
+    shipped, so that the parser would find something to sit above.
+
+    **"The top" is not one place.** A changelog opens with an `h1`, usually a
+    Keep a Changelog blurb, sometimes a policy paragraph, and closes with a
+    link-ref block. So the position is not chosen from the top of the file; it
+    is read off the one structure that already means "goes out next" — the
+    `## [Unreleased]` heading. The new section goes directly below it, which is
+    exactly where every later release goes, and the body between is folded in
+    exactly as it is on every later release. Nothing about the first cut is
+    special-cased except the boundary this returns.
+
+    That boundary is the first thing below `[Unreleased]` that is not part of
+    it: the next `h1`/`h2`, or the trailing link-ref block, whichever comes
+    first, or the end of the file. Without it the fold would swallow a
+    `## Notes` section and the link refs into the release.
+
+    Two shapes are refusals, not defaults. **No `## [Unreleased]` heading**:
+    there is no structure to read a position off, and picking one would be the
+    guess this script exists to not make. **More than one**: which of them a
+    first release belongs under is a coin toss. Both name what would make it
+    decidable, because a refusal a maintainer cannot act on is a dead end at
+    the exact moment they are least able to tell a tool limitation from a
+    mistake of their own.
+    """
+    unreleased = [index for index, tag, title in headings
+                  if tag == "h2" and title.startswith("[Unreleased]")]
+    if not unreleased:
+        raise BadFragment(
+            "CHANGELOG.md has no `## [x.y.z]` release heading to insert above, "
+            "and no `## [Unreleased]` heading to cut a first release below "
+            "either — so there is no position in it this script can defend, "
+            "and it will not pick between the preamble, the blurb and the "
+            "link-ref block. Add a `## [Unreleased]` heading and re-run: with "
+            "no release heading anywhere, the first release is cut directly "
+            "below it.")
+    if len(unreleased) > 1:
+        raise BadFragment(
+            "CHANGELOG.md has no `## [x.y.z]` release heading to insert above "
+            "and {0} `## [Unreleased]` headings (lines {1}) to cut a first "
+            "release below, so which one it belongs under is a guess. Leave "
+            "exactly one `## [Unreleased]` heading and re-run.".format(
+                len(unreleased), ", ".join(str(i + 1) for i in unreleased)))
+    start = unreleased[0]
+    ends = [index for index, tag, _ in headings
+            if index > start and tag in ("h1", "h2")]
+    block = _link_ref_block(lines, inert)
+    if block and block[0] > start:
+        ends.append(block[0])
+    return min(ends) if ends else len(lines)
+
+
 def _unreleased_span(lines: Sequence[str], headings: Sequence[Tuple[int, str, str]],
                      anchor: int) -> Tuple[Optional[int], List[str]]:
     """The `## [Unreleased]` heading's index and its body, above `anchor`."""
@@ -918,6 +997,11 @@ def _rewrite_links(lines: List[str], version: str
 
     Returns the summary and the definition lines it wrote, which is what
     `_verify_written` compares the released file's own link table against.
+
+    A first release goes through `_first_release_links` instead: there is no
+    earlier tag, so there is no `compare/vX...HEAD` line here to advance, and
+    this would report `links none` about a table that is one release behind
+    rather than one that was genuinely left alone on purpose.
     """
     span = _link_ref_block(lines, _inert_lines("\n".join(lines)))
     if span is None:
@@ -934,6 +1018,65 @@ def _rewrite_links(lines: List[str], version: str
         return ("[Unreleased] → compare/v{0}...HEAD, added [{0}] tag ref".format(version),
                 [lines[index], lines[index + 1]])
     return None
+
+
+def _first_release_links(lines: List[str], version: str) -> Tuple[str, List[str]]:
+    """What a first release can honestly do to the link-ref table, and say.
+
+    There is no previous tag, so there is no `[Unreleased]: .../compare/vX...HEAD`
+    line to advance: `_rewrite_links` finds nothing and reports `links none — no
+    compare line found ... left alone`, which reads as "there was nothing to do"
+    when what happened is "the table is now a release behind the file". That is
+    this tracker's defect class applied to link refs — an absence the tool
+    produced, read as an absence in the world.
+
+    The base URL is still there to be read. Keep a Changelog's own template for
+    a project with no releases writes `[Unreleased]: <repo>/commits/HEAD`, and
+    hand-written files carry a `tree/` or `compare/` variant of the same thing.
+    When one of those is present both definitions are written exactly as every
+    later release writes them, so the file passes `--check-links` immediately
+    after its first cut rather than acquiring a finding at birth.
+
+    When it is not present — no trailing block, no `[Unreleased]` definition, or
+    a URL with no forge segment to take a repository root from — nothing is
+    written and the summary names which of the three it was and what to add.
+    Returns `(summary, definitions written)`; the summary is never empty, which
+    is the difference between this and the `None` it replaces.
+    """
+    span = _link_ref_block(lines, _inert_lines("\n".join(lines)))
+    if span is None:
+        return ("none — first release: CHANGELOG.md has no trailing "
+                "link-reference block, so there was no `[Unreleased]` "
+                "definition to take a repository URL from. Both "
+                "`[{0}]: <repo>/releases/tag/v{0}` and "
+                "`[Unreleased]: <repo>/compare/v{0}...HEAD` are missing, and "
+                "`## [{0}]` renders as literal bracketed text until they are "
+                "added".format(version), [])
+    start, end = span
+    for index in range(start, end + 1):
+        match = _UNRELEASED_ANY_LINK_RE.match(lines[index])
+        if not match:
+            continue
+        url = match.group("url")
+        base = _FORGE_BASE_RE.match(url)
+        if not base:
+            return ("none — first release: `[Unreleased]` resolves to {0}, "
+                    "which has no `/commits/`, `/compare/`, `/tree/` or "
+                    "`/releases/` segment to take a repository URL from, so "
+                    "nothing was rewritten and `## [{1}]` has no link ref — "
+                    "add `[{1}]: <repo>/releases/tag/v{1}`".format(url, version),
+                    [])
+        root = base.group("base")
+        lines[index] = "[Unreleased]: {0}/compare/v{1}...HEAD".format(root, version)
+        lines.insert(index + 1, "[{0}]: {1}/releases/tag/v{0}".format(version, root))
+        return ("first release: [Unreleased] → compare/v{0}...HEAD (it pointed "
+                "at {1}, there being no earlier tag to compare from), added "
+                "[{0}] tag ref".format(version, url),
+                [lines[index], lines[index + 1]])
+    return ("none — first release: the trailing link-reference block has no "
+            "`[Unreleased]:` definition to take a repository URL from, so "
+            "nothing was rewritten and `## [{0}]` has no link ref — add "
+            "`[{0}]: <repo>/releases/tag/v{0}`".format(version), [])
 
 
 # Versions with a `## [x.y.z]` section and no tag anywhere — nothing was ever
@@ -1189,13 +1332,15 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
         _receipt("skipped", "cannot read {0}: {1} — nothing was written, "
                             "nothing consumed".format(changelog, exc),
                  ["a changelog this script can assemble into needs a "
-                  "`## [Unreleased]` heading and at least one `## [x.y.z]` "
-                  "release heading below it — the newest release section is "
-                  "the anchor the new one is inserted above, and this script "
-                  "will not guess where a release section belongs",
-                  "cutting a first release: seed that anchor with a section "
-                  "for the last tag that predates the file, rather than "
-                  "letting this script invent history it cannot know"])
+                  "`## [Unreleased]` heading. With one or more `## [x.y.z]` "
+                  "release headings below it the new section is inserted above "
+                  "the newest of them; with none, this is a first release and "
+                  "the section is cut directly below `## [Unreleased]`",
+                  "what it will not do is guess: with no `## [Unreleased]` "
+                  "heading there is no position in the file it can defend, and "
+                  "it refuses rather than picking one. Seeding a release "
+                  "section for a version that never shipped is no longer the "
+                  "way to cut a first release, and never was a good one"])
         return SKIPPED
     lines = text.splitlines()
 
@@ -1217,11 +1362,24 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
                             "assembling again would duplicate a release heading".format(version))
         return REFUSED
 
+    # Three states here, not two. A repo with releases has an unambiguous
+    # anchor and keeps using it. A repo cutting its genuine first release has
+    # no anchor and never will have had one, and refusing that left the
+    # documented way forward as hand-writing a release section for a version
+    # that never shipped — a maintainer inventing history to satisfy a parser,
+    # from a tool whose whole design is not doing that. A file whose shape
+    # cannot defend either position is still refused, and says what would
+    # decide it.
+    first_release = False
     try:
         anchor = _anchor(headings)
-    except BadFragment as exc:
-        _receipt("refused", str(exc))
-        return REFUSED
+    except BadFragment:
+        try:
+            anchor = _first_release_anchor(lines, headings, _inert_lines(text))
+        except BadFragment as undecidable:
+            _receipt("refused", str(undecidable))
+            return REFUSED
+        first_release = True
 
     # `[Unreleased]` means "goes out in the next release", so it goes out in it.
     # Leaving it behind strands the entries twice over: the tag ships silently
@@ -1250,8 +1408,17 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
     else:
         body = (list(lines[:unreleased_at + 1]) + [""] + _section_lines(section)
                 + list(lines[anchor:]))
-    rewritten = _rewrite_links(body, version)
-    links, written_refs = rewritten if rewritten else (None, [])
+    if first_release and anchor >= len(lines):
+        # Nothing followed `[Unreleased]`, so the section is now the tail of the
+        # file and `_section_lines`' trailing blank would become a trailing blank
+        # line in the released file.
+        while len(body) > 1 and not body[-1]:
+            body.pop()
+    if first_release:
+        links, written_refs = _first_release_links(body, version)
+    else:
+        rewritten = _rewrite_links(body, version)
+        links, written_refs = rewritten if rewritten else (None, [])
 
     assembled = "\n".join(body) + "\n"
     try:
@@ -1271,6 +1438,14 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
             "{0} ({1})".format(name.capitalize(), sum(1 for f in fragments if f.section == name))
             for name in SECTIONS if any(f.section == name for f in fragments)),
     ]
+    if first_release:
+        details.insert(0, (
+            "first     no `## [x.y.z]` release heading in CHANGELOG.md, so this "
+            "is its first release: the section was inserted directly below the "
+            "`## [Unreleased]` heading on line {0}, the one position in the file "
+            "this script can defend. Detected, not assumed — a single existing "
+            "release heading would have anchored it instead."
+        ).format(unreleased_at + 1))
     if links:
         details.append("links     " + links)
     else:
