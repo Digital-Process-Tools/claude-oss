@@ -72,6 +72,11 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    `tag_pattern`, that is the same finding as the stop-and-ask at the top of this file, reaching you
    from the other direction.
 
+   The reverse is now true as well: `tag_pattern` decides the range, not just the tag you are about
+   to write. A pattern that disagrees with how this repo actually tagged its last release anchors the
+   audit somewhere else — or reports `first-release` in a repo with releases — so a `scope` that does
+   not match the tag you expect is a config finding, not a delta.
+
    Then, and only for the two computable states:
 
    ```

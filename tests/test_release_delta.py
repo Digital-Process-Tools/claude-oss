@@ -776,6 +776,62 @@ def test_a_match_that_matches_everything_is_reported_as_unscoped(tmp_path):
     assert module._scope(str(repo), "v*", None)["scope"] == "v*"
 
 
+def test_a_config_that_will_not_decode_is_unscoped_rather_than_a_traceback(tmp_path):
+    """`read_text` raises UnicodeDecodeError, which is a ValueError, not an OSError.
+
+    So an `except OSError` around it lets a `.oss.json` saved in some other encoding
+    kill the gate with a traceback, no receipt and an exit code outside the three the
+    module documents -- in place of the unscoped range it exists to report. It is the
+    same brace this file already puts behind git's own output, one file along, and it
+    is likeliest on the Windows leg a POSIX run cannot observe.
+    """
+    module = _module()
+    repo = _init(tmp_path / "mojibake")
+    _commit(repo, "a.txt", "first")  # so could-not-run can only come from the config
+    config = Path(repo) / ".oss.json"
+    config.write_bytes(b'{"release": {"tag_pattern": "v\xff{version}"}}')
+
+    scope = module._scope(str(repo), None, None)
+    assert scope["scope"] is None
+    assert "could not be read" in scope["scope_reason"]
+
+    payload = module.compute(str(repo))
+    assert payload["state"] != "could-not-run", "a config's encoding must not block"
+    assert module.receipt(payload)
+
+    # The pair: the same bytes as UTF-8 scope, so the reason above is about the
+    # encoding and not about the fixture or the key.
+    config.write_text(
+        json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
+    )
+    assert module._scope(str(repo), None, None)["scope"] == "v*"
+
+
+def test_a_match_that_could_forge_a_receipt_line_is_refused(tmp_path):
+    """`scope` is printed at column 0 and is not flattened on the way out.
+
+    The config route already refuses a control character in `tag_pattern`; --match
+    took the same value straight through into the payload and the receipt, so one
+    newline in it wrote a second `release-delta:` line under the first. A protection
+    applied on one of two routes reads, in the receipt, exactly like one applied on
+    both.
+    """
+    module = _module()
+    repo = _init(tmp_path / "forge")
+    forged = "v*\nrelease-delta: delta"
+
+    scope = module._scope(str(repo), forged, None)
+    assert scope["scope"] is None
+    assert "control character" in scope["scope_reason"]
+    assert "\n" not in scope["scope_reason"]
+
+    receipt = module.receipt(dict(module._could_not_run("no"), **scope))
+    assert receipt.count("release-delta:") == 1, receipt
+
+    # The pair: an ordinary glob is carried through untouched.
+    assert module._scope(str(repo), "v*", None)["scope"] == "v*"
+
+
 def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
     """Found by running the script on a real checkout, not by reading it.
 

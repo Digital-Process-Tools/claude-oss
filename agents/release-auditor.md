@@ -65,7 +65,10 @@ Unmatched, `git describe` returns the newest tag of *any* namespace, so in a rep
 nightlies, candidates or per-service releases the delta computes cleanly over a fraction of the real
 range. Nothing is missing from that receipt — which is why `could-not-run` never fires for it.
 
-- **`scope` set** — the range was anchored inside one tag namespace. Say which glob, once.
+- **`scope` set** — the range was anchored inside one tag namespace. Say which glob, once. It is
+  derived from a config key, so it can disagree with how the repo actually tags: a `first-release` or
+  a suspiciously short range in a repo that plainly has releases is a **wrong glob**, not an empty
+  history, and that is a finding about the config rather than an audit you can complete.
 - **`scope: null`, printed as `UNSCOPED`** — **this does not stop the release**, and you must not
   treat it as one. A repo that has not said how its tags are spelled is common and legitimate.
   Report `scope_reason` verbatim in your verdict, in every round, and say plainly that anything

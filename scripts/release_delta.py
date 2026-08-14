@@ -175,6 +175,11 @@ def _one_line_scope(text, room=0):
     return _one_line(text, SCOPE_REASON_LIMIT + room)
 
 
+def _has_control(text):
+    """Text that would forge a receipt row or reach git's argv as something else."""
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in text)
+
+
 def _unscoped(reason, source=None, room=0):
     return {
         "scope": None,
@@ -194,7 +199,12 @@ def _read_config(path):
     """
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
+        # UnicodeDecodeError, not just OSError: it is a ValueError, so a config saved
+        # in another encoding -- likeliest on the Windows leg -- would otherwise leave
+        # this function by raising, and take the whole gate with it. The same brace
+        # `_git` puts behind git's output, one file along, and for the same reason: a
+        # promise never to raise has to hold for the case nobody predicted too.
         if not path.exists():
             return None, "there is no {0} at {1}".format(CONFIG_NAME, path)
         return None, "{0} could not be read ({1})".format(path, type(exc).__name__)
@@ -220,6 +230,17 @@ def _scope(repo, match, config):
                  `--match` and passing nothing are the same question.
     """
     if match:
+        if _has_control(match):
+            # The same refusal the config route makes below, on the other route in.
+            # `scope` is printed at column 0 and is not flattened on the way out, so
+            # one newline here writes a second `release-delta:` line under the first
+            # -- and a protection applied to one of two routes reads, in the receipt,
+            # exactly like one applied to both.
+            return _unscoped(
+                "--match carries a control character, so it is not a tag glob, and {0}"
+                .format(UNSCOPED_CONSEQUENCE),
+                "--match",
+            )
         if match.strip("*") == "":
             return _unscoped(
                 "--match was given as {0!r}, which matches every tag, so {1}".format(
@@ -277,7 +298,7 @@ def _scope(repo, match, config):
             CONFIG_NAME,
             room,
         )
-    if any(ord(ch) < 32 or ord(ch) == 127 for ch in pattern):
+    if _has_control(pattern):
         # A config value reaching git's argv and this receipt's own lines. It is a
         # tracked file rather than a stranger's, but a control character in it would
         # forge a receipt row, and a tag spelled with one is not a tag anybody made.
