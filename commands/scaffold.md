@@ -69,6 +69,14 @@ fails outright. Hence the `oss-` prefix, so it is still obvious in a directory l
 plugin because CI checks out the repo and nothing else: a workflow calling a plugin path
 is a red build on day one.
 
+The generated workflow installs that script's parser before running it. Without the
+install step the checker reports `skipped` and exits non-zero — which is the checker
+being right and the job being red anyway. It is a gap a scaffolded repo cannot see in
+itself: with zero fragments the checker reaches a verdict without needing a parser, so
+the job goes green on the scaffold pull request and only fails on the first real change
+after it. `.oss/README.md` names the same package for running the check on your own
+machine, which CI does not cover.
+
 The fragment directory the workflow polices is created alongside it, holding a
 `changelog.d/README.md` that explains the naming. An absent directory is a *failure* to
 the checker, not an empty one, so a workflow installed without it is red on the pull

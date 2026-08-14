@@ -416,6 +416,17 @@ subdirectories are not supported and a symlink there fails outright. So it keeps
 - `assemble_changelog.py` — validates changelog fragments and folds them into
   `CHANGELOG.md` at release time. It lives in your repository rather than in the plugin
   because CI checks out your repository and nothing else.
+
+## Running the fragment check yourself
+
+It parses each fragment with __PACKAGES__ and refuses to fall back to scanning the text
+when that is missing — it reports `skipped` and claims nothing. The generated workflow
+installs it; your machine is not covered by that, so before pushing:
+
+```bash
+python3 -m pip install __PACKAGES__
+python3 .oss/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
+```
 """
 
 CHANGELOG_WORKFLOW = """name: oss changelog
@@ -434,6 +445,16 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      # The checker parses each fragment and refuses to fall back to text scanning when
+      # its parser is absent -- it reports `skipped`, claims nothing, and exits non-zero.
+      # Correct of it, and the job is red anyway, so the parser has to be installed here.
+      # This step is easy to leave out and hard to miss the absence of: a freshly
+      # scaffolded repo has no fragments, and with none the checker reaches a verdict
+      # without ever needing a parser. The first pull request that carries a fragment is
+      # the first one that fails, long after the scaffold was verified as working.
+      - name: Install the fragment parser
+        run: python3 -m pip install --disable-pip-version-check __PACKAGES__
 
       - name: Fragments parse and name a real section
         run: python3 __DIR__/assemble_changelog.py --check --dir __FRAGMENTS__ --changelog CHANGELOG.md
@@ -481,13 +502,31 @@ def _note_comment():
     return "".join("# {}\n".format(line) for line in _wrap(OWNED_NOTE)) + "\n"
 
 
+#: Import name -> the package that provides it, for the one script this plugin vendors
+#: into a repo. Declared rather than spelled inline in the workflow so a second
+#: dependency has one place to be added, and so the test suite can hold this map against
+#: the guarded imports in `assemble_changelog.py` -- a dependency added there and not
+#: here fails our tests instead of somebody's first pull request (#17).
+ASSEMBLER_DEPENDENCIES = {"markdown_it": "markdown-it-py"}
+
+
+def _assembler_packages():
+    return " ".join(sorted(ASSEMBLER_DEPENDENCIES.values()))
+
+
 def _owned_readme(config, plugin_root):
-    return OWNED_README.replace("__DIR__", OWNED_DIR)
+    return (
+        OWNED_README.replace("__DIR__", OWNED_DIR)
+        .replace("__FRAGMENTS__", fragments_dir(config))
+        .replace("__PACKAGES__", _assembler_packages())
+    )
 
 
 def _owned_workflow(config, plugin_root):
-    body = CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR).replace(
-        "__FRAGMENTS__", fragments_dir(config)
+    body = (
+        CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR)
+        .replace("__FRAGMENTS__", fragments_dir(config))
+        .replace("__PACKAGES__", _assembler_packages())
     )
     return _note_comment() + body
 

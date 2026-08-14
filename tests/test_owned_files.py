@@ -12,6 +12,9 @@ what makes the third contract survive being discovered six months later by a per
 who was not in this conversation.
 """
 
+import ast
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,6 +45,127 @@ def _config(**overrides):
 
 def test_there_are_owned_files():
     assert scaffold.OWNED, "no owned files -- every check below would vacuously pass"
+
+
+# ------------------------------------------------- the workflow can run what it calls
+#
+# The generated workflow set up Python and ran the vendored assembler with nothing in
+# between. The assembler guards its one import and, when it is absent, reports `skipped`
+# and exits non-zero -- correctly, and the job is red anyway. Observed live on a
+# scaffolded repo's first pull request that carried a fragment (#17).
+
+
+def _workflow_steps():
+    """The generated workflow's run/uses lines, in order, as plain text.
+
+    Deliberately not a YAML parse: the assertion is about what comes before what in the
+    file a maintainer reads, and pyyaml is not a dependency of this repo.
+    """
+    body = scaffold.render_owned(".github/workflows/oss-changelog.yml", _config())
+    return [line.strip() for line in body.splitlines() if line.strip().startswith("run:")]
+
+
+def _guarded_import_roots(path):
+    """Top-level modules imported inside a try/except -- the third-party ones.
+
+    A guarded import is the shape of "this may not be installed". Reading them off the
+    source rather than naming markdown-it-py here means a second dependency added to the
+    assembler fails this suite instead of failing somebody's first pull request.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    roots = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Import):
+                roots.update(alias.name.split(".")[0] for alias in inner.names)
+            elif isinstance(inner, ast.ImportFrom) and inner.module and not inner.level:
+                roots.add(inner.module.split(".")[0])
+    return roots
+
+
+def test_the_assembler_has_a_guarded_dependency_to_install():
+    """Positive control. If the assembler ever stops guarding an import, the two tests
+    below would be asserting about an empty set and pass without checking anything.
+    """
+    roots = _guarded_import_roots(REPO_ROOT / "scripts" / "assemble_changelog.py")
+    assert roots, "no guarded imports found -- the checks below would vacuously pass"
+
+
+def test_every_guarded_dependency_is_declared_for_the_workflow():
+    """The drift guard. The workflow installs what scaffold declares; this pins that
+    declaration to what the vendored script actually needs.
+    """
+    roots = _guarded_import_roots(REPO_ROOT / "scripts" / "assemble_changelog.py")
+    assert roots == set(scaffold.ASSEMBLER_DEPENDENCIES)
+
+
+def test_the_workflow_installs_the_assembler_dependency_before_running_it():
+    steps = _workflow_steps()
+    assert steps, "no run steps in the workflow -- the check below would pass vacuously"
+    installs = [i for i, step in enumerate(steps) if "pip install" in step]
+    runs = [i for i, step in enumerate(steps) if "assemble_changelog.py" in step]
+    assert installs, "the workflow installs nothing"
+    assert runs, "the workflow never runs the assembler"
+    assert min(installs) < min(runs), steps
+
+
+def test_the_workflow_installs_every_declared_dependency_by_its_package_name():
+    body = scaffold.render_owned(".github/workflows/oss-changelog.yml", _config())
+    for package in scaffold.ASSEMBLER_DEPENDENCIES.values():
+        assert package in body, package
+
+
+def test_the_owned_readme_names_the_dependency_a_maintainer_needs_locally():
+    """CI is not the only place this runs. A maintainer checking fragments before
+    pushing needs the same package, and nothing said so.
+    """
+    body = scaffold.render_owned(".oss/README.md", _config())
+    for package in scaffold.ASSEMBLER_DEPENDENCIES.values():
+        assert package in body, package
+
+
+def test_zero_fragments_reach_a_verdict_without_the_parser(tmp_path):
+    """Characterisation, not a regression guard -- this passes before and after the fix,
+    and that is the point of writing it down.
+
+    It is why the defect survived a scaffold-and-check: the scaffold pull request has no
+    fragments, and with none the assembler concludes without needing a parser, so the job
+    is green. The first pull request that carries a fragment is the first one that is
+    red, and by then the maintainer has already verified the scaffold works.
+    """
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "markdown_it.py").write_text(
+        "raise ImportError('not installed on this runner')\n", encoding="utf-8"
+    )
+    fragments = tmp_path / "changelog.d"
+    fragments.mkdir()
+    env = dict(os.environ, PYTHONPATH=str(shim))
+    command = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "assemble_changelog.py"),
+        "--check",
+        "--dir",
+        str(fragments),
+        "--changelog",
+        str(tmp_path / "CHANGELOG.md"),
+    ]
+
+    empty = subprocess.run(
+        command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert empty.returncode == 0, empty.stdout
+
+    (fragments / "17.fixed.md").write_text("- a fragment (#17).\n", encoding="utf-8")
+    carried = subprocess.run(
+        command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert carried.returncode != 0, carried.stdout
+    assert "markdown-it-py" in carried.stdout
 
 
 def test_owned_files_live_in_one_directory():
