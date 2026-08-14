@@ -185,11 +185,13 @@ Four questions, every diff:
 - Does the fix reach the path the **caller actually uses**?
 - Is anything here **not this bug's blast radius**?
 
-**The developer spawns its own reviewer against its own committed diff** and reports what it flagged,
-fixed and refused. What that buys is not independence — it is one agent instead of nine, no PR
-dependency, and no re-paying a large author context. What is *not* independent, and cannot be, is the
-**acceptance**: who keeps which findings stays with the author deliberately, because a bad finding
-needs arguing down, and that is an outcome no bounce-and-repush loop produces.
+**The developer spawns its own reviewer and auditor against its own committed diff** — one generalist
+read, one fixed four-class checklist, in one message — and reports what each flagged, fixed and
+refused, including a spawn or a class that did not run. What that buys is not independence — it is
+two agents instead of nine, no PR dependency, and no re-paying a large author context. What is *not*
+independent, and cannot be, is the **acceptance**: who keeps which findings stays with the author
+deliberately, because a bad finding needs arguing down, and that is an outcome no bounce-and-repush
+loop produces.
 
 **The maintainer's own review is light and the list is closed:**
 
