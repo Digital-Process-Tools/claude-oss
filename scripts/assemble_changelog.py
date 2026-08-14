@@ -55,7 +55,7 @@ def _find_repo_root(start: Path) -> Optional[Path]:
     first match instead of assuming a fixed number of parents: the script
     lives at `scripts/` here but is vendored into scaffolded repos as
     `.oss/assemble_changelog.py`, a different depth, and a hardcoded parent
-    count is the same bug with a different number (#20). Returns None
+    count is the same bug with a different number. Returns None
     rather than guessing when no `.git` is found anywhere above."""
     for candidate in (start, *start.parents):
         if (candidate / ".git").exists():
@@ -1158,7 +1158,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     def _resolve(value: Optional[str], flag: str) -> Optional[Path]:
         # No `--dir`/`--changelog` given, and no `.git` found above this
         # script to derive a default from: say so, rather than composing a
-        # path out of a guess and failing on that instead (#20).
+        # path out of a guess and failing on that instead.
         if value is None:
             _receipt("skipped",
                      "could not find the repository root above {0} "
