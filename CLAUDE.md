@@ -112,8 +112,22 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-The changelog gate has never run on a real pull request — pushing to `main` does not trigger it. No
-issue has gone triage → developer → merge. `/oss:setup`'s probe half is prose rather than code, and
-`v0.1.0` is not tagged, so `--check-links` reports a missing link ref.
+Three of the four claims that stood here are now false, which is why they are being rewritten rather
+than kept: the changelog gate runs on every pull request and has done so on each one this release
+carries, the tracker has gone issue → developer → review → merge repeatedly, and `/oss:setup`'s probe
+is code rather than prose since `--probe` landed.
+
+What remains unproven is the part that matters most, and it moved while this release was being cut.
+Most of what this release says about a *scaffolded* repo still rests on tests and scratch runs rather
+than on a repo somebody maintains. But the path was walked once, on
+`Digital-Process-Tools/claude-5h-window-spread`, and it produced two defects within the hour — the
+`release` block of `.oss.json` being project-scope while `/oss:setup` git-excludes the whole file, and
+a null `commit_subject` with no defined behaviour beside a null `tag_pattern` that has one.
+
+One real use, two findings. Treat the ratio as the measurement it is: the surface is thin because it
+has barely been touched, not because it is sound.
+
+The owned files also only reach an already-scaffolded repo when someone re-runs `/oss:scaffold`
+there, and nothing tells them to.
 
 Treat this as tested, not proven.
