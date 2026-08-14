@@ -49,6 +49,55 @@ Only missing files are created. **An existing file is never overwritten** — th
 SECURITY.md is a decision somebody made, and this ships a default. A default must not win against a
 decision.
 
+The full list, so a plan line is never the first time you hear of a file:
+
+| File | What it is |
+| --- | --- |
+| `CLAUDE.md` | orientation for the next agent; carries the default branch and test command |
+| `SECURITY.md` | where a reporter goes |
+| `CODE_OF_CONDUCT.md` | the usual one |
+| `.github/ISSUE_TEMPLATE/bug_report.md` | so a report arrives with what it needs |
+| `.github/ISSUE_TEMPLATE/feature_request.md` | likewise |
+| `.github/ISSUE_TEMPLATE/config.yml` | keeps blank issues enabled |
+| `.github/PULL_REQUEST_TEMPLATE.md` | what a PR has to say |
+| `.github/dependabot.yml` | weekly action bumps |
+| `.gitignore` | the usual noise |
+| `.supertool.json` | **changes your own tooling mid-session — see below** |
+| `.oss/README.md` | the ownership table, stated inside the repo — **replaced every run** |
+| `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
+| `.github/workflows/oss-changelog.yml` | the workflow that calls it — **replaced every run** |
+
+The first nine are created once when absent and are yours afterwards. The last three are ours and
+are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
+already has everything.
+
+## `.supertool.json` moves the ground you are standing on
+
+`--apply` writes `.supertool.json` with `"presets": ["git", "github"]`, and roughly thirty `git-*`
+and `gh-*` ops come into existence the moment it lands. **The op listing you are working from was
+captured at session start, before that file existed, and is never refreshed.** The session that
+installs the config is the one that cannot see what it installed.
+
+What that feels like is a run of raw commands rejected one at a time — `gh label list`,
+`gh issue create`, `git commit`, `git push` each bounced by the guard with the op named. The
+messages are good and the guard is right; the cost is one round trip per discovery, and `ops` is
+~30KB so the blind route is not cheap either.
+
+Re-read the inventory once, immediately after `--apply`:
+
+```bash
+supertool 'ops-compact'
+```
+
+~2KB, and it is the only way the rest of this session knows what it can call.
+
+One trap in the new inventory, because two adjacent ops take their target two different ways:
+`gh-issue-create` reads the repo from its **payload** (`repo = "OWNER/NAME"`), not from a leading
+`repo:` op, and defaults to whatever repo `.supertool.json` resolved from. Filing an issue about
+this plugin from inside a scaffolded repo lands it in the wrong tracker unless the payload says
+otherwise. supertool refuses the `repo:` op here rather than silently guessing — trust that refusal
+and set it in the payload.
+
 ## Three contracts, and the repo can see which is which
 
 | Kind | Where | On update |

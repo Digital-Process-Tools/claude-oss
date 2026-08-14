@@ -34,6 +34,11 @@ Skill(manager)
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call
    gated on the verified merge result, and the default branch's own run gets checked after the squash.
 
+   **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
+   suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the
+   op makes still applies. Settle this before the first tick rather than at the merge step, where
+   the review is already spent — see *Before the first tick* in the manager skill.
+
 5. **Write one state entry.** The decision and the one reason for it. Reasoning that only matters to
    a pull request belongs in that pull request.
 

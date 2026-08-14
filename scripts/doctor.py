@@ -128,11 +128,22 @@ MEMORY_CONFIG_DIR = ".claude/remember"
 def memory_layout(project_dir):
     """Where the memory plugin keeps its config and its saved sessions.
 
-    Two different places, and conflating them was a real bug here: identity.md lives
-    beside config.json in `.claude/remember/`, while sessions go to the `data_dir` that
-    config names (`.remember` by default). This checker looked for identity inside the
-    DATA dir, so it reported "no identity" on every correctly configured repo -- and I
-    believed it about two of our own before someone said they were surprised.
+    Two different places: `config.json` sits in `.claude/remember/`, while sessions go
+    to the `data_dir` that config names (`.remember` by default).
+
+    identity.md can sit in either, and which one is READ depends on the install layout,
+    which is why this went round twice. Measured against the plugin's session-start
+    hook rather than reasoned about: it tries `$REMEMBER_DIR/identity.md` (the data
+    dir), then the data dir's parent, then the plugin's own directory. In a local
+    install the plugin's own directory IS `<repo>/.claude/remember/`, so identity there
+    is read -- as the last-resort fallback. In a marketplace or dependency install,
+    which is how this plugin declares it, the plugin lives outside the repo entirely
+    and `<repo>/.claude/remember/identity.md` is never read at all.
+
+    So the data dir is the location that works in every layout, and it is also the safe
+    one: the plugin writes a `.gitignore` containing `*` there, so the file cannot be
+    committed by accident. `.claude/` is partly tracked in a scaffolded repo and is not
+    safe in the same way.
     """
     root = Path(project_dir)
     config_dir = root / MEMORY_CONFIG_DIR
@@ -144,6 +155,14 @@ def memory_layout(project_dir):
     except (OSError, ValueError):
         pass
     return config_dir, data_dir
+
+
+def _display(project_dir, path):
+    """A path the reader can act on, relative to the repo when it is inside it."""
+    try:
+        return path.relative_to(Path(project_dir)).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def check_memory(project_dir):
@@ -172,19 +191,66 @@ def check_memory(project_dir):
     # inconvenient -- which is widening a check until a real gap disappears. Core
     # memories are what the agent LEARNED; identity is who it is, and it is the file
     # injected at session start. They are not substitutes.
-    # Beside config.json, not in the data dir. `.remember/` holds saved sessions.
-    identity = sorted(config_dir.glob("identity*.md"))
-    if not identity:
+    #
+    # Data dir first, because that is the hook's first choice and the only location
+    # read in every layout (see memory_layout).
+    #
+    # Not the same move as accepting core-memories.md, which widened WHAT counts until
+    # an inconvenient gap vanished. This matches WHERE we look to where the reader
+    # looks, and the config-dir branch below is a WARN precisely so that widening does
+    # not turn a file nobody reads into a pass.
+    identity = sorted(store.glob("identity*.md"))
+    if identity:
         report(
-            "WARN",
-            "{}: no identity.md. It records who the AGENT is here -- name, voice, working "
-            "style -- and is injected at session start, so without it every session "
-            "begins as nobody in particular. Saving still works, which is exactly what "
-            "makes the gap invisible. Seed it from the memory plugin's "
-            "identity.example.md and edit it.".format(MEMORY_DIR),
+            "OK",
+            "memory store configured ({} in {})".format(
+                identity[0].name, _display(project_dir, store)
+            ),
         )
         return
-    report("OK", "memory store configured ({})".format(identity[0].name))
+
+    stray = sorted(config_dir.glob("identity*.md"))
+    if stray:
+        # Read only when the plugin is installed INTO the repo, which is what a
+        # scripts/ directory beside config.json means. Otherwise the file exists, looks
+        # deliberate, and is never injected -- the worst of the three, because every
+        # signal says configured. Two of our own repos are in exactly this state.
+        if (config_dir / "scripts").is_dir():
+            report(
+                "OK",
+                "memory store configured ({} in {}, local install)".format(
+                    stray[0].name, _display(project_dir, config_dir)
+                ),
+            )
+            return
+        report(
+            "WARN",
+            "{} exists but is never read. The plugin is not installed into this repo, so "
+            "the session-start hook resolves identity against {} and the plugin's own "
+            "directory -- never this one. It looks configured from every angle except the "
+            "one that matters. Move it to {}/identity.md.".format(
+                _display(project_dir, stray[0]),
+                _display(project_dir, store),
+                _display(project_dir, store),
+            ),
+        )
+        return
+    # Name the paths consulted. The previous message named MEMORY_DIR while the lookup
+    # read the config dir, so following it to the letter left the warning byte-for-byte
+    # unchanged and gave the reader nothing to tell "wrong place" from "wrong content".
+    report(
+        "WARN",
+        "no identity.md in {} or {}. It records who the AGENT is here -- name, voice, "
+        "working style -- and is injected at session start, so without it every session "
+        "begins as nobody in particular. Saving still works, which is exactly what makes "
+        "the gap invisible. Seed {}/identity.md from the memory plugin's "
+        "identity.example.md and edit it -- that directory self-ignores, so the file "
+        "cannot be committed by accident.".format(
+            _display(project_dir, store),
+            _display(project_dir, config_dir),
+            _display(project_dir, store),
+        ),
+    )
 
 
 def check_jit_rules(project_dir):

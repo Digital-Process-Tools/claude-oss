@@ -50,7 +50,7 @@ label that does not exist on the repo.
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
 | Filing | `gh-issue-create:@FILE` |
-| Merging | `gh-pr-merge:N:squash` |
+| Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
 
 The ops are not wrappers. `gh-pr:N:status` returns state, mergeability, conflicts, branch **and the
 check tally already summed** — the exact arithmetic that gets got wrong by hand.
@@ -215,6 +215,39 @@ Any suite with silence assertions carries a guard that **fails loudly when the h
 anything**, and every "must not fire" case is paired with a "must fire" case in the same fixture. If
 the guard is missing, the silence half is decoration and should be treated as untested rather than as
 passing.
+
+## Before the first tick: the merge call has to be able to run
+
+`gh-pr-merge` is the only op in the table that writes, and by default **it writes nothing**. Without
+a `|force` suffix it evaluates every gate, prints the preview, and exits non-zero with
+`requires explicit confirmation`. So a loop reaches the merge step with all gates satisfied, having
+spent the whole review, and then cannot merge. Arrange this at setup, not at the merge.
+
+Three opt-outs exist, and they are not equivalent:
+
+| Opt-out | Reach |
+| --- | --- |
+| `\|force` on the call | that one call. Per-merge, explicit, leaves a record in the command |
+| `SUPERTOOL_NO_PUBLISH_CONFIRM=1` | every op in the environment, for as long as it is exported |
+| `"no_publish_confirm": true` in `.supertool.json` | every confirm-gated op in that project, permanently |
+
+**Prefer `|force`.** The other two are the same switch with a wider blast radius: the confirmation
+gate is shared, so turning it off for merging turns it off for the publishing ops in the same
+project too. That is three ops today, and the count is a fact about the installed presets rather
+than a promise — a project that later enables a publishing preset widens what it already disabled,
+silently.
+
+A second mechanism sits in front of all three and is not the same thing: the harness's own
+permission handling can deny the call before supertool sees it, and an allowlist entry does not
+necessarily clear it. Two consequences worth knowing before the first tick, because both cost a
+round trip each to rediscover:
+
+- `gh-pr-merge:N:squash` and `gh-pr-merge:N:squash|force` are **different command strings**, so an
+  approval of the first does not carry to the second.
+- The obvious fallback is worse than the thing it replaces. Raw `gh pr merge` is refused by
+  supertool's own guard, and rightly: the op is what does the leg-level arithmetic and reads
+  `state` / `mergedAt` / `mergeCommit` back. **Do not route around a denied merge.** Say the call
+  was denied, name it exactly, and let the maintainer run or permit it.
 
 ## Merge gates
 
