@@ -18,9 +18,30 @@ Stdlib plus `markdown-it-py`, which is the one dependency and is the point.
 dependencies; this repo still ships one file and no install step, and nothing
 a user installs imports this — it is a repo-internal release tool.
 
-    python3 .github/scripts/assemble_changelog.py --version 0.24.0
-    python3 .github/scripts/assemble_changelog.py --check     # CI: names *and* bodies
-    python3 .github/scripts/assemble_changelog.py --count     # exact fragment count
+    python3 scripts/assemble_changelog.py --version 0.24.0 --dir changelog.d --changelog CHANGELOG.md
+    python3 scripts/assemble_changelog.py --check     # CI: names *and* bodies
+    python3 scripts/assemble_changelog.py --count     # exact fragment count
+
+**The fold names its own target; the read-only modes derive one.** `REPO` is
+found by walking up from *this file* for a `.git`, which answers "which
+repository am I stored in" -- not "which repository is being released". Those
+coincide for the copy vendored into a managed repo at
+`.oss/assemble_changelog.py` and they do not coincide for the copy shipped
+inside the plugin, whose own checkout is always a clone: the walk there always
+succeeds, and always on the wrong repository, so the `None` arm that refuses
+cleanly is unreachable in precisely the deployment where the guess is wrong.
+
+The requirement is **unconditional** rather than applied to one copy, and that
+is a decision, not an oversight. Nothing observable distinguishes the two: both
+copies sit at some depth inside a real clone, and the difference between them
+is what the caller meant, which is not on disk. A detector would be guessing,
+and the two directions of a wrong guess are not comparable -- a false negative
+rewrites `CHANGELOG.md` and deletes every fragment in a repository nobody
+named, while a false positive costs one line of typing that the refusal itself
+prints. So the vendored copy pays the same two flags, and every invocation this
+plugin generates passes them. The read-only modes keep the derived default:
+they only read, and requiring the flags there would break the `--check` gate in
+every managed repo at once.
 
 Exit codes: 0 ok, 1 skipped (nothing to do, or nothing *provable* — stated
 either way), 2 refused (a finding).
@@ -1691,10 +1712,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--version", help="the version being cut, x.y.z")
     parser.add_argument("--date", default=datetime.date.today().isoformat(),
                         help="release date, YYYY-MM-DD (default: today)")
-    parser.add_argument("--changelog",
-                        default=str(REPO / "CHANGELOG.md") if REPO else None)
-    parser.add_argument("--dir", dest="directory",
-                        default=str(REPO / "changelog.d") if REPO else None)
+    # No argparse default on either. The derived value is applied per mode
+    # below -- read-only modes take it, the fold refuses without an explicit
+    # one -- and an argparse default would erase the distinction between "the
+    # caller named this" and "we guessed it", which is the whole question.
+    parser.add_argument("--changelog", default=None,
+                        help="path to CHANGELOG.md; required to fold, derived "
+                             "from this script's own repository for the "
+                             "read-only modes")
+    parser.add_argument("--dir", dest="directory", default=None,
+                        help="path to the fragment directory; required to "
+                             "fold, derived for the read-only modes")
     parser.add_argument("--dry-run", action="store_true", help="report, write nothing")
     parser.add_argument("--keep", action="store_true", help="do not delete consumed fragments")
     parser.add_argument("--check", action="store_true",
@@ -1705,21 +1733,68 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="print the fragment count as a bare integer, and nothing else")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    def _resolve(value: Optional[str], flag: str) -> Optional[Path]:
-        # No `--dir`/`--changelog` given, and no `.git` found above this
-        # script to derive a default from: say so, rather than composing a
-        # path out of a guess and failing on that instead.
-        if value is None:
+    def _resolve(value: Optional[str], flag: str,
+                 derived: Optional[Path]) -> Optional[Path]:
+        """Read-only modes only. Take what the caller passed, else the value
+        derived from this script's own location.
+
+        No `--dir`/`--changelog` given, and no `.git` found above this script
+        to derive a default from: say so, rather than composing a path out of
+        a guess and failing on that instead.
+        """
+        if value is not None:
+            return Path(value)
+        if derived is None:
             _receipt("skipped",
                      "could not find the repository root above {0} "
                      "(no .git there or in any parent) to derive a default "
                      "for {1}; pass it explicitly"
                      .format(Path(__file__).resolve(), flag))
             return None
-        return Path(value)
+        return derived
+
+    def _fold_target() -> Optional[Tuple[Path, Path]]:
+        """The fold's target, or a refusal that names what to pass.
+
+        Deliberately does not fall back to `REPO`. See the module docstring:
+        the derivation says which repository this file is *stored* in, the
+        fold needs the one being *released*, and no copy of this script can
+        tell whether those are the same. A refusal that only reported
+        something missing would turn a wrong-target write into a dead end, so
+        this prints the flags and a whole invocation.
+        """
+        missing = [flag for flag, value in (("--dir", args.directory),
+                                            ("--changelog", args.changelog))
+                   if value is None]
+        if not missing:
+            return Path(args.changelog), Path(args.directory)
+        _receipt("refused",
+                 "the fold rewrites CHANGELOG.md and deletes every consumed "
+                 "fragment, so it will not choose its own target: {0} {1} "
+                 "required and not given"
+                 .format(" and ".join(missing),
+                         "is" if len(missing) == 1 else "are"),
+                 ["pass      --dir <fragment directory> --changelog <changelog "
+                  "file>, both read relative to the directory you run this from",
+                  "example   --version {0} --dir changelog.d --changelog "
+                  "CHANGELOG.md".format(args.version),
+                  "why       the fold derives no default, in this copy or the "
+                  "one vendored into a managed repo. This file finds a "
+                  "repository root by walking up from itself, which names the "
+                  "repository it is stored in and not the one you are "
+                  "releasing; nothing on disk says whether those are the same",
+                  "untouched CHANGELOG.md was not read or written, and no "
+                  "fragment was consumed"])
+        return None
+
+    #: What the read-only modes fall back to. Composed here rather than at
+    #: argparse time so that `args.directory is None` still means "the caller
+    #: named nothing", which is what the fold gate reads.
+    derived_dir = (REPO / "changelog.d") if REPO else None
+    derived_changelog = (REPO / "CHANGELOG.md") if REPO else None
 
     if args.count:
-        directory = _resolve(args.directory, "--dir")
+        directory = _resolve(args.directory, "--dir", derived_dir)
         if directory is None:
             return SKIPPED
         try:
@@ -1735,13 +1810,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return OK
 
     if args.check_links:
-        changelog = _resolve(args.changelog, "--changelog")
+        changelog = _resolve(args.changelog, "--changelog", derived_changelog)
         if changelog is None:
             return SKIPPED
         return check_links(changelog)
 
     if args.check:
-        directory = _resolve(args.directory, "--dir")
+        directory = _resolve(args.directory, "--dir", derived_dir)
         if directory is None:
             return SKIPPED
         return check(directory)
@@ -1751,10 +1826,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             "(or pass --check / --count for the read-only modes)")
         return REFUSED
 
-    changelog = _resolve(args.changelog, "--changelog")
-    directory = _resolve(args.directory, "--dir")
-    if changelog is None or directory is None:
-        return SKIPPED
+    target = _fold_target()
+    if target is None:
+        return REFUSED
+    changelog, directory = target
     return assemble(changelog, directory, args.version, args.date,
                     dry_run=args.dry_run, keep=args.keep)
 
