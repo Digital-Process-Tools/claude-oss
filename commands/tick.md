@@ -30,7 +30,19 @@ Skill(manager)
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
    starting.
 
-4. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
+4. **Take the handback, then push and open the pull request.** An agent replies with a path, not a
+   document: a JSON report you query field by field, and a forge payload it wrote for you. Push its
+   branch, **read the body it wrote**, then hand the path over — one call, no body of your own:
+
+   ```bash
+   supertool 'gh-pr-create:@<pr_body.path from the report>'
+   ```
+
+   Both halves are in the skill under *What comes back is a file, not a document* and *Opening the
+   pull request*, including why the op rather than `gh pr create` and why reading the body is what
+   makes this a saving rather than a trick.
+
+5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call
    gated on the verified merge result, and the default branch's own run gets checked after the squash.
 
@@ -39,10 +51,10 @@ Skill(manager)
    op makes still applies. Settle this before the first tick rather than at the merge step, where
    the review is already spent — see *Before the first tick* in the manager skill.
 
-5. **Write one state entry.** The decision and the one reason for it. Reasoning that only matters to
+6. **Write one state entry.** The decision and the one reason for it. Reasoning that only matters to
    a pull request belongs in that pull request.
 
-6. **Arm the next tick, and keep working in this one.**
+7. **Arm the next tick, and keep working in this one.**
 
    ```
    ScheduleWakeup(delaySeconds=…, prompt="/oss:tick", reason="<what specifically is outstanding>")
