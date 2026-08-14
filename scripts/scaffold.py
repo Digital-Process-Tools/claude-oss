@@ -23,6 +23,7 @@ Python 3.9 compatible.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -860,6 +861,70 @@ _LABEL_COMMANDS = "Check with `gh label list`; create it with " + _LABEL_CREATE_
 _LABEL_PAGE = 500
 
 
+# A remote URL's userinfo is a credential often enough that it is treated as one every
+# time: `https://x-access-token:TOKEN@host/o/r` is what a CI checkout leaves behind, and
+# `https://TOKEN@host/o/r` -- the token standing alone as the username, with no password
+# field to key off -- is equally valid. So the rule is not "redact userinfo that looks
+# secret", it is "redact userinfo".
+# The span runs to the LAST `@` before the authority ends, not the first: an email as the
+# username is an ordinary spelling on more than one forge, and curl -- which is what git
+# drives for https -- reads `me@corp.example:TOKEN@host/o/r` that way. Splitting on the
+# first `@` leaves the password on the right of the split, printed. `/`, `\` and
+# whitespace all end the span; a backslash never separates a URL's authority from its
+# path, so excluding it is what keeps `C:\Users\bob@corp\repo` off this pattern.
+_URL_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^\s/\\]*@")
+# The same shape with no scheme, which is how a credential can reach free text: git's own
+# error lines quote whatever it was handed. A bare `user@host` with no password field is
+# left alone here -- it is the ssh remote spelling everybody has, and suppressing it would
+# cost the reader the host without protecting anything.
+_BARE_USERINFO = re.compile(r"(?<![\w@:.+\-])[\w.+\-][\w.+\-@]*:[^\s/\\]*@")
+_REDACTED = "[redacted]@"
+# What may still hold an `@` after redaction without anything having been missed: the
+# marker just written, and the scp-style `user@host:path` this deliberately keeps.
+_ACCOUNTED_AT = re.compile(r"\[redacted\]@|^[\w.+\-]+@(?=[^\s/:]+:)")
+# Userinfo is not the only place a URL carries a secret -- `?access_token=` is another,
+# and no part of a remote's query is worth quoting in a refusal. The scheme is what makes
+# the cut safe to take: a query belongs to a URL, and a path that happens to hold a `?`
+# is not one.
+_URL_QUERY = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://[^\s]*?(?=[?#])")
+
+
+def _without_credentials(text):
+    """Return ``text`` with any URL userinfo replaced by a marker.
+
+    Free-text safe: it rewrites the credential-shaped spans and leaves the rest, so an
+    error line keeps saying what went wrong. It is not a proof of absence -- that is what
+    ``_safe_origin`` adds for the one string known to be a whole URL.
+    """
+    text = _URL_USERINFO.sub(lambda m: m.group("scheme") + _REDACTED, text or "")
+    return _BARE_USERINFO.sub(_REDACTED, text)
+
+
+def _safe_origin(url):
+    """Return a remote URL safe to quote, or a phrase standing in for one that is not.
+
+    ``git remote get-url`` answers verbatim, and this module's answer is a report a
+    maintainer pastes. `doctor.py` states the contract this keeps: never echo a value
+    that could be a credential.
+
+    A URL's query is dropped whole rather than read, and an `@` surviving redaction means
+    the spelling was not one this recognises, so nothing about it is known -- and an
+    unrecognised spelling quoted anyway is the disclosure this exists to stop. Saying so
+    is the third state, not a failure. It costs a local path holding an `@` its display,
+    which is the honest price: the refusal still names the repo that was wanted.
+    """
+    url = (url or "").strip()
+    if not url:
+        return "empty"
+    shown = _without_credentials(url)
+    cut = _URL_QUERY.match(shown)
+    if cut and cut.end() < len(shown):
+        shown = shown[: cut.end()] + shown[cut.end()] + "[redacted]"
+    if "@" in _ACCOUNTED_AT.sub("", shown):
+        return "not shown (it carries userinfo in a spelling this could not normalise)"
+    return shown
+
+
 def _forge_label_names(repo_root, config):
     """Return ``(names, reason)`` -- the repo's label names, or ``None`` and why not.
 
@@ -884,7 +949,7 @@ def _forge_label_names(repo_root, config):
     if not ok:
         return None, (
             "{} has no readable origin remote ({}), so it was not assumed to be {}".format(
-                repo_root, detail, repo
+                repo_root, _without_credentials(detail), repo
             )
         )
     # Anchored, not a substring test. `owner/hello` occurs inside
@@ -898,7 +963,7 @@ def _forge_label_names(repo_root, config):
     wanted = repo.lower()
     if not (seen.endswith("/" + wanted) or seen.endswith(":" + wanted)):
         return None, "origin here is {}, not {}, so the forge was not asked".format(
-            origin.strip() or "empty", repo
+            _safe_origin(origin), repo
         )
 
     ok, out, detail = _run(
