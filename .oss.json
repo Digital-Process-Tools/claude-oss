@@ -24,6 +24,9 @@
     "tag_pattern": "v{version}",
     "merge_method": "squash",
     "commit_subject": null,
+    "create_release": true,
+    "draft": false,
+    "latest": true,
     "triggers": {
       "merged_prs": 10,
       "soak_hours": 48

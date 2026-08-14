@@ -62,9 +62,40 @@ LOCAL_KEYS = {"clone", "worktree_root", "state_file"}
 # gate that can be switched off is switched off on the day it is inconvenient, which is
 # the day it existed for. Keys that look like gates are refused, not ignored: an ignored
 # key reads as an accepted setting.
-RELEASE_KEYS = {"tag_pattern", "commit_subject", "merge_method", "triggers"}
+RELEASE_KEYS = {
+    "tag_pattern",
+    "commit_subject",
+    "merge_method",
+    "triggers",
+    "create_release",
+    "draft",
+    "latest",
+}
 MERGE_METHODS = {"squash", "merge", "rebase"}
 TRIGGER_KEYS = {"merged_prs", "soak_hours"}
+
+# Whether the tag becomes a GitHub Release, and what kind (#58).
+#
+# These are policy, not a gate, and they are policy about a *project* rather than
+# about a machine -- every maintainer of a repo should publish the same way -- so they
+# live in the tracked `.oss.json` and never in `.oss.local.json`.
+#
+# The shipped defaults are the conservative ones, and each is conservative about a
+# different thing:
+#
+#   create_release: false  Some projects tag deliberately without releasing. More to
+#                          the point, publishing is not this tool's decision to make
+#                          on a repo that never asked for it.
+#   draft: true            A draft is undoable; a published release has already
+#                          notified everyone watching by the time you regret it.
+#   latest: false          `Latest` changes what the repo's landing page shows, which
+#                          is outward-facing and belongs to whoever owns the page.
+#
+# Unset is a third state and not a quiet `false`: `release_publish_policy` reports
+# `stated`, and `release_publish.py` names the key in its skip reason, so a repo that
+# never chose is told what it would set rather than silently not releasing forever.
+PUBLISH_KEYS = ("create_release", "draft", "latest")
+PUBLISH_DEFAULTS = {"create": False, "draft": True, "latest": False}
 
 VERSION_PLACEHOLDER = "{version}"
 
@@ -734,6 +765,22 @@ def _validate_release(release):
             )
         )
 
+    for key in PUBLISH_KEYS:
+        value = release.get(key)
+        if value is not None and not isinstance(value, bool):
+            problems.append(
+                "release.{}: expected true or false, got {!r}. Every non-empty string is "
+                "truthy, so a value spelled like a decision publishes when it reads like "
+                "a refusal.".format(key, value)
+            )
+
+    if release.get("draft") is True and release.get("latest") is True:
+        problems.append(
+            "release.latest: a draft cannot be marked Latest, so this pair states an "
+            "outcome the release path can never produce. Set release.draft to false to "
+            "publish and mark Latest, or release.latest to false to keep the draft."
+        )
+
     triggers = release.get("triggers")
     if triggers is not None:
         if not isinstance(triggers, dict):
@@ -765,6 +812,41 @@ def release_commit_subject(config):
     if value is None:
         return DEFAULT_COMMIT_SUBJECT
     return value
+
+
+def release_publish_policy(config):
+    """Whether the tag becomes a GitHub Release, and what kind (#58).
+
+    Returns `create`, `draft`, `latest` -- and `stated`, which is the one that keeps
+    this honest. A repo that has never chosen and a repo that chose not to publish
+    produce the same three booleans and must not produce the same sentence: the first
+    is told which key would change it, the second is reported as the decision it is.
+    """
+    release = config.get("release") if isinstance(config, dict) else None
+    if not isinstance(release, dict):
+        release = {}
+
+    policy = {
+        "create": PUBLISH_DEFAULTS["create"],
+        "draft": PUBLISH_DEFAULTS["draft"],
+        "latest": PUBLISH_DEFAULTS["latest"],
+        "stated": False,
+    }
+
+    for key, field in zip(PUBLISH_KEYS, ("create", "draft", "latest")):
+        value = release.get(key)
+        if isinstance(value, bool):
+            policy[field] = value
+
+    # `stated` is about `create_release` alone, and deliberately not a union over the
+    # three keys. A repo that set only `draft` has said how it would publish, not
+    # whether to -- and a union here reported that repo as having chosen not to
+    # publish, in those words, which is a decision it never made rendered exactly like
+    # one it did. That is this module's own defect class inside the accessor written
+    # to prevent it.
+    policy["stated"] = isinstance(release.get("create_release"), bool)
+
+    return policy
 
 
 def _infer_tag_pattern(tags):

@@ -107,11 +107,62 @@ git ls-remote --tags origin <tag>
 
 A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a push that worked.
 
+## Then publish the release, if this repo publishes
+
+A tag with no release object leaves the releases page showing a bare tag with no notes, nothing
+marked `Latest`, and nobody who watches for releases notified. That surface is entirely within
+reach — the notes were assembled a moment ago and it depends on nobody else — so it is closed here
+rather than narrated (#58):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_publish.py" \
+  --repo . --version <the new version> --tag <the tag> --json
+```
+
+That is the dry run: it prints the command it *would* run and calls nothing. Add `--execute` to
+create the release. Read the printed command before you do.
+
+**Do not assemble the `gh` call yourself.** `--verify-tag` is the reason: without it
+`gh release create` creates the tag when it is missing, which turns the `git ls-remote` check above
+into a step that mints the very ref it was verifying. The script emits it on every branch that
+builds a command and the suite asserts the whole argv, so it cannot be lost to an edit. `--repo`
+is always passed for the same class of reason — `gh` otherwise infers the repository from whichever
+directory it is standing in.
+
+The notes are the `## [x.y.z]` section `/oss:changelog` just wrote, everything up to the next
+`## [`. A heading with no body under it is **not** empty notes; it is `could not run`.
+
+Three outcomes, exit codes because a shell reads those and never reads prose:
+
+- **exit 0, `create` / `created`** — the command is buildable, or it ran and the release exists.
+- **exit 4, `skipped`** — `release.create_release` says this repo does not publish, or has not said.
+  A decision, reported as one. It never stops the release: the tag is the release for a project that
+  tags deliberately without publishing.
+- **exit 3, `could-not-run` / `could-not-create`** — the notes could not be extracted, `gh` is not on
+  PATH, or the API call failed. **Say so in those words.** This is the one that must never read as
+  either of the other two, and above all never as a release that shipped: a maintainer who believes
+  something is published stops looking at it.
+
+The policy lives in `.oss.json`'s `release` block, tracked, because how a project publishes is the
+project's answer and not one laptop's:
+
+| Key | Default | Why that default |
+| --- | --- | --- |
+| `create_release` | `false` | Publishing a repo that never asked is not this tool's call to make. |
+| `draft` | `true` | A draft is undoable. A published release has already notified everyone. |
+| `latest` | `false` | `Latest` changes what the repo's landing page shows, and that page is theirs. |
+
+Unset is a third state, not a quiet `false`: the skip reason names `release.create_release` so a repo
+that never chose is told what would change it rather than silently never releasing. `draft: true`
+with `latest: true` is refused by the config validator — a draft cannot be Latest, so the pair states
+an outcome no release path can produce.
+
 ## The tag is not the delivery
 
-For plugin users the manifest version is what the updater compares; for catalogue users the pin is a
-commit sha somebody else advances. **Report which surfaces the release actually reached, in those
-words** — "tagged, not yet in the catalogue" rather than "shipped".
+Publishing the release closes one surface. It does not close the others. For plugin users the
+manifest version is what the updater compares; for catalogue users the pin is a commit sha somebody
+else advances. **Report which surfaces the release actually reached, in those words** — "tagged and
+released, not yet in the catalogue" rather than "shipped".
 
 And the inverse is just as real: a repo can be *released by manifest and never tagged*, which leaves
 the releases page a version stale while every install is already current. Check both directions

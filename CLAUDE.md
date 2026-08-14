@@ -149,6 +149,7 @@ agents/release-auditor.md   the whole delta since the last tag, once per release
 commands/*.md               /oss:tick setup scaffold triage changelog release doctor
 scripts/oss_config.py       read, validate and derive .oss.json
 scripts/release_delta.py    the release gate's range: delta / first-release / could-not-run
+scripts/release_publish.py  the GitHub Release: created / skipped by policy / could-not-create
 scripts/oss_state.py        the tick state file
 scripts/oss_rules.py        the 01-oss rule layer
 scripts/scaffold.py         templates, owned files, repo metadata checks

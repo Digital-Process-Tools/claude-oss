@@ -71,6 +71,7 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 | `/oss:scaffold` | Adds the missing repo furniture. Never overwrites; shows before it writes. Reports what it will not do: create a label, guess a required-check count, or generate a test workflow. |
 | `/oss:triage` | One triage sweep — priority, lane, milestone, and what the board is lying about. |
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
+| `/oss:release` | Gates, version sites, tag, and — where `.oss.json` says so — the GitHub Release, notes and all. |
 | `/oss:doctor` | Config, dependencies, clone, worktree root, state file. Exits 0 always. |
 
 ## Status
