@@ -75,8 +75,12 @@ it a second way — grep the new content back — before saying it.
 4. **Cross-platform is not your machine.** CI runs Linux, macOS and Windows. Before you report, audit
    for: path separators and suffix matches that behave differently with backslashes; a drive letter
    read as a hostname because the colon precedes the first slash; hardcoded POSIX literals in test
-   assertions; platform-specific exception types, so a narrow `except` never fires; and an unspawnable
-   binary raising a spawn error instead of reaching its own "the tool failed" arm. **A green local run
+   assertions; platform-specific exception types, so a narrow `except` never fires; an unspawnable
+   binary raising a spawn error instead of reaching its own "the tool failed" arm; and a character the
+   console's codepage cannot represent — anything you write to stdout or stderr is encoded with the
+   console's codepage, not the source file's, and on Windows that is typically cp1252, where an arrow,
+   a box-drawing glyph or an emoji raises `UnicodeEncodeError` and kills the process at the `print`,
+   after the work that print was reporting already happened. **A green local run
    is not evidence about the other legs.** Say which platform claims are **observed** and which are
    **reasoned** — a reasoned claim is worth having and should still carry the label.
 5. **Docs are part of the change.** The repo's `docs_targets` for anything user-facing, the changelog

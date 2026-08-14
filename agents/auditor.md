@@ -71,7 +71,7 @@ commit subject or a CI log line printed raw can forge whatever structure the rea
 Path and separator handling, **encoding** and codec choices, **line endings**. These reach a diff
 review only because many repositories have no leg that would redden on them.
 
-**The five recurring shapes are enumerated once, in `${CLAUDE_PLUGIN_ROOT}/agents/developer.md`
+**The recurring shapes are enumerated once, in `${CLAUDE_PLUGIN_ROOT}/agents/developer.md`
 under "Cross-platform is not your machine", and again in the manager skill.** Read that section, or
 work from it if your brief carried it verbatim. Do not reconstruct it from memory and do not restate
 it in your report: a third copy of that list is itself the drift defect this loop exists to file. If

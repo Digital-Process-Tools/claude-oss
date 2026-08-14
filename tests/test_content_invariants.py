@@ -470,16 +470,21 @@ def test_the_contract_checks_fire_on_an_agent_that_says_nothing():
 
 # --------------------------------------------------------------- no third copy (#4/#9/#26)
 #
-# The five recurring cross-platform shapes are already written down twice --
+# The recurring cross-platform shapes are already written down twice --
 # agents/developer.md and skills/manager/SKILL.md. A third copy is not coverage; it is
 # the drift defect this tracker was opened to file. The auditor references them, so
 # these anchors must be absent from it and present in their source.
+#
+# No count is stated here on purpose. The list gained a sixth entry in #56, and the
+# word "five" was by then sitting in documents that had no reason to know how long
+# the list was.
 
 PORTABILITY_SHAPES = (
     "drive letter",
     "POSIX literal",
     "spawn error",
     "narrow `except`",
+    "codepage",
 )
 
 
@@ -664,8 +669,8 @@ def test_the_release_auditor_contracts_fire_on_an_agent_that_says_nothing():
 
 def test_no_agent_recopies_the_portability_checklist():
     """The no-third-copy rule is not about one file. Any agent that restates the
-    five shapes makes a third copy, and the copy that drifts is never the one
-    anybody rereads.
+    shapes makes a third copy, and the copy that drifts is never the one anybody
+    rereads.
     """
     offenders = {}
     for agent in AGENTS:
@@ -766,4 +771,97 @@ def test_every_plugin_rooted_reference_in_an_agent_resolves():
         "no ${CLAUDE_PLUGIN_ROOT}/... reference found in any agent -- the auditor "
         "references the cross-platform section instead of copying it, so this pattern "
         "matching nothing means it has stopped doing that"
+    )
+
+
+# ------------------------------------------------- what the program prints (#56)
+#
+# Five of the six shapes are about what a program reads or invokes. The sixth is
+# about what it writes, and it exists because the gap cost a release: an arrow in
+# `assemble_changelog.py`'s receipt raised UnicodeEncodeError on the cp1252 console
+# of the Windows runner, after the script had already written CHANGELOG.md and
+# deleted every fragment. The agent that shipped it audited its change against all
+# five items correctly and ran the full suite green -- the character prints fine on
+# a UTF-8 console, so nothing local could have shown it.
+#
+# An item that does not exist is the one thing a checklist cannot report as
+# unchecked, which is why the sixth is pinned here rather than left to prose review.
+# Each anchor is a half of the item that would make it useless if it were dropped:
+#
+#   - the encoding is the console's, chosen at runtime, not the source file's;
+#   - cp1252 specifically -- the bar tests/test_receipt_encoding.py deliberately
+#     sets, since the em dashes that ship green through every Windows leg are valid
+#     cp1252 and an ASCII rule would condemn them;
+#   - the failure is an exception that kills the process, not a mangled glyph;
+#   - it is about what is printed, which is what separates it from the other five;
+#   - and it lands *after* the work, which is what makes it a platform item rather
+#     than a cosmetic one.
+
+CONSOLE_ENCODING_ANCHORS = [
+    ("the-encoding-is-the-console's", ("codepage",)),
+    ("the-bar-is-the-codepage-ci-measures", ("cp1252",)),
+    ("it-kills-the-process", ("unicodeencodeerror",)),
+    ("it-is-about-what-is-printed", ("stdout",)),
+    ("the-crash-lands-after-the-work", ("after the work",)),
+]
+
+CONSOLE_ENCODING_SOURCES = [
+    REPO_ROOT / "agents" / "developer.md",
+    REPO_ROOT / "skills" / "manager" / "SKILL.md",
+]
+
+
+def _console_encoding_anchors_unmet(text):
+    """Case-folded: capitalisation is not the contract, and the two documents word
+    the item differently -- one runs it into a prose paragraph, the other carries it
+    as a bullet in a list.
+    """
+    folded = text.lower()
+    return {
+        name
+        for name, anchors in CONSOLE_ENCODING_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_both_copies_carry_the_console_encoding_item():
+    """Both, and only these two. The no-third-copy guard above owns the other half:
+    `codepage` is in PORTABILITY_SHAPES, so an agent that restates this item is
+    reported as a third copy by the check that already exists.
+    """
+    for path in CONSOLE_ENCODING_SOURCES:
+        assert path.is_file(), "{} is missing".format(path.relative_to(REPO_ROOT))
+        unmet = _console_encoding_anchors_unmet(path.read_text(encoding="utf-8"))
+        assert not unmet, (
+            "{} does not carry the console-encoding shape: {}".format(
+                path.relative_to(REPO_ROOT), sorted(unmet)
+            )
+        )
+
+
+#: The list exactly as it stood before this change -- the checklist that was audited
+#: against, correctly, on the day the cp1252 crash shipped.
+THE_FIVE_ITEMS_AS_THEY_STOOD = """
+- a suffix or separator match that behaves differently with backslashes than with forward slashes
+- a Windows drive letter read as a hostname, because the colon precedes the first slash
+- a hardcoded POSIX literal in a test assertion
+- a platform raising a different exception type, so a narrow `except` never fires
+- an unspawnable binary raising a spawn error instead of reaching its own "the tool failed" arm
+"""
+
+
+def test_the_console_encoding_check_fires_on_the_checklist_that_missed_it():
+    """The positive control, and it is the whole value of the check above.
+
+    `assert "codepage" in text` over a prose file passes as readily on prose nobody
+    constrained as on prose written to the contract. So the same checker is run
+    against the five-item list as it was worded when the defect shipped: every
+    anchor must fire, or "the item is present" is a claim about nothing.
+    """
+    unmet = _console_encoding_anchors_unmet(THE_FIVE_ITEMS_AS_THEY_STOOD)
+    expected = {name for name, _ in CONSOLE_ENCODING_ANCHORS}
+    assert unmet == expected, (
+        "the console-encoding anchors do not fire on the checklist that missed the "
+        "defect, so they say nothing about the sixth item being there. Not firing: "
+        + repr(sorted(expected - unmet))
     )

@@ -314,13 +314,22 @@ The recurring shapes, worth auditing before any report:
 - a hardcoded POSIX literal in a test assertion
 - a platform raising a different exception type, so a narrow `except` never fires
 - an unspawnable binary raising a spawn error instead of reaching its own "the tool failed" arm
+- a character the console's codepage cannot represent: stdout and stderr are encoded with the
+  console's codepage, not the source file's, so on Windows — typically cp1252 — an arrow, a
+  box-drawing glyph or an emoji raises `UnicodeEncodeError` and kills the process at the `print`,
+  after the work that print was reporting already happened
 
-Note the shape of the last two: **neither is a platform bug** — both are the test harness rendering an
-environment limit as a product verdict, which is this file's own defect class relocated into the
-thing meant to detect it. So "add more tests for that platform" is the wrong lever; the exposure is
-in the tests that already exist. What works: make the path cheap enough that platform speed cannot
-hurt it, make failures announce themselves, and deliver the fix rather than leaving it
-fixed-in-source.
+The last one is the newest, and it is there because the checklist had no item for it while the defect
+shipped: five items about what a program **reads or invokes**, none about what it **writes**. What
+makes it a platform item rather than a cosmetic one is the ordering — the process dies reporting work
+it has already done, so the exit code describes the crash and not the mutation.
+
+Note the shape of the exception type and the unspawnable binary: **neither is a platform bug** — both
+are the test harness rendering an environment limit as a product verdict, which is this file's own
+defect class relocated into the thing meant to detect it. So "add more tests for that platform" is
+the wrong lever; the exposure is in the tests that already exist. What works: make the path cheap
+enough that platform speed cannot hurt it, make failures announce themselves, and deliver the fix
+rather than leaving it fixed-in-source.
 
 **Say which grade a cross-platform claim is** — observed, or reasoned. A correct analysis written
 without access to that platform is still worth having, and should still carry the label.
