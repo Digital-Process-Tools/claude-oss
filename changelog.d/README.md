@@ -28,7 +28,9 @@ text — the file name is metadata, and metadata does not survive being read out
 ```bash
 python3 scripts/assemble_changelog.py --check
 python3 scripts/assemble_changelog.py --check-links
-python3 scripts/assemble_changelog.py --version X.Y.Z   # release only: rewrites CHANGELOG.md, deletes fragments
+# Release only: rewrites CHANGELOG.md, deletes fragments. Both flags are required (#67) —
+# the fold will not derive its own target.
+python3 scripts/assemble_changelog.py --version X.Y.Z --dir changelog.d --changelog CHANGELOG.md
 ```
 
 ## Which number
