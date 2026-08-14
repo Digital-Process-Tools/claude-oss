@@ -205,3 +205,79 @@ def test_a_null_config_value_never_reaches_a_rendered_file_as_None():
     body = scaffold.render("CLAUDE.md", _config(test_command=None))
     assert "None" not in body
     assert "not detected" in body
+
+
+# ----------------------------------------------------------------------------- show
+#
+# `/oss:scaffold` tells the caller to relay what each generated file would contain
+# before writing it. The dry run named the plan but had no way to obtain the content,
+# so an agent's only options were to invent a preview by hand or run --apply first and
+# read the result -- which writes before showing, on exactly the files the instruction
+# says need a look first (#5).
+
+
+def test_show_covers_every_file_that_would_be_created(tmp_path):
+    shown = scaffold.show(tmp_path, _config())
+    created = {path for path, action, _ in shown if action == "create"}
+    assert created == set(scaffold.TEMPLATES)
+
+
+def test_show_covers_every_owned_file_too(tmp_path):
+    """`plan()` never marks an OWNED file "create" -- they are always "replace", so a
+    filter that only kept "create" entries silently dropped every one of them. These
+    are the files `apply` overwrites unconditionally, which makes the preview matter
+    most here, not least (coordinator review after the first pass of #5).
+    """
+    shown = scaffold.show(tmp_path, _config())
+    replaced = {path for path, action, _ in shown if action == "replace"}
+    assert replaced == set(scaffold.OWNED)
+
+
+def test_show_when_every_template_already_exists_still_reports_owned_files(tmp_path):
+    """The sharp case: a repo that already has every default. `apply` writes nothing
+    under TEMPLATES here but still overwrites all three OWNED files -- the destructive
+    half of `apply`. A preview that goes quiet in this case is the same shape as #8's
+    confident "missing": an absence the tool produced, read as an absence in the repo.
+    """
+    scaffold.apply(tmp_path, _config())
+    shown = scaffold.show(tmp_path, _config())
+    paths = {path for path, _, _ in shown}
+    assert paths, "nothing to show -- the assertion below would vacuously pass"
+    assert paths == set(scaffold.OWNED)
+    assert all(action == "replace" for _, action, _ in shown)
+
+
+def test_show_content_matches_what_apply_would_write(tmp_path):
+    config = _config(repo="acme/widget", default_branch="trunk")
+    shown = {path: body for path, _, body in scaffold.show(tmp_path, config)}
+    assert shown["CLAUDE.md"] == scaffold.render("CLAUDE.md", config)
+    assert shown[".oss/README.md"] == scaffold.render_owned(".oss/README.md", config)
+
+
+def test_show_skips_a_template_that_already_exists(tmp_path):
+    (tmp_path / "SECURITY.md").write_text("ours\n", encoding="utf-8")
+    shown = scaffold.show(tmp_path, _config())
+    assert "SECURITY.md" not in {path for path, _, _ in shown}
+
+
+def test_show_one_path_returns_only_that_files_body_and_action(tmp_path):
+    shown = scaffold.show(tmp_path, _config(), path="SECURITY.md")
+    assert shown == [("SECURITY.md", "create", scaffold.SECURITY_MD)]
+
+
+def test_show_one_path_works_even_when_the_file_is_already_present(tmp_path):
+    """A single-path request is "what would this default contain", which is worth
+    knowing even for a file the plan would call present rather than create."""
+    (tmp_path / "SECURITY.md").write_text("ours\n", encoding="utf-8")
+    shown = scaffold.show(tmp_path, _config(), path="SECURITY.md")
+    assert shown == [("SECURITY.md", "create", scaffold.SECURITY_MD)]
+
+
+def test_show_of_an_unknown_path_is_an_error_not_an_empty_list():
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.show(Path("."), _config(), path="NOT_A_TEMPLATE.md")
+
+
+def test_show_can_render_an_owned_file_by_path(tmp_path):
+    shown = scaffold.show(tmp_path, _config(), path=".oss/README.md")
+    assert shown == [(".oss/README.md", "replace", scaffold.render_owned(".oss/README.md", _config()))]

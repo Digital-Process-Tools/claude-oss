@@ -18,9 +18,26 @@ change that wants a branch, a diff and a review.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json
 ```
 
-Prints one line per file: `create` or `present`. **Nothing is written.** Relay the plan and what each
-generated file would contain before going further — a default that nobody read is not a default, it
-is a surprise.
+Prints one line per file: `create` or `present`. **Nothing is written.**
+
+That names the plan but not the content, and the content is what actually needs a look. Get it with
+`--show`:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json --show
+```
+
+Prints the full body of every file `apply` would actually write — nothing written here, same as the
+plan alone. That covers both halves of `apply`: files it would **create** (a template absent today)
+and files it would **replace** (everything in OWNED — `.oss/README.md`, `.oss/assemble_changelog.py`,
+`.github/workflows/oss-changelog.yml` — rewritten on every single run, whether or not a template is
+missing). Each line says which: a repo that already has every default still gets three `replace`
+lines out of a bare `--show`, because that is the destructive half of `apply` and the one a preview
+is for. Name one file (`--show CLAUDE.md`) to see just that one, including a file already `present`,
+when the question is what the default itself contains rather than whether it would be written.
+`--show` and `--apply` refuse to run together — show, read it, then apply as a separate step. Relay
+the plan and what each generated file would contain before going further — a default that nobody read
+is not a default, it is a surprise.
 
 ## Then write
 
@@ -84,10 +101,14 @@ are also the only thing a person sees before deciding whether to click.
 gh repo view --json description,repositoryTopics
 ```
 
-Feed that to `scaffold.check_metadata` and relay what it reports. It says what is **missing**; it
-never proposes a description or a topic. A generated description is written in the voice of a tool
-that has not read the code, and a guessed topic list is how a repo ends up tagged for something it
-does not do. Write them yourself:
+Feed the whole JSON object straight to `scaffold.check_metadata` and relay what it reports. It
+reads topics from `repositoryTopics` — the shape `gh` actually returns — and says what is
+**missing**; it never proposes a description or a topic. A finding can also come back `unknown`
+rather than `missing`, when the probe did not carry a shape the function could check at all — that is
+not the same as the repo having no topics, and it is relayed as "could not be determined," never
+folded into a confident "missing." A generated description is written in the voice of a tool that has
+not read the code, and a guessed topic list is how a repo ends up tagged for something it does not
+do. Write them yourself:
 
 ```bash
 gh repo edit --description '...'

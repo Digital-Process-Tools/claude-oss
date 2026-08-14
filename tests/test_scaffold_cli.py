@@ -125,3 +125,72 @@ def test_the_generated_claude_md_names_the_configured_repo(tmp_path):
     body = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
     assert "acme/widget" in body
     assert "trunk" in body
+
+
+# ------------------------------------------------------------------------------ show
+
+
+def test_show_prints_content_and_writes_nothing(tmp_path, capsys):
+    config = _write_config(tmp_path, repo="acme/widget")
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    out = capsys.readouterr().out
+    assert "CLAUDE.md" in out
+    assert "acme/widget" in out
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_show_one_path_prints_only_that_file(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    assert scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show", "SECURITY.md"]
+    ) == 0
+    out = capsys.readouterr().out
+    assert "Security Policy" in out
+    assert "CLAUDE.md" not in out
+
+
+def test_show_and_apply_together_is_refused_before_writing(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    result = scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show", "--apply"]
+    )
+    assert result == 1
+    assert "FAIL" in capsys.readouterr().out
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_show_of_an_unknown_path_is_a_named_failure(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    result = scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show", "NOT_A_TEMPLATE.md"]
+    )
+    assert result == 1
+    assert "FAIL" in capsys.readouterr().out
+
+
+def test_show_includes_owned_files_even_when_every_template_already_exists(tmp_path, capsys):
+    """The sharp case from the coordinator review: with every template already on disk,
+    the bare `--show` this command tells the caller to run must still name the three
+    files `apply` overwrites unconditionally -- printing nothing here reads as "apply
+    would write nothing", which is false.
+    """
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+    result = scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert ".oss/README.md" in out
+    assert ".oss/assemble_changelog.py" in out
+    assert ".github/workflows/oss-changelog.yml" in out
+    assert "nothing to show" not in out
+
+
+def test_show_labels_create_and_replace_differently(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+    out = capsys.readouterr().out
+    create_line = next(line for line in out.splitlines() if "CLAUDE.md" in line)
+    replace_line = next(line for line in out.splitlines() if ".oss/README.md" in line)
+    assert create_line != replace_line
+    assert "create" in create_line
+    assert "replace" in replace_line
