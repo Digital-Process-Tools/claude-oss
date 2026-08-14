@@ -225,29 +225,345 @@ def test_each_dimension_is_checked_separately(tmp_path):
     assert "paths" in _messages()
 
 
-def test_an_index_older_than_a_rule_is_reported_as_stale(tmp_path):
-    """A rule edited after the last rebuild is a rule whose row says something else."""
-    layer = _layer(tmp_path)
+def _touched_after(index, *entries):
+    """Entry files newer than the index, by an explicit stamp rather than by write order.
+
+    A test that writes the index, sleeps, and writes the entry is measuring the
+    filesystem's timestamp granularity as much as the code: one second on ext3 and on
+    some network mounts, two on FAT. Setting both stamps says what the fixture means.
+    """
+    base = 1000000000
+    os.utime(index, (base, base))
+    for entry in entries:
+        os.utime(entry, (base + 60, base + 60))
+
+
+def test_a_body_edit_with_identical_rows_is_not_told_to_rebuild(tmp_path):
+    """#80. mtime is evidence the index MIGHT be stale. It is not evidence that any
+    row differs -- and the row is the thing the warning asserted.
+
+    The bodies are what changed here; the indexed columns come from frontmatter, and
+    they are byte-identical to what a rebuild would write. Paired with the drift test
+    below, which shares this fixture and differs only in the frontmatter, because
+    "is not told to rebuild" also passes when the check never runs at all.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/\n---\n\nrewritten body.\n", encoding="utf-8")
     index = layer / "00-index.tsv"
-    index.write_text("stale\n", encoding="utf-8")
-    time.sleep(0.01)
-    rule = layer / "conventions.md"
-    rule.write_text("---\ntitle: x\n---\n", encoding="utf-8")
-    newer = index.stat().st_mtime + 60
-    os.utime(rule, (newer, newer))
+    index.write_text("docs/\tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry)
 
     doctor.check_jit_rules(tmp_path)
-    assert _states() == ["WARN"]
-    assert "stale" in _messages().lower()
+    assert _states() == ["OK"], _messages()
+    assert "rebuild" not in _messages().lower()
+
+
+def test_frontmatter_the_index_does_not_carry_is_reported_as_stale(tmp_path):
+    """The positive control: same fixture, same mtimes, a match: the row does not have."""
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: handbook/\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "rebuild the index" in _messages().lower()
+    assert "conventions.md" in _messages()
+
+
+def test_a_tools_row_is_compared_on_every_column_not_just_the_pattern(tmp_path):
+    """A `block` downgraded to `remind` is a rule that reads as enforced and is not.
+    The indexer writes six columns -- tool, match, filename, mode, require, forbid --
+    so all six are what "the row says something else" has to mean.
+    """
+    layer = _layer(tmp_path, "tools")
+    entry = layer / "no-force-push.md"
+    entry.write_text(
+        "---\ntool: Bash\nmatch: git push\nmode: block\n---\n", encoding="utf-8"
+    )
+    index = layer / "00-index.tsv"
+    index.write_text("Bash\tgit push\tno-force-push.md\tremind\t\t\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "rebuild the index" in _messages().lower()
+
+
+def test_a_tools_row_that_matches_every_column_is_current(tmp_path):
+    """The control for the column comparison: the same six columns, agreeing."""
+    layer = _layer(tmp_path, "tools")
+    entry = layer / "no-force-push.md"
+    entry.write_text(
+        "---\ntool: Bash\nmatch: git push\nmode: block\n---\n", encoding="utf-8"
+    )
+    index = layer / "00-index.tsv"
+    index.write_text("Bash\tgit push\tno-force-push.md\tblock\t\t\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+    assert "rebuild" not in _messages().lower()
+
+
+def test_a_row_that_cannot_be_derived_is_named_rather_than_judged(tmp_path):
+    """The third state. An invocation macro is expanded at index time, so the row is
+    the expansion and the frontmatter is the shorthand -- this check does not expand
+    macros, and the honest answer is that it could not look, naming which entry.
+
+    What it must NOT do is fall back to the imperative it cannot support.
+    """
+    layer = _layer(tmp_path, "tools")
+    entry = layer / "push-anchor.md"
+    entry.write_text(
+        "---\ntool: Bash\nmatch: ~@invocation git push\n---\n", encoding="utf-8"
+    )
+    index = layer / "00-index.tsv"
+    index.write_text("Bash\t(^|[;&|] *)git push\tpush-anchor.md\tremind\t\t\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "push-anchor.md" in _messages()
+    assert "macro" in _messages().lower()
+    assert "rebuild the index" not in _messages().lower()
+
+
+def test_a_dimension_with_no_known_derivation_is_declined_by_name(tmp_path):
+    """The same third state from the other direction: the row format belongs to
+    another tool, and a dimension this one has never heard of is not one it can
+    re-derive. Say so, with the dimension named.
+    """
+    layer = _layer(tmp_path, "gadgets")
+    entry = layer / "widget.md"
+    entry.write_text("---\nmatch: docs/\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\twidget.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "gadgets" in _messages()
+    assert "rebuild the index" not in _messages().lower()
+
+
+def test_an_undecidable_entry_no_newer_than_its_index_is_still_said_out_loud(tmp_path):
+    """Not a WARN -- nothing suggests this index is stale -- but it must never render
+    as "checked and clean" either, which is the state this whole family of tools
+    exists to keep visible.
+    """
+    layer = _layer(tmp_path, "tools")
+    entry = layer / "push-anchor.md"
+    entry.write_text(
+        "---\ntool: Bash\nmatch: ~@invocation git push\n---\n", encoding="utf-8"
+    )
+    index = layer / "00-index.tsv"
+    index.write_text("Bash\tanything\tpush-anchor.md\tremind\t\t\n", encoding="utf-8")
+    _touched_after(entry, index)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+    assert "1 not checked" in _messages()
+
+
+def test_a_keyword_the_blacklist_drops_is_not_read_as_drift(tmp_path):
+    """The vocabulary indexer skips generic single words, so a keyword in the
+    frontmatter with no row is the documented behaviour, not staleness. Asserting
+    equality there would report drift on a correctly built index.
+    """
+    layer = _layer(tmp_path, "vocabulary")
+    entry = layer / "billing.md"
+    entry.write_text("---\nkeywords: file, invoice\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("invoice\tbilling.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_a_keyword_the_frontmatter_no_longer_carries_is_drift(tmp_path):
+    """The control for the asymmetry above: a row the frontmatter cannot produce is
+    proof the index predates the edit, in the direction a blacklist cannot explain.
+    """
+    layer = _layer(tmp_path, "vocabulary")
+    entry = layer / "billing.md"
+    entry.write_text("---\nkeywords: invoice\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("invoice\tbilling.md\ndunning\tbilling.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "rebuild the index" in _messages().lower()
+
+
+def test_an_entry_that_cannot_be_read_is_the_third_state_not_the_first(tmp_path):
+    """An entry doctor cannot decode derives no rows -- and derives no verdict either.
+    Silence there would render as "rows match", which is the one thing it is not.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_bytes(b"---\nmatch: docs/\xff\xfe\n---\n")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "conventions.md" in _messages()
+    assert "could not be read" in _messages()
+    assert "rebuild the index" not in _messages().lower()
+
+
+def test_an_index_that_cannot_be_read_is_unknown_rather_than_current(tmp_path):
+    """It exists and it is not empty, so both earlier gates pass. Whether it is current
+    is then a question nothing answered.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_bytes(b"docs/\tconventions.md\xff\xfe\n")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "unknown" in _messages().lower()
+
+
+def test_a_non_ascii_keyword_is_declined_rather_than_folded_here(tmp_path):
+    """The indexer folds Latin-1 accents to ASCII before normalising. Doing that fold a
+    second time here, differently, would report drift about this function rather than
+    about the index -- so the entry is named as unchecked instead.
+    """
+    layer = _layer(tmp_path, "vocabulary")
+    entry = layer / "billing.md"
+    entry.write_text("---\nkeywords: détail\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("detail\tbilling.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "billing.md" in _messages()
+    assert "rebuild the index" not in _messages().lower()
+
+
+def test_an_entry_the_builder_writes_no_row_for_is_not_drift(tmp_path):
+    """A paths entry with no `match:` produces no row, by design and with a report of
+    its own from the rebuild. Expecting one here would call every such layer stale.
+    """
+    layer = _layer(tmp_path, "paths")
+    prose = layer / "notes.md"
+    prose.write_text("---\ntitle: notes\n---\n", encoding="utf-8")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry, prose)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_a_malformed_index_row_is_not_read_as_a_row_about_an_entry(tmp_path):
+    """A row with no filename column names no entry, so it is evidence about nothing --
+    and reading its first column as a filename would invent drift on a file called
+    `stale`.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\nstale\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_a_quoted_match_is_unwrapped_the_way_the_indexer_unwraps_it(tmp_path):
+    """The frontmatter reader strips a quote pair that wraps the whole value and leaves
+    every other quote alone, because a `match:` is an ERE and `["]` is how an author
+    anchors on a quoted argument. A reader that stripped every quote would report drift
+    on a correct index -- and one that stripped none would too.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text('---\nmatch: "docs/"\n---\n', encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_trailing_space_in_a_match_is_kept_the_way_the_indexer_keeps_it(tmp_path):
+    """The frontmatter reader trims trailing whitespace only on the copy it tests for
+    wrapping quotes, so an unquoted `match: docs/ ` is indexed WITH the space. A
+    reader that trimmed the returned value would derive `docs/`, find no such row and
+    say "rebuild" at an index that is exactly what a rebuild writes.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/ \n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/ \tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_a_row_missing_that_trailing_space_is_still_drift(tmp_path):
+    """The control for the fidelity above: the space is part of the pattern, so a row
+    without it is a row that matches something else.
+    """
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/ \n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\n", encoding="utf-8")
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "rebuild the index" in _messages().lower()
+
+
+def test_a_row_for_an_entry_that_is_gone_is_drift(tmp_path):
+    """Deleting a rule leaves its row behind, and the row is what runs."""
+    layer = _layer(tmp_path, "paths")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nmatch: docs/\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("docs/\tconventions.md\nold/\tremoved.md\n", encoding="utf-8")
+    _touched_after(entry, index)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "removed.md" in _messages()
 
 
 def test_rules_with_a_current_index_are_ok(tmp_path):
+    """The row names the entry it came from. This fixture used to index `conventions`
+    against a file `x` that was not in the layer -- a row no rebuild could produce, on
+    an entry with no `keywords:` to produce it from, passing because nothing compared
+    them.
+    """
     layer = _layer(tmp_path)
-    (layer / "conventions.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
-    time.sleep(0.01)
-    (layer / "00-index.tsv").write_text("conventions\tx\n", encoding="utf-8")
+    entry = layer / "conventions.md"
+    entry.write_text("---\nkeywords: conventions\n---\n", encoding="utf-8")
+    index = layer / "00-index.tsv"
+    index.write_text("conventions\tconventions.md\n", encoding="utf-8")
+    _touched_after(entry, index)
     doctor.check_jit_rules(tmp_path)
-    assert _states() == ["OK"]
+    assert _states() == ["OK"], _messages()
 
 
 def test_an_empty_index_beside_real_rules_does_not_read_as_current(tmp_path):
