@@ -139,6 +139,13 @@ def test_a_receipt_reaches_a_console_that_cannot_represent_it(tmp_path):
     assert result.stdout.startswith("assemble    : ok"), result.stdout + result.stderr
     assert result.returncode == OK, result.stdout + result.stderr
     assert _cut_landed(root), "the cut did not land, so the receipt proved nothing"
+    # The receipt degraded rather than dropped: the escape is present, and the
+    # line carrying it is still in its place. Without these two, a `_line` that
+    # discarded the whole unprintable line would pass every assertion above --
+    # an absence produced by the fix, read as a receipt that printed.
+    escape = "{0}u2014".format(chr(92))  # what `backslashreplace` writes for U+2014
+    assert escape in result.stdout, result.stdout
+    assert "no `## [x.y.z]` release heading" in result.stdout, result.stdout
 
 
 # --------------------------------------------------------------------------
@@ -195,6 +202,52 @@ def test_a_reporter_that_raises_after_the_cut_does_not_exit_skipped(tmp_path):
         "the tree moved and the exit code says SKIPPED -- 'nothing to do, or "
         "nothing provable', which tells a wrapper to carry on")
     assert code == REFUSED, code
+
+
+class _UnwritableChangelog:
+    """A changelog that reads fine and refuses to be written.
+
+    A shim rather than `chmod`: read-only permission bits are enforced
+    differently on Windows and by root, and a fixture that quietly stops
+    denying the write turns this test green for the wrong reason. Only the
+    four members `assemble` uses are exposed, so a fifth one appearing is a
+    loud AttributeError rather than a silent pass-through.
+    """
+
+    def __init__(self, path):
+        self._path = path
+        self.name = path.name
+
+    def read_text(self, **kwargs):
+        return self._path.read_text(**kwargs)
+
+    def write_text(self, *args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    def __str__(self):
+        return str(self._path)
+
+
+def test_a_write_that_never_landed_is_not_reported_as_a_release(tmp_path):
+    """The other half of the guard, and the one an earlier draft got wrong.
+
+    The guard wraps the write as well as the receipt, so a failure at the
+    write reaches the same alarm -- and the alarm must not then announce a
+    release that does not exist. Refusing is still right: a torn write is
+    indistinguishable from no write at this level, so "nothing happened" is
+    not a claim this run can make either.
+    """
+    root, script_path = _repo(tmp_path, "unwritable")
+    module = _module(script_path, "assemble_unwritable")
+    before = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    code = module.assemble(_UnwritableChangelog(root / "CHANGELOG.md"),
+                           root / "changelog.d", "0.1.0", "2026-08-14")
+
+    assert code == REFUSED, code
+    assert (root / "CHANGELOG.md").read_text(encoding="utf-8") == before
+    assert (root / "changelog.d" / "41.added.md").exists(), (
+        "the write failed and the fragments were consumed anyway")
 
 
 def test_the_same_fixture_reports_ok_when_the_reporter_works(tmp_path):

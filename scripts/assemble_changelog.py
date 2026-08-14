@@ -1590,12 +1590,16 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
     # A signal mid-unlink leaves the same torn state and is not fixable here --
     # the interpreter is not guaranteed to reach any handler we write.
     # ------------------------------------------------------------------
+    wrote = False
+    removed = 0
     try:
         changelog.write_text(assembled, encoding="utf-8")
+        wrote = True
         if not keep:
             for frag in fragments:
                 if frag.path:
                     frag.path.unlink()
+                    removed += 1
             details.append("removed   {0} fragment file(s) from {1}/"
                            .format(len(fragments), directory.name))
         else:
@@ -1611,31 +1615,34 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
         # code has been decided, which is exactly too late to change it.
         sys.stdout.flush()
     except Exception as exc:
-        if isinstance(exc, BrokenPipeError):
-            # CPython re-flushes stdout at shutdown, raises again on a closed
-            # pipe, and exits 120 -- replacing the deliberate exit code with
-            # an accidental one, which is the failure we are standing in.
-            # Scoped to this one exception type: pointing stdout at /dev/null
-            # is not something to do to a stream that still works.
-            try:
-                devnull = os.open(os.devnull, os.O_WRONLY)
-                os.dup2(devnull, sys.stdout.fileno())
-                os.close(devnull)
-            except Exception:  # pragma: no cover - nothing better to try
-                pass
+        # What the alarm may claim is exactly what `wrote` and `removed`
+        # establish, and no more. An earlier draft asserted "CHANGELOG.md now
+        # holds the release" from inside a block that also wraps the write --
+        # so the one case the fragment for this change names by name, a full
+        # disk on the redirect, would have produced a confident sentence about
+        # a file that was never written. Reporting a mutation that did not
+        # happen is the same defect as denying one that did.
         _alarm([
-            "assemble    : refused     (the release was cut and then could not "
-            "be reported: {0}: {1})".format(type(exc).__name__, exc),
-            "  written   {0} now holds `## [{1}] - {2}`".format(
-                changelog, version, date),
-            "  fragments {0}".format(
+            "assemble    : refused     ({0}: {1}: {2})".format(
+                "this run changed the tree and then could not report it"
+                if wrote or removed else
+                "this run could not complete and cannot prove it changed "
+                "nothing",
+                type(exc).__name__, exc),
+            "  written   " + (
+                "{0} now holds `## [{1}] - {2}`".format(changelog, version, date)
+                if wrote else
+                "the write to {0} did not complete. Whether it holds the "
+                "release, a truncated file or the original is not established "
+                "here -- read it before anything else".format(changelog)),
+            "  fragments " + (
                 "left in place (--keep)" if keep else
-                "{0}/ was being emptied of {1} consumed fragment(s) when this "
-                "raised; which of them are gone is not established here".format(
-                    directory.name, len(fragments))),
-            "  exit      refused, not skipped. The tree moved. Do not re-run "
-            "this: inspect the two paths above, then either commit the cut or "
-            "restore both from git.",
+                "{0} of {1} consumed fragment(s) deleted from {2}/".format(
+                    removed, len(fragments), directory.name)),
+            "  exit      refused, not skipped. Skipped means the tree is "
+            "untouched, and this run cannot prove that. Read the two paths "
+            "above, then either commit the cut or restore both from git; "
+            "re-running is not the move.",
         ])
         return REFUSED
     return OK
@@ -1751,5 +1758,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return assemble(changelog, directory, args.version, args.date,
                     dry_run=args.dry_run, keep=args.keep)
 
+def _exit(code: int) -> int:
+    """Deliver whatever is still buffered, and keep *code*.
+
+    CPython flushes stdout again while shutting down. On a closed pipe that
+    raises a second time, is reported as `Exception ignored while flushing
+    sys.stdout`, and sets the exit status to 120 -- so the number this script
+    decided on is replaced by an accident of the plumbing, which is a smaller
+    version of the bug the guard in `assemble` exists to close. Pointing the
+    descriptor at the null device before shutdown is what stops that.
+
+    **Only the script entry point does this.** `os.dup2` on fd 1 is
+    process-wide and permanent, and this module is also imported and called
+    in-process -- by its own tests, and by anything that vendors it -- where
+    silencing the caller's stdout for the rest of its run is a far worse
+    outcome than a wrong exit code. So it lives here, below `main`, and not in
+    any function a caller can reach.
+    """
+    try:
+        sys.stdout.flush()
+    except Exception:
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+            os.close(devnull)
+        except Exception:  # pragma: no cover - nothing better is available
+            pass
+    return code
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_exit(main()))
