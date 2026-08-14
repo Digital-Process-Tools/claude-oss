@@ -879,6 +879,23 @@ def test_the_three_origins_are_distinguishable(tmp_path, monkeypatch):
     assert origin == "here"
 
 
+def test_a_config_under_a_directory_absent_here_is_still_found_in_the_clone(
+    tmp_path, monkeypatch
+):
+    """`configs/.oss.json` excluded the same way leaves no `configs/` in the worktree.
+    Asking git from a directory that does not exist fails to start the subprocess, and
+    "git could not answer" is the wrong sentence about a repo git answers about fine."""
+    clone, worktree = _clone_with_worktree(tmp_path)
+    (clone / "configs").mkdir()
+    _write_config(clone / "configs")
+    monkeypatch.chdir(worktree)
+    assert not (worktree / "configs").exists(), "fixture no longer covers the case"
+
+    resolved, origin, detail = oss_config.resolve_config_path("configs/.oss.json")
+    assert origin == "clone", detail
+    assert Path(resolved).resolve() == (clone / "configs" / oss_config.CONFIG_NAME).resolve()
+
+
 def test_an_absolute_config_path_is_never_widened(tmp_path, monkeypatch):
     """A path somebody typed in full is an answer, not a starting point."""
     clone, worktree = _clone_with_worktree(tmp_path)

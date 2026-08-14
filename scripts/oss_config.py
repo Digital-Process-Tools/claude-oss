@@ -437,7 +437,13 @@ def resolve_config_path(path):
     if given.is_absolute():
         return None, "missing", "Run /oss:setup to write it."
 
-    start = given.parent if str(given.parent) else Path(".")
+    # git is asked from the directory the path points into, but that directory need not
+    # exist here -- an excluded `configs/.oss.json` has no `configs/` in the worktree.
+    # A non-existent cwd makes the subprocess fail to start, which would be reported as
+    # "git could not answer" about a repository git can answer about perfectly well.
+    start = given.parent
+    if not start.is_dir():
+        start = Path(".")
     clone, why_not = _enclosing_clone(start)
     if clone is None:
         return (
