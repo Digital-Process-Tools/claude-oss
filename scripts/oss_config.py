@@ -729,6 +729,38 @@ def _repoint_git_exclude(root):
     ]
 
 
+def _ignore_rule(root, name):
+    """Is ``name`` still ignored? ``(state, detail)`` -- clear, ignored, or unknown.
+
+    `.git/info/exclude` is the only ignore source this script may rewrite; a `.gitignore`
+    belongs to whoever maintains the repo. So repointing the exclude file does not
+    establish that the project half can be committed, and saying so anyway reports the
+    action taken rather than the state produced -- which is how this plugin's own repo
+    ended up with a correct `.oss.json` that `git add` silently refused.
+
+    `git check-ignore` exits 1 for "not ignored", so the shared `_run` helper cannot be
+    used here: it folds every non-zero exit into failure, and that would render a clean
+    answer as an unknown one.
+    """
+    command = ["git", "-C", str(root), "check-ignore", "-v", "--", name]
+    try:
+        done = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+    except OSError as exc:
+        return "unknown", "git would not start ({})".format(exc)
+    if done.returncode == 0:
+        first = (done.stdout or "").strip().splitlines()
+        return "ignored", first[0].split("\t")[0] if first else name
+    if done.returncode == 1:
+        return "clear", ""
+    stderr = (done.stderr or "").strip().splitlines()
+    return "unknown", stderr[-1] if stderr else "git check-ignore exited {}".format(done.returncode)
+
+
 def split_config_file(path):
     """Migrate a combined config in place. Returns ``(problems, notes)``.
 
@@ -762,11 +794,25 @@ def split_config_file(path):
                 target.name, len(local), ", ".join(sorted(local)) or "none"
             )
         )
-        notes.append(
-            "{}: {} project-scoped key(s), now safe to track".format(path.name, len(project))
-        )
+        notes.append("{}: {} project-scoped key(s)".format(path.name, len(project)))
 
     notes.extend(_repoint_git_exclude(path.parent))
+
+    state, detail = _ignore_rule(path.parent, path.name)
+    if state == "clear":
+        notes.append("{}: nothing ignores it, now safe to track".format(path.name))
+    elif state == "ignored":
+        notes.append(
+            "{}: still ignored by {} -- that rule is yours to change, and until it does "
+            "`git add` refuses the project half without saying so".format(path.name, detail)
+        )
+    else:
+        notes.append(
+            "{}: could not ask git whether anything ignores it ({}). Unchecked is not "
+            "unignored -- run `git check-ignore -v {}` where the repo is".format(
+                path.name, detail, path.name
+            )
+        )
     notes.append(
         "git add {} -- committing the project half is the point, and it is the one step "
         "this script leaves to you".format(path.name)

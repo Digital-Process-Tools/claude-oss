@@ -5,7 +5,7 @@ __pycache__/
 .DS_Store
 .max/
 .remember/
-.oss.json
+.oss.local.json
 
 # Machine-specific symlink to the local claude-supertool clone.
 /supertool

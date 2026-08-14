@@ -21,8 +21,11 @@ split is a fact about storage rather than a new shape every caller has to learn.
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -263,3 +266,94 @@ def test_split_cli_outside_a_git_repo_still_splits_and_says_the_exclusion_was_no
     assert oss_config._main(["--split", str(path)]) == 0
     assert (tmp_path / oss_config.LOCAL_CONFIG_NAME).is_file()
     assert ".git/info/exclude" in capsys.readouterr().out
+
+
+# ------------------------------------------------------- the rule --split cannot repoint
+#
+# `.git/info/exclude` is not the only thing that ignores a file, and it is the only one
+# this script may touch: a `.gitignore` belongs to the maintainer. So the project half can
+# be correct, un-excluded, and still invisible to `git add` -- which is exactly the state
+# this repository was in after #39, its own `.gitignore` still carrying `.oss.json`.
+#
+# `now safe to track` was printed unconditionally, so the receipt described the action
+# taken rather than the state produced. Three states now: clear, ignored (naming the rule),
+# and could-not-ask.
+
+
+def _real_git_repo(tmp_path):
+    """A repo `git check-ignore` will actually answer about, or the test skips.
+
+    A fake `.git/info/` is enough for the exclude rewrite and not enough for git itself,
+    and a skip that says so beats a green that measured nothing.
+    """
+    done = subprocess.run(
+        ["git", "init", "--quiet", str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {}".format(done.stderr.strip() or done.returncode))
+    (tmp_path / ".git" / "info").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".git" / "info" / "exclude").write_text(
+        "# git ls-files --others\n.oss.json\n", encoding="utf-8"
+    )
+    path = tmp_path / oss_config.CONFIG_NAME
+    path.write_text(json.dumps(_combined(tmp_path), indent=2), encoding="utf-8")
+    return path
+
+
+def test_split_names_the_gitignore_rule_that_still_hides_the_project_half(tmp_path, capsys):
+    path = _real_git_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("__pycache__/\n.oss.json\n", encoding="utf-8")
+
+    assert oss_config._main(["--split", str(path)]) == 0
+    out = capsys.readouterr().out
+
+    assert ".gitignore:2" in out, out
+    assert "now safe to track" not in out, (
+        "the project half is still ignored, so claiming it is trackable reports the "
+        "action taken instead of the state produced"
+    )
+
+
+def test_split_says_the_project_half_is_trackable_when_nothing_ignores_it(tmp_path, capsys):
+    # The positive control for the assertion above: with no rule in the way the
+    # trackable line must still appear, or that assertion also passes on a --split
+    # that says nothing about tracking at all.
+    path = _real_git_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+
+    assert oss_config._main(["--split", str(path)]) == 0
+    out = capsys.readouterr().out
+
+    assert "now safe to track" in out, out
+    assert ".gitignore:" not in out, out
+
+
+def test_split_says_it_could_not_ask_rather_than_claiming_the_file_is_trackable(tmp_path, capsys):
+    # No git repository at all, so check-ignore cannot answer. `unknown` is not `clear`:
+    # a file nobody could check is not a file nobody ignores.
+    path = tmp_path / oss_config.CONFIG_NAME
+    path.write_text(json.dumps(_combined(tmp_path), indent=2), encoding="utf-8")
+
+    assert oss_config._main(["--split", str(path)]) == 0
+    out = capsys.readouterr().out
+
+    assert "could not" in out, out
+    assert "now safe to track" not in out, out
+
+
+def test_this_repos_own_gitignore_does_not_hide_its_project_half():
+    """The stale line that motivated all of the above, pinned so it cannot come back."""
+    rules = [
+        line.strip()
+        for line in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    ]
+    assert oss_config.CONFIG_NAME not in rules, (
+        "{} is the tracked project half; a .gitignore rule for it makes this repo's own "
+        "config uncommittable".format(oss_config.CONFIG_NAME)
+    )
+    assert oss_config.LOCAL_CONFIG_NAME in rules, (
+        "and the machine half must be ignored, or one maintainer's paths get committed"
+    )
