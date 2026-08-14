@@ -131,6 +131,30 @@ worse evidence.
 A citation in a brief is a claim. `supertool 'gh-issue:N'` costs one call, and a wrong citation gets
 trusted where a wrong fact would get checked.
 
+## Notes: where the long half goes
+
+Everything you return is paid for twice — once landing in the maintainer's context, again on
+every later turn of the session, because it has joined the prefix. A thorough run produces more
+worth *keeping* than is worth *injecting*, and those are not the same set: the full reviewer
+exchange, a caller inventory, sweep output backing a one-line claim. Worth keeping as evidence.
+Not worth carrying in the report.
+
+Write that material to `<worktree_root>/notes/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.md` — a
+sibling of the numbered worktree directories, not inside any of them. Outside every worktree, it
+can never enter the diff and needs no `.gitignore` entry in the target repo, for the same reason
+`.oss.json` itself is excluded via `.git/info/exclude` rather than committed. The timestamp is not
+decoration: a stale note from a previous run of the same branch reads exactly like the current
+one, and without something that tells them apart the maintainer greps last week's evidence for
+this week's claim.
+
+Not every run needs one. A paragraph belongs in the report as-is; write a note only when something
+genuinely worth keeping would otherwise have to be dropped or would bloat the report past what the
+maintainer needs to decide push / review / bounce.
+
+The split is unproven until it is checked, so check it: end the report with one line on the split's
+cost — roughly how much went to the note versus the report, and whether anything had to be left
+out of both. Without that line the split is a guess that got adopted.
+
 ## Report format
 
 Compact. The maintainer acts on three lines, not an essay.
@@ -141,5 +165,8 @@ Compact. The maintainer acts on three lines, not an essay.
 - **Platform claims**: which are observed, which are reasoned.
 - **Anything you found that nobody filed.** An adjacent finding is fixed if you are comfortable it is
   in this change's blast radius, and reported for filing if it is not.
+- **Note path, if you wrote one**, absolute. Nothing else about the note belongs in the report — a
+  judgment call stays in the report itself, a note is where evidence lives, not where a decision
+  hides.
 
 No preamble, no retrospective, no restating the brief.

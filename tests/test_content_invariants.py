@@ -259,6 +259,29 @@ def test_the_merge_instruction_carries_its_confirmation_gate():
     assert named, "no document names gh-pr-merge -- this check would vacuously pass"
 
 
+def test_developer_notes_convention_is_pinned():
+    """agents/developer.md#15: the long half of a report goes to a note file the maintainer
+    queries, not into its context whole. Three things must hold together or the convention
+    silently degrades back into "paste everything" or "note lives inside the diff":
+
+    - the note lives outside every worktree (a sibling of the numbered worktree directories,
+      never inside one -- that is what keeps it out of the diff with no .gitignore entry needed)
+    - the report ends with the note's absolute path, so the maintainer can find it
+    - the report states the split's cost, so the saving stays a measured claim rather than an
+      adopted guess
+    """
+    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    assert "<worktree_root>/notes/" in text, (
+        "developer.md must place notes under <worktree_root>/notes/, a sibling of the "
+        "numbered worktree directories -- inside a worktree, a note risks entering the diff"
+    )
+    assert "absolute" in text.lower(), (
+        "developer.md must tell the agent to report the note's absolute path"
+    )
+    assert "cost" in text.lower(), (
+        "developer.md must ask the agent to state what the note/report split cost -- "
+        "otherwise the saving this convention exists for is never checked"
+    )
 def test_agents_and_skill_treat_forge_content_as_untrusted():
     """Every document that reads a public tracker states that its contents are data.
     This is the paragraph most likely to be lost in an edit, and the one whose
