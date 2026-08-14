@@ -25,10 +25,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+      # markdown-it-py is not a test tool, it is the assembler's one dependency, and the
+      # suite over scripts/assemble_changelog.py cannot reach a single assertion without
+      # it -- the script refuses to run rather than fall back to text scanning. Absent
+      # here, that whole suite errored on every leg, so the heading refusal, the raw-HTML
+      # refusal and the fence state machine had never been exercised on a runner at all;
+      # they passed locally because the package happened to be installed there. The
+      # changelog workflow learned this the same way and the lesson was applied to that
+      # one file only. tests/test_workflow_dependencies.py now holds both against
+      # scaffold.ASSEMBLER_DEPENDENCIES, which is where the package name is declared.
       - name: Install test deps
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov markdown-it-py
       - name: Run tests
         run: pytest
 

@@ -153,6 +153,60 @@ _REFUSABLE = {
     "html_inline": "raw HTML inside a paragraph, which renders a heading tag",
 }
 
+#: Where a fragment's links may point. `http` and `https` are what a changelog
+#: cites; `mailto` opens a composer and fetches nothing. A destination carrying
+#: no scheme at all is a path inside this repository and is allowed unlisted,
+#: which is the case the allowlist exists to keep cheap.
+#:
+#: Images are not on this list and get no scheme of their own, deliberately. A
+#: link is inert until a reader clicks it; an image is fetched by whatever
+#: renders CHANGELOG.md, without anyone deciding to fetch it, so an off-repo
+#: image reports every reader of the release notes to whoever serves it. That
+#: is true of a perfectly ordinary `https` URL, which is why a scheme allowlist
+#: alone does not reach this and images are held to `local only` instead.
+_LINK_SCHEMES = ("http", "https", "mailto")
+
+#: RFC 3986 section 3.1, applied to a destination the parser has already found,
+#: decoded and normalised. This is not a fourth round of the hand-written
+#: Markdown scanning the note above retired: every bypass in that history was a
+#: disagreement with CommonMark about *where a construct begins in the source*,
+#: and locating the destination is still the parser's job here. What is left is
+#: reading a scheme off an isolated URI, whose grammar is one line long and is
+#: not Markdown's.
+_SCHEME_RE = re.compile(r"\A([A-Za-z][A-Za-z0-9+.\-]*):")
+
+#: Characters a browser's URL parser discards before it decides what scheme it
+#: is looking at. `java<TAB>script:` is `javascript:` to a reader, and the
+#: Markdown parser percent-encodes that tab rather than dropping it, so both the
+#: literal control character and its escape have to go before the front of the
+#: string means anything. Used only to classify -- never to rewrite what an
+#: author wrote.
+_DISCARDED_IN_URL = re.compile(r"%0[0-9aAdD]|%1[0-9a-fA-F]|%20|%7[fF]|[\x00-\x20\x7f]")
+
+_URL_SHAPE = ("a fragment's links may point at http, https, mailto or a path "
+              "inside this repository, and its images at a path inside this "
+              "repository only")
+
+_REMEDY_LINK = ("Write the destination as an http or https URL, or as a path "
+                "relative to the repository root. To *show* a scheme rather "
+                "than link with it, put it in backticks: CHANGELOG.md is "
+                "rendered by tools this repository does not choose, and a "
+                "scheme one renderer strips is live in the next one, so what "
+                "is inert where it was tested is not inert where it is read.")
+
+_REMEDY_REMOTE_IMAGE = ("Commit the image into this repository and reference it "
+                        "by relative path, or link to it instead of embedding "
+                        "it -- `[screenshot](https://...)` is allowed, because "
+                        "a link waits to be clicked and an image does not. The "
+                        "URL a pull request gives you for a dragged-in "
+                        "screenshot is off-repo and lands here.")
+
+_REMEDY_DATA_IMAGE = ("A `data:` image is not remote, and that is the whole of "
+                      "what can be said for it: it is an unbounded opaque blob "
+                      "in a file whose diff is its review, so nobody reviewing "
+                      "the release can see what shipped. Commit the image and "
+                      "reference it by relative path.")
+
 _SHAPE = ("a fragment is `- ` bullets at column 0 plus lines indented under "
           "them, and parsed as CommonMark it may hold no heading, no link ref "
           "definition and no raw HTML at any depth")
@@ -172,7 +226,9 @@ _REMEDY = ("To show one in an entry, put it in a fenced code block at the "
 _NO_PARSER = (
     "markdown-it-py is not importable ({0}), so nothing can be established "
     "about these fragments and nothing is claimed. Install it — "
-    "`pip install markdown-it-py`, or `pip install -e .[dev]` — and run again. "
+    "`pip install markdown-it-py` — and run again; in CI, install it in the "
+    "same job that runs this, because a job that skipped it has not checked "
+    "anything it is about to report on. "
     "There is deliberately no text-scanning fallback: three of them shipped "
     "and all three were bypassed within one audit, so a "
     "fallback here would be the same bug wearing a receipt.")
@@ -186,6 +242,31 @@ def _parser():
     if _MD_IMPORT_ERROR is not None or _MarkdownIt is None:
         raise CannotValidate(_NO_PARSER.format(_MD_IMPORT_ERROR or "unavailable"))
     return _MarkdownIt("commonmark")
+
+
+def _scanning_parser():
+    """The same parser with its own link sanitiser switched off.
+
+    markdown-it refuses a `javascript:` destination itself: it declines to build
+    a link and leaves the source as literal text. That is the right default for
+    a renderer and it is the wrong one for a guard, because it means there is no
+    `link_open` token to inspect for precisely the destinations worth
+    inspecting. A scheme allowlist walked over a stock parse would have refused
+    nothing at all in that case while reading, in CI, as though it worked.
+
+    Refusing to build the link also does not make the text safe. `render` copies
+    the fragment body verbatim, so the source reaches CHANGELOG.md either way,
+    and CHANGELOG.md is rendered by tools this repository does not choose --
+    each with its own idea of which schemes to strip.
+
+    So the parser keeps the job it is here for, finding where a destination
+    begins and ends and decoding it, and the allowlist below decides. Turning
+    the sanitiser off widens what the guard *sees*; it never widens what the
+    guard *permits*.
+    """
+    md = _parser()
+    md.validateLink = lambda url: True
+    return md
 
 
 def _flatten(tokens: Sequence, line: Optional[int] = None) -> Iterator[Tuple[object, int]]:
@@ -208,6 +289,18 @@ def _finding(name: str, number: int, what: str, line: str) -> str:
     return ("{0}:{1}: {2} — {3}. Inserted verbatim into CHANGELOG.md, this line "
             "becomes one. {4} Line: {5}"
             .format(name, number, what, _SHAPE, _REMEDY, line.strip()[:120]))
+
+
+def _url_finding(name: str, number: int, what: str, remedy: str,
+                 line: str) -> str:
+    """One refusal about where something points, rather than about shape.
+
+    Separate from `_finding` because that one ends in advice about fenced code
+    blocks and indentation, which answers nothing an author asked when their
+    screenshot URL was turned away.
+    """
+    return ("{0}:{1}: {2} — {3}. {4} Line: {5}"
+            .format(name, number, what, _URL_SHAPE, remedy, line.strip()[:120]))
 
 
 def _line_of_reference(md, lines: Sequence[str], label: str) -> int:
@@ -288,6 +381,70 @@ def _structure_findings(name: str, lines: Sequence[str], tokens: Sequence) -> Li
     return findings
 
 
+def _classify(url: str) -> Tuple[str, str]:
+    """(shape, scheme) of a destination: `scheme`, `network-relative` or `local`.
+
+    `//evil.example/x` carries no scheme and is not local either, so `no scheme
+    means relative` is one case short of correct and the short version lets a
+    remote destination through an allowlist that never looked at it.
+    """
+    bare = _DISCARDED_IN_URL.sub("", url)
+    match = _SCHEME_RE.match(bare)
+    if match:
+        return "scheme", match.group(1).lower()
+    if bare.startswith("//"):
+        return "network-relative", ""
+    return "local", ""
+
+
+def _destination_refusal(kind: str, url: str) -> Tuple[Optional[str], str]:
+    """Why this destination is refused for a link or an image, and the remedy.
+
+    `(None, "")` when it is allowed. The asymmetry between the two kinds is the
+    decision this function exists to hold: an `https` URL is allowed as a link
+    and refused as an image.
+    """
+    shape, scheme = _classify(url)
+    shown = url.strip()[:80]
+    if kind == "image":
+        if shape == "local":
+            return None, ""
+        if shape == "scheme" and scheme == "data":
+            return ("an image inlined as a `data:` URL", _REMEDY_DATA_IMAGE)
+        return ("an image loaded from off this repository (`{0}`), which every "
+                "reader of the release notes fetches, reporting themselves to "
+                "whoever serves it".format(shown), _REMEDY_REMOTE_IMAGE)
+    if shape == "local" or (shape == "scheme" and scheme in _LINK_SCHEMES):
+        return None, ""
+    if shape == "network-relative":
+        return ("a link to a scheme-relative destination (`{0}`), which is off "
+                "this repository however the reader arrived at the file"
+                .format(shown), _REMEDY_LINK)
+    return ("a link with the `{0}:` scheme (`{1}`), which is not one of {2}"
+            .format(scheme, shown,
+                    ", ".join("`{0}`".format(s) for s in _LINK_SCHEMES)),
+            _REMEDY_LINK)
+
+
+def _destination_findings(name: str, lines: Sequence[str],
+                          tokens: Sequence) -> List[str]:
+    """Findings for every link and image destination in the fragment."""
+    findings: List[str] = []
+    for token, at in _flatten(tokens):
+        if token.type == "link_open":
+            kind, url = "link", token.attrGet("href") or ""
+        elif token.type == "image":
+            kind, url = "image", token.attrGet("src") or ""
+        else:
+            continue
+        what, remedy = _destination_refusal(kind, url)
+        if what is not None:
+            findings.append(_url_finding(
+                name, at + 1, what, remedy,
+                lines[at] if at < len(lines) else ""))
+    return findings
+
+
 def scan_fragment_body(name: str, text: str) -> List[str]:
     """Findings for one fragment's content, each naming the file and the line.
 
@@ -295,12 +452,13 @@ def scan_fragment_body(name: str, text: str) -> List[str]:
     empty list in that case: an empty list means "looked, found nothing", and
     conflating that with "did not look" is the defect this tracker is full of.
     """
-    md = _parser()
+    md = _scanning_parser()
     lines = text.splitlines()
     env: Dict = {}
     tokens = md.parse(text, env)
 
     findings = _structure_findings(name, lines, tokens)
+    findings.extend(_destination_findings(name, lines, tokens))
 
     if "\t" in text:
         at = next(i for i, line in enumerate(lines) if "\t" in line)
@@ -599,6 +757,29 @@ def _document_facts(text: str) -> Tuple[Counter, Dict[str, str], int]:
             for label, value in env.get("references", {}).items()}
     raw = sum(1 for token in flat if token.type in ("html_block", "html_inline"))
     return headings, refs, raw
+
+
+def _disallowed_destinations(text: str) -> Counter:
+    """Multiset of the link and image destinations a document holds that a
+    fragment would not be allowed to carry.
+
+    Read off the assembled file so the second layer covers destinations too. It
+    is a *delta* against the file as it stood, like every other check in
+    `_verify_written`: CHANGELOG.md's own preamble links and the compare URLs a
+    release rewrites are already there and are not this release's doing.
+    """
+    found: Counter = Counter()
+    for token, _ in _flatten(_scanning_parser().parse(text, {})):
+        if token.type == "link_open":
+            kind, url = "link", token.attrGet("href") or ""
+        elif token.type == "image":
+            kind, url = "image", token.attrGet("src") or ""
+        else:
+            continue
+        what, _remedy = _destination_refusal(kind, url)
+        if what is not None:
+            found[(kind, url)] += 1
+    return found
 
 
 def _headings(text: str) -> List[Tuple[int, str, str]]:
@@ -945,6 +1126,16 @@ def _verify_written(before: str, after: str, emitted: Sequence[str],
         findings.append(
             "re-parse of the assembled file found {0} new raw HTML token(s), "
             "which render as structure a reader will trust".format(after_raw - before_raw))
+    gained = _disallowed_destinations(after) - _disallowed_destinations(before)
+    if gained:
+        findings.append(
+            "re-parse of the assembled file found {0} link or image "
+            "destination(s) this release added that a fragment may not carry: "
+            "{1}. The per-fragment guard should have refused these; that it did "
+            "not is itself the finding".format(
+                sum(gained.values()),
+                ", ".join("{0} -> {1}".format(kind, url[:80])
+                          for kind, url in sorted(gained))))
     crowded = sorted(_crowded_headings(after) - _crowded_headings(before))
     if crowded:
         findings.append(
@@ -1129,8 +1320,9 @@ def check(directory: Path) -> int:
                    "in its own filename; each body parsed with "
                    "markdown-it-py {1}, whose token stream holds no heading, no "
                    "link ref definition and no raw HTML at any depth, whose "
-                   "fences all close inside the fragment, and whose top level is "
-                   "one `- ` bullet list"
+                   "fences all close inside the fragment, whose top level is "
+                   "one `- ` bullet list, and every link and image destination "
+                   "in which is on the allowlist"
              .format(len(fragments), _MD_VERSION),
              ["{0}  {1}".format(f.path.name if f.path else "?", f.section) for f in fragments])
     return OK
