@@ -20,9 +20,15 @@ from pathlib import Path
 
 import pytest
 
-import shell_probe
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# Stated rather than inherited, matching every other sibling import in this suite.
+# pytest's default import mode puts this directory on sys.path as a side effect, so
+# the bare import worked -- and stopped working under `--import-mode=importlib`,
+# which is a collection error nobody would connect to this line.
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+import shell_probe  # noqa: E402
+
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 
 # The shell is chosen by MEASUREMENT, not by `shutil.which("bash")`. That answers

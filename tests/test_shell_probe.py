@@ -27,9 +27,12 @@ from pathlib import Path
 
 import pytest
 
-import shell_probe
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# Stated rather than inherited: pytest's default import mode puts this directory on
+# sys.path as a side effect, and the bare import breaks under `--import-mode=importlib`.
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+import shell_probe  # noqa: E402
 
 LAUNCHER_SUITES = [
     str(REPO_ROOT / "tests" / "test_doctor_launcher.py"),
@@ -83,6 +86,19 @@ def _child_pytest(path_entries, args):
     )
 
 
+def _collected(suites):
+    """How many tests those suites contain, asked of pytest rather than counted here.
+
+    Collection runs under the ambient PATH: it is the baseline the doctored run is
+    compared against, so doctoring it too would compare a number to itself.
+    """
+    done = _child_pytest(
+        [os.environ.get("PATH", "")], list(suites) + ["--collect-only"]
+    )
+    assert done.returncode == 0, done.stdout[-4000:]
+    return len([line for line in done.stdout.splitlines() if "::test_" in line])
+
+
 def test_a_broken_shell_earlier_on_path_does_not_turn_the_suites_red(tmp_path):
     """The System32 case. A `bash` that spawns and fails sits ahead of the real one,
     exactly as WSL's does on a Windows runner; a usable shell is still reachable
@@ -106,6 +122,12 @@ def test_a_broken_shell_earlier_on_path_does_not_turn_the_suites_red(tmp_path):
     done = _child_pytest([str(stub.parent), os.environ.get("PATH", "")], LAUNCHER_SUITES)
     assert "failed" not in done.stdout, done.stdout[-4000:]
     assert done.returncode == 0, done.stdout[-4000:]
+    # The positive control, and the whole claim. "Nothing failed" and "exit 0" are
+    # both satisfied by a run in which every test SKIPPED, which is precisely the
+    # outcome this fix must not produce here: a usable shell was reachable, so the
+    # suites had to run. The expected count is collected rather than written down,
+    # so adding a test to either suite cannot quietly weaken this to "some passed".
+    assert "{} passed".format(_collected(LAUNCHER_SUITES)) in done.stdout, done.stdout[-4000:]
 
 
 def test_no_shell_at_all_does_not_silence_the_assertions_that_never_wanted_one(tmp_path):
