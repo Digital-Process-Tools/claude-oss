@@ -124,8 +124,8 @@ was wired.
 they have `Edit` and `Write`. You apply every fix yourself, so one context decides what lands.
 
 **Independence lives in the reviewer; judgment stays with you.** Argue down a finding that is wrong
-and say why — that is an outcome no bounce-and-repush loop produces. Report all three: what it
-flagged, what you fixed, what you refused.
+and say why — that is an outcome no bounce-and-repush loop produces. Report all three under
+`review.findings`, each with its disposition: what it flagged, what you fixed, what you refused.
 
 **Do not shell out to a headless `claude` CLI.** One agent did, unbounded, with auto-accepted write
 access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.
@@ -170,27 +170,83 @@ decoration: a stale note from a previous run of the same branch reads exactly li
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.
 
-Not every run needs one. A paragraph belongs in the report as-is; write a note only when something
-genuinely worth keeping would otherwise have to be dropped or would bloat the report past what the
-maintainer needs to decide push / review / bounce.
+Not every run needs one. A finding that fits its own field belongs in the report; write a note only
+when something genuinely worth keeping would otherwise have to be dropped or would be too long for
+any field of the report — the full reviewer exchange, a sweep, an inventory.
 
-The split is unproven until it is checked, so check it: end the report with one line on the split's
-cost — roughly how much went to the note versus the report, and whether anything had to be left
-out of both. Without that line the split is a guess that got adopted.
+The split is unproven until it is checked, so check it: fill `split_cost` with one line on the
+split's cost — roughly how much went to the note versus the report, and whether anything had to be
+left out of both. Without that line the split is a guess that got adopted.
 
 ## Report format
 
-Compact. The maintainer acts on three lines, not an essay.
+**One JSON file, plus a path and at most two lines back.** Everything you return in chat is paid for
+twice, and the orchestrator usually needs four fields out of a report. So the report is a file it
+queries — `jq`, or any structured read — rather than a document it pays for whether it needs it yet
+or not.
 
-- **What changed**, per file, one line each.
-- **Red output, then green output.** Verbatim, shortest decisive lines.
-- **Review and audit**: flagged / fixed / refused, with the reason for each refusal. Name both
-  spawns; a spawn that did not run says so.
-- **Platform claims**: which are observed, which are reasoned.
-- **Anything you found that nobody filed.** An adjacent finding is fixed if you are comfortable it is
-  in this change's blast radius, and reported for filing if it is not.
-- **Note path, if you wrote one**, absolute. Nothing else about the note belongs in the report — a
-  judgment call stays in the report itself, a note is where evidence lives, not where a decision
-  hides.
+1. Write it beside your note, at `<worktree_root>/reports/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.json`.
+   Derive `worktree_root` the same way you derived it to cut the worktree; never write a path you
+   were not given. Outside every worktree, for the same reason the note is. **Flatten the branch
+   name first** — most `branch_pattern`s contain a slash, and a filename built from one silently
+   becomes a directory, so `fix/12` names the file `fix-12-…`. That applies to the note beside it.
+2. Validate it before you hand it over. A report that does not validate is not a report:
 
-No preamble, no retrospective, no restating the brief.
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <path>
+   ```
+
+3. Reply with the absolute path and **at most two lines** — the same sentence you put in `summary`,
+   plus anything that genuinely cannot wait a turn: a permission block, a refusal you expect an
+   argument about.
+
+The fields, their enumerations and a worked example are in
+`${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
+this section would otherwise duplicate and drift from. What the old prose report asked for has not
+changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, review →
+`review`, platform claims → `claims`, unfiled findings → `adjacent`, the note path → `note_path`.
+
+### The pull request is yours to write — the title as much as the body
+
+Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.json` and record it under `pr_body`.
+**A file the forge can consume unchanged, not a markdown body** — JSON with four fields:
+
+```json
+{"title": "…", "body": "…", "head": "<your branch>", "base": "<default branch>"}
+```
+
+Markdown is the shape the next step refuses, and the refusal lands on somebody else after your
+session has ended: they read your body, wrap it, and **invent a title**. The title is the sentence
+most people read, and after a squash it is the only part of the pull request that survives into the
+log — so it belongs to whoever did the work. That is not a formatting detail, it is the whole point.
+The validator opens this file and checks it, including that `head` is the branch you are on.
+
+The orchestrator hands the path to the forge; it does not re-narrate your evidence into a body of its
+own. **This is the default, not something to be asked for.** You hold the evidence, so this deletes a
+translation step that costs about a thousand tokens and loses detail on the way — it does not move
+judgment, because the orchestrator still reads the body before it opens anything.
+
+If you did not write one, say so in the field with a reason. `not-written` is a state; an absent file
+the orchestrator discovers later is not.
+
+### Structure makes a report easier to accept unread. Write against that.
+
+That is the cost of this format and it is worth naming, because it is this plugin's own defect class
+pointed at your own output. A refused disposition renders identically whether the refusal was argued
+or lazy, and an orchestrator scanning JSON stops arguing with findings — which is exactly where the
+review step's value lives. Three rules follow, and the validator enforces all three:
+
+- **Every list is a survey with its own state.** `checked` with no items means you looked and found
+  nothing. `not-checked` means nobody looked, and has to say why. An empty array on its own cannot
+  tell those apart, which is the whole reason it is not an array.
+- **Every class carries a verdict**, including `not-applicable` and `not-checked` with a why. A class
+  missing from the list reads as a class that passed.
+- **A refusal carries its full sentence and its argument**, never a boolean. Those are the cheapest
+  and most valuable bytes in the file.
+
+**What the validator checks is shape, not truth.** It cannot tell a review that ran from one that
+says it did; a `pushed` of false is recorded, not verified. The schema's `x-enforced` and
+`x-convention` lists say exactly which is which — the honest split is written down there rather than
+implied here.
+
+No preamble, no retrospective, no restating the brief — in `summary` or in the two lines.

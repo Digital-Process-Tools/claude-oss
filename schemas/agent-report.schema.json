@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-report.schema.json",
+  "title": "Agent report",
+  "description": "What an agent hands back when it finishes one issue: a JSON file the orchestrator queries field by field, plus a path and at most two lines in chat. The orchestrator reads what it needs when it needs it instead of paying for a document on every later turn of the session. Validate with scripts/report_schema.py.",
+  "x-honesty-on-disk": "x-enforced-on-disk is the one place this validator leaves the report and touches the filesystem: it opens the pr_body payload, parses it, and checks the shape the forge needs. That is a deliberate exception to shape-only, because pr_body.state of 'written' is the report's one claim about a file the NEXT step consumes, and a body the forge rejects is discovered after the agent's session has ended. It is a separate list, run by a separate function, so nothing here can be mistaken for the shape pass: validate() never reads a file, and the command line says when it skipped the payload rather than staying quiet about it.",
+  "x-honesty": "This schema checks SHAPE, never TRUTH. A structured summary is easier to accept without reading than a paragraph is, and that is the trade being made here: a refused disposition renders identically whether the refusal was argued or lazy. Two lists below say which is which. x-enforced is what scripts/report_schema.py actually refuses a report over, and every name in it is paired with a mutation in tests/test_agent_report_schema.py that proves the refusal happens. x-convention is the rest -- real parts of the contract, checked by nobody, and listed here so the next person meets the limit at the same moment they meet the schema.",
+  "x-enforced": [
+    "required-keys",
+    "types",
+    "no-unknown-keys",
+    "enum-membership",
+    "survey-not-checked-carries-a-reason",
+    "survey-not-checked-carries-no-items",
+    "refusal-carries-text-and-argument",
+    "unreached-class-carries-a-why",
+    "observed-test-phase-carries-a-result",
+    "unobserved-test-phase-carries-a-reason",
+    "written-pr-body-carries-a-path",
+    "unwritten-pr-body-carries-a-reason"
+  ],
+  "x-enforced-on-disk": [
+    "pr-body-file-exists",
+    "pr-body-file-parses",
+    "pr-body-payload-shape",
+    "pr-body-title-and-body-are-non-empty",
+    "pr-body-head-matches-the-report-branch"
+  ],
+  "x-convention": [
+    "that a survey marked checked was in fact checked -- nothing here can see whether a reviewer ever spawned",
+    "that a refusal's reason argues the point rather than restating the finding",
+    "that files matches what the commit actually touched",
+    "that every claim needing a grade appears in claims, and that the grades are honest",
+    "that summary is two lines rather than a document moved one field to the left",
+    "that summary and split_cost are non-empty at all -- both are required keys of type string, and an empty string satisfies that",
+    "that pushed is false, which the contract requires and this validator does not",
+    "that the agent writes a report at all -- an agent that ignores this document produces nothing for any assertion to see"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "issue",
+    "branch",
+    "head",
+    "pushed",
+    "summary",
+    "files",
+    "tests",
+    "review",
+    "claims",
+    "adjacent",
+    "blocked",
+    "pr_body",
+    "note_path",
+    "split_cost"
+  ],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "issue": {"type": "integer", "description": "The issue this run implements."},
+    "branch": {"type": "string"},
+    "head": {"type": "string", "description": "The commit the agent stopped on."},
+    "pushed": {
+      "type": "boolean",
+      "description": "The contract says an agent never pushes. Recorded rather than assumed, so a run that was pushed is visible instead of silent."
+    },
+    "summary": {
+      "type": "string",
+      "description": "At most two lines. The whole of what the orchestrator reads before deciding push / review / bounce."
+    },
+    "files": {
+      "type": "array",
+      "description": "One entry per file the commit touches, one line each.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "change"],
+        "properties": {
+          "path": {"type": "string"},
+          "change": {"type": "string"}
+        }
+      }
+    },
+    "tests": {"$ref": "#/$defs/tests"},
+    "review": {"$ref": "#/$defs/review"},
+    "claims": {
+      "allOf": [{"$ref": "#/$defs/survey"}],
+      "description": "Claims the run could not observe on the machine it ran on -- platform legs above all. Not every sentence in the report: the set that needs a grade. A run that never assessed them says state not-checked and why, which is different from having none.",
+      "x-items": {"$ref": "#/$defs/claim"}
+    },
+    "adjacent": {
+      "allOf": [{"$ref": "#/$defs/survey"}],
+      "description": "Anything found that nobody filed.",
+      "x-items": {"$ref": "#/$defs/adjacent"}
+    },
+    "blocked": {
+      "allOf": [{"$ref": "#/$defs/survey"}],
+      "description": "Steps that could not be taken -- a permission prompt on a git step, an unspawnable agent, a decision that is not the agent's to make. A permission block is reported, never routed around.",
+      "x-items": {"$ref": "#/$defs/blocked"}
+    },
+    "pr_body": {"$ref": "#/$defs/pr_body"},
+    "note_path": {
+      "type": ["string", "null"],
+      "description": "Absolute path to the long half, when one was written. Lives outside every worktree so it can never enter a diff."
+    },
+    "split_cost": {
+      "type": "string",
+      "description": "One line: roughly how much went to the note versus the report, and whether anything had to be left out of both. Without it the split is a guess that got adopted."
+    }
+  },
+  "$defs": {
+    "survey": {
+      "type": "object",
+      "x-rule": "survey",
+      "description": "Every list in this report is a survey, because an empty array cannot say whether anyone looked. checked with no items means looked and found nothing. not-checked means nobody looked, and must say why.",
+      "additionalProperties": false,
+      "required": ["state", "items"],
+      "properties": {
+        "state": {"enum": ["checked", "partial", "not-checked"]},
+        "reason": {"type": "string"},
+        "items": {"type": "array"}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim", "grade"],
+      "properties": {
+        "claim": {"type": "string"},
+        "scope": {"type": "string", "description": "Where it applies -- a platform, a Python version, a shell."},
+        "grade": {
+          "enum": ["observed", "reasoned", "falsified", "unobserved"],
+          "description": "observed: run here. reasoned: argued from the code, worth having, still not run. unobserved: named and not established."
+        }
+      }
+    },
+    "adjacent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "action"],
+      "properties": {
+        "text": {"type": "string"},
+        "file": {"type": ["string", "null"]},
+        "in_blast_radius": {"type": "boolean"},
+        "action": {"enum": ["fixed", "report-for-filing"]}
+      }
+    },
+    "blocked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "kind"],
+      "properties": {
+        "text": {"type": "string"},
+        "kind": {"enum": ["permission", "capability", "decision", "other"]}
+      }
+    },
+    "tests": {
+      "type": "object",
+      "description": "One object rather than two, so a run with a green and no red is a stated state instead of a missing key.",
+      "additionalProperties": false,
+      "required": ["command", "red", "green"],
+      "properties": {
+        "command": {"type": "string"},
+        "red": {"$ref": "#/$defs/phase"},
+        "green": {"$ref": "#/$defs/phase"}
+      }
+    },
+    "phase": {
+      "type": "object",
+      "x-rule": "test-phase",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "enum": ["observed", "not-applicable", "not-run"],
+          "description": "not-applicable is the honest answer for a prose-only change; not-run is the answer when a test should have been watched failing and was not."
+        },
+        "result": {"type": "string", "description": "The shortest decisive line, verbatim."},
+        "note": {"type": "string"},
+        "coverage": {"type": "string"},
+        "reason": {"type": "string"}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mechanism", "classes", "findings"],
+      "properties": {
+        "mechanism": {
+          "type": "string",
+          "description": "What actually ran, named exactly -- the subagent type and the brief it was pointed at -- or that nothing did. A review that did not execute must never render as a review that found nothing."
+        },
+        "spawn_error": {"type": ["string", "null"]},
+        "classes": {
+          "allOf": [{"$ref": "#/$defs/survey"}],
+          "description": "One verdict per class, always present, so a class nobody reached is visible rather than absent.",
+          "x-items": {"$ref": "#/$defs/class_verdict"}
+        },
+        "findings": {
+          "allOf": [{"$ref": "#/$defs/survey"}],
+          "description": "An empty items list under state checked is a review that ran and found nothing. Under state not-checked it is a review that never ran. Those are not the same value and must never be spelled the same way.",
+          "x-items": {"$ref": "#/$defs/finding"}
+        }
+      }
+    },
+    "class_verdict": {
+      "type": "object",
+      "x-rule": "class-verdict",
+      "additionalProperties": false,
+      "required": ["class", "state"],
+      "properties": {
+        "class": {"type": "string"},
+        "state": {"enum": ["pass", "finding", "not-applicable", "not-checked"]},
+        "why": {"type": "string"}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "x-rule": "finding",
+      "additionalProperties": false,
+      "required": ["class", "disposition", "text"],
+      "properties": {
+        "class": {"type": "string"},
+        "disposition": {"enum": ["fixed", "refused", "argued-down", "filed", "open"]},
+        "text": {
+          "type": "string",
+          "description": "The finding as the reviewer put it, in full. One sentence is cheap; a boolean is unreadable."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Required when the disposition is refused or argued-down: the argument, not a restatement. This is the field that keeps the orchestrator arguing with findings rather than scanning past them."
+        }
+      }
+    },
+    "pr_body": {
+      "type": "object",
+      "x-rule": "pr-body",
+      "description": "The agent writes the whole pull request -- title and body -- to a file the forge can consume unchanged, and names it here. The orchestrator reads it and hands it over. That deletes a translation step that costs a thousand tokens and loses detail on the way. Judgment does not move: the orchestrator still reads the body before it opens anything.",
+      "additionalProperties": false,
+      "required": ["state", "path"],
+      "properties": {
+        "state": {"enum": ["written", "not-written"]},
+        "path": {
+          "type": ["string", "null"],
+          "description": "A .pr.json file holding the forge payload described by $defs/forge_payload -- NOT a markdown body. A markdown file is the shape a forge refuses, and the refusal lands on the orchestrator after the agent's session has ended, at which point somebody re-narrates the body and invents a title. The title is the sentence most people read and the only part that survives a squash into the log, so it belongs to whoever did the work."
+        },
+        "reason": {"type": "string"}
+      }
+    },
+    "forge_payload": {
+      "type": "object",
+      "description": "The file at pr_body.path. JSON only, deliberately: a forge may also accept TOML, but TOML needs an interpreter-version-dependent parser and a check that cannot run on every supported interpreter would have to report a third state on some of them -- one shape, checkable everywhere, is worth more than the flexibility.",
+      "additionalProperties": false,
+      "required": ["title", "body", "head", "base"],
+      "properties": {
+        "title": {"type": "string"},
+        "body": {"type": "string"},
+        "head": {"type": "string", "description": "The branch the work is on. Checked against the report's own branch: the two disagreeing means a pull request opened from somewhere else, and the comparison is free once the file is open."},
+        "base": {"type": "string"},
+        "draft": {"type": "boolean"},
+        "labels": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "issue": 123,
+      "branch": "fix/123",
+      "head": "1dc856d",
+      "pushed": false,
+      "summary": "Suffix match now splits on either separator, so a Windows path stops being read as one long name. Red then green pasted below; one reviewer finding argued down.",
+      "files": [
+        {"path": "scripts/example.py", "change": "split on either separator before matching a suffix"},
+        {"path": "tests/test_example.py", "change": "a backslash path and a POSIX path in the same fixture"}
+      ],
+      "tests": {
+        "command": "python3 -m pytest tests/ -q",
+        "red": {
+          "state": "observed",
+          "result": "1 failed, 218 passed",
+          "note": "the backslash case returned the whole path as the name"
+        },
+        "green": {
+          "state": "observed",
+          "result": "219 passed, 1 skipped",
+          "coverage": "91.4%"
+        }
+      },
+      "review": {
+        "mechanism": "general-purpose subagent pointed at the auditor brief in the plugin root",
+        "spawn_error": null,
+        "classes": {
+          "state": "checked",
+          "items": [
+            {"class": "correctness", "state": "pass"},
+            {"class": "platform", "state": "finding"},
+            {"class": "security", "state": "not-applicable", "why": "no input crosses a trust boundary in this diff"},
+            {"class": "performance", "state": "not-checked", "why": "no benchmark exists in this repo to run"}
+          ]
+        },
+        "findings": {
+          "state": "checked",
+          "items": [
+            {
+              "class": "platform",
+              "disposition": "fixed",
+              "text": "The assertion hardcodes a forward slash, so the new case passes on POSIX and cannot fail on Windows."
+            },
+            {
+              "class": "correctness",
+              "disposition": "argued-down",
+              "text": "The helper should raise on an empty path rather than returning an empty string.",
+              "reason": "Two callers already treat the empty string as absent and would start crashing on a case they handle today; raising is a behaviour change nobody filed."
+            }
+          ]
+        }
+      },
+      "claims": {
+        "state": "checked",
+        "items": [
+          {"claim": "the suffix match is separator-agnostic", "scope": "windows", "grade": "reasoned"},
+          {"claim": "the suite passes", "scope": "macos", "grade": "observed"}
+        ]
+      },
+      "adjacent": {
+        "state": "checked",
+        "items": [
+          {
+            "text": "The docstring above the helper still describes the single-separator behaviour.",
+            "file": "scripts/example.py",
+            "in_blast_radius": true,
+            "action": "fixed"
+          }
+        ]
+      },
+      "blocked": {"state": "checked", "items": []},
+      "pr_body": {"state": "written", "path": "{worktree_root}/reports/fix-123-20260814T101500Z.pr.json"},
+      "note_path": "{worktree_root}/notes/fix-123-20260814T101500Z.md",
+      "split_cost": "Roughly two thirds to the note (the full reviewer exchange and the caller sweep); nothing was left out of both."
+    }
+  ]
+}
