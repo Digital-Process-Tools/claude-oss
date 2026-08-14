@@ -38,6 +38,8 @@ pytestmark = pytest.mark.skipif(
 COMPUTABLE = 0
 COULD_NOT_RUN = 3
 
+CONFIG_NAME = ".oss.json"
+
 
 def _env():
     """A git that reads no user or system config and needs no interactive identity.
@@ -363,7 +365,7 @@ def two_namespaces(tmp_path):
 
 
 def _write_config(repo, release):
-    (Path(repo) / ".oss.json").write_text(
+    (Path(repo) / CONFIG_NAME).write_text(
         json.dumps({"repo": "o/r", "default_branch": "main", "release": release}),
         encoding="utf-8",
     )
@@ -836,24 +838,78 @@ def test_a_long_path_does_not_truncate_what_the_range_lost(tmp_path):
     """Found by running the script on a real checkout, not by reading it.
 
     The reason ends with the consequence -- what the unscoped range anchored on --
-    and the path sits in front of it. At the receipt's 200-character limit a normal
-    absolute path cut the sentence off mid-directory, leaving a reason that named a
-    file and never said what it cost.
+    and the path sits in front of it. At a fixed character limit a normal absolute
+    path cut the sentence off mid-directory, leaving a reason that named a file and
+    never said what it cost.
+
+    No directory is created. `_scope` reads a config path and never touches git or
+    the repo, so what the truncation arithmetic needs is a long *string*, not a long
+    *tree* -- and a config that does not exist is one of the states under test here
+    anyway. The first version of this built the length out of four nested directories
+    and failed all four Windows legs on `MAX_PATH` before a line of the code under
+    test ran: the harness rendering an environment limit as a product verdict. It is
+    also the shape that leaves the platform with the longest paths the one platform
+    where this goes unchecked, which is why the length moved into the string rather
+    than the names getting shorter.
+    """
+    module = _module()
+    long_path = str(tmp_path / ("a-fairly-ordinary-directory-name" * 8) / CONFIG_NAME)
+    assert len(long_path) > 260, "the fixture must exceed any fixed reason limit"
+
+    unscoped = module._scope(str(tmp_path), None, long_path)
+    assert unscoped["scope"] is None
+    assert long_path in unscoped["scope_reason"], "the reason lost the path it names"
+    assert unscoped["scope_reason"].endswith("read as the last release"), (
+        "the path pushed the consequence off the end, so the reason names a file and "
+        "never says what it cost"
+    )
+
+    # The pair: the same call with a short path is not truncated either, so the
+    # assertion above is about the arithmetic and not about a limit nothing reaches.
+    short = module._scope(str(tmp_path), None, str(tmp_path / CONFIG_NAME))
+    assert short["scope_reason"].endswith("read as the last release")
+
+
+def test_the_scoped_reason_keeps_the_path_of_a_real_deep_checkout(tmp_path):
+    """The same arithmetic on the other branch, against a real file on disk.
+
+    Three states, because two of them are not the same: the tree was built and the
+    assertion ran, the tree was built and the assertion failed, or **the tree could
+    not be built here**. Windows refuses a path past `MAX_PATH` unless
+    `LongPathsEnabled` is set, and a runner may have it -- so this attempts the path
+    and reports which answer it got, rather than assuming either. Shortening the
+    names until they fit everywhere would delete the case on the one platform where
+    paths are longest and leave a green tick where nothing ran.
+
+    What a skip here does *not* lose: the arithmetic itself is exercised on every
+    platform by the string-level case above, which needs no filesystem. What it does
+    lose is the confirmation that a real checkout produces such a path at all.
     """
     module = _module()
     deep = tmp_path.joinpath(*["a-fairly-ordinary-directory-name"] * 4)
-    repo = _init(deep / "repo")
+    config = deep / CONFIG_NAME
+    try:
+        deep.mkdir(parents=True)
+        config.write_text(
+            json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
+        )
+    except OSError as exc:
+        # The reason names what was measured -- the length, the errno, the path --
+        # and stops there. "MAX_PATH" is where this fires in practice and is worth
+        # pointing at, but it is a Windows cause and this arm catches any OSError,
+        # so stating it as the diagnosis would be an unmeasured claim in a message
+        # whose whole job is to say exactly what was and was not established.
+        pytest.skip(
+            "a {0}-character path could not be created here ({1}: {2}), so the "
+            "scoped reason went untested against a real deep checkout -- on Windows "
+            "this is MAX_PATH without LongPathsEnabled. The arithmetic itself is "
+            "still covered on this platform by the string-level case, which needs "
+            "no filesystem.".format(len(str(config)), type(exc).__name__, exc)
+        )
 
-    unscoped = module._scope(str(repo), None, None)
-    assert unscoped["scope"] is None
-    assert unscoped["scope_reason"].endswith("read as the last release")
-
-    (Path(repo) / ".oss.json").write_text(
-        json.dumps({"release": {"tag_pattern": "v{version}"}}), encoding="utf-8"
-    )
-    scoped = module._scope(str(repo), None, None)
+    scoped = module._scope(str(deep), None, None)
     assert scoped["scope"] == "v*"
-    assert scoped["scope_reason"].endswith(".oss.json"), (
+    assert scoped["scope_reason"].endswith(CONFIG_NAME), (
         "the scoped reason lost the path it names"
     )
 
