@@ -441,6 +441,12 @@ python3 .oss/assemble_changelog.py --check --dir '__FRAGMENTS__' --changelog CHA
 ```
 """
 
+#: The `types:` list below is #88. The half it cannot fix -- a failed run persisting
+#: on the head sha beside the passing one the label produces -- is
+#: Digital-Process-Tools/claude-supertool#1722, and the reference stays here rather
+#: than in the template body: this string is written into strangers' repositories,
+#: where an issue number in another org's tracker means nothing to the contributor
+#: reading it.
 CHANGELOG_WORKFLOW = """name: oss changelog
 
 on:
@@ -452,11 +458,11 @@ on:
     # the label is invisible to that too, and the printed remedy changes nothing
     # until an unrelated push moves the head sha (#88).
     #
-    # This does not, on its own, turn the pull request green. The run that already
-    # failed stays attached to the head sha beside the new passing one, and clearing
-    # it is a repository setting and an API call -- neither of which a workflow file
-    # can reach. The label makes a passing run exist; it does not retract a failed
-    # one. Reported upstream as Digital-Process-Tools/claude-supertool#1722.
+    # What this does is make a passing run exist. It cannot retract the run that
+    # already failed, and no workflow trigger can: if your merge gate aggregates every
+    # run on the head sha rather than reading the latest one per check name, the old
+    # failure stays visible beside the new pass and the pull request stays red. That
+    # is a property of the gate, not of this file.
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # Declared at workflow level rather than per job: every job here only reads the pull
@@ -503,7 +509,18 @@ jobs:
       # a surface a release leaves behind rather than one it reads, so the run that
       # discovers it stale must not be the run cutting the tag (#88).
       - name: CHANGELOG.md's link refs agree with its release headings
-        run: python3 __DIR__/assemble_changelog.py --check-links --dir '__FRAGMENTS__' --changelog CHANGELOG.md
+        run: |
+          set -eu
+          # Three states, three exit codes: 0 ok, 1 skipped, 2 refused. Only
+          # `refused` is a finding. `skipped` is what a repository that has not cut a
+          # release yet gets -- no `## [x.y.z]` heading to audit refs against, or no
+          # CHANGELOG.md at all, neither of which the scaffold creates -- and a leg
+          # that reddened every pull request there would be answering a question
+          # nobody could yet make green. The receipt is still printed, so a check
+          # that could not look says so rather than passing silently.
+          status=0
+          python3 __DIR__/assemble_changelog.py --check-links --dir '__FRAGMENTS__' --changelog CHANGELOG.md || status=$?
+          [ "$status" -ne 2 ] || exit 1
 
       # A change to what this project DOES must say so where users read it.
       - name: A user-visible change carries a fragment

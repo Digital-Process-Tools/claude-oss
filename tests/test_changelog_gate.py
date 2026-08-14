@@ -35,6 +35,8 @@ GENERATED_WORKFLOW = ".github/workflows/oss-changelog.yml"
 
 GATE_STEP = "- name: A user-visible change carries a fragment"
 
+LINKS_STEP = "- name: CHANGELOG.md's link refs agree with its release headings"
+
 
 def _config(**overrides):
     config = {
@@ -55,13 +57,13 @@ def _config(**overrides):
     return config
 
 
-def _gate_script():
-    """The gate step's shell body, dedented, ready to hand to bash."""
+def _step_script(step):
+    """One step's shell body, dedented, ready to hand to bash."""
     body = scaffold.render_owned(GENERATED_WORKFLOW, _config())
     lines = body.splitlines()
-    starts = [i for i, line in enumerate(lines) if line.strip() == GATE_STEP]
+    starts = [i for i, line in enumerate(lines) if line.strip() == step]
     assert len(starts) == 1, "expected exactly one {!r} step, found {}".format(
-        GATE_STEP, len(starts)
+        step, len(starts)
     )
     start = starts[0]
     runs = [i for i in range(start + 1, len(lines)) if lines[i].strip() == "run: |"]
@@ -76,8 +78,12 @@ def _gate_script():
         if len(line) - len(line.lstrip()) <= indent:
             break
         block.append(line)
-    assert block, "the gate step's `run: |` block is empty"
+    assert block, "the step's `run: |` block is empty"
     return textwrap.dedent("\n".join(block)) + "\n"
+
+
+def _gate_script():
+    return _step_script(GATE_STEP)
 
 
 def _git(repo, *args):
@@ -189,6 +195,29 @@ def test_deleting_someone_elses_fragment_does_not_satisfy_the_gate(tmp_path):
     )
 
 
+def test_adding_your_own_fragment_does_not_licence_deleting_somebody_elses(tmp_path):
+    """What pins the branch ORDER inside the gate, and nothing else does.
+
+    Found by review: with the deletion branch moved below the "was anything added"
+    branch, every other test in this file still passed, and this shape went green
+    printing `Fragment present:` over a receipt that named the entry it was dropping.
+    A pull request may announce its own change and still not be entitled to remove
+    somebody else's.
+    """
+    repo = _pull_request(
+        tmp_path,
+        {
+            "src.py": "value = 2\n",
+            "changelog.d/906.added.md": None,
+            "changelog.d/925.fixed.md": "- a fix (#925).\n",
+        },
+    )
+    result = _run_gate(repo)
+    assert result.returncode != 0, result.stdout
+    assert "906.added.md" in result.stdout, result.stdout
+    assert "deleted" in result.stdout, result.stdout
+
+
 def test_deleting_a_fragment_and_nothing_else_is_refused(tmp_path):
     """The plainest instance, and the one a `shipped`-paths gate would wave through:
     losing a fragment needs no code change to go with it.
@@ -214,6 +243,10 @@ def test_a_release_cut_passes(tmp_path):
     )
     result = _run_gate(repo)
     assert result.returncode == 0, result.stdout
+    # The receipt, not just the status: a gate that fell out of the "Fragment
+    # present" branch by accident would also be zero here.
+    assert "Release cut" in result.stdout, result.stdout
+    assert "906.added.md" in result.stdout, result.stdout
 
 
 def test_a_release_cut_that_also_carries_its_own_fragment_reports_both(tmp_path):
@@ -282,6 +315,75 @@ def test_the_workflow_audits_the_changelog_link_refs():
     """
     body = scaffold.render_owned(GENERATED_WORKFLOW, _config())
     assert "--check-links" in body, body
+
+
+def _links_repo(tmp_path, changelog):
+    """A repo carrying the vendored assembler where the generated step expects it."""
+    repo = tmp_path / "repo"
+    (repo / scaffold.OWNED_DIR).mkdir(parents=True)
+    (repo / scaffold.OWNED_DIR / "assemble_changelog.py").write_text(
+        (REPO_ROOT / "scripts" / "assemble_changelog.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (repo / "changelog.d").mkdir()
+    if changelog is not None:
+        (repo / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
+    return repo
+
+
+def _run_links(repo):
+    return subprocess.run(
+        ["bash", "-c", _step_script(LINKS_STEP)],
+        cwd=str(repo),
+        env={"PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+
+
+STALE = """# Changelog
+
+## [1.0.0] - 2026-01-01
+
+- a thing.
+"""
+
+AUDITED = STALE + """
+[Unreleased]: https://github.com/owner/name/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/owner/name/releases/tag/v1.0.0
+"""
+
+
+def test_a_stale_link_ref_table_is_a_finding(tmp_path):
+    """The positive control, and the whole reason the step was added. Without it the
+    two checks below could be passing because the step does nothing at all.
+    """
+    result = _run_links(_links_repo(tmp_path, STALE))
+    assert result.returncode != 0, result.stdout
+    assert "1.0.0" in result.stdout, result.stdout
+
+
+def test_an_audited_link_ref_table_passes(tmp_path):
+    result = _run_links(_links_repo(tmp_path, AUDITED))
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize(
+    "changelog", [None, "# Changelog\n\n## [Unreleased]\n"], ids=["absent", "pre-release"]
+)
+def test_a_repo_that_has_not_cut_a_release_is_skipped_not_red(tmp_path, changelog):
+    """`check_links` returns SKIPPED (exit 1), not OK, when there is no `## [x.y.z]`
+    heading to audit refs against or no CHANGELOG.md at all -- and the scaffold creates
+    neither. A step that treated that as a finding would redden every pull request in a
+    freshly scaffolded repo, and it sits above the fragment gate, so the gate this
+    change exists to fix would never run there. Found by review.
+    """
+    result = _run_links(_links_repo(tmp_path, changelog))
+    assert result.returncode == 0, result.stdout
+    assert "skipped" in result.stdout, (
+        "it passed without saying it could not look:\n" + result.stdout
+    )
 
 
 @pytest.mark.parametrize("mode", ["--check", "--check-links"])

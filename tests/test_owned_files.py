@@ -84,6 +84,10 @@ def test_a_nested_changelog_directory_still_renders():
         ".github/workflows/oss-changelog.yml", _config(changelog_dir="docs/changelog.d")
     )
     assert "docs/changelog.d" in body
+    # Not just "it appears somewhere": a placeholder left in a line this test does not
+    # look at renders literally into somebody's workflow and is invisible here.
+    for placeholder in ("__FRAGMENTS__", "__DIR__", "__PACKAGES__"):
+        assert placeholder not in body, placeholder
 
 
 # ------------------------------------------------- the workflow can run what it calls
