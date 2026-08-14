@@ -64,7 +64,8 @@ def assembler_path(repo_root):
 
 CHANGELOG_FRAGMENTS = """---
 title: "Changelog fragments"
-match: __FRAGMENTS__/
+description: "One file per pull request; do not hand-edit CHANGELOG.md while changelog.d/ exists -- the fold overwrites it and deletes the fragments."
+match: (__FRAGMENTS__/|(^|/)CHANGELOG\\.md$)
 ---
 
 One file per pull request, so two open PRs never touch the same file. `CHANGELOG.md` is assembled
@@ -131,6 +132,7 @@ def changelog_fragments(assembler, fragments_dir):
 
 OSS_CONFIG = """---
 title: ".oss.json is config, not truth"
+description: "Per-repo settings for the maintainer loop. Re-derive ci.required_checks and labels before acting; null is an answer, not a gap."
 match: \\.oss\\.json
 ---
 
@@ -155,6 +157,7 @@ probe could not tell". Everything else null is a hole -- the probe found nothing
 
 STATE_FILE = """---
 title: "The tick state file"
+description: "Written every tick, read first every tick. A corrupt file raises rather than resetting; an over-long decision is refused rather than truncated."
 keywords: state file, oss-watch, tick state, handoff, oss state
 ---
 
@@ -170,6 +173,31 @@ Two refusals worth knowing before editing the file by hand:
   exists for, and the tick that did it looks exactly like a first tick.
 - **An over-long decision is refused, not truncated.** A truncation drops the half that mattered and
   leaves something that still reads as a record.
+"""
+
+TOOLS_SUPERTOOL = """---
+title: "Read, Edit, Write, Glob and Grep go through supertool"
+description: "supertool has an op for every one of these; the call is refused and the reader is told which op replaces it."
+tool: Read|Edit|Write|Glob|Grep
+match: ~.*
+mode: block
+---
+
+`supertool` is a declared dependency of this plugin and installs alongside it, so this rule ships
+unconditionally rather than behind a presence check frontmatter has no way to express -- a tree
+that carries this layer already carries `supertool`.
+
+There is no read, edit, write, glob or grep that cannot go through it. Use the op that replaces
+the call just refused:
+
+- **Read** -- `supertool 'read:PATH'`
+- **Edit** -- `supertool 'edit:@-'` (a TOML payload on stdin) or `supertool 'edit:::OLD:::NEW:::PATH'`
+- **Write** -- `supertool 'write:PATH'`
+- **Glob** -- `supertool 'glob:PATTERN'`
+- **Grep** -- `supertool 'grep:PATTERN:PATH'`
+
+No exception for an image, a PDF or a notebook cell: none exists in this repository today. If one
+appears, that is when it gets one -- not before.
 """
 
 def rules(repo_root=None, fragments_dir=None):
@@ -190,6 +218,9 @@ def rules(repo_root=None, fragments_dir=None):
         },
         "vocabulary": {
             "oss-state.md": STATE_FILE,
+        },
+        "tools": {
+            "supertool-required.md": TOOLS_SUPERTOOL,
         },
     }
 
@@ -212,9 +243,13 @@ def _field(body, key):
 
 
 def index_rows(dimension, rules):
-    """`pattern<TAB>filename`, the shape a rebuild produces.
+    """The shape a rebuild produces, per dimension.
 
-    Paths index one row per `match`; vocabulary indexes one row per keyword.
+    Paths index one row of `match<TAB>filename`; vocabulary indexes one row of
+    `keyword<TAB>filename` per keyword; tools indexes one row of
+    `tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid` -- six columns, measured
+    against claude-jit-context's `rebuild-tsv.sh` rather than reasoned about (#80 found the
+    same list wrong when it was only reasoned about).
     """
     rows = []
     for name in sorted(rules):
@@ -225,6 +260,14 @@ def index_rows(dimension, rules):
                 keyword = keyword.strip()
                 if keyword:
                     rows.append("{}\t{}".format(keyword, name))
+        elif dimension == "tools":
+            tool = _field(body, "tool")
+            match = _field(body, "match")
+            if tool and match:
+                mode = _field(body, "mode") or "remind"
+                require = _field(body, "require") or ""
+                forbid = _field(body, "forbid") or ""
+                rows.append("\t".join([tool, match, name, mode, require, forbid]))
         else:
             match = _field(body, "match")
             if match:

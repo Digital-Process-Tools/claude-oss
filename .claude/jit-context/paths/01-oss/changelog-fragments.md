@@ -1,6 +1,7 @@
 ---
 title: "Changelog fragments"
-match: changelog.d/
+description: "One file per pull request; do not hand-edit CHANGELOG.md while changelog.d/ exists -- the fold overwrites it and deletes the fragments."
+match: (changelog.d/|(^|/)CHANGELOG\.md$)
 ---
 
 One file per pull request, so two open PRs never touch the same file. `CHANGELOG.md` is assembled
