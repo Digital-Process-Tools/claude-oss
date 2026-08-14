@@ -236,6 +236,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issue in the scaffolded repo, or at nothing. The reasoning each citation stood in for was already
   stated in prose, so the numbers and the pointer were dropped rather than replaced (#24).
 
+- Changelog fragments are now refused for where their links and images point, not only for
+  their shape. Links may use `http`, `https`, `mailto` or a path inside the repository;
+  images may use a repository path only, because a link waits to be clicked and an image is
+  fetched by whatever renders `CHANGELOG.md`, turning an off-repo one into a beacon that
+  reports every reader of the release notes. The checker refused every other way of getting
+  content into a released changelog and never looked at a destination, and a checker that
+  closes the rest of a class silently is read as closing the class — so the `ok` receipt now
+  says destinations were checked, and the re-parse of the written file refuses any the
+  release added (#30).
+- The scan parses with the Markdown library's own link sanitiser disabled. It refuses a
+  `javascript:` destination by declining to build a link at all, so there was no token for a
+  scheme allowlist to inspect and the obvious fix would have refused nothing while passing
+  CI — while the fragment text still reached `CHANGELOG.md` verbatim, to be rendered by tools
+  this repository does not choose. The same blind spot hid a `javascript:` link-reference
+  definition indented under a bullet, which passed `--check` clean until now (#30).
+
+- `changelog_dir` is now checked for shape, so a value carrying a command substitution can no
+  longer be substituted unquoted into the `run:` body of the workflow the scaffold writes into
+  another repository. `validate()` refuses anything that is not a relative path of plain
+  segments, the scaffold refuses it again at the point of substitution, and a non-string is
+  refused with a sentence instead of crashing the renderer. Nested directories such as
+  `docs/changelog.d` keep working (#31).
+
+- Every workflow now declares `permissions: contents: read` — this repo's changelog and tests
+  workflows, and the changelog workflow the scaffold generates for other repositories. Without
+  it a job inherits the repository default, which is read/write until somebody changes it, and
+  both changelog workflows execute the assembler from the pull request's own checkout (#32).
+
+- The test workflow installs `markdown-it-py`, so the suite covering the changelog assembler
+  now runs on a runner at all. It installed `pytest pytest-cov` and nothing else, and the
+  assembler refuses to work without its parser rather than falling back to text scanning —
+  so every test touching it errored on every platform and every Python version. The heading
+  refusal, the raw-HTML refusal, the fence state machine and the unclosed-fence check had
+  therefore never been exercised in CI; they passed locally only because the package happened
+  to be installed there (#38).
+- The package name is declared in one place, `scaffold.ASSEMBLER_DEPENDENCIES`, and was
+  already held against both the assembler's guarded imports and the workflow generated for
+  scaffolded repos. It was never held against the two workflows this project runs on itself,
+  which is why the plugin guaranteed the parser for every repo it scaffolds except the one it
+  lives in. Both are now checked, along with any workflow added later that reaches the
+  assembler (#38).
+- The message printed when the parser is missing no longer suggests `pip install -e .[dev]`,
+  which fails here: this repository declares no installable package, so the advice shown on
+  the exact failure it was written for was advice that could not be followed (#38).
+
 ## [0.1.0] - Scaffold
 
 ### Added
