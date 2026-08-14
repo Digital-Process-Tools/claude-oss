@@ -169,12 +169,17 @@ def test_a_changelog_rule_exists_and_fires_on_the_fragment_directory():
 def test_every_shipped_entry_declares_a_description():
     """Under `JIT_CONTEXT_INJECT=summary`, a match injects `title:` plus `description:` only.
     An entry with no `description:` is named and not injected -- the content never reaches a
-    session running that mode. All three population dimensions must carry one.
+    session running that mode. All three population dimensions must carry one, and it must say
+    something: an empty `description: ""` passes a bare substring check while reproducing the
+    exact bug this guards against -- nothing useful injected under summary mode.
     """
     for dimension, rules in oss_rules.RULES.items():
         for name, body in rules.items():
             block = body.split("\n---\n")[0]
-            assert "description:" in block, (dimension, name)
+            line = [ln for ln in block.splitlines() if ln.startswith("description:")]
+            assert line, (dimension, name)
+            value = line[0].split(":", 1)[1].strip().strip('"')
+            assert len(value) > 20, (dimension, name, value)
 
 
 # --- #108: the fragments rule must fire on CHANGELOG.md, the moment its warning applies ------
@@ -284,9 +289,11 @@ def test_tools_index_row_is_the_six_column_shape():
         assert mode == "block", mode
 
 
-def test_tools_match_fires_on_every_blocked_op_and_not_on_bash():
+def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():
     """Driven for real against the actual ERE: the wildcard match must actually match a
-    representative payload for each of the five tools' ordinary calls.
+    representative payload for each of the five tools' ordinary calls. (Bash is excluded
+    from the blocked set by the `tool:` field, not by `match:` -- see
+    test_tools_dimension_blocks_the_five_native_ops for that half.)
     """
     if _awk() is None:
         pytest.skip("no awk on PATH, so the tools match cannot be driven for real")

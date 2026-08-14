@@ -10,8 +10,9 @@ rules engine on purpose. Git tracks symlinks, a clone recreates them, and a link
 carries its own index -- so one committed link would be enough to point a stranger's
 rules at anything on the machine. Copies into an owned layer are the supported shape.
 
-Rows are written in the same format a rebuild would produce (`pattern<TAB>filename`), so
-regenerating the index is a no-op rather than a diff.
+Rows are written in the same format a rebuild would produce -- `pattern<TAB>filename` for
+paths and vocabulary, the six-column shape for tools (see `index_rows()`) -- so regenerating
+the index is a no-op rather than a diff.
 
 Python 3.9 compatible.
 """
