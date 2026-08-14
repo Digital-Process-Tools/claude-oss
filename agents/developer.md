@@ -206,13 +206,25 @@ this section would otherwise duplicate and drift from. What the old prose report
 changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, review →
 `review`, platform claims → `claims`, unfiled findings → `adjacent`, the note path → `note_path`.
 
-### The pull request body is yours to write
+### The pull request is yours to write — the title as much as the body
 
-Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.md` and record it under `pr_body`.
-The orchestrator reads the file and hands the path to the forge; it does not re-narrate your evidence
-into a body of its own. **This is the default, not something to be asked for.** You hold the evidence,
-so this deletes a translation step that costs about a thousand tokens and loses detail on the way —
-it does not move judgment, because the orchestrator still reads the body before it opens anything.
+Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.json` and record it under `pr_body`.
+**A file the forge can consume unchanged, not a markdown body** — JSON with four fields:
+
+```json
+{"title": "…", "body": "…", "head": "<your branch>", "base": "<default branch>"}
+```
+
+Markdown is the shape the next step refuses, and the refusal lands on somebody else after your
+session has ended: they read your body, wrap it, and **invent a title**. The title is the sentence
+most people read, and after a squash it is the only part of the pull request that survives into the
+log — so it belongs to whoever did the work. That is not a formatting detail, it is the whole point.
+The validator opens this file and checks it, including that `head` is the branch you are on.
+
+The orchestrator hands the path to the forge; it does not re-narrate your evidence into a body of its
+own. **This is the default, not something to be asked for.** You hold the evidence, so this deletes a
+translation step that costs about a thousand tokens and loses detail on the way — it does not move
+judgment, because the orchestrator still reads the body before it opens anything.
 
 If you did not write one, say so in the field with a reason. `not-written` is a state; an absent file
 the orchestrator discovers later is not.

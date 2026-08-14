@@ -3,6 +3,7 @@
   "$id": "agent-report.schema.json",
   "title": "Agent report",
   "description": "What an agent hands back when it finishes one issue: a JSON file the orchestrator queries field by field, plus a path and at most two lines in chat. The orchestrator reads what it needs when it needs it instead of paying for a document on every later turn of the session. Validate with scripts/report_schema.py.",
+  "x-honesty-on-disk": "x-enforced-on-disk is the one place this validator leaves the report and touches the filesystem: it opens the pr_body payload, parses it, and checks the shape the forge needs. That is a deliberate exception to shape-only, because pr_body.state of 'written' is the report's one claim about a file the NEXT step consumes, and a body the forge rejects is discovered after the agent's session has ended. It is a separate list, run by a separate function, so nothing here can be mistaken for the shape pass: validate() never reads a file, and the command line says when it skipped the payload rather than staying quiet about it.",
   "x-honesty": "This schema checks SHAPE, never TRUTH. A structured summary is easier to accept without reading than a paragraph is, and that is the trade being made here: a refused disposition renders identically whether the refusal was argued or lazy. Two lists below say which is which. x-enforced is what scripts/report_schema.py actually refuses a report over, and every name in it is paired with a mutation in tests/test_agent_report_schema.py that proves the refusal happens. x-convention is the rest -- real parts of the contract, checked by nobody, and listed here so the next person meets the limit at the same moment they meet the schema.",
   "x-enforced": [
     "required-keys",
@@ -17,6 +18,13 @@
     "unobserved-test-phase-carries-a-reason",
     "written-pr-body-carries-a-path",
     "unwritten-pr-body-carries-a-reason"
+  ],
+  "x-enforced-on-disk": [
+    "pr-body-file-exists",
+    "pr-body-file-parses",
+    "pr-body-payload-shape",
+    "pr-body-title-and-body-are-non-empty",
+    "pr-body-head-matches-the-report-branch"
   ],
   "x-convention": [
     "that a survey marked checked was in fact checked -- nothing here can see whether a reviewer ever spawned",
@@ -227,13 +235,30 @@
     "pr_body": {
       "type": "object",
       "x-rule": "pr-body",
-      "description": "The agent writes the pull request body to a file and returns the path; the orchestrator reads it and passes it to the forge. That deletes a translation step that costs a thousand tokens and loses detail on the way. Judgment does not move: the orchestrator still reads the body before it opens anything.",
+      "description": "The agent writes the whole pull request -- title and body -- to a file the forge can consume unchanged, and names it here. The orchestrator reads it and hands it over. That deletes a translation step that costs a thousand tokens and loses detail on the way. Judgment does not move: the orchestrator still reads the body before it opens anything.",
       "additionalProperties": false,
       "required": ["state", "path"],
       "properties": {
         "state": {"enum": ["written", "not-written"]},
-        "path": {"type": ["string", "null"]},
+        "path": {
+          "type": ["string", "null"],
+          "description": "A .pr.json file holding the forge payload described by $defs/forge_payload -- NOT a markdown body. A markdown file is the shape a forge refuses, and the refusal lands on the orchestrator after the agent's session has ended, at which point somebody re-narrates the body and invents a title. The title is the sentence most people read and the only part that survives a squash into the log, so it belongs to whoever did the work."
+        },
         "reason": {"type": "string"}
+      }
+    },
+    "forge_payload": {
+      "type": "object",
+      "description": "The file at pr_body.path. JSON only, deliberately: a forge may also accept TOML, but TOML needs an interpreter-version-dependent parser and a check that cannot run on every supported interpreter would have to report a third state on some of them -- one shape, checkable everywhere, is worth more than the flexibility.",
+      "additionalProperties": false,
+      "required": ["title", "body", "head", "base"],
+      "properties": {
+        "title": {"type": "string"},
+        "body": {"type": "string"},
+        "head": {"type": "string", "description": "The branch the work is on. Checked against the report's own branch: the two disagreeing means a pull request opened from somewhere else, and the comparison is free once the file is open."},
+        "base": {"type": "string"},
+        "draft": {"type": "boolean"},
+        "labels": {"type": "array", "items": {"type": "string"}}
       }
     }
   },
@@ -310,7 +335,7 @@
         ]
       },
       "blocked": {"state": "checked", "items": []},
-      "pr_body": {"state": "written", "path": "{worktree_root}/reports/fix-123-20260814T101500Z.pr.md"},
+      "pr_body": {"state": "written", "path": "{worktree_root}/reports/fix-123-20260814T101500Z.pr.json"},
       "note_path": "{worktree_root}/notes/fix-123-20260814T101500Z.md",
       "split_cost": "Roughly two thirds to the note (the full reviewer exchange and the caller sweep); nothing was left out of both."
     }

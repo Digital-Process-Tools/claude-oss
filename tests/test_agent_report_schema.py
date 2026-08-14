@@ -208,8 +208,10 @@ def _run(*args):
 
 
 def test_cli_accepts_a_valid_report(tmp_path):
+    # A whole report, payload file and all -- the shipped example names a placeholder
+    # path on purpose, since a real one would be a fact about one machine.
     path = tmp_path / "report.json"
-    path.write_text(json.dumps(_example()), encoding="utf-8")
+    path.write_text(json.dumps(_report_with_payload(tmp_path)), encoding="utf-8")
     done = _run(str(path))
     assert done.returncode == 0, done.stdout + done.stderr
 
@@ -268,7 +270,7 @@ def test_the_developer_brief_points_at_files_that_exist():
 
 def test_validate_file_reads_and_validates(tmp_path):
     path = tmp_path / "report.json"
-    path.write_text(json.dumps(_example()), encoding="utf-8")
+    path.write_text(json.dumps(_report_with_payload(tmp_path)), encoding="utf-8")
     assert report_schema.validate_file(path) == []
 
 
@@ -286,7 +288,7 @@ def test_validate_file_on_unparseable_json_reports_rather_than_returning_clean(t
 
 def test_main_returns_zero_on_a_good_report(tmp_path, capsys):
     path = tmp_path / "report.json"
-    path.write_text(json.dumps(_example()), encoding="utf-8")
+    path.write_text(json.dumps(_report_with_payload(tmp_path)), encoding="utf-8")
     assert report_schema.main([str(path)]) == 0
     assert "ok" in capsys.readouterr().out
 
@@ -385,3 +387,114 @@ def test_the_ascii_control_would_otherwise_have_raised():
     stream = io.TextIOWrapper(io.BytesIO(), encoding="ascii")
     with pytest.raises(UnicodeEncodeError):
         print("naïve", file=stream)
+
+# --- the one check that leaves the report and opens a file --------------------
+#
+# pr_body.state of "written" is the report's single claim about a file the NEXT
+# step consumes. A body the forge refuses is discovered after the agent's session
+# has ended, and the recovery is exactly the re-narration this format exists to
+# delete -- somebody reads the body, wraps it, and invents a title. So this one
+# claim is checked against the filesystem, in its own function, pinned to its own
+# list in the schema, so it can never be mistaken for the shape pass.
+
+
+def _payload():
+    return {
+        "title": "A title the agent wrote, because it survives the squash into the log",
+        "body": "The body.",
+        "head": "fix/123",
+        "base": "main",
+    }
+
+
+def _report_with_payload(tmp_path, payload=None, name="body.pr.json", write=True):
+    report = _example()
+    target = tmp_path / name
+    if write:
+        if isinstance(payload, str):
+            target.write_text(payload, encoding="utf-8")
+        else:
+            target.write_text(
+                json.dumps(_payload() if payload is None else payload), encoding="utf-8"
+            )
+    report["pr_body"] = {"state": "written", "path": str(target)}
+    return report
+
+
+def test_a_written_payload_the_forge_can_consume_is_accepted(tmp_path):
+    report = _report_with_payload(tmp_path)
+    assert report_schema.validate(report) == []
+    assert report_schema.validate_pr_body(report) == []
+
+
+def test_shape_validation_never_opens_the_file(tmp_path):
+    """validate() stays a shape checker. The split is why both can be trusted."""
+    report = _report_with_payload(tmp_path, write=False)
+    assert report_schema.validate(report) == []
+    assert report_schema.validate_pr_body(report), "the missing file must be caught somewhere"
+
+
+def test_a_report_that_wrote_no_body_has_nothing_to_open():
+    report = _example()
+    report["pr_body"] = {"state": "not-written", "path": None, "reason": "no code changed"}
+    assert report_schema.validate_pr_body(report) == []
+
+
+def _disk_mutations(tmp_path):
+    """One case per name in x-enforced-on-disk. Each must be rejected."""
+    return {
+        "pr-body-file-exists": _report_with_payload(tmp_path, write=False),
+        "pr-body-file-parses": _report_with_payload(
+            tmp_path, payload="# A markdown body, which is what the forge refuses"
+        ),
+        "pr-body-payload-shape": _report_with_payload(
+            tmp_path,
+            payload={"title": "t", "body": "b", "head": "fix/123", "base": "main", "titel": "typo"},
+        ),
+        "pr-body-title-and-body-are-non-empty": _report_with_payload(
+            tmp_path, payload={"title": "  ", "body": "b", "head": "fix/123", "base": "main"}
+        ),
+        "pr-body-head-matches-the-report-branch": _report_with_payload(
+            tmp_path, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
+        ),
+    }
+
+
+@pytest.mark.parametrize("name", sorted(_schema()["x-enforced-on-disk"]))
+def test_each_on_disk_property_rejects_a_payload_that_breaks_it(name, tmp_path):
+    report = _disk_mutations(tmp_path)[name]
+    assert report_schema.validate_pr_body(report), "{} accepted a payload that breaks it".format(name)
+
+
+def test_every_on_disk_claim_has_a_case_that_proves_it(tmp_path):
+    claimed = set(_schema()["x-enforced-on-disk"])
+    proven = set(_disk_mutations(tmp_path))
+    assert claimed == proven, "claimed but unproven: {}; proven but unclaimed: {}".format(
+        sorted(claimed - proven), sorted(proven - claimed)
+    )
+
+
+def test_a_markdown_body_is_refused_by_name():
+    """The defect this came from: a good body in a format the next step rejects."""
+    described = _schema()["$defs"]["pr_body"]["properties"]["path"]["description"]
+    assert "markdown" in described.lower()
+
+
+def test_the_cli_reads_the_payload_by_default(tmp_path, capsys):
+    report = _report_with_payload(
+        tmp_path, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
+    )
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    assert report_schema.main([str(path)]) == 1
+    assert "head" in capsys.readouterr().out
+
+
+def test_the_cli_says_when_it_did_not_read_the_payload(tmp_path, capsys):
+    """A check that was skipped must never render as a check that passed."""
+    report = _report_with_payload(tmp_path, write=False)
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    assert report_schema.main([str(path), "--shape-only"]) == 0
+    out = capsys.readouterr().out
+    assert "not read" in out and "shape" in out

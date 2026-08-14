@@ -40,7 +40,7 @@ _KEYWORDS = {
     "x-items", "x-rule",
     # annotations, carried for readers and ignored on purpose
     "$schema", "$id", "$defs", "$comment", "title", "description", "examples",
-    "x-honesty", "x-enforced", "x-convention",
+    "x-honesty", "x-honesty-on-disk", "x-enforced", "x-enforced-on-disk", "x-convention",
 }
 
 _TYPES = {
@@ -227,7 +227,71 @@ def validate(report, schema=None):
     return errors
 
 
-def validate_file(path, schema=None):
+def validate_pr_body(report, schema=None, base_dir=None):
+    """Open the pull request payload the report says it wrote, and check its shape.
+
+    The one check that leaves the report. `pr_body.state` of `written` is the report's
+    single claim about a file the *next* step consumes, and a payload the forge refuses
+    is discovered after the agent's session has ended -- at which point somebody reads
+    the body, wraps it, and invents a title. The title is the sentence most people read
+    and the only part of a pull request that survives a squash into the log, so it
+    belongs to whoever did the work; a check costing one `open()` keeps it there.
+
+    Kept out of validate() on purpose. A shape checker that quietly touches the
+    filesystem is two tools wearing one name, and neither can then be trusted about
+    what it did. The caller chooses; the command line says when it skipped.
+    """
+    if not isinstance(report, dict):
+        return []
+    node = report.get("pr_body")
+    if not isinstance(node, dict) or node.get("state") != "written":
+        return []
+    raw_path = node.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        # The shape pass already refuses this. Saying it twice buries the other errors.
+        return []
+
+    path = Path(raw_path)
+    if not path.is_absolute() and base_dir is not None:
+        path = Path(base_dir) / path
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [
+            "pr_body.path: cannot open the payload the report says it wrote ({})".format(exc)
+        ]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return [
+            "pr_body.path: {} is not the JSON payload a forge consumes ({}). A bare "
+            "markdown body is the shape the next step refuses, and the refusal lands "
+            "on somebody else after your session has ended.".format(path, exc)
+        ]
+
+    schema = schema if schema is not None else load_schema()
+    errors = []
+    rules = []
+    _walk(payload, schema["$defs"]["forge_payload"], schema, "pr_body.payload", errors, rules)
+    if errors:
+        return errors
+
+    for field in ("title", "body"):
+        if not _text(payload, field):
+            errors.append(
+                "pr_body.payload.{}: empty. The forge accepts it and a human then has to "
+                "write it, which is the step this file exists to delete.".format(field)
+            )
+    branch = report.get("branch")
+    if isinstance(branch, str) and payload.get("head") != branch:
+        errors.append(
+            "pr_body.payload.head: {!r} but the report is on branch {!r} -- a pull "
+            "request opened from somewhere other than the work".format(payload.get("head"), branch)
+        )
+    return errors
+
+
+def validate_file(path, schema=None, check_pr_body=True):
     path = Path(path)
     try:
         raw = path.read_text(encoding="utf-8")
@@ -237,7 +301,10 @@ def validate_file(path, schema=None):
         report = json.loads(raw)
     except json.JSONDecodeError as exc:
         return ["{}: not valid json ({})".format(path, exc)]
-    return validate(report, schema)
+    errors = validate(report, schema)
+    if check_pr_body:
+        errors = errors + validate_pr_body(report, schema, base_dir=path.parent)
+    return errors
 
 
 def _line(stream, text):
@@ -261,6 +328,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Validate an agent report.")
     parser.add_argument("reports", nargs="+", help="report JSON files")
     parser.add_argument("--schema", default=None, help="override the schema location")
+    parser.add_argument(
+        "--shape-only",
+        action="store_true",
+        help="do not open the pull request payload named by pr_body.path (and say so)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -272,7 +344,7 @@ def main(argv=None):
     failed = False
     for report in args.reports:
         try:
-            errors = validate_file(report, schema)
+            errors = validate_file(report, schema, check_pr_body=not args.shape_only)
         except ValueError as exc:
             # A broken schema, not a broken report. It must not surface as a traceback
             # and it must never surface as a report with nothing wrong with it.
@@ -285,6 +357,9 @@ def main(argv=None):
                 _line(sys.stdout, "  {}".format(error))
         else:
             _line(sys.stdout, "ok {}".format(report))
+        if args.shape_only:
+            # A check that was skipped must never render as a check that passed.
+            _line(sys.stdout, "  shape only: the pull request payload was not read")
     return 1 if failed else 0
 
 
