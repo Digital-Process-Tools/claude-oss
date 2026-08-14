@@ -6,7 +6,8 @@
   "version_sites": [
     ".claude-plugin/plugin.json",
     "CHANGELOG.md",
-    "README.md"
+    "README.md",
+    "skills/manager/SKILL.md"
   ],
   "changelog_dir": "changelog.d",
   "docs_targets": [
