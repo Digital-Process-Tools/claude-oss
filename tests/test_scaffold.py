@@ -555,6 +555,164 @@ def test_an_origin_pointing_somewhere_else_is_not_asked_about(tmp_path, monkeypa
     assert "other/thing" in reason
 
 
+def test_a_mismatched_origin_does_not_carry_its_credential_into_the_report(
+    tmp_path, monkeypatch
+):
+    """The refusal is the line most likely to be pasted, so it must not carry a token.
+
+    `https://x-access-token:TOKEN@host/o/r` is an ordinary remote spelling -- a CI
+    checkout leaves one behind, and several credential helpers write one. The mismatch
+    half of this fixture is the positive control: an assertion that the token is absent
+    also passes when the refusal stopped being printed at all.
+    """
+    _pin_forge(
+        monkeypatch,
+        "https://x-access-token:ghp_SECRETVALUE@github.com/other/thing.git",
+        (True, "[]", ""),
+    )
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "ghp_SECRETVALUE" not in reason
+    assert "x-access-token" not in reason
+    # ... and the refusal still says which repo it saw and which it wanted.
+    assert "other/thing" in reason
+    assert "owner/name" in reason
+
+
+def test_a_token_standing_alone_as_the_userinfo_is_redacted_too(tmp_path, monkeypatch):
+    """GitHub accepts the token as the whole username, with no password field at all."""
+    _pin_forge(monkeypatch, "https://ghp_SECRETVALUE@github.com/other/thing", (True, "[]", ""))
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "ghp_SECRETVALUE" not in reason
+    assert "other/thing" in reason
+
+
+def test_an_ordinary_ssh_origin_is_still_quoted_in_full(tmp_path, monkeypatch):
+    """The control on the redaction: it must not swallow the URL it was given.
+
+    A sanitiser that returns a placeholder for everything passes every "the secret is
+    absent" assertion above while telling the maintainer nothing about their remote.
+    """
+    _pin_forge(monkeypatch, "git@github.com:other/thing.git", (True, "[]", ""))
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "github.com:other/thing" in reason
+
+
+def test_a_query_string_is_dropped_from_a_quoted_origin(tmp_path, monkeypatch):
+    """Userinfo is not the only place a URL holds a secret; `?access_token=` is another.
+
+    The scheme is what makes the cut safe: a query is a URL's, and a path that happens to
+    contain `?` is not one. The marker is left behind so the reader knows the URL they are
+    reading is shorter than the one on disk.
+    """
+    _pin_forge(
+        monkeypatch, "https://github.com/other/thing.git?token=ghp_SECRETVALUE", (True, "[]", "")
+    )
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "ghp_SECRETVALUE" not in reason
+    assert "other/thing" in reason
+    assert "[redacted]" in reason
+
+
+def test_an_origin_whose_userinfo_cannot_be_recognised_is_not_quoted_at_all(
+    tmp_path, monkeypatch
+):
+    """A spelling that cannot be normalised is reported as such, never passed through.
+
+    A local-path remote holding an `@` is the honest cost of that rule: nothing in it is
+    secret, and it is still withheld, because at this point the string has already failed
+    to be either URL shape and nothing about it is known. The refusal still names the repo
+    that was wanted, which is the half a reader acts on.
+    """
+    _pin_forge(monkeypatch, "/srv/mirrors/me@work/thing.git", (True, "[]", ""))
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "me@work" not in reason
+    assert "not shown" in reason
+    assert "owner/name" in reason
+
+
+def test_a_userinfo_holding_a_literal_at_sign_is_redacted_whole(tmp_path, monkeypatch):
+    """The delimiter is the *last* `@` before the path, not the first.
+
+    An email as the username is an ordinary spelling on more than one forge, and curl --
+    which is what git drives for https -- reads the authority that way. Splitting on the
+    first `@` leaves the password on the right of the split, still printed.
+    """
+    _pin_forge(
+        monkeypatch,
+        "https://me@corp.example:ghp_SECRETVALUE@github.com/other/thing.git",
+        (True, "[]", ""),
+    )
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "ghp_SECRETVALUE" not in reason
+    assert "other/thing" in reason
+
+
+def test_a_windows_path_with_an_at_sign_is_not_mistaken_for_a_credential(tmp_path):
+    r"""`C:\Users\bob@corp\repo` holds no userinfo -- a drive letter is not a username.
+
+    Reading one as a credential does not disclose anything, but it prints `[redacted]`
+    over a path that was never secret, which teaches the reader to distrust the marker.
+    A backslash never separates a URL's authority from its path, so it bounds the span
+    a credential can occupy exactly as `/` does.
+    """
+    windows_path = r"C:\Users\bob@corp\repo"
+    assert scaffold._without_credentials(windows_path) == windows_path
+
+
+def test_the_unreadable_origin_arm_does_not_echo_a_credential_from_git_stderr(
+    tmp_path, monkeypatch
+):
+    """git echoes the URL in its own error text, and that text is interpolated too."""
+    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        scaffold,
+        "_run",
+        lambda command: (
+            False,
+            "",
+            "git remote get-url exited 128: could not read "
+            "https://x-access-token:ghp_SECRETVALUE@github.com/other/thing.git",
+        ),
+    )
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "ghp_SECRETVALUE" not in reason
+    # ... and the arm still reports what it could not do, and about which repo.
+    assert "exited 128" in reason
+    assert "owner/name" in reason
+
+
+def test_the_stderr_arm_redacts_a_userinfo_holding_a_literal_at_sign(tmp_path, monkeypatch):
+    """This arm has no `not shown` fallback, so its redaction must be right on its own.
+
+    `_safe_origin` knows it holds one whole URL and can refuse to quote a spelling it
+    could not normalise. A line of git's stderr is prose with a URL somewhere inside it,
+    so suppressing the line would cost the reader the error itself -- which makes the
+    span the redaction takes the only thing standing between a token and the report.
+    """
+    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        scaffold,
+        "_run",
+        lambda command: (
+            False,
+            "",
+            "git remote get-url exited 128: could not read "
+            "https://me@corp.example:ghp_SECRETVALUE@github.com/other/thing.git",
+        ),
+    )
+    names, reason = scaffold._forge_label_names(tmp_path, _config())
+    assert names is None
+    assert "ghp_SECRETVALUE" not in reason
+    assert "exited 128" in reason
+
+
 def test_an_unauthenticated_gh_is_unknown_with_its_own_words(tmp_path, monkeypatch):
     _pin_forge(
         monkeypatch,

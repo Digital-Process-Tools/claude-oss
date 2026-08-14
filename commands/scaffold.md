@@ -169,6 +169,14 @@ PATH, and `git remote get-url origin` naming the repo `.oss.json` does. `--root`
 any directory, and a file-writing tool should not fire a request about whatever slug a
 config happens to carry.
 
+When the origin names some other repo, the reason line quotes it with any userinfo and
+any query string redacted — a remote can carry a token in either, and this line is the one
+most likely to be pasted somewhere. A spelling whose credentials could not be recognised
+is reported as not shown rather than quoted. The neighbouring arm, where git could not
+read the origin at all, redacts the same shapes out of git's own error text, but it prints
+that text rather than withholding it: suppressing the line would cost the reader the error
+itself.
+
 The label is still **not created**. The trade is not "intrusive versus restrained" — a
 gate installed without its hatch is an incomplete install, and that objection is correct.
 It is that every other thing this command produces is a file in a checkout: previewable
