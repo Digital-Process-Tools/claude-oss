@@ -188,6 +188,14 @@ def _unscoped(reason, source=None, room=0):
     }
 
 
+# Win32 codes that Python's error map folds into ENOENT -- and so into
+# FileNotFoundError -- although they are not "nothing is there":
+#   206  ERROR_FILENAME_EXCED_RANGE   the name is longer than the filesystem allows
+#   123  ERROR_INVALID_NAME           the name is not a legal path
+# Empty on POSIX by construction: no OSError raised there carries `winerror` at all.
+_WINERROR_COULD_NOT_LOOK = frozenset((123, 206))
+
+
 def _read_config(path):
     """The repo's own config, or (None, why it could not be used).
 
@@ -199,7 +207,30 @@ def _read_config(path):
     """
     try:
         raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        # `FileNotFoundError` is not only "nothing is there" on Windows. Several
+        # distinct Win32 codes are mapped onto ENOENT before Python picks the class,
+        # and one of them -- 206, ERROR_FILENAME_EXCED_RANGE -- means the name could
+        # not be looked at rather than that it named nothing. Reported as absence it
+        # would be this repo's own defect class arriving through the OS: a check that
+        # could not look, rendered as a check that looked and found nothing.
+        #
+        # `winerror` exists only on Windows, so `getattr` is the whole platform test;
+        # on POSIX it is None and this is a plain absence. 123 (ERROR_INVALID_NAME)
+        # normally surfaces as a bare OSError, which the arm below already calls
+        # unreadable -- it is named here so the classification does not depend on
+        # which class the mapping chose.
+        #
+        # UNMEASURED, and deliberately harmless if wrong: no Windows run has been
+        # observed from the machine this was written on, so this is the mapping table
+        # as documented rather than as seen. If Windows reports 2 or 3 for such a path
+        # instead, this branch never fires and the behaviour is exactly what it was.
+        # `test_a_config_the_filesystem_will_not_look_at_...` measures the code the OS
+        # actually returned and says so rather than asserting a platform it cannot run.
+        if getattr(exc, "winerror", None) in _WINERROR_COULD_NOT_LOOK:
+            return None, "{0} could not be read ({1})".format(
+                path, "winerror {0}".format(exc.winerror)
+            )
         return None, "there is no {0} at {1}".format(CONFIG_NAME, path)
     except (OSError, UnicodeDecodeError) as exc:
         # Two braces, and the second one is why absence is told from unreadability by

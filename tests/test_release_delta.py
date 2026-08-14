@@ -904,6 +904,17 @@ def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
     (3.9-3.12) were red -- the local run measured a different interpreter, not a
     different fixture. The classification now comes from the exception already in
     hand, so no version's `exists()` semantics can decide whether the gate survives.
+
+    What is asserted here unconditionally is only what holds on every platform: the
+    gate does not raise, the range is unscoped, the path survives into the reason and
+    the consequence is not truncated. *Which* sentence it gets is not one of those --
+    POSIX refuses this path with ENAMETOOLONG, and Windows may report the same path as
+    an ordinary absence, in which case "there is no" is a true statement about it. So
+    that claim is conditioned on what this platform actually did with the path,
+    measured below, and skipped with the measurement when the OS gave nothing to tell
+    the two apart. Branching on `sys.platform` instead would be a guess about the
+    platform's behaviour dressed as a test of it -- which is the failure this whole
+    test exists downstream of.
     """
     module = _module()
     unlookable = str(tmp_path / ("x" * 300) / CONFIG_NAME)
@@ -917,12 +928,105 @@ def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
     assert payload["scope"] is None
     assert module.receipt(payload), "a receipt is produced whatever the path was"
 
-    # The pair, in the same fixture: a path the filesystem WILL look at and finds
-    # nothing at is a different sentence, so the reason above is about the lookup
-    # failing rather than about every absent config reading the same way.
+    # The pair the classification claim exists for, and it needs no long path at all:
+    # a file that is there and cannot be read, against a file that is simply not
+    # there. Two different sentences on every platform, so the distinction the fix
+    # introduced is tested wherever this suite runs.
+    unreadable = tmp_path / "undecodable.json"
+    unreadable.write_bytes(b'{"release": {"tag_pattern": "v\xff{version}"}}')
+    assert "could not be read" in (
+        module._scope(str(tmp_path), None, str(unreadable))["scope_reason"]
+    )
     absent = module._scope(str(tmp_path), None, str(tmp_path / CONFIG_NAME))
     assert "there is no" in absent["scope_reason"]
-    assert "could not be read" in scope["scope_reason"]
+
+    # Now the long path, classified against what the OS said rather than against what
+    # a platform is assumed to say. The measurement is of the raw open, not of the
+    # module, so agreeing with the module is not built in: if the OS reported anything
+    # more specific than not-found and the module still called it absence, this fails.
+    try:
+        open(unlookable).close()
+    except OSError as exc:
+        raw = exc
+    else:  # pragma: no cover - the fixture path cannot be opened anywhere
+        pytest.fail("the fixture path was openable, so it tests nothing")
+
+    winerror = getattr(raw, "winerror", None)
+    plain_absence = winerror in (2, 3) if winerror is not None else False
+    if isinstance(raw, FileNotFoundError) and plain_absence:
+        pytest.skip(
+            "this platform reported a 300-character component as an ordinary absence "
+            "({0}, errno {1}, winerror {2}), so the OS itself offers nothing to tell "
+            "'could not look' from 'nothing is there' for this path, and the "
+            "classification went untested here. Everything above ran: no traceback, "
+            "unscoped, path kept, consequence intact -- and the absent/unreadable "
+            "pair is asserted just above without needing a long path.".format(
+                type(raw).__name__, raw.errno, winerror
+            )
+        )
+    assert "could not be read" in scope["scope_reason"], (
+        "the OS distinguished this path from a missing file ({0}, errno {1}, winerror "
+        "{2}) and the classification threw that away -- a check that could not look, "
+        "reported as a check that looked and found nothing".format(
+            type(raw).__name__, raw.errno, winerror
+        )
+    )
+
+
+class _RaisingPath(object):
+    """A config path whose read fails with an exception chosen by the test.
+
+    The point of this file is a gate that survives whatever the filesystem does, and
+    most of what a filesystem can do cannot be provoked on the platform running the
+    suite. Constructing the exception is the only way to exercise the Windows arm
+    from a POSIX run at all -- and it is honest about its grade: it establishes what
+    `_read_config` does with a given error, never that Windows produces that error.
+    """
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def read_text(self, encoding=None):
+        raise self._exc
+
+    def __str__(self):
+        return "C:\\somewhere\\.oss.json"
+
+
+def test_a_windows_not_found_that_means_the_name_was_unlookable_is_not_absence():
+    """`FileNotFoundError` is several different Win32 answers wearing one class.
+
+    Python maps 206 (ERROR_FILENAME_EXCED_RANGE) onto ENOENT, so a name too long for
+    the filesystem arrives in the same arm as a file that is merely not there. Called
+    absence, that is this repo's defect class delivered by the OS: a check that could
+    not look, reported as a check that looked and found nothing.
+
+    GRADE. That `_read_config` classifies these codes this way is *observed*, here,
+    on whatever platform ran this. That Windows *emits* 206 for an over-long name is
+    *reasoned* -- from the documented error map, not from a run -- and if it is wrong
+    the branch simply never fires, which is why nothing else depends on it.
+    """
+    module = _module()
+
+    def read(winerror):
+        exc = FileNotFoundError(2, "The system cannot find the file specified")
+        if winerror is not None:
+            exc.winerror = winerror
+        return module._read_config(_RaisingPath(exc))
+
+    for code in (206, 123):
+        data, reason = read(code)
+        assert data is None
+        assert "could not be read" in reason, code
+        assert str(code) in reason, "the reason drops the code it classified on"
+
+    # The pair, twice over, because a rule that calls everything unreadable is the
+    # same bug pointing the other way: a real not-found on Windows, and the POSIX
+    # shape where no `winerror` attribute exists at all, are both still absence.
+    for code in (2, 3, None):
+        data, reason = read(code)
+        assert data is None
+        assert "there is no" in reason, code
 
 
 def test_the_scoped_reason_keeps_the_path_of_a_real_deep_checkout(tmp_path):
