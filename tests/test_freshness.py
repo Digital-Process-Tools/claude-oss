@@ -320,3 +320,139 @@ def test_the_summary_of_a_never_scaffolded_repo_is_one_warning(tmp_path):
     assert len(lines) == 1, lines
     assert lines[0][0] == "WARN"
     assert lines[0][1].count("/oss:scaffold") == 1, lines[0][1]
+
+
+# --------------------------------------------- what re-running would change (#26)
+#
+# The whole point of this section: "these differ" is the same sentence whether the
+# difference is a reworded comment or whether the repo's changelog gate is broken
+# until it is re-run. Doctor holds exactly two artefacts -- their bytes and ours --
+# and can therefore describe the EFFECT of re-running, never the CAUSE of the
+# difference. Every assertion below is about effect.
+
+
+def test_an_identical_file_has_no_effect_to_report():
+    """The control the two tests after this one need. A classifier that answered
+    "behaviour" unconditionally would pass the behaviour test and fail this one."""
+    text = "on:\n  push:\n    branches: [main]\n"
+    assert doctor.owned_effect(text, text, "x.yml")["kind"] == "same"
+
+
+def test_a_comment_only_difference_reports_that_nothing_it_does_changes():
+    theirs = "on:\n  push:\n    branches: [main]\n"
+    ours = "# why this file exists\non:\n  push:\n    branches: [main]\n"
+    effect = doctor.owned_effect(theirs, ours, "x.yml")
+    assert effect["kind"] == "cosmetic", effect
+    assert effect["sections"] == []
+
+
+def test_a_behavioural_difference_names_where_it_lands():
+    """The positive control for the test above, in the same file type. A classifier
+    that called everything cosmetic would report "nothing it does changes" about a
+    repo whose gate had been rewritten."""
+    theirs = "on:\n  push:\n    branches: [main]\n"
+    ours = "on:\n  push:\n    branches: [main, release]\n"
+    effect = doctor.owned_effect(theirs, ours, "x.yml")
+    assert effect["kind"] == "behaviour", effect
+    assert "on.push.branches" in effect["sections"], effect
+
+
+def test_a_python_change_is_named_by_its_enclosing_definition():
+    theirs = "def fold(x):\n    return 1\n"
+    ours = "def fold(x):\n    return 2\n"
+    effect = doctor.owned_effect(theirs, ours, "a.py")
+    assert effect["kind"] == "behaviour"
+    assert "fold" in effect["sections"], effect
+
+
+def test_markdown_prose_is_cosmetic_and_a_fenced_command_is_not():
+    """Both halves in one fixture: a README whose wording changed and a README whose
+    documented command changed are different decisions, and the same file type."""
+    prose_theirs = "# Running it\n\nThis file is owned by the plugin.\n"
+    prose_ours = "# Running it\n\nThis file belongs to the plugin.\n"
+    assert doctor.owned_effect(prose_theirs, prose_ours, "r.md")["kind"] == "cosmetic"
+
+    fence = "# Running it\n\n```\npython3 .oss/assemble_changelog.py {}\n```\n"
+    effect = doctor.owned_effect(fence.format("--check"), fence.format("--check-links"), "r.md")
+    assert effect["kind"] == "behaviour", effect
+    assert "Running it" in effect["sections"], effect
+
+
+def test_one_region_is_not_named_twice_at_two_depths():
+    """`jobs.gate.steps.name` and `jobs.gate.steps.name.run` are the same region. Four
+    slots is the whole budget; two of them pointing at one place is a worse sentence."""
+    theirs = "jobs:\n  gate:\n    steps:\n      - name: check\n        run: exit 1\n"
+    ours = "jobs:\n  gate:\n    steps:\n      - name: verify\n        run: exit 0\n"
+    sections = doctor.owned_effect(theirs, ours, "w.yml")["sections"]
+    assert sections == ["jobs.gate.steps.name.run"], sections
+
+
+def test_an_unknown_file_type_is_treated_as_behavioural():
+    """Silent in the safe direction. A suffix nobody taught this function about must
+    not be reported as "nothing it does changes"."""
+    effect = doctor.owned_effect("a\n", "b\n", "thing.conf")
+    assert effect["kind"] == "behaviour"
+
+
+def test_a_crlf_checkout_of_an_owned_file_is_not_drift(tmp_path):
+    """Windows checkouts hold CRLF where the plugin wrote LF. The bytes differ and
+    the file is the file -- git converted it, nobody edited it. Reporting that as
+    drift would make this check fire on every Windows repo forever, which is how a
+    real signal gets ignored."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    target = tmp_path / ".oss" / "README.md"
+    target.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    assert findings[".oss/README.md"]["state"] == "current", findings[".oss/README.md"]
+
+
+def test_an_undecodable_owned_file_is_unknown_rather_than_a_crash(tmp_path):
+    """The third state, for the half of the comparison that lives in their repo.
+    Doctor exits 0 always; an owned file that is not UTF-8 must produce a finding
+    that says so, not a traceback out of check_freshness."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    (tmp_path / ".oss" / "README.md").write_bytes(b"\xff\xfe not utf-8 \x00")
+    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    assert findings[".oss/README.md"]["state"] == "unknown", findings[".oss/README.md"]
+    assert "could not be read" in findings[".oss/README.md"]["detail"]
+
+
+def test_the_drift_line_never_claims_the_maintainer_wrote_nothing(tmp_path):
+    """Doctor cannot tell a stale copy from one the maintainer edited -- nothing in a
+    managed repo records which plugin version wrote the file. The old wording told
+    them outright that nothing they wrote was at risk, which is exactly wrong in the
+    case it cannot rule out."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    (tmp_path / ".oss" / "README.md").write_text("mine now\n", encoding="utf-8")
+    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    detail = findings[".oss/README.md"]["detail"]
+    assert "nothing you wrote is at risk" not in detail, detail
+    assert "/oss:scaffold" in detail
+
+
+def test_a_drifted_workflow_says_what_re_running_would_change(tmp_path):
+    """End to end on a real owned file. The maintainer decides whether to re-run from
+    this line, so it has to name behaviour rather than announce a difference."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    target = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    target.write_text(
+        target.read_text(encoding="utf-8").replace("exit 1", "exit 0"), encoding="utf-8"
+    )
+    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    finding = findings[".github/workflows/oss-changelog.yml"]
+    assert finding["state"] == "drifted", finding
+    assert "what it does" in finding["detail"], finding["detail"]
+
+
+def test_a_cosmetically_drifted_owned_file_says_so_instead(tmp_path):
+    """The paired negative for the test above, on the same mechanism: a difference
+    that changes no behaviour must not read like one that does."""
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    target = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    target.write_text("# a note somebody added\n" + target.read_text(encoding="utf-8"),
+                      encoding="utf-8")
+    finding = {f["path"]: f for f in doctor.owned_drift(
+        tmp_path, _config(), plugin_root=REPO_ROOT)}[".github/workflows/oss-changelog.yml"]
+    assert finding["state"] == "drifted", finding
+    assert "nothing it does changes" in finding["detail"], finding["detail"]
+    assert "what it does" not in finding["detail"], finding["detail"]

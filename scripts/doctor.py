@@ -20,8 +20,10 @@ Python 3.9 compatible.
 """
 
 import argparse
+import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -917,6 +919,175 @@ def dependency_findings(installed, latest, declared=None):
     return findings
 
 
+#: How many section names one drift line will carry. Past a handful this stops being a
+#: sentence a maintainer reads and becomes the diff dump this check exists to replace.
+MAX_EFFECT_SECTIONS = 4
+
+#: Suffixes where a line is inert exactly when it is blank or a `#` comment. Anything
+#: not listed here -- and not `.md`, handled separately -- is treated as behavioural,
+#: because the failure to be silent about is the one that calls a real change cosmetic.
+HASH_COMMENT_SUFFIXES = (".yml", ".yaml", ".py", ".sh", ".bash", ".toml", ".cfg", ".ini")
+
+
+def _normalise_newlines(text):
+    """CRLF is a checkout, not an edit.
+
+    A Windows clone with `core.autocrlf=true` holds every owned file with CRLF where
+    the plugin wrote LF. The bytes differ; the file does not. `Path.read_text` already
+    translates on read, so in practice this is a second belt -- but a future change to
+    `read_bytes` would otherwise turn every Windows repo into permanent drift, and a
+    warning that fires always is a warning nobody reads.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _inert_lines(lines, suffix):
+    """Per line: True when changing it cannot change what the file does.
+
+    Deliberately crude, and deliberately crude in one direction. A Python docstring
+    reads as behavioural here, which over-reports; a rewritten `run:` step reading as
+    prose would under-report, and that is the failure this whole check exists to stop.
+    """
+    flags = []
+    fenced = False
+    for raw in lines:
+        line = raw.strip()
+        if suffix == ".md":
+            if line.startswith("```") or line.startswith("~~~"):
+                fenced = not fenced
+                flags.append(True)
+            else:
+                flags.append(not fenced)
+            continue
+        if suffix in HASH_COMMENT_SUFFIXES:
+            flags.append(not line or line.startswith("#"))
+            continue
+        flags.append(False)
+    return flags
+
+
+def _section_at(lines, index, suffix):
+    """The name of the region a changed line sits in -- what the maintainer needs.
+
+    A YAML key path (`on.pull_request.types`), a Python definition, a Markdown
+    heading. Empty when the file type has no such notion or the line sits above the
+    first one, which the caller renders by naming no section rather than a wrong one.
+    """
+    line = lines[index]
+    if suffix == ".md":
+        for i in range(index, -1, -1):
+            match = re.match(r"^#+\s+(.*\S)\s*$", lines[i])
+            if match:
+                return match.group(1)
+        return ""
+    if suffix == ".py":
+        indent = len(line) - len(line.lstrip())
+        for i in range(index, -1, -1):
+            match = re.match(r"^(\s*)(?:async\s+)?(?:def|class)\s+(\w+)", lines[i])
+            if match and (i == index or len(match.group(1)) < indent):
+                return match.group(2)
+        return ""
+    if suffix in (".yml", ".yaml"):
+        parts = []
+        depth = len(line) - len(line.lstrip())
+        own = re.match(r"^\s*-?\s*([\w.-]+):", line)
+        if own:
+            parts.append(own.group(1))
+        for i in range(index - 1, -1, -1):
+            candidate = lines[i]
+            if not candidate.strip() or candidate.strip().startswith("#"):
+                continue
+            indent = len(candidate) - len(candidate.lstrip())
+            if indent >= depth:
+                continue
+            match = re.match(r"^\s*-?\s*([\w.-]+):", candidate)
+            if match:
+                parts.append(match.group(1))
+                depth = indent
+                if indent == 0:
+                    break
+        return ".".join(reversed(parts))
+    return ""
+
+
+def owned_effect(current_text, shipped_text, path):
+    """What re-running `/oss:scaffold` would do to this file, in three kinds.
+
+    This is the answer #26 asks for, and the reason it is phrased as an effect rather
+    than a provenance. From inside a managed repo this check holds exactly two
+    artefacts: their bytes and ours. Nothing in the repo records which plugin version
+    wrote their copy, so "yours is older than ours" and "yours has been edited" are
+    *not measurable* here -- they are the same observation. Describing the effect of
+    re-running is measurable from what is on hand, and stays true whichever of those
+    two it was.
+
+    * `same`      -- nothing to do.
+    * `cosmetic`  -- comments and prose move; nothing the file does changes.
+    * `behaviour` -- something it does changes, and `sections` names where.
+    """
+    suffix = Path(path).suffix.lower()
+    theirs = _normalise_newlines(current_text).split("\n")
+    ours = _normalise_newlines(shipped_text).split("\n")
+    if theirs == ours:
+        return {"kind": "same", "sections": []}
+
+    inert = {id(theirs): _inert_lines(theirs, suffix), id(ours): _inert_lines(ours, suffix)}
+    sections = []
+    behavioural = False
+    matcher = difflib.SequenceMatcher(None, theirs, ours, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        for lines, start, stop in ((theirs, i1, i2), (ours, j1, j2)):
+            flags = inert[id(lines)]
+            for index in range(start, stop):
+                if flags[index]:
+                    continue
+                behavioural = True
+                name = _section_at(lines, index, suffix)
+                if name and name not in sections:
+                    sections.append(name)
+    if not behavioural:
+        return {"kind": "cosmetic", "sections": []}
+    # `jobs.gate.steps.name` beside `jobs.gate.steps.name.run` is one region reported
+    # twice: the shorter is the path the longer already walks. Keeping both spends two
+    # of the four slots pointing at the same place.
+    kept = [
+        section
+        for section in sections
+        if not any(other != section and other.startswith(section + ".") for other in sections)
+    ]
+    return {"kind": "behaviour", "sections": kept[:MAX_EFFECT_SECTIONS]}
+
+
+def _drift_detail(name, effect):
+    """One sentence a maintainer decides "re-run or not" from.
+
+    Not a diff. Forty lines of unified diff for a workflow file teaches less than the
+    name of the key that changed, and the decision this line feeds is binary.
+
+    Both wordings carry the same caveat, because it is true in both and because the
+    old text got it backwards: it promised "nothing you wrote is at risk", which is a
+    claim about provenance this check cannot make. Owned files are replaced wholesale
+    -- that is the contract -- so an edit somebody made deliberately goes with the
+    re-run, and they are the only one who knows whether they made one.
+    """
+    caveat = (
+        "Owned files are replaced wholesale, so an edit you made here goes with it."
+    )
+    if effect["kind"] == "cosmetic":
+        return (
+            "{}: re-running /oss:scaffold would change comments and prose only -- "
+            "nothing it does changes. {}".format(name, caveat)
+        )
+    where = " -- {}".format(", ".join(effect["sections"])) if effect["sections"] else ""
+    return (
+        "{}: re-running /oss:scaffold would change what it does{}. {}".format(
+            name, where, caveat
+        )
+    )
+
+
 def owned_drift(repo_root, config, plugin_root=None):
     """Compare the files this plugin owns in a repo against what it ships today.
 
@@ -967,16 +1138,33 @@ def owned_drift(repo_root, config, plugin_root=None):
             )
             continue
 
-        if target.read_text(encoding="utf-8") == shipped:
+        # The other half of the comparison lives in somebody else's repo, so it can
+        # fail to be readable in ways ours cannot: a binary blob under the name, a
+        # permission bit, an encoding that is not UTF-8. Uncaught, that was a
+        # traceback out of a diagnostic whose whole contract is to exit 0 and print.
+        try:
+            current = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            findings.append(
+                {
+                    "path": name,
+                    "state": "unknown",
+                    "detail": "{}: your copy could not be read ({}), so no comparison "
+                    "was made".format(name, type(exc).__name__),
+                }
+            )
+            continue
+
+        effect = owned_effect(current, shipped, name)
+        if effect["kind"] == "same":
             findings.append({"path": name, "state": "current", "detail": name})
         else:
             findings.append(
                 {
                     "path": name,
                     "state": "drifted",
-                    "detail": "{}: differs from the version the plugin ships. Run "
-                    "/oss:scaffold to replace it -- this file is ours, so nothing you "
-                    "wrote is at risk.".format(name),
+                    "effect": effect["kind"],
+                    "detail": _drift_detail(name, effect),
                 }
             )
     return findings

@@ -41,6 +41,36 @@ If instead the report says `.oss.json read from the enclosing clone`, nothing is
 standing in a worktree and the config lives in the clone, which is where it belongs. Do not write a
 second one.
 
+## The `owned files` lines, and what to do about them
+
+Owned files — `.oss/README.md`, `.oss/assemble_changelog.py`,
+`.github/workflows/oss-changelog.yml` — are replaced wholesale by `/oss:scaffold`, so a fix
+shipped here reaches a repo only when somebody re-runs that command there. These lines are
+the only thing that tells a maintainer the re-run is worth doing, so read them as an answer
+to that one question rather than as a tidiness report. Four things they can say:
+
+- **Nothing** — the copies match what the plugin ships today. There is no `owned files` line
+  to relay.
+- **`would change what it does -- <names>`** — re-running changes behaviour, and the names
+  are the regions: a YAML key path like `on.pull_request.types`, a Python definition, a
+  Markdown heading. This is the one to act on. A repo scaffolded before the current release
+  can have a changelog gate that is satisfied by *deleting* somebody's pending fragment, and
+  this is the line that says so. Offer `/oss:scaffold --apply`.
+- **`would change comments and prose only -- nothing it does changes`** — a real difference
+  with no behavioural consequence. Worth mentioning; not worth interrupting anything for.
+- **`could not be read` / `no comparison was made`** — the third state. Either the plugin's
+  own copy was unreachable or theirs was, so **nothing was compared**. Never relay this as
+  up to date. `/oss:doctor` can run under a plugin version different from the one that
+  scaffolded the repo, and a check that cannot see our copy must not vouch for theirs.
+
+Two things the line deliberately does **not** say, because neither is measurable from inside
+a managed repo: whether their copy is *older* than ours, and whether somebody *edited* it.
+Nothing in the repo records which plugin version wrote the file, so those two are the same
+observation and guessing between them means telling a maintainer to discard their own work.
+The line describes the **effect of re-running**, which is true either way — and carries the
+caveat that a deliberate edit goes with the re-run, because owned files are replaced
+wholesale and the maintainer is the only one who knows whether they made one.
+
 Two of the warnings are about CI rather than about setup, and neither is cosmetic:
 
 - **A `test_command` that no workflow runs.** Green then means the changelog was checked
