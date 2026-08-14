@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Assemble `changelog.d/` fragments into a release section of `CHANGELOG.md` (#906).
+"""Assemble `changelog.d/` fragments into a release section of `CHANGELOG.md`.
 
 55 of the last 60 merged PRs touched `CHANGELOG.md`, all of them appending to the
 same place. With N open PRs each merge re-conflicts the other N-1. One file per
 change removes the shared path, so the conflict class disappears rather than
-being merged around — `merge=union` is not available here, because
-`tests/test_git_resolve_heading_dup_839.py` demonstrates it silently reparents
-unreleased work under a tagged release.
+being merged around — `merge=union` is not available here, because it silently
+reparents unreleased work under a tagged release.
 
 **Three states, never two.** This script can `ok`, it can produce a `finding`
 (refused, naming the file), and it can `skip` — and it says which, every run.
@@ -14,8 +13,8 @@ An assembler that finds no fragments and exits 0 has reported "released" when
 what happened is "nothing to release", which is the defect class this tracker
 is full of: an absence produced by a tool read as an absence in the world.
 
-Stdlib plus `markdown-it-py`, which is the one dependency and is the point
-(#936). `towncrier` and `scriv` both solve the assembling half and both are
+Stdlib plus `markdown-it-py`, which is the one dependency and is the point.
+`towncrier` and `scriv` both solve the assembling half and both are
 dependencies; this repo still ships one file and no install step, and nothing
 a user installs imports this — it is a repo-internal release tool.
 
@@ -75,10 +74,10 @@ SECTIONS = ("added", "changed", "deprecated", "removed", "fixed", "security")
 #: entries in one section without the two PRs colliding on a path again.
 #: `\Z` and not `$`. A POSIX filename may end in a newline, and `$` matched
 #: before one — so `1188.fixed.md\n` parsed as a fragment for issue 1188, got
-#: folded into the release and then deleted as consumed (#1188).
+#: folded into the release and then deleted as consumed.
 _NAME_RE = re.compile(r"^(\d+)\.([a-z]+)(?:\.([A-Za-z0-9][A-Za-z0-9._-]*))?\.md\Z")
 
-_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+\Z")  # \Z, not $ — #1188
+_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+\Z")  # \Z, not $ (a POSIX filename may end in a newline)
 
 #: Not fragments, and not mistakes either — refusing these would make the
 #: directory unable to document itself.
@@ -89,7 +88,7 @@ _UNRELEASED_LINK_RE = re.compile(  # anchored-ok: matched per line of CHANGELOG.
 )
 
 #: Any link-reference definition, used to find the block of them at the bottom.
-#: 0-3 leading spaces, like everything else CommonMark calls a link ref (#930).
+#: 0-3 leading spaces, like everything else CommonMark calls a link ref.
 #: This pattern decides where the trailing block *starts*, and anchored at column
 #: 0 it stopped its backward walk at an indented definition — truncating the block
 #: or missing it entirely, so the release advanced no link at all and shipped a
@@ -100,16 +99,17 @@ _UNRELEASED_LINK_RE = re.compile(  # anchored-ok: matched per line of CHANGELOG.
 #: the block cannot capture the rewrite.
 _LINK_REF_RE = re.compile(r"^ {0,3}\[[^\]]+\]:\s*\S")
 
-#: The guard and the reader are the same parser now (#936).
+#: The guard and the reader are the same parser now.
 #:
 #: Three rounds of hand-written Markdown scanning produced three bypasses, and
-#: each fix opened the next hole. #927 anchored its patterns at column 0 and
-#: #930 found three ways past. #932 widened them to `^ {0,3}` and made labels
-#: case-insensitive, and the next audit found six more plus a false refusal
-#: plus a prescribed remedy that was itself an injection. #934 inverted to a
-#: whitelist resting on a positional guarantee and its own fence state
-#: machine, and #936 walked straight through the fence: a column-0 line inside
-#: an open fence was `continue`d with no indent check and no opener check, so
+#: each fix opened the next hole. The first attempt anchored its patterns at
+#: column 0, and an audit found three ways past it. The second attempt widened
+#: them to `^ {0,3}` and made labels case-insensitive, and the next audit found
+#: six more plus a false refusal plus a prescribed remedy that was itself an
+#: injection. The third attempt inverted to a whitelist resting on a
+#: positional guarantee and its own fence state machine, and a further audit
+#: walked straight through the fence: a column-0 line inside an open fence was
+#: `continue`d with no indent check and no opener check, so
 #: `# INJECTED HEADING` and `[Unreleased]: https://evil.example/pwned` were
 #: copied verbatim into the released file under a receipt that said `ok`.
 #:
@@ -161,10 +161,10 @@ _REMEDY = ("To show one in an entry, put it in a fenced code block at the "
            "bullet's own indent (```), which is what every fenced example in "
            "CHANGELOG.md already does — and close the fence at that same "
            "indent, because a line reaching column 0 ends the bullet, the "
-           "fence and the list, whatever the fence was meant to be hiding "
-           "(#936). Indenting further is not a remedy: inside a `- ` bullet an "
+           "fence and the list, whatever the fence was meant to be hiding. "
+           "Indenting further is not a remedy: inside a `- ` bullet an "
            "indented line is still a live heading and a live definition, which "
-           "is what the advice this message used to give got wrong (#934).")
+           "is what the advice this message used to give got wrong.")
 
 #: Said in full wherever a run cannot validate, because the alternative is a
 #: receipt with nothing behind it — which is the thing this file exists to
@@ -174,7 +174,7 @@ _NO_PARSER = (
     "about these fragments and nothing is claimed. Install it — "
     "`pip install markdown-it-py`, or `pip install -e .[dev]` — and run again. "
     "There is deliberately no text-scanning fallback: three of them shipped "
-    "and all three were bypassed within one audit (#930, #934, #936), so a "
+    "and all three were bypassed within one audit, so a "
     "fallback here would be the same bug wearing a receipt.")
 
 
@@ -265,8 +265,8 @@ def _structure_findings(name: str, lines: Sequence[str], tokens: Sequence) -> Li
     findings: List[str] = []
     # `nesting >= 0` is openers *and* leaf blocks. A fenced code block is a
     # leaf — `nesting == 0`, no closing token — so counting openers alone
-    # counted a column-0 fence as no block at all, which is the shape #923
-    # named as the likely accidental trigger.
+    # counted a column-0 fence as no block at all, which is the shape
+    # identified as the likely accidental trigger.
     top = [t for t in tokens if t.level == 0 and t.nesting >= 0]
     if len(top) != 1 or top[0].type != "bullet_list_open":
         at = top[1].map[0] + 1 if len(top) > 1 and top[1].map else 1
@@ -373,16 +373,16 @@ def parse_fragment_name(name: str) -> Fragment:
     return Fragment(issue=int(match.group(1)), section=section, slug=match.group(3) or "")
 
 
-#: How a body may name its own issue: `#1192`, or a tracker URL ending in the
-#: number. Both are forms an author writes on purpose. A bare `1192` is not —
-#: v0.32.0's #1130 fragment was findable only because it happened to cite
-#: `tests/test_preset_git_splitlines_register_1130.py`, which no reader would
-#: aim at and no author could be told to produce.
+#: How a body may name its own issue: `#NNN`, or a tracker URL ending in the
+#: number. Both are forms an author writes on purpose. A bare `NNN` is not —
+#: one fragment was findable only because it happened to cite a test file whose
+#: name embedded the issue number, which no reader would aim at and no author
+#: could be told to produce.
 _SELF_REF = r"(?:#|/(?:issues|pull)/){0}(?![0-9])"
 
 
 def self_reference_finding(name: str, text: str) -> Optional[str]:
-    """One finding if the body never names the issue in its own filename (#1251).
+    """One finding if the body never names the issue in its own filename.
 
     `changelog.d/<issue>.<section>.md` holds the number in exactly one
     structural place, and assembly writes the *body* and deletes the file. So
@@ -395,10 +395,10 @@ def self_reference_finding(name: str, text: str) -> Optional[str]:
     Refusing here rather than appending a reference during assembly is a
     choice about where the rule lives. An append needs an "is it already
     there?" test, and that test cannot tell a self-citation from a coincidence
-    — v0.32.0's #1197 was findable only because a *different* fragment in the
+    — one fragment was findable only because a *different* fragment in the
     same release mentioned it. Refusing costs the author one `(#N)` in a PR
-    instead of a release-time repair across thirteen legs, and it is the form
-    `changelog.d/README.md` has documented all along.
+    instead of a release-time repair across thirteen legs, and it is the
+    `(#N)` form fragments are expected to use.
 
     Returns `None` for a name that does not parse: `collect` already reports
     that from `parse_fragment_name`, and a second complaint about one file
@@ -416,10 +416,8 @@ def self_reference_finding(name: str, text: str) -> Optional[str]:
     return (
         "{0}:{1}: the entry never names #{2} — the issue number is in the "
         "filename, and the release consumes the file, so nothing carries it "
-        "into CHANGELOG.md. Write `(#{2})` into the entry, the way "
-        "changelog.d/README.md's example does; a link to the issue counts "
-        "too. 8 of 20 entries in v0.32.0 and 6 of 28 in v0.33.0 shipped "
-        "naming every issue but their own (#1251). Line: {3}"
+        "into CHANGELOG.md. Write `(#{2})` into the entry — a link to the "
+        "issue counts too. Line: {3}"
         .format(name, at, number, lines[at - 1] if at <= len(lines) else ""))
 
 
@@ -508,9 +506,9 @@ def _merge_by_title(sections: Sequence[Tuple[str, List[str]]]) -> dict:
     """Fold same-named `###` blocks together, keyed case-insensitively.
 
     An `[Unreleased]` section that already carries two `### Fixed` headings is
-    the live bug (#911), and #839 is why that matters: a duplicated heading
-    reparents everything between the two copies. Emitting both again would
-    carry the defect into a tagged release, so they merge here.
+    a live bug: a duplicated heading reparents everything between the two
+    copies. Emitting both again would carry the defect into a tagged release,
+    so they merge here.
     """
     merged: dict = {}
     for title, block in sections:
@@ -606,11 +604,11 @@ def _document_facts(text: str) -> Tuple[Counter, Dict[str, str], int]:
 def _headings(text: str) -> List[Tuple[int, str, str]]:
     """(line index, tag, title) for every heading the parser actually sees.
 
-    `line.startswith("## [")` was the old test and #936 disproved it: a
-    fenced example of a release heading is inert to a reader and was an
-    anchor to this file. `changelog.d/README.md` prescribes exactly that fence
-    as *the* way to quote a heading in an entry, so CHANGELOG.md acquires such
-    lines by design, not by attack.
+    `line.startswith("## [")` was the old test, and it does not survive a
+    fenced example of a release heading: inert to a reader, it was mistaken
+    for an anchor to this file. A fenced block is the documented way to quote
+    a heading in an entry, so CHANGELOG.md acquires such lines by design, not
+    by attack.
     """
     md = _parser()
     flat = [token for token, _ in _flatten(md.parse(text, {}))]
@@ -637,7 +635,7 @@ def _inert_lines(text: str) -> Set[int]:
 
 
 def _crowded_headings(text: str) -> Set[str]:
-    """Titles of headings written directly against the line above them (#1113).
+    """Titles of headings written directly against the line above them.
 
     CommonMark lets an ATX heading interrupt a paragraph, so GitHub renders
     one of these correctly and nothing looks wrong; it is only wrong in the
@@ -731,7 +729,7 @@ def _rewrite_links(lines: List[str], version: str
                    ) -> Optional[Tuple[str, List[str]]]:
     """Point `[Unreleased]` at the new tag and add the new version's link ref.
 
-    Scoped to the bottom link-ref block (#923): this used to return on its
+    Scoped to the bottom link-ref block: this used to return on its
     first match anywhere in the file, and fragment bodies land near the top, so
     one `[Unreleased]: .../compare/v...HEAD` line inside an entry decided the
     base URL of the tag ref the release shipped — durably, since the line is
@@ -784,9 +782,10 @@ _COMPARE_HREF_RE = re.compile(r"/compare/v(?P<version>\d+\.\d+\.\d+)\.\.\.HEAD$"
 def release_versions(text: str) -> List[str]:
     """Every `## [x.y.z]` release version, newest first, off a real parse.
 
-    A parse and not a line prefix, for the reason #936 cost three rounds: this
-    file quotes release headings inside fenced blocks by house style, so the
-    characters `## [` appear in it without a heading being there.
+    A parse and not a line prefix: this file quotes release headings inside
+    fenced blocks by house style, so the characters `## [` appear in it
+    without a heading being there — and a line-prefix test cannot tell the
+    difference.
     """
     versions = []
     for _, tag, title in _headings(text):
@@ -804,8 +803,8 @@ def audit_link_refs(text: str,
 
     The assembler writes one definition per cut, which keeps the *next* release
     honest and says nothing about the state it inherited — `[0.24.0]` and
-    `[0.25.0]` shipped with none, and `[Unreleased]` sat two tags behind twice
-    (#918). Both are the same defect: a link that resolves, returns a real page,
+    `[0.25.0]` shipped with none, and `[Unreleased]` sat two tags behind
+    twice. Both are the same defect: a link that resolves, returns a real page,
     and answers a different question than the one the reader asked.
 
     Raises rather than returning `[]` when there is no release heading at all.
@@ -952,8 +951,8 @@ def _verify_written(before: str, after: str, emitted: Sequence[str],
             "the assembled file writes {0} heading(s) with no blank line above "
             "them, which a stricter Markdown parser folds into the paragraph "
             "before rather than rendering as a heading: {1}. The ones already "
-            "in CHANGELOG.md are carried forward untouched — they shipped in "
-            "tags (#1113)".format(len(crowded), ", ".join(crowded)))
+            "in CHANGELOG.md are carried forward untouched — they already "
+            "shipped in tags".format(len(crowded), ", ".join(crowded)))
     return findings
 
 def _receipt(state: str, summary: str, details: Sequence[str] = ()) -> None:
@@ -994,10 +993,10 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
         _receipt("skipped", "{0} CHANGELOG.md untouched".format(exc))
         return SKIPPED
 
-    # A *heading*, not the substring, and not a line that looks like one either
-    # (#936). Entries in this file quote release headings — #839's whole
-    # subject is one, and changelog.d/README.md prescribes a fenced block as
-    # the way to do it — so `"## [x]" in text` and `line.startswith("## [")`
+    # A *heading*, not the substring, and not a line that looks like one
+    # either. Entries in this file quote release headings — a fenced block is
+    # the documented way to do that — so `"## [x]" in text` and
+    # `line.startswith("## [")`
     # both answer a question about characters when the question is about
     # structure. The parser is asked instead.
     if any(tag == "h2" and title.startswith("[{0}]".format(version))
