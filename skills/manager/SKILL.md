@@ -409,7 +409,9 @@ Gates, each a call and not a feeling:
    run list is `UNKNOWN`, never a pass.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean → proceed;
-   findings → stop and file; **could not run → stop and say so.** **Two audit rounds, hard cap** — a
+   findings → stop and file, **in round one**; **could not run → stop and say so.** Round two is
+   different and deliberately so: what it finds is filed and the release ships over it.
+   **Two audit rounds, hard cap** — a
    competent audit of any non-trivial delta always finds something, so an unbounded "findings → stop"
    makes every release hostage to diminishing returns. After round two, file the rest against the
    next milestone and ship.

@@ -71,14 +71,24 @@ def _git(repo, *args):
         # --no-pager rather than GIT_PAGER=cat: git only pages onto a tty and this
         # output is captured, but `cat` is not a program that exists on Windows,
         # and a pager spawned there fails as something other than what it is.
+        #
+        # errors="replace" because a ref or a path is bytes on Linux and need not
+        # decode. Under the default `strict`, one undecodable byte anywhere in the
+        # history raises UnicodeDecodeError out of subprocess.run -- a ValueError,
+        # not an OSError -- and the gate dies with a traceback and no receipt at
+        # all, in place of the `could not run` it exists to produce. The except
+        # below is the belt to this brace: this function promises never to raise,
+        # and a promise a caller relies on has to hold for the reason nobody
+        # predicted too.
         done = subprocess.run(
             [git, "--no-pager", "-C", str(repo)] + list(args),
             capture_output=True,
             text=True,
+            errors="replace",
             env=env,
         )
-    except OSError as exc:  # pragma: no cover - git vanished mid-run
-        return None, "", str(exc)
+    except (OSError, ValueError) as exc:
+        return None, "", "{0}: {1}".format(type(exc).__name__, exc)
     return done.returncode, done.stdout.strip(), done.stderr.strip()
 
 
@@ -128,6 +138,12 @@ def compute(repo, match=None):
         return _could_not_run("git is not on PATH, so the delta cannot be computed")
 
     code, git_dir, err = _git(repo, "rev-parse", "--absolute-git-dir")
+    if code is None:
+        # git was found and still could not be run. Distinct from "not a
+        # repository", which is an answer; this is the absence of one.
+        return _could_not_run(
+            "git could not be run, so nothing about this history is known", err
+        )
     if code != 0:
         return _could_not_run(
             "the path is not a git repository, so there is no history to audit", err

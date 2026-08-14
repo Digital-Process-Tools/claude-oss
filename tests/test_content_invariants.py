@@ -737,14 +737,11 @@ def test_the_skill_and_the_command_agree_that_the_gate_is_performed():
     one gains the wiring, the other keeps sending its reader to a judgement call.
     """
     skill = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
-    assert RELEASE_AUDITOR_SUBAGENT in skill, (
-        "skills/manager/SKILL.md states the audit gate without naming what "
-        "performs it"
-    )
-    assert "first release" in skill, (
-        "skills/manager/SKILL.md must say what the gate does for a repo with no "
-        "previous tag -- otherwise an empty delta reads as an audit that found "
-        "nothing"
+    unmet = _release_wiring_unmet(skill)
+    assert not unmet, (
+        "skills/manager/SKILL.md states the audit gate but does not carry what "
+        "commands/release.md now carries, so its reader is still sent to a "
+        "judgement call: " + repr(sorted(unmet))
     )
 
 

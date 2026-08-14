@@ -466,6 +466,34 @@ def test_an_unreadable_tag_list_is_could_not_run(tmp_path, monkeypatch):
     assert module.compute(str(repo))["state"] == "first-release"
 
 
+def test_output_git_cannot_decode_is_could_not_run_rather_than_a_traceback(
+    tagged, monkeypatch
+):
+    """A ref or a path is bytes on Linux and need not decode.
+
+    `subprocess.run(text=True)` raises UnicodeDecodeError on one undecodable byte,
+    and that is a ValueError, not an OSError -- so an `except OSError` around it
+    lets the gate die with a traceback and no receipt in place of the `could not
+    run` it exists to produce. `errors="replace"` is why this should not happen;
+    the except is why it cannot.
+    """
+    module = _module()
+
+    def explodes(*args, **kwargs):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(module.subprocess, "run", explodes)
+    payload = module.compute(str(tagged))
+    assert payload["state"] == "could-not-run"
+    assert "UnicodeDecodeError" in payload["detail"]
+    assert module.receipt(payload)
+
+    # Positive control: unpatched, the same repo answers, so the reason above is
+    # about the decode and not about the fixture.
+    monkeypatch.undo()
+    assert module.compute(str(tagged))["state"] == "delta"
+
+
 def test_a_path_that_is_not_a_directory_is_could_not_run(tmp_path):
     module = _module()
     payload = module.compute(str(tmp_path / "nowhere"))
