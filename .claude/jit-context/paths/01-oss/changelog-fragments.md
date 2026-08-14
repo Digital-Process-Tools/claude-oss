@@ -22,3 +22,9 @@ Check before pushing:
 ```bash
 python3 scripts/assemble_changelog.py --check --check-links --dir 'changelog.d' --changelog CHANGELOG.md
 ```
+
+`--check-links` refuses when a `## [x.y.z]` section has no link reference definition. If the
+version it names was never tagged, the missing link is the correct state: there is no release
+page to point at, and a `releases/tag/vX.Y.Z` URL written for one is a 404 that renders as a
+working link. Declare it rather than writing it — add `--untagged X.Y.Z` (comma-separated for
+several) to the command above and to every CI leg that runs it, so the two cannot disagree.

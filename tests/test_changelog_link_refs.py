@@ -195,6 +195,40 @@ def test_an_untagged_version_that_is_not_x_y_z_is_refused_not_dropped(tmp_path):
     assert "is not x.y.z" in result.stdout, result.stdout
 
 
+def test_untagged_is_refused_by_the_modes_that_do_not_read_it(tmp_path):
+    """It is read by `--check-links` and nothing else. Accepted silently on the
+    fold, a declaration that never applied would be indistinguishable from one
+    that was honoured -- including a value `--check-links` would have refused."""
+    root, script_path = _repo(tmp_path, RELEASED)
+    folded = _fold(root, script_path, "--untagged", "0.1.0", "--dry-run")
+    assert folded.returncode == REFUSED, folded.stdout + folded.stderr
+    assert "--check-links" in folded.stdout, folded.stdout
+    counted = _run(root, script_path, "--count", "--untagged", "0.1.0",
+                   "--dir", "changelog.d")
+    assert counted.returncode == REFUSED, counted.stdout + counted.stderr
+    # The positive control: the same two runs without the flag do their job.
+    assert _fold(root, script_path, "--dry-run").returncode == OK
+    plain = _run(root, script_path, "--count", "--dir", "changelog.d")
+    assert plain.returncode == OK and plain.stdout.strip() == "1", plain.stdout
+
+
+def test_the_refusal_says_replace_when_a_definition_is_already_there(tmp_path):
+    """A second `[Unreleased]:` definition beside the first is not an error any
+    parse reports: the reference resolves to whichever is read first, so the
+    file carries two answers and shows one. The remedy has to say which."""
+    root, script_path = _repo(tmp_path, RELEASED.replace(
+        "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD",
+        "[Unreleased]: https://github.com/o/r/commits/HEAD"))
+    result = _fold(root, script_path)
+    assert result.returncode == REFUSED, result.stdout + result.stderr
+    assert "replace" in result.stdout, result.stdout
+    assert "commits/HEAD" in result.stdout, result.stdout
+    # The control: the branch with no definition at all still says "add".
+    absent = _repo(tmp_path, NO_UNRELEASED_DEFINITION, name="absent")
+    other = _fold(*absent).stdout
+    assert "add " in other and "replace" not in other, other
+
+
 def test_a_declaration_for_a_version_that_has_a_link_ref_is_a_finding(tmp_path):
     """`--untagged` is a declaration, not a mute button: a version declared
     untagged that carries a `releases/tag/v...` link is two statements that

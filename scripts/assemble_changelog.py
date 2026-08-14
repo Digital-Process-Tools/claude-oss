@@ -1060,9 +1060,12 @@ def _dominant_newline(raw: bytes) -> str:
     diff. Neither ending is the right one to impose; the file already answered
     the question and this reads the answer back.
 
-    A file with no ending at all, or a mixture, resolves to LF: it is what the
-    assembled string already holds and what every line this script writes ends
-    with.
+    A mixture is a majority vote, and a file with no line ending at all resolves
+    to LF -- it is what the assembled string already holds and what every line
+    this script writes ends with. So a mostly-CRLF file with a few stray LF
+    lines comes back CRLF, which is the ending its next reader will diff
+    against; there is no third answer that leaves such a file alone, because
+    this rewrites the whole document either way.
     """
     crlf = raw.count(b"\r\n")
     return "\r\n" if crlf and crlf * 2 > raw.count(b"\n") else "\n"
@@ -1090,7 +1093,21 @@ def _unwritable_links_refusal(lines: Sequence[str], version: str
     when that cannot supply one, the refusal names which of the three shapes it
     found, because all three are fixed differently.
     """
+    #: What to do about it, differing only in whether a definition is being
+    #: added or replaced. "Add" told against a file that already holds an
+    #: `[Unreleased]:` line leaves the old one in place beside the new: two
+    #: definitions of one reference, which no parse reports, and the reader is
+    #: shown whichever is read first.
+    add = ("add       `[Unreleased]: <repo>/compare/v<newest released "
+           "version>...HEAD` as the first line of the block at the bottom of "
+           "CHANGELOG.md, then re-run")
+    replace = ("replace   the `[Unreleased]:` line at the bottom of "
+               "CHANGELOG.md with `[Unreleased]: <repo>/compare/v<newest "
+               "released version>...HEAD` — replace it rather than adding a "
+               "second definition of the same reference, then re-run")
+
     span = _link_ref_block(lines, _inert_lines("\n".join(lines)))
+    remedy = add
     if span is None:
         reason = ("CHANGELOG.md has no trailing link-reference block at all, so "
                   "there is no `[Unreleased]` definition to advance and no "
@@ -1112,12 +1129,11 @@ def _unwritable_links_refusal(lines: Sequence[str], version: str
                       "`<repo>/compare/vX.Y.Z...HEAD` line — this rewrites that "
                       "line and will not reshape one it does not recognise"
                       .format(current))
+            remedy = replace
     return ("`## [{0}]` would have no link ref and would render as literal "
             "bracketed text".format(version),
             ["reason    " + reason,
-             "add       `[Unreleased]: <repo>/compare/v<newest released "
-             "version>...HEAD` as the first line of the block at the bottom of "
-             "CHANGELOG.md, then re-run: this advances it to "
+             remedy + ": this advances `[Unreleased]` to "
              "`compare/v{0}...HEAD` and writes `[{0}]: "
              "<repo>/releases/tag/v{0}` beside it".format(version),
              "why       a heading with no definition behind it is not a broken "
@@ -1191,21 +1207,25 @@ def _first_release_links(lines: List[str], version: str) -> Tuple[str, List[str]
 # pushed for them, so there is no release page to link to and a
 # `releases/tag/vX.Y.Z` URL invented for one is a 404 that renders as a working
 # link. This is the audit's third state made explicit: not "ok", not a finding,
-# but "there is no answer to give". It is closed by construction — every version
-# from 0.20.0 on is cut by the assembler, which writes the ref as it goes — and
-# `tests/test_changelog_link_refs_918.py` refuses anything at or above that floor
-# being added here.
+# but "there is no answer to give".
 #
-# EMPTIED ON VENDORING. Upstream this set lists ITS OWN untagged releases, and the
-# copy arrived here still naming 0.11.0 through 0.19.0 -- versions this repo has
-# never had. The audit duly reported nine findings about another project's release
-# history, in a tool whose whole purpose is to catch exactly that kind of confident
-# wrong statement.
+# EMPTIED ON VENDORING, and it stays empty. Upstream this set lists ITS OWN
+# untagged releases, and the copy arrived here still naming 0.11.0 through
+# 0.19.0 -- versions this repo has never had. The audit duly reported nine
+# findings about another project's release history, in a tool whose whole
+# purpose is to catch exactly that kind of confident wrong statement.
 #
-# It is per-repo state and does not belong in a shared tool. A repo that needs the
-# declaration should carry it in its own config rather than in a vendored script,
-# and until that exists an empty set means "no version is declared untagged", which
-# is true of every repo by default.
+# It is per-repo state and does not belong in a shared tool, so the declaration
+# is made by the caller instead: `--check-links --untagged 0.1.0,0.2.0`, in
+# whatever CI leg or command that repository runs the audit from, where the
+# versions sit beside the repository they are true of. This constant is the
+# fallback for a caller that declared nothing, and an empty set means "no
+# version is declared untagged", which is true of every repo by default.
+#
+# Nothing here declares a floor above which the set may not grow. Upstream's
+# comment cited a test enforcing one; that test was not vendored with the
+# script, and a citation to a file this repository does not have reads exactly
+# like a guard that runs.
 UNTAGGED_RELEASES = frozenset()
 
 _COMPARE_HREF_RE = re.compile(r"/compare/v(?P<version>\d+\.\d+\.\d+)\.\.\.HEAD$")
@@ -1909,6 +1929,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     #: named nothing", which is what the fold gate reads.
     derived_dir = (REPO / "changelog.d") if REPO else None
     derived_changelog = (REPO / "CHANGELOG.md") if REPO else None
+
+    # `--untagged` is read by `--check-links` and by nothing else. Accepting it
+    # silently on the fold, `--check` or `--count` would make a declaration that
+    # was never consulted look exactly like one that was honoured -- including a
+    # value that is not `x.y.z`, which `--check-links` refuses and every other
+    # mode would have ignored.
+    if args.untagged is not None and not args.check_links:
+        _receipt("refused",
+                 "--untagged is read by --check-links only, and this run is "
+                 "not one — nothing was audited, written or consumed",
+                 ["pass      --check-links alongside it, or drop it",
+                  "why       the versions it declares are compared against the "
+                  "link ref table, which no other mode reads. Silently ignored "
+                  "here, a declaration that never applied would be "
+                  "indistinguishable from one that did"])
+        return REFUSED
 
     if args.count:
         directory = _resolve(args.directory, "--dir", derived_dir)
