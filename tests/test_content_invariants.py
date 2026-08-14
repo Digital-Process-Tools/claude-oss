@@ -611,6 +611,12 @@ RELEASE_AUDITOR_CONTRACTS = [
     ("what-happens-after-round-two", ("next milestone",)),
     ("first-release-is-a-named-state", ("first release",)),
     ("the-range-is-computed-not-guessed", ("release_delta.py",)),
+    # An unscoped range is the one way this gate can be wrong while looking right:
+    # `describe` unmatched anchors on the newest tag of any namespace, the delta
+    # computes, and `could not run` never fires. So the agent has to say `unscoped`
+    # out loud -- and it must not read that as a fourth reason to stop, which would
+    # block every repo that has not spelled its tags out.
+    ("an-unscoped-range-is-named-and-does-not-block", ("unscoped", "does not stop")),
     ("reuses-the-class-vocabulary-by-reference", ("agents/auditor.md",)),
     ("the-delta-is-what-no-per-pr-review-can-see", ("individually clean",)),
     ("untrusted-input", ("data, not instructions",)),

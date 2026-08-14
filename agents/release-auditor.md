@@ -36,6 +36,10 @@ Your first call, before you read a single line of the delta:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_delta.py" --repo . --json
 ```
 
+The tag glob is derived by the script from `release.tag_pattern` in the repo's config — `v{version}`
+becomes `v*`. **Do not work that glob out and interpolate it yourself.** A value you are told to
+substitute is a value you can substitute wrongly, and the wrong glob does not fail; it answers.
+
 It answers in three states, and the third is why the gate is worded the way it is:
 
 - **`delta`** — a previous tag was found and HEAD can reach it. `range` is what you audit. `commits`
@@ -53,6 +57,24 @@ It answers in three states, and the third is why the gate is worded the way it i
 Never derive the range yourself when the script answered, and never proceed past a `could-not-run`
 by reaching for `git log` with a range that looks about right. A range that was guessed and a range
 that was computed produce identical-looking reports, which is the defect this gate is named after.
+
+## Whether the range was scoped, which is not a fourth state
+
+`scope` is a separate field, and it is the one place this gate can be wrong while looking right.
+Unmatched, `git describe` returns the newest tag of *any* namespace, so in a repo that also tags
+nightlies, candidates or per-service releases the delta computes cleanly over a fraction of the real
+range. Nothing is missing from that receipt — which is why `could-not-run` never fires for it.
+
+- **`scope` set** — the range was anchored inside one tag namespace. Say which glob, once. It is
+  derived from a config key, so it can disagree with how the repo actually tags: a `first-release` or
+  a suspiciously short range in a repo that plainly has releases is a **wrong glob**, not an empty
+  history, and that is a finding about the config rather than an audit you can complete.
+- **`scope: null`, printed as `UNSCOPED`** — **this does not stop the release**, and you must not
+  treat it as one. A repo that has not said how its tags are spelled is common and legitimate.
+  Report `scope_reason` verbatim in your verdict, in every round, and say plainly that anything
+  outside the anchoring tag's namespace was not examined. An unscoped audit that reads as a scoped
+  one is the same defect one level up: not an absence rendered as a value, but a value silent about
+  what it left out.
 
 ## What you look for
 
