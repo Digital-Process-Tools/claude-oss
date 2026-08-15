@@ -138,6 +138,28 @@ def test_state_file_present_but_unreadable_by_the_writer_is_not_ok(tmp_path):
     assert doctor.FINDINGS[-1][0] == "OK"
 
 
+def test_state_file_says_unmeasured_when_oss_state_could_not_be_imported(
+    tmp_path, monkeypatch
+):
+    """The shape lives in oss_state, so a broken install cannot judge the file.
+
+    Without this arm the check would either crash or quietly grade the file on nothing
+    -- and a doctor run on exactly the broken install it exists to diagnose is the run
+    that would hit it.
+    """
+    _state_file(tmp_path, "[]")
+    monkeypatch.setattr(doctor, "oss_state", None)
+    doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "not checked" in message
+
+    # Must-fire control, same fixture and same file: with the module there, it grades.
+    monkeypatch.undo()
+    doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
+    assert doctor.FINDINGS[-1][0] == "OK"
+
+
 def test_state_file_that_cannot_be_read_at_all_warns_rather_than_raising(tmp_path):
     """Exit 0 always, one VERDICT line -- a check that raises takes the contract out.
 

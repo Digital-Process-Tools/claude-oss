@@ -163,6 +163,22 @@ def test_migrate_keeps_the_original_beside_the_converted_file(tmp_path):
     assert json.loads(backup.read_text(encoding="utf-8")) == PRE_PLUGIN
 
 
+def test_the_backup_is_the_original_bytes_not_a_re_encoding_of_them(tmp_path):
+    """"Kept whole" has to mean the bytes.
+
+    `read_text` translates newlines, so a state file written on Windows round-trips
+    through the backup with its CRLFs replaced -- a copy that is not what it is a copy
+    of, held out as the thing to fall back to.
+    """
+    path = tmp_path / "crlf.json"
+    original = json.dumps(PRE_PLUGIN, indent=2).replace("\n", "\r\n").encode("utf-8")
+    path.write_bytes(original)
+
+    result = oss_state.migrate(path)
+    assert result["state"] == oss_state.MIGRATED
+    assert Path(result["backup"]).read_bytes() == original
+
+
 def test_migrate_refuses_rather_than_overwriting_an_earlier_backup(tmp_path):
     path = _pre_plugin(tmp_path)
     backup = Path(str(path) + oss_state.BACKUP_SUFFIX)
@@ -200,6 +216,28 @@ def test_migrate_refuses_a_shape_it_would_have_to_guess_at(tmp_path):
 
     # Must-fire control: the shape it CAN convert still converts, same fixture.
     assert oss_state.migrate(_pre_plugin(tmp_path))["state"] == oss_state.MIGRATED
+
+
+def test_a_json_document_that_is_neither_shape_is_named_rather_than_lumped_in(tmp_path):
+    """A number or a string at the top level is not the pre-plugin shape either.
+
+    It gets its own sentence rather than the migration hint, which would send a
+    maintainer to run a conversion that cannot apply.
+    """
+    path = tmp_path / "odd.json"
+    path.write_text("4", encoding="utf-8")
+
+    found = oss_state.describe(path)
+    assert found["state"] == oss_state.STATE_UNREADABLE
+    assert "int" in found["reason"]
+    assert "--migrate" not in found["reason"]
+
+    result = oss_state.migrate(path)
+    assert result["state"] == oss_state.CANNOT_MIGRATE
+    assert "int" in result["reason"]
+
+    # Must-fire control: the hint IS given for the shape it applies to, same fixture.
+    assert "--migrate" in oss_state.describe(_pre_plugin(tmp_path))["reason"]
 
 
 def test_migrate_refuses_a_corrupt_file_without_touching_it(tmp_path):

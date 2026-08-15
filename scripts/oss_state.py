@@ -215,8 +215,11 @@ def migrate(path):
         }
 
     try:
-        raw = path.read_text(encoding="utf-8")
-        document = json.loads(raw)
+        # Bytes, not text: the backup below has to be the file as it stands, and
+        # `read_text` translates newlines -- a CRLF original would be copied back with
+        # its line endings rewritten, which is not the thing it is a copy of.
+        original = path.read_bytes()
+        document = json.loads(original.decode("utf-8"))
     except (OSError, ValueError) as exc:
         return {
             "state": CANNOT_MIGRATE,
@@ -267,8 +270,8 @@ def migrate(path):
     try:
         # Exclusive create: an existing backup is an earlier attempt's original, and
         # overwriting it is how a second run destroys the history the first one saved.
-        with open(str(backup), "x", encoding="utf-8") as handle:
-            handle.write(raw)
+        with open(str(backup), "xb") as handle:
+            handle.write(original)
     except FileExistsError:
         return {
             "state": CANNOT_MIGRATE,

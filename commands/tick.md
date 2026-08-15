@@ -25,8 +25,9 @@ Skill(manager)
    whose file the script cannot use spent a whole tick before finding out (#149). A `FAIL` on this
    line names what is wrong and what to run; the common one is a state file written by a
    pre-plugin maintainer loop, an object keyed `tick_<ISO>` rather than a list of entries, which
-   `--migrate` converts in place while keeping the original beside it. Do that first. `no entries
-   yet` means a first tick and nothing else.
+   `--migrate` converts in place while keeping the original beside it. **A `FAIL` here stops the
+   tick** — settle it, then start over at this step. `no entries yet` means a first tick and
+   nothing else.
 
 2. **Read the board**, batched into one call:
 
