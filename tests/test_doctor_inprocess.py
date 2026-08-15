@@ -1666,3 +1666,22 @@ def test_main_reports_whether_anything_publishes_to_the_board(tmp_path, monkeypa
     monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     assert [m for _s, m in doctor.FINDINGS if m.startswith("radar board:")]
+
+
+def test_the_supertool_config_this_plugin_writes_satisfies_its_own_diagnostic(tmp_path):
+    """The plugin's own default, judged by the plugin's own check (#191).
+
+    `scaffold.SUPERTOOL_JSON` is written into a repo that has none, and its comment
+    says radar is on by default so "a managed repo should have a board the first
+    time someone opens it". Registering tiers is only half of that: the op reading
+    them is provided by a preset, and a template registering a board with no route
+    to it hands every scaffolded repo the exact state #191 reports -- a channel
+    that renders as healthy and publishes nothing.
+
+    A second measurement rather than a second assertion: this reads the template
+    through the diagnostic instead of restating what the template ought to say, so
+    the two cannot agree with each other while both being wrong.
+    """
+    (tmp_path / doctor.WATCH_CONFIG).write_text(scaffold.SUPERTOOL_JSON, encoding="utf-8")
+    state, detail = doctor.radar_publish_state(tmp_path)
+    assert state == "publishes", (state, detail)

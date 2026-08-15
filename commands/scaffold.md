@@ -124,8 +124,12 @@ already has everything.
 
 ## `.supertool.json` moves the ground you are standing on
 
-`--apply` writes `.supertool.json` with `"presets": ["git", "github"]`, and roughly thirty `git-*`
-and `gh-*` ops come into existence the moment it lands. **The op listing you are working from was
+`--apply` writes `.supertool.json` with `"presets": ["git", "github", "watch"]`, and roughly thirty
+`git-*` and `gh-*` ops come into existence the moment it lands. `watch` is in that list because it
+is what provides `radar`: the template registers a radar tier, and until #191 it registered one with
+no route to the op that reads it, so every scaffolded repo got a board that could never publish and
+looked exactly like one that did. Loading the preset spawns nothing — the ops become available and a
+poller starts only when something asks for one. **The op listing you are working from was
 captured at session start, before that file existed, and is never refreshed.** The session that
 installs the config is the one that cannot see what it installed.
 

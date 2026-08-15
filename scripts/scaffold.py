@@ -231,9 +231,18 @@ __pycache__/
 
 # Radar on by default: a managed repo should have a board the first time someone
 # opens it, not after they discover the op exists. Tiers are the smallest useful
-# set -- open pull requests -- and the presets are the two the loop actually calls.
+# set -- open pull requests -- and the presets are the ones the loop actually calls.
+#
+# `watch` is in that list because it is what PROVIDES `radar` (#191). Registering
+# tiers without it wrote a board with no route to it into every scaffolded repo:
+# the ops load, a session opens, `channel:health` reports FORWARDING, and nothing
+# can ever publish -- byte-identical to a healthy board, which is the defect this
+# plugin is named after, shipped as its own default. `doctor.radar_publish_state`
+# now reads this very template in `tests/test_doctor_inprocess.py`, so the two
+# cannot drift apart silently. Loading the preset spawns nothing: the ops become
+# available and a poller starts only when something asks for one.
 SUPERTOOL_JSON = """{
-  "presets": ["git", "github"],
+  "presets": ["git", "github", "watch"],
   "ops": {
     "radar": {
       "radar_tiers": {
