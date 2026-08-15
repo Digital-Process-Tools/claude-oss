@@ -219,6 +219,22 @@ def check_config(project_dir):
 
 
 def check_tool(name, probe):
+    """Is this dependency present, and does it run?
+
+    The probe's output is captured and never read -- both arms below branch on
+    ``returncode`` alone, and ``stderr`` is merged into the same pipe only to keep a
+    banner off this script's own stdout, where it would forge a finding.
+
+    So the pipe stays **bytes**. Text mode decodes with the *runner's* locale, and a
+    ``--version`` banner is exactly where a byte that locale cannot decode turns up --
+    a copyright sign, an accented author name. ``UnicodeDecodeError`` is a
+    ``ValueError``, so the guard below does not catch it, and a diagnostic contracted
+    to exit 0 with one VERDICT line died in a traceback instead of reaching its own
+    "found on PATH but would not run" arm. Nothing downstream wants text, so the
+    decode is removed rather than guarded: an ``except ValueError`` here would be
+    unreachable, and would newly swallow a malformed ``probe`` -- a bug in this file --
+    into a finding about the user's toolchain.
+    """
     if shutil.which(name) is None:
         report("WARN", "{}: not on PATH; anything needing it will be skipped".format(name))
         return
@@ -227,7 +243,6 @@ def check_tool(name, probe):
             probe,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            universal_newlines=True,
             timeout=20,
         )
     except (OSError, subprocess.SubprocessError) as exc:

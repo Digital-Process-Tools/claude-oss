@@ -10,6 +10,7 @@ So both: subprocess for the contract, in-process for the branches.
 """
 
 import json
+import locale
 import os
 import subprocess
 import sys
@@ -412,6 +413,81 @@ def test_check_tool_reports_ok_on_a_zero_exit(monkeypatch):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)
     doctor.check_tool("python", [sys.executable, "-c", "pass"])
     assert doctor.FINDINGS[-1][0] == "OK"
+
+
+def _undecodable_byte():
+    """A byte this runner's locale codec rejects, and the codec's name.
+
+    Measured, not tabulated. Text-mode ``subprocess`` decodes with
+    ``locale.getpreferredencoding(False)``, and which bytes that codec rejects is a
+    property of the runner rather than of a platform anyone can name: UTF-8 rejects a
+    lone ``0x80``, cp1252 maps ``0x80`` to a euro sign and rejects ``0x81``, and
+    latin-1 rejects nothing at all. A hardcoded byte would therefore be green on some
+    legs by never constructing the condition the test is about.
+
+    Returns ``(None, encoding)`` when the codec decodes every byte. That is the third
+    state -- the case cannot be built here -- and it is not a pass.
+    """
+    encoding = locale.getpreferredencoding(False)
+    for value in range(0x80, 0x100):
+        try:
+            bytes([value]).decode(encoding)
+        except UnicodeDecodeError:
+            return value, encoding
+    return None, encoding
+
+
+def test_check_tool_survives_a_banner_this_locale_cannot_decode(monkeypatch, tmp_path):
+    """A dependency whose ``--version`` banner carries one undecodable byte must reach
+    a finding, not a traceback.
+
+    ``doctor.py``'s contract is exit 0 and one VERDICT line. Text mode made the probe
+    decode output that no arm of ``check_tool`` reads -- both branch on ``returncode``
+    alone -- so a copyright sign in a banner, met by the wrong locale, killed the
+    diagnostic from a decode with no consumer.
+    """
+    bad, encoding = _undecodable_byte()
+    if bad is None:
+        pytest.skip(
+            "locale codec {!r} decodes every byte, so an undecodable banner cannot be "
+            "built here; check_tool's behaviour on one went untested".format(encoding)
+        )
+
+    # PATH is pinned at an empty directory. Every argv[0] below is an absolute
+    # interpreter path, so nothing should resolve a name against it -- pinning makes
+    # that structural rather than argued. A suite that finds a real tool where its
+    # fixture should have been has run something nobody asked for.
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)
+
+    emit_bad = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stdout.buffer.write(bytes([{}])); sys.stdout.flush()".format(bad),
+    ]
+
+    # Control: the fixture really does put that byte on the pipe. Read in bytes mode,
+    # the one way to look without triggering the defect under test.
+    emitted = subprocess.run(
+        emit_bad, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60
+    )
+    assert emitted.returncode == 0
+    assert bytes([bad]) in emitted.stdout, (
+        "fixture emitted {!r}, not the undecodable byte this test is about".format(
+            emitted.stdout
+        )
+    )
+
+    doctor.check_tool("undecodable", emit_bad)
+    assert doctor.FINDINGS[-1] == ("OK", "undecodable: available")
+
+    # Positive control, same fixture: a probe with a clean banner reaches the same arm.
+    # Without it, "OK was reported" cannot tell a working probe from one never invoked.
+    doctor.check_tool(
+        "ascii",
+        [sys.executable, "-c", "import sys; sys.stdout.write('tool 1.2.3')"],
+    )
+    assert doctor.FINDINGS[-1] == ("OK", "ascii: available")
 
 
 def test_main_returns_zero_and_ends_on_a_verdict(tmp_path, monkeypatch, capsys):
