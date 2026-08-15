@@ -1311,8 +1311,55 @@ def check_changelog_label(labels, reason=None):
     ]
 
 
+# Why a workflow could not be read (#134). `check_test_ci` reports ONE state for all
+# three of these -- `unreadable` -- and that is right: the remedy is identical and it
+# is "this process could not look", which is the whole distinction the state carries
+# against `unenforced`. What was wrong was discarding WHICH of the three at the point
+# it was recorded. An entry that would not stat and a file that would not read
+# produced a byte-identical string for the same path, so a reader was told strictly
+# less than the process knew, and a consumer that wanted to branch had nothing to
+# branch on -- the distinction lost where it was recorded, and missed somewhere else
+# entirely.
+#
+# Exported as a tuple because a table checked against itself proves nothing:
+# `tests/test_scaffold.py::test_the_three_causes_behind_one_unreadable_state_are_each_observed`
+# drives every one of them through a fixture and compares the OBSERVED set against
+# this, and `tests/test_state_vocabularies.py::FAN_IN_STATES` records that the
+# single-site state has a fan-in behind it at all.
+CAUSE_DIRECTORY_UNWALKABLE = "directory-unwalkable"
+CAUSE_ENTRY_UNSTATTABLE = "entry-unstattable"
+CAUSE_FILE_UNREADABLE = "file-unreadable"
+
+WORKFLOW_SCAN_CAUSES = (
+    CAUSE_DIRECTORY_UNWALKABLE,
+    CAUSE_ENTRY_UNSTATTABLE,
+    CAUSE_FILE_UNREADABLE,
+)
+
+
+def _unreadable(path, cause):
+    """One entry of a scan's `unreadable` list: the path, and why."""
+    return {"path": path, "cause": cause}
+
+
+def unreadable_paths(entries):
+    """Just the paths, sorted and deduped -- for a caller whose state does not turn
+    on the cause.
+
+    `_detect_changelog_gate` is one: `found` and `unknown` both decline the owned
+    trio, so nothing there changes with the cause and the render stays a path list.
+    Provided rather than left to each caller to rebuild, so the shape of an entry is
+    known in one place.
+    """
+    return sorted(set(entry["path"] for entry in entries))
+
+
 def _workflow_scan(repo_root):
     """``(files, unreadable)`` for the workflow directory. Never raises.
+
+    ``unreadable`` holds ``{"path": ..., "cause": ...}`` entries, not bare strings --
+    two of the causes below name the same path, and a list of strings folds them
+    together before any caller can see there were two.
 
     Three states, and the third one is the point (#124). ``Path.is_dir()`` answers
     True for a directory that exists and cannot be entered, so the old guard passed
@@ -1343,14 +1390,19 @@ def _workflow_scan(repo_root):
                     # and land us one level down in the same conflation.
                     is_file = entry.is_file()
                 except OSError:
-                    unreadable.append("{}/{}".format(WORKFLOW_DIR, entry.name))
+                    unreadable.append(
+                        _unreadable(
+                            "{}/{}".format(WORKFLOW_DIR, entry.name),
+                            CAUSE_ENTRY_UNSTATTABLE,
+                        )
+                    )
                     continue
                 if is_file and Path(entry.name).suffix in (".yml", ".yaml"):
                     files.append(directory / entry.name)
     except (FileNotFoundError, NotADirectoryError):
         pass
     except OSError:
-        unreadable.append(WORKFLOW_DIR)
+        unreadable.append(_unreadable(WORKFLOW_DIR, CAUSE_DIRECTORY_UNWALKABLE))
     return sorted(files), unreadable
 
 
@@ -1376,7 +1428,11 @@ def _workflow_texts(repo_root):
         try:
             texts.append(path.read_text(encoding="utf-8"))
         except OSError:
-            unreadable.append("{}/{}".format(WORKFLOW_DIR, path.name))
+            unreadable.append(
+                _unreadable(
+                    "{}/{}".format(WORKFLOW_DIR, path.name), CAUSE_FILE_UNREADABLE
+                )
+            )
     return texts, unreadable
 
 
@@ -1411,7 +1467,12 @@ def _detect_changelog_gate(repo_root, config):
     dir_marker = "/" + fragments.strip("/") + "/"
 
     signals = []
-    workflows, unreadable = _workflow_scan(root)
+    # Paths only. This function's two non-clean states both decline the owned trio,
+    # so the cause changes nothing it decides or prints -- and the walk below appends
+    # its own unreadable paths into the same list. Flattened here rather than carried
+    # and dropped later, so the shape is uniform from this line down.
+    workflows, scan_unreadable = _workflow_scan(root)
+    unreadable = unreadable_paths(scan_unreadable)
     for path in workflows:
         if path.name == "oss-changelog.yml":
             continue
@@ -1661,9 +1722,20 @@ def check_test_ci(repo_root, config):
     # in .github/workflows/ runs it" is a claim about every workflow in the repo, and
     # this process has not seen every workflow in the repo.
     if unreadable:
+        # One state, three causes, and the causes travel (#134). The state is right:
+        # all three mean this process could not look, they share a remedy, and that is
+        # the distinction against `unenforced` below. But two of them name the same
+        # path -- an entry that would not stat and a file that would not read -- and
+        # rendering only the path made those two indistinguishable to a reader who has
+        # a different thing to check in each case. `causes` is the machine-readable
+        # half: nothing branches on it today, which is precisely why it is here rather
+        # than in a later commit written after somebody needed it and found the
+        # distinction already destroyed.
+        seen = sorted(set((entry["path"], entry["cause"]) for entry in unreadable))
         return [
             {
                 "state": "unreadable",
+                "causes": sorted(set(cause for _path, cause in seen)),
                 "detail": (
                     "test_command '{command}' was verified when .oss.json was written, and "
                     "whether anything in {dir}/ runs it could not be established: {paths} "
@@ -1671,7 +1743,9 @@ def check_test_ci(repo_root, config):
                     "workflow that does may be one of the files above.".format(
                         command=command,
                         dir=WORKFLOW_DIR,
-                        paths=", ".join(sorted(set(unreadable))),
+                        paths=", ".join(
+                            "{0} ({1})".format(path, cause) for path, cause in seen
+                        ),
                     )
                 ),
             }

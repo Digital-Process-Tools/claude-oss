@@ -171,3 +171,55 @@ def test_repositoryTopics_takes_precedence_over_legacy_topics_key():
         "topics": [],
     }
     assert scaffold.check_metadata(probe) == []
+
+def test_the_metadata_vocabulary_is_keyed_by_field_and_state_together():
+    """The control behind the registered `missing` collision (#134).
+
+    `check_metadata` returns ONE list holding two vocabularies -- its own description
+    states and whatever `_check_topics` produced -- under one `state` key. `missing`
+    is in both, so a caller writing `if f["state"] == "missing"` gets two unrelated
+    situations, which is the shape #134 was filed about.
+
+    It is kept rather than renamed on one condition, and this is the condition:
+    `field` is always there, so the real key is the pair. `tests/
+    test_state_vocabularies.py` registers the collision with that sentence and names
+    this test as what makes it true, so the sentence is not self-certifying.
+    """
+    findings = scaffold.check_metadata({"description": "", "topics": []})
+    assert len(findings) == 2, "the collision is not reachable, so nothing below is a test"
+
+    states = sorted(f["state"] for f in findings)
+    assert states == ["missing", "missing"], (
+        "the two sites no longer share a state name. If one was renamed, the "
+        "MULTI_SITE_STATES entry for check_metadata:missing is now stale."
+    )
+
+    for finding in findings:
+        assert finding.get("field"), (
+            "a finding in this vocabulary carries no `field`, so the only thing "
+            "telling its two `missing` sites apart is gone: {!r}".format(finding)
+        )
+    pairs = sorted((f["field"], f["state"]) for f in findings)
+    assert pairs == [("description", "missing"), ("topics", "missing")]
+    assert len(set(pairs)) == len(pairs), "(field, state) is not a key either"
+
+
+def test_every_finding_this_vocabulary_can_emit_carries_a_field():
+    """The sweep above proves it for one pair of states. This drives every reachable
+    finding, so a new arm added without a `field` fails here rather than at whatever
+    reads it.
+    """
+    probes = [
+        {"description": "", "topics": []},
+        {"description": "x" * (scaffold.MAX_DESCRIPTION + 1), "topics": ["solo"]},
+        {"description": "ok"},
+        {"description": "ok", "repositoryTopics": [7]},
+    ]
+    seen = set()
+    for probe in probes:
+        findings = scaffold.check_metadata(probe)
+        assert findings, "probe {!r} produced nothing -- the loop below is vacuous".format(probe)
+        for finding in findings:
+            assert finding.get("field"), "no field on {!r}".format(finding)
+            seen.add(finding["state"])
+    assert seen == {"missing", "too-long", "thin", "unknown"}, sorted(seen)

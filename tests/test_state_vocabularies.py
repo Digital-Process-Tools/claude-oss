@@ -32,12 +32,24 @@ counted in `UNRESOLVED_SITES` rather than dropped -- and it cannot see the case
 #134 itself reports.
 
 That last one is the honest limit and it is worth spelling out. `check_test_ci`
-emits `unreadable` from exactly **one** site, so nothing below flags it; the three
-distinct causes behind it (`.github/workflows/` unwalkable, a child entry that
+emits `unreadable` from exactly **one** site, so no collision below flags it; the
+three distinct causes behind it (`.github/workflows/` unwalkable, a child entry that
 would not stat, a file that would not read) are folded upstream, into the one list
 `_workflow_scan` and `_workflow_texts` build. A cause fan-in behind a single literal
-is dataflow, not a countable site, and no static pass here finds it. So this guard
+is dataflow, not a countable site, and no static pass here finds it.
+
+What a static pass *can* do is refuse to let one be invisible, which is what
+`FAN_IN_STATES` below is. The fan-in is declared, the causes are pinned against a
+tuple `scaffold.py` itself exports, and the dynamic guard that drives all three is
+named -- so deleting or renaming that guard fails here rather than leaving a state
+nobody checks. Whether the guard *observed* anything is its own assertion, made at
+runtime where the causes are, and this file does not claim otherwise. So this guard
 narrows the class; it does not close it.
+
+It also once had a blind spot of its own shape, which is what `MERGED_VOCABULARIES`
+is for: a per-function scan is the wrong unit when a function fans a helper's
+findings into its own returned list, and it reported `scaffold.check_metadata` clean
+by splitting one vocabulary in two at a function boundary.
 
 It also only reads the key `state`. Two vocabularies in this plugin are shaped like
 states and are not spelled that way, so nothing below is evidence about either:
@@ -69,22 +81,32 @@ on their own.
                               invisible and why it was still worth filing.
   oss_config.verify_*         LOCAL.
 
-## A pin across lanes, deliberately
+## The site counts, and why they stay
 
-`MULTI_SITE_STATES` and `UNRESOLVED_SITES` below name `scaffold.py` and
-`oss_config.py`, which this lane does not own. That is the point of a sweep -- a
-registry that covered only the files one author could edit would answer the
-narrower question. It does mean a rename or a new arm in either file fails a test
-in this one, with a message saying what to write. That is the intended cost.
+`MULTI_SITE_STATES` and `UNRESOLVED_SITES` pin a NUMBER, not a property, so a
+correct change in `scripts/` fails a test in `tests/` with a message saying what to
+write. #153 wrote it that way partly because it could not edit `scaffold.py` or
+`oss_config.py` at all -- a cross-lane pin -- and that constraint is gone: #134's
+follow-up owns both files and changed one.
+
+The count still stays, on its own merits. The value of this registry is the
+sentence, and a sentence nobody is forced to re-read decays into boilerplate: a
+third arm arriving under a two-arm reason is exactly how a collision gets absorbed
+rather than noticed. Nothing static can check that a new arm still means what the
+sentence says, so the count is what makes somebody look. It is a deliberate cost
+paid on a rare event, not an accident of who owned which file.
 """
 
 import ast
+import importlib
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 # The scripts that emit a `state` vocabulary. Named rather than globbed: a glob that
 # silently matched nothing would make every assertion below trivially true, and
@@ -122,11 +144,72 @@ MULTI_SITE_STATES = {
         "release exists, which is the single distinction this state carries against "
         "`created`.",
     ),
-    ("scaffold.py", "_check_topics", "unknown"): (
+    ("scaffold.py", "check_metadata", "unknown"): (
         2,
         "the probe carries neither topics key, or its entries are a shape this cannot "
         "read. Both say topics were not checked, which is not the same as this repo "
-        "having none.",
+        "having none. Recorded against `check_metadata` rather than `_check_topics` "
+        "because MERGED_VOCABULARIES folds the helper into the list its caller "
+        "returns -- see there.",
+    ),
+    ("scaffold.py", "check_metadata", "missing"): (
+        2,
+        "no description, or no topics. Two situations under one state name, in ONE "
+        "list handed to ONE consumer -- the #134 shape exactly, and invisible to a "
+        "per-function scan because the second site sits inside `_check_topics`. Kept "
+        "rather than renamed because the discriminator already exists and is already "
+        "carried: this vocabulary is keyed by the pair (field, state), and every "
+        "finding the function returns has a `field`. Renaming to "
+        "`description-missing` / `topics-missing` would spell the field twice. That "
+        "sentence is only true while `field` is always there, so it is not left as a "
+        "sentence -- tests/test_repo_metadata.py::"
+        "test_the_metadata_vocabulary_is_keyed_by_field_and_state_together drives "
+        "both sites and asserts it.",
+    ),
+}
+
+# (module, caller) -> the helpers whose findings arrive inside the caller's own
+# returned list. Folded together before collisions are looked for.
+#
+# Per-function granularity is the wrong unit for a function that fans a helper's
+# findings into its own list. `check_metadata` appends whatever `_check_topics`
+# returns and hands back one list, so a caller sees one vocabulary and has one
+# `state` key to branch on. Swept apart, `missing` looked like two vocabularies each
+# using the word once -- a clean answer produced by where a function boundary happened
+# to fall, which is this repository's own defect class wearing a scan result's
+# clothes.
+#
+# A declaration here is a claim about the code, so it is checked rather than trusted:
+# `test_every_merged_vocabulary_declaration_is_true` asserts the caller really does
+# call the callee. A stale merge would union two vocabularies that no longer meet and
+# manufacture a collision -- the opposite error, and equally unwanted.
+MERGED_VOCABULARIES = {
+    ("scaffold.py", "check_metadata"): ("_check_topics",),
+}
+
+# (module, vocabulary, state) -> (causes, guard file, guard test name).
+#
+# The limit this file's docstring names, given teeth. A state emitted from ONE site
+# and reached by several distinct situations is dataflow: no static pass here can see
+# it, and #134's surviving instance is one of them. What a static pass CAN do is
+# refuse to let such a state be invisible. Each one is listed, with the causes it
+# folds and the dynamic guard that drives every one of them through a fixture.
+#
+# Three properties, and the third is deliberately not claimed:
+#
+#   * the causes match the tuple the module itself exports, so the table and the code
+#     cannot drift apart in silence;
+#   * the named guard exists in the tree, so renaming or deleting it fails here rather
+#     than leaving a table pointing at nothing;
+#   * whether that guard actually OBSERVED all of them is its own assertion, made at
+#     runtime where the causes are. Said out loud rather than implied: a registry that
+#     looked like it proved observation would be exactly the absence this repo is
+#     named after.
+FAN_IN_STATES = {
+    ("scaffold.py", "check_test_ci", "unreadable"): (
+        ("directory-unwalkable", "entry-unstattable", "file-unreadable"),
+        "tests/test_scaffold.py",
+        "test_the_three_causes_behind_one_unreadable_state_are_each_observed",
     ),
 }
 
@@ -219,14 +302,37 @@ def _module_states(source, label="<source>"):
     return vocabularies, unresolved, ""
 
 
-def sweep(sources, reasons=None):
+def _fold_merges(label, vocabularies, merges):
+    """Fold a helper's states into the caller whose list they arrive in.
+
+    ``merges`` is ``{(label, caller): (callee, ...)}``. The callee's entry is removed
+    once folded: leaving it would report the same site under two names and double
+    every count in the registry.
+
+    A callee named for a caller that does not exist here, or a callee this module has
+    no vocabulary for, is left alone rather than guessed at --
+    ``test_every_merged_vocabulary_declaration_is_true`` is what turns a stale
+    declaration into a failure, and doing it here as well would fail the wrong test
+    with the wrong message.
+    """
+    for (merge_label, caller), callees in sorted(merges.items()):
+        if merge_label != label or caller not in vocabularies:
+            continue
+        for callee in callees:
+            for state, lines in vocabularies.pop(callee, {}).items():
+                vocabularies[caller].setdefault(state, []).extend(lines)
+    return vocabularies
+
+
+def sweep(sources, reasons=None, merges=None):
     """``sources`` is ``{label: text}``. Returns the three-outcome report.
 
     ``text`` may be ``None``, which is how "this module would not be read" reaches
     here -- an error, not an empty module. ``reasons[label]`` says why, when there
-    is a why to say.
+    is a why to say. ``merges`` is MERGED_VOCABULARIES, or a fixture's own.
     """
     reasons = reasons or {}
+    merges = merges or {}
     report = {
         "outcome": "clean",
         "collisions": [],
@@ -247,6 +353,7 @@ def sweep(sources, reasons=None):
         if error:
             report["errors"].append("{0}: {1}".format(label, error))
             continue
+        vocabularies = _fold_merges(label, vocabularies, merges)
         report["vocabularies"][label] = vocabularies
         for function, states in vocabularies.items():
             for state, lines in states.items():
@@ -304,7 +411,7 @@ def _read_scripts():
 @pytest.fixture(scope="module")
 def shipped():
     sources, reasons = _read_scripts()
-    return sweep(sources, reasons)
+    return sweep(sources, reasons, MERGED_VOCABULARIES)
 
 
 # --- the guard's own three outcomes, each with a case that reaches it ----------
@@ -460,3 +567,140 @@ def test_release_publish_keeps_its_two_vocabularies_under_different_keys(shipped
         "notes_section emits `state` again; its vocabulary (found/empty/missing) is "
         "not the publish lifecycle's and must not share the key"
     )
+
+# --- vocabularies that arrive merged, and states that arrive fanned in ---------
+
+
+def test_a_helper_folded_into_its_caller_makes_a_hidden_collision_visible():
+    """The positive control for the merge machinery, on a fixture showing both
+    readings of one source.
+
+    Apart, each function uses `missing` once and the sweep is clean. Together --
+    which is what the single returned list actually is -- it is a collision. Without
+    this pair, folding could quietly do nothing and every merged registry entry would
+    be a sentence about a union that never happened.
+    """
+    source = (
+        "def _topics(p):\n"
+        "    return {'field': 'topics', 'state': 'missing'}\n"
+        "def check(p):\n"
+        "    out = [{'field': 'description', 'state': 'missing'}]\n"
+        "    out.append(_topics(p))\n"
+        "    return out\n"
+    )
+    apart = sweep({"m.py": source})
+    assert apart["outcome"] == "clean", apart
+    assert apart["collisions"] == []
+
+    together = sweep({"m.py": source}, merges={("m.py", "check"): ("_topics",)})
+    assert together["outcome"] == "collisions", together
+    assert together["collisions"] == [("m.py", "check", "missing", [2, 4])]
+    assert "_topics" not in together["vocabularies"]["m.py"], (
+        "the folded helper is still listed on its own, so every site it owns is "
+        "counted twice"
+    )
+
+
+def test_a_merge_declared_for_a_function_that_is_not_there_folds_nothing():
+    """A stale declaration must not invent a vocabulary. It fails in the test that
+    reads the source, not here, and here it has to be inert."""
+    source = "def check(p):\n    return {'state': 'missing'}\n"
+    report = sweep({"m.py": source}, merges={("m.py", "check"): ("gone",)})
+    assert report["outcome"] == "clean", report
+    assert report["vocabularies"]["m.py"] == {"check": {"missing": [2]}}
+
+
+def test_every_merged_vocabulary_declaration_is_true(shipped):
+    """Each caller in MERGED_VOCABULARIES really does call each callee.
+
+    Read off the source rather than trusted, because a merge nobody re-checks unions
+    two vocabularies that stopped meeting -- which manufactures a collision instead
+    of hiding one, and is just as wrong.
+    """
+    assert MERGED_VOCABULARIES, "the merge registry is empty -- the checks are vacuous"
+
+    # A callee declared under two callers folds into the first one and then silently
+    # into nothing, because `_fold_merges` pops it. Nothing today does that, and
+    # nothing may: a second declaration would look exactly like a fold that happened.
+    # Refused here rather than defended in the fold, so the message names the registry
+    # line to change.
+    claimed = {}
+    for (label, caller), callees in sorted(MERGED_VOCABULARIES.items()):
+        for callee in callees:
+            assert (label, callee) not in claimed, (
+                "MERGED_VOCABULARIES folds {0}:{1} into both {2} and {3}. It is popped "
+                "on the first fold, so the second one would quietly union "
+                "nothing.".format(label, callee, claimed[(label, callee)], caller)
+            )
+            claimed[(label, callee)] = caller
+
+    for (label, caller), callees in sorted(MERGED_VOCABULARIES.items()):
+        path = SCRIPTS / label
+        tree = ast.parse(path.read_text(encoding="utf-8"), label)
+        defs = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == caller
+        ]
+        assert defs, "MERGED_VOCABULARIES names {0}:{1}, which does not exist".format(
+            label, caller
+        )
+        called = set(
+            node.func.id
+            for node in ast.walk(defs[0])
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        )
+        for callee in callees:
+            assert callee in called, (
+                "MERGED_VOCABULARIES folds {0}:{1} into {0}:{2}, but {2} no longer "
+                "calls it. Drop the entry, or two vocabularies are being unioned for "
+                "no reason.".format(label, callee, caller)
+            )
+
+
+def test_every_fan_in_state_is_single_site_and_names_a_guard_that_exists(shipped):
+    """The compensating guard for the thing this file's docstring cannot see.
+
+    Three assertions, because each catches a different way the record goes stale:
+
+    * the state is still emitted from exactly one site, so it is still invisible to
+      the static pass and this entry is still the right home for it;
+    * the causes still match what the module itself exports, so table and code cannot
+      drift apart;
+    * the dynamic guard still exists under the name recorded, so a rename fails here
+      rather than leaving a table pointing at nothing.
+
+    What is NOT asserted, said rather than implied: that the guard observed anything.
+    That claim belongs to the guard, at runtime, where the causes are.
+    """
+    assert FAN_IN_STATES, "the fan-in registry is empty -- every check below is vacuous"
+    for key in sorted(FAN_IN_STATES):
+        label, function, state = key
+        causes, guard_file, guard_test = FAN_IN_STATES[key]
+        sites = shipped["vocabularies"].get(label, {}).get(function, {}).get(state)
+        assert sites, "{0}:{1} no longer emits {2!r} at all".format(label, function, state)
+        assert len(sites) == 1, (
+            "{0}:{1}:{2} is now emitted from {3} sites, so the static sweep can see "
+            "it and MULTI_SITE_STATES is where it belongs -- not here".format(
+                label, function, state, len(sites)
+            )
+        )
+
+        module = importlib.import_module(Path(label).stem)
+        exported = tuple(getattr(module, "WORKFLOW_SCAN_CAUSES", ()))
+        assert tuple(causes) == exported, (
+            "{0} exports causes {1!r}; FAN_IN_STATES records {2!r}".format(
+                label, exported, tuple(causes)
+            )
+        )
+
+        guard = REPO_ROOT / guard_file
+        text = guard.read_text(encoding="utf-8") if guard.exists() else ""
+        assert "def {0}(".format(guard_test) in text, (
+            "FAN_IN_STATES points at {0}::{1}, which is not there. The causes behind "
+            "{2}:{3}:{4} are dataflow and nothing static sees them, so that test is "
+            "the only thing between this state and the absence it hides.".format(
+                guard_file, guard_test, label, function, state
+            )
+        )
