@@ -116,6 +116,7 @@ STATE_EMITTING_SCRIPTS = (
     "oss_config.py",
     "release_delta.py",
     "release_publish.py",
+    "release_version.py",
     "scaffold.py",
 )
 

@@ -23,6 +23,35 @@ text — the file name is metadata, and metadata does not survive being read out
   notices until a release goes missing from it (#12).
 ```
 
+## Compatibility, on a `removed` fragment
+
+A `removed` fragment must say whether the removal breaks anything, as an ordinary bullet
+in the body:
+
+```markdown
+- Compatibility: compatible - an `.oss.json` already carrying the key still validates (#113).
+- Compatibility: breaking - callers passing the old key now fail (#113).
+```
+
+`scripts/release_version.py` reads it to propose the release number, and a `removed`
+fragment that declares nothing is `could not decide` rather than a quiet minor — the
+number stops and the author is asked. The **reason** after the verdict is required: a
+bare flag is the same unsourced verdict one field further along, and the sentence is the
+part worth having. A word that is neither `breaking` nor `compatible` is also `could not
+decide`, so a value nothing recognises never grades as compatible.
+
+Only `removed` is required to carry one. Every other section may, and a fragment that
+says nothing is read as compatible with the count of such fragments reported out loud.
+That is deliberate: every fragment carrying a field is every fragment having a field to
+get wrong, so the field is required exactly where the question is genuinely open. #171 is
+the case for it — `113.removed.md` was written by an author who knew the answer and put
+it in the one place a checker cannot see, and the version recommended beside it never
+mentioned the file.
+
+It is a plain bullet rather than front matter, so the assembler needs no special case and
+the claim ships into `CHANGELOG.md` where a user reads it, instead of being metadata
+deleted at the fold.
+
 ## Checking and folding
 
 ```bash

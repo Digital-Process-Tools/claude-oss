@@ -752,11 +752,28 @@ Gates, each a call and not a feeling:
    an empty diff: the delta is the whole history, it gets audited, and it permits the tag. This is
    the gate the loop stated for months with nothing behind it, so the outcome to distrust is the
    quiet one.
-4. **Every version site bumped**, swept **unfiltered** — a README is not a `.json` and an allowlist by
+4. **The number itself is proposed from the changelog fragments, not felt.** Every other input here
+   is pinned somewhere; the version was the one thing nobody could derive, so it came from whoever
+   was cutting the release. `scripts/release_version.py` reads the fragment sections and the current
+   version and answers in three states — `proposed`, `could not decide`, `no baseline`. **Quote the
+   receipt, then accept it or override the proposal, and record which.** The number is a promise to
+   users and stays a human decision; what this removes is an unsourced one.
+
+   The two answers that are not a proposal share one property, deliberately: the rule
+   **names no number** when it could not decide one. A default bump over a breaking change is
+   indistinguishable in the tag from a considered one. Fix what the receipt names and re-run rather
+   than picking one.
+
+   The rule, written down so "it depends" stops deciding it: **in a `0.x` line a breaking change is a
+   minor, and at `1.0.0` or later it is a major.** The section alone never settles it — a removal need
+   not break anything — so the fragment carries the verdict as a declared field, required on
+   `removed`, and a fragment that declares nothing there is `could not decide` rather than a quiet
+   minor.
+5. **Every version site bumped**, swept **unfiltered** — a README is not a `.json` and an allowlist by
    extension cannot see it. A sweep keyed on the *outgoing* version only finds sites that are
    half-bumped; it cannot find one frozen at some third value, which is the one most likely to be
    wrong.
-5. **The tag is not the delivery.** For plugin users the manifest version is what the updater
+6. **The tag is not the delivery.** For plugin users the manifest version is what the updater
    compares; for catalogue users the pin is a commit sha somebody else advances. Report which
    surfaces the release actually reached, in those words — "tagged, not yet in the catalogue" rather
    than "shipped".
