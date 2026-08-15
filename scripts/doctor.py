@@ -626,13 +626,78 @@ WATCH_NAME_ENV = "SUPERTOOL_WATCH_NAME"
 # `agree` there would be a green line about a comparison with no effect.
 WATCH_PATH_ENV = ("SUPERTOOL_WATCH_SOCK", "SUPERTOOL_WATCH_STATE_DIR")
 
+# `.oss.json`, read here directly rather than through `oss_config` (#191).
+#
+# This answers one question -- can bin/oss-workspace derive a channel name from
+# this repo? -- and the launcher answers it with a bare json.load and no schema in
+# the way. Routing through the validator would make doctor say "no name derivable"
+# for a config the launcher happily derives from, which is a disagreement invented
+# by the reader rather than found in the repo.
+OSS_CONFIG = ".oss.json"
 
-def _declared_watch_names(project_dir):
-    """The distinct `ops.*.watch_name` values in this repo's `.supertool.json`.
+# Does anything publish to this repo's board? (#191)
+#
+# `radar` reads its tiers from `ops.radar.radar_tiers` in this repo's own
+# `.supertool.json`, and there is NO default -- supertool's `help:radar` says in as
+# many words that with none configured radar refuses, "because an unconfigured
+# radar that prints nothing is byte-identical to a healthy one". That is this
+# plugin's own defect class, stated by the dependency about itself, and it is why
+# the question is asked here.
+#
+# It lived until now only in `bin/oss-workspace` as one line of session-start
+# stderr, decided by `grep -q radar` -- which also matches the string inside an
+# unrelated key, a validator command, or a comment. A launcher warning fires once
+# and scrolls; the diagnostic is where a maintainer goes to ask.
+RADAR_OP = "radar"
+RADAR_TIERS_KEY = "radar_tiers"
 
-    Returns `(names, problem)`. `problem` is None when the file was read -- which
-    includes the file not being there, because absence is an answer and an
-    unreadable file is not.
+# Measured against the dependency rather than assumed. In a project whose
+# `.supertool.json` enables no presets, `supertool 'radar:--state'` exits 1 with:
+#
+#   ERROR: op 'radar' is unavailable here, not unknown -- it is provided by the
+#   shipped preset 'watch', which <path>/.supertool.json does not enable.
+#
+# (supertool 0.44.0, 2026-08-15.) A transcription is a claim about something
+# outside this repo, so `tests/test_doctor_inprocess.py` re-measures it against the
+# installed supertool and skips loudly when supertool is not on PATH, rather than
+# leaving the claim asserted in this comment.
+WATCH_PRESET = "watch"
+
+# The same remedy `scaffold.check_radar` names, and the same reason it names it
+# rather than merging it in: `.supertool.json` is never overwritten by this plugin,
+# so an existing one is the repo's own. A config file edited behind somebody's back
+# is worse than a board they have to turn on. Composed from the constants above so
+# a drift in one of them reaches the remedy rather than leaving it confidently
+# telling a maintainer to add a key that no longer exists.
+RADAR_REMEDY_CONFIG = {
+    "presets": [WATCH_PRESET],
+    "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},
+}
+
+# Rendered from the mapping above rather than typed, so the line a maintainer
+# pastes is the same object a test reads back through `radar_publish_state`. A
+# remedy is a claim about what would fix the thing, and the only way to find out
+# that it does is to run the check over it -- asserting on its text would pass
+# just as happily on a remedy that fixes nothing.
+#
+# The second sentence exists because the repo that most needs this line is one
+# scaffolded before #191, which already HAS a `presets` list: a paste over it
+# would silently drop `git` and `github`.
+RADAR_REMEDY = (
+    "Add {} -- and where `presets` is already there, add '{}' to the list it has "
+    "rather than replacing it.".format(
+        json.dumps(RADAR_REMEDY_CONFIG, sort_keys=True), WATCH_PRESET
+    )
+)
+
+
+def _supertool_document(project_dir):
+    """This repo's `.supertool.json` as a mapping, in three states rather than two.
+
+    Returns `(doc, problem)`. `(None, None)` is the file not being there, which is
+    an answer; `(None, "unreadable")` is a file that is there and could not be
+    parsed, which is not. Folding those two renders a broken file as a repo that
+    declares nothing, under a line saying nothing is wrong.
 
     The exception in hand decides which: `FileNotFoundError` is absence, anything
     else is unreadable. Asking the filesystem a second question to explain why the
@@ -643,11 +708,26 @@ def _declared_watch_names(project_dir):
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return set(), None
+        return None, None
     except (OSError, ValueError, UnicodeDecodeError):
-        return set(), "unreadable"
+        return None, "unreadable"
     if not isinstance(doc, dict):
-        return set(), "unreadable"
+        return None, "unreadable"
+    return doc, None
+
+
+def _declared_watch_names(project_dir):
+    """The distinct `ops.*.watch_name` values in this repo's `.supertool.json`.
+
+    Returns `(names, problem)`. `problem` is None when the file was read -- which
+    includes the file not being there, because absence is an answer and an
+    unreadable file is not.
+    """
+    doc, problem = _supertool_document(project_dir)
+    if problem:
+        return set(), problem
+    if doc is None:
+        return set(), None
     # Absent and malformed are not the same answer. `ops` missing entirely is a
     # repo that declares nothing, which is a real and common state; `ops` present
     # and the wrong shape is a file somebody edited and broke, and folding it into
@@ -668,11 +748,209 @@ def _declared_watch_names(project_dir):
     }, None
 
 
+def radar_publish_state(project_dir):
+    """Does anything publish to this repo's board? Seven answers.
+
+    `unreadable` / `malformed` / `no-config` / `no-tiers` / `no-route` /
+    `route-unknown` / `publishes`, and the split is the point: from outside this
+    function an empty board and a healthy one render identically. `watches` shows
+    a fleet, `channel:health` reports FORWARDING, the session opens, and nothing
+    has ever been published to it.
+
+    Two independent halves have to hold, and each is silent about the other. A
+    tier has to be REGISTERED (`ops.radar.radar_tiers`), and the op reading it has
+    to be ROUTED here (its preset enabled). #191 measured this repository with
+    neither, under a diagnostic that printed OK.
+
+    The route half is answered from the same declaration rather than by running
+    supertool: this must stay fast, must exit 0, and a subprocess that failed for
+    its own reasons would arrive here as evidence about the repo. When `presets`
+    is absent or not a list of strings the answer is `route-unknown` -- NOT
+    `no-route`, which would send a maintainer to add a preset that may already be
+    in effect.
+
+    The detail names counts, keys and the config path -- never a tier name.
+    `.supertool.json` is contributor-writable in a managed repo, which is how a
+    tracked file gets to write a diagnostic's own output lines.
+    """
+    doc, problem = _supertool_document(project_dir)
+    if problem == "unreadable":
+        return "unreadable", "{} is there and could not be read".format(WATCH_CONFIG)
+    if doc is None:
+        return "no-config", "there is no {} here".format(WATCH_CONFIG)
+
+    # Present-and-broken is not the same answer as never-declared at any of the
+    # three levels, and the remedies differ: one is an edit to make, the other is
+    # an edit to undo.
+    ops = doc.get("ops")
+    if "ops" in doc and not isinstance(ops, dict):
+        return "malformed", "`ops` in {} is not an object".format(WATCH_CONFIG)
+    block = ops.get(RADAR_OP) if isinstance(ops, dict) else None
+    if block is not None and not isinstance(block, dict):
+        return "malformed", "`ops.{}` in {} is not an object".format(
+            RADAR_OP, WATCH_CONFIG
+        )
+    tiers = block.get(RADAR_TIERS_KEY) if isinstance(block, dict) else None
+    if tiers is not None and not isinstance(tiers, dict):
+        return "malformed", "`ops.{}.{}` in {} is not an object".format(
+            RADAR_OP, RADAR_TIERS_KEY, WATCH_CONFIG
+        )
+    if not tiers:
+        return "no-tiers", "`ops.{}.{}` in {} registers no tier".format(
+            RADAR_OP, RADAR_TIERS_KEY, WATCH_CONFIG
+        )
+
+    registered = "{} tier(s) registered in `ops.{}.{}`".format(
+        len(tiers), RADAR_OP, RADAR_TIERS_KEY
+    )
+    presets = doc.get("presets")
+    if not isinstance(presets, list) or not all(
+        isinstance(entry, str) for entry in presets
+    ):
+        return "route-unknown", registered
+    if WATCH_PRESET not in presets:
+        return "no-route", registered
+    return "publishes", registered
+
+
+def check_radar_publish(project_dir):
+    """Say whether anything can publish, and say what that does not cover.
+
+    OK here never means "your board is live". This reads one declaration; it does
+    not run radar, does not reach a forge and cannot know whether a tier has ever
+    emitted. Every message carries that limit, or the check becomes the shape it
+    exists to report.
+    """
+    state, detail = radar_publish_state(project_dir)
+    if state == "unreadable":
+        report(
+            "WARN",
+            "radar board: {}, so whether anything publishes to this repo's board is "
+            "unknown -- not answered as 'nothing does', because that sends you to "
+            "register tiers you may already have.".format(detail),
+        )
+        return
+    if state == "malformed":
+        report(
+            "WARN",
+            "radar board: {}, so no tier could be read from it. That is a file "
+            "somebody edited and broke rather than a repo that registers none, and "
+            "the two have different remedies.".format(detail),
+        )
+        return
+    if state == "no-config":
+        report(
+            "WARN",
+            "radar board: {}, so no radar tier is registered and nothing publishes to "
+            "this repo's board. The channel is still open and a session still runs; "
+            "an empty board renders exactly like a live one. {}".format(
+                detail, RADAR_REMEDY
+            ),
+        )
+        return
+    if state == "no-tiers":
+        report(
+            "WARN",
+            "radar board: {}, so nothing publishes to it. supertool's `{}` refuses "
+            "with none registered, and a board that prints nothing is "
+            "byte-identical to a healthy one -- which is why this is asked here "
+            "rather than left to one line of launcher stderr that scrolls away. "
+            "{}".format(detail, RADAR_OP, RADAR_REMEDY),
+        )
+        return
+    if state == "no-route":
+        report(
+            "WARN",
+            "radar board: {}, but `presets` in {} does not enable '{}', which is what "
+            "provides `{}` -- so the op has no route here and the registered tiers "
+            "cannot run. Both halves are needed and each is silent about the "
+            "other.".format(detail, WATCH_CONFIG, WATCH_PRESET, RADAR_OP),
+        )
+        return
+    if state == "route-unknown":
+        report(
+            "WARN",
+            "radar board: {}, but `presets` in {} is absent or not a list of strings, "
+            "so whether `{}` has a route here could not be read -- answered neither "
+            "as routed nor as unrouted.".format(detail, WATCH_CONFIG, RADAR_OP),
+        )
+        return
+    report(
+        "OK",
+        "radar board: {}, and `presets` in {} enables '{}', so this repo registers a "
+        "board and a route to it. This reads one declaration: it does not run `{}`, "
+        "and it does not establish that any tier has ever "
+        "emitted.".format(detail, WATCH_CONFIG, WATCH_PRESET, RADAR_OP),
+    )
+
+
+def _derive_watch_name(repo):
+    """The launcher's sanitisation, mirrored -- and this is the second spelling.
+
+    `bin/oss-workspace` holds the first, in an embedded heredoc, and it is the
+    authority: it is what actually exports the variable. This copy exists because
+    the diagnostic has to answer a question that needs the VALUE, not merely
+    whether one exists -- is the export in this environment the one this repo
+    derives, or one copied from somewhere else? -- and there is no route to the
+    launcher's answer that a diagnostic can take. Importing is impossible (the
+    launcher is a shell script and derives before any plugin import is
+    guaranteed); executing it is a subprocess in the hot path of a check whose
+    whole design is that it does not take one.
+
+    Two spellings of one rule is this repository's own governing rule violated, so
+    it is paid for rather than waved through: `_derive_watch_name` is measured
+    against the launcher's own program in
+    `tests/test_doctor_inprocess.py::test_doctor_derives_the_same_name_as_the_launcher_does`,
+    over a table of repos including spaces, colons, dots and non-ASCII -- the
+    launcher is run, its stdout compared to this function's return. A second
+    measurement, not a second assertion.
+
+    The single home this should eventually have is a shared module both sides
+    read. That is not this change: `bin/oss-workspace` is held by another lane,
+    and reaching into it mid-run is a conflict somebody else resolves by hand.
+    """
+    return re.sub(r"[^A-Za-z0-9._-]", "-", repo.strip())
+
+
+def _derivable_watch_name(project_dir):
+    """Can `bin/oss-workspace` derive a channel name for this repo, and which?
+
+    Returns `(state, name)`, state being `yes` / `no-config` / `unreadable` /
+    `no-repo`. `name` is empty for everything but `yes`, so a caller cannot get a
+    name out of a state that did not produce one.
+
+    The launcher derives the name from `.oss.json`'s `repo` when nothing declares
+    or exports one (#191), so "nothing declared" stopped meaning "the shared
+    default socket" the moment that landed -- and the line saying `Nothing is
+    broken` would have gone on saying it. This is the half of that change the
+    diagnostic owes its reader.
+
+    The three non-`yes` answers are kept apart because they are three different
+    remedies, and because a caller comparing an export against a derivation needs
+    to know it had nothing to compare against, rather than being handed an empty
+    string that every export differs from.
+    """
+    path = Path(project_dir) / OSS_CONFIG
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "no-config", ""
+    except (OSError, ValueError, UnicodeDecodeError):
+        return "unreadable", ""
+    if not isinstance(doc, dict):
+        return "unreadable", ""
+    repo = doc.get("repo")
+    if isinstance(repo, str) and repo.strip():
+        return "yes", _derive_watch_name(repo)
+    return "no-repo", ""
+
+
 def watch_channel_state(project_dir, env=None):
-    """Which watch channel does this repo actually resolve to? Eight answers.
+    """Which watch channel does this repo actually resolve to? Eleven answers.
 
     `unreadable` / `conflict` / `overridden` / `mismatch` / `undeclared-export` /
-    `agree` / `declared-only` / `default`, and the count is the point. The filed
+    `undeclared-export-unknown` / `derived-export` / `agree` / `declared-only` /
+    `derived` / `default`, and the count is the point. The filed
     symptom -- four repos on one poller slot -- was NOT a repo whose declaration
     disagreed with its environment. It was four repos declaring nothing at all with
     one hand-copied export between them, so a check that only compared a
@@ -726,10 +1004,54 @@ def watch_channel_state(project_dir, env=None):
             WATCH_CONFIG, WATCH_NAME_ENV
         )
     if exported:
-        return "undeclared-export", WATCH_NAME_ENV
+        # An export with no declaration beside it used to be one answer, and it
+        # accused the reader of a hand-copied settings file. Since #192 that is the
+        # ORDINARY state of every managed repo: the launcher derives a name from
+        # `.oss.json` and exports it, with nothing in `.supertool.json` to show for
+        # it. So the accusation has to be earned by a comparison rather than
+        # inferred from an absence -- and the original case is real, so the state is
+        # split rather than deleted.
+        derivable, derived = _derivable_watch_name(project_dir)
+        if derivable != "yes":
+            # Neither answer is available. Reporting `undeclared-export` here would
+            # accuse on no evidence, and reporting `derived-export` would clear on
+            # none; this is the third answer and it says which fact was missing.
+            return "undeclared-export-unknown", {
+                "no-config": "there is no {} to compare it against".format(OSS_CONFIG),
+                "unreadable": "{} is there and could not be read, so there was "
+                "nothing to compare it against".format(OSS_CONFIG),
+                "no-repo": "{} carries no repo to compare it against".format(
+                    OSS_CONFIG
+                ),
+            }[derivable]
+        if derived == exported:
+            return "derived-export", "{} matches what {}'s repo derives to".format(
+                WATCH_NAME_ENV, OSS_CONFIG
+            )
+        return "undeclared-export", "it is not what {}'s repo derives to".format(
+            OSS_CONFIG
+        )
     if declared:
         return "declared-only", "declared in {}".format(WATCH_CONFIG)
-    return "default", ""
+
+    # Nothing declared and nothing exported used to end here as one answer. Since
+    # #191 the launcher derives a name from `.oss.json`'s `repo` at that point, so
+    # this is two states: a repo that gets its own socket, and a repo that lands on
+    # the SHARED one because there was nothing to derive from.
+    derivable, _derived = _derivable_watch_name(project_dir)
+    if derivable == "yes":
+        return "derived", "nothing declared in {} and {} unset, and {} carries a repo".format(
+            WATCH_CONFIG, WATCH_NAME_ENV, OSS_CONFIG
+        )
+    # One state, three remedies -- write a config, fix a config, add a key. The
+    # reason travels in the detail rather than being dropped for arriving second,
+    # the same way `conflict` carries its override.
+    return "default", {
+        "no-config": "there is no {} to derive one from".format(OSS_CONFIG),
+        "unreadable": "{} is there and could not be read, so nothing could be "
+        "derived from it".format(OSS_CONFIG),
+        "no-repo": "{} carries no repo to derive one from".format(OSS_CONFIG),
+    }[derivable]
 
 
 def check_watch_channel(project_dir, env=None):
@@ -776,15 +1098,38 @@ def check_watch_channel(project_dir, env=None):
             "are named.".format(detail),
         )
         return
+    if state == "derived-export":
+        report(
+            "OK",
+            "watch channel: {} and {} declares no watch_name -- so this is the export "
+            "bin/oss-workspace makes for this repo, not a channel it never named. The "
+            "repo did name it, in {}, which is tracked and authoritative. This "
+            "compares two declarations against a derivation; it does not enumerate "
+            "the pollers on that channel, and WHICH server holds the socket is not "
+            "established, here or by supertool 'channel:health'.".format(
+                detail, WATCH_CONFIG, OSS_CONFIG
+            ),
+        )
+        return
     if state == "undeclared-export":
         report(
             "WARN",
-            "watch channel: {} is exported and {} declares no watch_name, so this repo "
-            "is on a channel it never named -- which is what a hand-copied "
-            ".claude/settings.local.json produces, and every repo carrying that copy "
+            "watch channel: {} is exported, {} declares no watch_name, and {} -- so "
+            "this repo is on a channel it never named, which is what a hand-copied "
+            ".claude/settings.local.json produces: every repo carrying that copy "
             "shares one poller slot while each board renders as its own.".format(
-                detail, WATCH_CONFIG
+                WATCH_NAME_ENV, WATCH_CONFIG, detail
             ),
+        )
+        return
+    if state == "undeclared-export-unknown":
+        report(
+            "WARN",
+            "watch channel: {} is exported, {} declares no watch_name, and {} -- so "
+            "whether this is the export bin/oss-workspace derives for this repo or "
+            "one copied from another is unknown. Not answered as copied, which would "
+            "accuse on no evidence, and not as derived, which would clear on "
+            "none.".format(WATCH_NAME_ENV, WATCH_CONFIG, detail),
         )
         return
     if state == "agree":
@@ -804,11 +1149,30 @@ def check_watch_channel(project_dir, env=None):
             ),
         )
         return
+    if state == "derived":
+        report(
+            "OK",
+            "watch channel: {}, so bin/oss-workspace exports a name derived from it "
+            "and a session it opens gets this repo's own socket. That covers sessions "
+            "this launcher opens: a `claude` started by hand here exports nothing and "
+            "lands on the shared default. WHICH server holds that socket is not "
+            "established, here or by supertool 'channel:health' -- its own report says "
+            "so, and it is the half that decides delivery.".format(detail),
+        )
+        return
+    # WARN, not OK. #191 measured this repository in exactly this state, with five
+    # events read, five forwarded, zero dropped and none delivered, under a line
+    # that said "Nothing is broken". The state was right and the verdict was not:
+    # the shared socket is held by one process, first one wins, and the loser is
+    # never told.
     report(
-        "OK",
-        "watch channel: none declared in {} and {} is unset, so this repo is on the "
-        "shared default channel with every other repo that declares none. Nothing is "
-        "broken; the fleet is not this repo's alone.".format(WATCH_CONFIG, WATCH_NAME_ENV),
+        "WARN",
+        "watch channel: none declared in {} and {} is unset, and {} -- so this repo "
+        "binds the SHARED default socket with every other repo that resolves to no "
+        "name. One process holds it, the first one wins, and the loser is never told "
+        "(#191). WHICH server holds it is not established, here or by supertool "
+        "'channel:health' -- its own report says so, and it is the half that decides "
+        "delivery.".format(WATCH_CONFIG, WATCH_NAME_ENV, detail),
     )
 
 
@@ -2423,6 +2787,10 @@ def main(argv=None):
     # Needs no config: the channel is supertool's file and this process's
     # environment, so it answers on a repo that has never run /oss:setup.
     check_watch_channel(project_dir)
+    # The channel and the board are two questions, and answering only the first is
+    # how a repo with a route to nowhere read as healthy (#191). Also needs no
+    # config: both live in supertool's file.
+    check_radar_publish(project_dir)
     check_freshness(project_dir, config)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
