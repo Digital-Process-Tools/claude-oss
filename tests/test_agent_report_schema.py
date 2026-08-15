@@ -121,6 +121,14 @@ def _mutations():
         }
         return report
 
+    def docs_target_left_alone_without_why(report):
+        report["docs"]["items"] = [{"path": "README.md", "state": "no-change-needed"}]
+        return report
+
+    def docs_target_unread_without_why(report):
+        report["docs"]["items"] = [{"path": "README.md", "state": "not-read"}]
+        return report
+
     def test_phase_observed_without_result(report):
         report["tests"]["green"] = {"state": "observed"}
         return report
@@ -146,6 +154,8 @@ def _mutations():
         "survey-not-checked-carries-no-items": survey_not_checked_carrying_items,
         "refusal-carries-text-and-argument": refusal_without_argument,
         "unreached-class-carries-a-why": class_verdict_unreached_without_why,
+        "docs-target-left-alone-carries-a-why": docs_target_left_alone_without_why,
+        "docs-target-unread-carries-a-why": docs_target_unread_without_why,
         "observed-test-phase-carries-a-result": test_phase_observed_without_result,
         "unobserved-test-phase-carries-a-reason": test_phase_skipped_without_reason,
         "written-pr-body-carries-a-path": pr_body_written_without_path,

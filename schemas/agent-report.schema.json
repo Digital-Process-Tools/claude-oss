@@ -14,6 +14,8 @@
     "survey-not-checked-carries-no-items",
     "refusal-carries-text-and-argument",
     "unreached-class-carries-a-why",
+    "docs-target-left-alone-carries-a-why",
+    "docs-target-unread-carries-a-why",
     "observed-test-phase-carries-a-result",
     "unobserved-test-phase-carries-a-reason",
     "written-pr-body-carries-a-path",
@@ -48,6 +50,7 @@
     "files",
     "tests",
     "review",
+    "docs",
     "claims",
     "adjacent",
     "blocked",
@@ -83,6 +86,11 @@
     },
     "tests": {"$ref": "#/$defs/tests"},
     "review": {"$ref": "#/$defs/review"},
+    "docs": {
+      "allOf": [{"$ref": "#/$defs/survey"}],
+      "description": "One entry per path in the repo's docs_targets. The changelog half of the docs duty is gated on every pull request; this half is not, and a gate was measured against this repository's last thirty merged pull requests rather than assumed -- the trigger the changelog gate already computes fires on 27 of 30 and is right about 6, and the narrowest rule worth testing (a new file under a product path) fires on none of the thirty at all. A rule wrong two times in three earns a blanket override label in a week, and one that never fires cannot be told from one that is broken. So the duty is observed here instead of enforced there, and this survey is the only record that it happened. state checked with no items means the config named no targets; not-checked means nobody opened them; the key being absent is refused outright, because that is the state this field exists to make unspellable.",
+      "x-items": {"$ref": "#/$defs/docs_target"}
+    },
     "claims": {
       "allOf": [{"$ref": "#/$defs/survey"}],
       "description": "Claims the run could not observe on the machine it ran on -- platform legs above all. Not every sentence in the report: the set that needs a grade. A run that never assessed them says state not-checked and why, which is different from having none.",
@@ -143,6 +151,24 @@
         "file": {"type": ["string", "null"]},
         "in_blast_radius": {"type": "boolean"},
         "action": {"enum": ["fixed", "report-for-filing"]}
+      }
+    },
+    "docs_target": {
+      "type": "object",
+      "x-rule": "docs-target",
+      "description": "One path from docs_targets, and what happened to it. updated needs no why -- the diff is the why. The other two do: 'no change needed' with no reason is the sentence a run that never opened the file also writes, and an unread target is a gap somebody can act on rather than the absence of a finding.",
+      "additionalProperties": false,
+      "required": ["path", "state"],
+      "properties": {
+        "path": {"type": "string"},
+        "state": {
+          "enum": ["updated", "no-change-needed", "not-read"],
+          "description": "updated: this diff changed it. no-change-needed: you opened it and it is still true. not-read: you did not open it."
+        },
+        "why": {
+          "type": "string",
+          "description": "Required for no-change-needed (what you read it against) and for not-read (why not). The whole value of this survey is in this field."
+        }
       }
     },
     "blocked": {
@@ -315,6 +341,21 @@
             }
           ]
         }
+      },
+      "docs": {
+        "state": "checked",
+        "items": [
+          {
+            "path": "README.md",
+            "state": "no-change-needed",
+            "why": "the only sentence naming the helper describes what it returns, not how it splits; read it against the new behaviour and it is still true"
+          },
+          {
+            "path": "docs/paths.md",
+            "state": "not-read",
+            "why": "held by the lane on #131 this run; the separator paragraph there almost certainly needs the same edit"
+          }
+        ]
       },
       "claims": {
         "state": "checked",
