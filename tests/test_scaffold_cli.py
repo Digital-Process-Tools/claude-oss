@@ -5,8 +5,11 @@ is a command somebody runs to "see what it does".
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -268,3 +271,79 @@ def test_force_owned_flag_writes_the_trio_despite_a_detected_gate(tmp_path, caps
         ["--root", str(tmp_path), "--config", str(config), "--apply", "--force-owned"]
     ) == 0
     assert (tmp_path / ".github" / "workflows" / "oss-changelog.yml").is_file()
+
+
+# #125: the flag reached apply() and neither of the two paths a maintainer runs first.
+# Both arms of each pair live in one test on one fixture -- asserting only the forced
+# arm would still pass if the decline half quietly stopped working, and the decline
+# half is the thing the flag exists to override.
+
+
+def test_the_dry_run_stops_advising_the_flag_that_was_just_passed(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+
+    assert scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--force-owned"]
+    ) == 0
+    forced = capsys.readouterr().out
+    assert forced.count("replace ") >= 3, forced
+    assert "decline " not in forced, forced
+    assert "Pass --force-owned to override" not in forced, forced
+
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
+    unforced = capsys.readouterr().out
+    assert unforced.count("decline ") >= 3, unforced
+    assert "Pass --force-owned to override" in unforced, unforced
+
+
+def test_the_preview_stops_hiding_the_three_files_the_apply_would_overwrite(tmp_path, capsys):
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+
+    assert scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--force-owned", "--show"]
+    ) == 0
+    forced = capsys.readouterr().out
+    assert forced.count("would replace") >= 3, forced
+    for name in sorted(scaffold.OWNED):
+        assert name in forced, forced
+
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    unforced = capsys.readouterr().out
+    assert "would replace" not in unforced, unforced
+
+
+def test_the_dry_run_survives_a_workflow_directory_it_cannot_read(tmp_path, capsys):
+    """#124 mechanism 1 through the CLI: the raise came before any output, so
+    /oss:scaffold printed no plan at all -- dry run, --show and --apply alike."""
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+    directory = tmp_path / ".github" / "workflows"
+
+    os.chmod(str(directory), 0o000)
+    try:
+        try:
+            os.listdir(str(directory))
+        except PermissionError:
+            pass
+        except OSError as exc:
+            pytest.skip(
+                "chmod 000 gave {} (errno {}) rather than a denied listing; the "
+                "unreadable dry run went untested".format(type(exc).__name__, exc.errno)
+            )
+        else:
+            pytest.skip(
+                "chmod 000 still allows listing {} -- root, or a platform that does not "
+                "enforce the mode bit. The unreadable dry run went untested.".format(directory)
+            )
+        assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
+        out = capsys.readouterr().out
+        assert "PLAN:" in out, out
+        assert out.count("decline ") >= 3, out
+    finally:
+        os.chmod(str(directory), 0o755)
+
+    # Positive control on the identical tree: readable, the plan still prints.
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
+    assert "PLAN:" in capsys.readouterr().out

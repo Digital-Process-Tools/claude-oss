@@ -25,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -1265,7 +1266,38 @@ def owned_drift(repo_root, config, plugin_root=None):
             )
             continue
 
-        if not target.is_file():
+        # `Path.is_file()` cannot be used here, and neither can `os.path.isfile`: both
+        # answer the wrong question in a different way on each interpreter. Before 3.13
+        # `is_file()` re-raises anything that is not "this path is not there", so an
+        # owned file inside a directory this process cannot traverse raised
+        # `PermissionError` and took out doctor's *exit 0 always, one VERDICT line*
+        # contract. From 3.13 the same call answers False -- which is worse, because an
+        # unreadable file then reports as an *absent* one with `Run /oss:scaffold.`
+        # beside it, and nothing raises to say otherwise. CI runs 3.9-3.12 and this was
+        # written on 3.14, so the local suite was green while eight legs were red.
+        #
+        # `os.stat` raises on every version instead, which makes the three states a
+        # property of the call rather than of the runner: absent, present, or could not
+        # look. The exception already in hand settles which -- the filesystem is not
+        # asked a second question to explain why the first one failed.
+        try:
+            mode = os.stat(str(target)).st_mode
+        except (FileNotFoundError, NotADirectoryError):
+            present = False
+        except OSError as exc:
+            findings.append(
+                {
+                    "path": name,
+                    "state": "unknown",
+                    "detail": "{}: could not be looked at ({}), so whether this repo has "
+                    "it is unknown -- not absent".format(name, type(exc).__name__),
+                }
+            )
+            continue
+        else:
+            present = stat.S_ISREG(mode)
+
+        if not present:
             if not gate:
                 gate.append(_gate_verdict(repo_root, config))
             verdict = gate[0]

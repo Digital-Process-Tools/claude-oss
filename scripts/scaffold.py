@@ -25,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -682,8 +683,41 @@ def render_owned(name, config, plugin_root=None):
     return OWNED[name](config, plugin_root or SCRIPT_DIR.parent)
 
 
-def plan(repo_root, config):
-    """What would be written, and what is already there. This is the whole answer."""
+# The reason strings for the two overrides, kept apart on purpose (#124 / #125).
+# Forcing past "I saw your gate" and forcing past "I could not read your repository"
+# are different decisions by different people, and a receipt that renders them
+# identically has collapsed the third state at the flag instead of at the walk.
+_FORCED_OVER_GATE = (
+    "ours; --force-owned overrides the changelog gate detected under a different "
+    "name ({}). It is replaced on every run from here on."
+)
+_FORCED_OVER_UNKNOWN = (
+    "ours; --force-owned overrides an incomplete read of this repository ({}). The "
+    "collision check could not run -- it was overridden, not answered."
+)
+
+
+def plan(repo_root, config, force_owned=False):
+    """What would be written, and what is already there. This is the whole answer.
+
+    ``force_owned`` belongs here rather than in ``apply`` alone (#125). It was a
+    parameter of ``apply`` only, so the dry run printed three ``decline`` lines each
+    advising the flag that had just been passed, and ``--show`` previewed nothing for
+    the three files the next command was about to overwrite. The person that hurt is
+    the person behaving correctly: previewing before writing into a repo that already
+    runs a gate is the responsible move, and it was the one that showed nothing.
+
+    One function decides, and the other two paths read the decision -- ``apply`` walks
+    this, and ``show`` walks it too, so the plan, the preview and the write can no
+    longer disagree about what is going to happen.
+
+    The flag overrides both ``found`` and ``unknown``. ``unknown`` is a fact about this
+    process's privileges rather than about the repository, and a maintainer with the
+    credentials the process lacks is exactly who can settle it by hand -- a tool with no
+    override for an environment condition is one people re-run as root, which is worse
+    than the thing the refusal was protecting. What must not be lost is *which* was
+    overridden, so the two carry different reasons.
+    """
     problems = oss_config.validate(config)
     if problems:
         raise ScaffoldError("config does not validate: {}".format("; ".join(problems)))
@@ -706,7 +740,30 @@ def plan(repo_root, config):
 
     gate_state, gate_detail = _detect_changelog_gate(repo_root, config)
     for name in sorted(OWNED):
-        if gate_state in ("found", "unknown"):
+        if gate_state in ("found", "unknown") and force_owned:
+            entries.append(
+                {
+                    "path": name,
+                    "action": "replace",
+                    "reason": (
+                        _FORCED_OVER_GATE if gate_state == "found" else _FORCED_OVER_UNKNOWN
+                    ).format(gate_detail),
+                }
+            )
+        elif gate_state == "unknown":
+            entries.append(
+                {
+                    "path": name,
+                    "action": "decline",
+                    "reason": (
+                        "this repository's tree could not be fully read ({}), so whether a "
+                        "changelog gate already runs here is unknown -- which is not the "
+                        "same as it having none; not written. Check by hand, then pass "
+                        "--force-owned to override.".format(gate_detail)
+                    ),
+                }
+            )
+        elif gate_state == "found":
             entries.append(
                 {
                     "path": name,
@@ -743,11 +800,16 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
     hand and decided the match is not a real conflict. Silence is not that decision;
     passing the flag is, the same way editing SECURITY.md by hand is what turns a
     default into a decision nothing here overwrites.
+
+    The flag is handed to ``plan`` and nothing is decided here (#125). This used to
+    reinterpret a ``decline`` entry at write time, which is precisely how the plan, the
+    preview and the write came to disagree: three renderings of one decision, made in
+    three places, and only one of them had been told about the flag.
     """
     created = []
     replaced = []
     declined = []
-    for entry in plan(repo_root, config):
+    for entry in plan(repo_root, config, force_owned=force_owned):
         if entry["action"] == "create":
             render_to(repo_root, entry["path"], render(entry["path"], config))
             created.append(entry["path"])
@@ -755,18 +817,12 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
             render_to(repo_root, entry["path"], render_owned(entry["path"], config, plugin_root))
             replaced.append(entry["path"])
         elif entry["action"] == "decline":
-            if force_owned:
-                render_to(
-                    repo_root, entry["path"], render_owned(entry["path"], config, plugin_root)
-                )
-                replaced.append(entry["path"])
-            else:
-                declined.append(entry["path"])
+            declined.append(entry["path"])
 
     return {"created": created, "replaced": replaced, "declined": declined}
 
 
-def show(repo_root, config, path=None, plugin_root=None):
+def show(repo_root, config, path=None, plugin_root=None, force_owned=False):
     """Render generated file contents for review, without writing anything.
 
     ``/oss:scaffold`` promises to relay what a generated file would contain before
@@ -786,6 +842,11 @@ def show(repo_root, config, path=None, plugin_root=None):
     A single ``path`` renders it regardless of plan state, known or not: it answers
     "what would this default contain", which is worth knowing even for a template
     already present.
+
+    ``force_owned`` is passed straight through to ``plan``, which is the only place it
+    is interpreted. The preview showing three fewer files than the very next command
+    writes is the class this docstring already names -- #125 was that regression
+    arriving through a flag rather than through the plan.
     """
     if path is not None:
         # templates_for, not TEMPLATES: one default is named by the config -- the
@@ -804,7 +865,7 @@ def show(repo_root, config, path=None, plugin_root=None):
             )
         )
     shown = []
-    for entry in plan(repo_root, config):
+    for entry in plan(repo_root, config, force_owned=force_owned):
         if entry["action"] == "create":
             shown.append((entry["path"], "create", render(entry["path"], config)))
         elif entry["action"] == "replace":
@@ -1187,25 +1248,73 @@ def check_changelog_label(labels, reason=None):
     ]
 
 
-def _workflow_files(repo_root):
+def _workflow_scan(repo_root):
+    """``(files, unreadable)`` for the workflow directory. Never raises.
+
+    Three states, and the third one is the point (#124). ``Path.is_dir()`` answers
+    True for a directory that exists and cannot be entered, so the old guard passed
+    and the ``iterdir()`` behind it raised ``PermissionError`` -- uncaught, through
+    ``check_ci`` and ``check_freshness``, taking out doctor's *exit 0 always, one
+    VERDICT line* contract. Catching that into an empty list would have been the worse
+    fix: ``[]`` already means "this repo has no workflows", and trading a traceback for
+    a confident wrong answer is this repository's own defect class.
+
+    So absence and unreadability are kept apart, and the exception already in hand
+    decides which is which -- no second question is put to the filesystem to explain
+    why the first one failed. ``FileNotFoundError`` is a fact about the repo (there is
+    no such directory); ``NotADirectoryError`` likewise (something else has the name);
+    anything else is a fact about this process, and goes in ``unreadable``.
+
+    Whatever was listed before a mid-iteration failure is kept: a partial answer plus
+    a marker saying it is partial beats discarding both.
+    """
     directory = Path(repo_root) / WORKFLOW_DIR
-    if not directory.is_dir():
-        return []
-    return sorted(
-        path
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix in (".yml", ".yaml")
-    )
+    files = []
+    unreadable = []
+    try:
+        with os.scandir(str(directory)) as entries:
+            for entry in entries:
+                try:
+                    # os.DirEntry.is_file() raises rather than swallowing, unlike
+                    # Path.is_file() -- which would drop an unstattable child silently
+                    # and land us one level down in the same conflation.
+                    is_file = entry.is_file()
+                except OSError:
+                    unreadable.append("{}/{}".format(WORKFLOW_DIR, entry.name))
+                    continue
+                if is_file and Path(entry.name).suffix in (".yml", ".yaml"):
+                    files.append(directory / entry.name)
+    except (FileNotFoundError, NotADirectoryError):
+        pass
+    except OSError:
+        unreadable.append(WORKFLOW_DIR)
+    return sorted(files), unreadable
+
+
+def _workflow_files(repo_root):
+    """Just the files. Kept for callers that genuinely only need the list.
+
+    This cannot report what it could not read -- that is the whole reason
+    ``_workflow_scan`` exists. Anything deciding what to *write*, or printing a
+    verdict about what CI does, must call the scan and handle its second element.
+    """
+    return _workflow_scan(repo_root)[0]
 
 
 def _workflow_texts(repo_root):
+    """``(texts, unreadable)`` -- the workflows this process could read, and the ones
+    it could not. A read that failed used to be skipped silently, so a workflow that
+    does run the tests could be invisible to ``check_test_ci`` and the answer would
+    come back "nothing in .github/workflows/ runs it" as though it had been measured.
+    """
+    files, unreadable = _workflow_scan(repo_root)
     texts = []
-    for path in _workflow_files(repo_root):
+    for path in files:
         try:
             texts.append(path.read_text(encoding="utf-8"))
         except OSError:
-            continue
-    return texts
+            unreadable.append("{}/{}".format(WORKFLOW_DIR, path.name))
+    return texts, unreadable
 
 
 CHANGELOG_GATE_FILENAME_HINT = "assemble_changelog"
@@ -1239,80 +1348,172 @@ def _detect_changelog_gate(repo_root, config):
     dir_marker = "/" + fragments.strip("/") + "/"
 
     signals = []
-    unreadable = []
-    for path in _workflow_files(root):
+    workflows, unreadable = _workflow_scan(root)
+    for path in workflows:
         if path.name == "oss-changelog.yml":
             continue
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
-            unreadable.append(str(path.relative_to(root)))
+            unreadable.append(path.relative_to(root).as_posix())
             continue
         if (
             CHANGELOG_GATE_FILENAME_HINT in text
             or dir_marker in text
             or CHANGELOG_ESCAPE_LABEL in text
         ):
-            signals.append(str(path.relative_to(root)))
+            signals.append(path.relative_to(root).as_posix())
 
     # Directories a scan has no business walking into: git's own object store, our
     # own owned directory (excluded for the same reason the workflow filter excludes
     # oss-changelog.yml), and the dependency/build trees a real JS or Python repo
-    # accumulates -- an unbounded rglob through node_modules or a virtualenv costs
-    # real time for a filename search that will never match inside them.
-    _RGLOB_SKIP_DIRS = frozenset(
-        (OWNED_DIR, ".git", "node_modules", "vendor", ".venv", "venv", "dist", "build")
+    # accumulates -- an unbounded walk through node_modules or a virtualenv costs real
+    # time for a filename search that will never match inside them. Matched at every
+    # depth, not just the first component: a nested `packages/app/node_modules` is
+    # exactly as unbounded as a top-level one, and was previously both walked in full
+    # and reported as somebody else's gate.
+    #
+    # The rule the list encodes is "derived and vendored trees are not evidence that a
+    # gate runs", and `__pycache__` is the Python one it was missing beside `dist` and
+    # `build`. A `.pyc` is evidence a file was imported once on somebody's machine, not
+    # evidence anything runs in CI: it is gitignored in every repo that has one, so it
+    # cannot reach another checkout. Left in, a tree whose assembler was deleted and
+    # whose cache was not would decline the trio on the strength of the stale artifact
+    # alone. Adding it only bites now because the pruning above moved to every depth --
+    # `__pycache__` is never a top-level component, so under the old first-component
+    # match this entry would have done nothing at all.
+    _SKIP_DIRS = frozenset(
+        (
+            OWNED_DIR,
+            ".git",
+            "node_modules",
+            "vendor",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            "__pycache__",
+        )
     )
-    try:
-        for candidate in root.rglob(CHANGELOG_GATE_FILENAME_HINT + "*"):
-            if not candidate.is_file():
+
+    # os.walk with an onerror callback, not Path.rglob (#124). pathlib's recursive glob
+    # swallows PermissionError while walking and yields nothing for the subtree it could
+    # not enter, so the `except OSError` that used to sit here was a guard that could
+    # never fire -- and a guard that cannot fire is indistinguishable from one that had
+    # nothing to catch. The walk returned ('none', '') for a tree it had not finished
+    # reading, byte-for-byte what it returns for a tree that genuinely has no gate, and
+    # `plan()` then emitted `replace` for the owned trio on the strength of it.
+    #
+    # os.walk is the version-independent answer: Path.walk arrived in 3.12 and CI runs
+    # 3.9 upwards. It also does not follow directory symlinks by default, which is the
+    # behaviour we want for the same reason the rules engine refuses symlinked layers --
+    # a clone can aim a symlink anywhere.
+    def _walk_error(exc):
+        name = getattr(exc, "filename", None)
+        if not name:
+            unreadable.append("(repository tree walk)")
+            return
+        try:
+            unreadable.append(Path(name).relative_to(root).as_posix())
+        except ValueError:
+            unreadable.append(str(name))
+
+    for dirpath, dirnames, filenames in os.walk(str(root), onerror=_walk_error):
+        dirnames[:] = [name for name in dirnames if name not in _SKIP_DIRS]
+        for filename in filenames:
+            if not filename.startswith(CHANGELOG_GATE_FILENAME_HINT):
                 continue
-            rel = candidate.relative_to(root)
-            if rel.parts and rel.parts[0] in _RGLOB_SKIP_DIRS:
+            candidate = Path(dirpath) / filename
+            rel = candidate.relative_to(root).as_posix()
+            # The rglob form filtered these through `is_file()`; os.walk hands a broken
+            # symlink straight to `filenames`, because it reads a raising `is_dir()` as
+            # False. Filtering with `is_file()` again would swallow OSError and drop an
+            # unstattable match in silence -- the defect this whole function is being
+            # rewritten for. One stat, and the exception in hand classifies it: absent
+            # is a dangling link pointing at nothing, anything else is a name this
+            # process could not resolve and therefore could not rule out.
+            try:
+                mode = os.stat(str(candidate)).st_mode
+            except FileNotFoundError:
                 continue
-            signals.append(str(rel))
-    except OSError:
-        unreadable.append("(repository tree walk)")
+            except OSError:
+                unreadable.append(rel)
+                continue
+            if stat.S_ISREG(mode):
+                signals.append(rel)
 
     if signals:
-        return "found", "already present: {}".format(", ".join(sorted(set(signals))))
+        # A positive signal is the stronger statement, so it wins the state -- but the
+        # unread part of the tree is still carried in the detail rather than dropped.
+        # Both states decline the trio, so this changes nothing about what is written;
+        # it changes what a maintainer reading the receipt is told they overrode.
+        detail = "already present: {}".format(", ".join(sorted(set(signals))))
+        if unreadable:
+            detail += "; and could not read: {}".format(", ".join(sorted(set(unreadable))))
+        return "found", detail
     if unreadable:
         return "unknown", "could not read: {}".format(", ".join(sorted(set(unreadable))))
     return "none", ""
 
 
-def check_changelog_gate(repo_root, config):
+def check_changelog_gate(repo_root, config, force_owned=False):
     """Would the owned changelog trio sit on top of a gate this repo already runs?
 
     Same three-state contract as ``check_changelog_label``, and the same reason: an
     unchecked repo is not a clean one. What differs is that this one changes what
     ``apply`` actually does -- see ``_detect_changelog_gate`` and ``plan``.
+
+    ``force_owned`` changes only the sentence about what happened to the trio, never
+    the state. It has to: ``_print_findings`` runs after ``apply``, so with the flag
+    passed the run printed ``ours ... (replaced)`` and then, three lines down, that the
+    trio "was NOT written". Both sentences described the same run and one of them was
+    false.
     """
     state, detail = _detect_changelog_gate(repo_root, config)
     if state == "found":
+        if force_owned:
+            outcome = (
+                "--force-owned was passed, so the owned changelog trio is written over "
+                "it anyway. Two gates checking the same thing will both run on every "
+                "pull request unless you remove one."
+            )
+        else:
+            outcome = (
+                "The owned changelog trio ({dir}/README.md, "
+                "{dir}/assemble_changelog.py, .github/workflows/oss-changelog.yml) was "
+                "NOT written -- two gates checking the same thing would both run on "
+                "every pull request, with two jobs named 'fragment'. Pass --force-owned "
+                "to write ours anyway once you have confirmed this is not a real "
+                "conflict.".format(dir=OWNED_DIR)
+            )
         return [
             {
                 "state": "found",
                 "detail": (
                     "this repo already runs a changelog gate under a different name "
-                    "({}). The owned changelog trio ({dir}/README.md, "
-                    "{dir}/assemble_changelog.py, .github/workflows/oss-changelog.yml) "
-                    "was NOT written -- two gates checking the same thing would both "
-                    "run on every pull request, with two jobs named 'fragment'. Pass "
-                    "--force-owned to write ours anyway once you have confirmed this "
-                    "is not a real conflict.".format(detail, dir=OWNED_DIR)
+                    "({}). {}".format(detail, outcome)
                 ),
             }
         ]
     if state == "unknown":
+        if force_owned:
+            outcome = (
+                "--force-owned was passed, so the owned changelog trio is written "
+                "anyway. The check was overridden rather than answered: nothing here "
+                "has established that this repo has no gate of its own."
+            )
+        else:
+            outcome = (
+                "The owned changelog trio was NOT written. Check by hand, then pass "
+                "--force-owned to write ours anyway."
+            )
         return [
             {
                 "state": "unknown",
                 "detail": (
                     "could not determine whether this repo already runs a changelog "
                     "gate under a different name ({}) -- which is not the same as it "
-                    "having none. The owned changelog trio was NOT written. Check by "
-                    "hand, then pass --force-owned to write ours anyway.".format(detail)
+                    "having none. {}".format(detail, outcome)
                 ),
             }
         ]
@@ -1332,7 +1533,25 @@ def check_ci(repo_root, config):
     A value somebody already set is left alone: that is a decision, and the same rule
     that stops a default overwriting a SECURITY.md stops a guess overwriting a count.
     """
-    if not _workflow_files(repo_root):
+    files, unreadable = _workflow_scan(repo_root)
+    # Before the "no workflows, nothing to say" arm, not after it (#124). An empty list
+    # used to carry both "this repo has no CI" and "this process could not look", and
+    # the second one silently borrowed the first one's verdict.
+    if unreadable:
+        return [
+            {
+                "state": "unreadable",
+                "detail": (
+                    "{dir}/ could not be read ({paths}), so whether this repo has CI at "
+                    "all is unknown -- which is not the same as it having none, and not "
+                    "the same as ci.required_checks being right. Nothing is said about "
+                    "the count until the directory can be listed.".format(
+                        dir=WORKFLOW_DIR, paths=", ".join(sorted(set(unreadable)))
+                    )
+                ),
+            }
+        ]
+    if not files:
         return []
 
     ci = config.get("ci")
@@ -1363,7 +1582,7 @@ def check_ci(repo_root, config):
                 "posting a status -- so the count would be wrong wherever any of those exist. "
                 "Measure it from the checks a commit actually ran, then set it by hand: "
                 "gh api repos/{repo}/commits/<sha>/check-runs".format(
-                    count=len(_workflow_files(repo_root)),
+                    count=len(files),
                     dir=WORKFLOW_DIR,
                     repo=config.get("repo") or "OWNER/NAME",
                 )
@@ -1402,7 +1621,7 @@ def check_test_ci(repo_root, config):
     it is stated, not fixed.
     """
     command = (config.get("test_command") or "").strip()
-    texts = _workflow_texts(repo_root)
+    texts, unreadable = _workflow_texts(repo_root)
 
     if not command:
         return [
@@ -1435,6 +1654,27 @@ def check_test_ci(repo_root, config):
             }
         ]
 
+    # After the two positive arms and before the negative one (#124). A verbatim or
+    # token match is a real observation and stands whatever else went unread; "nothing
+    # in .github/workflows/ runs it" is a claim about every workflow in the repo, and
+    # this process has not seen every workflow in the repo.
+    if unreadable:
+        return [
+            {
+                "state": "unreadable",
+                "detail": (
+                    "test_command '{command}' was verified when .oss.json was written, and "
+                    "whether anything in {dir}/ runs it could not be established: {paths} "
+                    "could not be read. That is not the same as nothing running it -- the "
+                    "workflow that does may be one of the files above.".format(
+                        command=command,
+                        dir=WORKFLOW_DIR,
+                        paths=", ".join(sorted(set(unreadable))),
+                    )
+                ),
+            }
+        ]
+
     return [
         {
             "state": "unenforced",
@@ -1453,12 +1693,15 @@ def check_test_ci(repo_root, config):
     ]
 
 
-def _print_findings(repo_root, config):
+def _print_findings(repo_root, config, force_owned=False):
     """Everything the scaffold measured but did not act on, in one place.
 
     Printed by both paths. Before writing it is a warning about what the plan does not
     cover; after writing it is the list of things the repo still needs and this tool
     would not do for it.
+
+    ``force_owned`` reaches the changelog finding only, and only so it stops denying a
+    write the same run just made.
     """
     for finding in check_radar(repo_root):
         print("radar    {}".format(finding["detail"]))
@@ -1473,7 +1716,7 @@ def _print_findings(repo_root, config):
     names, reason = _forge_label_names(repo_root, config)
     for finding in check_changelog_label(names, reason=reason):
         print("label    {}".format(finding["detail"]))
-    for finding in check_changelog_gate(repo_root, config):
+    for finding in check_changelog_gate(repo_root, config, force_owned=force_owned):
         print("changelog {}".format(finding["detail"]))
 
 
@@ -1522,7 +1765,7 @@ def _main(argv=None):
         )
 
     try:
-        entries = plan(args.root, config)
+        entries = plan(args.root, config, force_owned=args.force_owned)
     except ScaffoldError as exc:
         print("FAIL {}".format(exc))
         return 1
@@ -1533,7 +1776,7 @@ def _main(argv=None):
             return 1
         show_path = args.show or None
         try:
-            shown = show(args.root, config, path=show_path)
+            shown = show(args.root, config, path=show_path, force_owned=args.force_owned)
         except ScaffoldError as exc:
             print("FAIL {}".format(exc))
             return 1
@@ -1548,7 +1791,7 @@ def _main(argv=None):
     if not args.apply:
         for entry in entries:
             print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
-        _print_findings(args.root, config)
+        _print_findings(args.root, config, force_owned=args.force_owned)
         declined_count = sum(1 for e in entries if e["action"] == "decline")
         summary = "PLAN: {} to create, {} already present".format(
             sum(1 for e in entries if e["action"] == "create"),
@@ -1589,7 +1832,7 @@ def _main(argv=None):
 
     # After the writes, not before: the stale-config and missing-gate findings are
     # about the repo as it now stands, which is the state the maintainer has to act on.
-    _print_findings(args.root, config)
+    _print_findings(args.root, config, force_owned=args.force_owned)
 
     print("WROTE: {} template(s), replaced {} file(s) in the {} rule layer".format(
         len(written), len(rules), oss_rules.LAYER

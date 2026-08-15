@@ -133,6 +133,24 @@ separately rather than one list.
   so skips. Neither the errno nor the platform is written down anywhere — both are measured.
   An escape hatch for the unknown that only fires when the platform is informative is this repo's own
   defect class wearing the third state's clothes.
+- **`Path.rglob` and `Path.is_dir` each destroy the answer a guard beside them was written to
+  read.** `is_dir()` swallows `OSError` and returns True for a directory that exists and cannot be
+  entered, so `if not d.is_dir(): return []` passes and the `iterdir()` under it raises
+  `PermissionError` — which is how #124 took out `doctor.py`'s *exit 0 always, one VERDICT line*
+  contract from three frames away in `scaffold.py`. Worse in the same function: pathlib's recursive
+  glob **swallows `PermissionError` while walking** and yields nothing for the subtree, so the
+  `except OSError` wrapped around `root.rglob(...)` to build an `unreadable` list could never fire
+  for the case it was written for, and `('none', '')` came back identically for "read the whole tree,
+  no gate" and "could not read the tree" — with the owned trio then written into that repo. A walk
+  that must report has to be `os.walk(onerror=...)`; there is no argument to `rglob` that makes it
+  speak. And catching the raise into `[]` would have been the worse fix, because `[]` already meant
+  "this repo has no workflows": the two states have to be returned separately, which is why
+  `_workflow_scan` returns `(files, unreadable)` and `_workflow_files` is only the first half.
+- **A permission fixture is a measurement, not a given.** Root ignores the mode bit, some
+  filesystems ignore it, and Windows' `os.chmod` on a directory toggles a read-only attribute that
+  does not stop a listing. So the deny is confirmed by attempting the exact operation the code under
+  test performs, and skips with what went untested when it did not take — never asserts on a
+  platform's error code from a table.
 - **`pytest.raises(Exception)` does not catch a skip, and the test passes anyway.** pytest's outcome
   exceptions derive from `BaseException`, so a `pytest.skip` inside the block sails past the `raises`
   and skips the enclosing test — a green tick over an assertion that never ran, reported as `1 skipped`
