@@ -730,9 +730,33 @@ def _entry_count(lines: Sequence[str]) -> int:
     return sum(1 for line in lines if line.startswith("- "))
 
 
+#: Between the date and a title. An em dash, which `_line` already names as a
+#: character it deliberately permits and degrades rather than raising on.
+TITLE_SEPARATOR = " — "
+
+
+def release_heading(version: str, date: str, title: Optional[str] = None) -> str:
+    """The one place the text of a release heading is decided.
+
+    `render` returns the headings it wrote and `_verify_written` re-parses
+    against that list, so the heading has exactly one author. A caller that
+    wants to *quote* the heading — the dry run's receipt did, by formatting it
+    a second time — takes `render`'s return value rather than calling this,
+    and this exists so `render` itself is not the place a title is spliced.
+
+    The date stays. It is a fact about the release and Keep a Changelog's own
+    shape; a title is editorial and is added to it, never in place of it.
+    """
+    heading = "## [{0}] - {1}".format(version, date)
+    if title:
+        heading += TITLE_SEPARATOR + title
+    return heading
+
+
 def render(fragments: Sequence[Fragment], version: str, date: str,
            residue_preamble: Sequence[str] = (),
-           residue_sections: Sequence[Tuple[str, List[str]]] = ()
+           residue_sections: Sequence[Tuple[str, List[str]]] = (),
+           title: Optional[str] = None
            ) -> Tuple[str, List[str]]:
     """The release section as text, and the heading lines it wrote.
 
@@ -745,8 +769,12 @@ def render(fragments: Sequence[Fragment], version: str, date: str,
     function is *entitled* to have added, so that anything else in the result
     is a finding. Deriving that list by pattern-matching the output would put
     the verifier back on the same footing as the guard it exists to backstop.
+
+    *title* changes the heading's text and nothing else about that contract —
+    it goes into the returned list like any other heading, so the verifier
+    keeps accepting exactly what this function says it wrote.
     """
-    out = ["## [{0}] - {1}".format(version, date), ""]
+    out = [release_heading(version, date, title), ""]
     emitted = [out[0]]
     if any(line.strip() for line in residue_preamble):
         out.extend(residue_preamble)
@@ -1241,22 +1269,123 @@ UNTAGGED_RELEASES = frozenset()
 _COMPARE_HREF_RE = re.compile(r"/compare/v(?P<version>\d+\.\d+\.\d+)\.\.\.HEAD$")
 
 
-def release_versions(text: str) -> List[str]:
-    """Every `## [x.y.z]` release version, newest first, off a real parse.
+def _release_headings(text: str) -> List[Tuple[int, str, str]]:
+    """(line index, version, full heading text) for every release heading.
 
     A parse and not a line prefix: this file quotes release headings inside
     fenced blocks by house style, so the characters `## [` appear in it
     without a heading being there — and a line-prefix test cannot tell the
     difference.
+
+    The version is read out of the leading `[...]` and nothing else is looked
+    at, which is the contract a title has to keep: whatever follows the
+    closing bracket is text this script writes and never reads back.
     """
-    versions = []
-    for _, tag, title in _headings(text):
+    found = []
+    for index, tag, title in _headings(text):
         if tag != "h2" or not title.startswith("[") or "]" not in title:
             continue
         label = title[1:title.index("]")]
         if _VERSION_RE.match(label):
-            versions.append(label)
-    return versions
+            found.append((index, label, title))
+    return found
+
+
+def release_versions(text: str) -> List[str]:
+    """Every `## [x.y.z]` release version, newest first, off a real parse."""
+    return [version for _, version, _ in _release_headings(text)]
+
+
+#: A leading `-`, en dash, em dash or colon between `[x.y.z]` and what follows
+#: it. Stripped so the date and the title are compared on their own; the
+#: separator is punctuation and says nothing about which of the two it is.
+_HEADING_SEPARATOR_RE = re.compile(r"^[-–—:]\s*")
+_HEADING_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\b")
+
+
+def heading_shape(heading: str) -> Tuple[str, str]:
+    """What a release heading carries after its `[x.y.z]`: three states.
+
+    `("dated", "2026-08-14")`, `("titled", the title)`, or `("bare", "")` for a
+    heading that is a version and nothing else. Three rather than two because
+    "this repository titles its release headings" is an inference, and a bare
+    heading is evidence for neither side — reading a title into `## [0.1.0]`
+    would be the separator-stripping matching its own leftovers.
+
+    Read off a heading, not off a line: the caller has already been through
+    the parser. The date is not validated as a real calendar date, only as the
+    shape this script writes; `## [0.1.0] - Scaffold` is this repository's own
+    oldest heading and is a title, correctly.
+    """
+    rest = heading[heading.index("]") + 1:].strip() if "]" in heading else ""
+    rest = _HEADING_SEPARATOR_RE.sub("", rest, count=1).strip()
+    if not rest:
+        return "bare", ""
+    match = _HEADING_DATE_RE.match(rest)
+    if match:
+        after = _HEADING_SEPARATOR_RE.sub(
+            "", rest[match.end():].strip(), count=1).strip()
+        if not after:
+            return "dated", match.group(0)
+        # `[x.y.z] - 2026-08-14 — A title`: what this script writes when it is
+        # given a title, so a repository that folded once with one is asked
+        # for one again.
+        return "titled", after
+    return "titled", rest
+
+
+def _title_problem(title: str) -> Optional[str]:
+    """Why this `--title` cannot be written, or None when it can.
+
+    Only one thing is refused, and it is structural rather than editorial: a
+    heading is one line. A value carrying a newline would end the heading part
+    way through and turn the rest into body text, which renders as prose under
+    a heading nobody wrote and parses back as neither.
+
+    What a title *says* is not this script's business. `_verify_written`
+    already re-parses the assembled file and refuses raw HTML, a link
+    destination a fragment may not carry, and any heading this run did not
+    report writing — so a title that smuggles structure is caught by the guard
+    that exists for it, on the assembled document, rather than by a second
+    list of rules here that would drift from it.
+    """
+    if "\n" in title or "\r" in title:
+        return ("--title {0!r} contains a line break, and a Markdown heading "
+                "is one line — everything after the break would render as "
+                "body text under a heading nobody wrote".format(title))
+    return None
+
+
+def _title_receipt(title: Optional[str], heading: str,
+                   shape: Optional[Tuple[str, str]]) -> str:
+    """One line saying which of the three declarations this fold was given,
+    and what it read the file's own convention to be.
+
+    Four renderings, not one. `--title 'text'`, `--title ''` (a decision to
+    cut this release plain) and no `--title` at all are three different
+    states, and the file either had a release heading to read a convention off
+    or it did not. A receipt that rendered them the same would turn "nobody
+    decided" into "somebody decided nothing" at precisely the moment the
+    heading is being written.
+    """
+    if title:
+        return "heading   `{0}` — from --title".format(heading)
+    if shape is None:
+        return ("heading   `{0}` — the default. CHANGELOG.md holds no release "
+                "heading to read a title convention from, so none was inferred "
+                "— not the same as reading one and finding it plain"
+                .format(heading))
+    kind, carried = shape
+    carried_note = " (`{0}`)".format(carried) if carried else ""
+    if title is not None:
+        return ("heading   `{0}` — --title '' declares this release "
+                "deliberately untitled. The newest release heading above it is "
+                "{1}{2}, and this is a decision recorded against it rather "
+                "than the flag being forgotten"
+                .format(heading, kind, carried_note))
+    return ("heading   `{0}` — the default, and the newest release heading "
+            "above it is {1}{2}, so no title convention was found to keep"
+            .format(heading, kind, carried_note))
 
 
 def audit_link_refs(text: str,
@@ -1542,10 +1671,18 @@ def _alarm(lines: Sequence[str]) -> None:
 
 
 def assemble(changelog: Path, directory: Path, version: str, date: str,
-             dry_run: bool = False, keep: bool = False) -> int:
+             dry_run: bool = False, keep: bool = False,
+             title: Optional[str] = None) -> int:
     if not _VERSION_RE.match(version):
         _receipt("refused", "--version {0!r} is not x.y.z".format(version))
         return REFUSED
+
+    if title is not None:
+        problem = _title_problem(title)
+        if problem:
+            _receipt("refused", problem + " — CHANGELOG.md untouched, nothing "
+                                          "consumed")
+            return REFUSED
 
     try:
         fragments = collect(directory)
@@ -1635,7 +1772,43 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
     preamble, residue_sections = _subsections(residue_body)
     folded = _entry_count(residue_body)
 
-    section, emitted = render(fragments, version, date, preamble, residue_sections)
+    # The title convention is read out of the file, not out of a config key.
+    # A heading style is a per-release editorial choice, so it cannot
+    # live in a file that is written once — and the changelog is the only place
+    # a repository has already stated the convention, four releases running in
+    # the case this was filed from. Derived at the moment it is needed, which
+    # is what a shared script owes a repository it knows nothing about.
+    #
+    # Three states, and the middle one is the reason this exists. Given a
+    # title, write it. Given `--title ''`, write the plain heading and record
+    # that somebody chose it. Given nothing against a file whose newest release
+    # heading carries a title, refuse: writing the plain heading would succeed,
+    # look right, and break a convention nobody reviewing a version bump reads
+    # the heading closely enough to notice.
+    previous = _release_headings(text)
+    shape = heading_shape(previous[0][2]) if previous else None
+    if title is None and shape is not None and shape[0] == "titled":
+        _receipt("refused",
+                 "CHANGELOG.md's newest release heading carries a title and "
+                 "this fold was given none — CHANGELOG.md untouched, nothing "
+                 "consumed",
+                 ["read      `## {0}` on line {1}, whose text after the version "
+                  "is {2!r}".format(previous[0][2], previous[0][0] + 1, shape[1]),
+                  "pass      --title '<what this release is about>' to write "
+                  "one, and `{0}` is what you would get"
+                  .format(release_heading(version, date, "…")),
+                  "or        --title '' to declare this release deliberately "
+                  "untitled. An empty title is a decision and the receipt "
+                  "records it as one; omitting the flag is not a decision, "
+                  "which is why it is refused here rather than defaulted "
+                  "through to `{0}`".format(release_heading(version, date)),
+                  "why       the plain heading would be written, the fold "
+                  "would succeed, and the break would be visible only to "
+                  "somebody reading the heading against the four above it"])
+        return REFUSED
+
+    section, emitted = render(fragments, version, date, preamble,
+                              residue_sections, title)
 
     # Arithmetic, not trust: every entry on either side has to be in the result.
     # A merge that dropped one would otherwise be indistinguishable from a clean
@@ -1688,6 +1861,7 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
         return REFUSED
 
     details = [
+        _title_receipt(title, emitted[0], shape),
         "consumed  " + ", ".join(f.path.name for f in fragments if f.path),
         "sections  " + ", ".join(
             "{0} ({1})".format(name.capitalize(), sum(1 for f in fragments if f.section == name))
@@ -1752,8 +1926,13 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
         "no raw HTML".format(_MD_VERSION, len(emitted)))
 
     if dry_run:
-        _receipt("ok", "dry-run: {0} fragment(s) would become `## [{1}] - {2}`; "
-                       "nothing written".format(len(fragments), version, date), details)
+        # `emitted[0]`, not a second `"## [{0}] - {1}"` formatted here. This
+        # line used to compose the heading itself, which made the receipt a
+        # second author of what a release heading looks like — so with a title
+        # it would have quoted a heading the fold was not about to write, in a
+        # mode whose entire job is to say what the fold would do.
+        _receipt("ok", "dry-run: {0} fragment(s) would become `{1}`; nothing "
+                       "written".format(len(fragments), emitted[0]), details)
         return OK
 
     # ------------------------------------------------------------------
@@ -1800,8 +1979,14 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
                            "twice if the next release also consumes them"
                            .format(len(fragments), directory.name))
 
-        _receipt("ok", "{0} fragment(s) -> `## [{1}] - {2}` in {3}"
-                 .format(len(fragments), version, date, changelog.name), details)
+        # `emitted[0]` for the same reason the dry run uses it, and more so:
+        # this is the only line that reports the mutation, printed after
+        # CHANGELOG.md was rewritten and the fragments deleted. Composing the
+        # heading here a second time made it name a heading that is not in the
+        # file it had just written -- the receipt disagreeing with the tree it
+        # exists to describe.
+        _receipt("ok", "{0} fragment(s) -> `{1}` in {2}"
+                 .format(len(fragments), emitted[0], changelog.name), details)
         # Flushed inside the guard on purpose. A receipt that only reached a
         # buffer has not been delivered, and a pipe that closed under it
         # raises when the interpreter flushes at shutdown -- after the exit
@@ -1908,6 +2093,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                              "and one written anyway is a 404 that reads as a "
                              "working link. Per-repository, which is why it is "
                              "a flag and not a constant in this file")
+    parser.add_argument("--title", default=None,
+                        help="the release heading's title, written after the "
+                             "date as `## [x.y.z] - YYYY-MM-DD — <title>`. "
+                             "Absent means the convention is read out of "
+                             "CHANGELOG.md's newest release heading and the "
+                             "fold refuses if that one carries a title; "
+                             "`--title ''` declares this release deliberately "
+                             "untitled, which is a decision and is recorded as "
+                             "one. Per-release, which is why it is a flag and "
+                             "not a key in a config file written once")
     parser.add_argument("--count", action="store_true",
                         help="print the fragment count as a bare integer, and nothing else")
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -1988,6 +2183,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   "indistinguishable from one that did"])
         return REFUSED
 
+    # Same argument as `--untagged` above, one flag along. A title is read by
+    # the fold and by nothing else: accepted silently on `--check`,
+    # `--check-links` or `--count`, a title that was never going to be written
+    # would look exactly like one that was — and what it decides here is the
+    # heading a release ships under.
+    if args.title is not None and (args.check or args.check_links or args.count):
+        _receipt("refused",
+                 "--title is read by the fold only, and this run is a "
+                 "read-only mode — nothing was audited, written or consumed",
+                 ["pass      it on the fold (`--version x.y.z --dir ... "
+                  "--changelog ...`), or drop it here",
+                  "why       it decides the release heading, which no "
+                  "read-only mode writes. Silently ignored here, a title that "
+                  "never applied would be indistinguishable from one that did"])
+        return REFUSED
+
     if args.count:
         directory = _resolve(args.directory, "--dir", derived_dir)
         if directory is None:
@@ -2041,7 +2252,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return REFUSED
     changelog, directory = target
     return assemble(changelog, directory, args.version, args.date,
-                    dry_run=args.dry_run, keep=args.keep)
+                    dry_run=args.dry_run, keep=args.keep, title=args.title)
 
 def _exit(code: int) -> int:
     """Deliver whatever is still buffered, and keep *code*.

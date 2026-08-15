@@ -111,7 +111,24 @@ def _repo(tmp_path, changelog_text, name):
     return root, script_path
 
 
-def _assemble_on_a_console(root, script_path, version):
+#: A titled history, so a fold given no `--title` is refused against it. That
+#: refusal's receipt is the longest new non-ASCII string in the script.
+TITLED_RELEASE = """# Changelog
+
+## [Unreleased]
+
+## [0.1.0] — A rule that disarmed itself after one refusal
+
+### Added
+
+- The first release.
+
+[Unreleased]: https://github.com/o/r/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/o/r/releases/tag/v0.1.0
+"""
+
+
+def _assemble_on_a_console(root, script_path, version, *extra):
     """A real cut -- not `--dry-run`, whose receipt takes a different branch --
     with stdout pinned to the console codepage rather than the developer's.
 
@@ -128,7 +145,7 @@ def _assemble_on_a_console(root, script_path, version):
     return subprocess.run(
         [sys.executable, str(script_path), "--version", version,
          "--date", "2026-08-14", "--dir", "changelog.d",
-         "--changelog", "CHANGELOG.md"],
+         "--changelog", "CHANGELOG.md", *extra],
         cwd=str(root), capture_output=True, encoding=CONSOLE, env=env,
     )
 
@@ -170,3 +187,46 @@ def test_an_ordinary_release_receipt_prints_on_a_cp1252_console(tmp_path):
     # consumed while the exit code said SKIPPED. Assert both halves agree.
     assert "## [0.2.0] - 2026-08-14" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert not (root / "changelog.d" / "41.added.md").exists()
+
+def test_a_titled_release_receipt_prints_on_a_cp1252_console(tmp_path):
+    """The heading is now the first thing on the summary line, and with a title
+    it carries an em dash the maintainer did not put there.
+
+    The static scan above reads the script's source and cannot see this: the
+    separator is in the source, but what lands on the console is the source
+    character joined to a value that arrived on argv. This drives it.
+    """
+    root, script_path = _repo(tmp_path, HAS_RELEASE, "titled")
+    result = _assemble_on_a_console(root, script_path, "0.2.0",
+                                    "--title", "A heading that says why")
+    assert "UnicodeEncodeError" not in result.stderr, result.stderr
+    assert "Traceback" not in result.stderr, result.stderr
+    assert result.stdout.startswith("assemble    : ok"), result.stdout + result.stderr
+    assert result.returncode == 0
+    assert ESCAPE not in result.stdout, DEGRADED + result.stdout
+    # The write half, as above: the receipt printed and the heading it quoted
+    # is the one on disk.
+    assert "## [0.2.0] - 2026-08-14 — A heading that says why" in (
+        root / "CHANGELOG.md").read_text(encoding="utf-8")
+
+
+def test_the_missing_title_refusal_prints_on_a_cp1252_console(tmp_path):
+    """The other new receipt, and the one with the most non-ASCII in it: it
+    quotes the heading it read, the heading it would have written and the
+    heading it declined to default through to.
+
+    A refusal reaches the console on exactly the path a maintainer is on when
+    something has already gone wrong, so a receipt that cannot print there
+    takes the explanation with it.
+    """
+    root, script_path = _repo(tmp_path, TITLED_RELEASE, "refused")
+    result = _assemble_on_a_console(root, script_path, "0.2.0")
+    assert "UnicodeEncodeError" not in result.stderr, result.stderr
+    assert "Traceback" not in result.stderr, result.stderr
+    assert result.stdout.startswith("assemble    : refused"), (
+        result.stdout + result.stderr)
+    assert result.returncode == 2
+    assert ESCAPE not in result.stdout, DEGRADED + result.stdout
+    # And the refusal meant it: nothing written, nothing consumed.
+    assert "## [0.2.0]" not in (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert (root / "changelog.d" / "41.added.md").exists()
