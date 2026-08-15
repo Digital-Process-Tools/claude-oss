@@ -92,12 +92,55 @@ behind presets many repos never enable; check before writing an instruction that
   | --- | --- |
   | `destroys` — data gone, no copy anywhere | yes, unconditionally |
   | `discloses` — a secret or a private path leaves the machine | yes, unconditionally |
-  | `containment` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally |
+  | `containment (read)` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally |
+  | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally |
+  | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally |
+  | `ships-local-state` — a value true of exactly one checkout, baked into the artifact every user installs | yes, unconditionally |
+  | `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a filed issue |
+  | `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a filed issue |
   | `fails-to-preserve` | can ship behind a filed issue |
   | `misreports` | can ship behind a filed issue |
 
+  **This table is the only place the rows are written down.** The audit agents reference it rather
+  than restating it; a second copy drifts, and the copy that drifts is the one quoted afterwards.
+
+  **The rule that decides which row a finding belongs in: each row earns its place because each
+  invites a different fix.** So when two rows both look like they fit, name the fix each would send a
+  reviewer to make and pick the one whose fix removes the defect. `destroys` sends them to the
+  destructive call when the defect is an unvalidated argument; `misreports` sends them to the logic
+  when the defect is one rendering seam; `containment` sends them to a path chokepoint that is not on
+  the code path at all. A candidate row that would send the reviewer where an existing row already
+  sends them has not earned a line.
+
+  That rule is also what settles whether the two `containment` rows are one row or two. They are two:
+  the read-side fix is a chokepoint on the paths a caller may name, and it **passes** the write-side
+  case, because the boundary that matters on a mutating route is which repository the caller meant —
+  a fact that is not on disk to be validated against.
+
+  Two bounds, stated so they can be argued with rather than inherited. `misdirects` files rather than
+  blocks because the wrong next step is *printed*, and something with a choice obeys it — unless what
+  it prints performs a write, which is `containment (write)` and blocks. `splices` files rather than
+  blocks because the values that reach a subprocess argv here come from the maintainer's own config
+  on the maintainer's own machine — a splice whose value came from **forge text** is not this row at
+  all, it is `forges`, and that blocks.
+
+  `ships-local-state` blocks for a reason the other rows do not share: **the release is the mechanism
+  by which it takes effect.** Before the tag it is a file edit. After the tag it is on every machine
+  that installs the artifact and needs another release to undo.
+
+  **The rows are a record of what has already gone wrong, never a partition of what can.** So do not
+  tune a brief toward the table, and do not stretch a finding into the nearest row that will take it.
+
   **Say so if a finding fits none of these.** Separate audits have refused this table and been right
-  every time; the class that does not exist yet is where the worst finding lands.
+  every time; the class that does not exist yet is where the worst finding lands. An unranked finding
+  is reported unranked — never demoted to "no row, therefore minor".
+
+  **Two vocabularies, joined here.** The audit agents search by *strategy* — the lettered checklist in
+  `${CLAUDE_PLUGIN_ROOT}/agents/auditor.md`. This table ranks by *cost*. They are deliberately not one
+  list and not a one-to-one map: one strategy turns up findings that rank anywhere from `misreports`
+  to `destroys`, and one row is reached by several strategies. The join is at the report — **every
+  finding carries both**, the letter it was found by and the row it is ranked in — and a row that is
+  ranked here but reachable from no strategy is a class the next audit cannot find.
 
 - **Ask whether the fix compounds**, not whether the loop is worth it. A fix that removes a whole
   class of future defects outranks a bigger fix that removes one instance.
@@ -465,9 +508,11 @@ means answering "it has never run" when one read-only call would have shown othe
 ## Releasing
 
 Trigger, whichever comes first: **N merged PRs since the last tag**, **any user-visible fix plus a
-soak period**, or **immediately for anything in the `destroys` / `discloses` / `containment`
-classes**. Thresholds live in user config; state them out loud when reporting, because a threshold
-nobody can see arriving is indistinguishable from deciding on a whim.
+soak period**, or **immediately for anything in a class the ranking table above marks blocking** —
+`destroys`, `discloses`, `containment (read)`, `containment (write)`, `forges`, `ships-local-state`.
+
+Thresholds live in user config; state them out loud when reporting, because a threshold nobody can
+see arriving is indistinguishable from deciding on a whim.
 
 Gates, each a call and not a feeling:
 
@@ -482,6 +527,13 @@ Gates, each a call and not a feeling:
    competent audit of any non-trivial delta always finds something, so an unbounded "findings → stop"
    makes every release hostage to diminishing returns. After round two, file the rest against the
    next milestone and ship.
+
+   **One exception, and it is why the ranking is not decoration: a finding in a row the table marks
+   blocking is not carry-forward material.** It stops the tag in either round. Without that, the cap
+   outranks the table by being later in the document, and a gate whose worst outcome is a filed issue
+   is not a gate. Each finding the auditor hands back carries its row, so this is a read and not a
+   judgement; a finding that came back `unranked` is ranked here before the cap is applied to it, and
+   one that came back `could not rank` means the audit did not complete, which is `could not run`.
 
    The gate is performed, not judged: `scripts/release_delta.py` computes the range in three states
    and `oss:release-auditor` reads it. **`could-not-run` is the script's answer, not yours**, and it

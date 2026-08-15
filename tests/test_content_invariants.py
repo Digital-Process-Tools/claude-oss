@@ -974,3 +974,250 @@ def test_the_reviewer_return_check_fires_on_a_brief_that_never_states_it():
         "no-findings-must-be-said-and-named",
         "empty-return-is-did-not-run-not-clean",
     }, repr(sorted(unmet))
+
+
+# ------------------------------------- the ranking table, and the join to the search (#83)
+#
+# The plugin ran two class vocabularies and never joined them. `agents/auditor.md`
+# searches by letter -- A an absence the caller cannot read, B a guard nominally on and
+# effectively off, C untrusted text forging a boundary, D/F/H the platform band. The
+# manager's table ranks by word -- `destroys`, `discloses`, `containment`, and the rest --
+# and gate 3 decides what blocks a release out of those words.
+#
+# So a row could be ranked and never searched for. That is this repo's own defect class
+# one layer over: a class ruled on, and not written where the brief is built from, is a
+# class the next audit cannot find.
+#
+# The design these checks pin is *two vocabularies with one explicit join*, not one
+# merged list. A search strategy and a severity are different things, and the map between
+# them is many-to-many by construction: class A turns up findings that rank anywhere from
+# `misreports` to `destroys`. So there is deliberately no per-letter-to-per-row assertion
+# below -- a test asserting a fixed map would pin a design this change argues against.
+#
+# What is asserted is the join at the points where it can actually drift:
+#
+#   - the table is the single place the rows are written down, so no agent recopies it;
+#   - every row carries a blocking verdict in one of exactly two recognised spellings,
+#     because an unrecognised third spelling would otherwise read as "does not block";
+#   - the release trigger names exactly the rows the table marks blocking -- add a row to
+#     one and this goes red until you touch the other;
+#   - both audit agents reference the table and separate `unranked` (classified, no row
+#     fits) from `could not rank` (the table never reached me);
+#   - the two-round cap does not quietly outrank the table.
+
+MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+AUDIT_AGENTS = [REPO_ROOT / "agents" / "auditor.md", REPO_ROOT / "agents" / "release-auditor.md"]
+
+RANKING_BLOCKS = "yes, unconditionally"
+RANKING_FILES_IT = "can ship behind a filed issue"
+RANKING_VERDICTS = (RANKING_BLOCKS, RANKING_FILES_IT)
+
+RANKING_HEADER = "| Class | Blocks a release? |"
+TRIGGER_MARKER = "marks blocking**"
+
+
+def _ranking_table():
+    """The rows as (name, verdict), or None if the table is not findable at all.
+
+    None and [] are different answers and the callers below treat them that way: a
+    table that moved is not a table with no rows.
+    """
+    lines = MANAGER_SKILL.read_text(encoding="utf-8").split("\n")
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == RANKING_HEADER:
+            start = i
+            break
+    if start is None:
+        return None
+    rows = []
+    for line in lines[start + 2:]:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            break
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) != 2:
+            break
+        name = re.match(r"`([^`]+)`", cells[0])
+        rows.append((name.group(1) if name else None, cells[1]))
+    return rows
+
+
+def _release_trigger_rows():
+    """The rows the release trigger enumerates, or None if the marker is gone."""
+    text = MANAGER_SKILL.read_text(encoding="utf-8")
+    at = text.find(TRIGGER_MARKER)
+    if at < 0:
+        return None
+    tail = text[at + len(TRIGGER_MARKER):]
+    stop = tail.find("\n\n")
+    segment = tail if stop < 0 else tail[:stop]
+    return [m.group(1) for m in re.finditer(r"`([^`]+)`", segment)]
+
+
+def test_the_ranking_table_is_findable_and_named():
+    """Vacuity guard. Every check below reads this table; a table that moved would
+    make them all pass over an empty list, which is the defect this plugin is named
+    after arriving inside the suite meant to catch it.
+    """
+    rows = _ranking_table()
+    assert rows is not None, (
+        "no {!r} table in skills/manager/SKILL.md -- every ranking check below would "
+        "pass vacuously".format(RANKING_HEADER)
+    )
+    assert len(rows) >= 5, "ranking table has {} rows, which is fewer than it had".format(len(rows))
+    unnamed = [verdict for name, verdict in rows if name is None]
+    assert not unnamed, "ranking rows with no `backticked` class name: {!r}".format(unnamed)
+    names = [name for name, _ in rows]
+    assert len(names) == len(set(names)), "duplicate ranking rows: {!r}".format(names)
+
+
+def test_every_ranking_row_states_whether_it_blocks():
+    """Two recognised spellings and no third. A row whose verdict is worded some new
+    way is not a row that does not block -- it is a row nobody ruled on, and it must
+    fail rather than be read as the lenient half.
+    """
+    rows = _ranking_table()
+    assert rows is not None
+    unruled = [(name, verdict) for name, verdict in rows if verdict not in RANKING_VERDICTS]
+    assert not unruled, (
+        "these ranking rows carry a verdict that is neither {!r} nor {!r}, so nothing "
+        "can tell whether they block: {!r}".format(RANKING_BLOCKS, RANKING_FILES_IT, unruled)
+    )
+
+
+def _trigger_join_mismatch(rows, trigger):
+    """Shared by the real check and its positive control."""
+    if rows is None:
+        return ("no ranking table",)
+    if trigger is None:
+        return ("no release trigger enumeration",)
+    blocking = {name for name, verdict in rows if verdict == RANKING_BLOCKS}
+    named = set(trigger)
+    return tuple(sorted(blocking ^ named))
+
+
+def test_the_release_trigger_names_exactly_the_rows_that_block():
+    """The join, and the reason it is worth more than the rows themselves.
+
+    Two places in one file state the blocking set: the table's right-hand column and
+    the release trigger. Nothing but this test makes the second follow the first, and
+    a row added to the table alone is a class that blocks a release in the ranking and
+    does not trigger one in the loop that reads it.
+    """
+    mismatch = _trigger_join_mismatch(_ranking_table(), _release_trigger_rows())
+    assert not mismatch, (
+        "the release trigger and the ranking table disagree about which classes block. "
+        "In one and not the other: {!r}".format(mismatch)
+    )
+
+
+def test_the_trigger_join_fires_when_the_two_disagree():
+    """Positive control. A set-equality assertion over two lists parsed out of the same
+    file passes just as readily when both parsers return nothing, so the comparison is
+    run against a pair that is wrong on purpose and must be reported.
+    """
+    rows = [
+        ("destroys", RANKING_BLOCKS),
+        ("ships-local-state", RANKING_BLOCKS),
+        ("misreports", RANKING_FILES_IT),
+    ]
+    assert _trigger_join_mismatch(rows, ["destroys"]) == ("ships-local-state",)
+    assert _trigger_join_mismatch(rows, ["destroys", "ships-local-state", "misreports"]) == (
+        "misreports",
+    )
+    assert _trigger_join_mismatch(rows, ["destroys", "ships-local-state"]) == ()
+    assert _trigger_join_mismatch(None, ["destroys"]) == ("no ranking table",)
+    assert _trigger_join_mismatch(rows, None) == ("no release trigger enumeration",)
+
+
+def test_both_audit_agents_reference_the_ranking_table():
+    """The structural half of #83. An agent that searches without ranking hands back
+    findings the release gate cannot weigh; the reference is what makes the letters and
+    the rows one system rather than two.
+    """
+    for path in AUDIT_AGENTS:
+        text = path.read_text(encoding="utf-8")
+        assert "${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md" in text, (
+            "{} never points at the ranking table, so a finding it reports carries no "
+            "row and gate 3 has nothing to weigh".format(path.relative_to(REPO_ROOT))
+        )
+
+
+def test_no_audit_agent_recopies_the_ranking_rows():
+    """Same discipline as the portability shapes: the rows ship once. A copy in an
+    agent is the drift defect, and the copy that drifts is never the one anybody
+    rereads. The control comes first -- if the rows were absent from the skill too,
+    "absent from the agents" would be satisfied by their being absent everywhere.
+    """
+    rows = _ranking_table()
+    assert rows is not None
+    names = [name for name, _ in rows]
+    skill = MANAGER_SKILL.read_text(encoding="utf-8")
+    missing = [n for n in names if "`{}`".format(n) not in skill]
+    assert not missing, "rows unfindable in their own source: {!r}".format(missing)
+    for path in AUDIT_AGENTS:
+        text = path.read_text(encoding="utf-8")
+        copied = [n for n in names if "`{}`".format(n) in text]
+        assert not copied, (
+            "{} carries its own copy of the ranking rows {!r} -- reference the table "
+            "instead".format(path.relative_to(REPO_ROOT), copied)
+        )
+
+
+RANKING_STATE_ANCHORS = [
+    ("finding-carries-a-row", ("ranking table",)),
+    ("unranked-is-classified-and-no-row-fits", ("unranked",)),
+    ("could-not-rank-is-the-table-never-arrived", ("could not rank",)),
+]
+
+
+def _ranking_states_unmet(text):
+    folded = text.lower()
+    return {
+        name
+        for name, anchors in RANKING_STATE_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_both_audit_agents_separate_unranked_from_could_not_rank():
+    """Three states again, in the ranking rather than the search. "No row fits" is a
+    finding worth the table gaining a row; "the table never reached me" is an audit
+    that did not happen. They render identically as a missing row.
+    """
+    for path in AUDIT_AGENTS:
+        unmet = _ranking_states_unmet(path.read_text(encoding="utf-8"))
+        assert not unmet, "{}: {}".format(path.relative_to(REPO_ROOT), sorted(unmet))
+
+
+def test_the_ranking_state_check_fires_on_a_brief_that_only_ranks():
+    """Positive control: prose that asks for a ranking and even names the table, but
+    offers no way to say the ranking could not be made, must report both third-state
+    anchors unmet.
+    """
+    only_ranks = (
+        "Rank every finding against the ranking table and report the row beside the "
+        "class letter it was found by.\n"
+    )
+    assert _ranking_states_unmet(only_ranks) == {
+        "unranked-is-classified-and-no-row-fits",
+        "could-not-rank-is-the-table-never-arrived",
+    }
+
+
+ROUND_CAP_ANCHOR = "carry-forward"
+
+
+def test_the_round_cap_does_not_quietly_outrank_the_table():
+    """Gate 3 and the release auditor both end round two by filing what remains and
+    shipping over it. The table says some rows block unconditionally. Left unjoined the
+    cap wins by being later, and a gate whose worst outcome is a filed issue is not a
+    gate -- so both documents must state the exception.
+    """
+    for path in [MANAGER_SKILL, REPO_ROOT / "agents" / "release-auditor.md"]:
+        text = path.read_text(encoding="utf-8").lower()
+        assert ROUND_CAP_ANCHOR in text, (
+            "{} states the two-round cap but never says a blocking row is not "
+            "carry-forward material".format(path.relative_to(REPO_ROOT))
+        )

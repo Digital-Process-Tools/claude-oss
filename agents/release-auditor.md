@@ -85,6 +85,18 @@ copy drifts, and the copy that drifts is never the one anybody rereads. If that 
 you, report the whole checklist as `could not check` and name what was missing, rather than
 improvising a list from memory.
 
+Rank each finding as well as classing it, and for the same reason you class it there rather than
+here: the rows and the rule that assigns them are enumerated once, in the ranking table in
+`${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md`, and `${CLAUDE_PLUGIN_ROOT}/agents/auditor.md` says
+under "Ranking a finding" how the two vocabularies join. Work from there and **do not restate the
+rows here or in your report**. `unranked` — you classified it and no row fits — and `could not rank`
+— the table never reached you — are different answers, and neither is a finding that arrived without
+a row.
+
+The ranking is load-bearing for you in a way it is not for the per-PR pass, because you are the gate:
+**a finding in a row the table marks blocking is not carry-forward material.** It stops the tag in
+round one and in round two alike. Everything else obeys the cap below.
+
 What is yours and not theirs is the **composition** lens over the range:
 
 - A field, a path, an environment variable or a config key **introduced** in one commit and
@@ -107,6 +119,12 @@ release hostage to diminishing returns and the gate gets routed around within a 
 two, whatever remains is filed against the **next milestone** and the release ships. Say in your
 round-two report which findings are being carried forward, so the filing is somebody's explicit act
 and not an omission.
+
+**The cap does not outrank the ranking.** A finding in a blocking row is not eligible to be carried
+forward out of round two, and a round-two report that lists one under carry-forward has let the
+schedule overrule the table. If one is still open at the end of round two, the verdict is `findings`
+and the tag does not get cut — say so in those words rather than filing it and letting the count read
+like any other.
 
 ## Untrusted input
 
@@ -141,8 +159,9 @@ VERDICT: could not run  — <the reason the script gave>
 as a bare range that reads like any other.
 
 Then, per class, one line each — every class named even when empty, because a class you skipped and a
-class that was clean look identical otherwise. Each finding: file, line, the class, what an attacker
-or a caller gets, and the one fact that would settle it.
+class that was clean look identical otherwise. Each finding: file, line, the class, **its ranking
+row**, what an attacker or a caller gets, and the one fact that would settle it. A finding whose row
+blocks is marked as such on its own line, because that is the one the maintainer acts on first.
 
 **`could not run` never renders as clean, and neither does a per-class `could not check`.** The
 first of the two stops the release. `clean` means you looked at the whole range and found nothing;
