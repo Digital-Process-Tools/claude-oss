@@ -275,6 +275,13 @@ above for the full contract.
 longer reads as a repo with no CI, and `test_command … and nothing in .github/workflows/ runs it` is
 no longer printed about workflows nothing read.
 
+That third state is one name over three situations — the directory would not open, a name in it
+would not stat, or a file would not read — so each path it names now carries which one it was:
+`.github/workflows/ci.yml (file-unreadable)`. Two of the three name the *same* path, and printing
+the path alone made them the same sentence, which is a different thing to go and check in each case.
+The state stays one because the remedy is one; the cause travels beside it, and on the finding as a
+machine-readable `causes` list (#134).
+
 There is no longer a `ci` finding about a leg count. It reported `ci.required_checks` as stale, and
 #113 deleted that key rather than guarding it — the only quantity derivable offline is the workflow
 *job declaration* count, which a build matrix, a reusable workflow or an organisation/app-level check

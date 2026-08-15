@@ -1089,6 +1089,111 @@ def test_an_unreadable_workflow_directory_is_reported_rather_than_raised(tmp_pat
     assert unreadable == []
 
 
+def test_the_three_causes_behind_one_unreadable_state_are_each_observed(
+    tmp_path, monkeypatch
+):
+    """The dynamic half of #134, and the one no static pass can do.
+
+    `check_test_ci` emits `unreadable` from ONE site, correctly: all three situations
+    below mean "this process could not look", which is the single distinction the
+    state carries against `unenforced`, and they share a remedy. What was wrong was
+    throwing the distinction away at the point it was recorded -- an entry that would
+    not stat and a file that would not read produced a byte-identical detail string
+    for the same path, so the reader was told strictly less than the process knew.
+
+    Every cause is driven here and the observed set is compared with what the module
+    exports -- in that order. A table checked against a set nobody populated is
+    trivially complete, which is the shape this whole file exists to refuse.
+
+    The two entry-level arms are reached by replacing `os.scandir`, not by a mode bit.
+    `_denied` skips as root and on any platform that does not enforce the bit, and a
+    guard whose only real assertion is "three causes exist" must not be able to skip
+    into silence on the legs that matter. The mode-bit path keeps its own test above
+    as the real-OS control for cause one.
+    """
+    _with_workflow(tmp_path, "name: ci\njobs:\n  t:\n    steps:\n      - run: pytest\n")
+    config = _config(test_command="pytest")
+    observed = {}
+
+    # Positive control first, on the untouched tree: nothing unreadable, no finding.
+    # Without it, three "the cause was reported" assertions would still pass against a
+    # scan that reported an unreadable file unconditionally.
+    files, unreadable = scaffold._workflow_scan(tmp_path)
+    assert [p.name for p in files] == ["ci.yml"]
+    assert unreadable == []
+    assert scaffold.check_test_ci(tmp_path, config) == []
+
+    real_scandir = os.scandir
+
+    class _Entry(object):
+        name = "ci.yml"
+
+        def is_file(self):
+            raise OSError(13, "cannot stat")
+
+    class _Scan(object):
+        def __init__(self, entries):
+            self._entries = entries
+
+        def __enter__(self):
+            return iter(self._entries)
+
+        def __exit__(self, *exc):
+            return False
+
+    # Cause 1: the directory itself will not open.
+    monkeypatch.setattr(
+        scaffold.os, "scandir", lambda path: _raise(OSError(13, "denied"))
+    )
+    findings = scaffold.check_test_ci(tmp_path, config)
+    assert findings and findings[0]["state"] == "unreadable"
+    observed["directory"] = findings[0]
+
+    # Cause 2: the directory opens, one child will not stat.
+    monkeypatch.setattr(scaffold.os, "scandir", lambda path: _Scan([_Entry()]))
+    findings = scaffold.check_test_ci(tmp_path, config)
+    assert findings and findings[0]["state"] == "unreadable"
+    observed["entry"] = findings[0]
+
+    # Cause 3: the child stats fine and the file will not read.
+    monkeypatch.setattr(scaffold.os, "scandir", real_scandir)
+    monkeypatch.setattr(
+        Path, "read_text", lambda self, *a, **k: _raise(OSError(13, "denied"))
+    )
+    findings = scaffold.check_test_ci(tmp_path, config)
+    assert findings and findings[0]["state"] == "unreadable"
+    observed["file"] = findings[0]
+
+    causes = set()
+    for finding in observed.values():
+        assert finding["causes"], "an unreadable finding carried no cause at all"
+        causes.update(finding["causes"])
+    assert causes == set(scaffold.WORKFLOW_SCAN_CAUSES), (
+        "the causes observed by driving all three situations are {0}; the module "
+        "exports {1}. A cause nobody can reach, or one nobody declared, is the "
+        "absence this registry exists to make visible.".format(
+            sorted(causes), sorted(scaffold.WORKFLOW_SCAN_CAUSES)
+        )
+    )
+    assert len(causes) == 3, sorted(causes)
+
+    # The pair #134 is actually about: same path, same state, and until now the same
+    # bytes. The detail has to tell them apart or the cause was recorded and then
+    # discarded one layer further down.
+    entry_detail = observed["entry"]["detail"]
+    file_detail = observed["file"]["detail"]
+    assert scaffold.WORKFLOW_DIR + "/ci.yml" in entry_detail
+    assert scaffold.WORKFLOW_DIR + "/ci.yml" in file_detail
+    assert entry_detail != file_detail, (
+        "an entry that would not stat and a file that would not read still render "
+        "identically for the same path"
+    )
+
+
+def _raise(exc):
+    raise exc
+
+
 def test_an_absent_workflow_directory_is_not_unreadable(tmp_path):
     """The third state must not swallow the second: no directory is a fact about the
     repo, an unreadable one is a fact about this process."""
