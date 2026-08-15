@@ -19,6 +19,86 @@ about another repo asserted here would arrive with the same authority as one tha
 learn. Everything repo-shaped lives in `.oss.json`, and everything in `.oss.json` is a starting point
 you re-derive before acting on it.
 
+## Who decides
+
+**The loop decides and acts; it does not propose.** Being invoked is the authority — a tick is not a
+plan submitted for a nod, and nothing below is a proposal awaiting one. What keeps that safe is the
+maintainer's ability to *reverse* a decision, so the duty is to preserve that ability, never to ask
+permission to use it.
+
+The obvious rule is *reversible versus irreversible*, and it is the wrong one: it sorts a squash
+merge — which no single action undoes cleanly — onto the same side as inventing a tag, and puts an
+issue close onto the side of things worth pausing over.
+**The test is who has to be involved to undo it.**
+
+- Undoing it is another action this loop can take with the same tools — a revert, a reopen, a second
+  label write, a fresh branch off the same base. **The loop's. It acts, and reports what it did.**
+- Undoing it needs a credential or an act this loop cannot reach, needs somebody outside the project
+  to un-know something, or cannot be undone at all. **It stops, and says why in the same breath.**
+
+Both sides are written out, because a principle without a list is where the stalling comes back.
+
+**The loop's, and it asks about none of them:** triage, labels and milestones; deciding what is
+worth building and refusing what is not; delegating, briefing and re-briefing agents; reviewing, and
+sending work back; pushing an agent's branch and opening the pull request; **merging on green**;
+closing and reopening issues; filing on this project's own tracker; deleting merged branches and
+reaping worktrees; reverting; and deriving a version number from rules the repository already
+states.
+
+**Stops, and names which of these it is:**
+
+| Stop | Why it cannot be taken back |
+| --- | --- |
+| **Tagging a release** | installed users resolve the tag; a moved or deleted one is a different artifact under a name somebody already holds |
+| **Publishing a release object** | it is the delivery, and it lands on machines nobody asked |
+| **Force-pushing or rewriting shared history** | somebody else's clone has already fetched what is being replaced |
+| **Deleting anything with no copy elsewhere** | the `destroys` row below, applied to this loop's own hands |
+| **The embargo path** | a private disclosure cannot be un-sent, and sending it commits this project to somebody else's disclosure timing |
+| **A value the repository genuinely does not state** | inventing one is unrecoverable the same way a tag is; `tag_pattern: null` is the worked example, and a model because it refuses *and says why* |
+
+**Two things look like they belong on that list and do not.** Both are places where stopping is the
+expensive answer, and neither is a detail.
+
+*Filing on a dependency's own tracker.* The section below already settles it in three arms, and the
+duty half is unambiguous: for a dependency the same maintainer owns, filing is part of finishing the
+work, and the refusal that sounds like restraint has already left a reproduced cross-repo defect
+unreported for weeks. What stops is narrower than "somebody else's tracker" — it is the private
+channel, the embargo row above, and not the public one.
+
+*A finding in a row the table below marks blocking.* It stops **the release**, and this loop stops
+it **by itself, without asking** — read the blocking column off the table when you need the set,
+never a copy of it carried up here, because the copy is what drifts and the copy is what gets
+quoted. Every gate on this page is that shape: a gate the loop performs on itself, never a question
+put to the maintainer. `could not run` stops a release the same way, and it stops it without asking
+too. Reading a gate as "ask first" turns a check into a round trip and loses the check.
+
+### What replaces asking
+
+A stall is not the only alternative to a wrong decision.
+**Decide, state the assumption, act, and report it prominently.** The report is what preserves the
+reversal, which makes this a different instruction from "ask" rather than a politer spelling of it.
+The assumption travels with the action — in the state entry and in whatever the maintainer reads
+next — so a wrong one is findable beside the result rather than buried under it.
+
+**A question is right when the answer is genuinely not in the repository and the two branches lead
+to materially different work.** That is the whole permission and it is deliberately narrow: a
+question whose answer is in the config, in the history or on this page is not a question, it is a
+round trip, and two of them were spent inside one release. When a stop is right it carries its
+reason, in the shape `tag_pattern: null` already has.
+
+**Deferring is a stall wearing a schedule's clothes.** *Loop mechanics* below already names the
+tell, and that sentence is the only copy of it — the positive half is what goes missing there:
+while there is disjoint work available and an idle agent to take it, start it.
+Waiting on CI is not a reason to stop working, and deferring to the next tick is not a decision.
+
+### The third state applies to authority too
+
+**"I could not determine whether this was mine to decide" must never render as "I decided it was
+not."** A considered deferral and a stall are indistinguishable from outside — this file's own
+defect class, pointed at its own authority. So say which one happened: name the act, say the
+determination was `undetermined` and what would settle it, and where the act itself is reversible,
+take it and report the assumption rather than parking the work behind a question.
+
 ## The repo block comes from config, and config rots
 
 Read the config first, every tick. It is two files with one merged view:
@@ -76,6 +156,21 @@ there is no op for tagging, releasing or deleting a ref.
 
 Do not assume ops that a repo's `.supertool.json` does not declare. `radar` and `dashboard` live
 behind presets many repos never enable; check before writing an instruction that depends on one.
+
+**Check by probing, and the probe is named here so this cannot become a reason not to look.** A
+caution that names no probe is what got read as permission to skip the reading entirely, and that
+produced a whole tick with no reading of the watcher fleet at all.
+
+```bash
+supertool 'radar:--state'
+```
+
+That call is read-only — it spawns nothing, reaps nothing and calls no API — and it answers in three
+states, the third of which is not the first: **no preset, or no tier registered** (there is no fleet
+to read, and that is said rather than passed over); **tiers are registered** (bare `radar` reads the
+delivery tally); and **the probe itself did not answer**, which is `unknown` and gets reported. Bare
+`radar` heals and forks pollers, so it is a write and a separate, deliberate call — never folded
+into the probe.
 
 ## Deciding what to build
 

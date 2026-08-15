@@ -82,6 +82,8 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
 SETUP_MD = REPO_ROOT / "commands" / "setup.md"
 SCAFFOLD_MD = REPO_ROOT / "commands" / "scaffold.md"
 TICK_MD = REPO_ROOT / "commands" / "tick.md"
+SKILL_MD = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+DEVELOPER_MD = REPO_ROOT / "agents" / "developer.md"
 README_MD = REPO_ROOT / "README.md"
 
 # Mentions no command, no settings file and no subject for identity.md.
@@ -255,6 +257,131 @@ def _carries_the_three_state_worktree_rule(text):
     )
 
 
+# The skill has to state its own authority (#185).
+#
+# `skills/manager/SKILL.md` said what to decide and how to evidence it, and never
+# who decides. The omission has a direction: every ambiguity resolves toward
+# stopping and asking, and three distinct stalls were observed in one day --
+# asking a question the repository already answered, waiting for approval that
+# the invocation already was, and deferring available work to a later tick.
+#
+# So the predicates below require the *boundary*, not a mood. A file can be full
+# of decisive-sounding prose and still leave a reader unable to say which acts
+# are theirs, which is why every fact here names something enumerable: the undo
+# test, both sides of the list, the sentence that replaces "ask", the bound on
+# when a question is right, and the third state.
+#
+# PROPOSING below is a control in its own right, for the same reason CAUTIONING
+# is one above. SILENT never says "merge" or "maintainer" at all, so every
+# predicate fails it for the wrong reason -- and the file this issue is about was
+# not silent, it was decisive-sounding and unbounded.
+# --------------------------------------------------------------------------- #
+
+
+def _states_the_loop_decides_rather_than_proposes(text):
+    return bool(re.search(r"decides and acts; it does not propose", text)) and bool(
+        re.search(r"[Bb]eing invoked is the authority", text)
+    )
+
+
+def _names_the_undo_test(text):
+    """Not "reversible" -- that rule mis-sorts a squash merge and an issue close."""
+    return bool(re.search(r"who has to be involved to undo it", text, re.I)) and bool(
+        re.search(r"reversible versus irreversible.{0,40}wrong one", text, re.I)
+    )
+
+
+#: Acts the loop takes without asking, and acts it stops for. A principle without
+#: a list is where the stalling comes back, so the list is what gets asserted.
+ACTS_THE_LOOP_TAKES = ("merging on green", "closing and reopening", "reaping worktrees")
+ACTS_THAT_STOP = (
+    "Tagging a release",
+    "Publishing a release object",
+    "Force-pushing",
+    "embargo path",
+)
+
+
+#: The two lead-ins that carry the polarity. Each act is required in the half its
+#: own lead-in introduces, and required absent from the other.
+LOOP_LIST_LEAD = "**The loop's, and it asks about none of them:**"
+STOP_LIST_LEAD = "**Stops, and names which of these it is:**"
+
+
+def _enumerates_both_sides_of_the_boundary(text):
+    """Both lists, and every act on the side its lead-in claims.
+
+    A membership test over the whole file was the first spelling and it was wrong:
+    it passes on prose naming every act and putting each on the wrong side, which
+    is not a hypothetical shape -- it is what this file becomes if the boundary is
+    later edited the wrong way round, and it is indistinguishable from the correct
+    file to any check that only asks whether the words are present. REVERSED_BOUNDARY
+    below is that file, and it is a control rather than an illustration.
+    """
+    if LOOP_LIST_LEAD not in text or STOP_LIST_LEAD not in text:
+        return False
+    ours = text.split(LOOP_LIST_LEAD, 1)[1].split(STOP_LIST_LEAD, 1)[0]
+    theirs = text.split(STOP_LIST_LEAD, 1)[1]
+    return all(act in ours and act not in theirs for act in ACTS_THE_LOOP_TAKES) and all(
+        act in theirs and act not in ours for act in ACTS_THAT_STOP
+    )
+
+
+def _says_a_gate_is_not_a_question(text):
+    """The constraint that keeps this from becoming a licence to skip gates."""
+    return bool(re.search(r"gate the loop performs on itself", text)) and bool(
+        re.search(r"stops it .{0,30}without asking", text, re.I)
+    )
+
+
+def _says_deciding_replaces_asking(text):
+    return bool(
+        re.search(r"Decide, state the assumption, act, and report it prominently", text)
+    ) and bool(re.search(r"different instruction from", text))
+
+
+def _bounds_when_a_question_is_right(text):
+    return bool(
+        re.search(r"genuinely not in the repository and the two branches", text)
+    ) and "tag_pattern: null" in text
+
+
+def _says_deferring_is_a_stall(text):
+    return bool(re.search(r"stall wearing a schedule", text, re.I)) and bool(
+        re.search(r"deferring to the next tick is not a decision", text, re.I)
+    )
+
+
+def _says_undetermined_is_not_declined(text):
+    """The third state, pointed at the loop's own authority."""
+    return bool(re.search(r"could not determine whether this was mine to decide", text)) and bool(
+        re.search(r"must never render as", text, re.I)
+    )
+
+
+def _names_the_readonly_watcher_probe(text):
+    """A caution against assuming an op has to name the probe that answers it.
+
+    Deliberately an *invocation*, not a mention. The caution already named
+    `radar`; what the loop did with it was read the warning as permission to skip
+    the reading entirely, so a "does this file say radar" predicate would certify
+    exactly the state being fixed.
+    """
+    return bool(re.search(r"^\s*supertool\s+.*radar:--state", text, re.M))
+
+
+def _points_at_the_managers_authority_clause(text):
+    """The agent's boundary was written down and the maintainer's was not (#185).
+
+    A pointer, deliberately, and not a copy: the list lives in one place for the
+    same reason the ranking table does -- a second copy drifts, and the copy that
+    drifts is the one quoted afterwards.
+    """
+    return "Who decides" in text and bool(
+        re.search(r"the list lives there and is not copied here", text)
+    )
+
+
 # (label, predicate, pattern whose lines carry the fact)
 SETUP_FACTS = [
     ("identity.md describes the agent", _names_the_agent_as_identity_subject, r"who the agent is"),
@@ -305,11 +432,76 @@ TICK_FACTS = [
     ),
 ]
 
+# The skill's statement of its own authority. Split out from SKILL_FACTS below
+# only so the PROPOSING control can be parametrized over exactly these.
+SKILL_AUTHORITY_FACTS = [
+    (
+        "the loop decides rather than proposes",
+        _states_the_loop_decides_rather_than_proposes,
+        r"decides and acts|invoked is the authority",
+    ),
+    (
+        "the undo test is named, not reversibility",
+        _names_the_undo_test,
+        r"who has to be involved to undo it|reversible versus irreversible",
+    ),
+    (
+        "both sides of the boundary are enumerated",
+        _enumerates_both_sides_of_the_boundary,
+        r"merging on green|Tagging a release",
+    ),
+    (
+        "a gate is a check, not a question",
+        _says_a_gate_is_not_a_question,
+        r"performs on itself|without asking",
+    ),
+    (
+        "deciding and reporting replaces asking",
+        _says_deciding_replaces_asking,
+        r"state the assumption, act|different instruction from",
+    ),
+    (
+        "a question is bounded to what the repo does not answer",
+        _bounds_when_a_question_is_right,
+        r"genuinely not in the repository|tag_pattern: null",
+    ),
+    (
+        "deferring to a later tick is a stall",
+        _says_deferring_is_a_stall,
+        r"stall wearing a schedule|deferring to the next tick is not a decision",
+    ),
+    (
+        "undetermined authority is not a declined one",
+        _says_undetermined_is_not_declined,
+        r"could not determine whether this was mine to decide",
+    ),
+]
+
+# The caution against assuming a preset op has to name the probe that answers it.
+SKILL_PROBE_FACTS = [
+    (
+        "the watcher probe is invoked, not just cautioned about",
+        _names_the_readonly_watcher_probe,
+        r"radar:--state",
+    ),
+]
+
+SKILL_FACTS = SKILL_AUTHORITY_FACTS + SKILL_PROBE_FACTS
+
+DEVELOPER_FACTS = [
+    (
+        "the manager's own authority clause is pointed at",
+        _points_at_the_managers_authority_clause,
+        r"Who decides|the list lives there and is not copied here",
+    ),
+]
+
 README_FACTS = [
     ("scaffold is in the launcher path", _names_scaffold_as_the_next_step, r"/oss:scaffold|tracked file"),
 ]
 
 ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + TICK_FACTS + README_FACTS
+ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + SKILL_FACTS + DEVELOPER_FACTS + README_FACTS
 
 # (file, label, predicate, pattern whose lines carry the fact) for every carried fact,
 # so a new surface joins both the real-file assertion and its deletion control at once.
@@ -317,6 +509,8 @@ CARRIED = (
     [(SETUP_MD,) + fact for fact in SETUP_FACTS]
     + [(SCAFFOLD_MD,) + fact for fact in SCAFFOLD_FACTS]
     + [(TICK_MD,) + fact for fact in TICK_FACTS]
+    + [(SKILL_MD,) + fact for fact in SKILL_FACTS]
+    + [(DEVELOPER_MD,) + fact for fact in DEVELOPER_FACTS]
     + [(README_MD,) + fact for fact in README_FACTS]
 )
 CARRIED_IDS = ["{}: {}".format(entry[0].name, entry[1]) for entry in CARRIED]
@@ -368,6 +562,131 @@ def test_a_cautioning_file_fails_every_tick_predicate(label, predicate, _pattern
     assert not predicate(CAUTIONING), (
         "{}: predicate passes on a file that only cautions about the op. "
         "A mention is not an instruction.".format(label)
+    )
+
+
+# A file that reads exactly as #185 describes: it names merging, releasing and the
+# maintainer, sounds decisive about the work, and leaves the reader unable to say
+# which acts are the loop's. SILENT cannot catch that, because SILENT never says
+# "merge" or "maintainer" at all -- every authority predicate fails it for the
+# wrong reason. This fixture is the file the issue was filed against.
+PROPOSING = (
+    "# Manager\n"
+    "\n"
+    "Read the board, decide what is worth building, delegate it, review it hard.\n"
+    "\n"
+    "Check with the maintainer before merging anything, and a release is theirs to\n"
+    "approve. Where a call is not obvious, stop and ask -- the maintainer decides,\n"
+    "and there is always the next tick.\n"
+)
+
+# The same shape one level down: the caution that names an op and no probe for it.
+PROBELESS_CAUTION = (
+    "Do not assume ops that a repo's `.supertool.json` does not declare. `radar` and\n"
+    "`dashboard` live behind presets many repos never enable; check before writing an\n"
+    "instruction that depends on one.\n"
+)
+
+
+# Every act named, and each one under the lead-in for the other side. This is not
+# a silent file and not a vague one -- it is the file that results from editing the
+# boundary the wrong way round, and a predicate that only asks whether the words
+# appear cannot tell it from the real one.
+REVERSED_BOUNDARY = (
+    "## Who decides\n"
+    "\n"
+    "**The loop's, and it asks about none of them:** Tagging a release,\n"
+    "Publishing a release object, Force-pushing a shared branch, the embargo path.\n"
+    "\n"
+    "**Stops, and names which of these it is:**\n"
+    "\n"
+    "| Stop | Why |\n"
+    "| --- | --- |\n"
+    "| **merging on green** | somebody ought to look at it first |\n"
+    "| **closing and reopening** an issue | the maintainer's call |\n"
+    "| **reaping worktrees** | ask before removing anything |\n"
+)
+
+
+def test_a_boundary_stated_the_wrong_way_round_is_caught():
+    """The must-fire half for the one predicate whose subject is a *list*.
+
+    Two assertions before the discrimination, because both of the ways this test
+    can go quietly useless are invisible from its result:
+
+    - the fixture might stop naming the acts, which is what a typo in it produces,
+      and then the predicate fails it for the same reason it fails SILENT;
+    - the fixture might not actually be adversarial, and a control that the
+      superseded predicate ALSO rejected proves nothing about what replaced it.
+      So the superseded spelling is written out here and asserted to pass on it.
+    """
+    for act in ACTS_THE_LOOP_TAKES + ACTS_THAT_STOP:
+        assert act in REVERSED_BOUNDARY, act
+
+    membership_only = all(act in REVERSED_BOUNDARY for act in ACTS_THE_LOOP_TAKES) and all(
+        act in REVERSED_BOUNDARY for act in ACTS_THAT_STOP
+    )
+    assert membership_only, "the fixture is not the one the old predicate accepted"
+
+    assert not _enumerates_both_sides_of_the_boundary(REVERSED_BOUNDARY)
+    # And the must-not-fire half, against the file that has it the right way round.
+    assert _enumerates_both_sides_of_the_boundary(SKILL_MD.read_text(encoding="utf-8"))
+
+
+def test_the_authority_controls_actually_name_their_subjects():
+    """The positive control for the two controls below.
+
+    A fixture that stopped naming its subject would make the tests under it pass
+    for the same reason SILENT does, and the discrimination they exist to prove
+    would go untested while still reporting green.
+    """
+    for term in ("merging", "maintainer", "release", "next tick"):
+        assert term in PROPOSING, term
+    assert "radar" in PROBELESS_CAUTION
+    # And the deletion patterns are not vacuous: each must select at least one
+    # line of the real file, or `test_deleting_the_carrying_lines_fails_the_predicate`
+    # deletes nothing, asserts against an unmodified file, and passes on a fact the
+    # surface never carried. Counted in LINES, not compared as strings: the first
+    # spelling of this guard was `_without_lines_matching(text, pattern) != text`,
+    # which is true of every file ending in a newline whatever the pattern selects,
+    # because the join drops it -- a guard that could not fail, in the test written
+    # to stop a guard that could not fail.
+    for path, label, _predicate, pattern in CARRIED:
+        text = path.read_text(encoding="utf-8")
+        kept = _without_lines_matching(text, pattern)
+        assert len(kept.splitlines()) < len(text.splitlines()), (
+            "{}: {}: the pattern {!r} selects no line of the file, so its deletion "
+            "control deletes nothing".format(path.name, label, pattern)
+        )
+
+
+@pytest.mark.parametrize(
+    "label,predicate,_pattern", SKILL_AUTHORITY_FACTS, ids=[f[0] for f in SKILL_AUTHORITY_FACTS]
+)
+def test_a_proposing_file_fails_every_authority_predicate(label, predicate, _pattern):
+    """Sounding decisive is not stating a boundary.
+
+    Every stall #185 records was produced by a file full of confident prose that
+    never said who decides, so a predicate satisfied by confident prose would
+    certify the exact state being reported as fixed.
+    """
+    assert not predicate(PROPOSING), (
+        "{}: predicate passes on a file that only sounds decisive and still "
+        "defers every call to the maintainer.".format(label)
+    )
+
+
+def test_a_cautioning_file_fails_the_probe_predicate():
+    """Mentioning an op is not naming the probe that answers whether it is there.
+
+    The skill cautioned against assuming `radar`, correctly, and that caution was
+    read as licence to skip the reading entirely -- so a predicate satisfied by
+    the caution would certify the state this fix exists to change.
+    """
+    assert not _names_the_readonly_watcher_probe(PROBELESS_CAUTION)
+    # The must-fire half, same fixture: with the probe invocation present it does.
+    assert _names_the_readonly_watcher_probe(
+        PROBELESS_CAUTION + "\n```bash\nsupertool 'radar:--state'\n```\n"
     )
 
 
