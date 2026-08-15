@@ -137,6 +137,14 @@ UNRESOLVED_SITES = {
     "doctor.py": {
         # `compare_versions(...)` -> current / behind / ahead / unknown.
         "dependency_findings": 1,
+        # `_jit_layer_verdict(...)` -> reads / unread / could-not-determine / no-layer.
+        # Seven causes fan into one emission on purpose, so the level table has one place
+        # to consult. That is the fan-in this file's docstring says no static pass here
+        # can see -- and the compensating guard is named rather than assumed:
+        # `tests/test_jit_layer_readers.py::test_every_state_this_check_emits_has_a_level`
+        # drives all four states through fixtures, asserts the set was *observed*, and
+        # only then checks `doctor.JIT_LAYER_LEVELS` against it.
+        "jit_layer_readers": 1,
     },
 }
 

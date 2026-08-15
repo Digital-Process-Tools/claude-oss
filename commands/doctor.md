@@ -84,6 +84,32 @@ The line describes the **effect of re-running**, which is true either way — an
 caveat that a deliberate edit goes with the re-run, because owned files are replaced
 wholesale and the maintainer is the only one who knows whether they made one.
 
+## The `jit rule layer` line — indexed is not read
+
+`.claude/jit-context/*/01-oss/` is this plugin's own rule layer. The check above it answers *will
+the matcher find these rows*; this one answers the question nobody asked until #119, which is
+*does anything look in that directory at all*. For the whole life of the layer the answer was no:
+`claude-jit-context` enumerated layers from a fixed list of four names in three hooks and `01-oss`
+was not one of them, so every rule in it was written, indexed, reported clean — and read by nothing.
+
+It is measured against the hook scripts of the installed version, not inferred from a version
+number. Four things it can say:
+
+- **`… names 01-oss in its layer list …`**, at `OK` — the rules are reachable.
+- **`… enumerates layers from a fixed list that does not include 01-oss …`**, at `WARN` — a real
+  gap with a real consequence. Treat every rule in that layer as inert until an installed version
+  fixes it. The fix belongs to `claude-jit-context`, not here, so there is nothing to run: this is
+  a line to believe, not a line to act on. It clears itself on the next dependency update that
+  carries the fix, which is why it is a `WARN` and not the permanent `OK`-with-a-caveat that
+  `agent dispatch` carries.
+- **`… could not be determined …`**, at `WARN` — nothing was measured. The dependency is not in the
+  install record, its unpacked tree was not found, a hook file would not decode, or the hooks carry
+  no fixed layer list at all. That last one is the expected shape of the upstream fix, so it is
+  reported as *unknown* rather than as a pass **or** as a gap. Do not relay any of these as
+  either — an incomplete scan never settles this question.
+- **`this repo has no .claude/jit-context/*/01-oss/ …`**, at `OK` — nothing to read, so nothing to
+  warn about. `/oss:scaffold` writes the layer if you want it.
+
 Two of the warnings are about CI rather than about setup, and neither is cosmetic:
 
 - **A `test_command` that no workflow runs.** Green then means the changelog was checked
