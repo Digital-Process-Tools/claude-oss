@@ -323,6 +323,50 @@ def fragments_dir(config):
     return value or DEFAULT_FRAGMENTS_DIR
 
 
+def untagged_declaration(config):
+    """This repository's `changelog_untagged`, in its three states.
+
+    Returns `(flag, note)`: the `--untagged` fragment to splice into the generated
+    `--check-links` command line, and one sentence saying which of the three states
+    the caller's config was in.
+
+    The three do not collapse into two. "No flag on the command line" and "declared
+    that nothing is exempt" produce the same audit and are not the same decision, and
+    the second one is a maintainer having thought about it. This plugin's whole
+    premise is that a check which never ran must not render as a check that found
+    nothing, and the same applies one layer up to a declaration nobody made (#121).
+
+    Re-checked here for the same reason `fragments_dir()` is: `render_owned()` reaches
+    this without going near `plan()`, and this value becomes shell source.
+    """
+    value = config.get("changelog_untagged")
+    problem = oss_config.changelog_untagged_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+
+    if value is None:
+        return "", (
+            "changelog_untagged is not declared in .oss.json, so every `## [x.y.z]` "
+            "section below is expected to carry a link ref. That is this file's "
+            "default reading and not a statement anybody made -- declare [] to say "
+            "so deliberately, or list the versions that were never tagged."
+        )
+    if not value:
+        return " --untagged ''", (
+            "changelog_untagged is declared empty in .oss.json: this repository "
+            "states that every release section was tagged. Behaviourally the same as "
+            "declaring nothing, and the empty --untagged below is what makes the "
+            "audit's receipt say which of the two it was."
+        )
+    return " --untagged '{}'".format(",".join(value)), (
+        "changelog_untagged in .oss.json declares {} as never tagged, so no "
+        "`releases/tag/v...` link is expected for {}. A link written for one would "
+        "be a 404 that renders as a working link, which is the failure this "
+        "declaration exists to prevent.".format(
+            ", ".join(value), "them" if len(value) > 1 else "it")
+    )
+
+
 def _render_fragments_readme(config):
     return FRAGMENTS_README.replace("__DIR__", fragments_dir(config))
 
@@ -510,6 +554,7 @@ jobs:
       # a surface a release leaves behind rather than one it reads, so the run that
       # discovers it stale must not be the run cutting the tag (#88).
       - name: CHANGELOG.md's link refs agree with its release headings
+        # __UNTAGGED_NOTE__
         run: |
           set -eu
           # Three states, three exit codes: 0 ok, 1 skipped, 2 refused. Only
@@ -520,7 +565,7 @@ jobs:
           # nobody could yet make green. The receipt is still printed, so a check
           # that could not look says so rather than passing silently.
           status=0
-          python3 __DIR__/assemble_changelog.py --check-links --dir '__FRAGMENTS__' --changelog CHANGELOG.md || status=$?
+          python3 __DIR__/assemble_changelog.py --check-links__UNTAGGED__ --dir '__FRAGMENTS__' --changelog CHANGELOG.md || status=$?
           [ "$status" -ne 2 ] || exit 1
 
       # A change to what this project DOES must say so where users read it.
@@ -645,10 +690,19 @@ def _owned_readme(config, plugin_root):
 
 
 def _owned_workflow(config, plugin_root):
+    flag, note = untagged_declaration(config)
     body = (
         CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR)
         .replace("__FRAGMENTS__", fragments_dir(config))
         .replace("__PACKAGES__", _assembler_packages())
+        .replace("__UNTAGGED__", flag)
+        # Wrapped against the placeholder's own indentation rather than a constant:
+        # the note is a paragraph, and a YAML comment that runs off the line is the
+        # sentence nobody reads. The comment is here because the flag alone cannot
+        # say it -- an absent `--untagged` is exactly what "declared nothing" and
+        # "this template predates the key" both look like.
+        .replace("# __UNTAGGED_NOTE__",
+                 "\n        ".join("# " + line for line in _wrap(note, 72)))
     )
     return _note_comment() + body
 
@@ -1760,7 +1814,15 @@ def _main(argv=None):
     # rule names the assembler by reading the tree for it, and on a first-ever scaffold
     # the vendored copy only exists once `apply()` has written it. Installed first, the
     # very repo being set up would get the could-not-locate rule (#68).
-    rules = oss_rules.install(args.root, fragments_dir=fragments_dir(config))
+    rules = oss_rules.install(
+        args.root,
+        fragments_dir=fragments_dir(config),
+        # The rule prints a command a human copies. Given nothing it printed a generic
+        # explanation of `--untagged` and no version, so the reader had to derive this
+        # repository's answer themselves -- twice, once here and once in the CI leg,
+        # which is exactly the disagreement the key exists to make impossible (#101).
+        untagged=config.get("changelog_untagged"),
+    )
     for path in rules:
         # os.path.relpath, not Path.relative_to: install() returns paths built from the
         # root as GIVEN, and `--root .` is how the command invokes it. relative_to()

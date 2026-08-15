@@ -1315,6 +1315,34 @@ def audit_link_refs(text: str,
     return findings
 
 
+def _untagged_receipt(untagged: Optional[AbstractSet[str]]) -> str:
+    """One line saying which of the three declarations this run was given.
+
+    Not two. `None` (no `--untagged` on the command line) and an empty set
+    (`--untagged ''`) audit the file identically, and a receipt that renders
+    them the same has turned "nobody decided" into "somebody decided nothing"
+    — the absence-read-as-an-answer this file exists to not do, applied to
+    its own output.
+
+    The empty case is reachable on purpose: the workflow this script is
+    vendored into renders `--untagged ''` when a repository declares
+    `changelog_untagged: []`, so the declaration is visible in the CI log of
+    the repository that made it.
+    """
+    if untagged is None:
+        return ("untagged  (none declared) — no --untagged was passed, so every "
+                "`## [x.y.z]` section is expected to carry a link ref. That is "
+                "this run's default reading and not a statement anybody made")
+    if not untagged:
+        return ("untagged  (declared empty) — --untagged was passed naming no "
+                "version: the caller states that every release section here was "
+                "tagged. Same audit as declaring nothing, and a different claim")
+    versions = sorted(untagged)
+    return ("untagged  {0} — declared by the caller as having no tag, so no "
+            "`releases/tag/v...` link was expected for {1}"
+            .format(", ".join(versions), "them" if len(versions) > 1 else "it"))
+
+
 def check_links(changelog: Path,
                 untagged: Optional[AbstractSet[str]] = None) -> int:
     """`--check-links`: audit the table, and say which of the three it did.
@@ -1327,10 +1355,14 @@ def check_links(changelog: Path,
     findings about releases this repository never had.
 
     `None` means the caller declared nothing, which is not the same as
-    declaring that every section is tagged — but it is the only reading
-    available, and the receipt below says so by naming what was declared.
+    declaring that every section is tagged. Both audit the file identically
+    and only one of them is a decision somebody made, so the receipt names
+    which of the three it was given — on `ok` and on `refused` alike, because
+    a reader looking at a finding needs to know whether a declaration existed
+    before the finding means anything.
     """
     declared = UNTAGGED_RELEASES if untagged is None else untagged
+    declaration = _untagged_receipt(untagged)
     try:
         text = changelog.read_text(encoding="utf-8")
     except OSError as exc:
@@ -1343,19 +1375,19 @@ def check_links(changelog: Path,
         _receipt("skipped", "{0}".format(exc))
         return SKIPPED
     if findings:
+        # The count stays the count of findings. The declaration line is a
+        # labelled note in the same shape the `--untagged` refusal already
+        # uses, not a finding -- it is the context the findings are read in.
         _receipt("refused", "{0} finding(s) in {1}'s link ref table"
-                 .format(len(findings), changelog.name), findings)
+                 .format(len(findings), changelog.name),
+                 list(findings) + [declaration])
         return REFUSED
     versions = release_versions(text)
     _receipt("ok", "{0} release section(s) in {1}, parsed with markdown-it-py "
                    "{2}: each has a link ref or is declared untagged, and "
                    "[Unreleased] compares from v{3}"
              .format(len(versions), changelog.name, _MD_VERSION, versions[0]),
-             ["untagged  {0} — declared by the caller as having no tag, so no "
-              "`releases/tag/v...` link was expected for "
-              "{1}".format(", ".join(sorted(declared & set(versions))),
-                           "them" if len(declared & set(versions)) > 1 else "it")]
-             if declared & set(versions) else [])
+             [declaration])
     return OK
 
 

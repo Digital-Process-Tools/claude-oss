@@ -32,6 +32,41 @@ requirement, and a wrong tree costs a read rather than a write.
 Fragment names must parse, the section must be a real Keep a Changelog heading, and the body must be
 a single top-level list with no headings, no raw HTML and no unclosed fences.
 
+## Link refs, and the versions that were never tagged
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check-links --untagged "$(python3 -c 'import json;print(",".join(json.load(open(".oss.json")).get("changelog_untagged") or []))')" --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
+```
+
+`--check-links` refuses when a `## [x.y.z]` section has no link reference definition. If
+that version was never tagged, the missing link is the **correct** state — there is no
+release page to point at, and a `releases/tag/vX.Y.Z` URL written for one is a 404 that
+renders as a working link.
+
+`--untagged` is how that is declared, and the declaration lives in `.oss.json` under
+`changelog_untagged`, not on this command line. Which sections were never tagged is a
+fact about **one** repository, and the same answer has to reach three places — this
+command, the rule under `.claude/jit-context/paths/01-oss/`, and the `oss-changelog.yml`
+leg that gates every pull request. Read it from the config in all three and they cannot
+drift; write it in each and they will. Read `changelog_untagged` from `.oss.json` and
+pass it, as above.
+
+**Its three states are three, not two.** Absent or `null` means nobody declared anything,
+so every release section is expected to carry a link ref — that is the default reading,
+not a statement. `[]` means the repository has declared that every section was tagged;
+same audit, and a decision on record. A list names the exempt versions. The receipt says
+which of the three it was given, on `ok` and on a refusal alike, because a finding about
+a missing link ref means something different depending on whether anyone had answered the
+question.
+
+A declared version with no matching `## [x.y.z]` section is itself a finding. An
+exemption for a section that is not there costs nothing and reports nothing, which is how
+a stale declaration outlives the history it described.
+
+`--untagged` is read by `--check-links` and by nothing else: passed to the fold, to
+`--check` or to `--count`, it is **refused** rather than ignored, because a declaration
+that was never consulted is indistinguishable from one that was honoured.
+
 ## Fold (release only)
 
 ```bash

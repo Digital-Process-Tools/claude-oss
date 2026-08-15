@@ -27,10 +27,11 @@ text — the file name is metadata, and metadata does not survive being read out
 
 ```bash
 python3 scripts/assemble_changelog.py --check
-# `--untagged 0.1.0`: that section was never tagged and has no release page, so no
-# `releases/tag/v0.1.0` link is expected for it. Same declaration the changelog workflow
-# passes; drop it and this refuses (#93).
-python3 scripts/assemble_changelog.py --check-links --untagged 0.1.0
+# `--untagged`: those sections were never tagged and have no release page, so no
+# `releases/tag/vX.Y.Z` link is expected for them. Read from `changelog_untagged` in
+# `.oss.json` rather than typed, so this command, the CI leg and the jit-context rule
+# cannot give three answers to one question (#101). Drop it and this refuses (#93).
+python3 scripts/assemble_changelog.py --check-links --untagged "$(python3 -c 'import json;print(",".join(json.load(open(".oss.json")).get("changelog_untagged") or []))')"
 # Release only: rewrites CHANGELOG.md, deletes fragments. Both flags are required (#67) —
 # the fold will not derive its own target.
 python3 scripts/assemble_changelog.py --version X.Y.Z --dir changelog.d --changelog CHANGELOG.md
