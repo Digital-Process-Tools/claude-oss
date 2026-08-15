@@ -112,7 +112,7 @@ separately rather than one list.
   for the timeout and network instances; wrong for this one — a fixture composing a 300-character
   path is a static fact sitting in the diff, and a reader could have caught it.
 - **Do not ask the filesystem a second question to explain why the first one failed.**
-  `release_delta.py`'s `_read_config` (also #76, so grep it there until that merges) called
+  `release_delta.py`'s `_read_config` (landed with #76, `3e5f6c4`) called
   `path.exists()` from inside the `except` that guards the read, to tell an absent config from an
   unreadable one. `Path.exists()` swallows a short list of errnos and re-raises everything else, so
   an over-long component — or a directory the process cannot traverse — killed the release gate with a
@@ -191,22 +191,78 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-Three of the four claims that stood here are now false, which is why they are being rewritten rather
-than kept: the changelog gate runs on every pull request and has done so on each one this release
-carries, the tracker has gone issue → developer → review → merge repeatedly, and `/oss:setup`'s probe
-is code rather than prose since `--probe` landed.
+**Measured at `c6b7bd4`, seventeen merged pull requests after `v0.3.0`** — `git log v0.3.0..main
+--oneline | wc -l`. Every claim below is graded **observed** (a named command produced it) or
+**reasoned** (argued from code that was read, not run), because that is what the rest of this file
+demands and this is the section where it matters most. **Re-derive this at each release rather than
+editing it.** The version it replaces was written for `v0.3.0`; by the seventeenth merge every claim
+in it had moved, silently, in the file every agent reads first.
 
-What remains unproven is the part that matters most, and it moved while this release was being cut.
-Most of what this release says about a *scaffolded* repo still rests on tests and scratch runs rather
-than on a repo somebody maintains. But the path was walked once, on
-`Digital-Process-Tools/claude-5h-window-spread`, and it produced two defects within the hour — the
-`release` block of `.oss.json` being project-scope while `/oss:setup` git-excludes the whole file, and
-a null `commit_subject` with no defined behaviour beside a null `tag_pattern` that has one.
+### How far the loop has actually reached — observed
 
-One real use, two findings. Treat the ratio as the measurement it is: the surface is thin because it
-has barely been touched, not because it is sound.
+`/oss:setup` has produced a **committed** `.oss.json` on two sibling repositories besides this one
+(`gh api repos/OWNER/NAME/contents/.oss.json` across the org: two hits, first committed 2026-08-14
+and 2026-08-15). `/oss:scaffold --apply` has reached **none** of them — no `.oss/`, no
+`.github/workflows/oss-changelog.yml`, no `.claude/jit-context/*/01-oss/`. That last one is decisive
+rather than suggestive: the rule layer is not part of the trio scaffold is allowed to decline, so its
+absence cannot be a decline. Both repos carry a hand-written `CLAUDE.md` and their own `00-manual`
+rule layers, neither of which this plugin wrote.
 
-The owned files also only reach an already-scaffolded repo when someone re-runs `/oss:scaffold`
-there, and nothing tells them to.
+**Config-writing has reached three repositories. Furniture-writing has reached one — this one.**
+
+The repository the previous version of this section named as the one real use carries no `.oss.json`
+at all. That is not proof the run never happened: `--split` never runs `git add`, so a setup can be
+complete on disk and invisible from outside. It means the run is **unobservable**, and the section
+reported it as a measurement anyway. That is why *"one real use, two findings"* is retired rather
+than updated — it was a ratio computed from one unverifiable sample and then quoted as the rate at
+which defects surface here.
+
+### What replaces the ratio
+
+- **Dogfooding still finds what the suite cannot** — observed. `python3 scripts/doctor.py --root .`
+  in a worktree of this branch prints `VERDICT: not usable -- 4 failure(s), 6 warning(s)` on a tree
+  whose CI is green. Four of those are `.oss.local.json` being git-excluded and therefore absent from
+  every worktree by construction; nothing in `tests/` would notice.
+- **A rule can be written, shipped, indexed, reported healthy — and read by nothing.** Observed, and
+  the sharpest instance this repo has produced of the class it is named after. Every rule under
+  `.claude/jit-context/*/01-oss/` has been inert since the layer existed: `claude-jit-context` 0.3.5
+  enumerates layers from a literal `split("00-manual 10-auto 20-grouped 30-crosscutting", …)` in
+  three hooks (`pre-path-hook.sh:308`, `pre-prompt-hook.sh:173`, `pre-tool-hook.sh:721`), and its
+  tools dimension additionally reads one hardcoded index path. Confirmed here against the installed
+  version, and upstream with the positive control that makes it a measurement rather than an
+  inference — identical content fires under `00-manual` and does not fire under `01-oss`. #119 here,
+  the dependency's #176 there, both open; #156 made `doctor` report it in four states, keyed on the
+  *shape* of a fixed layer list rather than on today's spelling. **The rules are still inert**, and
+  nothing in this repository can change that.
+- **CI settles what a local run cannot** — reasoned, not re-observed. Two entries in the traps list
+  above were written after a green macOS suite and a red matrix on the same commit. This section
+  read them; it did not re-run them.
+
+### What #147 changed, and what it did not
+
+`/oss:setup` now ends by *running* `scripts/scaffold.py --root . --config .oss.json` and relaying the
+plan in three outcomes, rather than naming `/oss:scaffold` in prose (`1f3eacc`, `commands/setup.md`).
+So the sentence this section used to close on — *"the owned files only reach an already-scaffolded
+repo when someone re-runs `/oss:scaffold` there, and nothing tells them to"* — splits:
+
+- **The second half is now false.** Two things tell them. Setup's plan names `/oss:scaffold` even on
+  `PLAN: 0 to create`, precisely because owned files are replaced on every run. And `/oss:doctor`'s
+  `owned_drift` says *what* re-running would change — a drifted gate versus moved comments — which is
+  the only signal that a repo scaffolded last week is carrying a stale one.
+- **The first half stands.** Both are commands somebody must choose to run, and nothing schedules
+  either. It is also untestable in the field either way: **no repository outside this one has owned
+  files that could go stale**, so the failure mode has never been observed. Reasoned from the
+  ownership contract, not measured.
+
+### Still the most important sentence here
+
+Most of what this plugin claims about a *scaffolded* repository rests on tests and scratch runs
+rather than on a repo somebody maintains through it. That stood at `v0.3.0`, and it is re-earned
+rather than inherited — the measurement above re-earned it **downward**. The surface is thin because
+it has barely been touched, not because it is sound.
+
+`tests/test_claude_md_currency.py` asserts that this section names the release and the commit it was
+measured at, and nothing more. It cannot check that a claim above is true and does not try; it turns
+a section that goes stale silently into one that goes stale visibly.
 
 Treat this as tested, not proven.
