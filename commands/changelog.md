@@ -34,9 +34,27 @@ a single top-level list with no headings, no raw HTML and no unclosed fences.
 
 ## Link refs, and the versions that were never tagged
 
+Read `changelog_untagged` from `.oss.json` first, and build the invocation from **which of
+its three states** you found. Do not collapse them with `or []` or any other falsy test:
+`null` and `[]` are both falsy and mean different things, and a one-liner that maps the
+first onto the second reports "declared empty" for a repository that declared nothing —
+the defect this key exists to remove, reintroduced at the surface that documents it.
+
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check-links --untagged "$(python3 -c 'import json;print(",".join(json.load(open(".oss.json")).get("changelog_untagged") or []))')" --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
+# absent or null -- nobody declared anything. Pass no --untagged at all.
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check-links --dir 'changelog.d' --changelog CHANGELOG.md
+
+# [] -- declared that every release section was tagged.
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check-links --untagged '' --dir 'changelog.d' --changelog CHANGELOG.md
+
+# a list -- comma-separated, in the order you found them.
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check-links --untagged '0.1.0' --dir 'changelog.d' --changelog CHANGELOG.md
 ```
+
+Three commands rather than one clever line, because the clever line is where the bug goes.
+Substitute `changelog_dir` for `changelog.d` as the check above does; the versions are
+validated as `x.y.z` before they are ever written into a workflow, so they carry nothing a
+shell reads as an instruction.
 
 `--check-links` refuses when a `## [x.y.z]` section has no link reference definition. If
 that version was never tagged, the missing link is the **correct** state — there is no
@@ -48,8 +66,7 @@ renders as a working link.
 fact about **one** repository, and the same answer has to reach three places — this
 command, the rule under `.claude/jit-context/paths/01-oss/`, and the `oss-changelog.yml`
 leg that gates every pull request. Read it from the config in all three and they cannot
-drift; write it in each and they will. Read `changelog_untagged` from `.oss.json` and
-pass it, as above.
+drift; write it in each and they will.
 
 **Its three states are three, not two.** Absent or `null` means nobody declared anything,
 so every release section is expected to carry a link ref — that is the default reading,

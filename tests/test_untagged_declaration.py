@@ -25,6 +25,7 @@ built from the same fixture, because an assertion that a flag is absent from a
 string also passes when the renderer produced nothing at all.
 """
 
+import re
 import shlex
 import subprocess
 import sys
@@ -424,3 +425,62 @@ def test_this_repositorys_workflow_and_config_declare_the_same_versions():
             "'which versions were never tagged' have drifted".format(
                 name, versions, sorted(declared))
         )
+
+# --------------------------------------------------------------------------- #
+# The collapse, guarded where it actually happened
+# --------------------------------------------------------------------------- #
+
+#: `x or []` is the idiomatic Python way to default a value, and it is exactly
+#: wrong here: `None` and `[]` are both falsy and mean different things. The
+#: first draft of this change shipped that expression in two documented command
+#: lines, so every repository that had declared nothing would have been told, by
+#: the tool that exists to keep the two apart, that it had declared empty. Found
+#: in review rather than by a test, which is why there is now a test.
+_EMPTY_LITERALS = r"\[\s*\]|" + chr(34) * 2 + "|" + chr(39) * 2
+COLLAPSE_RE = re.compile(
+    r"changelog_untagged[^\n]{0,80}?\bor\b\s*(?:" + _EMPTY_LITERALS + r")")
+
+#: Every surface that could build the declaration into a command.
+COLLAPSE_SURFACES = (
+    REPO_ROOT / "commands" / "changelog.md",
+    REPO_ROOT / "changelog.d" / "README.md",
+    REPO_ROOT / "scripts" / "scaffold.py",
+    REPO_ROOT / "scripts" / "oss_rules.py",
+    REPO_ROOT / "scripts" / "oss_config.py",
+    REPO_ROOT / "README.md",
+)
+
+
+def test_the_collapse_detector_fires_on_the_expression_it_is_named_for():
+    """The control. A regex that matches nothing turns the sweep below into a
+    sweep that never looked -- which is this repository's whole subject."""
+    assert COLLAPSE_RE.search(
+        'join(json.load(open(".oss.json")).get("changelog_untagged") or [])')
+    assert COLLAPSE_RE.search('u = config.get("changelog_untagged") or []')
+    # The must-not-fire half, in the same fixture: reading the key without
+    # collapsing it, and an unrelated `or []`, are both fine.
+    assert not COLLAPSE_RE.search('u = config.get("changelog_untagged")')
+    assert not COLLAPSE_RE.search('versions = config.get("version_sites") or []')
+
+
+def test_no_surface_folds_absent_and_empty_together():
+    seen = 0
+    offenders = []
+    for path in COLLAPSE_SURFACES:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        seen += text.count("changelog_untagged")
+        for number, line in enumerate(text.splitlines(), 1):
+            if COLLAPSE_RE.search(line):
+                offenders.append("{}:{}: {}".format(path.name, number, line.strip()))
+
+    assert seen, (
+        "no surface mentions changelog_untagged at all, so this sweep checked "
+        "nothing -- either the key was renamed or COLLAPSE_SURFACES is stale"
+    )
+    assert not offenders, (
+        "these default an absent declaration to an empty one. Both are falsy "
+        "and they are different states: absent is 'nobody decided', empty is "
+        "'this repository decided nothing is exempt'. " + "; ".join(offenders)
+    )

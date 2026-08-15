@@ -1222,6 +1222,16 @@ def _first_release_links(lines: List[str], version: str) -> Tuple[str, List[str]
 # fallback for a caller that declared nothing, and an empty set means "no
 # version is declared untagged", which is true of every repo by default.
 #
+# Where the caller keeps its answer is the caller's business and this file has
+# no opinion on it -- the flag is the whole interface. A repository managed by
+# the plugin that vendors this script keeps it in `.oss.json` and renders it
+# into the CI leg, the checking command and the editor rule from there, so one
+# question has one answer; a repository using this script on its own writes it
+# wherever it writes such things. Either way, nothing here reads a config file:
+# a shared tool that went looking for one would find whichever repository it
+# happened to be standing in, which is the failure the emptied constant above
+# is the scar from.
+#
 # Nothing here declares a floor above which the set may not grow. Upstream's
 # comment cited a test enforcing one; that test was not vendored with the
 # script, and a citation to a file this repository does not have reads exactly
