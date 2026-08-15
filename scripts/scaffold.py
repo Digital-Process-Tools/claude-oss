@@ -1058,6 +1058,15 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rule
     preview assembled from somebody else's plan is no longer a preview of this run.
     """
     if path is not None:
+        # A path a person typed, against paths this plugin builds with `/` on every
+        # platform (see `_rule_layer_path`). The three membership tests below are string
+        # equality, so a Windows maintainer typing the separator their shell completes
+        # with was told the file "is not a known template, owned file or rule" -- which
+        # reads exactly like the file not existing. Normalising here can only turn a miss
+        # into a hit: nothing in the known set contains a backslash, and `show` renders
+        # generated content rather than reading the named file, so no normalisation can
+        # send it to a different file than the caller meant.
+        path = path.replace("\\", "/")
         # templates_for, not TEMPLATES: one default is named by the config -- the
         # fragment directory README. The bare form below walks plan(), which is
         # already config-aware, so looking a single path up in the module-level dict
@@ -1175,6 +1184,47 @@ def _layer_scan(repo_root, dimensions):
     return found, unreadable
 
 
+def _one_line(detail):
+    """A repo-derived detail, safe to drop into a line this loop prints.
+
+    The detail is built out of filenames in somebody else's repository, so it is data.
+    A newline in one ends the ``layer    `` line and starts whatever follows at column 0
+    of a CI log or a receipt -- which is #173 and #180's shape (a value reaching a
+    generated file and injecting at column 0) arriving through a different door, since a
+    newline is a legal POSIX filename character and nothing upstream refuses one.
+
+    Flattened rather than dropped, and rather than refused. The name is evidence about
+    the repository and the reader needs it; what it must not have is a line of its own.
+    ``oss_rules._inline()`` does the same job one layer over, for a Markdown code span,
+    and wraps in backticks that would be noise here.
+    """
+    return " ".join(str(detail).split())
+
+
+def _join_names(names):
+    """Sorted, deduped, and each one flattened onto a single line.
+
+    Every name in these lists comes out of the repository being inspected, so it is
+    data -- and this string is printed. It reaches ``plan()``'s three ``decline`` rows,
+    ``check_changelog_gate``'s finding, ``plan_rules()``'s ``layer`` note, and
+    ``/oss:doctor``'s owned-files line, which consumes this function's return value. A
+    newline is a legal POSIX filename character and nothing upstream refuses one, so a
+    file named across two lines ends the line it is printed on and starts the rest at
+    column 0 of a CI log or a receipt somebody parses. That is #173 and #180's shape
+    reaching a receipt rather than a generated file.
+
+    Fixed at the chokepoint rather than at the four call sites, for the reason
+    ``fragments_dir()`` gives one function up: one guard where the value is built beats
+    each caller remembering (#31), and one of those callers is in a file this change
+    could not edit.
+
+    Flattened, not dropped and not refused. The name is the evidence a maintainer needs
+    in order to judge whether the detected gate is real; what it must not have is a line
+    of its own.
+    """
+    return ", ".join(sorted(set(_one_line(name) for name in names)))
+
+
 def _rules_gate(repo_root, config, force_owned=False):
     """The ``gate`` argument ``oss_rules.install()`` is called with, decided once.
 
@@ -1240,6 +1290,10 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
     ``basis``
         Where the two tree-dependent inputs came from, in prose. See below -- this is the
         half a faithful preview turns on.
+    ``gate``
+        The ``gate`` argument ``--apply`` would hand ``oss_rules.install()``. Returned
+        rather than recomputed by the caller, because ``_detect_changelog_gate`` walks
+        the whole repository and this function has already paid for one.
     ``detail``
         Present only when ``state`` is ``"unknown"``: why.
 
@@ -1295,7 +1349,9 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
                 "why it is missing is answered from the changelog-gate state {!r} ({}), "
                 "read before the writes -- the same answer --apply reads after them, "
                 "because the scan excludes this plugin's own oss-changelog.yml and {}/ "
-                "by name.".format(gate_state, gate_detail or "no detail", OWNED_DIR)
+                "by name.".format(
+                    gate_state, gate_detail or "no detail", OWNED_DIR
+                )
             )
 
     try:
@@ -1312,6 +1368,7 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
             "entries": [],
             "unreadable": [],
             "basis": basis,
+            "gate": gate,
             "detail": (
                 "the {} rule layer could NOT be previewed ({}). --apply would still "
                 "delete and rewrite it, and how many files that is cannot be reported "
@@ -1359,6 +1416,7 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
         "entries": rows,
         "unreadable": unreadable,
         "basis": basis,
+        "gate": gate,
         "detail": None,
     }
 
@@ -2043,12 +2101,12 @@ def _detect_changelog_gate(repo_root, config):
         # unread part of the tree is still carried in the detail rather than dropped.
         # Both states decline the trio, so this changes nothing about what is written;
         # it changes what a maintainer reading the receipt is told they overrode.
-        detail = "already present: {}".format(", ".join(sorted(set(signals))))
+        detail = "already present: {}".format(_join_names(signals))
         if unreadable:
-            detail += "; and could not read: {}".format(", ".join(sorted(set(unreadable))))
+            detail += "; and could not read: {}".format(_join_names(unreadable))
         return "found", detail
     if unreadable:
-        return "unknown", "could not read: {}".format(", ".join(sorted(set(unreadable))))
+        return "unknown", "could not read: {}".format(_join_names(unreadable))
     return "none", ""
 
 
@@ -2326,8 +2384,10 @@ def _main(argv=None):
         # entirely for a single non-rule path: a gate walk that answers a question
         # nobody asked is cost, and its notes would be noise over one file's body.
         rules_plan = None
-        if show_path is None or show_path in rule_layer_paths():
-            rules_plan = plan_rules(args.root, config, force_owned=args.force_owned)
+        if show_path is None or show_path.replace("\\", "/") in rule_layer_paths():
+            rules_plan = plan_rules(
+                args.root, config, force_owned=args.force_owned, entries=entries
+            )
             for line in rules_notes(rules_plan):
                 print("layer    {}".format(line))
         try:
@@ -2408,17 +2468,25 @@ def _main(argv=None):
     # layer before rewriting it, so a rule this version no longer ships is deleted and
     # nothing here used to mention it -- and a preview that promises a deletion the
     # receipt never confirms is only half a fix for #182.
-    rules_plan = plan_rules(args.root, config, force_owned=args.force_owned)
+    #
+    # `entries` is the pre-write plan, and reusing it here is safe rather than merely
+    # cheap: the only thing read out of it is the action on the OWNED files, and
+    # `plan()` decides those from the gate state and `--force-owned` alone, never from
+    # what is on disk. Recomputing would walk the whole repository again to reach the
+    # same answer.
+    rules_plan = plan_rules(
+        args.root, config, force_owned=args.force_owned, entries=entries
+    )
     for entry in rules_plan["entries"]:
         if entry["action"] == "remove":
             print("removed  {}  ({})".format(entry["path"], entry["reason"]))
     for line in rules_notes(rules_plan, include_basis=False):
         print("layer    {}".format(line))
 
-    # `_rules_gate` decides, here and in the preview, so the two cannot drift.
-    gate, _gate_state, _gate_detail = _rules_gate(
-        args.root, config, force_owned=args.force_owned
-    )
+    # The gate `plan_rules` already decided, through `_rules_gate`. Taken from there
+    # rather than asked for again: it costs a second walk of the repository, and two
+    # reads are two chances for the preview and the write to disagree.
+    gate = rules_plan["gate"]
     rules = oss_rules.install(
         args.root,
         fragments_dir=fragments_dir(config),

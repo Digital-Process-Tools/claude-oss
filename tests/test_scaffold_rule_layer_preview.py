@@ -357,3 +357,83 @@ def test_the_show_output_names_the_rule_files(tmp_path, capsys):
     out = capsys.readouterr().out
     assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" in out
     assert "would replace (rewritten every run)" in out
+
+# ------------------------------------------- what the repo under inspection gets to say
+
+
+def test_a_newline_in_a_filename_cannot_start_a_line_of_its_own_in_the_layer_note(
+    tmp_path, capsys
+):
+    """The gate detail is built from filenames in somebody else's repository.
+
+    It is data, and #182 put it in a line this loop prints and people read. A newline in
+    one would end the `layer    ` line and start whatever follows at column 0 of a CI log
+    -- the shape #173 and #180 closed for `.oss.json` values reaching a generated
+    CLAUDE.md, arriving here through a different door.
+
+    The fixture is measured, not assumed: a newline is legal in a POSIX filename and
+    refused by Windows, so the test creates the file and skips with what went untested
+    when it cannot.
+    """
+    config = _write_config(tmp_path)
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    body = "on: [pull_request]\njobs:\n  x:\n    steps:\n      - run: assemble_changelog\n"
+    # The positive control, and the reason an empty `layer` line cannot pass this test:
+    # an ordinary name that must appear in the detail whatever happens to the odd one.
+    (workflows / "ordinary.yml").write_text(body, encoding="utf-8")
+    hostile = workflows / "ev\nil.yml"
+    try:
+        hostile.write_text(body, encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        pytest.skip(
+            "this platform refused a filename containing a newline ({}); the layer "
+            "note's handling of one went untested here".format(exc)
+        )
+
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
+    out = capsys.readouterr().out
+    layer_lines = [line for line in out.splitlines() if line.startswith("layer    ")]
+
+    # Must fire: the note is rendered at all, and names the ordinary workflow.
+    assert layer_lines, out
+    assert any("ordinary.yml" in line for line in layer_lines), layer_lines
+    # Must fire: the hostile name is still reported, flattened rather than dropped --
+    # suppressing it would trade a forged line for a silent one.
+    assert any("ev il.yml" in line for line in layer_lines), layer_lines
+    # Must not fire: it did not get a line of its own.
+    assert "ev\nil.yml" not in out, out
+
+
+# ----------------------------------------------------- --show takes a path a user types
+
+
+def test_show_accepts_a_path_with_the_local_separator(tmp_path):
+    """`--show` compares a typed string against forward-slash paths.
+
+    Every generated path this plugin knows is built with `/` on purpose, so the three
+    membership tests in `show()` are string equality against forward slashes -- and a
+    Windows maintainer typing the separator their shell completes with was told the file
+    "is not a known template, owned file or rule", which is indistinguishable from the
+    file not existing. #182 is the first change to advertise a path deep enough
+    (`.claude/jit-context/paths/01-oss/oss-config.md`) that anybody would type it.
+
+    Asserted on every platform rather than behind a Windows branch: the subject is a
+    string the user typed, not a path the OS produced, so a backslash form is a real
+    input everywhere, and a platform branch here would make the assertion vacuous on the
+    two legs that pass today.
+    """
+    rule = ".claude/jit-context/vocabulary/01-oss/oss-state.md"
+    assert scaffold.show(tmp_path, _config(), path=rule.replace("/", "\\")) == [
+        (rule, "replace", oss_rules.STATE_FILE)
+    ]
+    template = ".github/ISSUE_TEMPLATE/bug_report.md"
+    assert scaffold.show(tmp_path, _config(), path=template.replace("/", "\\")) == [
+        (template, "create", scaffold.render(template, _config()))
+    ]
+    # Positive control: normalising separators did not turn the refusal off. A path that
+    # is genuinely not ours is still refused, in both spellings.
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.show(tmp_path, _config(), path="NOT_A_TEMPLATE.md")
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.show(tmp_path, _config(), path=".claude\\jit-context\\paths\\01-oss\\nope.md")
