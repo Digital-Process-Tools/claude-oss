@@ -1596,12 +1596,14 @@ DISPATCHING_DIRECTORIES = ("commands", "skills", "agents")
 # hunting for. What #140 needs is that the report is not SILENT about agents, which is
 # what produced two wrong diagnoses; it does not need a finding invented to carry it.
 #
-# The wording deliberately avoids "not checked", which #140 suggested. That phrase is
-# already taken: two suites assert it appears for every unmeasured label when .oss.json
-# is absent and appears NOWHERE when it is present, so it means exactly "the config was
-# missing, so this check could not look". Reusing it for a fact that is unobservable in
-# principle would make a maintainer read a configured repo as a misconfigured one -- and
-# would silently retire an invariant, which is a worse outcome than picking a phrase.
+# The wording deliberately avoids "not checked", which #140 suggested -- and so does
+# every other branch of this function. That phrase is already taken: two suites assert
+# it appears for every unmeasured label when .oss.json is absent and appears NOWHERE
+# when it is present, and `commands/doctor.md` tells its reader all five of its uses
+# mean the config was missing, so nothing below is evidence either way. Reusing it for
+# a fact that is unobservable in principle would make a maintainer read a configured
+# repo as a misconfigured one, and would silently retire an invariant -- a worse outcome
+# than picking a phrase.
 NOT_OBSERVABLE_HERE = (
     "whether this session can dispatch to them cannot be determined from here -- it is "
     "a fact about the harness's agent registry, which no script can read; if a spawn "
@@ -1655,12 +1657,18 @@ def agent_dispatch(plugin_root=None):
                 dispatched.setdefault(name, set()).add(path.name)
 
     lines = []
+    # "could not be checked", never "not checked". `commands/doctor.md` enumerates the
+    # five labels that say `not checked` and tells its reader that all of them mean one
+    # thing: .oss.json was absent, so nothing below is evidence either way. These
+    # branches are a sixth source with a different cause -- the plugin's own tree is
+    # empty or unreadable, which IS a finding about the plugin -- and borrowing the
+    # phrase would have a reader wave it off as expected fallout from unset config.
     if not scanned and not unreadable:
         return [
             (
                 "WARN",
-                "agent dispatch: not checked -- no documents found under {} in {}, so "
-                "nothing was cross-referenced".format(
+                "agent dispatch: could not be checked -- no documents found under {} in "
+                "{}, so nothing was cross-referenced".format(
                     "/, ".join(DISPATCHING_DIRECTORIES) + "/", root
                 ),
             )
@@ -1680,7 +1688,8 @@ def agent_dispatch(plugin_root=None):
         return lines + [
             (
                 "WARN",
-                "agent dispatch: not checked -- agents/ could not be listed ({}), so "
+                "agent dispatch: could not be checked -- agents/ could not be listed "
+                "({}), so "
                 "there was nothing to check the dispatched names against".format(
                     _one_line(str(exc))
                 ),
@@ -1704,7 +1713,8 @@ def agent_dispatch(plugin_root=None):
         lines.append(
             (
                 "WARN",
-                "agent dispatch: not checked -- {} document(s) read and none spawns an "
+                "agent dispatch: could not be checked -- {} document(s) read and none "
+                "spawns an "
                 "oss: agent, so nothing was cross-referenced".format(scanned),
             )
         )

@@ -25,7 +25,7 @@ Read the config first, every tick. It is two files with one merged view:
 
 - **`.oss.json`** — tracked, the project's answer, the same for every maintainer: `repo`,
   `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`,
-  `docs_targets`, `labels`, `ci.required_checks`, `release`.
+  `docs_targets`, `labels`, `release`.
 - **`.oss.local.json`** — git-excluded, this machine's answer, three keys that each name a directory
   on one person's disk: `clone`, `worktree_root`, `state_file`.
 

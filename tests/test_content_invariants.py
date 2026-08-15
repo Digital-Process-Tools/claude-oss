@@ -1310,7 +1310,11 @@ def test_the_round_cap_check_fires_on_the_cap_as_it_was_stated_before():
 # spawn whose name does not resolve must land in the third state and must have a
 # defined next step, in the two documents that dispatch one.
 
-AGENT_DISPATCH_RE = re.compile(r'subagent_type:\s*"oss:([a-z0-9-]+)"')
+# Character class kept identical to doctor.py's AGENT_DISPATCH_RE on purpose. A test
+# regex narrower than the production one goes dark silently: the first `oss:` name with
+# an underscore or a capital would still be cross-referenced at runtime and would stop
+# being seen here, and a guard that quietly stopped matching reports clean.
+AGENT_DISPATCH_RE = re.compile(r'subagent_type:\s*"oss:([A-Za-z0-9_-]+)"')
 
 # Each dispatching document, and the definition file its own fallback must point at.
 DISPATCHING_DOCUMENTS = [
@@ -1451,6 +1455,21 @@ def _dispatched_agent_names(documents):
     return found
 
 
+def test_this_scan_and_doctors_use_the_same_pattern():
+    """A comment saying "keep these identical" is not a guard. doctor.py runs the same
+    cross-reference at runtime; if the two patterns drift, one of them stops seeing a
+    dispatch the other still sees, and the narrower one reports clean while checking
+    less. Compared as text because the two live in different modules.
+    """
+    doctor_source = (REPO_ROOT / "scripts" / "doctor.py").read_text(encoding="utf-8")
+    assert AGENT_DISPATCH_RE.pattern in doctor_source, (
+        "scripts/doctor.py no longer contains this suite's dispatch pattern {!r}, so the "
+        "two cross-references can disagree about what a dispatch looks like".format(
+            AGENT_DISPATCH_RE.pattern
+        )
+    )
+
+
 def test_the_dispatch_scan_finds_the_names_that_are_there():
     """Anti-vacuity for the cross-reference below: a regex that matched nothing would
     report every dispatched name as accounted for.
@@ -1486,9 +1505,16 @@ def test_the_dispatch_cross_reference_fires_on_a_name_with_no_file():
 # as a missing step. That silence produced two wrong bug reports against this repo.
 # The remedy is one command and it was documented nowhere.
 
+# Each anchor is a phrase the pre-#140 README did not contain. A bare "agent" was the
+# first attempt and it was inert: README.md already said "agent" twice, so that half of
+# the pair passed against the unfixed file and only the command anchor was working. An
+# anchor satisfied by prose that predates the change checks nothing, and the fabricated
+# "before" fixture below could not reveal it, because it is one line rather than the
+# whole file.
 RELOAD_ANCHORS = [
     ("names-the-reload-command", "/reload-plugins"),
-    ("says-the-agents-are-what-goes-missing", "agent"),
+    ("names-what-goes-stale", "agent registry"),
+    ("names-the-error-the-reader-will-actually-see", "agent type"),
 ]
 
 
@@ -1504,15 +1530,34 @@ def test_the_readme_install_step_names_the_reload():
     assert not unmet, "README.md's install step does not carry the reload: " + repr(sorted(unmet))
 
 
-def test_the_reload_check_fires_on_the_install_step_as_it_was_stated_before():
-    """Positive control, and it is the actual prior text: correct as far as it went,
-    and silent on the command that fixes the failure it was describing.
+RELOAD_BLOCK_START = "**Then run `/reload-plugins`"
+RELOAD_BLOCK_END = "Installing pulls in"
+
+
+def test_the_reload_check_fires_on_the_readme_with_the_new_block_removed():
+    """Positive control against the real file, not a fabricated line.
+
+    A one-line "before" fixture cannot show that an anchor is carried by the new text
+    rather than by something else already in README.md -- and one of these anchors was
+    a bare "agent", which the unfixed README satisfied twice over. Cutting the added
+    block out of the current file and requiring every anchor to go unmet is the claim
+    that actually matters: the install step is where this lives, and deleting it is
+    visible.
     """
-    before = (
-        "**Restart Claude Code afterwards.** Plugin registrations are read once at "
-        "session start.\n"
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    start = text.index(RELOAD_BLOCK_START)
+    end = text.index(RELOAD_BLOCK_END, start)
+    without = text[:start] + text[end:]
+    assert _reload_unmet(without) == {name for name, _ in RELOAD_ANCHORS}, (
+        "an anchor survives deleting the whole install-step block, so it is satisfied "
+        "by prose elsewhere in README.md and checks nothing"
     )
-    assert _reload_unmet(before) == {name for name, _ in RELOAD_ANCHORS}
-    # Must-fire half: prose carrying both anchors comes back clean, so the assertion
+    # Must-fire half: prose carrying every anchor comes back clean, so the assertion
     # above is about the text rather than about a matcher that matches nothing.
-    assert _reload_unmet("Run /reload-plugins or the agents will not register.") == set()
+    assert (
+        _reload_unmet(
+            "Run /reload-plugins: installing mid-session leaves the agent registry "
+            "stale, and a spawn answers Agent type not found."
+        )
+        == set()
+    )

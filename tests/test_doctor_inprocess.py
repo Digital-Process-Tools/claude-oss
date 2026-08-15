@@ -962,7 +962,11 @@ def test_agent_dispatch_warns_rather_than_passing_when_it_scanned_nothing(tmp_pa
     """
     lines = doctor.agent_dispatch(tmp_path / "nowhere")
     assert [level for level, _ in lines] == ["WARN"], lines
-    assert "not checked" in lines[0][1]
+    assert "could not be checked" in lines[0][1]
+    # And not the reserved phrase: commands/doctor.md tells its reader every `not
+    # checked` line means .oss.json was absent. This one means the plugin's own tree
+    # was, which is a finding rather than expected fallout from unset config.
+    assert "not checked" not in lines[0][1], lines[0][1]
 
 
 def test_agent_dispatch_reports_a_document_it_could_not_read(tmp_path):
