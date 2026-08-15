@@ -151,6 +151,18 @@ separately rather than one list.
   does not stop a listing. So the deny is confirmed by attempting the exact operation the code under
   test performs, and skips with what went untested when it did not take — never asserts on a
   platform's error code from a table.
+- **A sweep of patterns cannot see a value that never had one.** #173 swept all 28 compiled
+  patterns in `scripts/` — honestly, in both directions, 3 hits and 25 clean with a reason each —
+  and closed a newline hole in the `repo` that reaches a generated `CLAUDE.md`. The same commit
+  left `test_command` and `default_branch`, substituted into the same file by the same function,
+  with nothing but a `str` type check: guard and bypass three lines apart. Neither value had a
+  pattern, so neither could appear in a sweep of patterns. Enumerate the **substitution sites** —
+  every `.oss.json` value that reaches a generated file, in every template rendered — and report
+  the ones found clean as loudly as the ones fixed, because a sweep that reports only hits cannot
+  be told from one that stopped early. Also worth keeping from #180: a `\A…\Z` pattern was the
+  wrong mechanism for both of the new values. A shell command admits nearly everything, so the
+  refusal is a *character class* chosen from the harm; a branch name already has an authority, so
+  the refusal is a transcription of `git check-ref-format`. Neither is a shape this repo invented.
 - **`pytest.raises(Exception)` does not catch a skip, and the test passes anyway.** pytest's outcome
   exceptions derive from `BaseException`, so a `pytest.skip` inside the block sails past the `raises`
   and skips the enclosing test — a green tick over an assertion that never ran, reported as `1 skipped`
