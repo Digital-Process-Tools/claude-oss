@@ -4,11 +4,17 @@ Companion to test_content_invariants.py, which holds the cross-document prose
 guards; this file is only about the worktree questions the manager loop asks --
 which tree is safe to reap, and whether an agent is still in it.
 
-Two kinds of guard live here and they are not interchangeable:
+Three kinds of guard live here and they are not interchangeable. Which kind a
+guard is says what its passing is worth, so each is labelled rather than left to
+read like the others:
 
-* **Routing guards** -- the skill must name the op that answers the question,
-  and must not route the reader into a raw command a guard refuses. These were
-  red against the file before #145.
+* **Routing guards** -- the skill must name the op that answers the question.
+  Six of these, each measured red against `HEAD^`'s SKILL.md before the change.
+* **A regression guard** -- the skill must not print the raw listing supertool's
+  guard refuses. This one was already green before the change: the literal
+  command never appeared in the old file either, so it proves nothing about this
+  fix and only holds the ground going forward. Saying so is the point; a guard
+  that never fired red reads exactly like one that did.
 * **Doctrine-retention guards** -- naming a tool must not cost the paragraph the
   reason the rule exists. These are green by construction against a file that
   still carries the doctrine, so each one is paired with a synthetic fixture
@@ -119,20 +125,26 @@ def test_the_removal_gate_carries_the_squash_merge_caveat():
     #145 said nothing, so a reader could reap on ancestry alone.
     """
     folded = _flatten(_bullet(_skill(), "delete merged worktrees"))
-    assert "squash" in folded, (
-        "the worktree removal bullet does not mention squash merges, though the "
-        "branch bullet beside it does and the same blind spot applies"
+    assert "cannot see a squash merge" in folded, (
+        "the worktree removal bullet does not carry the squash-merge blind spot, "
+        "though the branch bullet beside it does and the same blind spot applies. "
+        "The anchor is the whole clause on purpose: a bare 'squash' is satisfied "
+        "by prose asserting the opposite"
     )
 
 
 def test_the_exit_code_caveat_names_the_route_that_distinguishes():
     """`cannot tell` must not be reachable only as 'not zero'.
 
-    Measured 2026-08-15 on supertool 0.43.0: the preset script exits 2 for a
-    path it cannot decide and 1 for an occupied one, while supertool returns 1
-    for both. A shell that needs the two apart has to run the script.
+    Measured 2026-08-15 against supertool 0.44.0 by running both routes over the
+    same paths: the preset script exits 2 for a path it cannot decide and 1 for
+    an occupied one, while supertool returns 1 for both. That measurement is not
+    reproduced here -- supertool is not vendored into this repo and a test that
+    shelled out to whatever version is installed would report the runner's
+    environment as a verdict on the prose. This asserts only that the skill
+    carries the caveat, in the same bullet that makes the claim it qualifies.
     """
-    folded = _flatten(_skill())
+    folded = _flatten(_bullet(_skill(), "delete merged worktrees"))
     assert "cannot tell" in folded, "the third occupancy state is never named"
     assert "worktrees.py" in folded, (
         "the skill never names the route that distinguishes `cannot tell` from "
@@ -142,7 +154,13 @@ def test_the_exit_code_caveat_names_the_route_that_distinguishes():
 
 
 def test_the_skill_does_not_route_the_reader_into_the_refused_command():
-    """Must-not-fire. Its must-fire pair is the test directly below."""
+    """Must-not-fire, and green before #145 as well as after.
+
+    The old file never printed the literal command either -- it routed the
+    reader there by describing the question and naming no op. So this holds
+    ground rather than proving a fix, and it is grouped with the retention
+    guards for that reason. Its must-fire pair is the test directly below.
+    """
     folded = _flatten(_skill())
     assert "git worktree list" not in folded, (
         "the skill instructs a raw command supertool's guard refuses"

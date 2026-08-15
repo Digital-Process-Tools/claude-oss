@@ -58,7 +58,7 @@ label that does not exist on the repo.
 | PR state + summed check tally | `gh-pr:N` / `gh-pr:N:status` |
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
-| Worktree ownership + merge state | `git-worktrees`, `git-worktrees:PATH` — the raw listing is refused |
+| Worktree ownership + merge state | `git-worktrees`, `git-worktrees:PATH` — the raw `git worktree` listing is refused |
 | Filing | `gh-issue-create:@FILE` |
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
@@ -543,7 +543,9 @@ is not on this list is just a way of not fixing things.
   touch a directory that still exists. A shell that has to branch on the verdict must run the preset
   `worktrees.py` itself: supertool collapses the exit to 0/1, so `cannot tell` (2) arrives
   indistinguishable from `occupied` (1), and treating both as "not idle" is the only safe read
-  through supertool.
+  through supertool. That is the one read this document sanctions outside supertool, and only for
+  that reason — the op's own `help` names the script, so derive its path from the installed tool
+  rather than from a path written down anywhere.
 - **Delete merged branches through the API**, `gh api -X DELETE repos/OWNER/REPO/git/refs/heads/<b>`,
   never `git push --delete` in a loop. And note `git branch -r --merged` **cannot see squash
   merges** — it reported 4 on a repo holding 96 merged branches. Intersect the live branch list with
