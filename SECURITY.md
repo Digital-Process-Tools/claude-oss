@@ -15,7 +15,16 @@ and released before it is discussed publicly:
 
 - **destroys** -- data is gone with no copy anywhere
 - **discloses** -- something private leaves the machine
-- **containment** -- code reaches outside the directory it was given
+- **containment** -- code reads or writes outside the directory it was given
+- **forges** -- text you wrote in an issue, a comment or a log is read back as this
+  project's own output, so a stranger's words steer a maintainer's session
+
+That list is about **disclosure timing**, and it is narrower than the set of defects that
+are **release-blocking** here. A defect that is already public the moment it ships -- a
+path or a value true of one machine, baked into the released artifact -- is fixed just as
+urgently and can be **reported in the open**, because there is no window of private
+knowledge for an embargo to protect. If you are unsure which you have, report it privately
+and we will tell you.
 
 ## Scope
 
