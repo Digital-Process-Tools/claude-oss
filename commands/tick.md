@@ -29,21 +29,30 @@ Skill(manager)
    tick** — settle it, then start over at this step. `no entries yet` means a first tick and
    nothing else.
 
-2. **Read the board.** The three ops every repo has, batched into one call:
+2. **Read the board**, batched into one call:
 
    ```bash
-   supertool 'gh-prs' 'gh-issues' 'gh-branch'
+   supertool 'gh-prs' 'gh-issues' 'gh-branch' 'git-worktrees'
    ```
 
-   Those three are the tracker. **Two more surfaces are part of this same board read**, because
-   steps 3 and 5 decide from both — and neither is universally available, so each is ordered with
-   the reading that tells you whether it applies. They belong here rather than in a step of their
-   own: this is one question — what is true right now — and a board split across two steps is a
-   board you can believe you finished before you reached the second half.
+   The fourth op is the one this step used to be missing, and it is not conditional:
+   `git-worktrees` is available wherever supertool is, and it boards every tree of this repo
+   whether or not anything configured a root for them. `worktree_root` in `.oss.local.json` names
+   where this loop puts its own — but **the board is not gated on that key**, because a tree nobody
+   configured is still a tree, and skipping the call in a repo that sets no root reproduces exactly
+   the absence this step exists to close: a worktree board nobody read renders as no worktrees.
 
-   **The watcher fleet — probe first, then run.** `radar` lives behind a preset and refuses when no
-   tiers are registered, so do not reach for it blind. `radar:--state` is the read-only probe: it
-   spawns nothing, reaps nothing and calls no API.
+   Which trees exist, who holds them and what merged is an input to step 3, not a step-5 cleanup
+   detail. **Read both of its columns in three states, and never round the third one up.**
+   `cannot tell` is not `idle`, and `merge unknown` is not `merged` — neither is permission: not to
+   brief a second agent into that tree, not to reap it. The skill's cleanup gate carries the rest,
+   including why the shell exit cannot be branched on.
+
+   **Then the watcher fleet, which is conditional — probe first, then run.** It gets its own call
+   for two reasons, not one: `radar` lives behind a preset and refuses when no tiers are
+   registered, so reaching for it blind is a refusal rather than a reading; and the bare call is a
+   write. `radar:--state` is the read-only probe — it spawns nothing, reaps nothing and calls no
+   API.
 
    ```bash
    supertool 'radar:--state'
@@ -59,23 +68,9 @@ Skill(manager)
    probed is **not a quiet channel** — it is a channel with no reading, and reporting it as calm is
    this loop's own defect class landing on the loop's own instrumentation.
 
-   Bare `radar` heals and forks pollers. That is a write, not a read, which is the reason the probe
-   is ordered separately rather than folded into it — you run the repair deliberately, having seen
-   what needs repairing.
-
-   **The worktrees — wherever `worktree_root` is set.** That key lives in `.oss.local.json`, the
-   machine-local half, and never in the committed project config; a repo whose local half sets none
-   has no worktree board to read, and that is a reading too.
-
-   ```bash
-   supertool 'git-worktrees'
-   ```
-
-   Which trees exist, who holds them and what merged is an input to step 3, not a step-5 cleanup
-   detail. **Read both of its columns in three states, and never round the third one up.**
-   `cannot tell` is not `idle`, and `merge unknown` is not `merged` — neither is permission: not to
-   brief a second agent into that tree, not to reap it. The skill's cleanup gate carries the rest,
-   including why the shell exit cannot be branched on.
+   Bare `radar` heals and forks pollers. That is a write, not a read, which is why the probe is a
+   separate call rather than folded into it — you run the repair deliberately, having seen what
+   needs repairing.
 
 3. **Act on what is open before starting anything new.** A merged-but-unverified PR, a red default
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
