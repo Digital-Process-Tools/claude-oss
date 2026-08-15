@@ -158,6 +158,49 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    frozen at some third value, which is the one most likely to be wrong. A README is not a `.json`,
    so an allowlist by extension cannot see it.
 
+   **The number swept for comes from the section below, not from an impression of the delta.**
+   `version_sites` says where the number goes; nothing here used to say what it is.
+
+## Which number the release gets
+
+Every other input above is pinned. The version was not, so it came from whoever happened to be
+cutting the release — and in #171 that produced a recommendation of a minor bump that never
+mentioned the `removed` fragment sitting in the same directory. The number was right by luck.
+
+The fragments already carry the evidence, so it is read rather than felt:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_version.py" --repo . --json
+```
+
+It reads `changelog_dir` and `release.tag_pattern` out of this repo's own `.oss.json`, counts the
+fragment sections, and reads the current version out of the last matching tag. Pass `--current
+X.Y.Z` when the baseline is not a tag. **It proposes; it never writes, bumps or tags.**
+
+- **exit 0, `proposed`** — `version` is the number, with `change_class`, `line`, `bump` and the
+  fragments behind them. **Quote the receipt, then accept it or override the proposal, and record
+  which you did and why.** A release number is a promise to users, so the decision stays yours; what
+  this removes is the *unsourced* guess, not the judgement.
+- **exit 3, `could not decide`** — no fragments, a section outside the six, a compatibility line that
+  will not read, or a `removed` fragment that declares nothing. **It names no number**, deliberately:
+  a default patch bump over a breaking change is indistinguishable in the tag from a considered one.
+  Fix what it names — usually one bullet in one fragment — and re-run. Do not pick a number instead.
+- **exit 4, `no baseline`** — the change class is known and the version it applies to is not: no tag,
+  a null `tag_pattern`, or a tag that does not spell a triple. A first release lands here, and the
+  number is yours to choose. It names none either.
+
+The rule, so that "it depends" stops producing this issue: **in a `0.x` line a breaking change is a
+minor** — semver's own clause 4, where anything may change at any time — **and at `1.0.0` or later it
+is a major.** In a `0.x` line that fold makes `breaking` and `feature` the same number, so the
+receipt says the fold happened; a maintainer who wants `1.0.0` here has to override the proposal
+rather than notice nothing.
+
+And the section alone never decides it. A removal need not break anything — `113.removed.md` in this
+repository is exactly that case — so the verdict is a declared field on the fragment,
+`- Compatibility: breaking|compatible - <reason>`, documented in `changelog.d/README.md`. Required on
+`removed`, optional elsewhere, and an unrecognised value is `could not decide` rather than a quiet
+pass.
+
 ## Then
 
 Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject` —
