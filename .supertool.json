@@ -1,9 +1,20 @@
 {
-  "presets": ["git", "github"],
+  "presets": [
+    "git",
+    "github",
+    "watch"
+  ],
   "validators": {
     "py": {
       "py-syntax": {
         "cmd": "{python} -m py_compile {file}"
+      }
+    }
+  },
+  "ops": {
+    "radar": {
+      "radar_tiers": {
+        "gh-prs": {}
       }
     }
   }
