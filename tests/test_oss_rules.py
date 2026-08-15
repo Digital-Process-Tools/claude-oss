@@ -512,3 +512,131 @@ def test_install_refuses_a_root_that_is_not_a_directory(tmp_path):
     victim.write_text("x", encoding="utf-8")
     with pytest.raises(oss_rules.RulesError):
         oss_rules.install(victim)
+
+
+# --- #117: why the assembler is missing, when it is missing --------------------------
+#
+# `assembler_path()` returning None has more than one cause and they do not share a
+# remedy. In a repo where /oss:scaffold declined the owned changelog trio because a gate
+# already runs there under another name, the could-not-locate branch's remedy sentence --
+# run /oss:scaffold and this rule is rewritten with the invocation -- names the command
+# that just declined and will decline again. The clause is false in exactly the repo the
+# decline produces, and it renders identically to the same sentence in a repo where it is
+# true. So the caller tells the rule what it established about the gate, and the rule
+# stops guessing why the script is not there.
+
+DECLINED = ("found", "already present: .github/workflows/changelog.yml")
+UNREADABLE = ("unknown", "could not read: packages/private")
+
+#: The sentence the pre-#117 rule emitted for every missing assembler, and the one it
+#: must now emit only when a gate was looked for and none was found.
+VENDORING_REMEDY = "run that and this rule is rewritten with the invocation"
+
+#: Emitted only when the caller established that a foreign gate is what is in the way.
+DECLINED_ANCHOR = "will not put one here"
+
+
+def _no_assembler(tmp_path, name):
+    root = tmp_path / name
+    root.mkdir()
+    return root
+
+
+def _flat(body):
+    """The rule body with its line wrapping collapsed.
+
+    Prose anchors are matched against this, not the raw text. A phrase that happens to
+    span a wrap is absent from the file it is plainly in, and reflowing a paragraph then
+    turns a real guard off with nothing failing -- the same absence-that-reads-as-clean
+    this whole rule exists to prevent, in the test for it.
+    """
+    return " ".join(body.split())
+
+
+def test_a_declined_repo_is_not_sent_back_to_the_command_that_declined(tmp_path):
+    """Both arms on one pair of trees. Asserting only the declined arm passes if the
+    remedy sentence stopped being emitted anywhere at all, which would break the far
+    commoner repo -- the one that has no gate and is waiting to be handed the checker.
+    """
+    declined = _no_assembler(tmp_path, "declined")
+    oss_rules.install(declined, gate=DECLINED)
+    declined_body = _changelog_rule(declined)
+
+    clean = _no_assembler(tmp_path, "clean")
+    oss_rules.install(clean, gate=("none", ""))
+    clean_body = _changelog_rule(clean)
+
+    # Declined: no invocation, no false remedy, and the workflow that does run is named.
+    assert _assembler_command(declined_body) is None, declined_body
+    assert DECLINED_ANCHOR in _flat(declined_body), declined_body
+    assert ".github/workflows/changelog.yml" in declined_body, declined_body
+    assert VENDORING_REMEDY not in _flat(declined_body), declined_body
+
+    # No gate: the remedy is true here, and this is the arm that must keep firing.
+    assert _assembler_command(clean_body) is None, clean_body
+    assert VENDORING_REMEDY in _flat(clean_body), clean_body
+    assert DECLINED_ANCHOR not in _flat(clean_body), clean_body
+
+
+def test_a_tree_that_could_not_be_read_is_not_reported_as_a_decline(tmp_path):
+    """`_detect_changelog_gate` has three answers, not two. Folding `unknown` into the
+    declined text would state as established the one thing that run failed to establish.
+    """
+    root = _no_assembler(tmp_path, "unreadable")
+    oss_rules.install(root, gate=UNREADABLE)
+    body = _changelog_rule(root)
+
+    assert "packages/private" in body, body
+    assert "unknown" in body.lower(), body
+    assert DECLINED_ANCHOR not in _flat(body), body
+    assert VENDORING_REMEDY not in _flat(body), body
+
+
+def test_a_caller_that_did_not_look_says_so_rather_than_promising_a_rewrite(tmp_path):
+    """The fourth answer, and the default. `rules()` is called with no gate by anything
+    that only wants the structural shape, and by any caller predating the parameter --
+    neither of which checked, so neither may promise what /oss:scaffold will do.
+    """
+    root = _no_assembler(tmp_path, "unlooked")
+    oss_rules.install(root)
+    body = _changelog_rule(root)
+
+    assert "not established" in _flat(body), body
+    assert DECLINED_ANCHOR not in _flat(body), body
+    assert VENDORING_REMEDY not in _flat(body), body
+
+
+def test_the_rest_of_the_layer_still_ships_into_a_declined_repo(tmp_path):
+    """The shape this fix is not: omitting the changelog rule leaves the reader with no
+    statement at all, and the other rules have nothing to do with the trio.
+    """
+    root = _no_assembler(tmp_path, "declined-layer")
+    written = oss_rules.install(root, gate=DECLINED)
+
+    for dimension, layer_rules in oss_rules.RULES.items():
+        for name in layer_rules:
+            assert (_layer(root, dimension) / name).is_file(), name
+    assert len(written) == sum(len(r) for r in oss_rules.RULES.values()) + len(
+        oss_rules.RULES
+    )
+
+
+def test_an_unrecognised_gate_state_is_refused_rather_than_rendered(tmp_path):
+    """A state this module does not know cannot be rendered honestly, and the branch it
+    would fall through to is the one that says nobody looked -- which would be false.
+    """
+    root = _no_assembler(tmp_path, "bogus")
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root, gate=("probably", "who knows"))
+
+
+def test_the_gate_detail_cannot_break_out_of_its_code_span(tmp_path):
+    """The detail is built from filenames in somebody's repository. A backtick in one
+    would end the span and spill the rest of the sentence into rendered markdown.
+    """
+    root = _no_assembler(tmp_path, "backtick")
+    oss_rules.install(root, gate=("found", "already present: wf/`odd`.yml"))
+    body = _changelog_rule(root)
+
+    assert "odd" in body, body
+    assert "`odd`" not in body, body

@@ -117,13 +117,95 @@ def _untagged_clause(untagged):
     )
 
 
-def changelog_fragments(assembler, fragments_dir, untagged=None):
+#: The three answers `scaffold._detect_changelog_gate` can give about a changelog gate
+#: already running under another name. `None` -- no pair at all -- is the fourth, and it
+#: is the one that says nobody looked; it is the default because a caller that did not
+#: pass a gate did not check one.
+GATE_STATES = ("none", "found", "unknown")
+
+
+def _inline(detail):
+    """A repo-derived detail, safe to drop inside a Markdown code span.
+
+    The detail is built from filenames in somebody else's repository, so it is data.
+    A backtick in one would close the span and spill the rest of the sentence into the
+    rendered rule; a newline would end the paragraph. Neither survives.
+    """
+    flat = " ".join(str(detail).split()).replace("`", "'")
+    return "`{}`".format(flat) if flat else "no detail was given"
+
+
+def _no_assembler_because(gate):
+    """Why the checker is not in this tree -- or that this was never established.
+
+    Four answers, because the caller has four (#117). The pre-#117 rule had one: it told
+    every reader that `/oss:scaffold` vendors the checker and would rewrite this rule.
+    That sentence is false in exactly the repository the decline produces -- `/oss:scaffold`
+    is the command that declined, and it declines again -- and it renders identically to
+    the same sentence in a repo where it is true. A rule that cannot describe the
+    repository it is in has to say so rather than describe a different one.
+    """
+    if gate is None:
+        return (
+            "**Why it is missing was not established**: whatever wrote this rule did not\n"
+            "check whether this repository already runs a changelog gate under another\n"
+            "name. `/oss:scaffold` vendors this plugin's checker when it finds no other\n"
+            "gate and declines when it does, so running it may or may not rewrite this\n"
+            "rule -- which of the two is unknown here.\n"
+        )
+
+    state, detail = gate
+    if state == "none":
+        return (
+            "`/oss:scaffold` found no changelog gate of any other name here, and it\n"
+            "vendors the checker: run that and this rule is rewritten with the\n"
+            "invocation.\n"
+        )
+    if state == "found":
+        return (
+            "**`/oss:scaffold` will not put one here.** A changelog gate already runs in\n"
+            "this repository under a different name ({}), so the owned checker was\n"
+            "declined rather than written on top of it -- and running `/oss:scaffold`\n"
+            "again declines again. **This rule does not know that gate's command.** Read\n"
+            "what the parentheses above name -- one file or several, and possibly a note\n"
+            "about part of the tree that could not be read: that is the gate this\n"
+            "repository actually runs.\n"
+            "`/oss:scaffold --force-owned` installs this plugin's checker alongside it,\n"
+            "after which both gates run on every pull request.\n"
+        ).format(_inline(detail))
+    if state == "unknown":
+        return (
+            "**Why it is missing is unknown, which is not the same as this repository\n"
+            "having no gate of its own.** Part of the tree could not be read ({}), so\n"
+            "`/oss:scaffold` declined the owned checker rather than write it over a gate\n"
+            "it could not rule out, and it declines again until that read succeeds.\n"
+            "Check by hand; `/oss:scaffold --force-owned` overrides.\n"
+        ).format(_inline(detail))
+
+    # Not a state this module knows how to describe. The branch it would otherwise fall
+    # through to is the one claiming nobody looked, and somebody did -- so refuse rather
+    # than render the most plausible sentence to hand.
+    raise RulesError(
+        "unknown changelog gate state {!r}; expected one of {} or None".format(
+            state, ", ".join(GATE_STATES)
+        )
+    )
+
+
+def changelog_fragments(assembler, fragments_dir, untagged=None, gate=None):
     """The fragment rule, rendered for one tree.
 
     `assembler` is a repo-relative path or `None`; `fragments_dir` is that repository's
     fragment directory, which is not `changelog.d` everywhere and is what the rule has to
     match on or it never fires at all. `untagged` is that repository's
     `changelog_untagged`, in the three states `_untagged_clause` keeps apart.
+
+    `gate` is what the caller established about a changelog gate already running under
+    another name -- `(state, detail)` from `scaffold._detect_changelog_gate`, or `None`
+    for a caller that did not look. It is consulted only when there is no assembler,
+    because it answers one question and one only: why not. It is orthogonal to
+    `untagged`: that one shapes the command when there IS an assembler, this one
+    explains the absence when there is not.
     """
     if assembler:
         # Both `--dir` and `--changelog` on every invocation. Given neither, the assembler
@@ -150,13 +232,14 @@ def changelog_fragments(assembler, fragments_dir, untagged=None):
     else:
         # Named as a third state rather than filled with a guess. No path appears here on
         # purpose: a plausible one is indistinguishable, to whoever runs it, from a path
-        # that was checked.
+        # that was checked. Why it is not here is a separate question and the remedy
+        # depends entirely on the answer, so it is asked of the caller rather than guessed.
         check = (
             "**The fragment checker could not be located in this repository**, so this rule\n"
-            "names no command. `/oss:scaffold` vendors it; run that and this rule is\n"
-            "rewritten with the invocation. A path guessed here would fail the first time\n"
-            "anybody ran it, and read as this repository being wrong.\n"
-        )
+            "names no command. A path guessed here would fail the first time anybody ran\n"
+            "it, and read as this repository being wrong.\n"
+            "\n"
+        ) + _no_assembler_because(gate)
 
     return CHANGELOG_FRAGMENTS.replace("__FRAGMENTS__", fragments_dir).replace(
         "__CHECK__", check
@@ -244,7 +327,7 @@ No exception for an image, a PDF or a notebook cell: none exists in this reposit
 appears, that is when it gets one -- not before.
 """
 
-def rules(repo_root=None, fragments_dir=None, untagged=None):
+def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None):
     """dimension -> {filename: body}, rendered for the tree it is going into.
 
     `repo_root` is what makes the changelog rule correct in more than one repository: the
@@ -255,6 +338,10 @@ def rules(repo_root=None, fragments_dir=None, untagged=None):
     `untagged` is the same kind of fact as `fragments_dir`: it belongs to one repository,
     the caller has read it out of that repository's `.oss.json`, and this module has no
     way to derive it. `None` here means the same as `None` there.
+
+    `gate` says why the assembler is not there when it is not there (#117). Called with
+    no gate, the rule says that this was not established -- also honest, and the reason
+    the parameter defaults to `None` rather than to "no gate found".
     """
     return {
         "paths": {
@@ -262,6 +349,7 @@ def rules(repo_root=None, fragments_dir=None, untagged=None):
                 assembler_path(repo_root) if repo_root is not None else None,
                 fragments_dir or DEFAULT_FRAGMENTS_DIR,
                 untagged,
+                gate,
             ),
             "oss-config.md": OSS_CONFIG,
         },
@@ -324,7 +412,7 @@ def index_rows(dimension, rules):
     return rows
 
 
-def install(repo_root, fragments_dir=None, untagged=None):
+def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
     The layer is removed first: a rule we stopped shipping would otherwise survive an
@@ -334,14 +422,21 @@ def install(repo_root, fragments_dir=None, untagged=None):
     changelog rule names the assembler where **this** repository keeps it. `fragments_dir`
     is that repository's `changelog_dir` and `untagged` its `changelog_untagged`; the
     caller has both and this module has no way to derive either.
+
+    `gate` is the same shape of fact one level further out: whether a changelog gate
+    already runs here under another name, which is knowledge only the caller has and is
+    what decides whether a missing assembler is a gap or a decision (#117). The whole
+    layer ships either way -- omitting the rule would leave the reader with no statement
+    at all, where the defect was a statement about a different repository.
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
         raise RulesError("{}: not a directory".format(root))
 
     written = []
-    # Rendered once, against this tree, before anything is removed.
-    rendered = rules(root, fragments_dir, untagged)
+    # Rendered once, against this tree, before anything is removed -- which is also what
+    # makes an unrenderable gate state a refusal rather than a half-replaced layer.
+    rendered = rules(root, fragments_dir, untagged, gate)
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.exists():

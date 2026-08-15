@@ -303,12 +303,29 @@ A symlink into the plugin checkout would have been simpler and is refused by the
 purpose — git carries symlinks, so a clone would need only one committed link to point rules at
 anything on the machine.
 
-**This layer does not read the `changelog` finding.** It is installed unconditionally by `apply()`,
-regardless of whether the owned changelog trio was written or declined, so a repo whose gate this run
-declined still gets `01-oss` rules describing `.oss/assemble_changelog.py` and `changelog.d/` — machinery
-that, in that repo, is not there. #105 named this: a rule describing absent machinery is worse than no
-rule. Out of scope for this change (`scripts/oss_rules.py` is a different lane); noted here so it is
-not read as settled.
+**The layer ships whole, and the changelog rule is told why the checker is not there.** Since #117 the
+run hands `oss_rules.install()` the same gate detection the trio's decision came from, and the rule's
+could-not-locate branch renders one of four sentences rather than one:
+
+| What the run established | What the rule says |
+| --- | --- |
+| no gate under another name | `/oss:scaffold` vendors the checker; run it and this rule is rewritten |
+| a gate under another name | `/oss:scaffold` **will not put one here** — it declined, it declines again, and this rule does not know that gate's command. Read what it names — one file or several, and possibly a note about part of the tree that could not be read; `--force-owned` installs ours alongside |
+| the tree could not be fully read | why it is missing is **unknown**, which is not the same as this repo having no gate. It declines again until the read succeeds |
+| nothing checked | why it is missing **was not established** — running the scaffold may or may not rewrite this rule |
+
+The rule is not omitted in the declined case, which was the other candidate shape: an omitted rule
+leaves the reader with no statement at all, where the defect was a statement about a *different*
+repository. The layer's own ownership contract is unchanged — it is still replaced wholesale.
+
+What this composition produced before #117 is worth keeping in view, because neither half contained
+it. `/oss:scaffold` declined the trio (#116/#126), and the rule told every reader that
+`/oss:scaffold` vendors the checker and would rewrite the rule — naming the command that had just
+declined and would decline again. The sentence was false in exactly the repo the decline creates, and
+rendered identically to the same sentence in a repo where it is true.
+
+`--force-owned` is the one case where the gate state is deliberately not passed through: the trio was
+*written*, so a `found` reaching the rule would report a decline that did not happen.
 
 Do this on a branch, and open a PR. Do not commit generated furniture straight to the default branch:
 these are files everyone reads, and the review is the point.
