@@ -248,6 +248,11 @@ Three outcomes, exit codes because a shell reads those and never reads prose:
   This is the one that must never read as either of the other two, and above all never as a release
   that shipped: a maintainer who believes something is published stops looking at it.
 
+Three, because those are the answers a script that ran can give. A call the harness refuses never
+runs, and it is a fourth — *A denied call is a fourth answer* below. **Do not read the list above as
+exhaustive.** Filing a denial under one of these three is the single mistake that section exists to
+prevent, and an enumeration that looks complete is what produces it.
+
 A `.oss.json` that parses but is not an object — `[]`, `"x"`, `null`, `42` — is exit 3 and not exit
 4. It states no policy, which is a different fact from stating one that does not publish, and the
 two were indistinguishable until #126: the shipped defaults answered for it and the run reported
@@ -267,6 +272,61 @@ Unset is a third state, not a quiet `false`: the skip reason names `release.crea
 that never chose is told what would change it rather than silently never releasing. `draft: true`
 with `latest: true` is refused by the config validator — a draft cannot be Latest, so the pair states
 an outcome no release path can produce.
+
+## A denied call is a fourth answer, and it is none of the three above
+
+Supertool's own confirmation gate and its three opt-outs (`|force` per call,
+`SUPERTOOL_NO_PUBLISH_CONFIRM=1` per environment, `no_publish_confirm` per project) are not the only
+thing that can refuse a release step. The harness's permission handling sits **in front** of all
+three and can deny a call before supertool or `gh` ever sees it. An allowlist entry does not
+necessarily clear it, two spellings of one op are two different command strings, and it is not
+stable: the identical call has come back denied and then, later in the same session with no
+configuration change of any kind, been permitted. That has now been reproduced at four distinct
+calls — a skill invocation, a merge op, a force-push and a rebase — so it is not a property of the
+merge, which is what every other mention of this gate in the plugin is framed around (#186).
+
+The release path is where that costs the most, because the calls most likely to be gated all sit
+**after** the writing has started — `git push origin <tag>`, the `--execute` publish above, and any
+force-push. By then the changelog is folded, the fragments are deleted, the version sites are bumped
+and the commit is made.
+
+**A denial is none of the three outcomes above.** `created`, `skipped` and `could-not-create` are
+verdicts `release_publish.py` earned by running. A call the harness refused never ran: it
+has no exit code, and nothing whatever about the repository was established. Reporting it as
+`could-not-create` — or as the range gate's `could-not-run` — states a fact about the repository that
+nobody measured, which is this plugin's own defect class one layer up from where it usually bites.
+The word already exists in this plugin, at the merge: say the call was **denied**, name it exactly,
+and hand it to the maintainer to run or to permit.
+
+**Do not route around it.** Concretely:
+
+- **Do not reword the call to get past the classifier.** A different spelling is a different command
+  string, so a reworded call that succeeds proves nothing about the one that was refused — and
+  hand-assembling the `gh release create` invocation loses `--verify-tag`, which is the whole reason
+  the section above says not to assemble it.
+- **Do not retry in a loop.** The denial is unstable, so re-invoking the *identical* call once is a
+  legitimate probe, and its outcome is reported either way. A second denial is handed over. Retrying
+  until the classifier relents is not a gate being satisfied, it is a gate being outlasted.
+- **Do not read a denial as a gate that passed, and never as a release that shipped.** It stops the
+  release where it stands; the report says `denied at <step>` and never reports as released.
+
+### Where a denied release resumes
+
+Name the write steps that landed and the ones that did not. A release stopped mid-sequence is
+recoverable, and only if somebody knows the position — which is a different sentence at each step,
+so do not write one that covers both:
+
+- **denied at `git push origin <tag>`** — the fold, the version bumps, the commit and the tag are all
+  still **local**. Nothing outside the clone has changed. It resumes at that push, and the publish
+  after it.
+- **denied at the publish** — the push already succeeded, so the tag is on the remote and only the
+  release object is missing. It resumes at `release_publish.py --execute` alone. Saying a tag push is
+  outstanding here sends a maintainer to re-run a step that already ran.
+
+The ordering trade is real, and it is stated here rather than quietly taken: folding first puts the
+destructive half (the fragments are deleted) ahead of the deniable half, and tagging first would make
+a refusal cheaper at the cost of a tag pointing at a commit whose changelog is not folded. The order
+is unchanged and the receipt above is the mitigation.
 
 ## The tag is not the delivery
 

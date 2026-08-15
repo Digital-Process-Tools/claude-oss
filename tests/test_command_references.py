@@ -85,6 +85,7 @@ TICK_MD = REPO_ROOT / "commands" / "tick.md"
 SKILL_MD = REPO_ROOT / "skills" / "manager" / "SKILL.md"
 DEVELOPER_MD = REPO_ROOT / "agents" / "developer.md"
 README_MD = REPO_ROOT / "README.md"
+RELEASE_MD = REPO_ROOT / "commands" / "release.md"
 
 # Mentions no command, no settings file and no subject for identity.md.
 SILENT = "# Setup\n\nProbe the repo and write the config. Then stop.\n"
@@ -129,6 +130,39 @@ def _says_the_two_merge_strings_differ(text):
 def _says_the_harness_gate_is_a_fourth_one(text):
     return bool(re.search(r"fourth", text, re.I)) and bool(
         re.search(r"no_publish_confirm|three opt-outs", text, re.I)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The release needs an answer for a call the harness refuses (#186).
+#
+# The plugin documents supertool's own confirmation gate and its three opt-outs
+# and says nothing about the harness permission sitting in front of them, which
+# can refuse the tag push or the publish -- after the fold has already deleted
+# the fragments. A refusal is none of `release_publish.py`'s three verdicts:
+# those are earned by running. So the predicates below require the file to say
+# that, not merely to mention that denials happen. The distinction is the whole
+# issue -- the same call has been denied and then permitted with no change, so a
+# document that merely acknowledges denials exist leaves the loop with nothing
+# to do when one lands mid-sequence.
+# --------------------------------------------------------------------------- #
+
+
+def _says_a_denial_is_not_one_of_the_three(text):
+    return bool(re.search(r"\bdenied\b", text, re.I)) and bool(
+        re.search(r"has no exit code", text, re.I)
+    )
+
+
+def _forbids_evading_a_denied_call(text):
+    return bool(re.search(r"do not reword", text, re.I)) and bool(
+        re.search(r"until the classifier relents", text, re.I)
+    )
+
+
+def _says_where_a_denied_release_resumes(text):
+    return bool(re.search(r"where a denied release resumes", text, re.I)) and bool(
+        re.search(r"never reports as released", text, re.I)
     )
 
 
@@ -500,8 +534,28 @@ README_FACTS = [
     ("scaffold is in the launcher path", _names_scaffold_as_the_next_step, r"/oss:scaffold|tracked file"),
 ]
 
-ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + TICK_FACTS + README_FACTS
-ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + SKILL_FACTS + DEVELOPER_FACTS + README_FACTS
+RELEASE_FACTS = [
+    (
+        "a denied call is none of the publisher's three verdicts",
+        _says_a_denial_is_not_one_of_the_three,
+        r"\bdenied\b|has no exit code",
+    ),
+    (
+        "a denied call is not reworded past the classifier",
+        _forbids_evading_a_denied_call,
+        r"do not reword|classifier relents",
+    ),
+    (
+        "a denied release says where it stopped",
+        _says_where_a_denied_release_resumes,
+        r"where a denied release resumes|never reports as released",
+    ),
+]
+
+ALL_FACTS = (
+    SETUP_FACTS + SCAFFOLD_FACTS + TICK_FACTS + SKILL_FACTS
+    + DEVELOPER_FACTS + README_FACTS + RELEASE_FACTS
+)
 
 # (file, label, predicate, pattern whose lines carry the fact) for every carried fact,
 # so a new surface joins both the real-file assertion and its deletion control at once.
@@ -512,6 +566,7 @@ CARRIED = (
     + [(SKILL_MD,) + fact for fact in SKILL_FACTS]
     + [(DEVELOPER_MD,) + fact for fact in DEVELOPER_FACTS]
     + [(README_MD,) + fact for fact in README_FACTS]
+    + [(RELEASE_MD,) + fact for fact in RELEASE_FACTS]
 )
 CARRIED_IDS = ["{}: {}".format(entry[0].name, entry[1]) for entry in CARRIED]
 
@@ -687,6 +742,42 @@ def test_a_cautioning_file_fails_the_probe_predicate():
     # The must-fire half, same fixture: with the probe invocation present it does.
     assert _names_the_readonly_watcher_probe(
         PROBELESS_CAUTION + "\n```bash\nsupertool 'radar:--state'\n```\n"
+    )
+
+# A file that names every subject of RELEASE_FACTS and settles none of them.
+# SILENT cannot catch what #186 was made of: the old release.md was not silent
+# about permissions, it was *adjacent* to them -- it ran the publisher and read
+# its exit codes, while having no answer for a call that never reached the
+# publisher at all. A predicate satisfied by a file that merely names the
+# subject would certify exactly that state.
+NARRATING = (
+    "# Release\n"
+    "\n"
+    "Gates first, then the tag.\n"
+    "\n"
+    "The harness classifier is not stable and a call can come back denied. That is\n"
+    "worth knowing before you push a tag. `release_publish.py` reports created,\n"
+    "skipped or could-not-create, and the report says which one.\n"
+)
+
+
+def test_the_narrating_fixture_actually_names_every_release_subject():
+    """The positive control for the control below. A fixture that stopped naming
+    the subjects would make the next test pass for the same reason SILENT does,
+    and the discrimination it exists to prove would go untested while reporting
+    green."""
+    for subject in ("denied", "classifier", "could-not-create", "report"):
+        assert subject in NARRATING, subject
+
+
+@pytest.mark.parametrize(
+    "label,predicate,_pattern", RELEASE_FACTS, ids=[f[0] for f in RELEASE_FACTS]
+)
+def test_a_narrating_file_fails_every_release_predicate(label, predicate, _pattern):
+    assert not predicate(NARRATING), (
+        "{}: predicate passes on a file that names the subject and decides nothing. "
+        "Naming the fragments is not sourcing the number, and knowing that denials "
+        "happen is not having an answer for one.".format(label)
     )
 
 
