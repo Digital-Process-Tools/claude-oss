@@ -65,9 +65,25 @@ it a second way — grep the new content back — before saying it.
 
 1. **Reproduce first.** Drive the actual code path before you believe the issue. That is one command,
    and it is the difference between fixing the defect and fixing your model of it.
-2. **Test first, and watch it fail.** Run the repo's `test_command`. A test written after the fix
-   asserts what the code happens to do. **Report the red output and the green output separately**, as
-   the shortest decisive lines. The bar: *would this test still pass if the code did nothing?*
+2. **Test first, and watch it fail.** A test written after the fix asserts what the code happens to
+   do. **The targeted run is not optional**: your new test red before the fix exists, then green
+   after, and **the red output and the green output reported separately**, as the shortest decisive
+   lines. The bar: *would this test still pass if the code did nothing?*
+
+   **The full suite is optional — the repo's whole `test_command` — and the criteria are the
+   point.** Worth the wall-clock when the change is in the core, or in a shared helper, fixture or
+   conftest, or something was deleted or renamed, or you genuinely do not know what else reads the
+   code — and
+   **mandatory after a rebase onto the default branch**, without exception. That last one is not
+   symmetry: the failure a rebase introduces is by construction one your branch alone cannot show
+   you, and three pull requests went red on a single day on exactly that, so a rule that leaves the
+   full run optional without this clause reads as permission to skip the run that catches the most.
+   Not worth it when the change is confined to one module whose own tests are green and nothing
+   moved underneath it.
+
+   The anti-pattern is the expensive half: **never re-run the full suite to watch a failure you have
+   already seen.** Go back to the one file. Re-running everything to re-read the same assertion is
+   the most wasteful loop available to a delegated agent.
 3. **A negative assertion needs a positive control.** An assertion that *X does not happen* passes
    when *nothing at all* happens — a broken harness, an unresolved tree, a process that died before
    it spoke. Pair every "must not fire" case with a "must fire" case in the same fixture, and if the
@@ -86,11 +102,65 @@ it a second way — grep the new content back — before saying it.
 5. **Docs are part of the change.** The repo's `docs_targets` for anything user-facing, the changelog
    always. A change nobody can discover is not shipped. If the repo uses changelog fragments, add
    one; do not hand-edit the assembled file.
+
+   **A change to a file convention is not finished until the repo's diagnostic reports the new
+   convention.** `scripts/doctor.py` is what tells a maintainer whether their repo matches what this
+   plugin expects, so a convention that moves without it answers confidently against a rule nobody
+   follows any more — health measured against the old shape, or a gap reported for what is now
+   correct behaviour. It has already happened here, and in the worst way to catch: two individually
+   correct commits, one teaching the writer to decline a file and one leaving the diagnostic
+   reporting that file as missing with the remedy *run the writer that now declines*. The defect
+   existed only in the composition, so neither diff review could see it.
+
+   The rule is **make sure the diagnostic reports it**, not *always edit `doctor.py`*. Say in your
+   report which of the three you are in:
+
+   - **updated** — you changed the diagnostic in this diff, and its new output is in the report;
+   - **already covered** — the value flows through a derivation the diagnostic already consumes, so
+     no edit was needed. **Name the derivation**, and say you confirmed it rather than assumed it;
+     the confirmation is the work, and an unnamed one is indistinguishable from a guess;
+   - **needed but out of bounds** — the file is **held by another lane**, or the brief did not give
+     it to you. Then do not reach into it: another agent's file is not yours to edit mid-run. Write
+     the required change precisely enough for the maintainer to sequence it — which check, what it
+     says today, what it must say — and report it under `blocked`. An unstated third arm is how this
+     becomes a rule that gets skipped silently.
 6. **Commit. Do not push. Do not open a PR. Do not comment on the issue.** Unconditionally — not
    "unless something blocks you". A brief that said "do not push *if* a prompt blocks you" is how one
    agent correctly pushed. Tell the maintainer and they will.
 
 A permission block on a git step is not a failure you should route around. Report it.
+
+## A defect in a declared dependency is reported, never worked around silently
+
+You will sometimes trip over a bug that is not in this repo at all but in something the project
+declares as a dependency. Routing around it and saying nothing leaves the board that owns the fix
+unaware of a defect somebody has already reproduced — and **getting it onto that tracker is part of
+finishing the work**, not a favour to another project.
+
+**You do not perform the filing.** Opening an issue on another repository is publishing, and your
+publishing clause is unconditional: **do not open the upstream issue**, do not comment on one. You
+hand the maintainer what they need to open it in one call, in `adjacent`, with `action` set to
+`report-for-filing`:
+
+- **which declared dependency** it is, by the name the manifest uses — never a repo slug you
+  inferred, and never a tracker you guessed at;
+- **the reproduction**, the same standard as a local finding;
+- **whether it is a blocking class.** Look the finding up in the ranking table the manager skill
+  owns, and say the row. **A finding in a blocking row must not become a public issue on somebody
+  else's tracker** — it goes down the **embargo** path, meaning whatever private reporting channel
+  that project's own security policy names: a security tab, a disclosure address or a form. The
+  word *embargo* is unlikely to appear in the policy; read the policy. Say so in the item; the
+  maintainer is the one who routes it, and this is the sentence that stops the routing being a
+  reflex.
+- **For an arbitrary third-party dependency, say that too.** Filing there is a judgement rather than
+  a duty: there may be no filing rights, no relationship, and a public tracker is a disclosure
+  channel. A dependency the same maintainer owns is the unambiguous case.
+
+Three outcomes and the third is the one that gets lost: **reported** to the maintainer for filing;
+**could not identify the dependency or its tracker**, said as that rather than dropped; and
+**deliberately not reported**, which **is a decision with a reason** — already fixed upstream, or
+already filed — and never something that happens because nobody decided. A defect found, judged
+worth reporting, and then silently not reported reads exactly like a dependency with no defects.
 
 ## Review your own diff before you hand it back
 
@@ -248,6 +318,22 @@ The fields, their enumerations and a worked example are in
 this section would otherwise duplicate and drift from. What the old prose report asked for has not
 changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, review →
 `review`, platform claims → `claims`, unfiled findings → `adjacent`, the note path → `note_path`.
+
+### Report the friction you hit in the tooling, not only in the code
+
+**Every UX problem you hit while using the ops goes in the report, one line each**: a field missing
+from an op, a second call needed to get what the first should have returned, an error naming what is
+wrong but not what to do, a stack trace where a sentence belongs, output you had to read twice
+because it did not mean what it appeared to mean. For the length of this task you are a primary user
+of these ops, and that is **signal nobody else can see** — the maintainer runs the loop, not the
+ops, and a friction nobody writes down is paid again by every later agent.
+
+It goes in `adjacent`, with `action` set to `report-for-filing` and `file` null, and each line
+prefixed `tooling:` so a reader can tell it from a finding about the code. That routing is a
+compromise and worth knowing as one: the schema refuses keys it does not define, so there is no
+dedicated field, and `adjacent` is the survey whose meaning — *found, nobody filed it* — is nearest.
+If you hit no friction, that is `checked` with no `tooling:` items, which is a claim; leaving the
+duty out entirely is not.
 
 ### The pull request is yours to write — the title as much as the body
 

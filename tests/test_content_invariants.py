@@ -1570,3 +1570,360 @@ def test_the_reload_check_fires_on_the_readme_with_the_new_block_removed():
         )
         == set()
     )
+
+
+# --------- a defect in a declared dependency is filed on that dependency's board (#143)
+#
+# The refusal this replaces was reasonable-sounding and cost a confirmed, reproduced
+# cross-repo defect its filing: "that is a decision about somebody else's roadmap".
+# Anchors are phrases only the new text carries -- each was grepped against the
+# pre-change documents first, because an anchor the file already contained is a green
+# tick over a sentence nobody wrote.
+
+UPSTREAM_FILING_ANCHORS = [
+    ("scoped-to-declared-dependencies", ("declared dependency",)),
+    ("filing-is-part-of-the-job", ("part of finishing the work",)),
+    ("the-arbitrary-third-party-case-is-bounded", ("third-party",)),
+    ("a-blocking-class-does-not-go-to-a-public-tracker", ("embargo",)),
+    # Not "deliberately not": the skill already contains that string, in "deliberately
+    # not one list", so it passed against the unchanged file -- a green tick over a
+    # sentence nobody had written. Caught by running the guard before the prose.
+    ("deliberately-not-reported-is-a-decision-with-a-reason", ("is a decision with a reason",)),
+]
+
+UPSTREAM_FILING_DOCUMENTS = [
+    MANAGER_SKILL,
+    REPO_ROOT / "agents" / "developer.md",
+]
+
+
+def _upstream_filing_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in UPSTREAM_FILING_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_both_documents_state_the_upstream_filing_duty():
+    for path in UPSTREAM_FILING_DOCUMENTS:
+        unmet = _upstream_filing_unmet(path.read_text(encoding="utf-8"))
+        assert not unmet, "{}: {}".format(path.relative_to(REPO_ROOT), sorted(unmet))
+
+
+def test_the_manager_derives_the_tracker_rather_than_listing_it():
+    """Which trackers those are is data. The derivation already exists; naming the
+    functions is what stops a list of repo names being written into shared prose,
+    which test_no_repo_specific_spellings_in_prose would reject anyway -- so the
+    rule without the derivation is a rule with no way to be obeyed.
+    """
+    folded = _flatten(MANAGER_SKILL.read_text(encoding="utf-8"))
+    for symbol in ("declared_dependencies", "dependency_repositories"):
+        assert symbol.lower() in folded, (
+            "the manager skill states the upstream filing rule but never says where "
+            "the tracker comes from: {} is unnamed".format(symbol)
+        )
+
+
+def test_the_manager_separates_could_not_file_from_did_not_file():
+    folded = _flatten(MANAGER_SKILL.read_text(encoding="utf-8"))
+    assert "could not file" in folded, (
+        "the filing outcome has two failure states -- the tracker did not resolve or "
+        "the filing failed, versus a decision not to file -- and only the second one "
+        "is written down"
+    )
+
+
+def test_the_developer_reports_upstream_rather_than_filing_itself():
+    """The developer's publishing clause is unconditional, and opening an issue on
+    another repo is publishing. So the duty lands as a report, not a filing.
+    """
+    folded = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert "do not open the upstream issue" in folded, (
+        "developer.md states the upstream duty without saying who performs it, which "
+        "reads as permission to file against another repo mid-task"
+    )
+
+
+def test_the_upstream_filing_check_fires_on_the_refusal_it_replaces():
+    """Positive control, both halves. The must-not-fire half is the sentence that
+    actually shipped on the tracker; every anchor has to come back unmet, or the
+    guard would have passed against the documents before this change.
+    """
+    refusal = (
+        "Needs a companion issue on the dependency that owns the fix. Not filed yet "
+        "-- filing there is a decision about somebody else's roadmap and belongs to "
+        "whoever owns that board."
+    )
+    assert _upstream_filing_unmet(refusal) == {name for name, _ in UPSTREAM_FILING_ANCHORS}
+    # Must-fire half: prose carrying every anchor comes back clean, so the assertion
+    # above is about the text rather than about a matcher that never matches.
+    carries_it = (
+        "A defect you find in a declared dependency is filed on that dependency's "
+        "tracker, and that is part of finishing the work. For an arbitrary "
+        "third-party dependency it is a judgement rather than a duty. A finding in a "
+        "blocking row goes to the embargo path, never to a public tracker. And "
+        "deliberately not filed is a decision with a reason, never a default."
+    )
+    assert _upstream_filing_unmet(carries_it) == set()
+
+
+# ------------------- a label PATCH replaces the whole set, and the freeze is a label (#137)
+
+LABEL_WRITE_ANCHORS = [
+    ("patch-replaces-rather-than-adds", ("replaces the whole label set",)),
+    ("recount-after-the-last-write", ("after the last label write",)),
+]
+
+
+def _label_write_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in LABEL_WRITE_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_the_freeze_step_states_that_a_label_patch_replaces():
+    """The cohort freeze is the backlog's only terminating condition, and a later
+    priority write removes the cohort label with exit 0 and no error. A freeze that
+    can be silently undone by the next write is not a freeze.
+    """
+    unmet = _label_write_unmet(MANAGER_SKILL.read_text(encoding="utf-8"))
+    assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
+
+
+def test_the_label_write_check_fires_on_the_freeze_step_as_it_was():
+    before = (
+        "At each release tag, label everything then-open as a frozen cohort in the "
+        "same minute as the tag. Nothing joins a cohort, ever, so it can only shrink. "
+        "Cohort labels are the maintainer's act, by hand; the triager must never "
+        "write one."
+    )
+    assert _label_write_unmet(before) == {name for name, _ in LABEL_WRITE_ANCHORS}
+    assert (
+        _label_write_unmet(
+            "PATCH replaces the whole label set, so add with POST and re-count the "
+            "cohort after the last label write of the tick."
+        )
+        == set()
+    )
+
+
+# ------------------- a short sha answers [] and exits 0 (#137)
+
+SHORT_SHA_ANCHORS = [
+    ("resolve-the-sha-first", ("rev-parse",)),
+    ("say-what-a-short-sha-does", ("40-character",)),
+]
+
+
+def _short_sha_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in SHORT_SHA_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_the_release_gate_resolves_the_sha_before_counting_workflows():
+    """Gate 1 counts workflows on the exact commit being tagged. An abbreviated sha
+    returns an empty run list and exits 0, which is indistinguishable from a commit no
+    workflow ran on -- this repo's own defect class, sitting in the release gate.
+    """
+    unmet = _short_sha_unmet(MANAGER_SKILL.read_text(encoding="utf-8"))
+    assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
+
+
+def test_the_short_sha_check_fires_on_the_gate_as_it_was():
+    before = (
+        "The default branch is green at leg level for the exact commit being tagged "
+        "-- and count the workflows, not just the runs. A workflow declared in the "
+        "workflows directory but absent from the run list is UNKNOWN, never a pass."
+    )
+    assert _short_sha_unmet(before) == {name for name, _ in SHORT_SHA_ANCHORS}
+    assert (
+        _short_sha_unmet(
+            "Pass the output of git rev-parse, never an abbreviated sha: the full "
+            "40-character sha returns the runs and the short form returns nothing."
+        )
+        == set()
+    )
+
+
+# ------------------- the full suite is optional, the targeted red-green is not (#141)
+
+SUITE_RULE_ANCHORS = [
+    ("the-full-suite-is-optional", ("full suite is optional",)),
+    ("a-rebase-makes-it-mandatory", ("after a rebase",)),
+    ("never-re-run-to-re-read-a-failure", ("failure you have already seen",)),
+]
+
+
+def _suite_rule_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in SUITE_RULE_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_the_developer_states_when_the_full_suite_is_worth_the_wall_clock():
+    """The optional half without the rebase clause reads as permission to skip the run
+    that has caught the most: three pull requests went red the same day on a defect
+    only the full suite on a rebased tree could see.
+    """
+    unmet = _suite_rule_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
+
+
+def test_the_suite_rule_check_fires_on_the_instruction_it_replaces():
+    before = (
+        "Test first, and watch it fail. Run the repo's test_command. A test written "
+        "after the fix asserts what the code happens to do. Report the red output and "
+        "the green output separately, as the shortest decisive lines."
+    )
+    assert _suite_rule_unmet(before) == {name for name, _ in SUITE_RULE_ANCHORS}
+    assert (
+        _suite_rule_unmet(
+            "The full suite is optional, and mandatory after a rebase onto the "
+            "default branch. Never re-run it to watch a failure you have already seen."
+        )
+        == set()
+    )
+
+
+# ------------------- the tooling friction the agent is the only one who can see (#141)
+
+FRICTION_ANCHORS = [
+    ("the-duty-is-named", ("friction",)),
+    ("it-is-signal-only-the-agent-has", ("signal nobody else can see",)),
+    ("it-has-somewhere-to-go-in-a-fixed-schema", ("adjacent",)),
+]
+
+
+def _friction_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in FRICTION_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_the_developer_reports_tooling_friction():
+    """A duty with no field to land in is a duty that evaporates at report time, so
+    the check is the pair: the duty, and where it goes in a schema that refuses
+    unknown keys.
+    """
+    unmet = _friction_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
+
+
+def test_the_friction_check_fires_on_a_brief_that_only_reports_the_code():
+    before = (
+        "Unfiled findings go in adjacent: anything you found that nobody filed, with "
+        "whether you fixed it or are handing it over to be filed."
+    )
+    assert _friction_unmet(before) == {
+        "the-duty-is-named",
+        "it-is-signal-only-the-agent-has",
+    }
+    assert _friction_unmet("Read the diff and report what you find.") == {
+        name for name, _ in FRICTION_ANCHORS
+    }
+    assert (
+        _friction_unmet(
+            "Report every friction you hit using the ops, one line each, in adjacent "
+            "-- for the length of this task that is signal nobody else can see."
+        )
+        == set()
+    )
+
+
+# ------------- a convention change is not finished until the diagnostic reports it
+#
+# The failure this guards lives in the composition of two individually correct
+# commits: scaffold learned to decline the owned trio and doctor went on reporting
+# all three absent with the remedy "run the command that now declines". Neither diff
+# was wrong on its own, which is why a rule about the pair has to be written down.
+
+DOCTOR_CONVENTION_ANCHORS = [
+    ("the-diagnostic-has-to-report-the-new-convention", ("reports the new convention",)),
+]
+
+DOCTOR_CONVENTION_DOCUMENTS = [
+    MANAGER_SKILL,
+    REPO_ROOT / "agents" / "developer.md",
+]
+
+
+def _doctor_convention_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in DOCTOR_CONVENTION_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_both_documents_tie_a_convention_change_to_the_diagnostic():
+    for path in DOCTOR_CONVENTION_DOCUMENTS:
+        unmet = _doctor_convention_unmet(path.read_text(encoding="utf-8"))
+        assert not unmet, "{}: {}".format(path.relative_to(REPO_ROOT), sorted(unmet))
+
+
+def test_the_developer_separates_an_edit_from_a_derivation_that_already_covers_it():
+    """"Always edit doctor.py" would be the wrong rule: a key that flows through a
+    derivation the diagnostic already consumes is reported without a line being added.
+    Which of the two happened is the part a maintainer cannot re-derive from the diff,
+    so the report has to say it and name the derivation.
+    """
+    folded = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert "name the derivation" in folded, (
+        "developer.md ties a convention change to the diagnostic but offers only one "
+        "way to satisfy it, so a derivation that already covers the change reads as "
+        "an unmet requirement"
+    )
+
+
+def test_the_developer_states_what_to_do_when_another_lane_holds_the_file():
+    """The third arm, and the one that makes the rule survive a fleet: the diagnostic
+    is one file, several agents run at once, and reaching into another lane's file is
+    worse than the defect. Silently skipping it is worse again.
+    """
+    folded = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert "held by another lane" in folded, (
+        "developer.md requires the diagnostic to be updated and never says what to do "
+        "when the file is out of bounds, which leaves reaching into it and dropping it "
+        "as the two available readings"
+    )
+
+
+def test_the_doctor_convention_check_fires_on_the_documents_as_they_were():
+    """Positive control. The docs requirement as both files stated it: complete about
+    the repo's own documentation, silent about the diagnostic that describes it.
+    """
+    before = (
+        "Docs are part of the change. The repo's docs_targets for anything "
+        "user-facing, the changelog always. A change nobody can discover is not "
+        "shipped. If the repo uses changelog fragments, add one; do not hand-edit the "
+        "assembled file."
+    )
+    assert _doctor_convention_unmet(before) == {name for name, _ in DOCTOR_CONVENTION_ANCHORS}
+    assert "name the derivation" not in _flatten(before)
+    assert "held by another lane" not in _flatten(before)
+    # Must-fire half.
+    assert (
+        _doctor_convention_unmet(
+            "A convention change is finished when the diagnostic reports the new "
+            "convention, whether by an edit or by a derivation it already consumes."
+        )
+        == set()
+    )
+
+
