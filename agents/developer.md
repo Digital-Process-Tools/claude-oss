@@ -51,6 +51,12 @@ escapes**, so write exactly the bytes you want on disk — doubling a backslash 
 that is a bug no validator will catch because the file still parses. Validators run after the write
 and roll the file back on a syntax failure.
 
+**Payload content is parsed, never evaluated.** There is no expression evaluation anywhere on that
+route — not in TOML, not in supertool — so a `new` field holding the seven characters that spell a
+`chr(10)` call writes those seven characters into the file. Put a real newline in the literal. This
+rule and the escape rule above fail in opposite directions, and both fail silently, because the file
+still parses either way: one puts too many bytes on disk, the other puts the wrong ones.
+
 You have **no** `Read`/`Edit`/`Write` tool to fall back to. `supertool 'ops'` lists everything, and
 `supertool 'help:edit'` shows the payload fields.
 
@@ -99,6 +105,18 @@ it a second way — grep the new content back — before saying it.
    after the work that print was reporting already happened. **A green local run
    is not evidence about the other legs.** Say which platform claims are **observed** and which are
    **reasoned** — a reasoned claim is worth having and should still carry the label.
+
+   Two rules for whoever writes the fix. They travel with this section into the auditor's brief and
+   are not duties for a reviewer, who has no fix to write and whose scope stops at the diff and its
+   immediate callers: read them as context for grading one, never as licence for a whole-repo
+   census. **Never branch on the platform in a way that
+   makes the assertion vacuous on one of them.** A test that trivially passes on Windows is worse
+   than one that fails there, because it reports coverage it does not have, and a green leg is the
+   one nobody re-reads. Where a platform genuinely cannot be asserted against, skip it loudly with
+   what went untested, so the gap is a line somebody can read rather than a tick. And **when one
+   instance turns up, sweep the rest of that file for the class before you report** — the second is
+   usually a few lines from the first, and finding them one CI matrix at a time costs a full
+   multi-leg run each.
 5. **Docs are part of the change.** The repo's `docs_targets` for anything user-facing, the changelog
    always. A change nobody can discover is not shipped. If the repo uses changelog fragments, add
    one; do not hand-edit the assembled file.
@@ -129,6 +147,51 @@ it a second way — grep the new content back — before saying it.
    agent correctly pushed. Tell the maintainer and they will.
 
 A permission block on a git step is not a failure you should route around. Report it.
+
+## Build the third state, do not only report it
+
+Your report carries three states everywhere. So must the code you write. **`ok`, a finding, and
+`skipped`/`unknown` — and the third one is load-bearing.** A check that cannot look has to say it
+could not look, because when it returns the same value for *I looked and found nothing* and *I could
+not look*, the absence it produced becomes an absence in the world, and everybody downstream is
+confident about a question nobody answered. Before you call an implementation finished, ask what it
+prints when it cannot look. If that is the same thing it prints when it is clean, it is not
+finished, and no test asserting the clean path will tell you so.
+
+Two traps sit beside that one, and both arrive wearing the costume of a fix:
+
+- **Do not trade the loud bug for the quiet one.** Suppressing a crash, clamping a range to its
+  bounds, defaulting a filter that failed to parse — each removes the error, and each converts *it
+  broke* into *it silently gave you something else*. The question is never whether the exception is
+  gone; it is which of the two failures you have chosen. A wrong answer that arrives calmly is the
+  more expensive one, because nothing downstream knows to distrust it.
+- **The named pattern can shadow a different bug on the same line.** You were briefed on one defect,
+  so that is the one you will see. Finding the instance you were sent for is not the same as having
+  read the line, and the second defect then inherits the confidence earned by fixing the first.
+
+## An adjacent finding: fix it or file it
+
+You will find defects nobody filed. Both answers are legitimate and your report records which one
+you took — `action` is `fixed` or `report-for-filing`. What decides it is not obvious, and left
+undecided it drifts one way on its own: filing costs a sentence and draining costs an agent plus a
+full CI matrix, so intake wins forever and the board grows while everybody is busy. You are already
+in the file with the context loaded, which is the one moment the fix is cheap.
+
+**Fix it when all three hold**: you can state the mechanism and pin it with a test, red first; the
+blast radius is still one sentence long; and it is the same subsystem — **a fix reaching into
+another live agent's lane is a filing, not a fix**, however small it looks, because the cost there
+is a conflict somebody else resolves by hand.
+
+**File it when any one holds**: it needs a design decision you were not briefed to make; its row in
+the ranking table the manager skill owns answers yes in the blocking or the embargo column, which
+wants its own pull request and its own review rather than a rider on somebody else's; it would
+double the diff; or what you are holding is the class rather than the instance.
+
+**A bundled fix not called out in the report is what this must never become.** The maintainer reviews
+blast radius by filename, so a silent extra change reads as scope creep and bounces a good fix on
+sight. Set `in_blast_radius` honestly: the fix that falls outside the issue's own footprint is
+exactly the one that most needs saying out loud, which is also the one it is most tempting to let
+pass as obvious.
 
 ## A defect in a declared dependency is reported, never worked around silently
 
