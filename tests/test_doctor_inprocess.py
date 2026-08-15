@@ -889,3 +889,110 @@ def test_the_verdict_line_counts_only_findings_doctor_itself_recorded(tmp_path, 
     doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
     capsys.readouterr()
     assert [state for state, _ in doctor.FINDINGS] == ["OK"]
+
+
+# ------------------------------------------------- agent dispatch (#81)
+#
+# What this check can and cannot see is the point of it. It cross-references the
+# `oss:NAME` spawns written into this plugin's own documents against the agent files
+# it ships -- a fact on disk. It cannot see whether the harness registers any of
+# them, because that lives in a registry no python process can read, and #81 is what
+# leaving that unsaid costs: two of four shipped agents unreachable, the release
+# gate's blocking audit dispatching to nothing, for two versions, with no signal.
+#
+# So the boundary rides on the line rather than being omitted from it, and the
+# vacuous state -- nothing scanned -- is a warning rather than a clean report.
+
+
+def _fake_plugin(root, documents, agents):
+    for relative, text in documents.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    agent_dir = root / "agents"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    for name in agents:
+        (agent_dir / (name + ".md")).write_text("name: " + name, encoding="utf-8")
+    return root
+
+
+def test_agent_dispatch_is_clean_on_this_plugin_and_still_states_what_it_cannot_know():
+    lines = doctor.agent_dispatch()
+    assert lines, "agent_dispatch reported nothing at all"
+    joined = " ".join(message for _, message in lines)
+
+    # Every shipped agent named individually (#140), and read off disk rather than out
+    # of a list in the checker or in this test.
+    shipped = sorted(path.stem for path in (REPO_ROOT / "agents").glob("*.md"))
+    assert shipped, "no agent files -- the assertions below would be vacuous"
+    for name in shipped:
+        assert "oss:" + name in joined, name
+
+    # The clause that keeps this from reading as "the agents work", and the remedy for
+    # the only failure anyone has observed.
+    assert "cannot be determined from here" in joined, joined
+    assert "registry" in joined, joined
+    assert "/reload-plugins" in joined, joined
+
+    # And it must NOT borrow "not checked", which two suites pin to "the config was
+    # absent". A phrase reused is an invariant retired.
+    assert "not checked" not in joined, joined
+
+    # OK, not WARN. A sentence equally true on every machine forever is not a finding,
+    # and counting it would pin every repo's verdict at "usable with gaps".
+    assert not [level for level, _ in lines if level != "OK"], lines
+
+
+def test_agent_dispatch_fails_on_a_name_no_file_ships(tmp_path):
+    """Positive control for the finding state."""
+    root = _fake_plugin(
+        tmp_path,
+        {"commands/release.md": 'Agent(subagent_type: "oss:ghost")'},
+        ["developer"],
+    )
+    lines = doctor.agent_dispatch(root)
+    assert [level for level, _ in lines] == ["FAIL"], lines
+    assert "ghost" in lines[0][1]
+
+
+def test_agent_dispatch_warns_rather_than_passing_when_it_scanned_nothing(tmp_path):
+    """The vacuous state. A plugin root with no documents yields no dispatched names,
+    and "no name is missing a file" is trivially true of the empty set -- which would
+    print an OK line about a tree the check never found. It must say so instead.
+    """
+    lines = doctor.agent_dispatch(tmp_path / "nowhere")
+    assert [level for level, _ in lines] == ["WARN"], lines
+    assert "not checked" in lines[0][1]
+
+
+def test_agent_dispatch_reports_a_document_it_could_not_read(tmp_path):
+    """A file that cannot be read is a hole in the cross-reference, not an absence of
+    findings. Skipping it silently would let a rename hide behind a permissions error.
+    """
+    root = _fake_plugin(
+        tmp_path,
+        {"commands/release.md": 'Agent(subagent_type: "oss:developer")'},
+        ["developer"],
+    )
+    unreadable = root / "commands" / "broken.md"
+    unreadable.write_text("x", encoding="utf-8")
+    try:
+        unreadable.chmod(0o000)
+        if os.access(str(unreadable), os.R_OK):
+            pytest.skip(
+                "this process can read a 0o000 file (root, or a filesystem without "
+                "POSIX modes), so the unreadable-document arm cannot be reached here"
+            )
+        lines = doctor.agent_dispatch(root)
+    finally:
+        unreadable.chmod(0o644)
+    warnings = [message for level, message in lines if level == "WARN"]
+    assert warnings, lines
+    assert "broken.md" in " ".join(warnings)
+
+
+def test_check_agent_dispatch_prints_every_line_it_produced(capsys):
+    doctor.check_agent_dispatch()
+    out = capsys.readouterr().out
+    assert out.strip(), "check_agent_dispatch printed nothing"
+    assert len(doctor.FINDINGS) == len(out.strip().splitlines())

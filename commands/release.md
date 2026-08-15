@@ -91,6 +91,21 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    Hand it the payload verbatim and the round number. It writes nothing and it does not tag. **A
    spawn that did not run is `could not run`**, never a clean audit — if the agent fails to start or
    comes back empty, that is the third outcome and the same stop applies.
+
+   **A spawn that errors because the name does not resolve is that same `could not run`**, and it is
+   not hypothetical: this gate dispatched to a name the harness never registered for two releases,
+   so its third outcome was its permanent state and nothing reported it (#81). A release read as
+   having passed its gates because the error scrolled past. So:
+
+   - **Quote the spawn error verbatim in the release report.** It is the only thing that separates a
+     wiring failure from a clean audit, and both otherwise render as silence.
+   - **Re-dispatch to `general-purpose` with a pointer to `agents/release-auditor.md`**, handing it
+     the same payload, the same round number and the same "writes nothing, does not tag". An audit
+     performed by the fallback is an audit; record which agent ran.
+   - **If the fallback does not run either, the gate is `could not run` and the release stops.** The
+     contract above is unchanged by *why* nothing ran. Do not audit the delta yourself in its place
+     — the gate asks for an independent read, and the releaser is not one.
+
 4. **Every site in `version_sites` bumped**, swept **unfiltered**:
 
    ```bash

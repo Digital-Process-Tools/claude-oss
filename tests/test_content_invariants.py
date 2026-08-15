@@ -1292,3 +1292,227 @@ def test_the_round_cap_check_fires_on_the_cap_as_it_was_stated_before():
         "the round-cap anchor is satisfied by the wording it was written to reject, "
         "so it would pass on all three documents unchanged"
     )
+
+
+# ------------------------ a spawn that cannot resolve is could-not-run (#81)
+#
+# WHAT THESE DO NOT CHECK, said first because it is the whole reason they are shaped
+# this way. Whether a shipped agent file *registers* as a spawnable `subagent_type` is
+# a fact about the harness's agent registry. pytest cannot spawn an agent and cannot
+# read that registry, so nothing below observes registration, and nothing below would
+# have gone red while two of the four shipped agents were unreachable. These are a
+# substitute for the test #81 asks for, and the substitution is the finding: a check
+# asserting "four agent files ship and are well-formed" would have reported the broken
+# state as healthy, which is the defect this repo is named after written a second time
+# in the tool meant to detect it.
+#
+# What IS checkable is the consequence, and it is the half that blocks a release: a
+# spawn whose name does not resolve must land in the third state and must have a
+# defined next step, in the two documents that dispatch one.
+
+AGENT_DISPATCH_RE = re.compile(r'subagent_type:\s*"oss:([a-z0-9-]+)"')
+
+# Each dispatching document, and the definition file its own fallback must point at.
+DISPATCHING_DOCUMENTS = [
+    (REPO_ROOT / "agents" / "developer.md", "agents/auditor.md"),
+    (REPO_ROOT / "commands" / "release.md", "agents/release-auditor.md"),
+]
+
+
+def _unresolvable_spawn_unmet(text, definition_file):
+    """Anchors on the contract, not on the wording of any one paragraph.
+
+    `general-purpose` is matched as a bare name on purpose. `_explore_reviewer_unmet`
+    forbids the literal `subagent_type: "general-purpose"` in developer.md -- the
+    reviewer spawn must stay `Explore`, which carries no Edit/Write -- so the fallback
+    is named in prose rather than written as a spawn call. Do not "fix" that by adding
+    the spawn-call literal: it would satisfy this check and break that one, and the
+    two are about different spawns.
+    """
+    # Backticks dropped as well as whitespace folded. Every one of these anchors is a
+    # phrase a markdown author will code-span part of -- `general-purpose`, the file
+    # path -- and an anchor that a code span breaks reports the rule as missing from a
+    # document that states it. Same failure `_flatten` was written for, one punctuation
+    # mark further down.
+    folded = _flatten(text).replace("`", "")
+    unmet = set()
+    if "does not resolve" not in folded:
+        unmet.add("names-the-name-that-does-not-resolve")
+    if "could not run" not in folded:
+        unmet.add("an-unresolvable-spawn-is-could-not-run")
+    if "general-purpose" not in folded:
+        unmet.add("names-the-fallback-dispatch")
+    # The joined phrase, not the two halves separately. developer.md already says
+    # "general-purpose" three times for an unrelated reason -- the reviewer spawn is
+    # Explore *rather than* general-purpose -- so a bare-name anchor was satisfied by
+    # prose arguing the opposite, and reported the fallback as documented in a file
+    # that never mentioned it.
+    if "general-purpose with a pointer to " + definition_file.lower() not in folded:
+        unmet.add("points-the-fallback-at-the-definition-file")
+    if "quote the spawn error" not in folded:
+        unmet.add("the-spawn-error-is-quoted-not-summarised")
+    return unmet
+
+
+ALL_UNRESOLVABLE_SPAWN_ANCHORS = {
+    "names-the-name-that-does-not-resolve",
+    "an-unresolvable-spawn-is-could-not-run",
+    "names-the-fallback-dispatch",
+    "points-the-fallback-at-the-definition-file",
+    "the-spawn-error-is-quoted-not-summarised",
+}
+
+
+def test_the_dispatching_documents_exist():
+    """Anti-vacuity. Every check below reads a file by name; a rename makes them all
+    pass by never running, which is the state they exist to make impossible.
+    """
+    for path, _ in DISPATCHING_DOCUMENTS:
+        assert path.is_file(), "{} is gone -- the checks below would vacuously pass".format(
+            path.relative_to(REPO_ROOT)
+        )
+
+
+def test_every_dispatching_document_handles_a_name_that_does_not_resolve():
+    """Both documents in one report. Asserting inside the loop stops at the first
+    failure, which hides whether the second document has the same gap or a different
+    one -- and the whole point of #81 is that two documents were wrong at once.
+    """
+    gaps = {}
+    for path, definition_file in DISPATCHING_DOCUMENTS:
+        unmet = _unresolvable_spawn_unmet(path.read_text(encoding="utf-8"), definition_file)
+        if unmet:
+            gaps[str(path.relative_to(REPO_ROOT))] = sorted(unmet)
+    assert not gaps, (
+        "a document dispatches an oss: agent without saying what happens when the "
+        "name does not resolve: {}".format(gaps)
+    )
+
+
+def test_the_unresolvable_spawn_check_fires_on_the_spawn_as_it_was_stated_before():
+    """Positive control, and it is the actual prior text of both documents.
+
+    Both already said a spawn that did not run is not a clean audit. Neither said what
+    to do about a name that never resolves, so the reader hit an error with no defined
+    next step -- and #81 is a release whose blocking gate dispatched to nothing for two
+    versions. Every anchor must report unmet against these, or the check above says
+    nothing about whether the gap was closed.
+    """
+    developer_before = (
+        'Agent(subagent_type: "oss:auditor", model: "sonnet")\n\n'
+        "A review that did not execute must never render as a review that found "
+        "nothing. Treat an empty final message as did not run, never as clean.\n"
+    )
+    assert (
+        _unresolvable_spawn_unmet(developer_before, "agents/auditor.md")
+        == ALL_UNRESOLVABLE_SPAWN_ANCHORS
+    ), repr(sorted(_unresolvable_spawn_unmet(developer_before, "agents/auditor.md")))
+
+    # release.md's prior text already carried "could not run" for a different reason --
+    # the gate's own third outcome -- so only that one anchor was met. Pinning the
+    # difference keeps the check from being read as evidence about the other four.
+    release_before = (
+        'Agent(subagent_type: "oss:release-auditor", run_in_background: false)\n\n'
+        "A spawn that did not run is could not run, never a clean audit -- if the "
+        "agent fails to start or comes back empty, that is the third outcome and the "
+        "same stop applies.\n"
+    )
+    assert _unresolvable_spawn_unmet(release_before, "agents/release-auditor.md") == (
+        ALL_UNRESOLVABLE_SPAWN_ANCHORS - {"an-unresolvable-spawn-is-could-not-run"}
+    ), repr(sorted(_unresolvable_spawn_unmet(release_before, "agents/release-auditor.md")))
+
+
+def test_the_unresolvable_spawn_check_passes_on_prose_that_states_the_whole_contract():
+    """The must-fire half of the pair.
+
+    Every assertion above is that something is *absent* from a fixture, and an absence
+    check passes just as well when the matcher is broken and matches nothing at all.
+    One fixture that states the contract in different words must come back clean, or
+    the five anchors above are unfalsifiable.
+    """
+    complete = (
+        "If the spawn errors because the name does not resolve, that is could not "
+        "run, not a clean audit. Quote the spawn error verbatim, then re-dispatch to "
+        "general-purpose with a pointer to agents/auditor.md.\n"
+    )
+    assert _unresolvable_spawn_unmet(complete, "agents/auditor.md") == set()
+    assert _unresolvable_spawn_unmet("", "agents/auditor.md") == ALL_UNRESOLVABLE_SPAWN_ANCHORS
+
+
+# ------------------------------------- every dispatched name ships a definition (#81)
+
+
+def _dispatched_agent_names(documents):
+    """name -> the documents that spawn it. Scanned, never listed."""
+    found = {}
+    for path, text in documents:
+        for name in AGENT_DISPATCH_RE.findall(text):
+            found.setdefault(name, set()).add(str(path))
+    return found
+
+
+def test_the_dispatch_scan_finds_the_names_that_are_there():
+    """Anti-vacuity for the cross-reference below: a regex that matched nothing would
+    report every dispatched name as accounted for.
+    """
+    found = _dispatched_agent_names(_executable_documents())
+    assert found, "no oss: agent dispatch found in any executable document"
+    assert {"auditor", "release-auditor"} <= set(found), sorted(found)
+
+
+def test_every_dispatched_agent_name_ships_a_definition_file():
+    """A dispatch to a name with no file cannot work under any harness. This is green
+    today and it is not evidence that the four register -- see the block comment above.
+    """
+    shipped = {path.stem for path in AGENTS}
+    dispatched = _dispatched_agent_names(_executable_documents())
+    missing = {name: sorted(where) for name, where in dispatched.items() if name not in shipped}
+    assert not missing, "dispatched with no agents/<name>.md: {}".format(missing)
+
+
+def test_the_dispatch_cross_reference_fires_on_a_name_with_no_file():
+    """Positive control: a document spawning a name nothing ships must be reported."""
+    fixture = [(Path("commands/made-up.md"), 'Agent(subagent_type: "oss:ghost")')]
+    dispatched = _dispatched_agent_names(fixture)
+    assert dispatched == {"ghost": {"commands/made-up.md"}}
+    shipped = {path.stem for path in AGENTS}
+    assert [name for name in dispatched if name not in shipped] == ["ghost"]
+
+
+# ------------------------------------------- the install step names the reload (#140)
+#
+# An installed-but-unreloaded session resolves all seven skills and none of the four
+# agents, which reads as a working plugin with a broken agents/ directory rather than
+# as a missing step. That silence produced two wrong bug reports against this repo.
+# The remedy is one command and it was documented nowhere.
+
+RELOAD_ANCHORS = [
+    ("names-the-reload-command", "/reload-plugins"),
+    ("says-the-agents-are-what-goes-missing", "agent"),
+]
+
+
+def _reload_unmet(text):
+    folded = _flatten(text)
+    return {name for name, anchor in RELOAD_ANCHORS if anchor not in folded}
+
+
+def test_the_readme_install_step_names_the_reload():
+    readme = REPO_ROOT / "README.md"
+    assert readme.is_file(), "README.md is gone -- this check would vacuously pass"
+    unmet = _reload_unmet(readme.read_text(encoding="utf-8"))
+    assert not unmet, "README.md's install step does not carry the reload: " + repr(sorted(unmet))
+
+
+def test_the_reload_check_fires_on_the_install_step_as_it_was_stated_before():
+    """Positive control, and it is the actual prior text: correct as far as it went,
+    and silent on the command that fixes the failure it was describing.
+    """
+    before = (
+        "**Restart Claude Code afterwards.** Plugin registrations are read once at "
+        "session start.\n"
+    )
+    assert _reload_unmet(before) == {name for name, _ in RELOAD_ANCHORS}
+    # Must-fire half: prose carrying both anchors comes back clean, so the assertion
+    # above is about the text rather than about a matcher that matches nothing.
+    assert _reload_unmet("Run /reload-plugins or the agents will not register.") == set()

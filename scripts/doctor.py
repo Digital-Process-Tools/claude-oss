@@ -1576,6 +1576,163 @@ def check_ci_enforcement(project_dir, config):
         )
 
 
+# Every `oss:NAME` spawn written into this plugin's own documents. The names are read
+# off the documents rather than listed here: a list would be a fact about the plugin
+# kept in a second place, and the one that drifts is always the copy nobody edits.
+AGENT_DISPATCH_RE = re.compile(r'subagent_type:\s*"oss:([A-Za-z0-9_-]+)"')
+
+# Directories of this plugin that dispatch agents. `agents/` is included because an
+# agent may spawn another one -- developer.md does.
+DISPATCHING_DIRECTORIES = ("commands", "skills", "agents")
+
+# The clause that keeps the line from being read as "the agents work", and the remedy
+# for the one failure that has actually been observed.
+#
+# It rides on the line rather than getting its own, and it is OK rather than WARN, on
+# purpose. A permanent warning is not a signal: this sentence is equally true on every
+# machine, every run, forever, so counting it into the verdict would put every repo at
+# "usable with gaps" and cost the verdict the discrimination it exists for -- and #140
+# quotes exactly such a verdict as the thing whose one warning the reader had to go
+# hunting for. What #140 needs is that the report is not SILENT about agents, which is
+# what produced two wrong diagnoses; it does not need a finding invented to carry it.
+#
+# The wording deliberately avoids "not checked", which #140 suggested. That phrase is
+# already taken: two suites assert it appears for every unmeasured label when .oss.json
+# is absent and appears NOWHERE when it is present, so it means exactly "the config was
+# missing, so this check could not look". Reusing it for a fact that is unobservable in
+# principle would make a maintainer read a configured repo as a misconfigured one -- and
+# would silently retire an invariant, which is a worse outcome than picking a phrase.
+NOT_OBSERVABLE_HERE = (
+    "whether this session can dispatch to them cannot be determined from here -- it is "
+    "a fact about the harness's agent registry, which no script can read; if a spawn "
+    "fails with 'Agent type not found', run /reload-plugins and try again (#140)"
+)
+
+
+def agent_dispatch(plugin_root=None):
+    """Cross-reference the agent names this plugin dispatches against the files it ships.
+
+    Returns ``[(level, message)]`` rather than printing, so the states are testable.
+
+    Three of them, and the third is why this exists at all. ``ok``: every dispatched
+    name has an ``agents/<name>.md``. A finding: a name with no file, or a document
+    that could not be read, which is a hole in the cross-reference and not an absence
+    of findings. And ``unknown``: nothing was scanned, which is trivially clean --
+    "no dispatched name lacks a file" is true of the empty set -- and would otherwise
+    print an OK line about a tree the check never found.
+
+    What it CANNOT see is stated on the line rather than left out of it. Registration
+    lives in the harness's agent registry; no python process can query it. #81 is the
+    bill for leaving that unsaid: two of the four shipped agents did not register, the
+    release gate's blocking security audit dispatched to a name that resolved to
+    nothing for two versions, and a gate that never ran read exactly like a gate that
+    passed. A check reporting "four agent files ship and are well-formed" would have
+    called that healthy -- this repo's own defect class, inside the checker written to
+    catch it -- so this one reports what it measured and names what it did not.
+    """
+    root = PLUGIN_ROOT if plugin_root is None else Path(plugin_root)
+    dispatched = {}  # name -> the documents that spawn it
+    unreadable = []
+    scanned = 0
+    for directory in DISPATCHING_DIRECTORIES:
+        base = root / directory
+        try:
+            paths = sorted(base.rglob("*.md"))
+        except OSError as exc:
+            unreadable.append("{}/: {}".format(directory, _one_line(str(exc))))
+            continue
+        for path in paths:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                # The exception in hand answers what went wrong. Asking the filesystem
+                # a second question to explain the first is how release_delta.py's
+                # _read_config took down the release gate.
+                unreadable.append("{}: {}".format(path.name, _one_line(str(exc))))
+                continue
+            scanned += 1
+            for name in AGENT_DISPATCH_RE.findall(text):
+                dispatched.setdefault(name, set()).add(path.name)
+
+    lines = []
+    if not scanned and not unreadable:
+        return [
+            (
+                "WARN",
+                "agent dispatch: not checked -- no documents found under {} in {}, so "
+                "nothing was cross-referenced".format(
+                    "/, ".join(DISPATCHING_DIRECTORIES) + "/", root
+                ),
+            )
+        ]
+    for detail in unreadable:
+        lines.append(
+            (
+                "WARN",
+                "agent dispatch: could not read {} -- the cross-reference below is "
+                "incomplete by that much".format(detail),
+            )
+        )
+
+    try:
+        shipped = {path.stem for path in (root / "agents").glob("*.md")}
+    except OSError as exc:
+        return lines + [
+            (
+                "WARN",
+                "agent dispatch: not checked -- agents/ could not be listed ({}), so "
+                "there was nothing to check the dispatched names against".format(
+                    _one_line(str(exc))
+                ),
+            )
+        ]
+
+    missing = sorted(name for name in dispatched if name not in shipped)
+    if missing:
+        lines.append(
+            (
+                "FAIL",
+                "agent dispatch: {} spawned by {} but no agents/<name>.md ships it".format(
+                    ", ".join("oss:" + name for name in missing),
+                    ", ".join(sorted(set().union(*(dispatched[n] for n in missing)))),
+                ),
+            )
+        )
+        return lines
+
+    if not dispatched:
+        lines.append(
+            (
+                "WARN",
+                "agent dispatch: not checked -- {} document(s) read and none spawns an "
+                "oss: agent, so nothing was cross-referenced".format(scanned),
+            )
+        )
+        return lines
+
+    # Every SHIPPED agent is named, not only the dispatched ones. #140 asks for the four
+    # individually, and two of them (developer, triager) are spawned by a human out of
+    # the manager loop rather than by a document, so a list of dispatched names would
+    # silently omit exactly the two whose absence started this.
+    lines.append(
+        (
+            "OK",
+            "agent dispatch: {} agent file(s) ship ({}) and every oss: name this "
+            "plugin's documents spawn has one -- {}".format(
+                len(shipped),
+                ", ".join("oss:" + name for name in sorted(shipped)),
+                NOT_OBSERVABLE_HERE,
+            ),
+        )
+    )
+    return lines
+
+
+def check_agent_dispatch(plugin_root=None):
+    for level, message in agent_dispatch(plugin_root):
+        report(level, message)
+
+
 def check_freshness(project_dir, config):
     """Report, never update. A tool that changes underneath a running session changes
     behaviour mid-flight, and the runtime already owns installation.
@@ -1729,6 +1886,9 @@ def main(argv=None):
     )
     check_state_file(project_dir, config)
     check_ci_enforcement(project_dir, config)
+    # A fact about the plugin, not about the project, so it needs no config and runs
+    # even when everything else was unmeasurable.
+    check_agent_dispatch()
 
     # Declared dependencies install automatically; they do not configure themselves,
     # and the unconfigured state is the one that still appears to work.
