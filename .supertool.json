@@ -10,5 +10,10 @@
         "cmd": "{python} -m py_compile {file}"
       }
     }
+  },
+  "ops": {
+    "radar": {
+      "watch_name": "claude-oss"
+    }
   }
 }
