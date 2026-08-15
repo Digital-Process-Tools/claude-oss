@@ -10,6 +10,7 @@
     "skills/manager/SKILL.md"
   ],
   "changelog_dir": "changelog.d",
+  "changelog_untagged": ["0.1.0"],
   "docs_targets": [
     "README.md"
   ],

@@ -23,4 +23,12 @@ safe to delete; nothing reads it.
 **`null` is an answer, not a gap.** `test_command` and `changelog_dir` may be null and mean "the
 probe could not tell". Everything else null is a hole -- the probe found nothing and said nothing.
 
+**`changelog_untagged` has three states and they are three.** It lists the `## [x.y.z]` sections in
+`CHANGELOG.md` that were never tagged, so the link-ref audit does not demand a `releases/tag/v...`
+URL that would 404. Absent or `null` means nobody declared anything and every section is expected to
+carry a link ref -- a default reading, not a statement. `[]` means the repository has declared that
+every section was tagged: the same audit, and a decision on record. A list names the exempt versions.
+The scaffolded CI leg and the fragment rule both render from this key, so the answer is written once.
+Versions, not tags: `0.1.0`, never `v0.1.0`. A declared version with no matching section is a finding.
+
 **No key here holds a credential.** The file is committed; tokens live in the forge CLI's own auth.

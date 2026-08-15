@@ -34,7 +34,7 @@ REQUIRED_KEYS = {
     "state_file",
 }
 
-OPTIONAL_KEYS = {"milestones", "notes", "release"}
+OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged"}
 
 # Keys this plugin used to write and no longer reads. Tolerated, never emitted, never
 # validated -- a type check over a value with no consumer is asserting against nothing.
@@ -195,6 +195,54 @@ def changelog_dir_problem(value):
             "hoped about.".format(value)
         )
     return None
+
+
+# The second value in this file that becomes shell source, and it arrives by the same
+# route: `scaffold.py` interpolates it into the `--check-links` line of the workflow it
+# writes into somebody else's repository (#101, #121).
+#
+# A version is `x.y.z` and nothing else, so anything else is REFUSED at validation
+# rather than escaped at the template. Escaping is a claim about a quoting context that
+# the next person to edit the template can invalidate without noticing; a refusal is a
+# claim about the value, and it holds wherever the value goes next. The template quotes
+# anyway -- two mechanisms, and neither of them the only one standing there.
+#
+# Not `v1.2.3`: the tag spelling is `release.tag_pattern`'s business, and the audit this
+# feeds compares against `## [x.y.z]` headings, which carry the version.
+CHANGELOG_UNTAGGED_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def changelog_untagged_problem(value):
+    """Why this `changelog_untagged` cannot be used, or None when it is fine.
+
+    Three states, all legal, and only the first two mean the same thing:
+
+    * absent or `None` -- nobody declared anything, so every `## [x.y.z]` section is
+      expected to carry a link ref. That is the default reading, not a statement.
+    * `[]` -- declared empty. This repository states that every release section was
+      tagged. Same behaviour, different epistemics, and the receipts keep them apart.
+    * `["0.1.0"]` -- declared. Those sections are exempt and the audit names them.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        return (
+            "changelog_untagged: expected a list of x.y.z version strings, or null "
+            "when nothing has been declared; got {!r}. An empty list is a legal and "
+            "different answer -- it says every release section was tagged.".format(value)
+        )
+    bad = [item for item in value
+           if not (isinstance(item, str) and CHANGELOG_UNTAGGED_RE.match(item))]
+    if bad:
+        return (
+            "changelog_untagged: every entry must be an x.y.z version, one per list "
+            "item; got {!r}. This value is written into a `run:` line of the workflow "
+            "generated for another repository, so anything a shell would read as an "
+            "instruction is refused rather than quoted and hoped about. Versions, not "
+            "tags: write '0.1.0', not 'v0.1.0'.".format(bad)
+        )
+    return None
+
 
 # Label vocabularies differ per repo and no pattern list covers every convention, so
 # these are widened rather than made exhaustive -- and every label that matches none
@@ -774,6 +822,10 @@ def validate(config):
     if changelog_dir:
         problems.append(changelog_dir)
 
+    changelog_untagged = changelog_untagged_problem(config.get("changelog_untagged"))
+    if changelog_untagged:
+        problems.append(changelog_untagged)
+
     if "release" in config:
         problems.extend(_validate_release(config["release"]))
 
@@ -970,6 +1022,12 @@ def build(probe):
             if any(name.startswith("changelog.d/") for name in files)
             else None
         ),
+        # Emitted as null rather than omitted. Which release sections were never
+        # tagged is not measurable from a probe -- a tag can be absent because the
+        # release predates the repository, which is the case #121 was filed from, or
+        # because nobody has cut it yet. So the key ships visible and undeclared, and
+        # a maintainer who needs it finds it in the file rather than in a changelog.
+        "changelog_untagged": None,
         "docs_targets": docs_targets,
         "labels": {"priority": classified["priority"], "lanes": classified["lanes"]},
         "milestones": list(probe.get("milestones") or []),

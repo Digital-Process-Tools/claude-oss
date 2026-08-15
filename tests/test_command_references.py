@@ -567,3 +567,85 @@ def test_deleting_the_carrying_lines_fails_the_predicate(path, label, predicate,
     predicate still passing here is matching something incidental."""
     mutated = _without_lines_matching(path.read_text(encoding="utf-8"), pattern)
     assert not predicate(mutated), "{}: predicate passes with its own lines deleted".format(label)
+
+# --------------------------------------------------------------------------- #
+# A flag the script accepts and the command file never mentions.
+#
+# `--untagged` shipped, was the only place a repository could declare its
+# untagged releases, and `commands/changelog.md` did not name it -- so the one
+# surface a maintainer reads before running the audit was silent about the one
+# flag that changes its verdict (#101). Nothing caught that, because the guard
+# above checks that documented invocations pass required flags and cannot see a
+# flag that was never documented at all.
+#
+# Three states rather than two. A flag is documented, or it is exempt WITH A
+# REASON WRITTEN DOWN, or it is a finding. An exemption list with no reasons is
+# the same silence one indirection further away, and a flag added to the parser
+# next year lands in the third state by default -- which is the point: the
+# decision gets made, rather than defaulted into by nobody noticing.
+# --------------------------------------------------------------------------- #
+
+ASSEMBLER_SCRIPT = REPO_ROOT / "scripts" / "assemble_changelog.py"
+CHANGELOG_MD = REPO_ROOT / "commands" / "changelog.md"
+
+ADD_ARGUMENT_RE = re.compile(r"""add_argument\(\s*["'](--[A-Za-z0-9-]+)["']""")
+
+#: flag -> why commands/changelog.md does not name it. Each of these is a
+#: decision, and the reason is the part that makes it one.
+UNDOCUMENTED_BY_DECISION = {
+    "--date": (
+        "the fold takes today's date and the command never overrides it; the "
+        "flag exists so the test suite can pin a date"
+    ),
+    "--dry-run": (
+        "a rehearsal of the fold. /oss:release runs the fold for real, gated, "
+        "and a documented rehearsal invites folding twice"
+    ),
+    "--keep": (
+        "keeps consumed fragments. The fold deleting them is the policy this "
+        "command file states; a flag that undoes it does not belong beside it"
+    ),
+}
+
+
+def _assembler_flags():
+    """Every long flag the assembler's parser accepts, read off the source."""
+    return sorted(set(ADD_ARGUMENT_RE.findall(
+        ASSEMBLER_SCRIPT.read_text(encoding="utf-8"))))
+
+
+def test_the_flag_detector_reads_the_parser():
+    """The detector before the assertion. A regex matching nothing turns the
+    check below into a check that never looked, and one matching everything
+    turns it into a check that cannot report."""
+    flags = _assembler_flags()
+    assert flags, "no --flags found in " + ASSEMBLER_SCRIPT.name
+    # The must-fire half: flags known to be there are found.
+    for known in ("--check", "--check-links", "--dir", "--changelog", "--untagged"):
+        assert known in flags, known
+    # The must-not-fire half, same fixture: prose mentioning a flag is not a
+    # parser accepting one.
+    assert ADD_ARGUMENT_RE.findall("the --nonesuch flag, as in add_argument, is prose") == []
+    # And every exemption names a flag that exists. An exemption for a flag
+    # that was renamed is a silence nobody is accountable for any more.
+    assert not set(UNDOCUMENTED_BY_DECISION) - set(flags), (
+        "these exemptions name flags the parser no longer has: "
+        + ", ".join(sorted(set(UNDOCUMENTED_BY_DECISION) - set(flags)))
+    )
+
+
+def test_every_assembler_flag_is_documented_or_exempt_with_a_reason():
+    text = CHANGELOG_MD.read_text(encoding="utf-8")
+    assert text.strip(), CHANGELOG_MD.name + " is empty -- nothing was checked"
+
+    undocumented = [flag for flag in _assembler_flags()
+                    if flag not in text and flag not in UNDOCUMENTED_BY_DECISION]
+    assert not undocumented, (
+        "{} accepts these flags and {} never names them: {}. Document them, or "
+        "add each to UNDOCUMENTED_BY_DECISION with the reason it stays out -- "
+        "a flag that changes the verdict and appears on no surface a maintainer "
+        "reads is the shape #101 was filed about.".format(
+            ASSEMBLER_SCRIPT.name, CHANGELOG_MD.name, ", ".join(undocumented))
+    )
+    for flag, reason in sorted(UNDOCUMENTED_BY_DECISION.items()):
+        assert reason.strip(), flag + ": exempt with no reason recorded"

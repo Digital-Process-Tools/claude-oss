@@ -27,9 +27,14 @@ text — the file name is metadata, and metadata does not survive being read out
 
 ```bash
 python3 scripts/assemble_changelog.py --check
-# `--untagged 0.1.0`: that section was never tagged and has no release page, so no
-# `releases/tag/v0.1.0` link is expected for it. Same declaration the changelog workflow
-# passes; drop it and this refuses (#93).
+# `--untagged`: that section was never tagged and has no release page, so no
+# `releases/tag/v0.1.0` link is expected for it. Drop it and this refuses (#93).
+# `0.1.0` is not typed here twice by accident -- it is `changelog_untagged` in
+# `.oss.json`, which is where the CI leg and the jit-context rule read it from too, so
+# one question has one answer (#101). Change it there, not here.
+# Absent/null, `[]` and a list are three different declarations: pass no flag, pass
+# `--untagged ''`, or pass the versions. Do not fold the first two together with a
+# falsy test -- both are falsy and they do not mean the same thing.
 python3 scripts/assemble_changelog.py --check-links --untagged 0.1.0
 # Release only: rewrites CHANGELOG.md, deletes fragments. Both flags are required (#67) —
 # the fold will not derive its own target.

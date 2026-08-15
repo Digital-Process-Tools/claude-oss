@@ -86,22 +86,55 @@ because the fold has no way to know it was meant to stay.
 __CHECK__"""
 
 
-def changelog_fragments(assembler, fragments_dir):
+def _untagged_clause(untagged):
+    """The `--untagged` half of the command this rule prints, in three states.
+
+    `None` is "this repository declared nothing", `[]` is "it declared that nothing is
+    exempt", and a list is the declaration. The rule used to explain the flag
+    generically and name no version, which is a rule about a tool rather than about the
+    repository it was installed into -- and a reader following it had to go and work out
+    their own answer, which is the work the config key exists to have done once (#101).
+    """
+    if untagged is None:
+        return "", (
+            "This repository declares no untagged versions in `.oss.json`, so every "
+            "`## [x.y.z]`\nsection is expected to carry a link ref. If one of them was "
+            "never tagged, add it to\n`changelog_untagged` and re-run `/oss:scaffold "
+            "--apply` — the CI leg reads the same key,\nso the two cannot disagree. "
+            "Declaring `[]` says the same thing deliberately.\n"
+        )
+    if not untagged:
+        return " --untagged ''", (
+            "`changelog_untagged` is declared empty in `.oss.json`: every release "
+            "section here was\ntagged, and that is a decision on record rather than a "
+            "question nobody asked.\n"
+        )
+    return " --untagged '{}'".format(",".join(untagged)), (
+        "The declaration above is not written here: `changelog_untagged` in "
+        "`.oss.json` names {},\nand the CI leg reads the same key, so the command you "
+        "run and the one that gates the pull\nrequest cannot disagree. Add a version "
+        "there and re-run `/oss:scaffold --apply`.\n".format(", ".join(untagged))
+    )
+
+
+def changelog_fragments(assembler, fragments_dir, untagged=None):
     """The fragment rule, rendered for one tree.
 
     `assembler` is a repo-relative path or `None`; `fragments_dir` is that repository's
     fragment directory, which is not `changelog.d` everywhere and is what the rule has to
-    match on or it never fires at all.
+    match on or it never fires at all. `untagged` is that repository's
+    `changelog_untagged`, in the three states `_untagged_clause` keeps apart.
     """
     if assembler:
         # Both `--dir` and `--changelog` on every invocation. Given neither, the assembler
         # derives its own root by walking up for a `.git`, which under a plugin finds the
         # plugin's repository rather than the one being checked.
+        flag, declaration = _untagged_clause(untagged)
         check = (
             "Check before pushing:\n"
             "\n"
             "```bash\n"
-            "python3 {} --check --check-links --dir '{}' --changelog CHANGELOG.md\n"
+            "python3 {} --check --check-links{} --dir '{}' --changelog CHANGELOG.md\n"
             "```\n"
             "\n"
             "`--check-links` refuses when a `## [x.y.z]` section has no link reference "
@@ -110,11 +143,10 @@ def changelog_fragments(assembler, fragments_dir):
             "is no release\n"
             "page to point at, and a `releases/tag/vX.Y.Z` URL written for one is a 404 that "
             "renders as a\n"
-            "working link. Declare it rather than writing it — add `--untagged X.Y.Z` "
-            "(comma-separated for\n"
-            "several) to the command above and to every CI leg that runs it, so the two "
-            "cannot disagree.\n"
-        ).format(assembler, fragments_dir)
+            "working link.\n"
+            "\n"
+            "{}"
+        ).format(assembler, flag, fragments_dir, declaration)
     else:
         # Named as a third state rather than filled with a guess. No path appears here on
         # purpose: a plausible one is indistinguishable, to whoever runs it, from a path
@@ -155,6 +187,14 @@ safe to delete; nothing reads it.
 
 **`null` is an answer, not a gap.** `test_command` and `changelog_dir` may be null and mean "the
 probe could not tell". Everything else null is a hole -- the probe found nothing and said nothing.
+
+**`changelog_untagged` has three states and they are three.** It lists the `## [x.y.z]` sections in
+`CHANGELOG.md` that were never tagged, so the link-ref audit does not demand a `releases/tag/v...`
+URL that would 404. Absent or `null` means nobody declared anything and every section is expected to
+carry a link ref -- a default reading, not a statement. `[]` means the repository has declared that
+every section was tagged: the same audit, and a decision on record. A list names the exempt versions.
+The scaffolded CI leg and the fragment rule both render from this key, so the answer is written once.
+Versions, not tags: `0.1.0`, never `v0.1.0`. A declared version with no matching section is a finding.
 
 **No key here holds a credential.** The file is committed; tokens live in the forge CLI's own auth.
 """
@@ -204,19 +244,24 @@ No exception for an image, a PDF or a notebook cell: none exists in this reposit
 appears, that is when it gets one -- not before.
 """
 
-def rules(repo_root=None, fragments_dir=None):
+def rules(repo_root=None, fragments_dir=None, untagged=None):
     """dimension -> {filename: body}, rendered for the tree it is going into.
 
     `repo_root` is what makes the changelog rule correct in more than one repository: the
     assembler's path is read off that tree rather than baked in. Called with no root, the
     changelog rule renders its could-not-locate form -- which is the honest answer to
     "what do the rules say" asked without a repository to say it about.
+
+    `untagged` is the same kind of fact as `fragments_dir`: it belongs to one repository,
+    the caller has read it out of that repository's `.oss.json`, and this module has no
+    way to derive it. `None` here means the same as `None` there.
     """
     return {
         "paths": {
             "changelog-fragments.md": changelog_fragments(
                 assembler_path(repo_root) if repo_root is not None else None,
                 fragments_dir or DEFAULT_FRAGMENTS_DIR,
+                untagged,
             ),
             "oss-config.md": OSS_CONFIG,
         },
@@ -279,7 +324,7 @@ def index_rows(dimension, rules):
     return rows
 
 
-def install(repo_root, fragments_dir=None):
+def install(repo_root, fragments_dir=None, untagged=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
     The layer is removed first: a rule we stopped shipping would otherwise survive an
@@ -287,7 +332,8 @@ def install(repo_root, fragments_dir=None):
 
     The rules are rendered against `repo_root`, not copied from a constant, so the
     changelog rule names the assembler where **this** repository keeps it. `fragments_dir`
-    is that repository's `changelog_dir`; the caller has it and this module does not.
+    is that repository's `changelog_dir` and `untagged` its `changelog_untagged`; the
+    caller has both and this module has no way to derive either.
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
@@ -295,7 +341,7 @@ def install(repo_root, fragments_dir=None):
 
     written = []
     # Rendered once, against this tree, before anything is removed.
-    rendered = rules(root, fragments_dir)
+    rendered = rules(root, fragments_dir, untagged)
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.exists():

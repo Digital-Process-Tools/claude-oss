@@ -477,7 +477,23 @@ def test_the_committed_layer_in_this_repo_names_a_path_that_is_here():
     # And that it is the CURRENT rendering. Resolving is necessary and not sufficient: the
     # old committed string named a path that resolves here, which is precisely why the bug
     # was invisible from inside this repository.
-    assert body == oss_rules.rules(REPO_ROOT)["paths"]["changelog-fragments.md"], (
+    #
+    # Rendered from THIS repository's `.oss.json`, the way `scaffold.py --apply` renders
+    # it, rather than from `rules()`'s defaults. Every per-repo input this rule takes has
+    # to come from the same place the real caller takes it from, or the comparison
+    # measures the defaults and passes on a layer built from something else. It held with
+    # one input only because this repo's `changelog_dir` happens to equal the default;
+    # `changelog_untagged` does not, and would not have been noticed by a test comparing
+    # against a value neither side read (#101).
+    import json
+
+    config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
+    current = oss_rules.rules(
+        REPO_ROOT,
+        fragments_dir=config["changelog_dir"],
+        untagged=config.get("changelog_untagged"),
+    )["paths"]["changelog-fragments.md"]
+    assert body == current, (
         "the committed layer is stale -- rerun /oss:scaffold, or scripts/scaffold.py --apply"
     )
 
