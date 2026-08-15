@@ -26,6 +26,9 @@ Python 3.9 compatible.
 """
 
 import json
+import os
+import stat
+import tempfile
 from pathlib import Path
 
 MAX_DECISION = 200
@@ -189,6 +192,39 @@ def _entry_from(key, value):
     return {"at": at, "decision": decision, "detail": value}
 
 
+def _carry_mode(source, target):
+    """Give ``target`` ``source``'s permission bits, best effort.
+
+    A silence that is argued rather than shrugged at: `mkstemp` creates at 0600, which
+    is stricter than any state file's mode, never looser. So a mode that cannot be
+    carried leaves a file the owner can still read and nobody else gained access to --
+    not worth refusing a conversion over, and not worth a receipt of its own. On
+    Windows the bits are close to meaningless and this is close to a no-op.
+    """
+    try:
+        os.chmod(str(target), stat.S_IMODE(os.stat(str(source)).st_mode))
+    except OSError:
+        return
+
+
+def _discard(tmp):
+    """Remove a temp file a failed write left behind. Returns what to say about it.
+
+    An empty string when there is nothing to say, and a sentence naming the leftover
+    when it could not be removed -- a stray file in the maintainer's state directory
+    that nothing else will ever mention is a small mess with no receipt.
+    """
+    if tmp is None:
+        return ""
+    try:
+        os.unlink(str(tmp))
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        return "; a partial copy was left at {} and can be deleted ({})".format(tmp, exc)
+    return ""
+
+
 def migrate(path):
     """Convert a timestamp-keyed object of entries into the list shape, in place.
 
@@ -196,6 +232,13 @@ def migrate(path):
     written unless the whole document converts, and the original is kept beside it at
     ``<path>.pre-migration`` first, because the failure this guards against destroys a
     history that exists precisely because it cannot be recomputed.
+
+    That copy is **read back and compared** before the original is touched, and the
+    original is replaced by writing a sibling temp file and renaming it over the top.
+    Both exist because the receipt on a failed write claims the original is unchanged:
+    `write_text` truncates at open, so the claim was false on every path where the
+    write failed after that point (#174), and a copy nobody read back is the same
+    claim one level down.
     """
     path = Path(path)
     found = describe(path)
@@ -292,15 +335,70 @@ def migrate(path):
             "backup": None,
         }
 
+    # Read the copy back before anything touches the original. A receipt naming a
+    # backup nobody read is the same defect one layer out: `handle.write` returning
+    # without raising is not evidence the bytes landed, and the history this is a copy
+    # of cannot be recomputed. Neither branch below deletes the copy it distrusts --
+    # a failed read-back is not proof the file is wrong, and removing the only other
+    # copy of an unrecomputable history is the one thing this must never do. Neither
+    # returns it as `backup` either: that field is what a caller offers as the copy to
+    # fall back on, and a copy that did not verify is not one. The reason names the
+    # path, as something to move aside.
     try:
-        path.write_text(body, encoding="utf-8")
+        kept = backup.read_bytes()
     except OSError as exc:
         return {
             "state": CANNOT_MIGRATE,
             "entries": None,
             "reason": (
+                "wrote the backup {} and could not read it back ({}), so nothing was "
+                "written to the original -- it is untouched. Move that copy aside and "
+                "run this again.".format(backup, exc)
+            ),
+            "backup": None,
+        }
+    if kept != original:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": (
+                "the backup {} does not match the original ({} bytes written, {} read "
+                "back), so nothing was written to the original -- it is untouched. "
+                "Move that copy aside and run this again.".format(
+                    backup, len(original), len(kept)
+                )
+            ),
+            "backup": None,
+        }
+
+    # Written beside the original and moved onto it, rather than into it. `write_text`
+    # truncates at open, so a failure part-way through left the original destroyed
+    # while this receipt said it was unchanged (#174). `os.replace` either happens or
+    # does not: POSIX `rename` is atomic, and on Windows a same-directory replace goes
+    # through `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`, which fails outright --
+    # typically `PermissionError`, when another process holds the destination open --
+    # rather than half-writing. The temp file is a sibling on purpose: `os.replace`
+    # across filesystems raises, and it is the same directory the backup was just
+    # created in, so it introduces no permission the step above did not already need.
+    tmp = None
+    try:
+        handle, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+        )
+        os.close(handle)
+        tmp = Path(tmp_name)
+        tmp.write_text(body, encoding="utf-8")
+        _carry_mode(path, tmp)
+        os.replace(str(tmp), str(path))
+    except OSError as exc:
+        leftover = _discard(tmp)
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": (
                 "could not write the converted history ({}); the original is unchanged "
-                "and a copy of it is at {}".format(exc, backup)
+                "-- it is only ever replaced by an atomic rename -- and a copy of it is "
+                "at {}{}".format(exc, backup, leftover)
             ),
             "backup": str(backup),
         }

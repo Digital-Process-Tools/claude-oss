@@ -10,6 +10,8 @@ Every "must not fire" case below sits in the same function as a "must fire" case
 harness that produced nothing at all fails instead of passing.
 """
 
+import errno
+import io
 import json
 import sys
 from pathlib import Path
@@ -252,6 +254,193 @@ def test_migrate_refuses_a_file_that_is_not_there(tmp_path):
     result = oss_state.migrate(tmp_path / "gone.json")
     assert result["state"] == oss_state.CANNOT_MIGRATE
     assert "not there" in result["reason"]
+
+
+# --- migrate: the failure receipt has to be true of the file, not just readable ----
+#
+# #174. The receipt on a failed write says "the original is unchanged". Asserting that
+# the sentence is present passes whether or not the file survived, so every case below
+# injects the failure and reads the original back.
+
+
+class _PartialWriter:
+    """A handle that writes part of the payload and then fails, as ENOSPC does.
+
+    Wrapping rather than subclassing: the point is that the failure lands *after* the
+    open, which is where the truncation already happened.
+    """
+
+    def __init__(self, handle, limit):
+        self._handle = handle
+        self._limit = limit
+
+    def write(self, payload):
+        self._handle.write(payload[: self._limit])
+        self._handle.flush()
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self._handle.close()
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+
+def _explode_writes_near(monkeypatch, target, limit=5):
+    """Fail every write opened through `io.open` at ``target`` or a sibling temp file.
+
+    `io.open` is the seam `pathlib` goes through on 3.9 through 3.14, and it is the one
+    both an in-place `write_text` and a temp-file-then-rename write reach -- so this
+    cannot pass by the implementation moving out from under it. The backup is excluded
+    on purpose: it is written with the builtin `open`, and it has to succeed for the
+    case under test to be "the converted history could not be written".
+    """
+    real_open = io.open
+    target = Path(target)
+
+    def opener(file, mode="r", *args, **kwargs):
+        handle = real_open(file, mode, *args, **kwargs)
+        if isinstance(file, int) or not any(ch in mode for ch in "wxa"):
+            return handle
+        name = Path(file).name
+        if name.endswith(oss_state.BACKUP_SUFFIX):
+            return handle
+        if name == target.name or name.startswith(target.name + "."):
+            return _PartialWriter(handle, limit)
+        return handle
+
+    monkeypatch.setattr(io, "open", opener)
+
+
+def test_a_failed_write_leaves_the_original_the_receipt_calls_unchanged(
+    tmp_path, monkeypatch
+):
+    """The whole of #174: force the write to fail part-way, then read the file back.
+
+    The must-fire half is the state assertion. If the injection never fired -- an
+    interpreter whose `pathlib` does not route through `io.open`, say -- `migrate`
+    succeeds, the state is `migrated`, and this fails loudly rather than passing over a
+    file nobody managed to damage.
+    """
+    path = _pre_plugin(tmp_path, name="state.json")
+    original = path.read_bytes()
+
+    _explode_writes_near(monkeypatch, path)
+    result = oss_state.migrate(path)
+
+    assert result["state"] == oss_state.CANNOT_MIGRATE, "the injected failure never fired"
+    assert "No space left on device" in result["reason"]
+    # The sentence the receipt makes, checked against the file rather than the string.
+    assert path.read_bytes() == original
+    assert "unchanged" in result["reason"]
+    # ... and the copy it points at is real, and is the history.
+    assert json.loads(Path(result["backup"]).read_text(encoding="utf-8")) == PRE_PLUGIN
+
+
+def test_a_failed_write_leaves_no_half_written_file_beside_the_original(
+    tmp_path, monkeypatch
+):
+    """A temp file is the cost of the atomic write, so it is the thing to account for.
+
+    Must-fire control in the same fixture: a migration that is allowed to finish also
+    leaves nothing behind, so this cannot pass by nothing ever being created.
+    """
+    path = _pre_plugin(tmp_path, name="state.json")
+
+    with monkeypatch.context() as patched:
+        _explode_writes_near(patched, path)
+        assert oss_state.migrate(path)["state"] == oss_state.CANNOT_MIGRATE
+
+    after_failure = sorted(p.name for p in tmp_path.iterdir())
+    assert after_failure == ["state.json", "state.json" + oss_state.BACKUP_SUFFIX]
+
+    Path(str(path) + oss_state.BACKUP_SUFFIX).unlink()
+    assert oss_state.migrate(path)["state"] == oss_state.MIGRATED
+    assert sorted(p.name for p in tmp_path.iterdir()) == after_failure
+
+
+def test_the_backup_is_read_back_before_the_original_is_touched(tmp_path, monkeypatch):
+    """A receipt pointing at a copy nobody read back is the same defect one layer out.
+
+    The injection makes the backup write drop most of the bytes and report success --
+    a short write, which is what a full or flaky filesystem does. Nothing may then be
+    written to the original.
+    """
+    path = _pre_plugin(tmp_path, name="state.json")
+    original = path.read_bytes()
+    real_open = getattr(oss_state, "open", open)
+
+    class _ShortWriter:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, payload):
+            return self._handle.write(payload[:4])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            self._handle.close()
+            return False
+
+    def opener(file, *args, **kwargs):
+        return _ShortWriter(real_open(file, *args, **kwargs))
+
+    with monkeypatch.context() as patched:
+        patched.setattr(oss_state, "open", opener, raising=False)
+        result = oss_state.migrate(path)
+
+    assert result["state"] == oss_state.CANNOT_MIGRATE, "the short write never fired"
+    assert "backup" in result["reason"]
+    assert path.read_bytes() == original
+
+    # Must-fire control, same fixture: with the write intact the backup verifies and
+    # the conversion goes through, so the guard above is not simply always refusing.
+    Path(str(path) + oss_state.BACKUP_SUFFIX).unlink()
+    assert oss_state.migrate(path)["state"] == oss_state.MIGRATED
+
+
+def test_a_backup_that_cannot_be_read_back_is_its_own_answer(tmp_path, monkeypatch):
+    """Unverifiable is not the same state as verified-and-wrong, and neither is fine.
+
+    Both stop before the original is touched, and neither hands back the copy as
+    something to restore from -- `backup` stays None and the reason names the path as
+    a thing to move aside.
+    """
+    path = _pre_plugin(tmp_path, name="state.json")
+    original = path.read_bytes()
+    real_open = io.open
+
+    def opener(file, mode="r", *args, **kwargs):
+        if (
+            not isinstance(file, int)
+            and Path(file).name.endswith(oss_state.BACKUP_SUFFIX)
+            and "r" in mode
+        ):
+            raise OSError(errno.EIO, "Input/output error")
+        return real_open(file, mode, *args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(io, "open", opener)
+        result = oss_state.migrate(path)
+
+    assert result["state"] == oss_state.CANNOT_MIGRATE, "the read-back never failed"
+    assert "Input/output error" in result["reason"]
+    assert str(path) + oss_state.BACKUP_SUFFIX in result["reason"]
+    assert result["backup"] is None
+    assert path.read_bytes() == original
+
+    # Must-fire control, same fixture: a backup that reads back is accepted, and the
+    # copy is named as one -- so the guard is not refusing everything.
+    Path(str(path) + oss_state.BACKUP_SUFFIX).unlink()
+    done = oss_state.migrate(path)
+    assert done["state"] == oss_state.MIGRATED
+    assert done["backup"] == str(path) + oss_state.BACKUP_SUFFIX
 
 
 # --- the CLI /oss:tick invokes -----------------------------------------------------

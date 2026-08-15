@@ -57,9 +57,11 @@ default. Ask instead, and if the answer is yes, run the conversion where its rec
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --migrate
 ```
 
-It keeps the original at `<state_file>.pre-migration`, refuses rather than overwriting an earlier
-one, and refuses any shape it would have to guess at. `/oss:doctor` reports the same thing at any
-later point, and so does step 1 of a tick (#149).
+It keeps the original at `<state_file>.pre-migration`, reads that copy back and compares it before
+it writes anything, refuses rather than overwriting an earlier one, and refuses any shape it would
+have to guess at. The converted file is written beside the original and renamed over it, so a
+failure leaves the original as it was rather than truncated (#174). `/oss:doctor` reports the same
+thing at any later point, and so does step 1 of a tick (#149).
 
 The rules that matter, all enforced by `scripts/oss_config.py`:
 
