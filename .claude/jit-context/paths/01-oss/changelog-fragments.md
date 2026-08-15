@@ -14,6 +14,18 @@ from these at release time and the fragments are deleted.
 in the text as well as the filename -- the filename is metadata, and metadata does not survive being
 read out of context.
 
+**A `removed` fragment must declare compatibility**, as one more bullet in that list:
+
+    - Compatibility: breaking - <reason>
+    - Compatibility: compatible - <reason>
+
+`/oss:release` reads it to propose the version. A removal that declares nothing stops the proposal
+and names the file, rather than being read as a quiet minor -- whether a removal breaks anything is
+the question the number turns on, and an author who knows the answer and writes it as prose puts it
+where nothing can read it. The reason is part of the field: a bare verdict is the same unsourced
+answer one field further along. Other sections may carry the bullet and are read as compatible when
+they do not.
+
 **Do not hand-edit `CHANGELOG.md`** while this directory exists. The fold overwrites it and deletes
 the fragments; an entry written directly into the file is lost at the next release, silently,
 because the fold has no way to know it was meant to stay.

@@ -841,3 +841,36 @@ def test_the_same_directory_proposes_once_the_unreadable_entry_is_a_file(tmp_pat
     assert payload["unreadable"] == []
     assert payload["fragments"] == 2
     assert payload["version"] == "0.5.0"
+
+# The rule an agent is *given* is a fourth place the convention lives, and it is the
+# one that reaches an author at the moment they write a fragment. The three documents
+# above are pulled; this one is pushed. It came back as a review finding on this very
+# commit: the README, the command and the skill had all been updated and the injected
+# rule still described the pre-#171 body, so an agent following only what it was
+# handed would omit the field and stop the next release.
+
+RULE_LAYER = (
+    REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
+)
+
+
+def test_the_injected_fragment_rule_names_the_compatibility_field():
+    """The artifact, not the generator. tests/test_oss_rules.py holds the committed
+    layer equal to what `scripts/oss_rules.py` renders; this holds that rendering to
+    the convention, which equality alone cannot -- two copies agree perfectly while
+    both being out of date."""
+    unmet = _fragment_field_unmet(RULE_LAYER.read_text(encoding="utf-8"))
+    assert not unmet, (
+        "the jit-context rule injected when an agent touches changelog.d/ still "
+        "describes the pre-#171 body: " + repr(sorted(unmet))
+    )
+
+
+def test_the_injected_rule_anchors_fire_on_the_body_paragraph_as_it_was_stated_before():
+    the_prior_rule = (
+        "**Body:** a single top-level `-` list. No headings, no raw HTML, no unclosed "
+        "fences. Name the issue in the text as well as the filename -- the filename "
+        "is metadata, and metadata does not survive being read out of context.\n"
+    )
+    unmet = _fragment_field_unmet(the_prior_rule)
+    assert unmet == {name for name, _ in FRAGMENT_FIELD_ANCHORS}, repr(sorted(unmet))
