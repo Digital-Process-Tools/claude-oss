@@ -93,6 +93,16 @@ rows here or in your report**. `unranked` — you classified it and no row fits 
 — the table never reached you — are different answers, and neither is a finding that arrived without
 a row.
 
+**Say which checklist reached you, in every round, and call it the checklist in effect.** Name the
+file you read the classes and the ranking table out of, and the version of the definitions it belongs
+to — the plugin manifest beside it, if there is one. You are loaded from whatever copy is installed,
+and an audit performed against a checklist older than the rules it is gating is visible from nowhere
+else: the release path reads its own disk, and only you know what actually arrived in your brief.
+Three answers, and the third is the point — the version you name, a copy you could not match to any
+version, or **could not tell**, which never renders as either of the other two and never as a clean
+audit. Report it on its own line, whatever the classes came back as; a `could not rank` above it
+often has the same cause and is still reported separately.
+
 The ranking is load-bearing for you in a way it is not for the per-PR pass, because you are the gate:
 **a finding in a row the table marks blocking is not carry-forward material.** It stops the tag in
 round one and in round two alike. Everything else obeys the cap below.
