@@ -637,6 +637,59 @@ the cohort label, exit 0, nothing errors, and the freeze verified minutes earlie
 whole set is what you mean. And re-count the cohort **after the last label write of the tick**,
 never before it — a count taken first measures a set that is still being edited.
 
+### Intake: filings per merged pull request
+
+The cohort measures the drain. This measures the fill, and without it the board's growth is a
+feeling rather than a number. **Report it every tick, in the state entry.**
+
+**The denominator, stated every time**, because a ratio whose denominator nobody wrote down means
+nothing: pull requests **merged since the last tick**, against issues **the loop itself filed** in
+that same window. Not everything that arrived on the tracker — a filing a maintainer made by hand,
+or one a stranger opened, is intake the loop did not generate, and folding it in inflates the
+numerator with work the loop has no lever on. Both halves of that rule travel with the number; a
+window and an authorship rule left unstated make the ratio unreadable a week later.
+
+**The review layer is a discovery machine and must not be throttled to make this number look
+better.** The findings are the return on the review, not a side effect of it. Rationing filings
+while discovery runs ahead of delivery moves the queue into somebody's head, which is the one place
+it cannot be counted at all. This number exists to be known, not optimised.
+
+**No target ratio is claimed here, and none may be added from a single sample.** One project
+measured roughly three filings per merged pull request; one day of another measured roughly 0.6.
+Whether that gap is a healthier codebase, a shallower review, or the two ends counting a "filing"
+differently is not knowable from either number — and a threshold read off one day of one repository
+is exactly the hardcoded fact that never belongs in shared prose. Report the number and its window,
+and let a run of them say something.
+
+`scripts/oss_state.py` computes and records it, so it is recomputable rather than asserted:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+  --decision "…" --at "…" \
+  --filings 6 --merged-prs 11 --window "since the last tick"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --trend
+```
+
+**The pair is stored, never the quotient.** 1/2 and 3/4 do not average to the ratio over six pull
+requests, so a history of quotients cannot be re-added. `--trend` re-adds the numerators and the
+denominators, which is only possible because both were kept.
+
+Four states, and the third is the one that gets lost:
+
+| State | What it means |
+| --- | --- |
+| `measured` | both counts taken, something merged. **A ratio of 0.0 lives here**, and it is a finding |
+| `no-denominator` | nothing merged in the window. 6/0 is not 6 and it is not 0; the numerator still reports |
+| `could-not-count` | a count was not taken — pass `unknown` with `--intake-why`. **Never renders as zero** |
+| `partial` | `--trend` only: some ticks counted and some did not. A real sum, and not the range's total |
+
+**Never count by aggregating pages.** `gh api … --paginate --jq 'length'` runs the filter once per
+page and prints **one number per page**, never a total — measured `98` then `13` against a real
+total of `111`. Whoever reads the first line gets a number smaller than the truth, correctly
+formatted, at exit 0. Collect the pages into one array before the filter (`--slurp`), or count the
+rows yourself. The same trap in its other spelling — a full page read as a complete list — is in the
+triager's duties, and both are one shape: a partial read rendering as a total.
+
 ## Loop mechanics
 
 Arm the loop at the end of the first tick, every time, including when this skill was invoked
