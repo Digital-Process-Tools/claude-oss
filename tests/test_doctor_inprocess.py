@@ -1766,13 +1766,25 @@ def test_watch_channel_a_declaration_still_decides_against_an_export(tmp_path):
 
 
 def test_watch_channel_derived_export_detail_prints_no_name(tmp_path):
+    """No-leak, and the split that produced the two details being asserted.
+
+    The state assertions are not decoration. Without them this test is green
+    against the code BEFORE the split, whose detail for both exports was the
+    literal string `SUPERTOOL_WATCH_NAME` -- which contains neither sentinel, so
+    a no-leak assertion alone passes on a version that never made the comparison.
+    A test whose name claims to cover a feature has to fail when the feature is
+    gone.
+    """
     _oss_config_doc(tmp_path, {"repo": "zzsentinelzz/zzrepozz"})
+    seen = []
     for exported in ("zzsentinelzz-zzrepozz", "zzotherzz"):
-        _state, detail = doctor.watch_channel_state(
+        state, detail = doctor.watch_channel_state(
             tmp_path, env={"SUPERTOOL_WATCH_NAME": exported}
         )
+        seen.append(state)
         assert "zzsentinelzz" not in detail, detail
         assert "zzotherzz" not in detail, detail
+    assert seen == ["derived-export", "undeclared-export"], seen
 
 
 def test_check_watch_channel_does_not_accuse_an_export_the_repo_derives(
