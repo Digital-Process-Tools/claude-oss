@@ -155,7 +155,41 @@ RELEASE_DEFAULTS = {"commit_subject": DEFAULT_COMMIT_SUBJECT}
 # token ends up in git history with everyone assuming the schema rejected it.
 SECRET_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|credential)", re.IGNORECASE)
 
-REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
+# `\A...\Z`, not `^...$`, here and for every pattern below that validates a value
+# destined for a file this plugin writes. Python's `$` matches **before** a trailing
+# newline, so `^...$` accepted `owner/name` and `changelog.d` with a newline glued to
+# the end -- and such a newline does not escape a shell quote, it ends the YAML block
+# scalar the command sits in, so the generated workflow stops parsing and the
+# changelog gate it carries silently stops running (#173).
+#
+# The anchors live in the pattern rather than at the call site (`fullmatch` would also
+# close it) because a later caller reaching for `.match` or `.search` cannot then lose
+# them. `scripts/assemble_changelog.py` already spells it this way for the same reason.
+REPO_RE = re.compile(r"\A[^/\s]+/[^/\s]+\Z")
+
+
+def repo_problem(value):
+    """Why this `repo` cannot be used, or None when it is fine.
+
+    A function rather than a bare `REPO_RE.match()` at the one call site so that
+    `scaffold.py` can re-check at the moment it renders, the way `fragments_dir()`
+    and `untagged_declaration()` already do for the two values that reach the
+    generated workflow. `repo` reaches a generated file too -- it is the H1 of the
+    CLAUDE.md this plugin writes -- and it had exactly one guard, inside `validate()`,
+    which only `plan()` calls. A caller reaching `render()` directly got no check at
+    all, which is the same asymmetry #31 closed for `changelog_dir` (#173).
+
+    Null is accepted here and refused one layer up: `repo` is in REQUIRED_KEYS and not
+    in NULLABLE_KEYS, so `validate()` already reports a null with the sentence that
+    explains why a null is a hole rather than an answer. Repeating it here would put
+    two different sentences on one fact.
+    """
+    if value is None:
+        return None
+    if not (isinstance(value, str) and REPO_RE.match(value)):
+        return "repo: expected 'owner/name', got {!r}".format(value)
+    return None
+
 
 # `changelog_dir` is the one value in this file that becomes shell source. `scaffold.py`
 # substitutes it into a `run:` line of the workflow it writes into somebody else's
@@ -167,7 +201,11 @@ REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 # the scaffold creates parent directories -- and admits nothing a shell, a regex or a
 # path resolver reads as an instruction. Tighter than this refuses a legitimate repo to
 # close a hole that quoting already closes; looser is theatre.
-CHANGELOG_DIR_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+#
+# Anchored `\A...\Z` per the note on REPO_RE: `^...$` admitted a trailing newline, and
+# this value lands on four separate lines of the generated workflow, so it was the
+# widest instance of that defect rather than the newest (#173).
+CHANGELOG_DIR_RE = re.compile(r"\A[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\Z")
 
 
 def changelog_dir_problem(value):
@@ -209,7 +247,12 @@ def changelog_dir_problem(value):
 #
 # Not `v1.2.3`: the tag spelling is `release.tag_pattern`'s business, and the audit this
 # feeds compares against `## [x.y.z]` headings, which carry the version.
-CHANGELOG_UNTAGGED_RE = re.compile(r"^\d+\.\d+\.\d+$")
+#
+# Anchored `\A...\Z` per the note on REPO_RE. The template quoting held, exactly as
+# this comment claimed -- and a newline is the one byte that needs no quote to escape:
+# it ended the `run:` block scalar instead (#173). Two mechanisms is still the design;
+# this is the second one being made to actually hold up its half.
+CHANGELOG_UNTAGGED_RE = re.compile(r"\A\d+\.\d+\.\d+\Z")
 
 
 def changelog_untagged_problem(value):
@@ -801,9 +844,9 @@ def validate(config):
         else:
             problems.append("{}: unknown key (typo, or a schema change nobody wrote down)".format(key))
 
-    repo = config.get("repo")
-    if repo is not None and not (isinstance(repo, str) and REPO_RE.match(repo)):
-        problems.append("repo: expected 'owner/name', got {!r}".format(repo))
+    repo = repo_problem(config.get("repo"))
+    if repo:
+        problems.append(repo)
 
     labels = config.get("labels")
     if labels is not None:

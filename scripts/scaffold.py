@@ -253,6 +253,21 @@ updates:
 """
 
 
+def repo_slug(config):
+    """This repository's `owner/name`, refused here rather than at `plan()` alone.
+
+    `render()` reaches this without going near `plan()`, which is the same reason
+    `fragments_dir()` and `untagged_declaration()` re-check -- and until #173 this
+    value was the one of the three that had no funnel, so a caller rendering
+    CLAUDE.md directly wrote whatever `.oss.json` carried into its H1.
+    """
+    value = config.get("repo")
+    problem = oss_config.repo_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+    return value
+
+
 def _render_claude_md(config):
     if config.get("test_command"):
         test_line = "```\n{}\n```".format(config["test_command"])
@@ -262,7 +277,7 @@ def _render_claude_md(config):
             "Find it and replace this paragraph -- a guess here becomes an instruction."
         )
     return CLAUDE_MD.format(
-        repo=config["repo"],
+        repo=repo_slug(config),
         default_branch=config["default_branch"],
         test_line=test_line,
     )
