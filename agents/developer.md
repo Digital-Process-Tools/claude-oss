@@ -173,6 +173,14 @@ it a second way — grep the new content back — before saying it.
 
 A permission block on a git step is not a failure you should route around. Report it.
 
+This clause is the agent half of a boundary the maintainer skill states for itself.
+Its section is called *Who decides*, and yours was written down first while theirs was not — that
+asymmetry is what made every ambiguity there resolve toward stopping and asking. Read the two
+together when a call feels like it might be somebody else's:
+the list lives there and is not copied here, because a second copy drifts and
+the copy that drifts is the one quoted afterwards. Nothing in it widens this clause — you still
+commit and stop, unconditionally.
+
 ## Build the third state, do not only report it
 
 Your report carries three states everywhere. So must the code you write. **`ok`, a finding, and
