@@ -123,16 +123,33 @@ fi
 
 # The channel NAME is this repo's state and is read from its own .supertool.json,
 # then exported — a stdio MCP server the harness spawns inherits this process's
-# environment, which is what carries the name to the consumer. Exactly one
-# distinct name is exported; disagreeing op blocks are a state this script cannot
-# resolve, so it says so and exports nothing.
+# environment, which is what carries the name to the consumer.
+#
+# There are THREE answers here, not two, and the third is why this block prints a
+# tagged line rather than a bare name:
+#
+#   name=<x>   exactly one distinct declared name — export it
+#   conflict   two or more op blocks declare different names, already reported on
+#              stderr. A state this script cannot resolve, so it exports nothing
+#              AND derives nothing (see the guard below).
+#   (nothing)  no op block declares one — the case the derivation exists for
+#
+# The last two both used to arrive as an empty string, and the derivation guard
+# below tested emptiness, so a refusal was printed to stderr and a derived name
+# was exported anyway: `none exported` on one stream, SUPERTOOL_WATCH_NAME on the
+# other. Distinguishing them is the whole point of the tag; a bare name cannot be
+# mistaken for the tag and the tag cannot be forged by a declared value, because
+# every declared value arrives prefixed.
+#
 # The guard is an `if` and not `[ -n "$x" ] && ...` inside the substitution: a
 # heredoc opened by the right-hand side of `&&` and then followed by `|| true` is
 # a syntax error under bash -- `syntax error near unexpected token ||` -- while
 # macOS's /bin/sh parsed it and every local run stayed green.
 watch_name=""
+watch_name_state=undeclared
+read_name_out=""
 if [ -n "$python_bin" ]; then
-watch_name=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' || true
+read_name_out=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' || true
 import json, sys
 
 try:
@@ -152,14 +169,25 @@ names = sorted({
     and block["watch_name"]
 })
 if len(names) == 1:
-    print(names[0])
+    print("name=" + names[0])
 elif names:
+    # Tagged on stdout AND explained on stderr, because the two have to agree:
+    # the tag stops the derivation below from firing, and this sentence is the
+    # only thing that tells the caller it did not.
+    print("conflict")
     sys.stderr.write(
-        "oss-workspace: op blocks disagree about watch_name (%s) — none exported. "
-        "The ops themselves are on different channels; fix that file, then run "
-        "supertool 'channel:health'\n" % ", ".join(names))
+        "oss-workspace: op blocks disagree about watch_name (%s) — none exported, "
+        "and none derived from .oss.json either: the ops are already on different "
+        "channels, so a name derived from the repo would be one nothing here "
+        "publishes to — an uncontested socket carrying no events, which reads as "
+        "healthy. This session is on the SHARED DEFAULT socket. Fix that file, "
+        "then run supertool 'channel:health'\n" % ", ".join(names))
 READ_NAME
 )
+case "$read_name_out" in
+    name=*)   watch_name=${read_name_out#name=}; watch_name_state=declared ;;
+    conflict) watch_name_state=conflict ;;
+esac
 fi
 
 # Nothing declared a name (#191). Falling through here exports nothing, so the
@@ -174,8 +202,14 @@ fi
 # tick anyway. NOT the directory basename — that changes when somebody clones
 # elsewhere, and two unrelated repos cloned to the same basename collide silently,
 # which is this same defect reached by a different road.
+#
+# It fires on `undeclared` ONLY, never on `conflict`. A repo whose op blocks
+# contradict each other has not failed to choose a channel, it has chosen two,
+# and neither is the one a derivation would invent — so deriving there swaps a
+# loud wrong state (the shared socket, announced) for a quiet one (a private
+# socket nobody publishes to, indistinguishable from working).
 watch_name_source="declared in $repo_root/.supertool.json"
-if [ -z "$watch_name" ] && [ -n "$python_bin" ]; then
+if [ "$watch_name_state" = undeclared ] && [ -n "$python_bin" ]; then
     watch_name_source="derived from repo in $repo_root/.oss.json"
     watch_name=$("$python_bin" - "$repo_root/.oss.json" <<'DERIVE_NAME' || true
 import json, re, sys

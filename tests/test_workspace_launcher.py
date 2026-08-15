@@ -517,6 +517,22 @@ def _declare_watch_name(repo, name):
     )
 
 
+def _declare_disagreeing_watch_names(repo, first, second):
+    """Two op blocks naming two different channels.
+
+    Both op keys contain `radar` so the fixture does not also trip the "no radar
+    tiers" warning, which would put unrelated text into the stderr the
+    disagreement assertions read.
+    """
+    (repo / ".supertool.json").write_text(
+        json.dumps({"ops": {
+            "radar": {"watch_name": first},
+            "radar-slow": {"watch_name": second},
+        }}),
+        encoding="utf-8",
+    )
+
+
 def test_the_watch_name_is_derived_from_the_repo_when_nothing_declares_one(tmp_path):
     """`.oss.json` already carries `repo`: tracked, authoritative, read every tick.
 
@@ -585,3 +601,64 @@ def test_the_derived_name_is_sanitised_into_something_a_socket_path_can_hold(tmp
     done, argv = run(repo, with_channel=True)
     assert argv, done.stderr
     assert _exported_watch_name(repo) == "Org.Name-repo-with-spaces", done.stderr
+
+
+# --- and the three states the derivation collapsed into two -------------------
+#
+# `READ_NAME` leaves the name empty in TWO distinct cases: nothing declared, and
+# op blocks that declare different names. The derivation guard tested only for
+# emptiness, so the refusal was printed and then overridden -- stderr said "none
+# exported" while `SUPERTOOL_WATCH_NAME=owner-name` was exported.
+#
+# Declared-and-agreed, declared-and-contradictory and undeclared are three
+# states, and the tests below hold them apart in both directions: the pair that
+# must not derive, and the pair that must.
+
+
+def test_disagreeing_op_blocks_do_not_fall_through_to_the_derivation(tmp_path):
+    """The ops are already on different channels, so a derived third name would
+    be one that nothing in this repo publishes to -- an uncontested socket, a
+    green `channel:health`, and no events, which is a quiet wrong answer where
+    the shared default is at least a loud one.
+
+    `_exported_watch_name` is read rather than a falsy check on purpose: `None`
+    would mean the launcher died before exec'ing anything, and an assertion that
+    no name was exported must not be satisfiable by that.
+    """
+    repo = _repo(tmp_path)
+    _declare_disagreeing_watch_names(repo, "alpha", "beta")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+
+
+def test_the_disagreement_receipt_says_what_the_code_actually_did(tmp_path):
+    """A message that does not match the behaviour is the defect, not a cosmetic
+    issue. Both declared names are named -- the positive half, which fails if the
+    message never reaches stderr at all -- and the name that WOULD have been
+    derived is absent, the negative half, which the test above pins to an
+    observed export rather than to silence.
+    """
+    repo = _repo(tmp_path)
+    _declare_disagreeing_watch_names(repo, "alpha", "beta")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert "alpha" in done.stderr and "beta" in done.stderr, done.stderr
+    assert "none exported" in done.stderr, done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    assert "owner-name" not in done.stderr, done.stderr
+
+
+def test_an_undeclared_name_is_not_reported_as_a_disagreement(tmp_path):
+    """The other side of the same seam, and the control that stops the fix from
+    being "never derive": the undeclared state still derives, and still reads
+    differently from the contradictory one.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        json.dumps({"ops": {"radar": {"tiers": []}}}), encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+    assert "disagree" not in done.stderr, done.stderr
