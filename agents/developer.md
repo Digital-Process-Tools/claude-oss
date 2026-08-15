@@ -145,13 +145,18 @@ hand the maintainer what they need to open it in one call, in `adjacent`, with `
 - **which declared dependency** it is, by the name the manifest uses — never a repo slug you
   inferred, and never a tracker you guessed at;
 - **the reproduction**, the same standard as a local finding;
-- **whether it is a blocking class.** Look the finding up in the ranking table the manager skill
-  owns, and say the row. **A finding in a blocking row must not become a public issue on somebody
-  else's tracker** — it goes down the **embargo** path, meaning whatever private reporting channel
-  that project's own security policy names: a security tab, a disclosure address or a form. The
-  word *embargo* is unlikely to appear in the policy; read the policy. Say so in the item; the
-  maintainer is the one who routes it, and this is the sentence that stops the routing being a
-  reflex.
+- **which row, and what its embargo column says.** Look the finding up in the ranking table the
+  manager skill owns, and report both verdicts the row carries. **A finding whose row answers yes
+  in the embargo column must not become a public issue on somebody else's tracker** — it goes down
+  the **embargo** path, meaning whatever private reporting channel that project's own security
+  policy names: a security tab, a disclosure address or a form. The word *embargo* is unlikely to
+  appear in the policy; read the policy. Say so in the item; the maintainer is the one who routes
+  it, and this is the sentence that stops the routing being a reflex.
+
+  **Read the embargo column, not the blocking one.** They are two questions — what we may ship
+  against whether their users are exposed while a fix is written — and they disagree on one row.
+  Do not copy the set into your report: name the row you read and the column's answer, so a change
+  to the table reaches this routing instead of being outvoted by a stale list.
 - **For an arbitrary third-party dependency, say that too.** Filing there is a judgement rather than
   a duty: there may be no filing rights, no relationship, and a public tracker is a disclosure
   channel. A dependency the same maintainer owns is the unambiguous case.

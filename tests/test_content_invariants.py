@@ -1012,7 +1012,13 @@ RANKING_BLOCKS = "yes, unconditionally"
 RANKING_FILES_IT = "can ship behind a filed issue"
 RANKING_VERDICTS = (RANKING_BLOCKS, RANKING_FILES_IT)
 
-RANKING_HEADER = "| Class | Blocks a release? |"
+# The table gained a second verdict column when release-blocking and embargo were split
+# (#139): they are two questions and they disagree on one row. This file still checks the
+# blocking column, which is what the release trigger joins against; the embargo column and
+# the relationship between the two sets are checked in tests/test_embargo_routing.py. Said
+# here rather than left out -- a column absent from a sweep reads like a column it cleared.
+RANKING_HEADER = "| Class | Blocks a release? | Embargo when reported upstream? |"
+RANKING_COLUMNS = 3
 TRIGGER_MARKER = "marks blocking**"
 
 
@@ -1036,7 +1042,7 @@ def _ranking_table():
         if not stripped.startswith("|"):
             break
         cells = [c.strip() for c in stripped.strip("|").split("|")]
-        if len(cells) != 2:
+        if len(cells) != RANKING_COLUMNS:
             break
         name = re.match(r"`([^`]+)`", cells[0])
         rows.append((name.group(1) if name else None, cells[1]))

@@ -88,21 +88,30 @@ behind presets many repos never enable; check before writing an instruction that
   *concept*, not the issue's spelling of it.
 - **Rank by what cannot be undone**, then by who is walking away:
 
-  | Class | Blocks a release? |
-  | --- | --- |
-  | `destroys` — data gone, no copy anywhere | yes, unconditionally |
-  | `discloses` — a secret or a private path leaves the machine | yes, unconditionally |
-  | `containment (read)` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally |
-  | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally |
-  | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally |
-  | `ships-local-state` — a value true of exactly one checkout, baked into the artifact every user installs | yes, unconditionally |
-  | `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a filed issue |
-  | `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a filed issue |
-  | `fails-to-preserve` | can ship behind a filed issue |
-  | `misreports` | can ship behind a filed issue |
+  | Class | Blocks a release? | Embargo when reported upstream? |
+  | --- | --- | --- |
+  | `destroys` — data gone, no copy anywhere | yes, unconditionally | yes |
+  | `discloses` — a secret or a private path leaves the machine | yes, unconditionally | yes |
+  | `containment (read)` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally | yes |
+  | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally | yes |
+  | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally | yes — the attacker's delivery channel *is* a public tracker, so the writeup is the payload |
+  | `ships-local-state` — a value true of exactly one checkout, baked into the artifact every user installs | yes, unconditionally | no — already public the moment it ships, so there is no window of private knowledge to protect |
+  | `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a filed issue | no |
+  | `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a filed issue | no |
+  | `fails-to-preserve` | can ship behind a filed issue | no |
+  | `misreports` | can ship behind a filed issue | no |
 
   **This table is the only place the rows are written down.** The audit agents reference it rather
   than restating it; a second copy drifts, and the copy that drifts is the one quoted afterwards.
+
+  **The two verdict columns are two different questions, and they disagree on one row.** Blocking a
+  tag asks *what may this project ship*. The embargo column asks *should a reporter hold disclosure*
+  — whether public knowledge, before a fix exists, hands somebody a working recipe against installed
+  users. `ships-local-state` is the row where those come apart: it blocks a tag because **the release
+  is the mechanism by which it takes effect**, and that is an argument about our own artifact. It is
+  public the instant it ships, so there is no private window an embargo could protect, and routing it
+  to somebody's private channel over-applies a promise about their disclosure timing. Read the column
+  you actually need; a finding's row answers both questions and it answers them differently.
 
   **The rule that decides which row a finding belongs in: each row earns its place because each
   invites a different fix.** So when two rows both look like they fit, name the fix each would send a
@@ -186,14 +195,18 @@ Within that set, two cases and they are not the same duty:
   no relationship, and a public tracker is a **disclosure channel** — say which of the two cases you
   are in before you open anything.
 
-**The security exception is not optional, and it is a read rather than a list.** A finding in a row
-the ranking table above marks blocking does not go onto somebody else's public tracker as a reflex.
-It goes down the **embargo** path — whatever private reporting channel that project's own security
-policy names, which is a security tab, a disclosure address or a form rather than the word
-*embargo*, so read the policy instead of grepping for the term. Route those rows there and
-everything else to its issue tracker. **Read the rows off the table when you route** — a restated
-copy has already drifted out of step with a security policy that restated it, and the drifted copy
-is the one that gets quoted.
+**The security exception is not optional, and it is a read rather than a list.** A finding whose row
+the ranking table above answers **yes** in its *embargo* column does not go onto somebody else's
+public tracker as a reflex. It goes down the **embargo** path — whatever private reporting channel
+that project's own security policy names, which is a security tab, a disclosure address or a form
+rather than the word *embargo*, so read the policy instead of grepping for the term. Route those
+rows there and everything else to its issue tracker.
+
+**Route on the embargo column, not on the blocking one — they are not the same set.** Blocking is
+about what we may ship; embargo is about whether *their* users are exposed while a fix is written,
+and one row is blocking and not embargo for the reason given under the table. **Read the column off
+the table when you route** — a restated copy has already drifted out of step with a security policy
+that restated it, and the drifted copy is the one that gets quoted.
 
 Three outcomes, and the third is what actually happened:
 
@@ -637,6 +650,59 @@ the cohort label, exit 0, nothing errors, and the freeze verified minutes earlie
 whole set is what you mean. And re-count the cohort **after the last label write of the tick**,
 never before it — a count taken first measures a set that is still being edited.
 
+### Intake: filings per merged pull request
+
+The cohort measures the drain. This measures the fill, and without it the board's growth is a
+feeling rather than a number. **Report it every tick, in the state entry.**
+
+**The denominator, stated every time**, because a ratio whose denominator nobody wrote down means
+nothing: pull requests **merged since the last tick**, against issues **the loop itself filed** in
+that same window. Not everything that arrived on the tracker — a filing a maintainer made by hand,
+or one a stranger opened, is intake the loop did not generate, and folding it in inflates the
+numerator with work the loop has no lever on. Both halves of that rule travel with the number; a
+window and an authorship rule left unstated make the ratio unreadable a week later.
+
+**The review layer is a discovery machine and must not be throttled to make this number look
+better.** The findings are the return on the review, not a side effect of it. Rationing filings
+while discovery runs ahead of delivery moves the queue into somebody's head, which is the one place
+it cannot be counted at all. This number exists to be known, not optimised.
+
+**No target ratio is claimed here, and none may be added from a single sample.** One project
+measured roughly three filings per merged pull request; one day of another measured roughly 0.6.
+Whether that gap is a healthier codebase, a shallower review, or the two ends counting a "filing"
+differently is not knowable from either number — and a threshold read off one day of one repository
+is exactly the hardcoded fact that never belongs in shared prose. Report the number and its window,
+and let a run of them say something.
+
+`scripts/oss_state.py` computes and records it, so it is recomputable rather than asserted:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+  --decision "…" --at "…" \
+  --filings 6 --merged-prs 11 --window "since the last tick"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --trend
+```
+
+**The pair is stored, never the quotient.** 1/2 and 3/4 do not average to the ratio over six pull
+requests, so a history of quotients cannot be re-added. `--trend` re-adds the numerators and the
+denominators, which is only possible because both were kept.
+
+Four states, and the third is the one that gets lost:
+
+| State | What it means |
+| --- | --- |
+| `measured` | both counts taken, something merged. **A ratio of 0.0 lives here**, and it is a finding |
+| `no-denominator` | nothing merged in the window. 6/0 is not 6 and it is not 0; the numerator still reports |
+| `could-not-count` | a count was not taken — pass `unknown` with `--intake-why`. **Never renders as zero** |
+| `partial` | `--trend` only: some ticks counted and some did not. A real sum, and not the range's total |
+
+**Never count by aggregating pages.** `gh api … --paginate --jq 'length'` runs the filter once per
+page and prints **one number per page**, never a total — measured `98` then `13` against a real
+total of `111`. Whoever reads the first line gets a number smaller than the truth, correctly
+formatted, at exit 0. Collect the pages into one array before the filter (`--slurp`), or count the
+rows yourself. The same trap in its other spelling — a full page read as a complete list — is in the
+triager's duties, and both are one shape: a partial read rendering as a total.
+
 ## Loop mechanics
 
 Arm the loop at the end of the first tick, every time, including when this skill was invoked
@@ -659,6 +725,10 @@ describes the schedule instead of the next action. Waiting on CI is not a reason
 The `state_file` named in `.oss.json` — every decision and its reasoning, written every tick, read
 first every tick. Keep entries short: the decision and the one reason for it. Reasoning that only
 matters to the PR belongs in the PR body.
+
+Entries also carry one machine-readable field, and only one: `detail.intake`, the tick's counts and
+window as written above under *Intake: filings per merged pull request*. It is there so the ratio
+can be re-added across ticks rather than re-asserted — prose cannot be summed.
 
 **The handoff is not the repo.** The state file records what was believed when it was written. The
 first call of every session is the repo itself: `git log --oneline -1`, `gh-prs`, `gh-issues`.

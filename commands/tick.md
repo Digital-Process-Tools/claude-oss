@@ -51,8 +51,21 @@ Skill(manager)
    op makes still applies. Settle this before the first tick rather than at the merge step, where
    the review is already spent — see *Before the first tick* in the manager skill.
 
-6. **Write one state entry.** The decision and the one reason for it. Reasoning that only matters to
-   a pull request belongs in that pull request.
+6. **Write one state entry, and record the intake ratio with it.** The decision and the one reason
+   for it. Reasoning that only matters to a pull request belongs in that pull request.
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+     --decision "…" --at "<ISO timestamp>" \
+     --filings <issues the loop filed> --merged-prs <PRs merged> \
+     --window "since the last tick"
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --trend
+   ```
+
+   Pass `unknown` for a count you could not take, with `--intake-why` — **`could-not-count` is not
+   zero**, and a metric that renders the two alike is worse than none. The denominator, the
+   authorship rule and why no target ratio is claimed are in the skill under *Intake: filings per
+   merged pull request*.
 
 7. **Arm the next tick, and keep working in this one.**
 
