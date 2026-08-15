@@ -121,6 +121,30 @@ it a second way — grep the new content back — before saying it.
    always. A change nobody can discover is not shipped. If the repo uses changelog fragments, add
    one; do not hand-edit the assembled file.
 
+   **Nothing checks the docs half, so your report is the only record that it happened.** The
+   changelog half is gated on every pull request. A matching gate for this half was **measured on this
+   plugin's own repository, against its last thirty merged pull requests** rather than assumed, and
+   rejected on the numbers: the trigger the changelog gate already computes fires on 27 of the 30 and
+   is right about 6, the narrowest rule anybody proposed — a new file under a product path — fires on
+   none of the thirty at all, and the best of them is wrong two times in three. Those counts are one
+   repository's history, named as such and not a fact about yours; what carries across is the shape.
+   A gate wrong that often earns a blanket override label inside a week, which converts an unmeasured
+   duty into a measured and routinely-overridden one; a gate that never fires cannot be told from one
+   that is broken. So this duty is **observed rather than enforced**: **open every path in
+   `docs_targets` and report one line per path** under `docs`, saying which of these three docs
+   states each is in — not to be confused with the diagnostic's own three, below.
+
+   - **updated** — this diff changed it. No reason needed; the diff is the reason.
+   - **no-change-needed** — you opened it and it is still true. **Say what you read it against**,
+     because `no-change-needed` **with no reason is the sentence a run that never opened the file
+     also writes**, and it is the state you are most likely to write.
+   - **not-read** — you did not open it, and why. A file held by another lane is a real answer here.
+     That is a gap somebody can act on, which is not the same thing as no finding.
+
+   **An absent `docs` survey says nobody looked, not that the docs were fine** — the validator
+   refuses a report without one for exactly that reason. `checked` with no items is the honest answer
+   when the config names no targets at all.
+
    **A change to a file convention is not finished until the repo's diagnostic reports the new
    convention.** `scripts/doctor.py` is what tells a maintainer whether their repo matches what this
    plugin expects, so a convention that moves without it answers confidently against a rule nobody
@@ -131,7 +155,8 @@ it a second way — grep the new content back — before saying it.
    existed only in the composition, so neither diff review could see it.
 
    The rule is **make sure the diagnostic reports it**, not *always edit `doctor.py`*. Say in your
-   report which of the three you are in:
+   report which of these three diagnostic states you are in — a separate question from the docs
+   states above, which happen to share the word *updated*:
 
    - **updated** — you changed the diagnostic in this diff, and its new output is in the report;
    - **already covered** — the value flows through a derivation the diagnostic already consumes, so
@@ -385,7 +410,9 @@ The fields, their enumerations and a worked example are in
 `${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
 this section would otherwise duplicate and drift from. What the old prose report asked for has not
 changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, review →
-`review`, platform claims → `claims`, unfiled findings → `adjacent`, the note path → `note_path`.
+`review`, platform claims → `claims`, every `docs_targets` path with what happened to it — updated,
+read and still true, or not opened — → `docs`, unfiled findings → `adjacent`, the note path →
+`note_path`.
 
 ### Report the friction you hit in the tooling, not only in the code
 

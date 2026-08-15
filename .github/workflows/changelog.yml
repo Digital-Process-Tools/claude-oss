@@ -73,6 +73,16 @@ jobs:
       # A PR that changes what the plugin DOES must say so where users read it.
       # Docs, tests and CI changes are exempt by construction: the paths below are
       # the ones a user can observe from outside.
+      #
+      # The obvious next step -- reuse this same trigger to demand a docs_targets
+      # diff -- was measured against this repository's last thirty merged pull
+      # requests and REJECTED on the numbers (#164). It works here because the
+      # requirement is unconditional over the trigger: every user-visible change
+      # needs a fragment. It is not unconditional for the README, which most
+      # product changes correctly leave alone. The counts live in
+      # agents/developer.md section 5 and tests/test_docs_duty.py, in one place
+      # each, deliberately not repeated here. That duty is observed in the agent's
+      # report instead, as a per-path survey with a third state.
       - name: A user-visible change carries a fragment
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
         # Passed through env, never interpolated into the script body: a `${{ }}`

@@ -187,6 +187,27 @@ def _rule_class_verdict(node, path, errors):
         )
 
 
+def _rule_docs_target(node, path, errors):
+    """The two states an agent can write without having opened the file.
+
+    `updated` is proven by the diff. The other two are proven by nothing, and
+    "no change needed" is exactly what a run that never read the file also
+    writes -- so the why is the whole content of those two states.
+    """
+    state = node.get("state")
+    if state == "no-change-needed" and not _text(node, "why"):
+        errors.append(
+            "{}: state 'no-change-needed' needs a why -- say what you read the file "
+            "against; with no reason it reads exactly like a file nobody "
+            "opened".format(_label(path))
+        )
+    if state == "not-read" and not _text(node, "why"):
+        errors.append(
+            "{}: state 'not-read' needs a why -- an unread doc is a gap somebody can "
+            "act on, not the absence of a finding".format(_label(path))
+        )
+
+
 def _rule_test_phase(node, path, errors):
     state = node.get("state")
     if state == "observed" and not _text(node, "result"):
@@ -210,6 +231,7 @@ _RULES = {
     "survey": _rule_survey,
     "finding": _rule_finding,
     "class-verdict": _rule_class_verdict,
+    "docs-target": _rule_docs_target,
     "test-phase": _rule_test_phase,
     "pr-body": _rule_pr_body,
 }
