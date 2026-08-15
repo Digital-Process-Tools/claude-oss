@@ -254,6 +254,9 @@ def _carries_the_three_state_worktree_rule(text):
     """
     return bool(re.search(r"`cannot tell` is not `idle`", text)) and bool(
         re.search(r"`merge unknown` is not `merged`", text)
+    )
+
+
 # The skill has to state its own authority (#185).
 #
 # `skills/manager/SKILL.md` said what to decide and how to evidence it, and never
@@ -426,6 +429,9 @@ TICK_FACTS = [
         "the worktree verdicts are read in three states",
         _carries_the_three_state_worktree_rule,
         r"`cannot tell` is not `idle`|`merge unknown` is not `merged`",
+    ),
+]
+
 # The skill's statement of its own authority. Split out from SKILL_FACTS below
 # only so the PROPOSING control can be parametrized over exactly these.
 SKILL_AUTHORITY_FACTS = [
@@ -556,6 +562,9 @@ def test_a_cautioning_file_fails_every_tick_predicate(label, predicate, _pattern
     assert not predicate(CAUTIONING), (
         "{}: predicate passes on a file that only cautions about the op. "
         "A mention is not an instruction.".format(label)
+    )
+
+
 # A file that reads exactly as #185 describes: it names merging, releasing and the
 # maintainer, sounds decisive about the work, and leaves the reader unable to say
 # which acts are the loop's. SILENT cannot catch that, because SILENT never says
