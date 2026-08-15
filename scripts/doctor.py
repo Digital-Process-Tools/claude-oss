@@ -1134,12 +1134,84 @@ def _drift_detail(name, effect):
     )
 
 
+def _gate_verdict(repo_root, config):
+    """Would `/oss:scaffold` write the owned changelog trio into this repo at all?
+
+    ``"write"``, ``"declined"`` or ``"unknown"``.
+
+    The verdict only, without scaffold's own detail sentence. That sentence is a whole
+    paragraph naming the trio and the override, written for a caller that prints one
+    finding; passed through into a report line that already names all three files it
+    covers, it said the same thing three times over. What matched is a question
+    `/oss:scaffold` answers directly, and the detail lines below say so.
+
+    scaffold declines the trio when the repo already runs a changelog gate under
+    another name -- two jobs called `fragment` on every pull request is the failure it
+    cannot have. That decline is why this exists: without it `owned_drift` reported
+    three files `absent` with the remedy `Run /oss:scaffold.`, forever, in a repo where
+    running it declines again. Both halves were correct; the composition was not.
+
+    Read through the PUBLIC `scaffold.check_changelog_gate`, not the private
+    `_detect_changelog_gate` and not a decline recorded on disk at scaffold time:
+
+    * A private import couples a diagnostic to a helper nobody owes stability to, and
+      that helper is being changed right now (#124).
+    * A file written at scaffold time answers "what was true the last time somebody
+      ran the command", which is a different question from "what would happen if they
+      ran it today" -- and the drift between those two is exactly the class of thing
+      this module exists to catch, so introducing another instance of it to fix one
+      would be perverse.
+    * `check_changelog_gate` is already the function whose whole job is to report this
+      to a caller, and it carries a machine-readable `state` per finding.
+
+    The contract relied on is deliberately the narrowest available: an empty result
+    means the trio gets written; a non-empty one means it does not. Only `found` is
+    read as a decision. Every other state -- `unknown` today, anything a later change
+    adds -- lands in `unknown`, so a new state is an addition rather than a break, and
+    the failure mode of being out of step is the honest third answer rather than the
+    wrong one. A decline that scaffold made because it could not look is not a
+    decision anybody took, and reporting it as one would reinstate this repo's own
+    defect class one layer up.
+    """
+    try:
+        findings = scaffold.check_changelog_gate(repo_root, config)
+    except Exception:  # noqa: BLE001 - a diagnostic never dies on a probe
+        return "unknown"
+
+    if not findings:
+        return "write"
+
+    states = {str(f.get("state")) for f in findings if isinstance(f, dict)}
+    return "declined" if states == {"found"} else "unknown"
+
+
 def owned_drift(repo_root, config, plugin_root=None):
     """Compare the files this plugin owns in a repo against what it ships today.
 
     `/oss:scaffold` replaces them on every run -- but an update to the plugin does not
     run the command, so a repo scaffolded months ago still holds the old copies. This
     is the check that makes that visible rather than assumed.
+
+    Five states, and the two added by #126 are the ones that carry the argument:
+
+    `current`   on disk and byte-identical to what the plugin ships
+    `drifted`   on disk and different; re-running the scaffold would change it
+    `absent`    not on disk, and re-running the scaffold WOULD write it
+    `declined`  not on disk because the scaffold refuses to write it here, on purpose
+    `unknown`   the comparison, or the question of which of the two above applies,
+                could not be answered
+
+    `declined` is not decoration on `absent`. They share the observation -- no file --
+    and have opposite remedies: one is fixed by running `/oss:scaffold`, the other is
+    *caused* by it, and `--force-owned` is the only thing that changes it. Folded
+    together, a declined repo gets a WARN on every run, mid-tick and before every
+    release, naming a command that provably changes nothing. `owned_drift_summary`
+    argues the same point about a different line: advice printed regardless of state
+    carries no information.
+
+    So `declined` reports at OK: it is the designed steady state of a repo that made a
+    choice, and it still prints, because a decline that nobody sees is how a repo ends
+    up with no changelog gate at all while looking clean.
     """
     root = Path(repo_root)
     plugin_root = Path(plugin_root or SCRIPT_DIR.parent)
@@ -1156,6 +1228,10 @@ def owned_drift(repo_root, config, plugin_root=None):
             }
             for name in sorted(scaffold.OWNED)
         ]
+
+    # Asked once, lazily: it walks the repo tree, and it only changes an answer on
+    # the absent branch. A repo whose owned files are all present never pays for it.
+    gate = []
 
     findings = []
     for name in sorted(scaffold.OWNED):
@@ -1175,13 +1251,40 @@ def owned_drift(repo_root, config, plugin_root=None):
             continue
 
         if not target.is_file():
-            findings.append(
-                {
-                    "path": name,
-                    "state": "absent",
-                    "detail": "{}: not in this repo. Run /oss:scaffold.".format(name),
-                }
-            )
+            if not gate:
+                gate.append(_gate_verdict(repo_root, config))
+            verdict = gate[0]
+            if verdict == "declined":
+                findings.append(
+                    {
+                        "path": name,
+                        "state": "declined",
+                        "detail": "{}: absent on purpose -- this repo already runs a "
+                        "changelog gate under a different name, so /oss:scaffold "
+                        "declines the trio and will decline it again. Run "
+                        "/oss:scaffold to see which file matched; pass --force-owned "
+                        "to write ours anyway.".format(name),
+                    }
+                )
+            elif verdict == "unknown":
+                findings.append(
+                    {
+                        "path": name,
+                        "state": "unknown",
+                        "detail": "{}: not in this repo, and whether /oss:scaffold "
+                        "would write it could not be determined -- so this is neither "
+                        "a gap nor a decision. Run /oss:scaffold, which reports what "
+                        "it could not read.".format(name),
+                    }
+                )
+            else:
+                findings.append(
+                    {
+                        "path": name,
+                        "state": "absent",
+                        "detail": "{}: not in this repo. Run /oss:scaffold.".format(name),
+                    }
+                )
             continue
 
         # The other half of the comparison lives in somebody else's repo, so it can
@@ -1225,10 +1328,11 @@ def owned_drift_summary(findings):
 
     Findings are grouped on what they actually say -- the detail with its own path
     prefix removed -- so identical facts collapse and different ones never do. That
-    keeps the three states apart without the grouping needing to know them: `absent`,
-    `drifted` and `unknown` say different things, and `unknown` is a check that could
-    not look rather than a pass. `current` stays one OK line per file; a clean repo's
-    output is not what was wrong here.
+    keeps the states apart without the grouping needing to know them: `absent`,
+    `drifted`, `declined` and `unknown` say different things, `unknown` is a check that
+    could not look rather than a pass, and `declined` is a file the scaffold refuses to
+    write here rather than one it has not written yet. `current` stays one OK line per
+    file; a clean repo's output is not what was wrong here.
 
     Lines come out in first-appearance order: a group is emitted where its first member
     appeared, so grouping only ever pulls a later file up to an earlier one and never
@@ -1267,7 +1371,14 @@ def owned_drift_summary(findings):
 
     lines = []
     for state, shared, paths in groups:
-        level = "OK" if state == "current" else "WARN"
+        # `declined` joins `current` at OK. It is not a gap: the file is absent
+        # because /oss:scaffold refuses to write it into this repo, every run, and
+        # nothing the reader can do about it is an improvement. Warned about, it is a
+        # line that appears on every run of a correctly configured repo and names a
+        # remedy that changes nothing -- which is what the docstring above says makes
+        # a line worthless. It still prints, because a decline nobody ever sees is how
+        # a repo ends up with no changelog gate while reading as clean.
+        level = "OK" if state in ("current", "declined") else "WARN"
         if len(paths) == 1:
             body = "{}: {}".format(paths[0], shared) if shared else paths[0]
             lines.append((level, body))

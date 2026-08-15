@@ -47,10 +47,18 @@ Owned files — `.oss/README.md`, `.oss/assemble_changelog.py`,
 `.github/workflows/oss-changelog.yml` — are replaced wholesale by `/oss:scaffold`, so a fix
 shipped here reaches a repo only when somebody re-runs that command there. These lines are
 the only thing that tells a maintainer the re-run is worth doing, so read them as an answer
-to that one question rather than as a tidiness report. Four things they can say:
+to that one question rather than as a tidiness report. Seven things they can say:
 
 - **Nothing** — the copies match what the plugin ships today. There is no `owned files` line
   to relay.
+- **`not in this repo. Run /oss:scaffold.`** — a gap. The repo was scaffolded before these
+  files existed, or never scaffolded at all, and re-running writes them.
+- **`absent on purpose`**, at `OK` rather than `WARN` — this repo already runs a changelog
+  gate under another name, so `/oss:scaffold` declines the trio and will decline it again.
+  Do **not** relay this as something to fix: the remedy for an ordinary gap is the command
+  that produced this state, and a warning naming it would appear on every run of a correctly
+  configured repo forever (#126). `/oss:scaffold --force-owned` is the only thing that
+  changes it, and only a maintainer who checked the match by hand should pass it.
 - **`would change what it does -- <names>`** — re-running changes behaviour, and the names
   are the regions: a YAML key path like `on.pull_request.types`, a Python definition, a
   Markdown heading. This is the one to act on. A repo scaffolded before the current release
@@ -62,6 +70,11 @@ to that one question rather than as a tidiness report. Four things they can say:
   own copy was unreachable or theirs was, so **nothing was compared**. Never relay this as
   up to date. `/oss:doctor` can run under a plugin version different from the one that
   scaffolded the repo, and a check that cannot see our copy must not vouch for theirs.
+- **`whether /oss:scaffold would write it could not be determined`** — the same third state,
+  one question earlier. The file is absent and the gate check could not answer whether that
+  is a gap or a decision, so it is reported as neither. This is not `absent on purpose`:
+  scaffold also declines when it could not look, and a decline nobody took must never be
+  relayed as a choice somebody made.
 
 Two things the line deliberately does **not** say, because neither is measurable from inside
 a managed repo: whether their copy is *older* than ours, and whether somebody *edited* it.

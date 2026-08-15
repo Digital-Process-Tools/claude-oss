@@ -139,9 +139,15 @@ Three outcomes, exit codes because a shell reads those and never reads prose:
   A decision, reported as one. It never stops the release: the tag is the release for a project that
   tags deliberately without publishing.
 - **exit 3, `could-not-run` / `could-not-create`** — the notes could not be extracted, `gh` is not on
-  PATH, or the API call failed. **Say so in those words.** This is the one that must never read as
-  either of the other two, and above all never as a release that shipped: a maintainer who believes
-  something is published stops looking at it.
+  PATH, the API call failed, or `.oss.json` is not a JSON object at all. **Say so in those words.**
+  This is the one that must never read as either of the other two, and above all never as a release
+  that shipped: a maintainer who believes something is published stops looking at it.
+
+A `.oss.json` that parses but is not an object — `[]`, `"x"`, `null`, `42` — is exit 3 and not exit
+4. It states no policy, which is a different fact from stating one that does not publish, and the
+two were indistinguishable until #126: the shipped defaults answered for it and the run reported
+*skipped by policy* naming a key the document could not have set. The tag shipped and the Release
+silently did not.
 
 The policy lives in `.oss.json`'s `release` block, tracked, because how a project publishes is the
 project's answer and not one laptop's:
