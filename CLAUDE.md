@@ -163,6 +163,12 @@ separately rather than one list.
   wrong mechanism for both of the new values. A shell command admits nearly everything, so the
   refusal is a *character class* chosen from the harm; a branch name already has an authority, so
   the refusal is a transcription of `git check-ref-format`. Neither is a shape this repo invented.
+  And a transcription is a claim about something outside the repo, so it is **measured against
+  that authority in a test, not asserted in a comment**: the first version of #180's borrowed a
+  control set that carves tab out for a shell command, git refuses a tab in a ref name, and the
+  docstring citing git was already false at the moment it was written. Over-refusals that are
+  deliberate live in a named exception list with a reason each, and a test fails when an entry
+  stops being an exception — an exception list that has drifted is a licence.
 - **`pytest.raises(Exception)` does not catch a skip, and the test passes anyway.** pytest's outcome
   exceptions derive from `BaseException`, so a `pytest.skip` inside the block sails past the `raises`
   and skips the enclosing test — a green tick over an assertion that never ran, reported as `1 skipped`

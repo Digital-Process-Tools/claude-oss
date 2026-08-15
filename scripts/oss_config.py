@@ -264,8 +264,16 @@ def test_command_problem(value):
 #: refusing them cannot refuse a branch that exists. `\x85`, `\u2028` and `\u2029` are
 #: added because git tolerates them and this value is written into a Markdown document
 #: where they end a line.
+#: The control set is built here rather than borrowed from `_CONTROLS`, which carves
+#: tab out because a shell command legitimately contains one. A ref name does not: git
+#: refuses EVERY ASCII control including tab, so reusing that constant made this set
+#: quietly one byte looser than the authority its own docstring cites. Found by review
+#: on #180, and it is why `tests/test_claude_md_injection.py` now measures this
+#: function against `git check-ref-format` itself instead of asserting the claim.
+_REF_CONTROLS = frozenset(chr(point) for point in range(0x20)) | {"\x7f"}
+
 _REF_FORBIDDEN = (
-    frozenset(" ~^:?*[") | {"\\"} | _CONTROLS | frozenset(LINE_BREAKS)
+    frozenset(" ~^:?*[") | {"\\"} | _REF_CONTROLS | frozenset(LINE_BREAKS)
 )
 
 

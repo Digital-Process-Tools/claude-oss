@@ -32,6 +32,7 @@ Python 3.9 compatible.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -345,6 +346,7 @@ def test_the_maintainers_reproduction_is_refused():
         "main\n",
         "\nmain",
         "main\r",
+        "main\t",
         "main ",
         "ma in",
         "main^",
@@ -546,6 +548,167 @@ def test_legitimate_default_branches_still_validate(value):
     text = scaffold.render("CLAUDE.md", config)
     assert structure_problems(text, config) == []
     assert value in text, "the branch name was not written into the document at all"
+
+
+# --- the transcription, measured against its own authority -----------------
+#
+# `default_branch_problem` claims to transcribe `git check-ref-format`. Review on
+# #180 found that claim already one byte false -- the ref set borrowed the control
+# set that carves tab out for `test_command`, and git refuses a tab in a ref name --
+# so the claim is measured against git itself here rather than asserted. A rule whose
+# authority is external and whose agreement with it is only stated is exactly the
+# shape this repo distrusts: an unrun check reading identically to a passed one.
+
+
+#: One spawn per name for the whole module, not one per name per test. Three tests
+#: walk the same corpus, and a `git` process is the expensive part of this file --
+#: worst on the Windows legs, where spawning is the slowest thing a test can do.
+_GIT_REF_VERDICTS = {}
+
+
+def _git_ref_verdict(name):
+    """What git says about `refs/heads/<name>`: True, False, or None for no answer.
+
+    `refs/heads/` is prefixed rather than using `--branch`, which is not a usable
+    oracle here: it refuses `-main` because argv reads it as an option, and accepts
+    `@` because the expansion runs first. The third state is real -- git may be
+    absent, and a name carrying a NUL cannot be put in an argv at all.
+    """
+    if name in _GIT_REF_VERDICTS:
+        return _GIT_REF_VERDICTS[name]
+    _GIT_REF_VERDICTS[name] = _ask_git(name)
+    return _GIT_REF_VERDICTS[name]
+
+
+def _ask_git(name):
+    try:
+        completed = subprocess.run(
+            ["git", "check-ref-format", "refs/heads/" + name],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return completed.returncode == 0
+
+
+#: Names git accepts and this module refuses anyway, each with the reason. Written
+#: down as an exception list rather than folded into the oracle, so an over-refusal
+#: nobody decided on shows up as a failure instead of as an unremarkable pass.
+DELIBERATELY_STRICTER = {
+    "-main": "argv reads a leading '-' as an option, not as a branch",
+    "@": "git allows refs/heads/@; '@' alone is a branch name nothing should have",
+    "main\x85": "NEL ends a line in the Markdown document this value is written into",
+    "main" + chr(0x2028): "LS ends a line in that document",
+    "main" + chr(0x2029): "PS ends a line in that document",
+}
+
+#: The corpus both directions are measured over. Every value the parametrised cases
+#: above use, plus one name per punctuation character, so the comparison is not
+#: limited to the characters somebody already suspected.
+REF_CORPUS = sorted(
+    {
+        "main", "master", "develop", "trunk", "release/1.x", "v2-dev",
+        "feature/a.b_c-1", "ma`in", "`main`", "main\n", "\nmain", "main\r",
+        "main ", "ma in", "main^", "ma..in", "main.lock", "-main", "main/",
+        "/main", "ma//in", "main~1", "refs/heads/main:", "main?", "main*",
+        "ma[in", "main@{1}", "@", "main.", "", "main\t", "main\x01", "main\x7f",
+        "ma" + BACKSLASH + "in", "..main", ".main", "main.lock/x",
+    }
+    | set(DELIBERATELY_STRICTER)
+    | {"ma" + chr(point) + "in" for point in range(0x21, 0x7f)}
+)
+
+
+def test_no_name_git_refuses_is_accepted_here():
+    """The direction that matters: nothing git calls invalid may validate here."""
+    asked = 0
+    refused_by_git = []
+    wrongly_accepted = []
+    for name in REF_CORPUS:
+        verdict = _git_ref_verdict(name)
+        if verdict is None:
+            continue
+        asked += 1
+        if verdict is False:
+            refused_by_git.append(name)
+            if oss_config.default_branch_problem(name) is None:
+                wrongly_accepted.append(name)
+
+    if asked == 0:
+        pytest.skip(
+            "git check-ref-format answered for none of the {} candidates, so the "
+            "transcription in default_branch_problem() went unmeasured on this "
+            "runner -- git absent, or refusing to be spawned".format(len(REF_CORPUS))
+        )
+
+    # The positive control, and it is not decoration: without it this test passes
+    # on a corpus git happens to accept entirely, having asserted nothing.
+    assert refused_by_git, (
+        "git accepted all {} candidates it was asked about, so the loop above "
+        "asserted nothing".format(asked)
+    )
+    assert wrongly_accepted == [], wrongly_accepted
+
+
+def test_no_name_git_accepts_is_refused_here_without_a_stated_reason():
+    """The other side. Refusing a legitimate repository is the failure mode here."""
+    asked = 0
+    accepted_by_git = []
+    surprises = []
+    for name in REF_CORPUS:
+        verdict = _git_ref_verdict(name)
+        if verdict is None:
+            continue
+        asked += 1
+        if verdict is True:
+            accepted_by_git.append(name)
+            if (
+                oss_config.default_branch_problem(name) is not None
+                and name not in DELIBERATELY_STRICTER
+            ):
+                surprises.append(name)
+
+    if asked == 0:
+        pytest.skip(
+            "git check-ref-format answered for none of the {} candidates, so this "
+            "direction went unmeasured on this runner".format(len(REF_CORPUS))
+        )
+
+    assert accepted_by_git, (
+        "git refused all {} candidates it was asked about, so the loop above "
+        "asserted nothing".format(asked)
+    )
+    assert surprises == [], (
+        "refused without a reason in DELIBERATELY_STRICTER: {}".format(surprises)
+    )
+
+
+def test_every_deliberate_over_refusal_is_still_one():
+    """An exception list that has stopped describing the code is a licence.
+
+    Each entry has to be refused here and accepted by git. An entry git now also
+    refuses is no longer an exception and belongs in the ordinary rule; an entry
+    this module now accepts is a hole the list is quietly covering for.
+    """
+    asked = 0
+    for name, reason in sorted(DELIBERATELY_STRICTER.items()):
+        assert oss_config.default_branch_problem(name) is not None, (name, reason)
+        verdict = _git_ref_verdict(name)
+        if verdict is None:
+            continue
+        asked += 1
+        assert verdict is True, (
+            "{!r} is listed as stricter-than-git, and git refuses it too -- it is "
+            "not an exception".format(name)
+        )
+    if asked == 0:
+        pytest.skip(
+            "git answered for none of the {} listed exceptions, so only the "
+            "refusal half of this test ran".format(len(DELIBERATELY_STRICTER))
+        )
 
 
 def test_the_line_break_set_is_the_one_python_splits_on():
