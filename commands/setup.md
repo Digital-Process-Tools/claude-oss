@@ -267,8 +267,10 @@ reported as failed sends the maintainer to re-run the half that already worked.
 
 ### Which lines are offline and which one is not
 
-The per-file lines — `create`, `present`, `replace`, `decline` — are **read from the filesystem**, so
-they answer on a machine with no network at all. The findings printed underneath are not uniformly
+The per-file lines — `create`, `present`, `replace`, `decline`, `remove` — and the `layer` lines
+beside them are **read from the filesystem**, so they answer on a machine with no network at all.
+(`remove` and `layer` arrived with #182, which taught the plan to preview the `01-oss` rule layer;
+they are local reads like the rest.) The findings printed underneath are not uniformly
 local: the `label` finding is the **only line that asks the forge**, one `gh` call capped at 20
 seconds, and it degrades to its own stated `unknown` with a reason rather than to silence or to a
 guess. The `radar` and `tests` findings beside it are local reads like the plan itself.

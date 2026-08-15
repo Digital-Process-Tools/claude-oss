@@ -231,10 +231,16 @@ def test_show_covers_every_owned_file_too(tmp_path):
     filter that only kept "create" entries silently dropped every one of them. These
     are the files `apply` overwrites unconditionally, which makes the preview matter
     most here, not least (coordinator review after the first pass of #5).
+
+    The 01-oss rule layer joined them in #182 -- same contract, same argument -- so this
+    is a superset assertion now, with the surplus pinned to the layer rather than left
+    unexamined. An equality here would have been the thing that made adding the layer
+    look like a regression.
     """
     shown = scaffold.show(tmp_path, _config())
     replaced = {path for path, action, _ in shown if action == "replace"}
-    assert replaced == set(scaffold.OWNED)
+    assert set(scaffold.OWNED) <= replaced
+    assert replaced - set(scaffold.OWNED) == set(scaffold.rule_layer_paths())
 
 
 def test_show_when_every_template_already_exists_still_reports_owned_files(tmp_path):
@@ -247,7 +253,10 @@ def test_show_when_every_template_already_exists_still_reports_owned_files(tmp_p
     shown = scaffold.show(tmp_path, _config())
     paths = {path for path, _, _ in shown}
     assert paths, "nothing to show -- the assertion below would vacuously pass"
-    assert paths == set(scaffold.OWNED)
+    # The owned trio and the rule layer: everything replaced wholesale on every run,
+    # and nothing else, since every template is already present. The layer was the
+    # missing half of exactly this assertion until #182.
+    assert paths == set(scaffold.OWNED) | set(scaffold.rule_layer_paths())
     assert all(action == "replace" for _, action, _ in shown)
 
 

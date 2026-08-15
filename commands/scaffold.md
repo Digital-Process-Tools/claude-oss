@@ -22,10 +22,21 @@ nothing, so that costs the boundary nothing. Every write lives here.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json
 ```
 
-Prints one line per file — `create` or `present` for a template, and `replace` or `decline` for each
-of the three OWNED files, which this bare invocation reports on every run and not only under
-`--apply`. **Nothing is written.** A repo that already has every default still gets three `replace`
-lines here; that is the destructive half of the apply, previewed.
+Prints one line per file — `create` or `present` for a template, `replace` or `decline` for each of
+the three OWNED files, and `replace` (or `remove`) for each file in the `01-oss` rule layer, all of
+which this bare invocation reports on every run and not only under `--apply`. **Nothing is written.**
+A repo that already has every default still gets three `replace` lines for the trio and one per rule
+file; that is the destructive half of the apply, previewed.
+
+The `PLAN:` line counts the rule layer too — `…, 3 declined (already covered elsewhere), 7 rule
+file(s) replaced in the 01-oss layer`. Until #182 it did not, so a run against a repo with every
+default present and a changelog gate already running printed `PLAN: 0 to create, 11 already present,
+3 declined` for a run whose only effect was to delete and rewrite the layer.
+
+One `layer` line follows the rows and says which of the changelog rule's four sentences the preview
+picked and where that answer came from — including when the answer depends on a file *this run would
+create*, which it says rather than guessing at. A layer directory that could not be listed gets its
+own `layer` line, because what would be deleted from it is unknown rather than nothing.
 
 The plan runs the same four checks the apply does, and one of them — `label` — reads the
 repo's label list from the forge. So the preview is read-only but no longer strictly
@@ -42,10 +53,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json 
 Prints the full body of every file `apply` would actually write — nothing written here, same as the
 plan alone. That covers both halves of `apply`: files it would **create** (a template absent today)
 and files it would **replace** (everything in OWNED — `.oss/README.md`, `.oss/assemble_changelog.py`,
-`.github/workflows/oss-changelog.yml` — rewritten on every single run, whether or not a template is
-missing). Each line says which: a repo that already has every default still gets three `replace`
-lines out of a bare `--show`, because that is the destructive half of `apply` and the one a preview
-is for. Name one file (`--show CLAUDE.md`) to see just that one, including a file already `present`,
+`.github/workflows/oss-changelog.yml` — plus every file in the `01-oss` rule layer, all rewritten on
+every single run whether or not a template is missing). Each line says which: a repo that already has
+every default still gets three `replace` lines for the trio and one per rule file out of a bare
+`--show`, because that is the destructive half of `apply` and the one a preview is for. The rule
+bodies are printed in full, and that is the point of printing them — they are markdown a hook injects
+into a model's context on a match, so they are the generated content most worth reading before it
+lands. Name one file (`--show CLAUDE.md`, or `--show .claude/jit-context/paths/01-oss/oss-config.md`)
+to see just that one, including a file already `present`,
 when the question is what the default itself contains rather than whether it would be written.
 `--show` and `--apply` refuse to run together — show, read it, then apply as a separate step. Relay
 the plan and what each generated file would contain before going further — a default that nobody read
@@ -309,6 +324,18 @@ nothing a human wrote lives there.
 
 Write your own rules in `00-manual/`. If you want to change one of ours, copy it there and edit the
 copy; the next install will not fight you for it.
+
+**And it is previewed, which it was not until #182.** Being replaced wholesale on every run is
+precisely what makes "what would this change" a non-trivial question here *every* time, and the layer
+was the only wholesale-replaced target the preview could not answer it for. It now previews the same
+way the trio does, with two additions the trio does not need. A file in the layer today that this
+version no longer ships previews as `remove`, because the layer is deleted before it is rewritten —
+and `--apply` prints a matching `removed` line, so the promise and the receipt agree. And the
+changelog rule's body depends on a gate read and an assembler lookup that `--apply` performs *after*
+its own writes, so the preview renders against the tree **as it will be after those writes**, and its
+`layer` line says which input came from the plan rather than from disk. A preview that quietly picked
+one of the four sentences in the table below would be a second confident wrong answer rather than a
+fix for the first.
 
 A symlink into the plugin checkout would have been simpler and is refused by the rules engine on
 purpose — git carries symlinks, so a clone would need only one committed link to point rules at

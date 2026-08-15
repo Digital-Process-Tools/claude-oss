@@ -315,7 +315,17 @@ def test_the_preview_stops_hiding_the_three_files_the_apply_would_overwrite(tmp_
 
     assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
     unforced = capsys.readouterr().out
-    assert "would replace" not in unforced, unforced
+    # Narrowed from a bare `"would replace" not in unforced` in #182: the rule layer is
+    # replaced wholesale on every run and now previews as such, so a blanket assertion
+    # here would be asserting the defect. The subject of this test is the trio, and it
+    # is still declined -- named file by file rather than by a substring that three
+    # different write contracts all happen to share.
+    for name in sorted(scaffold.OWNED):
+        assert "----- {} (would replace".format(name) not in unforced, unforced
+    # Positive control, so the loop above cannot pass on an empty preview: the run does
+    # still show something it would replace, and it is the layer.
+    assert unforced.count("would replace") >= 1, unforced
+    assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" in unforced, unforced
 
 
 def test_the_dry_run_survives_a_workflow_directory_it_cannot_read(tmp_path, capsys):
