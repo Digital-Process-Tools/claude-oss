@@ -25,7 +25,7 @@ Read the config first, every tick. It is two files with one merged view:
 
 - **`.oss.json`** — tracked, the project's answer, the same for every maintainer: `repo`,
   `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`,
-  `docs_targets`, `labels`, `ci.required_checks`, `release`.
+  `docs_targets`, `labels`, `release`.
 - **`.oss.local.json`** — git-excluded, this machine's answer, three keys that each name a directory
   on one person's disk: `clone`, `worktree_root`, `state_file`.
 
@@ -166,8 +166,16 @@ checker that cannot answer must say so, name what went unchecked, and never rend
 ## Delegating
 
 Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
-the deliverable is a diff or a label. A newly written agent file does not register until a fresh
-session — until then brief `general-purpose` with a pointer to the definition file.
+the deliverable is a diff or a label.
+
+**A spawn whose `subagent_type` does not resolve is `could not run`, and the fallback is to brief
+`general-purpose` with a pointer to the definition file.** A newly written agent file not
+registering until a fresh session is the benign case and it clears itself. The one that does not is
+a shipped agent that never registers at all: two of the four did exactly that for two releases, and
+the release gate's blocking audit dispatched to nothing the whole time (#81). So treat the
+resolution error as a finding to report, not only an obstacle to route around — and quote it, since
+a spawn that errored and a review that came back clean are the same silence in any report that
+paraphrases.
 
 The definitions carry worktree setup, TDD and the report format, so a brief carries only what is true
 about **this** issue. That matters: **boilerplate is where unverified claims hide, because it is the

@@ -26,7 +26,14 @@ command — lives in a config file the plugin writes by probing the repo, not in
 /plugin install oss@dpt-plugins
 ```
 
-**Restart Claude Code afterwards.** Plugin registrations are read once at session start.
+**Then run `/reload-plugins`, or restart Claude Code.** Plugin registrations are read once at
+session start, and installing mid-session leaves the agent registry as it was.
+
+That step is not cosmetic, because **its failure does not look like a missing step.** In a session
+that installed the plugin and never reloaded, all seven `oss:` skills resolve and none of the four
+`oss:` agents does — which reads as a plugin that is installed and working with a broken `agents/`
+directory, and has already produced two wrong bug reports against this repo (#140). If a spawn comes
+back `Agent type 'oss:...' not found`, reload before concluding anything about the files.
 
 Installing pulls in `supertool`, `remember` and `claude-jit-context` automatically — they are
 declared dependencies and resolve from the same marketplace.
