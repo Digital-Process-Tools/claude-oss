@@ -165,6 +165,19 @@ separately rather than one list.
   `.match` or `.search` cannot lose it. Assert the rendered file still parses, not that the regex
   returned False: the regex is the cause and the parse is the harm.
 
+- **Patching a module attribute injects nothing where the caller captured the function at import.**
+  `pathlib` on **3.10 alone** routes `Path.open` through `self._accessor.open`, and
+  `_NormalAccessor.open = io.open` binds the function object when `pathlib` is imported — so a test
+  that monkeypatches `io.open` rebinds the module attribute and pathlib never looks at it again. 3.9
+  calls `io.open(...)` by name and 3.11 deleted the accessor, so #174's injection was green on 3.9,
+  3.11 and 3.12 and red on all three operating systems at 3.10: the interpreter axis, not the
+  platform one, and the failure read as a product defect for a condition the harness could not
+  produce. Patch the method the code under test calls — `Path.write_text`, `Path.read_bytes` — which
+  is looked up on the class at call time on every version. And measure it: attempt the exact
+  operation against a scratch file of the same shape, and skip carrying the interpreter and the
+  sentence naming what went untested when the injection did not take. Same rule as the permission
+  fixture, one axis over: never assert on a condition you did not establish.
+
 ## Layout
 
 ```
