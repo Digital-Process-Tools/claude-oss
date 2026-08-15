@@ -335,6 +335,13 @@ and invisible from outside.
   `--root .` calls `ok`. The guess happened to be right and nothing established that it was. A
   diagnostic that reported `ok` there would be answering a well-formed question about a repository
   nobody named.
+- **A dimension can read the layer and still not see the call you want.** The successor to the
+  above, and the reason "the layer is live" is not the end of the question. The tools dimension
+  builds the subject its rules match against from `command`, `skill`, `file_path` and `pattern`;
+  an `Agent` payload carries `subagent_type`, `description` and `prompt`, so the hook returns `{}`
+  and exits before the layer loop. A `tool: Agent` rule would index cleanly, diagnose healthy and
+  never fire — which is why #144 ships a recorded gap in `00-README.md` instead of a rule. Ask what
+  a dimension can *see*, not only whether it is read.
 - **CI settles what a local run cannot** — reasoned, not re-observed. Two entries in the traps list
   above were written after a green macOS suite and a red matrix on the same commit. This section
   read them; it did not re-run them.

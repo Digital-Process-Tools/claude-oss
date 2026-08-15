@@ -2,10 +2,17 @@
 
 Every observable signal said the `01-oss` layer was healthy -- files on disk, index
 rows current, `doctor` listing them, the generator's own tests green. Nothing anywhere
-asked *does anything read this directory?*, and the answer was no: `claude-jit-context`
-enumerates layers from a fixed list in three hooks (`pre-path-hook.sh:308`,
-`pre-tool-hook.sh:721`, `pre-prompt-hook.sh:173`, measured against 0.3.5) and `01-oss`
-is not in it.
+asked *does anything read this directory?*, and the answer was no: up to and including
+0.3.5, `claude-jit-context` enumerated layers from a fixed list in three hooks and
+`01-oss` was not in it.
+
+**That has since been fixed upstream: 0.4.0 enumerates the layers off disk and no hook
+carries a fixed list.** The check is written against the *shape* rather than against a
+spelling precisely so that this sentence changing does not make it wrong -- a hook set
+with no fixed enumeration answers `could-not-determine`, never `unread`. Line numbers are
+deliberately not cited here any more: the three this docstring used to name moved with the
+fix, which is the failure mode `agents/developer.md` warns about in general terms and this
+file demonstrated in particular.
 
 Four states, and the third and fourth are the point:
 
@@ -39,7 +46,9 @@ PLUGIN = "claude-jit-context"
 VERSION = "9.9.9"
 LAYER = "01-oss"
 
-#: The shape the three real hooks carry today, verbatim apart from indentation.
+#: The shape the three real hooks carried up to 0.3.5, verbatim apart from indentation.
+#: Fabricated either way -- see the last paragraph of the module docstring for why none of
+#: these fixtures is read off the installed dependency.
 OMITS = 'split("00-manual 10-auto 20-grouped 30-crosscutting", layers, " ")\n'
 #: The same line if upstream simply added our layer to the list.
 NAMES = 'split("00-manual 01-oss 10-auto 20-grouped 30-crosscutting", layers, " ")\n'
@@ -107,6 +116,28 @@ def test_a_hook_set_that_names_our_layer_reads_it(tmp_path):
     cache, record = _cache(tmp_path, {"pre-tool-hook.sh": NAMES})
     finding = _one(_project(tmp_path), cache, record)
     assert finding["state"] == "reads"
+
+
+def test_the_positive_answer_counts_what_it_says_it_counts(tmp_path):
+    """`len(dimensions)` was rendered as "N rule(s)".
+
+    The two counts are equal in every other fixture here, because `_project` writes exactly
+    one entry per dimension -- so this one puts a second entry in a dimension, which is the
+    only arrangement that can tell them apart. A diagnostic that names the wrong noun is
+    read as a rule count and quoted as one.
+    """
+    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": NAMES})
+    project = _project(tmp_path)
+    extra = project / ".claude" / "jit-context" / "tools" / LAYER / "second.md"
+    extra.write_text("---\n---\n", encoding="utf-8")
+
+    rules = len(list((project / ".claude" / "jit-context").rglob("*.md")))
+    dimensions = 2
+    assert rules != dimensions, "the fixture cannot tell the two counts apart"
+
+    detail = _one(project, cache, record)["detail"]
+    assert "{} rule(s)".format(dimensions) not in detail, detail
+    assert "{} dimension(s)".format(dimensions) in detail, detail
 
 
 def test_hooks_that_enumerate_at_runtime_are_unknown_not_unread(tmp_path):

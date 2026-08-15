@@ -1438,20 +1438,26 @@ def check_jit_rules(project_dir):
         name = layer.relative_to(rules_dir)
         index = layer / JIT_INDEX
 
+        # Derived BEFORE the first report, because every count printed below is a count of
+        # rules and `rules` is a count of files. `JIT_ENTRY_SKIP` is not an entry: it gets
+        # no index row and the dependency's builder skips it, so a layer that documents
+        # itself was reported as having one more rule than it has -- in all three arms, one
+        # of which is a FAIL that would name a rule the layer does not contain.
+        dimension = name.parts[0] if name.parts else ""
+        entries = {p.name: p for p in rules if p.name != JIT_ENTRY_SKIP}
+
         if not index.is_file():
             report(
                 "FAIL",
                 "{}: {} rule(s) and no {} -- the matcher reads the index, so none of "
                 "them run, and that is indistinguishable from rules that matched "
-                "nothing. Rebuild the index.".format(name, len(rules), JIT_INDEX),
+                "nothing. Rebuild the index.".format(name, len(entries), JIT_INDEX),
             )
             continue
         # Read once, and guarded: this used to be an unguarded `read_text` inside the
         # emptiness test, so an index holding a byte sequence that is not UTF-8 raised
         # out of a diagnostic whose whole contract is to exit 0 with a VERDICT line.
         # The tree being diagnosed chooses that file's bytes.
-        dimension = name.parts[0] if name.parts else ""
-        entries = {p.name: p for p in rules if p.name != JIT_ENTRY_SKIP}
         try:
             index_text = index.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -1467,7 +1473,7 @@ def check_jit_rules(project_dir):
                 "FAIL",
                 "{}: {} is empty beside {} rule(s). An empty table is the same silence "
                 "as a missing one, and it is the one that passes an existence check. "
-                "Rebuild the index.".format(name, JIT_INDEX, len(rules)),
+                "Rebuild the index.".format(name, JIT_INDEX, len(entries)),
             )
             continue
 
@@ -2392,7 +2398,10 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         # is a hook that reads it, and no file this could not open can unsay that.
         return (
             "reads",
-            "{} names {} in its layer list ({}), so the {} rule(s) under {}/*/{}/ are "
+            # `dimensions`, so the noun is `dimension(s)`. It read `rule(s)`, which is a
+            # different number and the one a reader would quote: this repo ships three
+            # dimensions and more rules than that.
+            "{} names {} in its layer list ({}), so the {} dimension(s) under {}/*/{}/ are "
             "reachable".format(
                 named, layer, ", ".join(naming[:3]), len(dimensions), JIT_RULES_DIR, layer
             ),

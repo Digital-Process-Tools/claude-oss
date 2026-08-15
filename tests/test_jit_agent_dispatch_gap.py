@@ -131,6 +131,15 @@ def test_the_gap_record_gets_no_index_row_but_a_real_rule_does(tmp_path):
     assert GAP_RECORD not in named, "the gap record was indexed as a rule"
     assert "supertool-required.md" in named, "no rule was indexed at all"
 
+    # Why it gets no row, held directly rather than inferred from the row list above. The
+    # exemption in `test_every_rule_file_is_indexed` means an added `match:` here would
+    # produce a row for a filename the dependency's builder skips -- a row deleted by the
+    # next rebuild and read as drift -- with nothing else in the suite going red.
+    record = oss_rules.RULES["tools"][GAP_RECORD]
+    assert oss_rules._field(record, "match") is None, "the record declares a match:"
+    assert oss_rules._field(record, "tool") is None, "the record declares a tool:"
+    assert oss_rules._field(record, "description"), "the record declares no description:"
+
 
 def test_the_diagnostic_does_not_count_the_gap_record_as_a_rule(tmp_path, capsys):
     """`doctor` already knows `00-README.md` is not an entry -- its count did not.
@@ -162,6 +171,27 @@ def test_the_diagnostic_does_not_count_the_gap_record_as_a_rule(tmp_path, capsys
         ]
     )
     assert "{} rule(s)".format(indexed) in reported, reported
+
+
+def test_the_failure_arms_do_not_count_the_gap_record_either(tmp_path, capsys):
+    """The same count, in the branch that fires when the index is gone.
+
+    Fixing only the healthy branch leaves a layer holding one rule and one record saying
+    "2 rule(s) and no 00-index.tsv" -- and a layer holding *only* a record saying
+    "1 rule(s)" about zero rules, which is a FAIL naming a rule that does not exist.
+    """
+    oss_rules.install(tmp_path)
+    layer = tmp_path / ".claude" / "jit-context" / "tools" / oss_rules.LAYER
+    (layer / "00-index.tsv").unlink()
+    rules = len([p for p in layer.glob("*.md") if p.name != GAP_RECORD])
+    doctor.check_jit_rules(tmp_path)
+    reported = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if "tools/{}".format(oss_rules.LAYER) in line
+    ]
+    assert reported, "the tools layer was not reported at all"
+    assert "{} rule(s)".format(rules) in reported[0], reported[0]
 
 
 # --- 3. the gap is still true, driven against the installed dependency ------------------
@@ -200,7 +230,21 @@ def _child_env(project):
 
 
 def _drive(bash, hook, project, payload):
-    """The hook's stdout for one PreToolUse payload, or `None` if it could not be run."""
+    """`(stdout, problem)`. `problem` is `None` only when the hook actually answered.
+
+    The two failure shapes here render identically to a substring test and must not, which
+    is the whole subject of this file pointed at its own harness:
+
+    - the spawn raised, hung past the timeout, or was killed -- `subprocess.run` raises,
+      and `TimeoutExpired` is a `SubprocessError`, so a hang arrives here as an exception
+      rather than as output
+    - the process ran and printed nothing
+
+    Neither is the hook saying "no rule matched". The hook's contract is to print a JSON
+    object on every call -- `{}` is its way of having nothing to say -- so empty stdout is
+    *no answer*, not a quiet one. Collapsing either into `""` would let `SENTINEL not in
+    output` pass on a run that measured nothing, and report it as the gap holding.
+    """
     try:
         done = subprocess.run(
             [bash, str(hook)],
@@ -211,9 +255,45 @@ def _drive(bash, hook, project, payload):
             universal_newlines=True,
             timeout=120,
         )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return done.stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "", "the hook could not be run: {!r}".format(exc)
+    if not done.stdout.strip():
+        return done.stdout, (
+            "the hook printed nothing at all (exit {}), so it did not answer. "
+            "stderr: {!r}".format(done.returncode, done.stderr[-400:])
+        )
+    return done.stdout, None
+
+
+def test_a_hook_that_never_answered_is_not_read_as_a_silent_one(tmp_path):
+    """The harness's own three states, all in one fixture.
+
+    An unspawnable binary, and a hook that runs and says nothing, must both come back as a
+    *problem* rather than as empty output -- otherwise every assertion built on `_drive`
+    passes on a run where nothing was measured. Paired with a stand-in that does answer, so
+    "reports a problem" is not satisfied by a helper that reports one unconditionally.
+    """
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on PATH, so the answering half of this fixture cannot run")
+
+    out, problem = _drive("this-binary-does-not-exist-144", "hook.sh", tmp_path, {})
+    assert problem is not None, "an unspawnable binary was reported as a silent hook"
+    assert out == ""
+
+    mute = tmp_path / "mute.sh"
+    mute.write_text("cat > /dev/null\n", encoding="utf-8")
+    out, problem = _drive(bash, mute, tmp_path, {})
+    assert problem is not None, "a hook that printed nothing was reported as an answer"
+
+    # The must-answer half. `{}` is the hook's own way of having nothing to say, so it is
+    # deliberately the reply used here: the helper has to call that an answer, or the real
+    # test below would skip on every silent-but-successful run and measure nothing.
+    speaking = tmp_path / "speaks.sh"
+    speaking.write_text("cat > /dev/null; printf '{}'\n", encoding="utf-8")
+    out, problem = _drive(bash, speaking, tmp_path, {})
+    assert problem is None, problem
+    assert out.strip() == "{}"
 
 
 def test_the_tools_dimension_still_cannot_see_an_agent_call(tmp_path):
@@ -258,17 +338,17 @@ def test_the_tools_dimension_still_cannot_see_an_agent_call(tmp_path):
     _fabricated_layer(project)
     hook = hooks[0]
 
-    control = _drive(
+    control, problem = _drive(
         bash, hook, project, {"tool_name": "Bash", "tool_input": {"command": "ls -la"}}
     )
-    if control is None or BASH_SENTINEL not in control:
+    if problem is not None or BASH_SENTINEL not in control:
         pytest.skip(
             "the control rule did not fire, so this harness saw nothing and an empty Agent "
             "answer would mean nothing. Untested: whether {} reads an Agent payload. "
-            "Control output: {!r}".format(version, control)
+            "Problem: {}. Control output: {!r}".format(version, problem, control)
         )
 
-    subject = _drive(
+    subject, problem = _drive(
         bash,
         hook,
         project,
@@ -281,7 +361,17 @@ def test_the_tools_dimension_still_cannot_see_an_agent_call(tmp_path):
             },
         },
     )
-    assert AGENT_SENTINEL not in (subject or ""), (
+    if problem is not None:
+        # The control answered and this did not. That is not the gap holding -- it is the
+        # one payload this dependency has never been asked to handle failing to produce an
+        # answer, which is a different fact and must never be reported as the first one.
+        pytest.skip(
+            "the control answered but the Agent payload did not, so nothing was measured "
+            "about it. Untested: whether {} reads an Agent payload. Problem: {}".format(
+                version, problem
+            )
+        )
+    assert AGENT_SENTINEL not in subject, (
         "{} now injects on an Agent dispatch. The feature is unblocked: build the rule, and "
         "delete the gap record from oss_rules.py -- it has become stale prose shipped into "
         "every managed repo.".format(version)

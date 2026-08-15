@@ -36,9 +36,14 @@ printf '%s' '{"tool_name":"Agent","tool_input":{"subagent_type":"x","prompt":"y"
 The `Bash` call is the control. If it says nothing either, the harness is blind and the
 second answer means nothing -- that is not evidence the gap is still there.
 
-**If the `Agent` call now injects, this file is stale.** Build the rule and delete this
-record; a record of a gap that has closed is worse than no record, because it is read as
-current. Two things to settle when that day comes, neither of which the hook can answer
-today: the rule fires on *every* dispatch, so it must carry only what is true of any
-subagent, and it should point at where the clauses live rather than restate them -- a second
-copy is the one that drifts, and it is the one people quote.
+**If the `Agent` call now injects, this file is stale**, and a record of a gap that has
+closed is worse than no record, because it is read as current. It is not edited here: this
+whole layer is generated and replaced wholesale on every install, so a correction made in
+this directory is gone the next time the owning plugin writes it. Report it instead, and
+whoever maintains that plugin has a test that fails on the same day this sentence stops
+being true.
+
+Two things wait on that day, neither of which the hook can answer now: the rule would fire
+on *every* dispatch rather than one kind, so it can only carry what is true of any subagent;
+and it should point at where the clauses live rather than restate them, because the second
+copy is the one that drifts and the one people quote.
