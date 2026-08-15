@@ -598,6 +598,204 @@ def check_merge_permission(project_dir, home=None):
     )
 
 
+# The watch channel, and why this is a diagnostic rather than a setting (#150).
+#
+# `.supertool.json` is supertool's file, not ours. A non-reserved key in an op's
+# block reaches that op's subprocess as a `SUPERTOOL_`-prefixed variable, so
+# `{"ops": {"radar": {"watch_name": "oss"}}}` arrives as SUPERTOOL_WATCH_NAME with
+# no plumbing on either side -- which is exactly why `.oss.json` has no business
+# carrying the name. `.oss.json` describes a repo's release and review process; a
+# watcher socket is neither, and a second home for one value is a second thing to
+# disagree.
+#
+# What is missing is not configuration, it is visibility. The name derives
+# /tmp/supertool-watch-<name>.sock and a poller slot directory held by exactly one
+# process, so several repos resolving to one name share one fleet -- and a shared
+# fleet renders in `watches` identically to a private one. That is this plugin's
+# own defect class in somebody else's tool, and saying which of the states holds
+# is the whole fix available from here.
+#
+# Read, never written. Nothing below creates or edits this file.
+WATCH_CONFIG = ".supertool.json"
+WATCH_NAME_ENV = "SUPERTOOL_WATCH_NAME"
+
+# An explicit socket or state directory OVERRIDES the name -- not because an
+# export is more authoritative, but because it is the value a running poller
+# already captured and cannot migrate away from. So a name that agrees with its
+# declaration still decides nothing while one of these is set, and reporting
+# `agree` there would be a green line about a comparison with no effect.
+WATCH_PATH_ENV = ("SUPERTOOL_WATCH_SOCK", "SUPERTOOL_WATCH_STATE_DIR")
+
+
+def _declared_watch_names(project_dir):
+    """The distinct `ops.*.watch_name` values in this repo's `.supertool.json`.
+
+    Returns `(names, problem)`. `problem` is None when the file was read -- which
+    includes the file not being there, because absence is an answer and an
+    unreadable file is not.
+
+    The exception in hand decides which: `FileNotFoundError` is absence, anything
+    else is unreadable. Asking the filesystem a second question to explain why the
+    first failed is how `Path.exists()` took the release gate down from inside the
+    `except` that was meant to make it survive a bad read.
+    """
+    path = Path(project_dir) / WATCH_CONFIG
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return set(), None
+    except (OSError, ValueError, UnicodeDecodeError):
+        return set(), "unreadable"
+    if not isinstance(doc, dict):
+        return set(), "unreadable"
+    ops = doc.get("ops")
+    if not isinstance(ops, dict):
+        return set(), None
+    return {
+        block["watch_name"]
+        for block in ops.values()
+        if isinstance(block, dict)
+        and isinstance(block.get("watch_name"), str)
+        and block["watch_name"]
+    }, None
+
+
+def watch_channel_state(project_dir, env=None):
+    """Which watch channel does this repo actually resolve to? Eight answers.
+
+    `unreadable` / `conflict` / `overridden` / `mismatch` / `undeclared-export` /
+    `agree` / `declared-only` / `default`, and the count is the point. The filed
+    symptom -- four repos on one poller slot -- was NOT a repo whose declaration
+    disagreed with its environment. It was four repos declaring nothing at all with
+    one hand-copied export between them, so a check that only compared a
+    declaration against an export would have rendered the reported case and a clean
+    one the same way. `undeclared-export` is that case and it is separate from
+    `default`, which is the same absence with nothing exported over it.
+
+    `unreadable` is separate from every state above for the same reason: a file
+    that could not be parsed yields no names, which looks exactly like a file that
+    was read and declared none.
+
+    The environment read is this process's, and that is the honest scope: a poller
+    spawned from this session inherits it. It says nothing about a session already
+    running elsewhere, and the messages say so rather than implying otherwise.
+
+    The detail names counts, variables and the config path -- never a name. The
+    value was never what the reader needs; both places to look are named, and the
+    file is contributor-writable in a managed repo, which is how a tracked file
+    gets to write a diagnostic's own output lines.
+    """
+    environ = os.environ if env is None else env
+    names, problem = _declared_watch_names(project_dir)
+    if problem == "unreadable":
+        return "unreadable", "{} is there and could not be read".format(WATCH_CONFIG)
+
+    overrides = [key for key in WATCH_PATH_ENV if environ.get(key)]
+    exported = environ.get(WATCH_NAME_ENV) or ""
+
+    if len(names) > 1:
+        return "conflict", "{} op blocks in {} declare {} distinct names".format(
+            len(names), WATCH_CONFIG, len(names)
+        )
+    if overrides:
+        return "overridden", ", ".join(overrides)
+
+    declared = next(iter(names)) if names else ""
+    if declared and exported:
+        if declared == exported:
+            return "agree", "declared in {} and exported as {}".format(
+                WATCH_CONFIG, WATCH_NAME_ENV
+            )
+        return "mismatch", "declared in {}, exported as {}".format(
+            WATCH_CONFIG, WATCH_NAME_ENV
+        )
+    if exported:
+        return "undeclared-export", WATCH_NAME_ENV
+    if declared:
+        return "declared-only", "declared in {}".format(WATCH_CONFIG)
+    return "default", ""
+
+
+def check_watch_channel(project_dir, env=None):
+    """Say which channel, and say what the answer does not cover.
+
+    OK here never means "your fleet is private" -- this reads two places and
+    compares them; it does not enumerate the pollers holding a slot. Every message
+    that could be read as that promise carries the limit, or the check becomes an
+    OK nobody measured, which is the shape it exists to report.
+    """
+    state, detail = watch_channel_state(project_dir, env=env)
+    if state == "unreadable":
+        report(
+            "WARN",
+            "watch channel: {}, so whether this repo declares a watch_name is unknown "
+            "-- not answered as 'declares none', because that reads as a repo on the "
+            "default channel.".format(detail),
+        )
+        return
+    if state == "conflict":
+        report(
+            "WARN",
+            "watch channel: {}. The ops are on different channels and nothing resolves "
+            "that -- bin/oss-workspace exports none of them. Leave one.".format(detail),
+        )
+        return
+    if state == "overridden":
+        report(
+            "WARN",
+            "watch channel: {} is set, which overrides the name entirely, so whatever "
+            "{} and {} say decides nothing. That override is deliberate -- it is the "
+            "path a running poller already captured -- but it means this repo's "
+            "declaration is not what its pollers use.".format(
+                detail, WATCH_CONFIG, WATCH_NAME_ENV
+            ),
+        )
+        return
+    if state == "mismatch":
+        report(
+            "WARN",
+            "watch channel: {} and the two differ. The export wins for pollers spawned "
+            "here, so this repo's own declaration is not in effect and its board is "
+            "some other repo's fleet. The names are not printed; both places to look "
+            "are named.".format(detail),
+        )
+        return
+    if state == "undeclared-export":
+        report(
+            "WARN",
+            "watch channel: {} is exported and {} declares no watch_name, so this repo "
+            "is on a channel it never named -- which is what a hand-copied "
+            ".claude/settings.local.json produces, and every repo carrying that copy "
+            "shares one poller slot while each board renders as its own.".format(
+                detail, WATCH_CONFIG
+            ),
+        )
+        return
+    if state == "agree":
+        report(
+            "OK",
+            "watch channel: {}, and they match. This compares two declarations; it "
+            "does not enumerate the pollers on that channel.".format(detail),
+        )
+        return
+    if state == "declared-only":
+        report(
+            "OK",
+            "watch channel: {} and nothing is exported over it. That reaches supertool's "
+            "own ops; the claude-channel consumer is spawned by the harness and does not "
+            "read this file, so check delivery with supertool 'channel:health'.".format(
+                detail
+            ),
+        )
+        return
+    report(
+        "OK",
+        "watch channel: none declared in {} and {} is unset, so this repo is on the "
+        "shared default channel with every other repo that declares none. Nothing is "
+        "broken; the fleet is not this repo's alone.".format(WATCH_CONFIG, WATCH_NAME_ENV),
+    )
+
+
 JIT_ENTRY_SKIP = "00-README.md"
 
 # The index columns each dimension's builder writes, and where the ENTRY FILENAME sits
@@ -2206,6 +2404,9 @@ def main(argv=None):
     # The merge permission is settled here or it is settled at the merge step,
     # with the whole review already spent.
     check_merge_permission(project_dir)
+    # Needs no config: the channel is supertool's file and this process's
+    # environment, so it answers on a repo that has never run /oss:setup.
+    check_watch_channel(project_dir)
     check_freshness(project_dir, config)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")

@@ -1,5 +1,5 @@
 ---
-description: Diagnose this repo's oss setup — config, dependencies, clone, worktree root, state file.
+description: Diagnose this repo's oss setup — config, dependencies, clone, worktree root, state file, watch channel.
 allowed-tools: Bash
 ---
 
@@ -40,6 +40,41 @@ sitting there untouched. Re-run from inside the tree before offering to write an
 If instead the report says `.oss.json read from the enclosing clone`, nothing is wrong: you are
 standing in a worktree and the config lives in the clone, which is where it belongs. Do not write a
 second one.
+
+## The `watch channel` line
+
+One line, eight states, and none of them is a claim about which pollers are running. It compares two
+places — a `watch_name` in this repo's `.supertool.json`, and `SUPERTOOL_WATCH_NAME` in the
+environment this run inherited — and reports which channel the repo resolves to. The name derives a
+socket and a poller-slot directory held by exactly one process, so repos resolving to one name share
+one fleet while each board renders as its own. That is the whole reason the line exists: the shared
+case and the private case are otherwise indistinguishable from inside either repo.
+
+- `OK … and they match` / `declared in .supertool.json and nothing is exported over it` — fine.
+  Neither says the fleet is private; nothing here enumerates pollers, and `supertool 'channel:health'`
+  is what answers delivery.
+- `OK … shared default channel` — nothing declared, nothing exported. Not a defect and not silence:
+  this repo is on the default channel with every other repo that declares none, which is stated
+  rather than left to be inferred from a missing line.
+- `WARN … is exported and .supertool.json declares no watch_name` — the filed case. A hand-copied
+  `.claude/settings.local.json` puts one name into several repos, and each of them then reports a
+  fleet that is not its own.
+- `WARN … declared in .supertool.json, exported as SUPERTOOL_WATCH_NAME and the two differ` — the
+  export wins for pollers spawned here, so this repo's declaration is not in effect.
+- `WARN … op blocks … declare N distinct names` — `bin/oss-workspace` exports none of them rather
+  than picking. Leave one.
+- `WARN … SUPERTOOL_WATCH_SOCK … is set, which overrides the name entirely` — deliberate on
+  supertool's side, because that path is what a running poller already captured. It still means the
+  comparison above decides nothing, so it is not reported as agreement.
+- `WARN … .supertool.json is there and could not be read` — the third state. Not `declares none`:
+  that reads as a repo on the default channel, and it is not one.
+
+**No name is ever printed** — the declaration, the export, both places to look, and nothing the
+diagnosed repo wrote. The remedy is always in one of the two places the line names.
+
+The plugin does not configure this. `.oss.json` describes a repo's release and review process and a
+watcher socket is neither, and `.supertool.json` already carries the name to supertool's own ops
+with no plumbing. Do not offer to write the name into `.oss.json`; there is nowhere for it to go.
 
 ## The `owned files` lines, and what to do about them
 

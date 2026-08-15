@@ -1068,3 +1068,177 @@ def test_check_agent_dispatch_prints_every_line_it_produced(capsys):
     out = capsys.readouterr().out
     assert out.strip(), "check_agent_dispatch printed nothing"
     assert len(doctor.FINDINGS) == len(out.strip().splitlines())
+
+
+# --- the watch channel (#150) -------------------------------------------------
+#
+# The reported symptom is four repos resolving to one poller slot because one
+# `SUPERTOOL_WATCH_NAME` was hand-copied between machines' settings files. The
+# thing that makes it invisible is that a shared fleet and a private one render
+# identically, so every arm below asserts a DISTINCT state -- an assertion that
+# two arms merely both produce a WARN would reproduce the defect in the test.
+
+
+def _supertool_config(root, doc):
+    (root / doctor.WATCH_CONFIG).write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_watch_channel_agrees_when_the_export_matches_the_declaration(tmp_path):
+    """The must-not-fire arm. Its control is the test directly below, which uses
+    the same fixture and changes only the exported value."""
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    state, _detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss"}
+    )
+    assert state == "agree"
+
+
+def test_watch_channel_reports_a_mismatch_against_the_same_fixture(tmp_path):
+    """The must-fire control for the test above."""
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    state, detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
+    )
+    assert state == "mismatch"
+    assert doctor.WATCH_CONFIG in detail
+
+
+def test_watch_channel_reports_an_export_this_repo_never_declared(tmp_path):
+    """The filed case: nothing declared here, a name exported anyway, which is
+    what a copied .claude/settings.local.json produces."""
+    _supertool_config(tmp_path, {"ops": {"radar": {}}})
+    state, _detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
+    )
+    assert state == "undeclared-export"
+
+
+def test_watch_channel_export_with_no_supertool_config_at_all(tmp_path):
+    state, _detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
+    )
+    assert state == "undeclared-export"
+
+
+def test_watch_channel_default_is_not_the_same_state_as_an_unreadable_file(tmp_path):
+    """Three states, not two: nothing declared and nothing exported is the shared
+    default channel, and it must not render as the file that could not be read."""
+    quiet = doctor.watch_channel_state(tmp_path, env={})[0]
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")
+    broken = doctor.watch_channel_state(tmp_path, env={})[0]
+    assert quiet == "default"
+    assert broken == "unreadable"
+
+
+def test_watch_channel_unreadable_when_the_document_is_not_an_object(tmp_path):
+    (tmp_path / doctor.WATCH_CONFIG).write_text("[]", encoding="utf-8")
+    assert doctor.watch_channel_state(tmp_path, env={})[0] == "unreadable"
+
+
+def test_watch_channel_declared_without_an_export_is_its_own_state(tmp_path):
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    assert doctor.watch_channel_state(tmp_path, env={})[0] == "declared-only"
+
+
+def test_watch_channel_reports_op_blocks_that_disagree(tmp_path):
+    _supertool_config(
+        tmp_path,
+        {"ops": {"radar": {"watch_name": "oss"}, "gh-prs": {"watch_name": "other"}}},
+    )
+    state, detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss"}
+    )
+    assert state == "conflict"
+    assert "2" in detail
+
+
+@pytest.mark.parametrize("var", ["SUPERTOOL_WATCH_SOCK", "SUPERTOOL_WATCH_STATE_DIR"])
+def test_watch_channel_reports_a_path_override_over_an_agreeing_name(tmp_path, var):
+    """An explicit socket or state directory overrides the name, so reporting
+    `agree` here would be a green line about a comparison that decides nothing."""
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    state, detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss", var: "/tmp/elsewhere"}
+    )
+    assert state == "overridden"
+    assert var in detail
+
+
+def test_watch_channel_state_never_prints_a_value_the_repo_chose(tmp_path):
+    """merge_permission_state's rule: counts and paths, never the file's text."""
+    secret = "zzsentinelzz"
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": secret}}})
+    for env in ({}, {"SUPERTOOL_WATCH_NAME": "other"}, {"SUPERTOOL_WATCH_NAME": secret}):
+        _state, detail = doctor.watch_channel_state(tmp_path, env=env)
+        assert secret not in detail
+
+
+def test_watch_channel_state_reads_os_environ_when_no_env_is_passed(tmp_path, monkeypatch):
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    monkeypatch.setenv("SUPERTOOL_WATCH_NAME", "oss-supertool")
+    monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
+    monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
+    assert doctor.watch_channel_state(tmp_path)[0] == "mismatch"
+
+
+def test_check_watch_channel_warns_on_a_mismatch_and_not_on_agreement(tmp_path, capsys):
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+
+    doctor.check_watch_channel(tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss"})
+    quiet = [state for state, _ in doctor.FINDINGS]
+    doctor.FINDINGS.clear()
+
+    doctor.check_watch_channel(tmp_path, env={"SUPERTOOL_WATCH_NAME": "elsewhere"})
+    loud = [state for state, _ in doctor.FINDINGS]
+
+    assert quiet == ["OK"]
+    assert loud == ["WARN"]
+    assert capsys.readouterr().out.strip()
+
+
+def test_check_watch_channel_prints_ascii_only(tmp_path):
+    """Windows consoles encode with the codepage, not the source file's encoding,
+    so a non-ASCII byte here kills the process at the print."""
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    for env in (
+        {},
+        {"SUPERTOOL_WATCH_NAME": "other"},
+        {"SUPERTOOL_WATCH_NAME": "oss"},
+        {"SUPERTOOL_WATCH_NAME": "oss", "SUPERTOOL_WATCH_SOCK": "/tmp/s.sock"},
+    ):
+        doctor.FINDINGS.clear()
+        doctor.check_watch_channel(tmp_path, env=env)
+        for _state, message in doctor.FINDINGS:
+            message.encode("ascii")
+
+
+def test_check_watch_channel_survives_an_unreadable_supertool_config(tmp_path):
+    """The contract is exit 0 always: an OSError that is not absence must arrive
+    as a WARN line, not as a traceback."""
+    blocked = tmp_path / doctor.WATCH_CONFIG
+    blocked.write_text("{}", encoding="utf-8")
+    try:
+        blocked.chmod(0o000)
+        if os.access(str(blocked), os.R_OK):
+            pytest.skip(
+                "this process can read a 0o000 file (root, or a filesystem without "
+                "POSIX modes), so the unreadable arm cannot be reached here; the "
+                "malformed-document arm above still covers the state"
+            )
+        state, _detail = doctor.watch_channel_state(tmp_path, env={})
+    finally:
+        blocked.chmod(0o644)
+    assert state == "unreadable"
+
+
+def test_main_reports_the_watch_channel(tmp_path, monkeypatch, capsys):
+    _config(tmp_path)
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    monkeypatch.setenv("SUPERTOOL_WATCH_NAME", "oss-supertool")
+    monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
+    monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
+    assert doctor.main(["--root", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert doctor.WATCH_NAME_ENV in out
+    assert out.strip().splitlines()[-1].startswith("VERDICT:")
