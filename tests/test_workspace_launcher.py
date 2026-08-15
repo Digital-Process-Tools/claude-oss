@@ -109,6 +109,7 @@ def _stub_claude(bindir, argv_log, mcp_get=None):
         '    fi\n'
         '    exit 0\n'
         'fi\n'
+        'printf "%s" "${SUPERTOOL_WATCH_NAME-}" > "' + str(bindir / "watch_name.txt") + '"\n'
         'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
         'exit 0\n',
     )
@@ -180,7 +181,8 @@ def _with_channel_consumer(home, bindir):
     return consumer
 
 
-def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None):
+def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
+        watch_name_env=None):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
@@ -200,7 +202,13 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None):
     env = dict(os.environ)
     env["HOME"] = str(home)
     env["USERPROFILE"] = str(home)
+    # Popped rather than left alone: the developer running this suite may well have
+    # one exported, and the derivation under test is the branch that only runs when
+    # nothing is. An inherited value would make every derivation assertion pass or
+    # fail on a fact about the machine.
     env.pop("SUPERTOOL_WATCH_NAME", None)
+    if watch_name_env is not None:
+        env["SUPERTOOL_WATCH_NAME"] = watch_name_env
     # Minimal PATH, deliberately: with the real claude reachable, the "missing
     # claude" case found it and EXECUTED it -- a test suite that launches a live
     # agent session in a temp directory. Only the stub, the interpreter and the
@@ -475,3 +483,204 @@ def test_the_script_is_posix_sh_not_bash(tmp_path):
         offender = re.search(r"^\s*%s\s" % bashism, text, re.MULTILINE)
         assert offender is None, "%s: %r" % (bashism, offender.group(0))
     assert re.search(r"\[\[", text) is None, "[[ is bash test syntax"
+
+# --- the watch name, and why it is derived rather than declared (#191) ----------
+#
+# A repo declaring nothing exported nothing, so its consumer bound the UNNAMED
+# socket /tmp/supertool-watch.sock -- shared with every other repo that declares
+# none, held by exactly one process, and the loser is never told. Measured on
+# 2026-08-15: a second channel-capable server won that socket, five events were
+# read and forwarded with zero dropped, and none of them reached the session.
+#
+# The assertions below read the value out of the process the launcher EXEC'd,
+# never out of the script's text. An export nothing carries is not an export.
+
+
+def _exported_watch_name(cwd):
+    """What the launcher exported into the session it opened.
+
+    Three answers, and the third is the one a bare falsy check destroys: `None`
+    means the stub never ran at all (so nothing was measured), `""` means it ran
+    and carried no name, and a string is a name. Folding the first two together
+    turns "the launcher never got that far" into "the launcher exported nothing",
+    which is the shape of bug this whole file exists to catch.
+    """
+    marker = Path(cwd) / "_stubbin" / "watch_name.txt"
+    if not marker.exists():
+        return None
+    return marker.read_text(encoding="utf-8")
+
+
+def _declare_watch_name(repo, name):
+    (repo / ".supertool.json").write_text(
+        json.dumps({"ops": {"radar": {"watch_name": name}}}), encoding="utf-8"
+    )
+
+
+def _declare_disagreeing_watch_names(repo, first, second):
+    """Two op blocks naming two different channels.
+
+    Both op keys contain `radar` so the fixture does not also trip the "no radar
+    tiers" warning, which would put unrelated text into the stderr the
+    disagreement assertions read.
+    """
+    (repo / ".supertool.json").write_text(
+        json.dumps({"ops": {
+            "radar": {"watch_name": first},
+            "radar-slow": {"watch_name": second},
+        }}),
+        encoding="utf-8",
+    )
+
+
+def test_the_watch_name_is_derived_from_the_repo_when_nothing_declares_one(tmp_path):
+    """`.oss.json` already carries `repo`: tracked, authoritative, read every tick.
+
+    Not the directory basename -- that changes when somebody clones elsewhere, and
+    two unrelated repositories cloned to the same basename collide silently, which
+    is this defect reached by a different road.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+
+
+def test_a_declared_watch_name_still_wins_over_the_derivation(tmp_path):
+    """The positive control for the test above, and a contract in its own right.
+
+    Without this pair, a launcher that exported a hardcoded string would satisfy
+    the derivation test, and a launcher that exported nothing at all would satisfy
+    any assertion phrased as "the declaration is not overwritten".
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "declared-by-hand")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "declared-by-hand", done.stderr
+
+
+def test_an_existing_export_wins_over_the_derivation_and_says_so(tmp_path):
+    """An exported value is one a running poller already captured, and moving the
+    socket under a live fleet is a documented failure. So the export wins -- and the
+    derivation losing quietly is the other half of the bug, so it is named.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=True, watch_name_env="a-live-fleet")
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "a-live-fleet", done.stderr
+    assert "a-live-fleet" in done.stderr
+    assert "owner-name" in done.stderr
+
+
+def test_nothing_to_derive_from_is_named_rather_than_silently_shared(tmp_path):
+    """Falling back to the shared socket without saying so IS the reported state.
+
+    A repo whose `.oss.json` carries no `repo` cannot be derived from. That is a
+    third answer -- not a name, and not a declaration -- and it has to arrive as
+    one, because the session still opens and the pollers still emit.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text('{"default_branch": "main"}', encoding="utf-8")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr
+    assert "declares no repo" in done.stderr
+
+
+def test_the_derived_name_is_sanitised_into_something_a_socket_path_can_hold(tmp_path):
+    """The name derives a filesystem path, so a slug reaches one. Every character
+    outside [A-Za-z0-9._-] becomes `-`; the slash separating owner from name is the
+    common case and a space is the one that would otherwise split an argv.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text(
+        '{"repo": "Org.Name/repo with spaces"}', encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "Org.Name-repo-with-spaces", done.stderr
+
+
+# --- and the three states the derivation collapsed into two -------------------
+#
+# `READ_NAME` leaves the name empty in TWO distinct cases: nothing declared, and
+# op blocks that declare different names. The derivation guard tested only for
+# emptiness, so the refusal was printed and then overridden -- stderr said "none
+# exported" while `SUPERTOOL_WATCH_NAME=owner-name` was exported.
+#
+# Declared-and-agreed, declared-and-contradictory and undeclared are three
+# states, and the tests below hold them apart in both directions: the pair that
+# must not derive, and the pair that must.
+
+
+def test_disagreeing_op_blocks_do_not_fall_through_to_the_derivation(tmp_path):
+    """The ops are already on different channels, so a derived third name would
+    be one that nothing in this repo publishes to -- an uncontested socket, a
+    green `channel:health`, and no events, which is a quiet wrong answer where
+    the shared default is at least a loud one.
+
+    `_exported_watch_name` is read rather than a falsy check on purpose: `None`
+    would mean the launcher died before exec'ing anything, and an assertion that
+    no name was exported must not be satisfiable by that.
+    """
+    repo = _repo(tmp_path)
+    _declare_disagreeing_watch_names(repo, "alpha", "beta")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+
+
+def test_the_disagreement_receipt_says_what_the_code_actually_did(tmp_path):
+    """A message that does not match the behaviour is the defect, not a cosmetic
+    issue. Both declared names are named -- the positive half, which fails if the
+    message never reaches stderr at all -- and the name that WOULD have been
+    derived is absent, the negative half, which the test above pins to an
+    observed export rather than to silence.
+    """
+    repo = _repo(tmp_path)
+    _declare_disagreeing_watch_names(repo, "alpha", "beta")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert "alpha" in done.stderr and "beta" in done.stderr, done.stderr
+    assert "none exported" in done.stderr, done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    assert "owner-name" not in done.stderr, done.stderr
+
+
+def test_an_undeclared_name_is_not_reported_as_a_disagreement(tmp_path):
+    """The other side of the same seam, and the control that stops the fix from
+    being "never derive": the undeclared state still derives, and still reads
+    differently from the contradictory one.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        json.dumps({"ops": {"radar": {"tiers": []}}}), encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+    assert "disagree" not in done.stderr, done.stderr
+
+
+def test_an_unreadable_supertool_config_does_not_fall_through_to_the_derivation(tmp_path):
+    """The fourth state, and the same seam one branch over.
+
+    A `.supertool.json` that cannot be parsed has not declared nothing -- what it
+    declares is UNKNOWN, and deriving there invents a name that the ops in that
+    file may well contradict. The receipt already said "no channel name was
+    exported and this session is on the default channel", so deriving one made
+    the message false in the second way on the same commit.
+
+    The control is the test above it: a repo with NO `.supertool.json` at all is
+    absence rather than unknown, and must still derive. Without that pair this
+    fix reads as "never derive", which deletes #191.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text("{not valid json", encoding="utf-8")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    assert "owner-name" not in done.stderr, done.stderr
