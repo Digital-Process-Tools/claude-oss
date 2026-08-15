@@ -12,6 +12,7 @@ reported as present rather than quietly replaced.
 import contextlib
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1047,6 +1048,378 @@ def test_force_owned_writes_the_trio_anyway(tmp_path):
     result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT, force_owned=True)
     assert result["replaced"] == sorted(scaffold.OWNED)
     assert result["declined"] == []
+
+
+# ------------------------------------- a directory the process is not allowed to read
+#
+# #124. Two mechanisms, one theme: the question "did I read this whole tree?" was put
+# to calls that discard the answer. `Path.is_dir()` answers True for a directory that
+# exists and cannot be entered, and `iterdir()` then raised through doctor's exit code;
+# `Path.rglob()` swallows PermissionError while walking and yields nothing for the
+# subtree, so `except OSError` around it was a guard that could never fire and could
+# never be told from a guard that had nothing to catch.
+#
+# Every test below pairs the denied arm with a positive control on the *identical*
+# tree, differing only in the mode bit -- otherwise "reported unreadable" would pass
+# on a harness that reports unreadable for everything.
+
+
+@contextlib.contextmanager
+def _denied(path):
+    """Deny reads on ``path``, or skip saying what went untested.
+
+    The mode bit is not assumed to have taken: root ignores it, some filesystems
+    ignore it, and Windows' ``os.chmod`` only toggles a read-only attribute that does
+    not stop a directory listing. So the deny is *measured* by attempting the exact
+    operation the code under test performs. Asserting on a platform's error code from
+    a table would report "this platform behaves" for a platform that does not.
+    """
+    os.chmod(str(path), 0o000)
+    try:
+        try:
+            os.listdir(str(path))
+        except PermissionError:
+            pass
+        except OSError as exc:
+            pytest.skip(
+                "chmod 000 on {} produced {} (errno {}) rather than a denied listing, so "
+                "the unreadable arm could not be set up and went untested".format(
+                    path, type(exc).__name__, exc.errno
+                )
+            )
+        else:
+            pytest.skip(
+                "chmod 000 on {} still allows listing it -- running as root, or a "
+                "filesystem/platform that does not enforce the mode bit. The unreadable "
+                "arm of this test went untested; the readable control still ran "
+                "elsewhere.".format(path)
+            )
+        yield
+    finally:
+        os.chmod(str(path), 0o755)
+
+
+def test_an_unreadable_workflow_directory_is_reported_rather_than_raised(tmp_path):
+    """Mechanism 1. The scan must answer, not raise: doctor's contract is one VERDICT
+    line and exit 0, and an uncaught PermissionError here took both."""
+    _with_workflow(tmp_path, "name: ci\n", name="ci.yml")
+    directory = tmp_path / ".github" / "workflows"
+
+    with _denied(directory):
+        files, unreadable = scaffold._workflow_scan(tmp_path)
+        assert files == []
+        assert unreadable, "the denied directory was not reported as unreadable"
+
+    # Positive control, same tree, mode bit restored by the context manager.
+    files, unreadable = scaffold._workflow_scan(tmp_path)
+    assert [p.name for p in files] == ["ci.yml"]
+    assert unreadable == []
+
+
+def test_an_absent_workflow_directory_is_not_unreadable(tmp_path):
+    """The third state must not swallow the second: no directory is a fact about the
+    repo, an unreadable one is a fact about this process."""
+    files, unreadable = scaffold._workflow_scan(tmp_path)
+    assert files == []
+    assert unreadable == []
+
+
+def test_check_ci_says_it_could_not_look_rather_than_no_workflows(tmp_path):
+    """`check_ci` read an empty list as "this repo has no CI". That conflation is what
+    made the raise worth catching in the first place -- catching it into silence would
+    have traded a traceback for a wrong answer."""
+    _with_workflow(tmp_path, "name: ci\n", name="ci.yml")
+    config = _config(ci={"required_checks": 0})
+    directory = tmp_path / ".github" / "workflows"
+
+    with _denied(directory):
+        findings = scaffold.check_ci(tmp_path, config)
+        assert findings and findings[0]["state"] == "unreadable"
+        # `unreadable` is also this checker's word for a config block it could not
+        # make sense of, so pin which of the two this is -- a state name alone would
+        # let the wrong finding satisfy the assertion.
+        assert scaffold.WORKFLOW_DIR in findings[0]["detail"]
+
+    # Positive control: the same tree readable reaches the stale-count finding, so the
+    # unreadable arm above is distinguishable from a checker that reports nothing.
+    findings = scaffold.check_ci(tmp_path, config)
+    assert findings and findings[0]["state"] == "stale"
+
+
+def test_check_test_ci_does_not_call_a_command_unenforced_over_an_unread_tree(tmp_path):
+    """Third instance of the same conflation, downstream of the same scan: "nothing in
+    .github/workflows/ runs it" is a measurement, and it was being printed for a
+    directory nothing had read."""
+    _with_workflow(tmp_path, "name: ci\njobs:\n  t:\n    steps:\n      - run: pytest\n")
+    config = _config(test_command="pytest")
+    directory = tmp_path / ".github" / "workflows"
+
+    with _denied(directory):
+        findings = scaffold.check_test_ci(tmp_path, config)
+        assert findings and findings[0]["state"] == "unreadable"
+        assert scaffold.WORKFLOW_DIR in findings[0]["detail"]
+        assert "could not be read" in findings[0]["detail"]
+
+    # Positive control: readable, the workflow does run the command, so no finding.
+    assert scaffold.check_test_ci(tmp_path, config) == []
+
+
+def test_a_subtree_that_could_not_be_walked_is_unknown_not_none(tmp_path):
+    """Mechanism 2, isolated to the mode bit alone. The two arms differ in nothing
+    else: same tree, same contents, no assembler anywhere. Denied must be `unknown`
+    and readable must be `none`, or "could not read the tree" and "read the whole tree
+    and there is no gate" are the same answer -- which is what shipped."""
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "notes.txt").write_text("nothing to see\n", encoding="utf-8")
+
+    with _denied(private):
+        state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
+        assert state == "unknown", "an unwalkable subtree reported as {!r}".format(state)
+        assert "private" in detail
+
+    assert scaffold._detect_changelog_gate(tmp_path, _config()) == ("none", "")
+
+
+def test_an_assembler_hidden_behind_a_denied_directory_is_unknown_not_none(tmp_path):
+    """The signal exists and is lost to the permission bit alone -- the pair the issue
+    measured. Readable finds the assembler; denied must not report a clean repo."""
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "assemble_changelog.py").write_text("# theirs\n", encoding="utf-8")
+
+    with _denied(private):
+        state, _ = scaffold._detect_changelog_gate(tmp_path, _config())
+        assert state == "unknown"
+
+    state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
+    assert state == "found"
+    assert "assemble_changelog.py" in detail
+
+
+def test_the_trio_is_declined_over_a_tree_that_could_not_be_read(tmp_path):
+    """What #86 and #105 said scaffold must never do: write the owned trio into a
+    repository whose tree it could not finish reading."""
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "notes.txt").write_text("nothing to see\n", encoding="utf-8")
+
+    with _denied(private):
+        actions = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
+        for name in scaffold.OWNED:
+            assert actions[name] == "decline"
+        result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+        assert result["declined"] == sorted(scaffold.OWNED)
+        assert not (tmp_path / ".github" / "workflows" / "oss-changelog.yml").exists()
+
+    # Positive control on the identical tree: readable, the trio is planned as replace.
+    actions = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
+    for name in scaffold.OWNED:
+        assert actions[name] == "replace"
+
+
+def test_skip_dirs_are_pruned_at_every_depth_not_just_the_top(tmp_path):
+    """The walk skips node_modules and friends to stay bounded. Matching only the
+    first path component left a nested one both walked and reported."""
+    nested = tmp_path / "packages" / "app" / "node_modules" / "pkg"
+    nested.mkdir(parents=True)
+    (nested / "assemble_changelog.js").write_text("// theirs\n", encoding="utf-8")
+    assert scaffold._detect_changelog_gate(tmp_path, _config()) == ("none", "")
+
+    # Positive control: the same file outside a skipped directory is still a signal,
+    # so the assertion above is not passing because the scan matches nothing at all.
+    (tmp_path / "packages" / "app" / "assemble_changelog.js").write_text(
+        "// theirs\n", encoding="utf-8"
+    )
+    state, _ = scaffold._detect_changelog_gate(tmp_path, _config())
+    assert state == "found"
+
+
+def test_a_bytecode_cache_is_not_evidence_that_a_gate_runs(tmp_path):
+    """`__pycache__` holds derived content, and the skip list already says derived
+    trees are not evidence -- it named `dist` and `build` and missed the Python one.
+    The artifact is gitignored in every repo that has one, so it cannot run in anybody
+    else's CI, which is the question being asked. It matters on its own and not just as
+    inflated detail: delete the source, leave the cache, and the stale `.pyc` declines
+    the trio by itself."""
+    cache = tmp_path / "scripts" / "__pycache__"
+    cache.mkdir(parents=True)
+    (cache / "assemble_changelog.cpython-311.pyc").write_bytes(b"\x00compiled")
+    assert scaffold._detect_changelog_gate(tmp_path, _config()) == ("none", "")
+
+    # Positive control: the source beside it is still a signal, so the assertion above
+    # is not passing because nothing under scripts/ is scanned at all.
+    (tmp_path / "scripts" / "assemble_changelog.py").write_text("# theirs\n", encoding="utf-8")
+    state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
+    assert state == "found"
+    assert detail.count("assemble_changelog") == 1, detail
+
+
+def test_a_dangling_symlink_is_not_a_gate_and_a_real_one_still_is(tmp_path):
+    """The rglob form filtered matches through `is_file()`, which is False for a
+    broken symlink; os.walk hands a broken symlink straight to `filenames`. Restoring
+    the filter cannot go back to `is_file()` -- that swallows OSError and would drop an
+    unstattable match silently, which is the defect being fixed one level down. One
+    stat, and the exception in hand says which of the two it is."""
+    link = tmp_path / "assemble_changelog.py"
+    try:
+        os.symlink(str(tmp_path / "nowhere"), str(link))
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        pytest.skip(
+            "could not create a symlink ({}: {}) -- Windows needs the privilege or "
+            "developer mode. The dangling-symlink arm went untested; nothing else "
+            "covers it.".format(type(exc).__name__, exc)
+        )
+    assert scaffold._detect_changelog_gate(tmp_path, _config()) == ("none", "")
+
+    # Positive control on the identical name: point it at something that exists and it
+    # is a signal again, so the assertion above is not passing because the walk has
+    # stopped matching anything at all.
+    (tmp_path / "nowhere").write_text("# theirs\n", encoding="utf-8")
+    state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
+    assert state == "found"
+    assert "assemble_changelog.py" in detail
+
+
+def test_the_paths_a_finding_names_are_separator_stable(tmp_path):
+    """Every path in a signal or unreadable list is posix-form, whatever built it.
+    They land in one comma-joined sentence, and some came from `str(PurePath)` and some
+    from `as_posix()` -- on Windows that renders one list in two conventions."""
+    nested = tmp_path / ".github" / "scripts"
+    nested.mkdir(parents=True)
+    (nested / "assemble_changelog.py").write_text("# theirs\n", encoding="utf-8")
+    state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
+    assert state == "found"
+    assert ".github/scripts/assemble_changelog.py" in detail
+    assert "\\" not in detail
+
+
+# ------------------------------------------------------ --force-owned, in every path
+#
+# #125. `force_owned` was a parameter of `apply()` alone, so the dry run advised
+# passing the flag that had just been passed and `--show` previewed nothing for three
+# files it was about to overwrite. `plan()` owns the decision now and `show()` inherits
+# it, so one function decides what all three paths report.
+
+
+def _with_readable_gate(root):
+    directory = root / ".github" / "workflows"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "changelog.yml").write_text(
+        "name: changelog\njobs:\n  fragment:\n    steps:\n      - run: python3 "
+        "tools/assemble_changelog.py --check\n",
+        encoding="utf-8",
+    )
+
+
+def test_the_plan_honours_force_owned_and_still_declines_without_it(tmp_path):
+    """Both arms, one fixture. Asserting only the forced arm passes if the decline
+    logic silently stops working, which would make the flag meaningless."""
+    _with_readable_gate(tmp_path)
+
+    forced = {
+        e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config(), force_owned=True)
+    }
+    for name in scaffold.OWNED:
+        assert forced[name] == "replace"
+
+    unforced = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
+    for name in scaffold.OWNED:
+        assert unforced[name] == "decline"
+
+
+def test_the_preview_shows_the_three_files_force_owned_is_about_to_overwrite(tmp_path):
+    """show() walks plan(), so the empty preview was the same defect one call down.
+    A maintainer who forces past a collision previews first; that is the responsible
+    move and it was the one that showed nothing."""
+    _with_readable_gate(tmp_path)
+
+    forced = {
+        path: action
+        for path, action, _ in scaffold.show(
+            tmp_path, _config(), plugin_root=REPO_ROOT, force_owned=True
+        )
+    }
+    for name in scaffold.OWNED:
+        assert forced.get(name) == "replace"
+
+    unforced = {path for path, _, _ in scaffold.show(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    for name in scaffold.OWNED:
+        assert name not in unforced
+
+
+def test_forcing_past_a_gate_and_forcing_past_an_unreadable_tree_differ(tmp_path):
+    """A user who forces past "I saw your gate" is not the user who forces past "I
+    could not read your repository". The flag overrides both -- a maintainer with the
+    credentials the process lacks is exactly who can settle an unreadable tree, and a
+    tool with no override for an environment condition is one people re-run as root.
+    But the receipt must record which of the two was overridden, or the third state is
+    collapsed at the flag instead of at the walk."""
+    _with_readable_gate(tmp_path)
+    first = sorted(scaffold.OWNED)[0]
+    found_reason = {
+        e["path"]: e["reason"] for e in scaffold.plan(tmp_path, _config(), force_owned=True)
+    }[first]
+
+    other = tmp_path / "private"
+    other.mkdir()
+    (other / "notes.txt").write_text("nothing to see\n", encoding="utf-8")
+    with _denied(other):
+        unknown_reason = {
+            e["path"]: e["reason"] for e in scaffold.plan(tmp_path, _config(), force_owned=True)
+        }[first]
+
+    assert found_reason != unknown_reason
+    assert "could not" in unknown_reason
+    assert "private" in unknown_reason
+
+
+def test_the_changelog_finding_does_not_deny_a_write_force_owned_just_made(tmp_path):
+    """`--force-owned --apply` printed "ours (replaced)" and then a finding saying the
+    trio "was NOT written". Both lines came from the same run."""
+    _with_readable_gate(tmp_path)
+
+    forced = scaffold.check_changelog_gate(tmp_path, _config(), force_owned=True)
+    assert forced and "NOT written" not in forced[0]["detail"]
+    assert "--force-owned" in forced[0]["detail"]
+
+    unforced = scaffold.check_changelog_gate(tmp_path, _config())
+    assert unforced and "NOT written" in unforced[0]["detail"]
+
+
+def test_doctor_keeps_its_verdict_line_over_an_unreadable_workflow_directory(tmp_path):
+    """The contract mechanism 1 broke belongs to doctor.py -- exit 0 always, one
+    VERDICT line -- and it broke from a raise three frames away in this module. Run as
+    a subprocess so the exit code is the real one."""
+    config = {
+        "repo": "owner/name",
+        "default_branch": "main",
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": ["README.md"],
+        "changelog_dir": "changelog.d",
+        "docs_targets": ["README.md"],
+        "labels": {"priority": [], "lanes": []},
+        "ci": {"required_checks": 0},
+    }
+    local = {
+        "clone": str(tmp_path),
+        "worktree_root": str(tmp_path / "wt"),
+        "state_file": ".max/oss-watch.json",
+    }
+    (tmp_path / ".oss.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / ".oss.local.json").write_text(json.dumps(local), encoding="utf-8")
+    _with_workflow(tmp_path, "name: ci\n", name="ci.yml")
+
+    with _denied(tmp_path / ".github" / "workflows"):
+        done = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "doctor.py"), "--root", str(tmp_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
+        assert done.returncode == 0, done.stdout[-2000:]
+        assert "VERDICT" in done.stdout, done.stdout[-2000:]
 
 
 # ------------------------------------------------- finding the config from a worktree

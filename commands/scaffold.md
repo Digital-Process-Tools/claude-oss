@@ -67,6 +67,32 @@ A workflow that could not be read counts the same as one that matched — the di
 never writing a second gate on top of a working one, so an unreadable file is treated as a possible
 collision rather than a clean repo.
 
+Same for a **directory** the walk could not enter (#124). That used to be unreportable rather than
+untreated: `Path.rglob` swallows a permission error mid-walk and simply yields nothing for the
+subtree, so "read the whole tree, no gate here" and "could not finish reading the tree" arrived as
+the identical answer and the trio was written on the strength of it. The walk now names what it
+could not enter, and the plan `decline`s with that as the reason.
+
+The same walk stopped counting things that are not gates. Derived and vendored trees are not
+evidence that anything runs — the skip list already said so for `dist`, `build`, `node_modules` and
+a virtualenv, and `__pycache__` was the Python one it was missing, so a gitignored
+`assemble_changelog.*.pyc` used to decline the trio on its own once the source beside it was
+deleted. Skips now match at every depth rather than on the first path component. A dangling symlink
+is not a gate either; a name that cannot be stat'd at all is reported as unreadable rather than as
+one.
+
+`--force-owned` overrides that too — an unreadable subtree is a fact about the process's privileges,
+not about the repository, and the maintainer holding the credentials it lacks is exactly who can
+settle it. But the two overrides are **not** the same decision and the receipt says which one you
+made: forcing past a gate that was seen reads *overrides the changelog gate detected under a
+different name*, and forcing past a tree that was not fully read reads *overrides an incomplete read
+of this repository … the collision check could not run — it was overridden, not answered.*
+
+All three paths honour the flag (#125). It reached `--apply` alone until then, so the dry run printed
+three `decline` lines each advising the flag that had just been passed, and `--show` previewed
+nothing for the three files the next command was about to overwrite — which is precisely the preview
+a maintainer runs *because* they are about to force past a collision.
+
 The full list, so a plan line is never the first time you hear of a file:
 
 | File | What it is |
@@ -245,8 +271,15 @@ insistently and still not acted on.
 was **declined**: not written, and named as such in the plan (`decline` rather than `replace`) as
 well as here. Detected the same way as everywhere else in this file — measured, three states, never
 a guessed absence — from another workflow mentioning `assemble_changelog`, the fragment directory, or
-the `no-changelog` label, or an `assemble_changelog*` file anywhere in the tree. `--force-owned`
-overrides it. See "Only missing files are created" above for the full contract.
+the `no-changelog` label, or an `assemble_changelog*` file anywhere in the tree. The third state is
+reachable: a directory the walk could not enter reports as *could not determine*, which is not the
+same as a repo with no gate. `--force-owned` overrides both, and the finding then says the trio was
+written anyway rather than continuing to claim it was not. See "Only missing files are created"
+above for the full contract.
+
+`ci` and `tests` gained the same third state from the same walk. `.github/workflows/` that cannot be
+listed no longer reads as a repo with no CI, and `test_command … and nothing in .github/workflows/
+runs it` is no longer printed about workflows nothing read.
 
 `/oss:doctor` repeats the last two on every run.
 
