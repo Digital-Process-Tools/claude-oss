@@ -1509,8 +1509,13 @@ def check_jit_rules(project_dir):
             )
             continue
 
+        # `entries`, not `rules`: the unfiltered list carries `JIT_ENTRY_SKIP`, which is
+        # not an entry, gets no index row, and is skipped by the dependency's builder. A
+        # layer that documents itself was reported as having one more rule than it has --
+        # and the drift comparison two lines up had already filtered it out, so the count
+        # disagreed with the check it was printed beside.
         current = "{}: {} rule(s) indexed, rows match their frontmatter".format(
-            name, len(rules)
+            name, len(entries)
         )
         if unchecked:
             current += " ({} not checked -- {}: {})".format(
