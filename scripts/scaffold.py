@@ -1814,6 +1814,24 @@ def _main(argv=None):
     # rule names the assembler by reading the tree for it, and on a first-ever scaffold
     # the vendored copy only exists once `apply()` has written it. Installed first, the
     # very repo being set up would get the could-not-locate rule (#68).
+    #
+    # The gate decision reaches the layer too (#117). Without it the rule shipped into a
+    # repo whose trio had just been declined told the reader that `/oss:scaffold` vendors
+    # the checker and would rewrite this rule -- naming the command that had just
+    # declined, and that declines again. Neither this run nor the run that taught the
+    # scaffold to decline contains that defect; only the pair does.
+    #
+    # Re-detected here rather than carried out of `apply()`: this is the state of the
+    # tree AFTER the writes, which is the tree the rule describes. On a first-ever
+    # scaffold `.oss/` did not exist when `plan()` looked, and it does now.
+    gate_state, gate_detail = _detect_changelog_gate(args.root, config)
+    if args.force_owned and gate_state in ("found", "unknown"):
+        # The trio was written, not declined. Handing the rule a `found` here would make
+        # it report a decline that did not happen -- the same false sentence pointing the
+        # other way. If the checker is somehow still missing, why is genuinely unknown.
+        gate = None
+    else:
+        gate = (gate_state, gate_detail)
     rules = oss_rules.install(
         args.root,
         fragments_dir=fragments_dir(config),
@@ -1822,6 +1840,7 @@ def _main(argv=None):
         # repository's answer themselves -- twice, once here and once in the CI leg,
         # which is exactly the disagreement the key exists to make impossible (#101).
         untagged=config.get("changelog_untagged"),
+        gate=gate,
     )
     for path in rules:
         # os.path.relpath, not Path.relative_to: install() returns paths built from the

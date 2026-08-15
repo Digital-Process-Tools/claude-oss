@@ -351,3 +351,72 @@ def test_the_dry_run_survives_a_workflow_directory_it_cannot_read(tmp_path, caps
     # Positive control on the identical tree: readable, the plan still prints.
     assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
     assert "PLAN:" in capsys.readouterr().out
+
+
+# #117: the decline has to reach the rule layer. `_main` installs `01-oss` on the same
+# run that declined the owned trio, so a declined repo received a rule describing an
+# assembler that run deliberately did not vendor -- and a remedy sentence naming the
+# command that had just declined.
+
+
+def _installed_changelog_rule(root):
+    """The installed rule, line wrapping collapsed.
+
+    Every anchor below is prose, and a phrase spanning a wrap is absent from the file it
+    is plainly in -- which turns a `not in` guard off with nothing failing. Collapsing
+    first is what makes the negative assertions mean anything.
+    """
+    body = (
+        root / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
+    ).read_text(encoding="utf-8")
+    return " ".join(body.split())
+
+
+def test_the_installed_rule_describes_the_repo_the_gate_decision_produced(tmp_path, capsys):
+    """Both arms, one test: a repo whose trio was declined, and a repo that got it. The
+    declined arm alone would still pass if rule emission stopped describing anything.
+    """
+    gated = tmp_path / "gated"
+    gated.mkdir()
+    gated_config = _write_config(gated)
+    _with_other_gate(gated)
+    assert scaffold._main(["--root", str(gated), "--config", str(gated_config), "--apply"]) == 0
+    capsys.readouterr()
+    gated_rule = _installed_changelog_rule(gated)
+
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    clean_config = _write_config(clean)
+    assert scaffold._main(["--root", str(clean), "--config", str(clean_config), "--apply"]) == 0
+    capsys.readouterr()
+    clean_rule = _installed_changelog_rule(clean)
+
+    # Declined: nothing was vendored, so the rule names no invocation, does not send the
+    # reader back to the command that declined, and names the gate that does run.
+    assert not (gated / ".oss" / "assemble_changelog.py").exists()
+    assert "assemble_changelog.py --check" not in gated_rule, gated_rule
+    assert "run that and this rule is rewritten" not in gated_rule, gated_rule
+    assert ".github/workflows/changelog.yml" in gated_rule, gated_rule
+
+    # Written: the same run on a repo with no foreign gate vendors the assembler and the
+    # rule names it. This is the arm that fails loudly if emission breaks outright.
+    assert (clean / ".oss" / "assemble_changelog.py").is_file()
+    assert ".oss/assemble_changelog.py" in clean_rule, clean_rule
+    assert "will not put one here" not in clean_rule, clean_rule
+
+
+def test_force_owned_does_not_leave_the_rule_calling_the_write_a_decline(tmp_path, capsys):
+    """With the flag the trio IS written, so the gate detection still says `found` while
+    nothing was declined. Reporting the decline anyway would be the same false sentence
+    pointing the other way.
+    """
+    config = _write_config(tmp_path)
+    _with_other_gate(tmp_path)
+    assert scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--apply", "--force-owned"]
+    ) == 0
+    capsys.readouterr()
+
+    body = _installed_changelog_rule(tmp_path)
+    assert ".oss/assemble_changelog.py" in body, body
+    assert "will not put one here" not in body, body
