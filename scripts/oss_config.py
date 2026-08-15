@@ -1011,6 +1011,37 @@ def _repoint_git_exclude(root):
     ]
 
 
+def _decode_output(raw):
+    """Decode a subprocess's bytes for display. Never raises. (#112)
+
+    `universal_newlines=True` -- and its modern spelling `text=True` -- makes
+    `subprocess` decode with the *locale* encoding, strictly. `UnicodeDecodeError` is a
+    `ValueError`, so it walks straight past every `except OSError` guarding these calls,
+    and what they carry is pathnames and command output: the one place a byte the locale
+    cannot decode is ordinary rather than exotic.
+
+    Decoding here instead makes the failure impossible rather than merely reportable, and
+    that is the stronger fix. The exit code already carries the answer -- `check-ignore`
+    exits 0 for ignored and 1 for clear -- so a byte in the *text* must never be able to
+    destroy it. Turning a repository whose paths are fine and whose bytes are not into an
+    `unknown` would report a limit of this tool as a fact about that repository, which is
+    the defect class the three states exist to prevent.
+
+    UTF-8 is named rather than inherited: git speaks UTF-8 for pathnames on every
+    platform, while a locale is a property of the machine *reading* the output rather
+    than of the process that wrote it. `replace` rather than `surrogateescape` because
+    this text is printed -- a lone surrogate only moves the crash from the decode to the
+    print. The newline folding is what `universal_newlines=True` was also doing, kept so
+    that dropping it changes nothing but the encoding policy.
+    """
+    if raw is None:
+        return ""
+    if not isinstance(raw, bytes):
+        return raw
+    text = raw.decode("utf-8", "replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _ignore_rule(root, name):
     """Is ``name`` still ignored? ``(state, detail)`` -- clear, ignored, or unknown.
 
@@ -1026,20 +1057,28 @@ def _ignore_rule(root, name):
     """
     command = ["git", "-C", str(root), "check-ignore", "-v", "--", name]
     try:
+        # Bytes, not text: see _decode_output. The pathname git echoes back is the one
+        # thing here guaranteed to be a filename, and a filename is where an undecodable
+        # byte lives. It is also the part after the tab, which this function throws away.
         done = subprocess.run(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
         )
     except OSError as exc:
         return "unknown", "git would not start ({})".format(exc)
+    except ValueError as exc:
+        # A different answer from the one above, and worth keeping apart: git is
+        # installed and would have run -- it is this *name* subprocess refuses to put in
+        # an argument vector, a NUL byte being the reachable case. Folding it into "would
+        # not start" would send someone to install a binary that is already there.
+        return "unknown", "{!r} could not be handed to git ({})".format(name, exc)
     if done.returncode == 0:
-        first = (done.stdout or "").strip().splitlines()
+        first = _decode_output(done.stdout).strip().splitlines()
         return "ignored", first[0].split("\t")[0] if first else name
     if done.returncode == 1:
         return "clear", ""
-    stderr = (done.stderr or "").strip().splitlines()
+    stderr = _decode_output(done.stderr).strip().splitlines()
     return "unknown", stderr[-1] if stderr else "git check-ignore exited {}".format(done.returncode)
 
 
@@ -1164,7 +1203,6 @@ def verify_test_command(command, cwd, timeout=120):
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            universal_newlines=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -1179,7 +1217,10 @@ def verify_test_command(command, cwd, timeout=120):
     if done.returncode == 0:
         return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
 
-    tail = (done.stdout or "").strip().splitlines()[-1:] or [""]
+    # Bytes, not text: an arbitrary test suite's output is not the caller's locale to
+    # promise, and a single stray byte in it used to raise past the guards above --
+    # reporting a suite that ran as a probe that crashed. See _decode_output.
+    tail = _decode_output(done.stdout).strip().splitlines()[-1:] or [""]
     # 127 is the POSIX shell's own "command not found", and 9009 is cmd.exe's, which
     # is a different problem from a suite that ran and failed. Reading only 127 makes
     # every missing runner on Windows report as a failing suite -- the exact confusion
@@ -1236,12 +1277,11 @@ def _run(command, cwd=None):
             cwd=str(cwd) if cwd is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
         )
     except OSError as exc:
         return False, "", "{} would not start ({})".format(command[0], exc)
     if done.returncode != 0:
-        lines = (done.stderr or "").strip().splitlines()
+        lines = _decode_output(done.stderr).strip().splitlines()
         return (
             False,
             "",
@@ -1249,7 +1289,9 @@ def _run(command, cwd=None):
                 " ".join(command[:3]), done.returncode, lines[-1] if lines else "no output"
             ),
         )
-    return True, done.stdout, ""
+    # `git ls-files` prints filenames, so this helper carries the same undecodable byte
+    # the check-ignore probe does (#112). Decoded here rather than by subprocess.
+    return True, _decode_output(done.stdout), ""
 
 
 def _git_lines(root, args):
