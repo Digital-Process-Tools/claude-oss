@@ -10,8 +10,11 @@ that could not be rendered, must never render as up to date.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -209,6 +212,52 @@ def test_drift_is_never_reported_as_current_when_it_cannot_be_rendered(tmp_path)
     """
     findings = doctor.owned_drift(tmp_path, _config(), plugin_root=tmp_path / "not-a-plugin")
     assert {f["state"] for f in findings} == {"unknown"}
+
+
+def test_an_owned_file_that_cannot_be_looked_at_is_unknown_and_not_absent(tmp_path):
+    """`absent` sends the reader to `/oss:scaffold`; `unknown` says the question was not
+    answered. Reporting the second as the first is this repo's own defect class, and
+    which one you get used to depend on the interpreter rather than on the repository:
+    before 3.13 `Path.is_file()` raised `PermissionError` here and killed doctor, and
+    from 3.13 it answers False and reports the file absent. `os.stat` raises on every
+    version, so the distinction is a property of the call.
+
+    The deny is measured rather than assumed -- root ignores the mode bit, some
+    filesystems ignore it, and Windows' `os.chmod` on a directory toggles a read-only
+    attribute that does not stop a listing.
+    """
+    scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
+    owned = tmp_path / ".oss" / "assemble_changelog.py"
+    assert owned.is_file(), "fixture did not produce the file the test is about"
+
+    # Positive control, same fixture: readable, the file is found and reported current.
+    # Without this, the unknown assertion below also passes when owned_drift breaks
+    # entirely and reports nothing about this path at all.
+    before = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    assert before[".oss/assemble_changelog.py"]["state"] == "current"
+
+    os.chmod(str(tmp_path / ".oss"), 0o000)
+    try:
+        try:
+            os.stat(str(owned))
+        except OSError:
+            pass
+        else:
+            pytest.skip(
+                "this platform still stats {} through a 000 directory, so the "
+                "unreadable case was not built and went untested".format(owned.name)
+            )
+
+        findings = {
+            f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+        }
+    finally:
+        os.chmod(str(tmp_path / ".oss"), 0o755)
+
+    finding = findings[".oss/assemble_changelog.py"]
+    assert finding["state"] == "unknown", finding
+    assert "not absent" in finding["detail"]
+    assert "/oss:scaffold" not in finding["detail"]
 
 
 # ------------------------------------------------ absent by design is not absent (#126)
