@@ -125,21 +125,24 @@ fi
 # then exported — a stdio MCP server the harness spawns inherits this process's
 # environment, which is what carries the name to the consumer.
 #
-# There are THREE answers here, not two, and the third is why this block prints a
-# tagged line rather than a bare name:
+# There are FOUR answers here, not one name-or-nothing, which is why this block
+# prints a tagged line rather than a bare name:
 #
-#   name=<x>   exactly one distinct declared name — export it
-#   conflict   two or more op blocks declare different names, already reported on
-#              stderr. A state this script cannot resolve, so it exports nothing
-#              AND derives nothing (see the guard below).
-#   (nothing)  no op block declares one — the case the derivation exists for
+#   name=<x>    exactly one distinct declared name — export it
+#   conflict    two or more op blocks declare different names, already reported
+#               on stderr. A state this script cannot resolve, so it exports
+#               nothing AND derives nothing (see the guard below).
+#   unreadable  the file exists and will not parse, so what it declares is
+#               UNKNOWN rather than absent — also refused, for the same reason.
+#   (nothing)   no .supertool.json, or none of its op blocks declares a name —
+#               absence, and the case the derivation exists for.
 #
-# The last two both used to arrive as an empty string, and the derivation guard
-# below tested emptiness, so a refusal was printed to stderr and a derived name
-# was exported anyway: `none exported` on one stream, SUPERTOOL_WATCH_NAME on the
-# other. Distinguishing them is the whole point of the tag; a bare name cannot be
-# mistaken for the tag and the tag cannot be forged by a declared value, because
-# every declared value arrives prefixed.
+# All three of the last used to arrive as an empty string, and the derivation
+# guard below tested emptiness, so a refusal was printed to stderr and a derived
+# name was exported anyway: `none exported` on one stream, SUPERTOOL_WATCH_NAME
+# on the other. Distinguishing them is the whole point of the tag; a bare name
+# cannot be mistaken for a tag and no tag can be forged by a declared value,
+# because every declared value arrives prefixed.
 #
 # The guard is an `if` and not `[ -n "$x" ] && ...` inside the substitution: a
 # heredoc opened by the right-hand side of `&&` and then followed by `|| true` is
@@ -152,13 +155,27 @@ if [ -n "$python_bin" ]; then
 read_name_out=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' || true
 import json, sys
 
+# The exception in hand decides which answer this is, the same way DERIVE_NAME
+# below decides it — absence and unreadability are two states and asking the
+# filesystem a second question to tell them apart is how Path.exists() took the
+# release gate down from inside the except meant to survive a bad read.
 try:
     with open(sys.argv[1], encoding="utf-8") as handle:
         doc = json.load(handle)
+except FileNotFoundError:
+    # No file is genuinely "declares none", which is the case the derivation
+    # below exists for (#191). Printing nothing is that answer.
+    raise SystemExit(0)
 except (OSError, ValueError) as err:
+    # A file that will not parse has NOT declared none — what it declares is
+    # unknown, and a derived name would be one the ops in that very file may
+    # contradict. So this refuses too, and says the same thing the code does.
+    print("unreadable")
     sys.stderr.write(
         "oss-workspace: %s could not be read (%s), so no channel name was exported "
-        "and this session is on the default channel\n" % (sys.argv[1], type(err).__name__))
+        "and none was derived either — what that file declares is unknown, not "
+        "absent. This session is on the SHARED DEFAULT socket. "
+        "supertool 'channel:health'\n" % (sys.argv[1], type(err).__name__))
     raise SystemExit(0)
 
 ops = doc.get("ops") if isinstance(doc, dict) else None
@@ -186,7 +203,8 @@ READ_NAME
 )
 case "$read_name_out" in
     name=*)   watch_name=${read_name_out#name=}; watch_name_state=declared ;;
-    conflict) watch_name_state=conflict ;;
+    conflict)   watch_name_state=conflict ;;
+    unreadable) watch_name_state=unreadable ;;
 esac
 fi
 
@@ -203,11 +221,12 @@ fi
 # elsewhere, and two unrelated repos cloned to the same basename collide silently,
 # which is this same defect reached by a different road.
 #
-# It fires on `undeclared` ONLY, never on `conflict`. A repo whose op blocks
-# contradict each other has not failed to choose a channel, it has chosen two,
-# and neither is the one a derivation would invent — so deriving there swaps a
-# loud wrong state (the shared socket, announced) for a quiet one (a private
-# socket nobody publishes to, indistinguishable from working).
+# It fires on `undeclared` ONLY — never on `conflict`, never on `unreadable`. A
+# repo whose op blocks contradict each other has not failed to choose a channel,
+# it has chosen two, and neither is the one a derivation would invent; a repo
+# whose config will not parse has declared something nobody can read. Deriving in
+# either swaps a loud wrong state (the shared socket, announced) for a quiet one
+# (a private socket nobody publishes to, indistinguishable from working).
 watch_name_source="declared in $repo_root/.supertool.json"
 if [ "$watch_name_state" = undeclared ] && [ -n "$python_bin" ]; then
     watch_name_source="derived from repo in $repo_root/.oss.json"

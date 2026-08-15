@@ -662,3 +662,25 @@ def test_an_undeclared_name_is_not_reported_as_a_disagreement(tmp_path):
     assert argv, done.stderr
     assert _exported_watch_name(repo) == "owner-name", done.stderr
     assert "disagree" not in done.stderr, done.stderr
+
+
+def test_an_unreadable_supertool_config_does_not_fall_through_to_the_derivation(tmp_path):
+    """The fourth state, and the same seam one branch over.
+
+    A `.supertool.json` that cannot be parsed has not declared nothing -- what it
+    declares is UNKNOWN, and deriving there invents a name that the ops in that
+    file may well contradict. The receipt already said "no channel name was
+    exported and this session is on the default channel", so deriving one made
+    the message false in the second way on the same commit.
+
+    The control is the test above it: a repo with NO `.supertool.json` at all is
+    absence rather than unknown, and must still derive. Without that pair this
+    fix reads as "never derive", which deletes #191.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text("{not valid json", encoding="utf-8")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    assert "owner-name" not in done.stderr, done.stderr
