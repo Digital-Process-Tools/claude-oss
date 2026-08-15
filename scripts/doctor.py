@@ -45,6 +45,11 @@ try:
 except ImportError:  # pragma: no cover - the module sits beside this file
     scaffold = None
 
+try:
+    import oss_rules
+except ImportError:  # pragma: no cover - the module sits beside this file
+    oss_rules = None
+
 FINDINGS = []
 
 # Far above any message this file composes -- the only thing that can reach it is
@@ -1532,6 +1537,262 @@ def published_versions(repos):
     return latest
 
 
+#: The dependency that consumes ``JIT_RULES_DIR``. It is declared in this plugin's own
+#: manifest, and the check below refuses to answer if it stops being declared rather
+#: than quietly measuring a plugin nobody depends on any more.
+JIT_PLUGIN = "claude-jit-context"
+
+PLUGIN_CACHE_ROOT = "~/.claude/plugins/cache"
+
+#: A *fixed layer list* in a hook, matched by shape rather than by its current spelling.
+#:
+#: The hooks hold ``split("00-manual 10-auto 20-grouped 30-crosscutting", layers, " ")``
+#: today, and matching that string is the version of this check that breaks the moment
+#: it is fixed: `claude-jit-context#176` replaces the literal, and a check keyed on the
+#: old spelling would then report `unread` forever -- #119 inverted, and harder to
+#: notice because the wrong answer is the one everybody already expects.
+#:
+#: So the pattern is "a quoted run of two or more layer-shaped tokens". It survives a
+#: reordering, a fifth layer, a rename of the awk variable, and a move to another
+#: language. What it does NOT survive is the list going away entirely -- which is the
+#: expected fix, and which lands in `could-not-determine` rather than in a verdict.
+JIT_LAYER_ENUMERATION = re.compile(
+    r"""(["'])(\d\d-[A-Za-z0-9][A-Za-z0-9-]*(?:[ \t]+\d\d-[A-Za-z0-9][A-Za-z0-9-]*)+)\1"""
+)
+
+#: State -> level. `unread` is WARN and not OK, and not FAIL.
+#:
+#: Not OK: #146 chose OK for a sentence equally true on every machine forever, because a
+#: permanent WARN pins every repo at `usable with gaps` and costs the verdict its
+#: discrimination. This is not that. A layer that provably never fires is a real gap
+#: with a real consequence -- every rule in it is written, indexed, listed by the check
+#: above, and read by nothing -- and it clears the day an installed version fixes it, so
+#: it does not pin anybody permanently.
+#:
+#: Not FAIL: nothing is broken. The repo builds, the tests run, the tick works. What is
+#: lost is the injection, which is an improvement not a dependency.
+JIT_LAYER_LEVELS = {
+    "reads": "OK",
+    "no-layer": "OK",
+    "unread": "WARN",
+    "could-not-determine": "WARN",
+}
+
+
+def jit_hook_roots(record=None, cache_root=None):
+    """``(roots, version)`` -- where the *running* ``claude-jit-context`` is unpacked.
+
+    The version comes from the install record for the reason ``active_versions``
+    documents at length: old versions stay unpacked on disk and a cache listing returns
+    whichever sorts last, so a directory glob answers "what was ever installed" to a
+    question that was about what runs.
+
+    ``installPath`` from that same record is preferred over rebuilding the cache path,
+    because it is the runtime's own answer rather than this file's second copy of a
+    layout it does not own. The glob is the fallback for records that predate the field.
+    """
+    version = active_versions([JIT_PLUGIN], record).get(JIT_PLUGIN)
+    if not version:
+        return [], None
+
+    roots = []
+    path = Path(record or os.path.expanduser(INSTALL_RECORD))
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {}
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    for key, entries in (plugins or {}).items() if isinstance(plugins, dict) else ():
+        if key.split("@", 1)[0] != JIT_PLUGIN or not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("version") != version:
+                continue
+            if entry.get("installPath"):
+                roots.append(Path(str(entry["installPath"])))
+
+    if not roots:
+        cache = Path(cache_root or os.path.expanduser(PLUGIN_CACHE_ROOT))
+        try:
+            roots = [
+                candidate
+                for candidate in sorted(
+                    cache.glob("*/{}/{}".format(JIT_PLUGIN, version))
+                )
+                if candidate.is_dir()
+            ]
+        except OSError:
+            roots = []
+    return list(dict.fromkeys(roots)), version
+
+
+def _jit_layer_verdict(project_dir, layer, record, cache_root):
+    """``(state, detail)`` for one question: does the installed dependency read ``layer``?
+
+    Four states, and the honest third one is the reason this exists. #119: every
+    observable signal said the layer was healthy -- files on disk, index rows current,
+    ``check_jit_rules`` above listing them clean -- and nothing anywhere asked whether
+    anything reads the directory. Nothing did, and had not since the layer was created.
+
+    Reading the dependency's own shipped hook scripts is a read outside the project
+    tree, and that is deliberate and in bounds. The ownership contract governs what this
+    plugin **writes**; ``active_versions`` and ``dependency_repositories`` already read
+    the same install record and the same cache to answer smaller questions. Nothing else
+    can answer this one: the contract being checked belongs to another repository and
+    lives in that repository's files.
+
+    ``detail`` is composed here and printed by the caller through ``report``, so hook
+    filenames -- text from a tree this script does not own -- go through ``_one_line``.
+    """
+    if not layer:
+        return (
+            "could-not-determine",
+            "the layer name comes from oss_rules.LAYER and that module could not be "
+            "imported, so there was nothing to look for",
+        )
+
+    if JIT_PLUGIN not in (declared_dependencies() or []):
+        return (
+            "could-not-determine",
+            "{} is no longer a declared dependency of this plugin, so which component "
+            "is supposed to read {}/*/{}/ is not something this can assume".format(
+                JIT_PLUGIN, JIT_RULES_DIR, layer
+            ),
+        )
+
+    try:
+        dimensions = sorted(
+            path.parent.name
+            for path in Path(project_dir).joinpath(JIT_RULES_DIR).glob("*/" + layer)
+            if path.is_dir()
+        )
+    except OSError as exc:
+        return (
+            "could-not-determine",
+            "{}/ would not be listed ({}), so whether this repo even has a {} layer is "
+            "unknown".format(JIT_RULES_DIR, _one_line(str(exc)), layer),
+        )
+
+    if not dimensions:
+        return (
+            "no-layer",
+            "this repo has no {}/*/{}/ , so there is nothing here for {} to read. Run "
+            "/oss:scaffold if you want this plugin's own rules injected.".format(
+                JIT_RULES_DIR, layer, JIT_PLUGIN
+            ),
+        )
+
+    roots, version = jit_hook_roots(record, cache_root)
+    named = "{} {}".format(JIT_PLUGIN, version) if version else JIT_PLUGIN
+    if not roots:
+        return (
+            "could-not-determine",
+            "{} carries {} rule(s) for {}, and the running {} could not be located -- it "
+            "is absent from the install record, the record would not read, or the "
+            "version it names is not unpacked. Nothing was measured.".format(
+                layer, len(dimensions), ", ".join(dimensions), named
+            ),
+        )
+
+    scripts, unreadable = [], []
+    for root in roots:
+        try:
+            scripts.extend(sorted(root.rglob("*.sh")))
+        except OSError as exc:
+            unreadable.append(
+                "{}: {}".format(_one_line(root.name), _one_line(str(exc)))
+            )
+    if not scripts:
+        return (
+            "could-not-determine",
+            "{} is recorded as installed and no hook script (*.sh) was found under it, "
+            "so what reads {} was never measured".format(named, layer),
+        )
+
+    naming, omitting = [], []
+    for path in scripts:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            # The exception in hand says what went wrong. Asking the filesystem a second
+            # question to explain the first is how release_delta.py took down the
+            # release gate.
+            unreadable.append(
+                "{}: {}".format(_one_line(path.name), _one_line(str(exc)))
+            )
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                # Prose about the layer list is not the layer list. Both hook trees
+                # carry comments quoting it, and one of them quotes a stale copy.
+                continue
+            for _, listed in JIT_LAYER_ENUMERATION.findall(line):
+                site = _one_line("{}:{}".format(path.name, number))
+                (naming if layer in listed.split() else omitting).append(site)
+
+    if naming:
+        # A positive answer stands on its own evidence: one enumeration naming the layer
+        # is a hook that reads it, and no file this could not open can unsay that.
+        return (
+            "reads",
+            "{} names {} in its layer list ({}), so the {} rule(s) under {}/*/{}/ are "
+            "reachable".format(
+                named, layer, ", ".join(naming[:3]), len(dimensions), JIT_RULES_DIR, layer
+            ),
+        )
+
+    if unreadable:
+        return (
+            "could-not-determine",
+            "{} hook file(s) under {} would not be read ({}), so the scan is incomplete "
+            "and nothing here says whether {} is read".format(
+                len(unreadable), named, "; ".join(unreadable[:3]), layer
+            ),
+        )
+
+    if omitting:
+        return (
+            "unread",
+            "{} enumerates layers from a fixed list that does not include {} ({}), so "
+            "every rule under {}/*/{}/ -- {} dimension(s), {} -- is written, indexed and "
+            "read by nothing. The fix belongs to that plugin "
+            "(Digital-Process-Tools/claude-jit-context#176); until an installed version "
+            "carries it, treat those rules as inert rather than as active.".format(
+                named, layer, ", ".join(omitting[:3]), JIT_RULES_DIR, layer,
+                len(dimensions), ", ".join(dimensions),
+            ),
+        )
+
+    return (
+        "could-not-determine",
+        "{} hook script(s) of {} were read and none carries a fixed layer list, so "
+        "whether {} is read could not be determined from the hooks on disk. That is "
+        "what an enumerate-the-directory implementation looks like -- the shape the "
+        "upstream fix takes -- which is why this is unknown rather than a gap.".format(
+            len(scripts), named, layer
+        ),
+    )
+
+
+def jit_layer_readers(project_dir, layer=None, record=None, cache_root=None):
+    """Does anything read this plugin's rule layer? ``[{state, detail}]``, one entry.
+
+    The verdict is computed by ``_jit_layer_verdict`` and emitted here, once. Every
+    branch of the vocabulary is pinned by ``tests/test_jit_layer_readers.py``, which
+    asserts all four states were **observed** before checking the level table against
+    them -- a table checked against an empty set of states is trivially complete, which
+    is the failure this whole check is about.
+    """
+    name = layer or (oss_rules.LAYER if oss_rules is not None else None)
+    state, detail = _jit_layer_verdict(project_dir, name, record, cache_root)
+    return [{"state": state, "detail": "jit rule layer: {}".format(detail)}]
+
+
+def check_jit_layer_readers(project_dir, record=None, cache_root=None):
+    for finding in jit_layer_readers(project_dir, record=record, cache_root=cache_root):
+        report(JIT_LAYER_LEVELS.get(finding["state"], "WARN"), finding["detail"])
+
+
 def check_ci_enforcement(project_dir, config):
     """Does anything in CI run the tests?
 
@@ -1904,6 +2165,10 @@ def main(argv=None):
     # and the unconfigured state is the one that still appears to work.
     check_memory(project_dir)
     check_jit_rules(project_dir)
+    # Rules indexed is not rules read. The check above answers "will the matcher find
+    # these rows"; this one answers "does anything look in this directory at all", and
+    # #119 is the bill for never having asked it.
+    check_jit_layer_readers(project_dir)
     # The merge permission is settled here or it is settled at the merge step,
     # with the whole review already spent.
     check_merge_permission(project_dir)
