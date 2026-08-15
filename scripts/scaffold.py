@@ -1254,7 +1254,7 @@ def _workflow_scan(repo_root):
     Three states, and the third one is the point (#124). ``Path.is_dir()`` answers
     True for a directory that exists and cannot be entered, so the old guard passed
     and the ``iterdir()`` behind it raised ``PermissionError`` -- uncaught, through
-    ``check_ci`` and ``check_freshness``, taking out doctor's *exit 0 always, one
+    ``check_test_ci`` and ``check_freshness``, taking out doctor's *exit 0 always, one
     VERDICT line* contract. Catching that into an empty list would have been the worse
     fix: ``[]`` already means "this repo has no workflows", and trading a traceback for
     a confident wrong answer is this repository's own defect class.
@@ -1520,76 +1520,15 @@ def check_changelog_gate(repo_root, config, force_owned=False):
     return []
 
 
-def check_ci(repo_root, config):
-    """What `ci.required_checks` says, now that a workflow has been installed.
-
-    **Nothing is written.** The value is derived from workflow jobs, and a job count
-    cannot see a check that arrives from outside the repo -- an organisation-level
-    required workflow, a branch protection rule, an app posting a status. Re-deriving
-    it after the scaffold would swap one number that was never measured for another,
-    and a wrong number on disk is indistinguishable from a measured one. So this names
-    the staleness and the observation that would settle it.
-
-    A value somebody already set is left alone: that is a decision, and the same rule
-    that stops a default overwriting a SECURITY.md stops a guess overwriting a count.
-    """
-    files, unreadable = _workflow_scan(repo_root)
-    # Before the "no workflows, nothing to say" arm, not after it (#124). An empty list
-    # used to carry both "this repo has no CI" and "this process could not look", and
-    # the second one silently borrowed the first one's verdict.
-    if unreadable:
-        return [
-            {
-                "state": "unreadable",
-                "detail": (
-                    "{dir}/ could not be read ({paths}), so whether this repo has CI at "
-                    "all is unknown -- which is not the same as it having none, and not "
-                    "the same as ci.required_checks being right. Nothing is said about "
-                    "the count until the directory can be listed.".format(
-                        dir=WORKFLOW_DIR, paths=", ".join(sorted(set(unreadable)))
-                    )
-                ),
-            }
-        ]
-    if not files:
-        return []
-
-    ci = config.get("ci")
-    declared = ci.get("required_checks") if isinstance(ci, dict) else None
-    if not isinstance(declared, int):
-        return [
-            {
-                "state": "unreadable",
-                "detail": (
-                    "ci.required_checks is missing or is not an integer, so what the merge "
-                    "gate should be counting is unknown -- which is not the same as zero."
-                ),
-            }
-        ]
-    if declared:
-        return []
-
-    return [
-        {
-            "state": "stale",
-            "detail": (
-                "ci.required_checks is 0 and {count} workflow file(s) now sit in {dir}/, so "
-                ".oss.json describes a repo with no CI. That file count is not the missing "
-                "number -- the config counts jobs, and neither quantity is the one the merge "
-                "gate needs. It is not re-derived here: counting "
-                "workflow jobs cannot see a check configured outside the repo -- an "
-                "organisation-level required workflow, a branch protection rule, an app "
-                "posting a status -- so the count would be wrong wherever any of those exist. "
-                "Measure it from the checks a commit actually ran, then set it by hand: "
-                "gh api repos/{repo}/commits/<sha>/check-runs".format(
-                    count=len(files),
-                    dir=WORKFLOW_DIR,
-                    repo=config.get("repo") or "OWNER/NAME",
-                )
-            ),
-        }
-    ]
-
+# `check_ci` lived here until #113. Its whole subject was `ci.required_checks`: it
+# reported the value as stale, and named `gh api .../check-runs` as the observation
+# that would settle it. With the key deleted there is nothing on disk to be stale --
+# the count is read live off the pull request, and a checker reporting on a value
+# nothing writes is a check whose only two outcomes are silence and a false alarm.
+#
+# The workflow-directory third state it carried is not lost: `check_test_ci` below
+# reports `unreadable` from the same `_workflow_scan`, so "this process could not
+# look" is still distinct from "this repo has no CI".
 
 # Tokens that say how something is run rather than what is run. Skipped when looking
 # for the part of a test command a workflow would have to mention.
@@ -1705,8 +1644,6 @@ def _print_findings(repo_root, config, force_owned=False):
     """
     for finding in check_radar(repo_root):
         print("radar    {}".format(finding["detail"]))
-    for finding in check_ci(repo_root, config):
-        print("ci       {}".format(finding["detail"]))
     for finding in check_test_ci(repo_root, config):
         print("tests    {}".format(finding["detail"]))
     # Read the label list rather than assuming it. The state was always three-valued;

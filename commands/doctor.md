@@ -89,7 +89,11 @@ Two of the warnings are about CI rather than about setup, and neither is cosmeti
 - **A `test_command` that no workflow runs.** Green then means the changelog was checked
   and the tests were not run — an absence that reads exactly like a pass on the merge
   screen. The fix is a workflow you write; the doctor will not write one.
-- **`ci.required_checks` at 0 beside workflow files.** The merge gate has no count to
-  hold a pull request against. Measure it from
-  `gh api repos/OWNER/NAME/commits/<sha>/check-runs` — which sees organisation-level and
-  app checks that counting workflow jobs structurally cannot — and set it by hand.
+- **A leftover `ci` block in `.oss.json`.** `ci.required_checks` was deleted in #113 and
+  nothing reads it. The config still validates with it — a key going away must not break
+  a repo that did nothing — but the number is dead, and a dead measurement on disk reads
+  exactly like a live one. Delete the block. The leg count is read off the pull request
+  it applies to, with `gh pr checks`, because nothing offline can produce it: a build
+  matrix expands one job declaration into many, a reusable workflow declares nothing
+  locally, an organisation- or app-level check never appears in `.github/workflows/` at
+  all, and a run that has not happened declares nothing either.

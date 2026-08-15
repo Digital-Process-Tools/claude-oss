@@ -45,6 +45,9 @@ def _combined(root):
         "changelog_dir": "changelog.d",
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
+        # Kept deliberately after #113 deleted the key. `/oss:setup` no longer writes
+        # it, but a config on somebody's disk still has it, and the split has to send
+        # it to the committed half rather than hiding it on one laptop.
         "ci": {"required_checks": 2},
         "state_file": ".max/oss-watch.json",
         "release": {
@@ -97,7 +100,6 @@ def test_everything_release_reads_is_project_scope():
         "repo",
         "default_branch",
         "branch_pattern",
-        "ci",
     ):
         assert key in oss_config.PROJECT_KEYS, key
 

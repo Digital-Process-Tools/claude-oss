@@ -31,7 +31,6 @@ def _valid(root):
         "changelog_dir": None,
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 0},
         "state_file": ".max/oss-watch.json",
     }
     project, local = oss_config.split(config)
@@ -84,7 +83,6 @@ def test_build_reads_a_probe_and_writes_a_config(tmp_path, monkeypatch, capsys):
     config = json.loads(capsys.readouterr().out)
     assert config["repo"] == "owner/name"
     assert config["labels"]["priority"] == ["priority-high"]
-    assert config["ci"]["required_checks"] == 1
 
 
 def test_build_on_a_bare_repo_still_produces_a_valid_config(monkeypatch, capsys):
@@ -157,33 +155,23 @@ def test_build_names_a_candidate_it_could_not_read(monkeypatch, capsys):
     assert json.loads(captured.out)["version_sites"] == []
 
 
-def test_build_flags_required_checks_as_a_job_count_not_a_check_count(monkeypatch, capsys):
-    """#85: `required_checks` counts workflow *job declarations*, and a matrix or a
-    reusable workflow multiplies one declaration into many actual check runs -- #113
-    is what trusting the unflagged number looks like once it is on disk (3 vs 14). The
-    note is the fix: the number stays, but it can no longer be mistaken for a count of
-    check runs.
+def test_build_emits_no_leg_count_and_no_note_standing_in_for_one(monkeypatch, capsys):
+    """#85 answered a wrong `required_checks` with a NOTE saying not to trust it. #113
+    deleted the value instead: a number carrying "do not trust this" is still the number
+    a reader who skipped the NOTE will use, and there was never a number to write --
+    a matrix expands one job declaration into many check runs, and a reusable or
+    org/app-level check is not in `.github/workflows/` at all.
+
+    Both halves in one fixture, because "no NOTE" also passes when nothing was printed.
     """
     probe = _probe(workflow_jobs=["tests.yml:pytest", "changelog.yml:fragment"])
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
     assert oss_config._main(["--build"]) == 0
     captured = capsys.readouterr()
-    assert "ci.required_checks" in captured.err
-    assert "job declaration" in captured.err
-    assert "gh pr checks" in captured.err
-    assert json.loads(captured.out)["ci"]["required_checks"] == 2
-
-
-def test_build_says_nothing_about_required_checks_when_there_are_no_jobs(monkeypatch, capsys):
-    """The positive control for the note above: a `0` is already visibly unset and
-    does not need the same caveat repeated over it.
-    """
-    probe = _probe(workflow_jobs=[])
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
-    assert oss_config._main(["--build"]) == 0
-    captured = capsys.readouterr()
-    assert "ci.required_checks" not in captured.err
-    assert json.loads(captured.out)["ci"]["required_checks"] == 0
+    assert "required_checks" not in captured.err
+    assert "ci" not in json.loads(captured.out)
+    # must fire, same run: the NOTEs that survived #113 still speak.
+    assert "worktree_root" in captured.err
 
 
 def test_build_flags_worktree_root_as_a_naming_guess_not_a_measurement(monkeypatch, capsys):

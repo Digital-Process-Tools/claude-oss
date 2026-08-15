@@ -1533,10 +1533,14 @@ def published_versions(repos):
 
 
 def check_ci_enforcement(project_dir, config):
-    """Does anything in CI run the tests, and does the config still describe the repo?
+    """Does anything in CI run the tests?
 
     A merge gate that passes because nothing ran is the worst of the three states: it
     reads exactly like a gate that passed because everything was checked.
+
+    It no longer asks how many legs there are. That number was `ci.required_checks`,
+    and #113 deleted it: nothing offline can produce it, so the config could only ever
+    carry a guess wearing a measurement's clothes.
     """
     if config is None:
         unmeasured("CI enforcement")
@@ -1556,8 +1560,20 @@ def check_ci_enforcement(project_dir, config):
     for finding in findings:
         report("WARN", finding["detail"])
 
-    for finding in scaffold.check_ci(project_dir, config):
-        report("WARN", finding["detail"])
+    # A key this plugin no longer reads, left on disk by an earlier version (#113).
+    # It is not an error and the config validates without complaint -- but tolerated
+    # is not the same as invisible, and a dead measurement sitting in .oss.json reads
+    # exactly like a live one to the next person who opens the file. Fired off the
+    # key's presence, so a repo without it hears nothing.
+    if "ci" in config:
+        report(
+            "WARN",
+            "ci.required_checks: no longer read by anything, and safe to delete from "
+            ".oss.json. It counted workflow job declarations, which a build matrix, a "
+            "reusable workflow or an org/app-level check multiplies or adds to "
+            "invisibly -- so the number was never the merge gate's. Count the legs on "
+            "the pull request instead: gh pr checks",
+        )
 
 
 def check_freshness(project_dir, config):

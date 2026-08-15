@@ -39,7 +39,6 @@ def _config(**overrides):
         "changelog_dir": "changelog.d",
         "docs_targets": ["README.md"],
         "labels": {"priority": ["priority-high"], "lanes": []},
-        "ci": {"required_checks": 4},
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides)
@@ -814,45 +813,19 @@ def test_output_that_cannot_be_decoded_is_a_reason_not_a_traceback(monkeypatch):
 
 # --------------------------------------------------------------- required checks
 
+# `check_ci` and the six tests over it were deleted with the key in #113. What replaces
+# them is tests/test_required_checks_left_the_config.py, which asserts the absence: no
+# script reads `required_checks`, `scaffold` has no `check_ci`, and an `.oss.json` still
+# carrying the block on somebody else's disk still validates.
 
-def test_required_checks_left_at_zero_beside_a_workflow_is_reported_stale(tmp_path):
-    _with_workflow(tmp_path)
-    findings = scaffold.check_ci(tmp_path, _config(ci={"required_checks": 0}))
-    assert findings and findings[0]["state"] == "stale"
 
-
-def test_the_stale_report_names_the_measured_way_to_get_the_number(tmp_path):
-    """A count of workflow jobs cannot see an org-level check, so the report must
-    not hand back a number -- it names the observation that would settle it.
+def test_scaffold_writes_no_ci_block_of_its_own(tmp_path):
+    """The property the deleted checker was defending, kept: a guessed number on disk
+    is indistinguishable from a measured one, so none is written.
     """
-    _with_workflow(tmp_path)
-    detail = scaffold.check_ci(tmp_path, _config(ci={"required_checks": 0}))[0]["detail"]
-    assert "check-runs" in detail
-    assert "organisation" in detail
-
-
-def test_a_maintainer_set_count_is_left_alone(tmp_path):
-    _with_workflow(tmp_path)
-    assert scaffold.check_ci(tmp_path, _config(ci={"required_checks": 4})) == []
-
-
-def test_a_repo_with_no_workflows_has_no_required_checks_finding(tmp_path):
-    assert scaffold.check_ci(tmp_path, _config(ci={"required_checks": 0})) == []
-
-
-def test_an_unreadable_ci_block_is_unknown_not_zero(tmp_path):
-    _with_workflow(tmp_path)
     config = _config()
-    config.pop("ci")
-    findings = scaffold.check_ci(tmp_path, config)
-    assert findings and findings[0]["state"] == "unreadable"
-
-
-def test_scaffold_never_writes_a_required_checks_number_it_could_not_measure(tmp_path):
-    """A guessed number on disk is indistinguishable from a measured one."""
-    config = _config(ci={"required_checks": 0})
     scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
-    assert config["ci"]["required_checks"] == 0
+    assert "ci" not in config
     assert not (tmp_path / ".oss.json").exists()
 
 
@@ -1124,26 +1097,9 @@ def test_an_absent_workflow_directory_is_not_unreadable(tmp_path):
     assert unreadable == []
 
 
-def test_check_ci_says_it_could_not_look_rather_than_no_workflows(tmp_path):
-    """`check_ci` read an empty list as "this repo has no CI". That conflation is what
-    made the raise worth catching in the first place -- catching it into silence would
-    have traded a traceback for a wrong answer."""
-    _with_workflow(tmp_path, "name: ci\n", name="ci.yml")
-    config = _config(ci={"required_checks": 0})
-    directory = tmp_path / ".github" / "workflows"
-
-    with _denied(directory):
-        findings = scaffold.check_ci(tmp_path, config)
-        assert findings and findings[0]["state"] == "unreadable"
-        # `unreadable` is also this checker's word for a config block it could not
-        # make sense of, so pin which of the two this is -- a state name alone would
-        # let the wrong finding satisfy the assertion.
-        assert scaffold.WORKFLOW_DIR in findings[0]["detail"]
-
-    # Positive control: the same tree readable reaches the stale-count finding, so the
-    # unreadable arm above is distinguishable from a checker that reports nothing.
-    findings = scaffold.check_ci(tmp_path, config)
-    assert findings and findings[0]["state"] == "stale"
+# The `check_ci` half of this trio went with the key in #113. `check_test_ci` below
+# carries the same conflation guard off the same `_workflow_scan`, so "this process
+# could not look" is still tested as distinct from "this repo has no CI".
 
 
 def test_check_test_ci_does_not_call_a_command_unenforced_over_an_unread_tree(tmp_path):
