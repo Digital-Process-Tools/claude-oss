@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "oss@dpt-plugins": true,
+    "supertool@dpt-plugins": true,
+    "remember@dpt-plugins": true,
+    "claude-jit-context@dpt-plugins": true
+  }
+}

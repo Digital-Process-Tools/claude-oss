@@ -1,7 +1,7 @@
 {
   "name": "oss",
   "description": "Run an open-source repo as its maintainer: triage the tracker, delegate the work, review hard, merge on green. One loop, one version, per-repo differences in config instead of prose.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Digital Process Tools"
   },
