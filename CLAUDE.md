@@ -231,52 +231,96 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `c6b7bd4`, seventeen merged pull requests after `v0.3.0`** — `git log v0.3.0..main
---oneline | wc -l`. Every claim below is graded **observed** (a named command produced it) or
-**reasoned** (argued from code that was read, not run), because that is what the rest of this file
-demands and this is the section where it matters most. **Re-derive this at each release rather than
-editing it.** The version it replaces was written for `v0.3.0`; by the seventeenth merge every claim
-in it had moved, silently, in the file every agent reads first.
+**Measured at `9aed28e`, twenty-eight merged pull requests after `v0.3.0`** — `git log
+v0.3.0..9aed28e --oneline | wc -l`. Every claim below is graded **observed** (a named command
+produced it) or **reasoned** (argued from code that was read, not run), because that is what the
+rest of this file demands and this is the section where it matters most. **Re-derive this at each
+release rather than editing it.** The version it replaces was measured eleven commits back at
+`c6b7bd4`, and its marker held while the prose around it moved: one claim had inverted, one had been
+false when it was written, and the count still verified. The marker is what made all three findable,
+so do not weaken it to make the prose easier to keep.
+
+The release this precedes is not named above because it is not cut. The release commit — a changelog
+fold and the version sites, no product change — is a descendant of `9aed28e` that does not exist
+yet, so this marker sits one commit behind its tag by construction, and that is the right place for
+it: it names the tree the claims were measured against, not the tree they shipped on.
+`tests/test_claude_md_currency.py` fails a marker naming a version with no `CHANGELOG.md` heading,
+and correctly — an uncut version is not a date.
 
 ### How far the loop has actually reached — observed
 
-`/oss:setup` has produced a **committed** `.oss.json` on two sibling repositories besides this one
-(`gh api repos/OWNER/NAME/contents/.oss.json` across the org: two hits, first committed 2026-08-14
-and 2026-08-15). `/oss:scaffold --apply` has reached **none** of them — no `.oss/`, no
-`.github/workflows/oss-changelog.yml`, no `.claude/jit-context/*/01-oss/`. That last one is decisive
-rather than suggestive: the rule layer is not part of the trio scaffold is allowed to decline, so its
-absence cannot be a decline. Both repos carry a hand-written `CLAUDE.md` and their own `00-manual`
-rule layers, neither of which this plugin wrote.
+Surveyed across the org, every repository rather than a filtered subset, with
+`gh api repos/OWNER/NAME/contents/…` at this commit:
 
-**Config-writing has reached three repositories. Furniture-writing has reached one — this one.**
+- **`/oss:setup` has produced a committed `.oss.json` on three repositories** — this one,
+  `claude-supertool` and `claude-jit-context`. Unchanged since the last measurement.
+- **`/oss:scaffold --apply` has reached two repositories besides this one** — `claude-jit-context`
+  and `claude-5h-window-spread` both carry the owned trio (`.oss/README.md`,
+  `.oss/assemble_changelog.py`, `.github/workflows/oss-changelog.yml`), each opening with the
+  ownership header only this plugin writes, and both carry `01-oss` layers under
+  `.claude/jit-context/`. This repository carries the rule layers and *not* the trio: its changelog
+  gate predates the plugin, so scaffold declines the trio here and `doctor` says so in as many
+  words.
 
-The repository the previous version of this section named as the one real use carries no `.oss.json`
-at all. That is not proof the run never happened: `--split` never runs `git add`, so a setup can be
-complete on disk and invisible from outside. It means the run is **unobservable**, and the section
-reported it as a measurement anyway. That is why *"one real use, two findings"* is retired rather
-than updated — it was a ratio computed from one unverifiable sample and then quoted as the rate at
-which defects surface here.
+**Config-writing has reached three repositories. Furniture-writing has reached three — this one and
+two others.**
+
+**The previous version of this section said furniture-writing had reached exactly one, and that was
+false when it was written.** `claude-5h-window-spread` has carried the trio since 2026-08-13, two
+days before `v0.3.0` was cut. The survey behind that claim selected its population as *the repos
+carrying a committed `.oss.json`* and then reported a conclusion about every repo — and
+5h-window-spread carries no committed `.oss.json` to this day, so it was never in the population
+that the conclusion was drawn about. The absence was produced by the query and read as an absence in
+the world, which is this repository's own defect class, committed into the section that exists to
+guard against it. Select the population on the thing being measured, not on the thing that is easy
+to list.
+
+What that correction does *not* rehabilitate is the retired ratio. *"One real use, two findings"*
+stays retired: `--split` never runs `git add`, so a setup can be complete on disk and invisible from
+outside, and a ratio computed from one sample whose denominator cannot be observed was a measurement
+only in presentation.
 
 ### What replaces the ratio
 
 - **Dogfooding still finds what the suite cannot** — observed. `python3 scripts/doctor.py --root .`
-  in a worktree of this branch prints `VERDICT: not usable -- 4 failure(s), 6 warning(s)` on a tree
-  whose CI is green. Four of those are `.oss.local.json` being git-excluded and therefore absent from
-  every worktree by construction; nothing in `tests/` would notice.
-- **A rule can be written, shipped, indexed, reported healthy — and read by nothing.** Observed, and
-  the sharpest instance this repo has produced of the class it is named after. Every rule under
-  `.claude/jit-context/*/01-oss/` has been inert since the layer existed: `claude-jit-context` 0.3.5
-  enumerates layers from a literal `split("00-manual 10-auto 20-grouped 30-crosscutting", …)` in
-  three hooks (`pre-path-hook.sh:308`, `pre-prompt-hook.sh:173`, `pre-tool-hook.sh:721`), and its
-  tools dimension additionally reads one hardcoded index path. Confirmed here against the installed
-  version, and upstream with the positive control that makes it a measurement rather than an
-  inference — identical content fires under `00-manual` and does not fire under `01-oss`. #119 here,
-  the dependency's #176 there, both open; #156 made `doctor` report it in four states, keyed on the
-  *shape* of a fixed layer list rather than on today's spelling. **The rules are still inert**, and
-  nothing in this repository can change that.
+  in a worktree of this branch prints `VERDICT: not usable -- 4 failure(s), 5 warning(s)` on a tree
+  whose CI is green (`main` at `9aed28e`, 13 legs, all passed). Four of those are `.oss.local.json`
+  being git-excluded and therefore absent from every worktree by construction; nothing in `tests/`
+  would notice. The warning count is five, not the six the previous version of this section
+  recorded — a one-line drift nobody would find except by re-running the command, which is the
+  argument for pasting verdicts rather than paraphrasing them.
 - **CI settles what a local run cannot** — reasoned, not re-observed. Two entries in the traps list
   above were written after a green macOS suite and a red matrix on the same commit. This section
   read them; it did not re-run them.
+
+### The rules are no longer inert — observed, and it inverts the last measurement
+
+The previous version stated, graded observed: *"The rules are still inert, and nothing in this
+repository can change that."* The second half was right, and it is the reason the first half is now
+false: the dependency shipped the fix. `claude-jit-context` 0.4.0 no longer joins a fixed layer list
+— layers are read off disk in byte order under `LC_ALL=C`, so `01-oss` needs no spelling anywhere,
+and #119 here and the dependency's #176 there are answered.
+
+Three things say so, and the third is what makes it a measurement:
+
+- `python3 scripts/doctor.py --root .` prints `OK jit rule layer: claude-jit-context 0.4.0 names
+  01-oss in its layer list (test-layer-enumeration.sh:494), so the 3 rule(s) under
+  .claude/jit-context/*/01-oss/ are reachable`. That check is `76ce7d3` (#156) — added in the same
+  delta as the sentence it now contradicts, and keyed on the *shape* of a layer list rather than on
+  a spelling, which is why it survived the fix instead of needing one.
+- The dependency ships `tests/test-layer-enumeration.sh`, whose fixtures fire an `01-oss` rule in
+  all three dimensions.
+- Firing the hook here settles it, with the positive control the last measurement also insisted on.
+  `pre-tool-hook.sh` given a `Read` of a file in this tree returns `{"decision":"block", …}` naming
+  `supertool-required.md`; given `TodoWrite` in the same tree it returns `{}`. The blocking half
+  alone would pass against a hook that refused everything, and the silent half alone would pass
+  against a hook that had died.
+
+So `Read`, `Edit`, `Write`, `Glob` and `Grep` are refused in this repository and every file
+operation goes through supertool. That is enforcement rather than advice, and it is the first time
+that has been true. What is *not* proven is anything about the rules' content: reachable says the
+layer is read, not that what it says is right, and the rules have now been under a live reader for
+part of one day.
 
 ### What #147 changed, and what it did not
 
@@ -290,19 +334,67 @@ repo when someone re-runs `/oss:scaffold` there, and nothing tells them to"* —
   `owned_drift` says *what* re-running would change — a drifted gate versus moved comments — which is
   the only signal that a repo scaffolded last week is carrying a stale one.
 - **The first half stands.** Both are commands somebody must choose to run, and nothing schedules
-  either. It is also untestable in the field either way: **no repository outside this one has owned
-  files that could go stale**, so the failure mode has never been observed. Reasoned from the
-  ownership contract, not measured.
+  either.
+
+### Owned files go stale in the field, and two of them have — observed
+
+The previous version closed that subsection by grading the failure mode unobservable: *"no
+repository outside this one has owned files that could go stale."* That was reasoned from the
+ownership contract, and it is now false and measured — it follows directly from the reach correction
+above, since the two repositories the earlier survey could not see are exactly the two carrying
+owned files. Rendering `scaffold._owned_assembler` at `9aed28e` and comparing it byte for byte
+against what each repo carries:
+
+| repository | `.oss/assemble_changelog.py` | against this tree |
+| --- | --- | --- |
+| what `/oss:scaffold` would write today | 104,445 bytes | — |
+| `claude-jit-context` | 102,079 bytes | drifted |
+| `claude-5h-window-spread` | 55,261 bytes | drifted |
+
+Neither is corrupt; both are older copies, and 5h-window-spread's still carries another project's
+issue number in its module docstring — the same foreign-history defect the traps list above records.
+
+Those three numbers were wrong on the first pass of this re-derivation, in a way worth writing down
+here rather than in the traps list above: the table is labelled in bytes, and they were `len()` of a
+decoded `str`, which is characters, on a file full of em-dashes. A character count and a byte count
+render identically under a heading that says "bytes"; the drift verdict beside each was unaffected,
+which is exactly why nothing about the table looked wrong. The review that caught it had to re-run
+the measurement rather than read it. **Encode before measuring bytes, and label a count with the
+unit the command actually returned.**
+
+So the failure mode is observed. **The repair is not.** `/oss:doctor` only reports `owned_drift` in
+a repository where somebody runs it, `/oss:scaffold` only replaces owned files in a repository where
+somebody runs that, and nothing has been observed clearing a drifted copy anywhere. The ownership
+contract promises that an owned file is always replaceable so fixes reach everyone; what is proven
+is the first half of that sentence.
 
 ### Still the most important sentence here
 
 Most of what this plugin claims about a *scaffolded* repository rests on tests and scratch runs
-rather than on a repo somebody maintains through it. That stood at `v0.3.0`, and it is re-earned
-rather than inherited — the measurement above re-earned it **downward**. The surface is thin because
-it has barely been touched, not because it is sound.
+rather than on a repo somebody maintains through it. That stood at `v0.3.0`, it stood at `c6b7bd4`,
+and it is re-earned rather than inherited at every re-derivation. This one moved it a little in each
+direction: furniture-writing turned out to have reached three repositories rather than one, and the
+same fact turned an unobserved failure mode into two measured stale copies with no observed repair.
+The surface is thin because it has barely been touched, not because it is sound.
 
 `tests/test_claude_md_currency.py` asserts that this section names the release and the commit it was
 measured at, and nothing more. It cannot check that a claim above is true and does not try; it turns
-a section that goes stale silently into one that goes stale visibly.
+a section that goes stale silently into one that goes stale visibly. **It could not have caught this
+round and was not extended to try.** A test that asserted the prose agreed with a `doctor` check
+would state the same claim twice and pass whenever both were wrong together. What did catch this
+round was a `doctor` check written to answer one question in four states, contradicting the prose
+beside it in the same delta — a second measurement, not a second assertion. That is the mechanism to
+add more of.
+
+One claim above is an exception and it is named rather than hidden, because it is the one this
+round got wrong: the "would write today" row of the drift table is computed entirely from this tree,
+needs no network and no history, and a three-line test could hold it. It was still declined. That
+number changes on every commit touching `scripts/assemble_changelog.py`, so the guard would fail
+unrelated pull requests until somebody edited a number in `CLAUDE.md` to make CI green — which turns
+a dated measurement into a build gate on a figure the marker at the top of this section already
+dates, and trains the reflex of editing the section instead of re-deriving it. The two remote rows
+cannot be tested at all: the workflow has no credentials for another repository. **Reasoned, and it
+is a judgement rather than an impossibility** — a maintainer who would rather pay that CI cost than
+carry an unguarded number is not wrong.
 
 Treat this as tested, not proven.
