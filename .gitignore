@@ -9,3 +9,8 @@ __pycache__/
 
 # Machine-specific symlink to the local claude-supertool clone.
 /supertool
+
+# Machine-local jit-context discovery logs: one checkout's session history,
+# never part of the plugin. Swept into the v0.3.0 release commit by a `git
+# commit --all` and removed in the same release.
+.claude/jit-context/.discovery/
