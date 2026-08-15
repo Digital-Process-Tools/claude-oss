@@ -32,8 +32,45 @@ Skill(manager)
 2. **Read the board**, batched into one call:
 
    ```bash
-   supertool 'gh-prs' 'gh-issues' 'gh-branch'
+   supertool 'gh-prs' 'gh-issues' 'gh-branch' 'git-worktrees'
    ```
+
+   The fourth op is the one this step used to be missing, and it is not conditional:
+   `git-worktrees` is available wherever supertool is, and it boards every tree of this repo
+   whether or not anything configured a root for them. `worktree_root` in `.oss.local.json` names
+   where this loop puts its own — but **the board is not gated on that key**, because a tree nobody
+   configured is still a tree, and skipping the call in a repo that sets no root reproduces exactly
+   the absence this step exists to close: a worktree board nobody read renders as no worktrees.
+
+   Which trees exist, who holds them and what merged is an input to step 3, not a step-5 cleanup
+   detail. **Read both of its columns in three states, and never round the third one up.**
+   `cannot tell` is not `idle`, and `merge unknown` is not `merged` — neither is permission: not to
+   brief a second agent into that tree, not to reap it. The skill's cleanup gate carries the rest,
+   including why the shell exit cannot be branched on.
+
+   **Then the watcher fleet, which is conditional — probe first, then run.** It gets its own call
+   for two reasons, not one: `radar` lives behind a preset and refuses when no tiers are
+   registered, so reaching for it blind is a refusal rather than a reading; and the bare call is a
+   write. `radar:--state` is the read-only probe — it spawns nothing, reaps nothing and calls no
+   API.
+
+   ```bash
+   supertool 'radar:--state'
+   ```
+
+   It has three answers and the third is not the first. **The preset is not enabled here, or no
+   tier is registered** — there is no fleet to read, and the tick says so rather than passing over
+   it. **Tiers are registered** — run bare `radar` and read its delivery tally. **The probe itself
+   did not answer** — that is `unknown`, and it is reported, not skipped past.
+
+   Read the tally, not the fact that the call succeeded: **forwarded is not delivered**. A poller
+   that is down and a poller with nothing to say produce the same silence, so a channel nobody
+   probed is **not a quiet channel** — it is a channel with no reading, and reporting it as calm is
+   this loop's own defect class landing on the loop's own instrumentation.
+
+   Bare `radar` heals and forks pollers. That is a write, not a read, which is why the probe is a
+   separate call rather than folded into it — you run the repair deliberately, having seen what
+   needs repairing.
 
 3. **Act on what is open before starting anything new.** A merged-but-unverified PR, a red default
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
