@@ -351,3 +351,90 @@ def test_every_anchor_matches_exactly_one_place_in_the_document():
         "can survive the rule's deletion: {}".format(wrong)
     )
 
+
+
+# ------------------------------------------------ the command doc must not disagree
+#
+# `agents/triager.md` is what the triager reads; `commands/triage.md` is what the
+# maintainer reads about the triager. Two descriptions of one contract, and #83
+# established at length that the copy which drifts is the one quoted afterwards.
+#
+# This lane shipped the cluster duty into the agent file and left the command file
+# enumerating three report parts, so the maintainer's own documentation promised a
+# report shape the agent no longer produces -- and a `Clusters` row the reader was
+# never told to look for reads exactly like a row the agent forgot.
+
+TRIAGE_COMMAND = REPO_ROOT / "commands" / "triage.md"
+
+
+def test_the_command_doc_tells_the_maintainer_the_clusters_row_exists():
+    """The agent produces a Clusters row; the command doc has to say so, or the
+    reader has no reason to notice a missing one.
+    """
+    assert TRIAGE_COMMAND.is_file(), "commands/triage.md is missing"
+    folded = _flatten(TRIAGE_COMMAND.read_text(encoding="utf-8"))
+    assert "clusters" in folded, (
+        "commands/triage.md never mentions Clusters, so the maintainer is told the "
+        "report has parts that do not include the one row whose absence is "
+        "indistinguishable from an empty one"
+    )
+
+
+def test_the_command_doc_carries_the_clusters_third_state():
+    """`none` and `could not look` are different answers. If only the agent file says
+    so, the reader has no basis for rejecting a blank row.
+    """
+    folded = _flatten(TRIAGE_COMMAND.read_text(encoding="utf-8"))
+    # Anchored on "row that did not run" rather than on "could not look". The control
+    # below caught that one: it is this repo's house vocabulary for a third state and
+    # appears in commands/doctor.md, so a guard keyed on it would have been green
+    # whatever commands/triage.md said about clusters.
+    missing = [phrase for phrase in ("row that did not run",) if phrase not in folded]
+    assert not missing, (
+        "commands/triage.md describes the Clusters row without its third state {} -- "
+        "a row that did not run then reads as a board with no clusters".format(missing)
+    )
+
+
+def test_the_command_doc_states_the_propose_only_boundary():
+    """The constraint that makes the duty safe. Stated in the agent file for the agent;
+    stated here so the maintainer knows a cluster is a request and not a decision
+    already taken.
+    """
+    # Anchored on "label to express a cluster", not on "never closes". The red run
+    # caught that one: commands/triage.md:10 has said "never touches code, never closes
+    # an issue" since long before clusters existed, so the guard passed against the
+    # unchanged file -- a green tick over a sentence the document did not contain.
+    folded = _flatten(TRIAGE_COMMAND.read_text(encoding="utf-8"))
+    assert "label to express a cluster" in folded, (
+        "commands/triage.md does not tell the maintainer that a cluster is a proposal "
+        "the triager never acts on, so a reader could take the parent as already chosen"
+    )
+
+
+def test_these_command_doc_guards_are_not_vacuous():
+    """Positive control, and the first attempt at it was wrong in a way worth keeping.
+
+    It stripped every *line* containing "luster" and then asserted the phrases were
+    gone -- but the paragraph spans several lines and only one of them carries that
+    word, so "could not look" survived and the control failed. A control that fails
+    for a reason unrelated to what it controls is no better than one that passes for
+    an unrelated reason.
+
+    So the control is a sibling command document instead: one that legitimately never
+    describes this row. If these phrases were generic enough to turn up there, every
+    guard above would be permanently green regardless of what `commands/triage.md`
+    says, and a deleted section would not turn one red.
+    """
+    sibling = REPO_ROOT / "commands" / "doctor.md"
+    assert sibling.is_file(), "commands/doctor.md is missing -- no control to compare against"
+    folded = _flatten(sibling.read_text(encoding="utf-8"))
+    ambient = [
+        phrase
+        for phrase in ("clusters", "row that did not run", "label to express a cluster")
+        if phrase in folded
+    ]
+    assert not ambient, (
+        "{} appear in commands/doctor.md, which does not describe the Clusters row -- "
+        "so they are ambient phrasing and the guards above cannot fail".format(ambient)
+    )
