@@ -162,15 +162,68 @@ READ_NAME
 )
 fi
 
+# Nothing declared a name (#191). Falling through here exports nothing, so the
+# consumer binds the UNNAMED socket /tmp/supertool-watch.sock — shared with every
+# other repo that declares none, held by exactly one process, first one wins, and
+# the loser is never told. Measured 2026-08-15: a second channel-capable server
+# held it, five events were read and forwarded with zero dropped, and none of them
+# reached the session. `channel:health` said FORWARDING throughout, correctly — it
+# cannot see WHICH server holds the socket, and its own report says so.
+#
+# So derive one. `.oss.json` carries `repo`: tracked, authoritative, and read every
+# tick anyway. NOT the directory basename — that changes when somebody clones
+# elsewhere, and two unrelated repos cloned to the same basename collide silently,
+# which is this same defect reached by a different road.
+watch_name_source="declared in $repo_root/.supertool.json"
+if [ -z "$watch_name" ] && [ -n "$python_bin" ]; then
+    watch_name_source="derived from repo in $repo_root/.oss.json"
+    watch_name=$("$python_bin" - "$repo_root/.oss.json" <<'DERIVE_NAME' || true
+import json, re, sys
+
+# The exception in hand decides which answer this is. Asking the filesystem a
+# second question to explain why the first failed is how Path.exists() took the
+# release gate down from inside the except that was meant to survive a bad read.
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        doc = json.load(handle)
+except FileNotFoundError:
+    sys.stderr.write(
+        "oss-workspace: no %s, so nothing could be derived and this session is on "
+        "the SHARED DEFAULT socket with every other repo that declares none. "
+        "supertool 'channel:health'\n" % sys.argv[1])
+    raise SystemExit(0)
+except (OSError, ValueError) as err:
+    sys.stderr.write(
+        "oss-workspace: %s could not be read (%s), so no channel name could be "
+        "derived and this session is on the SHARED DEFAULT socket. "
+        "supertool 'channel:health'\n" % (sys.argv[1], type(err).__name__))
+    raise SystemExit(0)
+
+repo = doc.get("repo") if isinstance(doc, dict) else None
+if not isinstance(repo, str) or not repo.strip():
+    sys.stderr.write(
+        "oss-workspace: %s declares no repo, so nothing could be derived and this "
+        "session is on the SHARED DEFAULT socket. supertool 'channel:health'\n"
+        % sys.argv[1])
+    raise SystemExit(0)
+
+# The name derives a filesystem path, so anything a path cannot hold is folded to
+# a dash rather than reaching one.
+print(re.sub(r"[^A-Za-z0-9._-]", "-", repo.strip()))
+DERIVE_NAME
+)
+fi
+
 # An exported value is the one a running poller already captured, and moving the
 # paths underneath a live fleet is a documented failure. So an export wins — and
 # both values are named, because a name losing quietly is the other half of it.
 if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
     if [ -n "$watch_name" ] && [ "$watch_name" != "$SUPERTOOL_WATCH_NAME" ]; then
         echo "oss-workspace: SUPERTOOL_WATCH_NAME is already exported as" \
-             "${SUPERTOOL_WATCH_NAME} and wins; $repo_root/.supertool.json declares" \
-             "$watch_name. The pollers this session spawns follow the export; ops" \
-             "already running elsewhere do not. supertool 'channel:health'" >&2
+             "${SUPERTOOL_WATCH_NAME} and wins; $watch_name was" \
+             "$watch_name_source. The pollers this session spawns follow the" \
+             "export; ops already running elsewhere do not." \
+             "supertool 'channel:health'" >&2
     fi
 elif [ -n "$watch_name" ]; then
     export SUPERTOOL_WATCH_NAME="$watch_name"

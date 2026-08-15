@@ -40,10 +40,21 @@ declared dependencies and resolve from the same marketplace.
 
 ## After cloning a repo you maintain
 
+Install the launcher once, from this plugin's own checkout:
+
+```
+ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
+```
+
+Then, in any repo you maintain:
+
 ```
 cd the-repo
 oss-workspace
 ```
+
+Without that symlink the launcher is only on the path it ships at, so run it as
+`bin/oss-workspace` from this checkout.
 
 That opens a session over the repo you are standing in, with the maintainer loop already running — or
 with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
@@ -89,9 +100,20 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 
 ## Status
 
-Not yet run against a live repo. The loop, its agents, the config layer and the diagnostic are in
-and tested; what has not happened is a real issue taken from triage through to a merge. Until that
-round-trip is clean twice, treat this as unproven rather than working.
+**Tested, not proven.** The claim this section used to make — that no real issue had gone from
+triage through to a merge — stopped being true some time before anyone edited it: the loop now
+maintains this repository, and the triage-to-merge round trip has run many times over, including
+the releases cut with `/oss:release`.
+
+What that does *not* establish is the part most users care about. Almost everything this plugin
+claims about a repository it has **scaffolded** still rests on tests and scratch runs rather than on
+a repo somebody maintains through it, and two owned files are known to have gone stale in the field
+with no observed repair.
+
+The measured version of that, with each claim graded observed or reasoned and dated to the commit
+it was taken at, is **[What is not proven yet](CLAUDE.md)** — re-derived at each release rather than
+edited. It is deliberately not restated here: a second copy is the one that drifts, and this
+section is the proof of it.
 
 ## Development
 

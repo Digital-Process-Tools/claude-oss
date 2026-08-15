@@ -222,6 +222,33 @@ dependency with no known defects. Which of the three happened is stated every ti
 
 ## Delegating
 
+### The manager does not write the diff
+
+**Not a style preference and not a matter of workload — a manager who implements has destroyed
+the only independent read the change will ever get.** Every gate in *Reviewing* below assumes two
+parties: somebody who made the change and somebody who did not. Review the diff you just wrote and
+the four questions answer themselves, the red re-run is a formality against a test you designed to
+pass, and an argued-down finding has nobody left to argue with. The review does not get weaker; it
+stops existing, while rendering exactly as before.
+
+It arrives disguised, and never as "I will skip delegating". It arrives as a fix small enough that
+briefing costs more than typing, as a diagnosis so complete that the implementation feels like
+transcription, or as a maintainer already deep in the file because they were verifying something
+else. All three are the same move and the last is the most dangerous, because the context that makes
+it efficient is exactly the context that makes the reviewer blind.
+
+So: **the manager reads, measures, decides, briefs, reviews and merges. It does not edit product
+code, and it does not write the tests that gate product code.** What it may write is the record —
+state entries, issue and pull request bodies, its own appended verification.
+
+Two things are genuinely the manager's to type, because delegating them makes no sense: a
+one-command probe run to *establish* a fact for a brief, and a revert. Both are measurements, not
+changes to the deliverable.
+
+When the fleet is exhausted, the honest move is to say the work is queued behind an agent, not to
+pick it up. A repository where the maintainer implements is a repository with one contributor and a
+review that only looks like one.
+
 Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
 the deliverable is a diff or a label.
 
