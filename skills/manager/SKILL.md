@@ -708,8 +708,15 @@ Gates, each a call and not a feeling:
    blocking is not carry-forward material.** It stops the tag in either round. Without that, the cap
    outranks the table by being later in the document, and a gate whose worst outcome is a filed issue
    is not a gate. Each finding the auditor hands back carries its row, so this is a read and not a
-   judgement; a finding that came back `unranked` is ranked here before the cap is applied to it, and
-   one that came back `could not rank` means the audit did not complete, which is `could not run`.
+   judgement — until one comes back with no row at all, which is two different answers and gets two
+   arms:
+
+   - **`unranked`** — the agent classified it and no row fits. It is ranked **here**, before the cap
+     is applied to it, and the row decides from there. **The cap does not reach a finding that has
+     no row yet**, so nothing is ever carried forward unranked.
+   - **`could not rank`** — the table never reached the agent, so nothing was ranked and the audit
+     did not complete. That is `could not run`, and it **stops** the tag. Re-dispatching with the
+     table in the payload is how the answer gets computed; it is not an extra round.
 
    The gate is performed, not judged: `scripts/release_delta.py` computes the range in three states
    and `oss:release-auditor` reads it. **`could-not-run` is the script's answer, not yours**, and it

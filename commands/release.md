@@ -45,6 +45,25 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    a read rather than a judgement — and without it the cap outranks the table by being later in the
    document, which makes the gate's worst outcome a filed issue.
 
+   **A finding can also arrive with no row at all, and that is not the same as a row that does not
+   block.** `${CLAUDE_PLUGIN_ROOT}/agents/auditor.md` defines the two rowless answers a finding can
+   carry instead of a row, and they are deliberately different answers. Read as one, the cheaper of
+   the two swallows the other and the gate re-creates a layer down the defect it exists to catch — so
+   the arms are separate here, and each one is stated rather than left to the omission above:
+
+   - **`unranked` — the agent classified it and no row fits.** Rank it **here**, before the cap is
+     applied to it, and let the row decide from there: put it in a row, or earn it a new one in the
+     table. **The cap does not reach a finding that has no row yet**, so nothing is ever carried
+     forward unranked. The rows are a record of what has already gone wrong rather than a partition
+     of what can, so a finding outside all of them has an *unknown* cost, and the escape hatch is
+     deliberately the productive one: the table grows by exactly the rows that were missing.
+   - **`could not rank` — the ranking table never reached the agent.** Nothing was ranked, so the
+     audit did not complete: that is **`could not run`, and it stops the tag**, the same contract as
+     a spawn that never started. Re-dispatch with the ranking table pasted into the payload verbatim
+     and record that you did — that is how the answer gets computed, not an extra round. A rank
+     nothing computed says nothing whatever about the finding, and must never be read as a row that
+     happens not to block.
+
    The range is computed before anyone judges it, because "could not run" is a fact about the
    repository and not a reading:
 
@@ -82,7 +101,30 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    audit somewhere else — or reports `first-release` in a repo with releases — so a `scope` that does
    not match the tag you expect is a config finding, not a delta.
 
-   Then, and only for the two computable states:
+   **Record the checklist in effect before you spawn.** The auditor is loaded from the installed
+   plugin, and the installed plugin is updated *by* releases — so an improvement to the checklist
+   cannot audit the release that ships it, and will not audit the next one either unless the install
+   is refreshed. That is a read, and both numbers are cheap: the version in
+   `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`, and this repository's own
+   `.claude-plugin/plugin.json` when this repository is the one that ships the definitions. Pass the
+   answer to the auditor with the payload and repeat it in the release report. Three states:
+
+   - **it matches** — name the version, once.
+   - **it differs** — name both. This **annotates, it does not stop the release.** For a repo that
+     merely installed the plugin the installed version is legitimately whatever they installed, and
+     blocking on a skew nobody chose trades a reporting gap for a release nobody can cut — the same
+     trade `scope: null` above already refuses. For the repository that *ships* the definitions both
+     numbers are on its own disk, and a gate older than the rules it is gating is a **config
+     finding** in the release report.
+   - **could not tell** — a manifest was absent or would not read, or `${CLAUDE_PLUGIN_ROOT}` is
+     unset. Say it in those words: *I could not tell which checklist I am running.* It annotates
+     rather than stopping, for the reason above, but **it never renders as a match** and a `clean`
+     underneath it is a clean audit of unknown vintage, reported as one.
+
+   This is where a `could not rank` usually comes from, and the two are still reported separately: a
+   version skew is evidence about the cause, never a substitute for the agent's own answer.
+
+   Then, and only for the two computable states of the range:
 
    ```
    Agent(subagent_type: "oss:release-auditor", run_in_background: false)
