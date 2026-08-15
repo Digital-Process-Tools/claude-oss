@@ -1118,8 +1118,16 @@ def test_watch_channel_reports_a_mismatch_against_the_same_fixture(tmp_path):
 
 
 def test_watch_channel_reports_an_export_this_repo_never_declared(tmp_path):
-    """The filed case: nothing declared here, a name exported anyway, which is
-    what a copied .claude/settings.local.json produces."""
+    """The filed case (#150): nothing declared here, a name exported anyway, which
+    is what a copied .claude/settings.local.json produces.
+
+    The fixture gained an `.oss.json` when #191 split this state. That is not a
+    weakening -- a name copied from ANOTHER repo is only identifiable as copied
+    against this repo's own identity, and the case as filed is exactly a repo that
+    has one and is not using it. Without the `.oss.json` the same fixture is the
+    honestly-unknown arm, which is asserted separately below.
+    """
+    _oss_config_doc(tmp_path, {"repo": "Digital-Process-Tools/claude-oss"})
     _supertool_config(tmp_path, {"ops": {"radar": {}}})
     state, _detail = doctor.watch_channel_state(
         tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
@@ -1128,6 +1136,7 @@ def test_watch_channel_reports_an_export_this_repo_never_declared(tmp_path):
 
 
 def test_watch_channel_export_with_no_supertool_config_at_all(tmp_path):
+    _oss_config_doc(tmp_path, {"repo": "Digital-Process-Tools/claude-oss"})
     state, _detail = doctor.watch_channel_state(
         tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
     )
@@ -1647,7 +1656,7 @@ def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
             target.write_text(doc, encoding="utf-8")
         else:
             _oss_config_doc(tmp_path, doc)
-        assert doctor._derivable_watch_name(tmp_path) == expected, (doc, expected)
+        assert doctor._derivable_watch_name(tmp_path)[0] == expected, (doc, expected)
         run = subprocess.run(
             [sys.executable, str(script), str(target)],
             capture_output=True,
@@ -1685,3 +1694,238 @@ def test_the_supertool_config_this_plugin_writes_satisfies_its_own_diagnostic(tm
     (tmp_path / doctor.WATCH_CONFIG).write_text(scaffold.SUPERTOOL_JSON, encoding="utf-8")
     state, detail = doctor.radar_publish_state(tmp_path)
     assert state == "publishes", (state, detail)
+
+# --- an export that the repo itself derives is not a copied one (#191) --------
+#
+# The composition defect this branch sits on. `bin/oss-workspace` now derives
+# SUPERTOOL_WATCH_NAME from .oss.json's repo, so an export with no declaration
+# beside it became the ORDINARY state of every managed repo -- and that is exactly
+# the shape `undeclared-export` was written to accuse of a hand-copied
+# settings.local.json. Neither #192's diff nor this one shows the seam; it exists
+# only in their composition. The original case is real and must keep firing, so
+# the state is split rather than deleted.
+
+
+def test_watch_channel_an_export_this_repo_derives_is_not_the_copied_case(tmp_path):
+    """The must-not-fire arm. Its control is the test directly below, which uses
+    the same fixture and changes only the exported value."""
+    _oss_config_doc(tmp_path, {"repo": "Digital-Process-Tools/claude-oss"})
+    state, _detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "Digital-Process-Tools-claude-oss"}
+    )
+    assert state == "derived-export", state
+
+
+def test_watch_channel_an_export_that_differs_from_the_derivation_still_fires(tmp_path):
+    """The must-fire control. The filed case is a name copied from another repo,
+    and splitting the state must not stop it being reported."""
+    _oss_config_doc(tmp_path, {"repo": "Digital-Process-Tools/claude-oss"})
+    state, _detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
+    )
+    assert state == "undeclared-export", state
+
+
+@pytest.mark.parametrize(
+    "doc", [None, "{not json", {"default_branch": "main"}, {"repo": "   "}]
+)
+def test_watch_channel_cannot_compare_an_export_with_nothing_to_derive_from(
+    tmp_path, doc
+):
+    """The third answer, and it is the whole point of the split. With no repo to
+    derive from, `derived` and `hand-copied` are indistinguishable -- so it is
+    answered as neither rather than falling silently to the accusation."""
+    target = tmp_path / doctor.OSS_CONFIG
+    if doc is None:
+        if target.exists():
+            target.unlink()
+    elif isinstance(doc, str):
+        target.write_text(doc, encoding="utf-8")
+    else:
+        _oss_config_doc(tmp_path, doc)
+    state, _detail = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"}
+    )
+    assert state == "undeclared-export-unknown", state
+
+
+def test_watch_channel_a_declaration_still_decides_against_an_export(tmp_path):
+    """The derivation is consulted only where the launcher consults it: after a
+    declaration and an export have both failed to answer. A derivable repo must
+    not turn `agree` or `mismatch` into anything else."""
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    assert (
+        doctor.watch_channel_state(tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss"})[0]
+        == "agree"
+    )
+    assert (
+        doctor.watch_channel_state(tmp_path, env={"SUPERTOOL_WATCH_NAME": "other"})[0]
+        == "mismatch"
+    )
+
+
+def test_watch_channel_derived_export_detail_prints_no_name(tmp_path):
+    _oss_config_doc(tmp_path, {"repo": "zzsentinelzz/zzrepozz"})
+    for exported in ("zzsentinelzz-zzrepozz", "zzotherzz"):
+        _state, detail = doctor.watch_channel_state(
+            tmp_path, env={"SUPERTOOL_WATCH_NAME": exported}
+        )
+        assert "zzsentinelzz" not in detail, detail
+        assert "zzotherzz" not in detail, detail
+
+
+def test_check_watch_channel_does_not_accuse_an_export_the_repo_derives(
+    tmp_path, capsys
+):
+    """The verdict is the deliverable. The old line accused the maintainer of a
+    copied settings file and named a remedy that would be wrong to follow."""
+    _oss_config_doc(tmp_path, {"repo": "Digital-Process-Tools/claude-oss"})
+
+    doctor.check_watch_channel(
+        tmp_path, env={"SUPERTOOL_WATCH_NAME": "Digital-Process-Tools-claude-oss"}
+    )
+    quiet = list(doctor.FINDINGS)
+    doctor.FINDINGS.clear()
+
+    doctor.check_watch_channel(tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss-supertool"})
+    loud = list(doctor.FINDINGS)
+
+    assert [state for state, _ in quiet] == ["OK"]
+    assert [state for state, _ in loud] == ["WARN"]
+    # The accusation must be absent from the derived arm and present in the control,
+    # or "the warning went away" cannot be told from "doctor stopped printing".
+    assert "hand-copied" not in quiet[0][1], quiet[0][1]
+    assert "hand-copied" in loud[0][1], loud[0][1]
+    assert capsys.readouterr().out.strip()
+
+
+def test_check_watch_channel_prints_ascii_only_in_the_export_states(tmp_path):
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    envs = [
+        {"SUPERTOOL_WATCH_NAME": "owner-name"},
+        {"SUPERTOOL_WATCH_NAME": "elsewhere"},
+    ]
+    seen = set()
+    for env in envs:
+        doctor.FINDINGS.clear()
+        seen.add(doctor.watch_channel_state(tmp_path, env=env)[0])
+        doctor.check_watch_channel(tmp_path, env=env)
+        for _state, message in doctor.FINDINGS:
+            message.encode("ascii")
+    (tmp_path / doctor.OSS_CONFIG).unlink()
+    doctor.FINDINGS.clear()
+    seen.add(doctor.watch_channel_state(tmp_path, env=envs[0])[0])
+    doctor.check_watch_channel(tmp_path, env=envs[0])
+    for _state, message in doctor.FINDINGS:
+        message.encode("ascii")
+    assert seen == {"derived-export", "undeclared-export", "undeclared-export-unknown"}
+
+
+def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
+    """The drift guard, at the level that matters now: the VALUE, not just whether
+    one exists.
+
+    doctor has to reproduce the launcher's sanitisation to tell a derived export
+    from a copied one, so there are two spellings of one rule and this is what
+    stops them parting. It runs `bin/oss-workspace`'s own embedded program against
+    a table of repos and compares its stdout to `doctor._derive_watch_name`. A
+    second measurement, not a second assertion. If the heredoc cannot be located
+    the guard fails loudly: a copy that went unchecked must not render as a copy
+    that agreed.
+    """
+    launcher = (REPO_ROOT / "bin" / "oss-workspace").read_text(encoding="utf-8")
+    marker = "DERIVE_NAME"
+    opening = "<<'" + marker + "'"
+    closing = "\n" + marker + "\n"
+    tail = launcher.split(opening, 1)[1] if opening in launcher else ""
+    if "\n" not in tail or closing not in tail:
+        pytest.fail(
+            "bin/oss-workspace no longer carries a {} heredoc, so doctor's copy of "
+            "the derivation went unchecked".format(marker)
+        )
+    script = tmp_path / "derive.py"
+    script.write_text(tail.split("\n", 1)[1].split(closing, 1)[0], encoding="utf-8")
+
+    target = tmp_path / doctor.OSS_CONFIG
+    repos = [
+        "Digital-Process-Tools/claude-oss",
+        "owner/name",
+        "  owner/name  ",
+        "Owner/Name.With.Dots",
+        "owner/name_with_underscore",
+        "owner/name with spaces",
+        "owner/name:colon",
+        "owner//name",
+        "owner/naïve",
+        "owner/repo-中文",
+        "...",
+        "/",
+    ]
+    for repo in repos:
+        _oss_config_doc(tmp_path, {"repo": repo})
+        run = subprocess.run(
+            [sys.executable, str(script), str(target)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert run.stdout.strip("\n") == doctor._derive_watch_name(repo), (
+            repo,
+            run.stdout,
+            run.stderr,
+        )
+        # And the guard is only worth its runtime if the launcher actually spoke.
+        assert run.stdout.strip(), (repo, run.stderr)
+
+
+# --- the remedies these checks print, measured rather than asserted -----------
+
+
+def test_the_radar_remedy_this_check_prints_actually_satisfies_the_check(tmp_path):
+    """A remedy is a claim about what would fix the thing. Reading it back through
+    the check is the only way to find out that it does -- an assertion about the
+    remedy's text would pass just as happily on a remedy that fixes nothing."""
+    (tmp_path / doctor.WATCH_CONFIG).write_text(
+        json.dumps(doctor.RADAR_REMEDY_CONFIG), encoding="utf-8"
+    )
+    state, detail = doctor.radar_publish_state(tmp_path)
+    assert state == "publishes", (state, detail)
+
+
+def test_the_radar_remedy_names_both_halves_and_says_not_to_replace_presets(tmp_path):
+    """A repo scaffolded before the preset fix already HAS a `presets` list, so a
+    remedy pasted over it would drop `git` and `github`. The line has to say which
+    of the two operations it means."""
+    assert doctor.WATCH_PRESET in doctor.RADAR_REMEDY
+    assert doctor.RADAR_TIERS_KEY in doctor.RADAR_REMEDY
+    assert "rather than replacing" in doctor.RADAR_REMEDY, doctor.RADAR_REMEDY
+
+
+def test_a_repo_scaffolded_today_passes_the_radar_check(tmp_path):
+    """End to end rather than through the template constant: run the scaffolder and
+    ask the diagnostic about what actually landed on disk."""
+    config = _config(tmp_path)
+    scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
+    doctor.check_radar_publish(tmp_path)
+    assert [state for state, _ in doctor.FINDINGS] == ["OK"], doctor.FINDINGS
+
+
+def test_a_repo_scaffolded_before_the_preset_fix_warns_and_its_remedy_works(tmp_path):
+    """The reverse direction, and the one a maintainer actually meets: an existing
+    repo carrying the old template. It must warn, and following the warning must
+    reach `publishes` -- measured by applying the remedy, not by reading it."""
+    stale = {
+        "presets": ["git", "github"],
+        "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+    }
+    (tmp_path / doctor.WATCH_CONFIG).write_text(json.dumps(stale), encoding="utf-8")
+    assert doctor.radar_publish_state(tmp_path)[0] == "no-route"
+    doctor.check_radar_publish(tmp_path)
+    assert [state for state, _ in doctor.FINDINGS] == ["WARN"], doctor.FINDINGS
+
+    # The remedy, as the line states it: add the preset to the list that is there
+    # rather than replacing it.
+    stale["presets"].append(doctor.WATCH_PRESET)
+    (tmp_path / doctor.WATCH_CONFIG).write_text(json.dumps(stale), encoding="utf-8")
+    assert doctor.radar_publish_state(tmp_path)[0] == "publishes"

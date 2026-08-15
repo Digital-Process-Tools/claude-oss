@@ -669,8 +669,25 @@ WATCH_PRESET = "watch"
 # is worse than a board they have to turn on. Composed from the constants above so
 # a drift in one of them reaches the remedy rather than leaving it confidently
 # telling a maintainer to add a key that no longer exists.
-RADAR_REMEDY = 'Add: "presets": ["{}"], "ops": {{"{}": {{"{}": {{"gh-prs": {{}}}}}}}}'.format(
-    WATCH_PRESET, RADAR_OP, RADAR_TIERS_KEY
+RADAR_REMEDY_CONFIG = {
+    "presets": [WATCH_PRESET],
+    "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},
+}
+
+# Rendered from the mapping above rather than typed, so the line a maintainer
+# pastes is the same object a test reads back through `radar_publish_state`. A
+# remedy is a claim about what would fix the thing, and the only way to find out
+# that it does is to run the check over it -- asserting on its text would pass
+# just as happily on a remedy that fixes nothing.
+#
+# The second sentence exists because the repo that most needs this line is one
+# scaffolded before #191, which already HAS a `presets` list: a paste over it
+# would silently drop `git` and `github`.
+RADAR_REMEDY = (
+    "Add {} -- and where `presets` is already there, add '{}' to the list it has "
+    "rather than replacing it.".format(
+        json.dumps(RADAR_REMEDY_CONFIG, sort_keys=True), WATCH_PRESET
+    )
 )
 
 
@@ -867,10 +884,40 @@ def check_radar_publish(project_dir):
     )
 
 
-def _derivable_watch_name(project_dir):
-    """Can `bin/oss-workspace` derive a channel name for this repo? Four answers.
+def _derive_watch_name(repo):
+    """The launcher's sanitisation, mirrored -- and this is the second spelling.
 
-    `yes` / `no-config` / `unreadable` / `no-repo`.
+    `bin/oss-workspace` holds the first, in an embedded heredoc, and it is the
+    authority: it is what actually exports the variable. This copy exists because
+    the diagnostic has to answer a question that needs the VALUE, not merely
+    whether one exists -- is the export in this environment the one this repo
+    derives, or one copied from somewhere else? -- and there is no route to the
+    launcher's answer that a diagnostic can take. Importing is impossible (the
+    launcher is a shell script and derives before any plugin import is
+    guaranteed); executing it is a subprocess in the hot path of a check whose
+    whole design is that it does not take one.
+
+    Two spellings of one rule is this repository's own governing rule violated, so
+    it is paid for rather than waved through: `_derive_watch_name` is measured
+    against the launcher's own program in
+    `tests/test_doctor_inprocess.py::test_doctor_derives_the_same_name_as_the_launcher_does`,
+    over a table of repos including spaces, colons, dots and non-ASCII -- the
+    launcher is run, its stdout compared to this function's return. A second
+    measurement, not a second assertion.
+
+    The single home this should eventually have is a shared module both sides
+    read. That is not this change: `bin/oss-workspace` is held by another lane,
+    and reaching into it mid-run is a conflict somebody else resolves by hand.
+    """
+    return re.sub(r"[^A-Za-z0-9._-]", "-", repo.strip())
+
+
+def _derivable_watch_name(project_dir):
+    """Can `bin/oss-workspace` derive a channel name for this repo, and which?
+
+    Returns `(state, name)`, state being `yes` / `no-config` / `unreadable` /
+    `no-repo`. `name` is empty for everything but `yes`, so a caller cannot get a
+    name out of a state that did not produce one.
 
     The launcher derives the name from `.oss.json`'s `repo` when nothing declares
     or exports one (#191), so "nothing declared" stopped meaning "the shared
@@ -878,33 +925,32 @@ def _derivable_watch_name(project_dir):
     broken` would have gone on saying it. This is the half of that change the
     diagnostic owes its reader.
 
-    Only WHETHER a name can be derived is answered, never which. The launcher's
-    sanitisation maps every non-empty repo string to a non-empty name, so nothing
-    here needs a copy of that expression -- and a copy is what would drift. What
-    remains shared is the four-way decision, which
-    `tests/test_doctor_inprocess.py` cross-checks by running the launcher's own
-    program against the same fixtures.
+    The three non-`yes` answers are kept apart because they are three different
+    remedies, and because a caller comparing an export against a derivation needs
+    to know it had nothing to compare against, rather than being handed an empty
+    string that every export differs from.
     """
     path = Path(project_dir) / OSS_CONFIG
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return "no-config"
+        return "no-config", ""
     except (OSError, ValueError, UnicodeDecodeError):
-        return "unreadable"
+        return "unreadable", ""
     if not isinstance(doc, dict):
-        return "unreadable"
+        return "unreadable", ""
     repo = doc.get("repo")
     if isinstance(repo, str) and repo.strip():
-        return "yes"
-    return "no-repo"
+        return "yes", _derive_watch_name(repo)
+    return "no-repo", ""
 
 
 def watch_channel_state(project_dir, env=None):
-    """Which watch channel does this repo actually resolve to? Nine answers.
+    """Which watch channel does this repo actually resolve to? Eleven answers.
 
     `unreadable` / `conflict` / `overridden` / `mismatch` / `undeclared-export` /
-    `agree` / `declared-only` / `derived` / `default`, and the count is the point. The filed
+    `undeclared-export-unknown` / `derived-export` / `agree` / `declared-only` /
+    `derived` / `default`, and the count is the point. The filed
     symptom -- four repos on one poller slot -- was NOT a repo whose declaration
     disagreed with its environment. It was four repos declaring nothing at all with
     one hand-copied export between them, so a check that only compared a
@@ -958,7 +1004,33 @@ def watch_channel_state(project_dir, env=None):
             WATCH_CONFIG, WATCH_NAME_ENV
         )
     if exported:
-        return "undeclared-export", WATCH_NAME_ENV
+        # An export with no declaration beside it used to be one answer, and it
+        # accused the reader of a hand-copied settings file. Since #192 that is the
+        # ORDINARY state of every managed repo: the launcher derives a name from
+        # `.oss.json` and exports it, with nothing in `.supertool.json` to show for
+        # it. So the accusation has to be earned by a comparison rather than
+        # inferred from an absence -- and the original case is real, so the state is
+        # split rather than deleted.
+        derivable, derived = _derivable_watch_name(project_dir)
+        if derivable != "yes":
+            # Neither answer is available. Reporting `undeclared-export` here would
+            # accuse on no evidence, and reporting `derived-export` would clear on
+            # none; this is the third answer and it says which fact was missing.
+            return "undeclared-export-unknown", {
+                "no-config": "there is no {} to compare it against".format(OSS_CONFIG),
+                "unreadable": "{} is there and could not be read, so there was "
+                "nothing to compare it against".format(OSS_CONFIG),
+                "no-repo": "{} carries no repo to compare it against".format(
+                    OSS_CONFIG
+                ),
+            }[derivable]
+        if derived == exported:
+            return "derived-export", "{} matches what {}'s repo derives to".format(
+                WATCH_NAME_ENV, OSS_CONFIG
+            )
+        return "undeclared-export", "it is not what {}'s repo derives to".format(
+            OSS_CONFIG
+        )
     if declared:
         return "declared-only", "declared in {}".format(WATCH_CONFIG)
 
@@ -966,7 +1038,7 @@ def watch_channel_state(project_dir, env=None):
     # #191 the launcher derives a name from `.oss.json`'s `repo` at that point, so
     # this is two states: a repo that gets its own socket, and a repo that lands on
     # the SHARED one because there was nothing to derive from.
-    derivable = _derivable_watch_name(project_dir)
+    derivable, _derived = _derivable_watch_name(project_dir)
     if derivable == "yes":
         return "derived", "nothing declared in {} and {} unset, and {} carries a repo".format(
             WATCH_CONFIG, WATCH_NAME_ENV, OSS_CONFIG
@@ -1026,15 +1098,38 @@ def check_watch_channel(project_dir, env=None):
             "are named.".format(detail),
         )
         return
+    if state == "derived-export":
+        report(
+            "OK",
+            "watch channel: {} and {} declares no watch_name -- so this is the export "
+            "bin/oss-workspace makes for this repo, not a channel it never named. The "
+            "repo did name it, in {}, which is tracked and authoritative. This "
+            "compares two declarations against a derivation; it does not enumerate "
+            "the pollers on that channel, and WHICH server holds the socket is not "
+            "established, here or by supertool 'channel:health'.".format(
+                detail, WATCH_CONFIG, OSS_CONFIG
+            ),
+        )
+        return
     if state == "undeclared-export":
         report(
             "WARN",
-            "watch channel: {} is exported and {} declares no watch_name, so this repo "
-            "is on a channel it never named -- which is what a hand-copied "
-            ".claude/settings.local.json produces, and every repo carrying that copy "
+            "watch channel: {} is exported, {} declares no watch_name, and {} -- so "
+            "this repo is on a channel it never named, which is what a hand-copied "
+            ".claude/settings.local.json produces: every repo carrying that copy "
             "shares one poller slot while each board renders as its own.".format(
-                detail, WATCH_CONFIG
+                WATCH_NAME_ENV, WATCH_CONFIG, detail
             ),
+        )
+        return
+    if state == "undeclared-export-unknown":
+        report(
+            "WARN",
+            "watch channel: {} is exported, {} declares no watch_name, and {} -- so "
+            "whether this is the export bin/oss-workspace derives for this repo or "
+            "one copied from another is unknown. Not answered as copied, which would "
+            "accuse on no evidence, and not as derived, which would clear on "
+            "none.".format(WATCH_NAME_ENV, WATCH_CONFIG, detail),
         )
         return
     if state == "agree":

@@ -43,11 +43,10 @@ second one.
 
 ## The `watch channel` line
 
-One line, nine states, and none of them is a claim about which pollers are running. It compares three
-places — a `watch_name` in this repo's `.supertool.json`, `SUPERTOOL_WATCH_NAME` in the environment
-this run inherited, and, when neither of those answers, the `repo` in `.oss.json` that
-`bin/oss-workspace` derives a name from (#191) — and reports which channel the repo resolves to.
-The name derives a
+One line, eleven states, and none of them is a claim about which pollers are running. It compares
+three places — a `watch_name` in this repo's `.supertool.json`, `SUPERTOOL_WATCH_NAME` in the
+environment this run inherited, and the `repo` in `.oss.json` that `bin/oss-workspace` derives a
+name from (#191) — and reports which channel the repo resolves to. The name derives a
 socket and a poller-slot directory held by exactly one process, so repos resolving to one name share
 one fleet while each board renders as its own. That is the whole reason the line exists: the shared
 case and the private case are otherwise indistinguishable from inside either repo.
@@ -65,9 +64,16 @@ case and the private case are otherwise indistinguishable from inside either rep
   (#191). One process holds that socket, the first one wins, and the loser is never told. The line
   names which of three reasons applied — no `.oss.json`, an unreadable one, or one with no `repo` —
   because the remedies differ.
-- `WARN … is exported and .supertool.json declares no watch_name` — the filed case. A hand-copied
-  `.claude/settings.local.json` puts one name into several repos, and each of them then reports a
-  fleet that is not its own.
+- `OK … so this is the export bin/oss-workspace makes for this repo` — an export with no
+  declaration beside it, and it is **exactly** what `.oss.json`'s `repo` derives to. Since #192 this
+  is the ordinary state of every managed repo, and it used to render as the accusation below.
+- `WARN … it is not what .oss.json's repo derives to` — the filed case (#150), now earned by a
+  comparison rather than inferred from an absence. A hand-copied `.claude/settings.local.json` puts
+  one name into several repos, and each of them then reports a fleet that is not its own.
+- `WARN … whether this is the export bin/oss-workspace derives … is unknown` — an export is set and
+  there is no `.oss.json`, or it cannot be read, or it carries no `repo`, so there is nothing to
+  compare against. Not answered as copied, which would accuse on no evidence, and not as derived,
+  which would clear on none. The line names which of the three it was.
 - `WARN … declared in .supertool.json, exported as SUPERTOOL_WATCH_NAME and the two differ` — the
   export wins for pollers spawned here, so this repo's declaration is not in effect.
 - `WARN … op blocks … declare N distinct names` — `bin/oss-workspace` exports none of them rather
