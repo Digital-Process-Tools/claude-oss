@@ -9,6 +9,7 @@ These are content tests. They fail loudly when the regex matches nothing it was
 meant to anchor on, because a pattern that matched nothing has checked nothing.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -1908,6 +1909,315 @@ def test_the_developer_states_what_to_do_when_another_lane_holds_the_file():
         "when the file is out of bounds, which leaves reaching into it and dropping it "
         "as the two available readings"
     )
+
+
+# ------------------------ the payload the developer writes is the payload the loop
+# opens (#160)
+#
+# agents/developer.md states a four-field pull request payload and the report schema
+# validates it, including that `head` is the branch the agent is on. skills/manager/
+# SKILL.md is the document the loop loads on every tick, and it is the consumer. A
+# contract stated in the producer and thin in the consumer is not a contract: the
+# observed cost was a maintainer re-deriving `head` and `base` by hand on ten pull
+# requests, on every one of which the payload was already right.
+#
+# The join is the check worth having, for the same reason it was worth having between
+# the ranking table and the release trigger: two documents describing one shape drift,
+# and the copy that drifts is never the one anybody rereads. The anchors beside it
+# cover the three things the join cannot see -- that the fields must not be rewritten,
+# that an unreadable payload is a third state, and that a maintainer's verification is
+# a different voice from the agent's claims.
+
+PR_PAYLOAD_PRODUCER = REPO_ROOT / "agents" / "developer.md"
+PR_PAYLOAD_SCHEMA = REPO_ROOT / "schemas" / "agent-report.schema.json"
+PR_PAYLOAD_CONSUMER_HEADING = "## Opening the pull request"
+
+
+def _schema_payload_required():
+    """The payload's required fields, from the schema -- the enforced authority.
+
+    The join below runs against this rather than against the prose example, and the
+    difference is the whole point: the example is a copy, and a join between two
+    copies checks that they agree with each other while both drift away from the
+    thing that is actually validated. `forge_payload` also *defines* optional fields
+    (`draft`, `labels`); required is the set a consumer must know arrives filled in.
+
+    None means `forge_payload` is not in the schema at all.
+    """
+    stack = [json.loads(PR_PAYLOAD_SCHEMA.read_text(encoding="utf-8"))]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if "forge_payload" in node:
+                return sorted(node["forge_payload"].get("required", []))
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return None
+
+
+def _payload_fields():
+    """The payload's field names out of the JSON example in agents/developer.md.
+
+    Parsed as JSON off the fence rather than pattern-matched on `"title"` coming
+    first. Anchoring on a key order made a legal reordering of the example return
+    None, and None is rendered by the callers as "no example in the file" -- a
+    tool-produced absence reported as an absence in the document, inside the block
+    written to prevent exactly that.
+
+    None means no parseable json fence carrying payload keys, which is a different
+    answer from a fence with no fields, and the callers keep them apart.
+    """
+    text = PR_PAYLOAD_PRODUCER.read_text(encoding="utf-8")
+    for block in re.findall(r"```json\s*(.*?)```", text, re.S):
+        # A fence that does not parse is skipped rather than failing the run --
+        # another fence may be the payload one.
+        try:
+            parsed = json.loads(block)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict) and "head" in parsed and "base" in parsed:
+            return sorted(parsed)
+    return None
+
+
+def _payload_consumer_section():
+    """The manager skill's consumer section, or None if the heading moved.
+
+    The stop is a heading match rather than a substring search for a newline
+    followed by two hashes, which additionally catches a heading at offset 0.
+
+    It does NOT make this robust against the hazard worth naming, and saying so is
+    the point: this section tells maintainers to write a literal
+    "## Verified by the maintainer" heading into a pull request body. Written at the
+    start of a line without a code span, that line is a `##` heading by every
+    reasonable reading, and *any* heading-based extractor stops there -- measured,
+    not assumed. Every anchor after it would then report "the document does not
+    state the rule" about text sitting in the file, which is the failure `_flatten`
+    was written for. What actually prevents it today is that the skill writes the
+    heading inside a code span, and that is a property of the prose, not of this
+    parser. `test_the_payload_contract_and_its_consumer_section_are_both_findable`
+    therefore checks the section still reaches its last bullet, so a truncation
+    fails loudly there instead of silently emptying the anchors.
+    """
+    text = MANAGER_SKILL.read_text(encoding="utf-8")
+    at = text.find(PR_PAYLOAD_CONSUMER_HEADING)
+    if at < 0:
+        return None
+    tail = text[at + len(PR_PAYLOAD_CONSUMER_HEADING):]
+    stop = re.search(r"^## ", tail, re.M)
+    return tail if stop is None else tail[:stop.start()]
+
+
+def _payload_join_mismatch(fields, section):
+    """Fields the producer defines and the consumer never names. Shared with its
+    positive control, so the control exercises the comparison itself rather than a
+    second implementation of it.
+    """
+    if fields is None:
+        return ("no required field list in the schema",)
+    if section is None:
+        return ("no consumer section in skills/manager/SKILL.md",)
+    if not fields:
+        # An empty contract would make "the consumer names every field" true by
+        # having nothing to name -- the vacuous pass this whole block exists to
+        # refuse.
+        return ("no fields on either side",)
+    folded = _flatten(section)
+    return tuple(f for f in fields if "`{}`".format(f) not in folded)
+
+
+def test_the_payload_contract_and_its_consumer_section_are_both_findable():
+    """Vacuity guard, first. Every check below reads one of these three."""
+    required = _schema_payload_required()
+    assert required, (
+        "no `forge_payload` required list in {} -- the join below would pass over "
+        "nothing".format(PR_PAYLOAD_SCHEMA.relative_to(REPO_ROOT))
+    )
+    assert _payload_fields() is not None, (
+        "no parseable json payload example in agents/developer.md -- the producer "
+        "check below would pass over nothing"
+    )
+    section = _payload_consumer_section()
+    assert section is not None, (
+        "no {!r} section in skills/manager/SKILL.md -- the loop's own document has "
+        "nowhere the payload contract could be stated".format(PR_PAYLOAD_CONSUMER_HEADING)
+    )
+    # Truncation guard. A `##` heading written inside this section -- which is one
+    # unbackticked edit away, since the section tells maintainers to write exactly
+    # such a heading -- would cut the extractor short, and every anchor below would
+    # then report the document as silent on rules it states. That must fail here,
+    # loudly and once, rather than there, quietly and four times.
+    assert _flatten(section).rstrip().endswith("it is the one that looks correct."), (
+        "the {!r} section does not run to its last bullet, so the extractor stopped "
+        "early and every anchor below is being checked against a fragment".format(
+            PR_PAYLOAD_CONSUMER_HEADING
+        )
+    )
+
+
+def test_the_producer_example_shows_every_field_the_schema_requires():
+    """The example in agents/developer.md is what an agent copies, so a required
+    field missing from it is a payload the validator refuses, written by an agent
+    that followed its own instructions. Asserted one way only: the example may show
+    an optional field (`draft`, `labels`) without that being a defect.
+    """
+    required = _schema_payload_required()
+    fields = _payload_fields()
+    assert required and fields is not None
+    missing = sorted(set(required) - set(fields))
+    assert not missing, (
+        "the schema requires {!r} and the example in agents/developer.md does not "
+        "show them, so an agent copying the example writes a payload the validator "
+        "refuses".format(missing)
+    )
+
+
+def test_the_consumer_names_every_field_the_payload_contract_requires():
+    """The join, and it runs against the schema rather than against the prose.
+
+    `schemas/agent-report.schema.json` is the enforced authority; skills/manager/
+    SKILL.md is what the loop actually reads each tick. A required field the
+    consumer never names is a field the maintainer will supply by hand -- the
+    observed defect -- and the hand-supplied value can be wrong in a way the
+    validator would have caught. Joining the skill to developer.md's *example*
+    instead would compare two copies and stay green while both drifted off the
+    schema.
+    """
+    mismatch = _payload_join_mismatch(_schema_payload_required(), _payload_consumer_section())
+    assert not mismatch, (
+        "the schema requires these payload fields and skills/manager/SKILL.md never "
+        "names them, so nothing tells the maintainer they arrive filled in: "
+        "{!r}".format(mismatch)
+    )
+
+
+def test_the_payload_join_fires_when_the_two_documents_disagree():
+    """Positive control. A containment assertion over text parsed from two files
+    passes just as readily when one side is empty, so the comparison is run against
+    pairs that are wrong on purpose and must be reported.
+    """
+    four = ["base", "body", "head", "title"]
+    assert _payload_join_mismatch(four, "the payload carries `title` and `body`.") == (
+        "base",
+        "head",
+    )
+    assert _payload_join_mismatch(four, "carries `base` `body` `head` `title`") == ()
+    assert _payload_join_mismatch(None, "anything") == (
+        "no required field list in the schema",
+    )
+    assert _payload_join_mismatch(four, None) == (
+        "no consumer section in skills/manager/SKILL.md",
+    )
+    # Two absences agreeing is not agreement.
+    assert _payload_join_mismatch([], "") == ("no fields on either side",)
+
+
+# Each anchor is a phrase the pre-change documents did not contain, and
+# `test_the_payload_anchors_fire_on_the_documents_as_they_were` proves that against
+# the wording they actually carried. An anchor satisfied by prose already on disk is
+# a green tick over a sentence nobody wrote, which this suite has shipped before.
+PR_PAYLOAD_ANCHORS = [
+    # Not `re-derive`: the skill already says "re-derive rather than trust" twice
+    # about config, so that word alone would pass forever.
+    ("head-and-base-are-not-rewritten-by-hand", ("rewriting them by hand",)),
+    # Two anchors, because "could not be read" on its own is close enough to this
+    # repo's house vocabulary to be satisfied by accident. The second pins the
+    # consequence, which is the half that matters.
+    (
+        "an-unreadable-payload-is-a-third-state",
+        ("could not be read", "no pull request to open"),
+    ),
+    ("maintainer-verification-is-appended-not-merged", ("verified by the maintainer",)),
+]
+
+# Checked against the consumer section, not the whole file. A three-word substring
+# anywhere in a 780-line document is the weakest assertion this block could make: the
+# bullet could be moved anywhere, or deleted and the phrase reintroduced in an
+# unrelated paragraph, and the check would keep passing. Scoping it to the section
+# where the body is published is what makes it a claim about placement rather than
+# about vocabulary.
+PR_AUTOLINK_ANCHOR = "does not autolink"
+
+
+def _payload_anchors_unmet(text):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchors in PR_PAYLOAD_ANCHORS
+        if not all(anchor in folded for anchor in anchors)
+    }
+
+
+def test_the_consumer_section_states_what_must_not_be_re_derived():
+    """`head` and `base` come out of the payload and the validator has already checked
+    them. A maintainer rewriting them is doing redundant work at best, and at worst is
+    hand-writing a value the validator would have refused.
+
+    The third state is the same rule this repo is named for, one document over: a
+    payload that could not be read is not a payload that was not written, and neither
+    of them is "there is no pull request to open".
+    """
+    section = _payload_consumer_section()
+    assert section is not None
+    unmet = _payload_anchors_unmet(section)
+    assert not unmet, "skills/manager/SKILL.md, {!r}: {}".format(
+        PR_PAYLOAD_CONSUMER_HEADING, sorted(unmet)
+    )
+
+
+def test_the_skill_names_the_backtick_autolink_trap():
+    """An issue number inside a code span creates no reference on the forge, so a body
+    reading `Part of #137` in backticks links nothing while looking exactly like a body
+    that does. It sits beside the `Closes #A B` trap, which is the same class: syntax
+    that silently references less than it appears to.
+    """
+    section = _payload_consumer_section()
+    assert section is not None
+    assert PR_AUTOLINK_ANCHOR in _flatten(section), (
+        "skills/manager/SKILL.md warns elsewhere that a closing reference can bind "
+        "less than it looks like it binds, and the section where the body is actually "
+        "published never says a backticked issue number references nothing at all"
+    )
+
+
+def test_the_payload_anchors_fire_on_the_documents_as_they_were():
+    """Positive control, and the one that makes the four checks above worth their
+    lines. This is the consumer section as #123 wrote it -- complete-reading,
+    confident, and silent on all four points. Every anchor must be unmet against it,
+    or the anchor was satisfied by wording the file already contained.
+    """
+    before = (
+        "Pushing and opening is yours, and it is one read plus one call:\n"
+        "1. Push the agent's branch.\n"
+        "2. Read the body before you publish it. Not optional, and it is what makes "
+        "this a saving rather than a trick: you stop writing a document you still have "
+        "to read. A body published unread is your name on text you have not seen. If "
+        "it is wrong, argue it in the pull request or send it back; do not quietly "
+        "rewrite it, because the person who did the work writes the record.\n"
+        "3. Hand the payload path to `gh-pr-create:@FILE`. Not `gh pr create`, and not "
+        "a body of your own assembled from the report.\n"
+        "If `pr_body` says `not-written`, it says why. Then the body is yours, and you "
+        "are writing it from a report rather than from the work.\n"
+    )
+    assert _payload_anchors_unmet(before) == {name for name, _ in PR_PAYLOAD_ANCHORS}
+    assert PR_AUTOLINK_ANCHOR not in _flatten(before)
+    # And the join was unmet against it too: the section named none of the four,
+    # `body` included -- it discussed "the body" in prose and never as the field.
+    assert _payload_join_mismatch(
+        ["base", "body", "head", "title"], before
+    ) == ("base", "body", "head", "title")
+    # Must-fire half, so a passing anchor set is reachable rather than merely absent.
+    assert (
+        _payload_anchors_unmet(
+            "`head` and `base` arrive filled in and the validator has checked them, so "
+            "rewriting them by hand is redundant work that can also be wrong. A payload "
+            "that could not be read is its own state and is never no pull request to "
+            "open. Append your own `## Verified by the maintainer` section."
+        )
+        == set()
+    )
+    assert PR_AUTOLINK_ANCHOR in _flatten("a backticked issue number does not autolink")
 
 
 def test_the_doctor_convention_check_fires_on_the_documents_as_they_were():

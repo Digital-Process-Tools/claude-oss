@@ -38,9 +38,15 @@ Skill(manager)
    supertool 'gh-pr-create:@<pr_body.path from the report>'
    ```
 
+   **That line is the `written` case only.** Reading `pr_body` has three answers — `written`,
+   `not-written`, and a path that is named but could not be read — and the third is not "no pull
+   request to open". Check the state before you type this; the skill's *Opening the pull request*
+   says what each one costs you.
+
    Both halves are in the skill under *What comes back is a file, not a document* and *Opening the
-   pull request*, including why the op rather than `gh pr create` and why reading the body is what
-   makes this a saving rather than a trick.
+   pull request*, including why the op rather than `gh pr create`, why reading the body is what
+   makes this a saving rather than a trick, and which of `head` and `base` the validator actually
+   checks — neither is yours to retype.
 
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call

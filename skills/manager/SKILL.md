@@ -310,9 +310,91 @@ Pushing and opening is yours, and it is one read plus one call:
    squash — when the issue quietly stays open and the board reads clean. That is the failure the
    merge gates already warn about, moved to the earliest point anything can see it.
 
-If `pr_body` says `not-written`, it says why. Then the body is yours, and you are writing it from a
-report rather than from the work. That is the expensive path this exists to avoid, not the routine
-one.
+**Four fields arrive filled in, and they are not yours to retype.** The payload requires `title`,
+`body`, `head` and `base`; `schemas/agent-report.schema.json` also defines `draft` and `labels` as
+optional, so read it rather than this sentence for the current set. Measured: ten pull requests in
+one day where `head` and `base` were both overwritten by hand and all twenty values were already
+right. The op requires `base` because it never *defaults* one — not because you must type it.
+
+**How far the validator actually gets, because "already checked" is not the same claim for both**,
+and the difference decides what is worth your attention:
+
+- **`head` is checked, but against the agent's own report**, not against git: `report_schema.py`
+  compares `payload.head` to the report's `branch`. Two fields written by the same agent in the same
+  run agreeing is internal consistency, not ground truth. Note also that the report's *top-level*
+  `head` is a commit SHA and the payload's `head` is a branch name — same word, two objects.
+- **`base` is checked for presence and nothing else.** Nothing compares it to `default_branch`. A
+  wrong-but-non-empty `base` passes, and it is the field whose corruption merges into the wrong
+  branch.
+- **Nothing in this loop runs the validator.** The agent runs it and reports the result, so
+  "validated" is a claim you are reading, not a check you observed.
+
+So the useful move is not retyping the two fields — it is **spending one call to see the check
+rather than the claim**, which is the thing your own hands cannot do better:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <pr_body.path>
+```
+
+You have just pushed the branch, so you are the only party in the loop holding ground truth about
+what `head` should be. **Compare it; rewriting them by hand is the one move that makes things
+worse** — a hand-written value is the only one nothing downstream verifies at all, and a mistyped
+`head` opens a pull request from somewhere other than the work with the validator's guarantee
+already spent.
+
+`title` is the agent's. It is the sentence most people read, and after a squash it is the only part
+of the pull request that survives into the log, so it belongs to whoever did the work.
+
+**Reading `pr_body` has three answers, not two.**
+
+- **`written`** — the routine path above. Read the body, then hand over the path.
+- **`not-written`** — the field says why. The body is yours, written from a report rather than from
+  the work. That is the expensive path this exists to avoid, not the routine one.
+- **The path is named and the file is absent, unparseable or unreadable.** That is neither of the
+  above and it is **never "no pull request to open"**. A payload that **could not be read** is a
+  missing artefact from a run that believed it wrote one: say which of the three you are in, and
+  either recover the file or write the body yourself *and record that you did*. Silently opening
+  nothing, or silently opening a body of your own as though none had been offered, is this loop's
+  own defect class landing on its own output.
+
+### Your verification is a different voice, so append it
+
+If you verified something the agent could not, **append a `## Verified by the maintainer` section to
+the body — never edit the agent's text into agreement with you.** Step 2 above says the person who
+did the work writes the record; without somewhere to put a verification, that rule leaves rewriting
+as the only way to record one, which is exactly what it forbids. The section is the missing half,
+not a new ceremony.
+
+**This happens at review time, not at creation time** — you have verified nothing when you open the
+pull request, and your verification is the *Reviewing* section below. So it is an edit to a body
+that already exists, and there is no op for it: `gh-pr-create` consumes the payload once and there
+is no `gh-pr-edit`. Use raw `gh`, which the op table above already sanctions for writes nothing
+wraps:
+
+```bash
+gh pr edit <N> --body-file <a file holding the agent's body plus your appended section>
+```
+
+Read the agent's body back out first rather than reconstructing it — `--body-file` replaces the
+whole body, so an append built from memory silently truncates the record you were protecting.
+
+What belongs in it is only what the agent could not have written: an independent reproduction or red
+run, a premise of the brief the agent falsified, and your acceptance or rejection of its argued-down
+findings. **Nothing else — an appendix restating the agent's claims in your voice is worse than no
+appendix, because it reads as corroboration and is a copy.** Having nothing to add is a normal
+outcome and the section is simply absent then, which means the converse holds and is worth stating:
+**an absent section says nobody verified independently, not that verification found nothing.** If
+you want the second of those on the record, write the section and say so.
+
+**Two ways a body silently references less than it appears to**, both worth catching before you
+publish rather than after the squash:
+
+- **A backticked issue number does not autolink.** `` `Part of #137` `` inside a code span creates
+  no reference at all on the forge, and renders as something that plainly did.
+- **A closing keyword binds one issue only.** `Closes #A #B` links both numbers and closes only
+  `#A`; `Closes #A B` does not even link `B`. Two issues need the keyword repeated — `Closes #A,
+  closes #B` — and the safe habit is one `Closes` line per issue. The merge gates carry the second
+  of these two cases; this is the first, and it is the one that looks correct.
 
 ## Reviewing
 
@@ -446,9 +528,10 @@ is not on this list is just a way of not fixing things.
 - **Cleanup is a separate call, gated on the verified merge result.** Chaining merge and cleanup once
   deleted a branch after a failed merge and auto-closed the PR. Recovery was possible only because
   the forge keeps the PR ref.
-- **Verify the linked issue actually closed.** Write one `Closes #N` per issue, each with its own
-  `#`; `Closes #A B` silently references only A, and a check that greps a *fragment* of the line
-  cannot audit that syntax. Read the whole line.
+- **Verify the linked issue actually closed.** Write one `Closes #N` per issue — the *keyword*
+  repeated, not just the `#`. `Closes #A B` silently references only A, and `Closes #A #B` links
+  both and closes only A, so "each number has its own `#`" is not the rule and satisfying it is not
+  enough. A check that greps a *fragment* of the line cannot audit either case. Read the whole line.
 - **`Part of` is a decision, not a defect.** Do not close such an issue because the work shipped.
 - **Delete merged worktrees** with `git worktree remove`, not `prune` — `prune` will not touch a
   directory that still exists.
