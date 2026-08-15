@@ -361,8 +361,19 @@ So the useful move is not retyping the two fields — it is **spending one call 
 rather than the claim**, which is the thing your own hands cannot do better:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <pr_body.path>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <the report path the agent replied with>
 ```
+
+**The report path, not the payload path** — and the reason is the same one that makes the call worth
+making. The `head` comparison above only exists where *both* documents are in hand: the validator
+opens the payload named at `pr_body.path` and compares its `head` to the report's `branch`. Handed
+the payload alone it has no branch to compare against, so the one check this call is for could not
+run. Validating the report reads both files, which is why one path covers both.
+
+Reach for the payload path anyway and the validator says so by name and names the call to run — it
+does not enumerate the report keys a payload is missing, because fourteen of those on a completely
+correct payload reads as a finding about the file rather than a mistake by the caller, and the move
+it invites is hand-writing `head`.
 
 You have just pushed the branch, so you are the only party in the loop holding ground truth about
 what `head` should be. **Compare it; rewriting them by hand is the one move that makes things

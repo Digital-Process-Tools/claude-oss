@@ -20,6 +20,12 @@ booleans -- the sentence is what an orchestrator can still argue with.
 
 Exit 0 when every report validates, 1 otherwise. A missing or unparseable file is an
 error, never a pass: a report that could not be read is not a report with no findings.
+
+Handed the pull request payload instead of the report -- the two land in one directory
+one suffix apart -- it says so by name and names the call to run. Enumerating the
+fourteen report keys a correct payload lacks is accurate and useless: it reads as a
+finding about the file rather than as a mistake by the caller, and the move it invites
+is hand-writing `head`, the one value nothing downstream verifies.
 """
 
 import argparse
@@ -313,6 +319,58 @@ def validate_pr_body(report, schema=None, base_dir=None):
     return errors
 
 
+def _is_forge_payload(document, schema):
+    """Is this unmistakably the pull request payload rather than the report?
+
+    A finished run leaves both files in one directory, differing by a suffix, and
+    the payload is the one the surrounding prose has just been discussing -- so it
+    is the one a caller reaches for. Fed to the report pass it produces fourteen
+    missing keys and three unknown ones about a file with nothing wrong with it,
+    which reads as a finding rather than as a category error and invites the reader
+    to go correct a correct payload.
+
+    The test is "unmistakably a payload", never "failed to be a report": every key
+    the forge requires is present, every key present is one the forge defines, and
+    no report-only required key appears. Keying on the negative would turn every
+    malformed report into "you passed the wrong file" -- a wrong answer delivered
+    calmly, which is worse than the wall it replaced.
+
+    Report-*only* is the load-bearing word. The report has a top-level `head` too --
+    a commit SHA where the payload's is a branch name, same word, two objects -- so
+    an intersection against the report's whole required list is never empty for a
+    payload and the detector silently never fires. The third clause is redundant
+    while the two key sets are otherwise disjoint, and is kept for the day one of
+    them grows a name the other already has.
+    """
+    if not isinstance(document, dict):
+        return False
+    payload = schema.get("$defs", {}).get("forge_payload", {})
+    required = set(payload.get("required", ()))
+    known = set(payload.get("properties", {}))
+    if not required or not known:
+        # A schema that stopped defining the payload cannot classify one. Decline
+        # rather than guess; the shape pass below still answers, loudly.
+        return False
+    keys = set(document)
+    return (
+        required <= keys
+        and keys <= known
+        and not (keys & (set(schema.get("required", ())) - known))
+    )
+
+
+def _wrong_file(path):
+    """Name the mistake and the call to run. A wall of missing keys does neither."""
+    return (
+        "{}: this is a pull request payload (title, body, head, base), not an agent "
+        "report, so nothing in it was validated. Validate the report instead -- it "
+        "names this payload at pr_body.path, and validating it opens this file and "
+        "checks its head against the report's branch, which is the check this file "
+        "cannot answer on its own:"
+        "\n    python3 report_schema.py <the report path the agent replied with>".format(path)
+    )
+
+
 def validate_file(path, schema=None, check_pr_body=True):
     path = Path(path)
     try:
@@ -323,6 +381,8 @@ def validate_file(path, schema=None, check_pr_body=True):
         report = json.loads(raw)
     except json.JSONDecodeError as exc:
         return ["{}: not valid json ({})".format(path, exc)]
+    if _is_forge_payload(report, schema if schema is not None else load_schema()):
+        return [_wrong_file(path)]
     errors = validate(report, schema)
     if check_pr_body:
         errors = errors + validate_pr_body(report, schema, base_dir=path.parent)

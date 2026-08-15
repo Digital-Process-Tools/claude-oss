@@ -508,3 +508,144 @@ def test_the_cli_says_when_it_did_not_read_the_payload(tmp_path, capsys):
     assert report_schema.main([str(path), "--shape-only"]) == 0
     out = capsys.readouterr().out
     assert "not read" in out and "shape" in out
+
+
+# --- handed the wrong one of the two files it has just been told about --------
+#
+# The report and its payload are written in the same run, land in the same
+# directory, and differ by one suffix. A caller who passes the payload to a
+# report validator gets a verdict that is accurate and useless: fourteen missing
+# keys and three unknown ones, on a file with nothing wrong with it. The next
+# move that invites is correcting a correct payload -- or hand-writing `head`,
+# which is the one value nothing downstream verifies at all.
+#
+# So the payload is detected and refused by name, with the call to run instead.
+# It stays a refusal: validating a payload on its own can never compare its
+# `head` to the report's `branch`, because the report is not in hand, and a
+# green tick standing in for a check that could not run is the defect this
+# repository is named after.
+
+
+def _payload_only(tmp_path, name="body.pr.json"):
+    target = tmp_path / name
+    target.write_text(json.dumps(_payload()), encoding="utf-8")
+    return target
+
+
+def test_a_forge_payload_handed_to_the_report_validator_is_refused_by_name(tmp_path, capsys):
+    errors = report_schema.validate_file(_payload_only(tmp_path))
+    assert len(errors) == 1, "a payload should get one sentence, not a wall: {}".format(errors)
+    said = errors[0].lower()
+    assert "payload" in said and "report" in said
+    assert "missing required key" not in said
+
+    assert report_schema.main([str(_payload_only(tmp_path, "second.pr.json"))]) == 1
+    out = capsys.readouterr().out
+    assert "INVALID" in out and "missing required key" not in out
+
+
+def test_the_refusal_names_the_call_to_run_instead(tmp_path):
+    """A diagnostic that says what is wrong and not what to do is half a diagnostic."""
+    errors = report_schema.validate_file(_payload_only(tmp_path))
+    assert "report_schema.py" in errors[0]
+
+
+def test_the_payload_detector_does_not_swallow_a_broken_report(tmp_path):
+    """The positive control. Refusing a payload by name must not become refusing everything.
+
+    Three inputs, one fixture: the payload above must be named rather than
+    enumerated; a genuinely malformed report must still be enumerated; and a good
+    report must still pass. A detector that answered the first by accepting
+    anything, or by declining to look, would pass the first assertion alone.
+    """
+    broken = tmp_path / "broken.json"
+    broken.write_text(json.dumps(_drop(_example(), "summary")), encoding="utf-8")
+    errors = report_schema.validate_file(broken)
+    assert any("missing required key" in e for e in errors), errors
+
+    good = tmp_path / "report.json"
+    good.write_text(json.dumps(_report_with_payload(tmp_path)), encoding="utf-8")
+    assert report_schema.validate_file(good) == []
+
+
+def test_a_half_written_payload_is_not_mistaken_for_one(tmp_path):
+    """Neither a report nor a payload is neither, and says so as schema violations.
+
+    The detector keys on being unmistakably a payload, not on failing to be a
+    report -- otherwise every malformed report starts reading as "you passed the
+    wrong file", which is a wrong answer delivered calmly.
+    """
+    half = tmp_path / "half.json"
+    half.write_text(json.dumps({"title": "t", "body": "b"}), encoding="utf-8")
+    errors = report_schema.validate_file(half)
+    assert any("missing required key" in e for e in errors), errors
+
+
+def test_a_json_document_that_is_not_an_object_is_not_classified(tmp_path):
+    """A top-level array is neither file, and the detector must not crash deciding."""
+    odd = tmp_path / "odd.json"
+    odd.write_text(json.dumps(["title", "body"]), encoding="utf-8")
+    errors = report_schema.validate_file(odd)
+    assert errors and all("pull request payload" not in e for e in errors), errors
+
+
+def test_a_schema_that_stopped_defining_the_payload_declines_rather_than_guesses(tmp_path):
+    """The third state. Unable to classify is not the same as classified as a report.
+
+    Declining leaves the shape pass to answer, which it does loudly. Guessing
+    either way would be a confident verdict about a question nothing looked at.
+    """
+    schema = _schema()
+    schema["$defs"]["forge_payload"] = {"type": "object"}
+    assert report_schema._is_forge_payload(_payload(), schema) is False
+    assert report_schema._is_forge_payload(_payload(), _schema()) is True
+
+
+# --- the call the skill documents, run rather than read -----------------------
+
+
+SKILL_PATH = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+
+# python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <SOMETHING>
+DOCUMENTED_CALL_RE = re.compile(r"report_schema\.py\"?\s+(<[^>\n]+>)")
+
+
+def test_the_documented_verification_call_validates_the_file_it_names(tmp_path, capsys):
+    """The maintainer's one call must pass on a correct run, or it teaches the wrong lesson.
+
+    Not a grep for a phrase. The placeholder in the skill is resolved to one of
+    the two files a finished run leaves on disk, and the validator is then run on
+    it exactly as documented. A call pointed at the payload exits 1 with a
+    seventeen-line diagnostic about a file with nothing wrong with it, which is
+    the defect this pins.
+    """
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    placeholders = DOCUMENTED_CALL_RE.findall(text)
+    assert placeholders, (
+        "no fenced report_schema.py invocation found in the manager skill -- either "
+        "it stopped documenting the check, or this pattern no longer matches how it "
+        "writes it, and a pattern that matched nothing has checked nothing"
+    )
+
+    report = _report_with_payload(tmp_path)
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    payload_path = Path(report["pr_body"]["path"])
+
+    for placeholder in placeholders:
+        lowered = placeholder.lower()
+        if "pr_body" in lowered or "payload" in lowered:
+            target = payload_path
+        elif "report" in lowered:
+            target = report_path
+        else:
+            raise AssertionError(
+                "the skill documents {} and this test cannot tell which of the two "
+                "files a finished run leaves that names -- resolve it here rather "
+                "than letting an unrecognised placeholder pass".format(placeholder)
+            )
+        assert report_schema.main([str(target)]) == 0, (
+            "the documented call {} exits non-zero on a correct run: {}".format(
+                placeholder, capsys.readouterr().out
+            )
+        )
