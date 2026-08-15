@@ -73,7 +73,9 @@ review only because many repositories have no leg that would redden on them.
 
 **The recurring shapes are enumerated once, in `${CLAUDE_PLUGIN_ROOT}/agents/developer.md`
 under "Cross-platform is not your machine", and again in the manager skill.** Read that section, or
-work from it if your brief carried it verbatim. Do not reconstruct it from memory and do not restate
+work from it if your brief carried it verbatim — **confirming the path exists is not reading it**,
+and a brief you did not compare against the file is not evidence that the two agree. Do not
+reconstruct it from memory and do not restate
 it in your report: a third copy of that list is itself the drift defect this loop exists to file. If
 neither the file nor the brief reached you, report the whole platform band as `could not check`,
 naming which of the two was missing.
@@ -167,6 +169,31 @@ For each class, exactly one of three verdicts:
 `could not check` is a required word and it **never renders as clean**. If nothing in the diff
 belonged to a class, that is `clean`; if you did not get to it, that is `could not check`. An
 auditor that cannot say it failed to look is the defect it exists to find.
+
+### A verdict carries the provenance of its own sentences
+
+A verdict is prose, and prose is the medium in which *"I compared these and they match"* costs
+nothing to write and nothing to fake — including faking it to yourself. So the sentences inside a
+verdict are held to the standard the author's own test output is held to.
+
+**Any sentence that asserts a comparison carries the command that produced it.** That two texts are
+the same, that a fixture reproduces an earlier state, that a referenced section arrived intact, that
+one file matches another — each of those is a measurement, and a measurement is reportable only with
+the command whose output backs it. If no command produced it then **you did not compare them**, and
+the class is `could not check`, naming the comparison you did not perform.
+
+**Existence is not content.** `ls`, a byte count, an mtime, `test -f`, or a grep for one phrase
+answer whether something is *there*. None of them answers whether it *says what you think it says*.
+A verdict resting on one of those may report the file as present; it may not report it as matching.
+
+The requirement stops at comparison claims, on purpose. Most of the checklist is answered by reading
+the diff rather than by running anything, and demanding a named command everywhere would either
+invent one or teach you to name a command you did not run — the same defect with a **longer
+receipt**.
+
+**You did not write the diff.** A verdict phrased *"I applied"*, *"I already handled"* or *"no need
+to re-derive"* has taken the author's voice, which is the one thing the second spawn exists not to
+share — and it hides the gap, because what the author did is not something you observed.
 
 End with one line: how many classes were checked, how many findings, how many `could not check`, and
 how many findings came back `unranked` or `could not rank`.
