@@ -14,7 +14,8 @@ maintainer believing something shipped that did not:
   skipped                  policy says this repo tags without publishing. A
                            decision, named out loud, never silence
   could-not-run            the notes could not be extracted, `gh` is not on PATH,
-  could-not-create         or the call failed. Not a release and not a skip
+  could-not-create         the call failed, or `.oss.json` is not a JSON object at
+                           all and so states no policy. Not a release and not a skip
 
 Exit codes, because a shell reads those and never reads prose:
 
@@ -180,8 +181,29 @@ def plan(config, tag, notes_path, gh):
 
     Policy is checked before anything else, so a repo that deliberately tags without
     releasing is never reported as a failure to reach an API it was never going to
-    call.
+    call. Which is exactly why a config that cannot state a policy has to be caught
+    first: `release_publish_policy` answers `isinstance(config, dict)` with the shipped
+    defaults, and the shipped default does not publish. A `.oss.json` holding `[]`,
+    `"x"`, `null` or `42` therefore came back `skipped`, exit 4, with a sentence about
+    `release.create_release` being unset -- about a document that could not have set
+    it. The tag ships, the Release silently does not, and the receipt says a decision
+    was made. That is the one outcome this script's three states exist to prevent, so
+    a structurally wrong config is `could-not-run` and exit 3 (#126).
+
+    Read as a fact about the document rather than as a missing key, because those are
+    different things and only one of them is a maintainer's choice. The neighbouring
+    `repo` check below already applies `isinstance(config, dict)` for the same reason;
+    this is the same guard, one step earlier, where it settles the question for every
+    caller instead of for one field.
     """
+    if not isinstance(config, dict):
+        return _could_not_run(
+            "the release config is a {0}, not a JSON object, so it states no release "
+            "policy at all -- which is not the same as stating one that does not "
+            "publish. No GitHub Release was created and the tag is "
+            "unaffected.".format(type(config).__name__)
+        )
+
     policy = oss_config.release_publish_policy(config)
 
     if not policy["create"]:
@@ -316,6 +338,15 @@ def receipt(payload):
 
 
 def _read_json(path):
+    """``(document, problem)``. A non-empty ``problem`` is the only failure signal.
+
+    NOT ``document is None``: a file containing exactly `null` parses to `None` with
+    nothing wrong, and read that way it was reported as `could not read <path> --`
+    with nothing after the dash, because there was no exception to name. A file that
+    could not be opened and a file that says `null` are different facts and rendered
+    identically -- which is the defect this plugin is named after, in the four lines
+    that read the config (#126).
+    """
     try:
         with open(str(path), "r", encoding="utf-8") as handle:
             return json.load(handle), ""
@@ -363,11 +394,22 @@ def main(argv=None):
     root = Path(args.repo)
     config_path = Path(args.config) if args.config else root / oss_config.CONFIG_NAME
     config, problem = _read_json(config_path)
-    if config is None:
+    if problem:
         return _emit(
             _could_not_run("could not read {0} -- {1}".format(config_path, _one_line(problem))),
             args.as_json,
         )
+
+    # Shape before policy, and before anything downstream. A document that is not an
+    # object states no policy, so every later step would be answering a question this
+    # config never posed -- and the first of them, `plan`, would call it a skip. Worse,
+    # left to fall through, the run reports whichever downstream step failed first: an
+    # absent changelog for a `.oss.json` containing `[]` is a true sentence about the
+    # wrong problem (#126).
+    if not isinstance(config, dict):
+        broken = plan(config=config, tag=args.tag, notes_path=None, gh=None)
+        broken["tag"] = args.tag
+        return _emit(broken, args.as_json)
 
     # Policy first: a repo that does not publish is not a repo that failed to find a
     # changelog.

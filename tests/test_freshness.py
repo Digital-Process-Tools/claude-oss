@@ -211,6 +211,142 @@ def test_drift_is_never_reported_as_current_when_it_cannot_be_rendered(tmp_path)
     assert {f["state"] for f in findings} == {"unknown"}
 
 
+# ------------------------------------------------ absent by design is not absent (#126)
+#
+# `owned_drift` reported every owned file not on disk as `absent`, remedy
+# `Run /oss:scaffold.` -- and scaffold *declines* to write the changelog trio into a
+# repo that already runs a changelog gate under another name. So a declined repo was
+# told, on every run, mid-tick and before every release, to run the command that had
+# just declined and would decline again.
+#
+# Both halves are individually correct and neither diff contains the defect: it lives
+# in the composition. `owned_drift_summary`'s own docstring already argues that a line
+# printed regardless of state carries no information.
+
+
+def _gated(root):
+    """A repo that already runs somebody else's changelog gate, so scaffold declines."""
+    workflows = root / ".github" / "workflows"
+    workflows.mkdir(parents=True, exist_ok=True)
+    (workflows / "their-changelog.yml").write_text(
+        "name: changelog\njobs:\n  fragment:\n    steps:\n"
+        "      - run: python tools/assemble_changelog.py --check\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_a_declined_trio_is_declined_and_an_ungated_repo_still_warns(tmp_path):
+    """The fix and its positive control in one fixture.
+
+    Two repos, one scaffold call each, differing only in whether a foreign gate is
+    present. The gated one must not be told to run /oss:scaffold; the ungated one
+    must. Without the second half, an `owned_drift` that returned nothing at all --
+    or a doctor that never ran -- satisfies the first half perfectly.
+    """
+    gated = _gated(tmp_path / "gated")
+    scaffold.apply(gated, _config(), plugin_root=REPO_ROOT)
+    findings = doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)
+    assert {f["state"] for f in findings} == {"declined"}, findings
+    for finding in findings:
+        assert "Run /oss:scaffold." not in finding["detail"], finding
+        assert "--force-owned" in finding["detail"], finding
+    assert {state for state, _ in doctor.owned_drift_summary(findings)} == {"OK"}
+
+    ungated = tmp_path / "ungated"
+    ungated.mkdir(parents=True, exist_ok=True)
+    scaffold.apply(ungated, _config(), plugin_root=REPO_ROOT)
+    (ungated / ".oss" / "assemble_changelog.py").unlink()
+    control = {f["path"]: f for f in doctor.owned_drift(ungated, _config(), plugin_root=REPO_ROOT)}
+    assert control[".oss/assemble_changelog.py"]["state"] == "absent"
+    assert "Run /oss:scaffold." in control[".oss/assemble_changelog.py"]["detail"]
+    assert ("WARN", ".oss/assemble_changelog.py: not in this repo. Run /oss:scaffold.") in (
+        doctor.owned_drift_summary(list(control.values()))
+    )
+
+
+def test_a_present_owned_file_is_still_compared_even_when_the_gate_declines(tmp_path):
+    """`--force-owned` writes the trio into a gated repo. The file is then on disk and
+    a decline says nothing about whether it drifted -- so the gate is consulted only
+    where the answer changes, which is the absent branch.
+    """
+    gated = _gated(tmp_path / "forced")
+    scaffold.apply(gated, _config(), plugin_root=REPO_ROOT, force_owned=True)
+    (gated / ".oss" / "README.md").write_text("someone edited this\n", encoding="utf-8")
+    findings = {f["path"]: f for f in doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)}
+    assert findings[".oss/README.md"]["state"] == "drifted"
+    # Positive control: the other two were written by the same forced run and match.
+    assert findings[".oss/assemble_changelog.py"]["state"] == "current"
+
+
+def test_a_gate_that_could_not_be_detected_is_unknown_and_never_declined(tmp_path, monkeypatch):
+    """The third state of the thing doctor is now asking.
+
+    scaffold declines the trio when detection returns `unknown` too -- but that is a
+    precaution, not a decision somebody made. Reporting it as `declined` would put
+    this repo's own defect class back: an absence produced by the tool, read as an
+    absence in the world. `unknown` is the name doctor already has for it.
+    """
+    monkeypatch.setattr(
+        scaffold,
+        "check_changelog_gate",
+        lambda root, config: [{"state": "unknown", "detail": "could not read: x.yml"}],
+    )
+    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert {f["state"] for f in findings} == {"unknown"}, findings
+    assert all("Run /oss:scaffold." not in f["detail"] for f in findings)
+    assert {state for state, _ in doctor.owned_drift_summary(findings)} == {"WARN"}
+
+
+def test_a_gate_state_this_doctor_has_never_heard_of_lands_in_unknown(tmp_path, monkeypatch):
+    """`_detect_changelog_gate` is being changed concurrently (#124) and may grow a
+    fourth state. An unrecognised state must be an addition rather than a break, and
+    it must not fall through to `absent` -- which is the exact wrong answer, because
+    it restores the remedy that provably changes nothing.
+    """
+    monkeypatch.setattr(
+        scaffold,
+        "check_changelog_gate",
+        lambda root, config: [{"state": "a-state-invented-tomorrow", "detail": "who knows"}],
+    )
+    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert {f["state"] for f in findings} == {"unknown"}, findings
+    assert all("Run /oss:scaffold." not in f["detail"] for f in findings)
+
+
+def test_a_gate_check_that_raises_is_unknown_rather_than_a_traceback(tmp_path, monkeypatch):
+    """doctor's whole contract is exit 0 and one VERDICT line. A consultation of
+    somebody else's module must not be the thing that breaks it.
+    """
+
+    def _boom(root, config):
+        raise OSError("the tree could not be walked")
+
+    monkeypatch.setattr(scaffold, "check_changelog_gate", _boom)
+    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    assert {f["state"] for f in findings} == {"unknown"}, findings
+
+
+def test_the_changelog_gate_governs_every_owned_file(tmp_path):
+    """The coupling doctor now depends on, asserted rather than assumed.
+
+    `owned_drift` reads one gate answer and applies it to all of `scaffold.OWNED`,
+    because `scaffold.plan` does exactly that. If the gate is ever narrowed to a
+    subset, this fails here rather than silently reporting two of three files as
+    declined when scaffold would have written them.
+    """
+    gated = _gated(tmp_path / "coupling")
+    entries = {e["path"]: e["action"] for e in scaffold.plan(gated, _config())}
+    assert {entries[name] for name in scaffold.OWNED} == {"decline"}, entries
+
+    # Positive control: the same call on an ungated repo replaces all of them, so the
+    # assertion above is about the gate and not about `plan` declining everything.
+    plain = tmp_path / "coupling-plain"
+    plain.mkdir(parents=True, exist_ok=True)
+    plain_entries = {e["path"]: e["action"] for e in scaffold.plan(plain, _config())}
+    assert {plain_entries[name] for name in scaffold.OWNED} == {"replace"}, plain_entries
+
+
 # ------------------------------------------------- one gap, one fix, one line
 
 

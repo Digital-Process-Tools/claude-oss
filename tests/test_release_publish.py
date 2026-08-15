@@ -750,3 +750,119 @@ def test_the_receipt_never_lets_a_stranger_forge_a_verdict_line(tmp_path):
     # Positive control: the receipt is not empty, so the absence above is a
     # measurement rather than a receipt that printed nothing at all.
     assert "--verify-tag" in done.stdout
+
+
+# ------------------------------------------- a config that is not an object (#126)
+#
+# `main` reads `.oss.json` with a bare `json.load`, deliberately bypassing
+# `oss_config.load` so that validation of keys this script never touches cannot block
+# a release. What it never asked is whether the parsed document is a mapping at all.
+# `release_publish_policy` then does `config.get("release") if isinstance(config, dict)
+# else None`, falls through to the shipped defaults, and the run reports *skipped by
+# policy* with a sentence about `release.create_release` being unset -- about a file
+# that states no policy because it is not a document that can state one.
+#
+# The tag ships and the Release silently does not, which is the single outcome the
+# three-state design of this script exists to prevent.
+
+
+@pytest.mark.parametrize("document", [[], "x", None, 42, 3.5, True])
+def test_a_non_object_config_is_could_not_run_and_never_a_policy_skip(document):
+    """Every non-mapping JSON document reaches `could-not-run`, and the reason names
+    what was found rather than a key the document could not have set.
+    """
+    plan = release_publish.plan(
+        config=document, tag="v1.0.0", notes_path="/tmp/n.md", gh="/usr/bin/gh"
+    )
+    assert plan["state"] == release_publish.STATE_COULD_NOT_RUN, plan
+    assert plan["state"] != release_publish.STATE_SKIPPED
+    assert "create_release" not in plan["reason"], plan["reason"]
+    assert type(document).__name__ in plan["reason"], plan["reason"]
+
+    # The positive control, in the same test rather than trusted from elsewhere: a
+    # well-formed config still builds a command. Without it, a `plan` that returned
+    # could-not-run for everything -- including a release that should ship -- passes
+    # every assertion above.
+    good = release_publish.plan(
+        config=_config(create_release=True, draft=False, latest=True),
+        tag="v1.0.0",
+        notes_path="/tmp/n.md",
+        gh="/usr/bin/gh",
+    )
+    assert good["state"] == release_publish.STATE_CREATE, good
+    assert "--verify-tag" in good["command"]
+
+
+def test_a_real_policy_skip_is_still_a_skip_and_not_a_failure():
+    """The negative control for the test above. Folding a structurally wrong config
+    into `could-not-run` must not drag a repo that genuinely tags without publishing
+    along with it -- that decision is not a failure and must keep exit 4.
+    """
+    plan = release_publish.plan(
+        config=_config(create_release=False),
+        tag="v1.0.0",
+        notes_path="/tmp/n.md",
+        gh="/usr/bin/gh",
+    )
+    assert plan["state"] == release_publish.STATE_SKIPPED
+    assert release_publish._exit_code(plan["state"]) == release_publish.EXIT_SKIPPED
+
+
+def test_the_cli_exits_could_not_run_for_a_config_that_is_not_an_object(tmp_path):
+    """End to end, because the exit code is what a shell reads. 3, not 4: a release
+    command that sees 4 stops looking, having been told a decision was made.
+    """
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+    (broken / ".oss.json").write_text("[]", encoding="utf-8")
+    done = _run(
+        ["--repo", str(broken), "--version", "0.3.0", "--tag", "v0.3.0", "--gh", "gh", "--json"],
+        cwd=tmp_path,
+    )
+    assert done.returncode == release_publish.EXIT_COULD_NOT_RUN, done.stdout
+    assert done.returncode != release_publish.EXIT_SKIPPED
+    assert "Traceback" not in done.stderr
+    payload = json.loads(done.stdout)
+    assert payload["state"] == release_publish.STATE_COULD_NOT_RUN
+    assert "list" in payload["reason"]
+
+    # Positive control in the same fixture: a well-formed config in the same shape of
+    # tree still reaches `create` and exits 0. An assertion that a broken config does
+    # not publish also passes when nothing publishes at all.
+    good = _run(
+        [
+            "--repo",
+            str(_repo(tmp_path / "good", create_release=True, draft=False, latest=True)),
+            "--version",
+            "0.3.0",
+            "--tag",
+            "v0.3.0",
+            "--gh",
+            "gh",
+            "--json",
+        ],
+        cwd=tmp_path,
+    )
+    assert good.returncode == release_publish.EXIT_OK, good.stdout
+    assert json.loads(good.stdout)["state"] == release_publish.STATE_CREATE
+
+
+def test_a_json_null_config_names_the_type_rather_than_an_empty_reason(tmp_path):
+    """`json.load` returns `None` for a file containing `null`, which the reader's
+    `config is None` arm already caught -- and reported as `could not read <path> --`
+    with nothing after the dash, because there was no exception to name. A receipt
+    that trails off is a receipt nobody can act on.
+    """
+    root = tmp_path / "nullish"
+    root.mkdir()
+    (root / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+    (root / ".oss.json").write_text("null", encoding="utf-8")
+    done = _run(
+        ["--repo", str(root), "--version", "0.3.0", "--tag", "v0.3.0", "--gh", "gh", "--json"],
+        cwd=tmp_path,
+    )
+    assert done.returncode == release_publish.EXIT_COULD_NOT_RUN
+    reason = json.loads(done.stdout)["reason"]
+    assert "NoneType" in reason, reason
+    assert not reason.rstrip().endswith("--"), reason
