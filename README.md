@@ -85,7 +85,7 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 | `/oss:triage` | One triage sweep — priority, lane, milestone, the clusters one change would fix, the cohort burn-down with the limit it was counted under, and what the board is lying about. |
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
 | `/oss:release` | Gates, version sites, tag, and — where `.oss.json` says so — the GitHub Release, notes and all. |
-| `/oss:doctor` | Config, dependencies, clone, worktree root, state file — including whether `/oss:tick` can actually read it, which is not the same question as whether it is there. Exits 0 always. |
+| `/oss:doctor` | Config, dependencies, clone, worktree root, state file — including whether `/oss:tick` can actually read it, which is not the same question as whether it is there — and which watch channel this repo resolves to, which decides whether its board is its own fleet or somebody else's. Exits 0 always. |
 
 ## Status
 
