@@ -13,6 +13,15 @@ Two decisions worth stating, because both are refusals:
 Timestamps are arguments, never read from the clock in here. A function that reads the
 clock cannot be tested for what it writes, and this file is evidence.
 
+The same refusal is why ``intake`` takes its two counts as arguments rather than asking
+the forge for them. Beside the decision, each entry can carry the tick's **intake**: how
+many issues the loop filed per pull request it merged, as ``detail["intake"]``. The pair
+is stored and the quotient derived, so a run of entries can be re-added -- 1/2 and 3/4 do
+not average to the ratio over six pull requests. ``intake_trend`` does the re-adding and
+``intake_line`` renders one, and both keep four states apart, of which the two that get
+lost are ``could-not-count`` (never zero) and ``partial`` (a real sum that is not the
+range's total).
+
 Python 3.9 compatible.
 """
 
@@ -363,7 +372,26 @@ def _main(argv=None):
     )
     args = parser.parse_args(argv)
 
+    intake_flags = [
+        name
+        for name, value in (
+            ("--filings", args.filings),
+            ("--merged-prs", args.merged_prs),
+            ("--window", args.window),
+            ("--intake-why", args.intake_why),
+        )
+        if value is not None
+    ]
+
     try:
+        if (args.read or args.last or args.trend) and intake_flags:
+            # Accepting and dropping them would discard a count somebody took, at exit
+            # 0, with the reading mode's own output looking entirely normal.
+            print(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(intake_flags))
+            )
+            return 1
         if args.read:
             print(json.dumps(read(args.path), indent=2))
             return 0
@@ -385,20 +413,11 @@ def _main(argv=None):
             print("FAIL --at is required with --decision; the timestamp is not read from a clock")
             return 1
         detail = json.loads(args.detail) if args.detail else None
-        given = [
-            name
-            for name, value in (
-                ("--filings", args.filings),
-                ("--merged-prs", args.merged_prs),
-                ("--window", args.window),
-            )
-            if value is not None
-        ]
-        if given:
+        if intake_flags:
             missing = [
                 name
                 for name in ("--filings", "--merged-prs", "--window")
-                if name not in given
+                if name not in intake_flags
             ]
             if missing:
                 # Half a record is worse than none: a numerator with no denominator and

@@ -88,21 +88,30 @@ behind presets many repos never enable; check before writing an instruction that
   *concept*, not the issue's spelling of it.
 - **Rank by what cannot be undone**, then by who is walking away:
 
-  | Class | Blocks a release? |
-  | --- | --- |
-  | `destroys` — data gone, no copy anywhere | yes, unconditionally |
-  | `discloses` — a secret or a private path leaves the machine | yes, unconditionally |
-  | `containment (read)` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally |
-  | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally |
-  | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally |
-  | `ships-local-state` — a value true of exactly one checkout, baked into the artifact every user installs | yes, unconditionally |
-  | `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a filed issue |
-  | `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a filed issue |
-  | `fails-to-preserve` | can ship behind a filed issue |
-  | `misreports` | can ship behind a filed issue |
+  | Class | Blocks a release? | Embargo when reported upstream? |
+  | --- | --- | --- |
+  | `destroys` — data gone, no copy anywhere | yes, unconditionally | yes |
+  | `discloses` — a secret or a private path leaves the machine | yes, unconditionally | yes |
+  | `containment (read)` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally | yes |
+  | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally | yes |
+  | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally | yes — the attacker's delivery channel *is* a public tracker, so the writeup is the payload |
+  | `ships-local-state` — a value true of exactly one checkout, baked into the artifact every user installs | yes, unconditionally | no — already public the moment it ships, so there is no window of private knowledge to protect |
+  | `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a filed issue | no |
+  | `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a filed issue | no |
+  | `fails-to-preserve` | can ship behind a filed issue | no |
+  | `misreports` | can ship behind a filed issue | no |
 
   **This table is the only place the rows are written down.** The audit agents reference it rather
   than restating it; a second copy drifts, and the copy that drifts is the one quoted afterwards.
+
+  **The two verdict columns are two different questions, and they disagree on one row.** Blocking a
+  tag asks *what may this project ship*. The embargo column asks *should a reporter hold disclosure*
+  — whether public knowledge, before a fix exists, hands somebody a working recipe against installed
+  users. `ships-local-state` is the row where those come apart: it blocks a tag because **the release
+  is the mechanism by which it takes effect**, and that is an argument about our own artifact. It is
+  public the instant it ships, so there is no private window an embargo could protect, and routing it
+  to somebody's private channel over-applies a promise about their disclosure timing. Read the column
+  you actually need; a finding's row answers both questions and it answers them differently.
 
   **The rule that decides which row a finding belongs in: each row earns its place because each
   invites a different fix.** So when two rows both look like they fit, name the fix each would send a
@@ -186,14 +195,18 @@ Within that set, two cases and they are not the same duty:
   no relationship, and a public tracker is a **disclosure channel** — say which of the two cases you
   are in before you open anything.
 
-**The security exception is not optional, and it is a read rather than a list.** A finding in a row
-the ranking table above marks blocking does not go onto somebody else's public tracker as a reflex.
-It goes down the **embargo** path — whatever private reporting channel that project's own security
-policy names, which is a security tab, a disclosure address or a form rather than the word
-*embargo*, so read the policy instead of grepping for the term. Route those rows there and
-everything else to its issue tracker. **Read the rows off the table when you route** — a restated
-copy has already drifted out of step with a security policy that restated it, and the drifted copy
-is the one that gets quoted.
+**The security exception is not optional, and it is a read rather than a list.** A finding whose row
+the ranking table above answers **yes** in its *embargo* column does not go onto somebody else's
+public tracker as a reflex. It goes down the **embargo** path — whatever private reporting channel
+that project's own security policy names, which is a security tab, a disclosure address or a form
+rather than the word *embargo*, so read the policy instead of grepping for the term. Route those
+rows there and everything else to its issue tracker.
+
+**Route on the embargo column, not on the blocking one — they are not the same set.** Blocking is
+about what we may ship; embargo is about whether *their* users are exposed while a fix is written,
+and one row is blocking and not embargo for the reason given under the table. **Read the column off
+the table when you route** — a restated copy has already drifted out of step with a security policy
+that restated it, and the drifted copy is the one that gets quoted.
 
 Three outcomes, and the third is what actually happened:
 
@@ -712,6 +725,10 @@ describes the schedule instead of the next action. Waiting on CI is not a reason
 The `state_file` named in `.oss.json` — every decision and its reasoning, written every tick, read
 first every tick. Keep entries short: the decision and the one reason for it. Reasoning that only
 matters to the PR belongs in the PR body.
+
+Entries also carry one machine-readable field, and only one: `detail.intake`, the tick's counts and
+window as written above under *Intake: filings per merged pull request*. It is there so the ratio
+can be re-added across ticks rather than re-asserted — prose cannot be summed.
 
 **The handoff is not the repo.** The state file records what was believed when it was written. The
 first call of every session is the repo itself: `git log --oneline -1`, `gh-prs`, `gh-issues`.

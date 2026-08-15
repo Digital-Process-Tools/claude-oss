@@ -24,6 +24,15 @@ That is a real limit and it cuts both ways -- an aggregation described in prose 
 fence, as something to run, is invisible here. Both arms are fixtured below, so the
 boundary is a decision on record rather than an accident of a regex.
 
+**And a command is a statement, not a neighbourhood.** The first cut of this scanner
+asked whether a `--slurp` sat within 200 characters of a `--paginate`, which is wide
+enough to span a wrapped argument list and therefore wide enough to reach the *next*
+command: one fixed call two lines below a broken one silently cleared the broken one --
+the shape a partial migration makes, and the exact case this file exists for. Markdown
+had the mirror bug, dropping the prose between two fences until unrelated blocks were
+adjacent. Both are gone: a group is one fenced block or one script, and a command inside
+it runs until its brackets close.
+
 ## Exemptions are named, and a stale one fails
 
 This file is itself full of the shape, on purpose. It is listed in ``EXEMPT`` with the
@@ -56,16 +65,19 @@ COULD_NOT_SCAN = "could-not-scan"
 # label -> why the shape being there is correct. Nothing else may carry it.
 EXEMPT = {
     "tests/test_paginated_counts.py": (
-        "the fixtures below are the defect by construction -- they are what proves the "
-        "scanner can see anything at all"
+        "the fixtures below, and the docstring above, are the defect by construction -- "
+        "they are what proves the scanner can see anything at all. "
+        "`test_the_scanner_flags_its_own_bad_fixture` pins which line the exemption is "
+        "covering, because an exemption satisfied by some other line in the same file "
+        "is a hole wearing a decision's clothes"
     ),
 }
 
-# How far either side of a `--paginate` an aggregation still counts as the same command.
-# Argument lists in Python span lines, so a line-local match would miss the shape it is
-# looking for; too wide a window invents pairs. 200 characters is about a wrapped
-# argument list.
-_WINDOW = 200
+# A statement that has not closed its brackets by this many lines is cut anyway. A
+# bracket inside a string literal can leave the count permanently open, and an
+# unterminated statement would swallow the rest of the file into one command -- which
+# is the false-positive engine, not a conservative default.
+_MAX_STATEMENT_LINES = 8
 
 _PAGINATE = re.compile(r"--paginate")
 # `--jq length`, `--jq '.[] | length'`, `-q length`, `| jq length`. Quoting varies and
@@ -80,25 +92,58 @@ _MARKDOWN_SUFFIXES = (".md", ".markdown")
 _SCRIPT_SUFFIXES = (".py", ".sh", ".yml", ".yaml", ".bash")
 
 
-def command_units(label, text):
-    """The lines of ``text`` that are commands, as ``(line number, line)``.
+def command_groups(label, text):
+    """The blocks of ``text`` that hold commands, each a list of ``(number, line)``.
 
-    Markdown contributes only fenced lines. Everything else contributes every line -- a
-    comment in a script carrying a runnable command is still a command somebody copies.
+    Markdown contributes **one group per fenced block**. Prose between fences is not a
+    command, and two fences are two contexts -- collapsing them into one string brought
+    unrelated blocks into each other's reach. Everything else is one group; a script is
+    one context, and ``statements`` separates the commands inside it.
     """
     lines = text.splitlines()
     if not label.lower().endswith(_MARKDOWN_SUFFIXES):
-        return list(enumerate(lines, 1))
+        return [list(enumerate(lines, 1))]
 
-    units = []
+    groups = []
+    current = []
     fenced = False
     for number, line in enumerate(lines, 1):
         if line.lstrip().startswith("```"):
+            if fenced:
+                groups.append(current)
+                current = []
             fenced = not fenced
             continue
         if fenced:
-            units.append((number, line))
-    return units
+            current.append((number, line))
+    if current:
+        groups.append(current)
+    return [group for group in groups if group]
+
+
+def statements(group):
+    """Split one group into commands, on bracket depth.
+
+    A command is a line, unless its brackets are still open -- which is what an argument
+    list wrapped across lines looks like, and the whole reason a line-local match was
+    not enough. Proximity is *not* enough either, and that was the bug: a `--slurp` on
+    the following command sat inside a 200-character window and cleared a genuine
+    finding on the one above it. Adjacency in characters is not membership in a command.
+    """
+    commands = []
+    current = []
+    depth = 0
+    for number, line in group:
+        current.append((number, line))
+        depth += sum(line.count(char) for char in "([{")
+        depth -= sum(line.count(char) for char in ")]}")
+        if depth <= 0 or len(current) >= _MAX_STATEMENT_LINES:
+            commands.append(current)
+            current = []
+            depth = 0
+    if current:
+        commands.append(current)
+    return commands
 
 
 def scan(sources):
@@ -112,19 +157,18 @@ def scan(sources):
 
     findings = []
     for label in sorted(readable):
-        units = command_units(label, readable[label])
-        joined = "\n".join(line for _, line in units)
-        starts = []
-        cursor = 0
-        for number, line in units:
-            starts.append((cursor, number, line))
-            cursor += len(line) + 1
-        for match in _PAGINATE.finditer(joined):
-            window = joined[max(0, match.start() - _WINDOW) : match.end() + _WINDOW]
-            if _SLURP.search(window):
-                continue
-            if _JQ.search(window) and _LENGTH.search(window):
-                number, line = _locate(starts, match.start())
+        for group in command_groups(label, readable[label]):
+            for command in statements(group):
+                text = "\n".join(line for _, line in command)
+                if not _PAGINATE.search(text) or _SLURP.search(text):
+                    continue
+                if not (_JQ.search(text) and _LENGTH.search(text)):
+                    continue
+                number, line = next(
+                    (number, line)
+                    for number, line in command
+                    if _PAGINATE.search(line)
+                )
                 findings.append((label, number, line.strip()))
 
     if unreadable or not readable:
@@ -139,17 +183,6 @@ def scan(sources):
         "scanned": len(readable),
         "unreadable": unreadable,
     }
-
-
-def _locate(starts, position):
-    """The ``(line number, line)`` whose span contains ``position``."""
-    found = (0, "")
-    for start, number, line in starts:
-        if start <= position:
-            found = (number, line)
-        else:
-            break
-    return found
 
 
 # ------------------------------------------------------------------ the scanner itself
@@ -200,6 +233,64 @@ def test_markdown_inside_a_fence_is_scanned():
     assert result["findings"][0][1] == 3
 
 
+def test_a_slurp_on_a_neighbouring_command_does_not_excuse_this_one():
+    """The shape a partial migration makes: one call fixed, the one above it not.
+
+    Reviewed on this branch and reproduced -- a character window wide enough to span a
+    wrapped argument list is also wide enough to reach the next command, so a `--slurp`
+    two lines away silently cleared a genuine finding. Both arms in one fixture: the
+    fixed call is not a finding and the broken one is.
+    """
+    script = "\n".join(
+        [
+            "count1=$(gh api repos/o/r/issues --paginate --jq 'length')",
+            "count2=$(gh api repos/o/r/pulls --paginate --slurp --jq 'length')",
+        ]
+    )
+    result = scan({"deploy.sh": script})
+    assert result["state"] == FINDINGS
+    assert [number for _, number, _ in result["findings"]] == [1]
+
+
+def test_two_unrelated_fenced_blocks_are_not_one_command():
+    """Markdown drops the prose between fences, which brought two independent blocks
+    into each other's window. A bare `--paginate` in one and an unrelated `--jq length`
+    in the other is not a per-page aggregation."""
+    markdown = "\n".join(
+        [
+            "First:",
+            "```bash",
+            "gh api repos/o/r/issues --paginate > pages.ndjson",
+            "```",
+            "Then, separately:",
+            "```bash",
+            "gh api repos/o/r/labels --jq length",
+            "```",
+        ]
+    )
+    assert scan({"guide.md": markdown})["state"] == CLEAN
+
+
+def test_the_scanner_flags_its_own_bad_fixture():
+    """The exemption for this file has to cover the fixture it claims to cover.
+
+    It was passing on the module docstring instead, while the fixture two lines below
+    `GOOD_SLURPED` escaped -- an exemption that reads as covering one thing and covers
+    another is a hole wearing a decision's clothes.
+    """
+    source = (REPO_ROOT / "tests" / "test_paginated_counts.py").read_text(
+        encoding="utf-8"
+    )
+    lines = source.splitlines()
+    bad_line = next(
+        number
+        for number, line in enumerate(lines, 1)
+        if line.startswith("BAD = ")
+    )
+    flagged = {number for _, number, _ in scan({"self.py": source})["findings"]}
+    assert bad_line in flagged, "the BAD fixture at line {} escaped".format(bad_line)
+
+
 def test_a_source_that_would_not_read_is_could_not_scan_and_never_clean():
     result = scan({"fine.sh": GOOD_PLAIN, "broken.sh": None})
     assert result["state"] == COULD_NOT_SCAN
@@ -223,20 +314,26 @@ def _tracked_sources():
     # `--others --exclude-standard` as well as the cache: a sweep that read only what
     # is committed answers clean about a script somebody just wrote, which is the exact
     # shape of absence this file exists to refuse.
-    done = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(REPO_ROOT),
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        done = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # A `git` that will not spawn has to reach this function's own "could not look"
+        # answer. Left uncaught it raises out of the fixture at collection time, which
+        # is a crash where a stated third state belongs.
+        return None
     if done.returncode != 0:
         return None
     # Bytes, decoded here rather than by `universal_newlines=True`. What this call
@@ -269,6 +366,31 @@ def swept():
     if sources is None:
         pytest.skip("git ls-files did not answer, so this sweep read nothing")
     return scan(sources)
+
+
+def test_an_unspawnable_git_reaches_the_skip_rather_than_a_traceback(monkeypatch):
+    """The platform band's own item: a binary that will not spawn must reach the "the
+    tool failed" arm, not raise past it.
+
+    Only `returncode` was handled, so a `PATH` without `git` -- a stripped container, a
+    minimal image -- crashed at collection instead of skipping with a reason. No CI leg
+    can catch this: every leg runs `actions/checkout`, which guarantees `git`.
+
+    Both arms: the raising spawn skips, and a spawn that merely exits non-zero still
+    returns `None` rather than an empty scan that would read as clean.
+    """
+    def raises(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory: 'git'")
+
+    monkeypatch.setattr(subprocess, "run", raises)
+    assert _tracked_sources() is None
+
+    class Failed(object):
+        returncode = 128
+        stdout = b""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Failed())
+    assert _tracked_sources() is None
 
 
 def test_the_sweep_actually_read_the_tree(swept):

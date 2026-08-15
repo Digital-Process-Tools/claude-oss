@@ -407,6 +407,20 @@ def test_the_cli_refuses_half_an_intake_record(tmp_path, capsys):
     assert not path.exists()
 
 
+def test_a_reason_with_no_counts_beside_it_is_refused(tmp_path, capsys):
+    """`--intake-why` alone is a reason for a measurement nobody took, and it used to be
+    accepted and dropped: the record trigger only watched the other three flags."""
+    path = tmp_path / "state.json"
+    assert (
+        oss_state._main(
+            [str(path), "--decision", "d", "--at", STAMP, "--intake-why", "gh was down"]
+        )
+        == 1
+    )
+    assert "--filings" in capsys.readouterr().out
+    assert not path.exists()
+
+
 def test_the_cli_refuses_a_count_that_is_not_a_number_rather_than_guessing(tmp_path):
     path = tmp_path / "state.json"
     with pytest.raises(SystemExit):
@@ -425,6 +439,38 @@ def test_the_cli_refuses_a_count_that_is_not_a_number_rather_than_guessing(tmp_p
                 WINDOW,
             ]
         )
+
+
+def test_intake_flags_on_a_read_mode_are_refused_rather_than_ignored(tmp_path, capsys):
+    """Counts passed to `--read` went nowhere and said nothing, which is a count
+    somebody took and the tool discarded. Both arms: refused on a read mode, accepted
+    on the append mode they belong to."""
+    path = tmp_path / "state.json"
+    assert (
+        oss_state._main(
+            [str(path), "--read", "--filings", "6", "--merged-prs", "11", "--window", WINDOW]
+        )
+        == 1
+    )
+    assert "only recorded with --decision" in capsys.readouterr().out
+    assert (
+        oss_state._main(
+            [
+                str(path),
+                "--decision",
+                "d",
+                "--at",
+                STAMP,
+                "--filings",
+                "6",
+                "--merged-prs",
+                "11",
+                "--window",
+                WINDOW,
+            ]
+        )
+        == 0
+    )
 
 
 def test_the_cli_prints_the_trend_over_the_file(tmp_path, capsys):
