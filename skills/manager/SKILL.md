@@ -58,6 +58,7 @@ label that does not exist on the repo.
 | PR state + summed check tally | `gh-pr:N` / `gh-pr:N:status` |
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
+| Worktree ownership + merge state | `git-worktrees`, `git-worktrees:PATH` — the raw listing is refused |
 | Filing | `gh-issue-create:@FILE` |
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
@@ -533,8 +534,16 @@ is not on this list is just a way of not fixing things.
   both and closes only A, so "each number has its own `#`" is not the rule and satisfying it is not
   enough. A check that greps a *fragment* of the line cannot audit either case. Read the whole line.
 - **`Part of` is a decision, not a defect.** Do not close such an issue because the work shipped.
-- **Delete merged worktrees** with `git worktree remove`, not `prune` — `prune` will not touch a
-  directory that still exists.
+- **Delete merged worktrees**, but read ownership before you reap. `git-worktrees` boards every
+  tree with an occupancy verdict and a merge state; `git-worktrees:PATH` gates one, and supertool's
+  exit is 0 only for `idle`. Both columns have three states and the third is never a yes: `cannot
+  tell` is not `idle`, and `merge unknown` is not `merged`. The merge column consults a merged PR as
+  well as ancestry, because **ancestry cannot see a squash merge** — the same blind spot the branch
+  bullet below names, on the same refs. Then `git worktree remove`, not `prune` — `prune` will not
+  touch a directory that still exists. A shell that has to branch on the verdict must run the preset
+  `worktrees.py` itself: supertool collapses the exit to 0/1, so `cannot tell` (2) arrives
+  indistinguishable from `occupied` (1), and treating both as "not idle" is the only safe read
+  through supertool.
 - **Delete merged branches through the API**, `gh api -X DELETE repos/OWNER/REPO/git/refs/heads/<b>`,
   never `git push --delete` in a loop. And note `git branch -r --merged` **cannot see squash
   merges** — it reported 4 on a repo holding 96 merged branches. Intersect the live branch list with
@@ -617,8 +626,12 @@ silent total outage.
   read can end without a marker.
 - **An agent is live until it has told you otherwise.** A surviving worktree is not evidence of a
   live agent; an *empty* worktree is not evidence of a dead one, because the commit is the last thing
-  an agent does. `ps` and `lsof` cannot see a sandboxed agent at all — an empty scan is not weak
-  evidence of death, it is no evidence. A task notification is the only thing that ends a run, and it
+  an agent does. `git-worktrees` performs that scan so you do not hand-roll it — tree activity plus
+  the process table — and reports what it looked at, in three states. It does not make the scan
+  conclusive: `ps` and `lsof` cannot see a sandboxed agent at all, so a scan holding nobody is not
+  weak evidence of death, it is no evidence. That is why the op's third state exists and why `cannot
+  tell` must not collapse into `idle`. And `idle` itself is a reading of the *tree* at one instant,
+  never a statement about the *run*: a task notification is the only thing that ends a run, and it
   survives a `/clear`. Until it arrives, **never brief a second agent into that worktree**: take the
   work as it stands, or wait.
 - **Never run anything inside an agent's active worktree** — not a suite, not a cleanup, not a merge.
