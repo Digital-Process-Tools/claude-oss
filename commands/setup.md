@@ -46,6 +46,21 @@ config cannot show:
   different layout, the emitted path is very likely wrong; check what is actually
   there before trusting it (#85).
 
+**If a file already stands where `state_file` points, read it before the first tick.** A repo
+that ran a maintainer loop before this plugin existed has a history in whatever shape that loop
+wrote — the one seen in the wild is an object keyed `tick_<ISO>`, and `/oss:tick` needs a list of
+entries. Setup is not the place to convert it: setup is a one-shot step, it does not see the file
+on a repo it has already onboarded, and the conversion is somebody's history rather than a
+default. Ask instead, and if the answer is yes, run the conversion where its receipt is visible:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --migrate
+```
+
+It keeps the original at `<state_file>.pre-migration`, refuses rather than overwriting an earlier
+one, and refuses any shape it would have to guess at. `/oss:doctor` reports the same thing at any
+later point, and so does step 1 of a tick (#149).
+
 The rules that matter, all enforced by `scripts/oss_config.py`:
 
 - **Label spellings come off the repo.** One repo spells it `priority-high`, a sibling spells it

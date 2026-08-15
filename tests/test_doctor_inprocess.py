@@ -102,11 +102,55 @@ def test_state_file_absence_is_a_warning_naming_the_first_tick(tmp_path):
     assert "first tick" in message
 
 
+def _state_file(tmp_path, body):
+    directory = tmp_path / ".max"
+    directory.mkdir(exist_ok=True)
+    path = directory / "oss-watch.json"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
 def test_state_file_present_is_ok(tmp_path):
-    (tmp_path / ".max").mkdir()
-    (tmp_path / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
+    _state_file(tmp_path, "[]")
     doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
     assert doctor.FINDINGS[-1][0] == "OK"
+
+
+# --- #149: present is not the question ---------------------------------------------
+
+
+def test_state_file_present_but_unreadable_by_the_writer_is_not_ok(tmp_path):
+    """A pre-plugin state file is a dict keyed `tick_<ISO>`; `oss_state` wants a list.
+
+    Doctor used to report it OK on `path.is_file()` alone, so the one step that would
+    have caught it before a tick's work was spent reported the file as fine. The
+    readable half sits in the same function: an assertion that the dict is not OK also
+    passes when nothing at all is OK.
+    """
+    _state_file(tmp_path, json.dumps({"tick_2026-08-01T09:00:00Z": {"decision": "x"}}))
+    doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "--migrate" in message
+
+    _state_file(tmp_path, json.dumps([{"at": "2026-08-01T09:00:00Z", "decision": "x"}]))
+    doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
+    assert doctor.FINDINGS[-1][0] == "OK"
+
+
+def test_state_file_that_cannot_be_read_at_all_warns_rather_than_raising(tmp_path):
+    """Exit 0 always, one VERDICT line -- a check that raises takes the contract out.
+
+    A directory standing where the state file should be fails the read on every
+    platform without a permission fixture: POSIX raises `IsADirectoryError`, Windows
+    raises `PermissionError`, both are `OSError`, and neither is `FileNotFoundError`.
+    """
+    (tmp_path / ".max").mkdir()
+    (tmp_path / ".max" / "oss-watch.json").mkdir()
+    doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "not written yet" not in message
 
 
 # --- #62: the four checks that depend on the config need a third state ------------
@@ -133,8 +177,7 @@ def test_check_state_file_says_unmeasured_when_the_config_was_not_found(tmp_path
     assert state == "WARN"
     assert "state_file" in message and "not checked" in message
 
-    (tmp_path / ".max").mkdir()
-    (tmp_path / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
+    _state_file(tmp_path, "[]")
     doctor.check_state_file(tmp_path, {"state_file": ".max/oss-watch.json"})
     assert doctor.FINDINGS[-1][0] == "OK"
 
@@ -505,7 +548,10 @@ def _fully_configured(root):
     """
     (root / "wt").mkdir(exist_ok=True)
     (root / ".max").mkdir(exist_ok=True)
-    (root / ".max" / "oss-watch.json").write_text("{}", encoding="utf-8")
+    # A list, because that is what /oss:tick writes and reads. It said `{}` until #149 --
+    # this suite's own idea of a fully configured repo carried the one shape the tick
+    # cannot use, and the doctor called it OK.
+    (root / ".max" / "oss-watch.json").write_text("[]", encoding="utf-8")
     # config.json lives in .claude/remember/; sessions AND identity go to the data_dir
     # it names. Identity in the config dir is only read when the plugin is installed
     # there, which this fixture does not do -- so putting it there would describe a repo
