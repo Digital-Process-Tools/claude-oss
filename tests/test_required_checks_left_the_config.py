@@ -252,9 +252,13 @@ def test_no_command_doc_still_tells_a_maintainer_to_set_the_number():
     it in their `.oss.json` needs to be told what happened to it -- but no doc may
     still carry the old remedy, which was `gh api .../check-runs`, then set it by hand.
     """
+    docs = sorted((REPO_ROOT / "commands").glob("*.md"))
+    # An empty glob makes every assertion below vacuously true -- a sweep that could
+    # not look, rendering as a sweep that found nothing.
+    assert docs, "no command docs found; the sweep below would pass over anything"
     offenders = sorted(
         str(path.relative_to(REPO_ROOT))
-        for path in (REPO_ROOT / "commands").glob("*.md")
+        for path in docs
         if "check-runs" in path.read_text(encoding="utf-8")
     )
     assert offenders == [], offenders
@@ -286,9 +290,14 @@ def test_the_docs_that_still_name_the_key_say_it_was_deleted():
     this test exists to catch -- and asserting only the absence above would pass over
     a doc that still presents the key as live configuration.
     """
-    for path in sorted((REPO_ROOT / "commands").glob("*.md")):
+    docs = sorted((REPO_ROOT / "commands").glob("*.md"))
+    assert docs, "no command docs found; the loop below would inspect nothing"
+    named = [p for p in docs if "required_checks" in p.read_text(encoding="utf-8")]
+    # The loop is over docs that mention the key, so it inspects nothing if none do.
+    # That is a legitimate end state -- but it must be reached by measurement, not by
+    # a glob that came back empty, so both halves are pinned.
+    assert named, "no command doc names the key; a reader arriving with it is told nothing"
+    for path in named:
         body = path.read_text(encoding="utf-8")
-        if "required_checks" not in body:
-            continue
         assert "#113" in body, path.name
         assert "deleted" in body, path.name

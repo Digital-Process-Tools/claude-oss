@@ -33,7 +33,6 @@ def _valid():
         "changelog_dir": "changelog.d",
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 4},
         "state_file": ".max/oss-watch.json",
     }
 
