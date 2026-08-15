@@ -39,7 +39,6 @@ def _write_config(root, **overrides):
         "changelog_dir": None,
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 0},
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides)
@@ -139,12 +138,17 @@ def test_the_plan_names_the_test_gate_that_does_not_exist(tmp_path, capsys):
     assert "runs it" in out
 
 
-def test_apply_reports_the_stale_required_checks_count(tmp_path, capsys):
+def test_apply_says_nothing_about_a_leg_count(tmp_path, capsys):
+    """#113 deleted `ci.required_checks`, and with it the finding that reported the
+    value as stale. The positive control is the assertion below it: the run still
+    prints findings, so this is a checker that went away rather than output that did.
+    """
     config = _write_config(tmp_path)
     scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
     out = capsys.readouterr().out
-    assert "required_checks" in out
-    assert "check-runs" in out
+    assert "required_checks" not in out
+    assert "check-runs" not in out
+    assert "no-changelog" in out, out
 
 
 def test_apply_names_the_escape_hatch_label_it_will_not_create(tmp_path, capsys):

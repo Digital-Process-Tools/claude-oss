@@ -18,9 +18,6 @@
     "lanes": []
   },
   "milestones": [],
-  "ci": {
-    "required_checks": 3
-  },
   "release": {
     "tag_pattern": "v{version}",
     "merge_method": "squash",

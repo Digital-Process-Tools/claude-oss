@@ -31,11 +31,28 @@ REQUIRED_KEYS = {
     "changelog_dir",
     "docs_targets",
     "labels",
-    "ci",
     "state_file",
 }
 
 OPTIONAL_KEYS = {"milestones", "notes", "release"}
+
+# Keys this plugin used to write and no longer reads. Tolerated, never emitted, never
+# validated -- a type check over a value with no consumer is asserting against nothing.
+#
+# `ci.required_checks` was deleted in #113. It was a measurement that cannot be taken:
+# the only quantity derivable without a run is the workflow *job declaration* count, and
+# this repo's own config was the proof that this is not the merge gate's number -- three
+# declarations against fourteen check runs, because a 3x4 matrix expands one declaration
+# into twelve. A guard asserting the config matched the declarations would have gone
+# green over a value wrong by eleven. Beyond a static matrix it is worse still: a
+# reusable workflow declares nothing locally, an organisation- or app-level check never
+# appears in `.github/workflows/` at all, and a run that has not happened declares
+# nothing either. The number is read live off the pull request, where it exists.
+#
+# They stay in KNOWN_KEYS on purpose. Every `.oss.json` an earlier version wrote still
+# carries the block, and a validator that starts refusing it turns a cleanup into a
+# breaking change for repos that did nothing.
+LEGACY_KEYS = {"ci"}
 
 # The config is two files because its keys have two different owners (#34).
 #
@@ -116,7 +133,7 @@ TAG_SCHEMES = [
 # type was checked. A present-but-empty key is the same absence, one layer down.
 NULLABLE_KEYS = {"test_command", "changelog_dir"}
 
-KNOWN_KEYS = REQUIRED_KEYS | OPTIONAL_KEYS
+KNOWN_KEYS = REQUIRED_KEYS | OPTIONAL_KEYS | LEGACY_KEYS
 PROJECT_KEYS = KNOWN_KEYS - LOCAL_KEYS
 
 # The one nullable release key that gets a default rather than a stop (#34).
@@ -749,11 +766,6 @@ def validate(config):
                 if not isinstance(labels.get(field), list):
                     problems.append("labels.{}: expected a list (an empty one is fine)".format(field))
 
-    ci = config.get("ci")
-    if ci is not None:
-        if not isinstance(ci, dict) or not isinstance(ci.get("required_checks"), int):
-            problems.append("ci.required_checks: expected an integer")
-
     for field in ("version_sites", "docs_targets"):
         if field in config and not isinstance(config[field], list):
             problems.append("{}: expected a list".format(field))
@@ -911,7 +923,6 @@ def build(probe):
 
     labels = list(probe.get("labels") or [])
     files = list(probe.get("files") or [])
-    jobs = list(probe.get("workflow_jobs") or [])
 
     test_command = None
     for marker, command in TEST_COMMANDS:
@@ -962,7 +973,8 @@ def build(probe):
         "docs_targets": docs_targets,
         "labels": {"priority": classified["priority"], "lanes": classified["lanes"]},
         "milestones": list(probe.get("milestones") or []),
-        "ci": {"required_checks": len(jobs)},
+        # No `ci` block. See LEGACY_KEYS: the job-declaration count this used to emit
+        # was not the merge gate's number and could not be made into one (#113, #85).
         "state_file": ".max/{}-watch.json".format(repo_name) if repo_name else ".max/oss-watch.json",
         "release": {
             # Both derived from what the repo already does. Null means the probe could
@@ -1469,21 +1481,11 @@ def _report_probe_notes(probe, config):
             file=sys.stderr,
         )
 
-    # `required_checks` counts workflow *job declarations*, read structurally out of
-    # `.github/workflows/*`. A build matrix, a reusable workflow call, or an
-    # organisation/app-level check (CodeQL, a bot) is invisible to that count and can
-    # put the real number of check runs well above it -- #113 is what trusting the
-    # unflagged number looks like once it is on disk (3 vs 14). A `0` already reads as
-    # visibly unset and needs no repeat of the same caveat.
-    required_checks = (config.get("ci") or {}).get("required_checks")
-    if probe.get("workflow_jobs") and required_checks:
-        print(
-            "NOTE ci.required_checks: {} counts job declarations, not check runs. A "
-            "build matrix, a reusable workflow, or an org/app-level check multiplies "
-            "or adds to this invisibly -- verify against `gh pr checks` on a recent "
-            "PR before treating it as a merge gate.".format(required_checks),
-            file=sys.stderr,
-        )
+    # No NOTE about a leg count, because no leg count is written (#113). The caveat this
+    # used to print -- a matrix, a reusable workflow or an org/app-level check multiplies
+    # or adds to the number invisibly -- was not a caveat on the value, it was the reason
+    # the value could not exist. A number carrying "do not trust this" is still the number
+    # a reader who skipped the NOTE will use. Count the legs on the pull request.
 
     # worktree_root and state_file have no filesystem signal to measure against on a
     # repo being set up for the first time: nothing has been cloned into a worktree

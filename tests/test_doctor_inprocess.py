@@ -45,7 +45,6 @@ def _config(root, **overrides):
         "changelog_dir": None,
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 0},
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides)
@@ -547,11 +546,11 @@ def _dependencies_current(monkeypatch):
 
 
 def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys):
-    # required_checks is set and a workflow actually runs the test command. A
-    # scaffolded repo without both is the state the doctor now warns about -- the
-    # tests are configured and nothing in CI runs them -- so a clean verdict has to
-    # be built on a repo where that is untrue.
-    config = _config(tmp_path, ci={"required_checks": 2})
+    # A workflow actually runs the test command, and the config carries no leftover
+    # `ci` block. Both are states the doctor warns about -- tests configured with
+    # nothing in CI running them, and the key #113 deleted still on disk -- so a clean
+    # verdict has to be built on a repo where neither is true.
+    config = _config(tmp_path)
     _fully_configured(tmp_path)
     scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
     (tmp_path / ".github" / "workflows" / "tests.yml").write_text(

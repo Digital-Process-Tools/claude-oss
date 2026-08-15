@@ -34,7 +34,6 @@ def _valid():
         "changelog_dir": "changelog.d",
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 4},
         "state_file": ".max/oss-watch.json",
     }
 
@@ -243,7 +242,7 @@ def test_probe_invents_nothing_on_a_bare_repo():
         _probe(labels=[], milestones=[], workflow_jobs=[], files=["README.md"])
     )
     assert config["labels"] == {"priority": [], "lanes": []}
-    assert config["ci"]["required_checks"] == 0
+    assert "ci" not in config
     assert config["changelog_dir"] is None
     assert oss_config.validate(config) == []
 

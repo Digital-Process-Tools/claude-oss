@@ -193,7 +193,7 @@ previewable before it is written with
 
 ## What the run reports and will not do for you
 
-Five checks run after the file list — `radar`, `label`, `ci`, `tests`, `changelog` — each naming
+Four checks run after the file list — `radar`, `label`, `tests`, `changelog` — each naming
 something measured and left alone, and each printing a line only when it has something to
 say. They are printed before writing as well as after, so nothing in them is a surprise. A
 line that is absent means that check came back clean — never that it did not run, which is
@@ -244,19 +244,6 @@ gh label create no-changelog --description "Change is invisible to users"
 
 One command, once, and the `label` line goes quiet.
 
-`ci` — `.oss.json` now describes a repo with no CI, because `ci.required_checks` was
-derived before this run installed a workflow. **The value is not rewritten.** Counting
-workflow jobs cannot see a check configured outside the repo — an organisation-level
-required workflow, a branch protection rule, an app posting a status — so re-deriving it
-would swap one unmeasured number for another, and a wrong count on disk is
-indistinguishable from a measured one. Measure it from checks that actually ran:
-
-```bash
-gh api repos/OWNER/NAME/commits/<sha>/check-runs
-```
-
-then set it by hand. A value already set is left alone: that is a decision.
-
 `tests` — if `.oss.json` carries a `test_command`, and no workflow runs it, the run says
 so. A pull request in that repo goes green with its changelog fragment checked and its
 tests not run at all, and `/oss:manager` merges on green — so green there is an absence
@@ -277,11 +264,18 @@ same as a repo with no gate. `--force-owned` overrides both, and the finding the
 written anyway rather than continuing to claim it was not. See "Only missing files are created"
 above for the full contract.
 
-`ci` and `tests` gained the same third state from the same walk. `.github/workflows/` that cannot be
-listed no longer reads as a repo with no CI, and `test_command … and nothing in .github/workflows/
-runs it` is no longer printed about workflows nothing read.
+`tests` reports a third state from the same walk: `.github/workflows/` that cannot be listed no
+longer reads as a repo with no CI, and `test_command … and nothing in .github/workflows/ runs it` is
+no longer printed about workflows nothing read.
 
-`/oss:doctor` repeats the last two on every run.
+There is no longer a `ci` finding about a leg count. It reported `ci.required_checks` as stale, and
+#113 deleted that key rather than guarding it — the only quantity derivable offline is the workflow
+*job declaration* count, which a build matrix, a reusable workflow or an organisation/app-level check
+multiplies or adds to invisibly. This repo's own config was the proof: three declarations against
+fourteen check runs. Count the legs on the pull request, with `gh pr checks`.
+
+`/oss:doctor` repeats the `tests` finding on every run, and adds one of its own when `.oss.json`
+still carries the deleted `ci` block.
 
 ## The rule layer is the exception, and deliberately so
 

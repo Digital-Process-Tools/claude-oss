@@ -271,7 +271,6 @@ def _write_config(root, overrides=None, extra=None):
         "changelog_dir": None,
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 0},
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides or {})

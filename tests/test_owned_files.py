@@ -38,7 +38,6 @@ def _config(**overrides):
         "changelog_dir": "changelog.d",
         "docs_targets": ["README.md"],
         "labels": {"priority": [], "lanes": []},
-        "ci": {"required_checks": 0},
         "state_file": ".max/oss-watch.json",
     }
     config.update(overrides)
