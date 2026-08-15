@@ -159,9 +159,10 @@ VERDICT: could not run  — <the reason the script gave>
 as a bare range that reads like any other.
 
 Then, per class, one line each — every class named even when empty, because a class you skipped and a
-class that was clean look identical otherwise. Each finding: file, line, the class, **its ranking
-row**, what an attacker or a caller gets, and the one fact that would settle it. A finding whose row
-blocks is marked as such on its own line, because that is the one the maintainer acts on first.
+class that was clean look identical otherwise. Each finding: file, line, the class, **its ranking row**
+(or `unranked` / `could not rank`), what an attacker or a caller gets, and the one fact that would
+settle it. A finding whose row blocks is marked as such on its own line, because that is the one the
+maintainer acts on first.
 
 **`could not run` never renders as clean, and neither does a per-class `could not check`.** The
 first of the two stops the release. `clean` means you looked at the whole range and found nothing;

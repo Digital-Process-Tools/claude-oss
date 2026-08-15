@@ -1094,6 +1094,11 @@ def _trigger_join_mismatch(rows, trigger):
         return ("no release trigger enumeration",)
     blocking = {name for name, verdict in rows if verdict == RANKING_BLOCKS}
     named = set(trigger)
+    if not blocking and not named:
+        # Two absences agreeing is not agreement. Symmetric difference cannot tell
+        # "both parsers found nothing" from "both found the same thing", and the
+        # first of those is a suite reporting a join it never looked at.
+        return ("no blocking rows on either side",)
     return tuple(sorted(blocking ^ named))
 
 
@@ -1129,6 +1134,11 @@ def test_the_trigger_join_fires_when_the_two_disagree():
     assert _trigger_join_mismatch(rows, ["destroys", "ships-local-state"]) == ()
     assert _trigger_join_mismatch(None, ["destroys"]) == ("no ranking table",)
     assert _trigger_join_mismatch(rows, None) == ("no release trigger enumeration",)
+    # Both parsers finding nothing must not read as the two halves agreeing.
+    assert _trigger_join_mismatch([], []) == ("no blocking rows on either side",)
+    assert _trigger_join_mismatch(
+        [("misreports", RANKING_FILES_IT)], []
+    ) == ("no blocking rows on either side",)
 
 
 def test_both_audit_agents_reference_the_ranking_table():
@@ -1144,11 +1154,17 @@ def test_both_audit_agents_reference_the_ranking_table():
         )
 
 
-def test_no_audit_agent_recopies_the_ranking_rows():
-    """Same discipline as the portability shapes: the rows ship once. A copy in an
-    agent is the drift defect, and the copy that drifts is never the one anybody
+def test_no_other_document_recopies_the_ranking_rows():
+    """Same discipline as the portability shapes: the rows ship once. A copy anywhere
+    else is the drift defect, and the copy that drifts is never the one anybody
     rereads. The control comes first -- if the rows were absent from the skill too,
-    "absent from the agents" would be satisfied by their being absent everywhere.
+    "absent from everywhere else" would be satisfied by their being absent everywhere.
+
+    The sweep is every executable document except the skill that owns the table, not
+    just the two audit agents. Scoping it to the agents that rank findings is how the
+    copy in agents/triager.md survived the change that made it wrong: a guard aimed at
+    the documents you were already thinking about reports nothing about the one you
+    were not.
     """
     rows = _ranking_table()
     assert rows is not None
@@ -1156,24 +1172,46 @@ def test_no_audit_agent_recopies_the_ranking_rows():
     skill = MANAGER_SKILL.read_text(encoding="utf-8")
     missing = [n for n in names if "`{}`".format(n) not in skill]
     assert not missing, "rows unfindable in their own source: {!r}".format(missing)
-    for path in AUDIT_AGENTS:
+    swept = 0
+    for path in EXECUTABLE_PROSE:
+        if path == MANAGER_SKILL:
+            continue
+        swept += 1
         text = path.read_text(encoding="utf-8")
         copied = [n for n in names if "`{}`".format(n) in text]
         assert not copied, (
             "{} carries its own copy of the ranking rows {!r} -- reference the table "
             "instead".format(path.relative_to(REPO_ROOT), copied)
         )
+    assert swept, "swept no documents, so this checked nothing"
 
 
 RANKING_STATE_ANCHORS = [
-    ("finding-carries-a-row", ("ranking table",)),
+    # Named for what each actually checks. "names-the-table" and "finding-carries-a-row"
+    # are two different claims and the first does not imply the second: a document can
+    # mention the table exists and never say a finding must carry a row out of it.
+    ("names-the-ranking-table", ("ranking table",)),
+    ("finding-carries-a-row", ("ranking row",)),
     ("unranked-is-classified-and-no-row-fits", ("unranked",)),
     ("could-not-rank-is-the-table-never-arrived", ("could not rank",)),
 ]
 
 
+def _flatten(text):
+    """Fold case and collapse every run of whitespace to one space.
+
+    Every anchor below is a multi-word phrase, and markdown wraps at 100 columns, so
+    an anchor lands across a newline as soon as the paragraph is reflowed. Matching the
+    raw text made this suite report "the document does not state the rule" for a
+    document that stated it either side of a line break -- a checker whose finding is
+    about its own reading, dressed as a finding about the file. It cost two rounds
+    while this was being written.
+    """
+    return " ".join(text.lower().split())
+
+
 def _ranking_states_unmet(text):
-    folded = text.lower()
+    folded = _flatten(text)
     return {
         name
         for name, anchors in RANKING_STATE_ANCHORS
@@ -1201,23 +1239,56 @@ def test_the_ranking_state_check_fires_on_a_brief_that_only_ranks():
         "class letter it was found by.\n"
     )
     assert _ranking_states_unmet(only_ranks) == {
+        "finding-carries-a-row",
         "unranked-is-classified-and-no-row-fits",
         "could-not-rank-is-the-table-never-arrived",
     }
+    # And a brief that says nothing at all must report every anchor unmet, or the
+    # anchors are satisfied by prose rather than by the contract.
+    assert _ranking_states_unmet("Read the diff and report what you find.") == {
+        name for name, _ in RANKING_STATE_ANCHORS
+    }
 
 
-ROUND_CAP_ANCHOR = "carry-forward"
+ROUND_CAP_ANCHOR = "not carry-forward material"
+ROUND_CAP_DOCUMENTS = [
+    MANAGER_SKILL,
+    REPO_ROOT / "agents" / "release-auditor.md",
+    REPO_ROOT / "commands" / "release.md",
+]
 
 
 def test_the_round_cap_does_not_quietly_outrank_the_table():
-    """Gate 3 and the release auditor both end round two by filing what remains and
-    shipping over it. The table says some rows block unconditionally. Left unjoined the
-    cap wins by being later, and a gate whose worst outcome is a filed issue is not a
-    gate -- so both documents must state the exception.
+    """Gate 3, the release auditor and the release command all end round two by filing
+    what remains and shipping over it. The table says some rows block unconditionally.
+    Left unjoined the cap wins by being later, and a gate whose worst outcome is a filed
+    issue is not a gate -- so every document that restates the cap must state the
+    exception beside it. A document that carries only half of a rule is worse than one
+    that carries neither, because it reads complete.
+
+    The anchor is the whole clause rather than the word `carry-forward`, which any
+    sentence about the cap contains and which would therefore pass forever.
     """
-    for path in [MANAGER_SKILL, REPO_ROOT / "agents" / "release-auditor.md"]:
-        text = path.read_text(encoding="utf-8").lower()
+    for path in ROUND_CAP_DOCUMENTS:
+        text = _flatten(path.read_text(encoding="utf-8"))
         assert ROUND_CAP_ANCHOR in text, (
-            "{} states the two-round cap but never says a blocking row is not "
-            "carry-forward material".format(path.relative_to(REPO_ROOT))
+            "{} states the two-round cap but never says a blocking row is {}".format(
+                path.relative_to(REPO_ROOT), ROUND_CAP_ANCHOR
+            )
         )
+
+
+def test_the_round_cap_check_fires_on_the_cap_as_it_was_stated_before():
+    """Positive control. The pre-#83 wording of the cap, which is what every one of
+    those three documents said: complete, confident, and silent on the exception.
+    """
+    before = (
+        "Two rounds, hard cap -- a competent audit of any non-trivial delta always "
+        "finds something, so an unbounded findings-therefore-stop makes every release "
+        "hostage to diminishing returns. After round two, file the rest against the "
+        "next milestone and ship, carrying forward what is left."
+    )
+    assert ROUND_CAP_ANCHOR not in _flatten(before), (
+        "the round-cap anchor is satisfied by the wording it was written to reject, "
+        "so it would pass on all three documents unchanged"
+    )
