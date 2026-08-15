@@ -344,6 +344,139 @@ def test_split_says_it_could_not_ask_rather_than_claiming_the_file_is_trackable(
     assert "now safe to track" not in out, out
 
 
+# ------------------------------------- the probe's own output is filenames (#112)
+#
+# `_ignore_rule` decoded git's output with `universal_newlines=True`, i.e. the locale
+# encoding, under `except OSError`. `UnicodeDecodeError` is a `ValueError`, so a byte the
+# locale cannot decode skipped all three states and raised out of the function.
+#
+# What flows through this call is **pathnames**, which is the one place an undecodable
+# byte is ordinary rather than exotic. And the answer never depended on the text: the
+# exit code carries ignored/clear/unknown on its own, and the `-v` detail this function
+# returns is the *source rule* -- everything before the tab -- while the undecodable
+# pathname is everything after it. So the bytes could not reach the returned value even
+# in principle. Reporting `unknown` here would have been this repo's own defect class: a
+# tool limitation rendered as a fact about the repository.
+
+_UNDECODABLE_NAME = "a\udc80b"
+"""A lone 0x80 written deliberately, never left to a locale to produce.
+
+surrogateescape is how Python already carries an undecodable filesystem byte, and it
+re-encodes to exactly that byte on the way into argv. Nothing is created on disk:
+`git check-ignore` answers about a pathname as a string, so there is no filesystem that
+can refuse the name and no path-length limit in play on any platform.
+"""
+
+
+def _undecodable_probe_repo(tmp_path):
+    """A repo whose `check-ignore` really does emit an undecodable byte, or a skip.
+
+    `core.quotePath` defaults to true, which renders the byte as an ASCII octal escape
+    and decodes cleanly -- so on a default repo this bug is unreachable and a test
+    asserting it would be asserting nothing. The setting is flipped, and then the raw
+    bytes are **measured** rather than assumed: if this platform's git still hands back
+    something strictly decodable, there was no signal to classify and the test skips
+    saying what went untested. No table of platform behaviours is written down.
+    """
+    done = subprocess.run(
+        ["git", "init", "--quiet", str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {!r}".format(done.stderr[-200:]))
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "core.quotePath", "false"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    (tmp_path / ".gitignore").write_text("*b\n", encoding="utf-8")
+
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(tmp_path), "check-ignore", "-v", "--", _UNDECODABLE_NAME],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, ValueError) as exc:
+        pytest.skip(
+            "this platform would not carry the byte into argv ({}: {}); the decode path "
+            "in _ignore_rule went untested here".format(type(exc).__name__, exc)
+        )
+    if probe.returncode != 0:
+        pytest.skip(
+            "git did not match the pathname here (exit {}, stdout {!r}); the decode path "
+            "went untested".format(probe.returncode, probe.stdout)
+        )
+    try:
+        probe.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return
+    pytest.skip(
+        "git's output here is strictly decodable ({!r}), so nothing reached the decoder "
+        "and there is no undecodable case on this platform to classify; the guard in "
+        "_ignore_rule went untested".format(probe.stdout)
+    )
+
+
+def test_ignore_rule_answers_about_a_path_git_prints_undecodably(tmp_path):
+    _undecodable_probe_repo(tmp_path)
+
+    # The bug: this raised UnicodeDecodeError out of a function whose whole contract is
+    # to return one of three states.
+    state, detail = oss_config._ignore_rule(tmp_path, _UNDECODABLE_NAME)
+
+    assert state == "ignored", (state, detail)
+    assert detail == ".gitignore:1:*b", (
+        "the source rule is entirely ASCII and sits before the tab, so the undecodable "
+        "pathname after it must not degrade it: got {!r}".format(detail)
+    )
+    assert "�" not in detail, detail
+
+    # The positive control, in the same fixture and the same repo: a name nothing matches
+    # must still come back `clear`. Without it, an assertion that the undecodable name was
+    # handled also passes on a probe that answered nothing at all, or on a repo where
+    # every question happens to return the same state.
+    assert oss_config._ignore_rule(tmp_path, "zzz.txt") == ("clear", "")
+
+
+def test_ignore_rule_reports_unknown_when_git_cannot_be_run_with_that_name(tmp_path):
+    """The remaining `ValueError`: subprocess refuses an argument holding a NUL byte.
+
+    Different answer from `git would not start` -- the binary is there and would have
+    run; it is this name that cannot be handed to it -- so it gets its own reason rather
+    than being folded into the missing-binary one.
+    """
+    state, detail = oss_config._ignore_rule(tmp_path, "a\x00b")
+
+    assert state == "unknown", (state, detail)
+    assert "would not start" not in detail, detail
+    assert "could not be handed to git" in detail, detail
+
+    # Positive control: the same directory answers normally for a name git accepts, so
+    # this is a fact about the name and not about a probe that is broken outright.
+    assert oss_config._ignore_rule(tmp_path, "zzz.txt")[0] in ("clear", "unknown")
+
+
+def test_run_returns_undecodable_stdout_instead_of_raising():
+    """`_run` had the same spelling and the same guard, and `git ls-files` prints paths.
+
+    Driven with a real subprocess emitting a real 0x80, so no locale and no mock decides
+    whether the case occurs.
+    """
+    emit = r"import sys; sys.stdout.buffer.write(b'ok-\x80\n')"
+    ok, stdout, detail = oss_config._run([sys.executable, "-c", emit])
+
+    assert ok is True, detail
+    assert stdout.startswith("ok-"), repr(stdout)
+
+    # Positive control: an all-ASCII run through the same helper is byte-exact, so the
+    # replacement policy is confined to bytes that had no other rendering.
+    ok, clean, detail = oss_config._run([sys.executable, "-c", "print('ok-plain')"])
+    assert ok is True, detail
+    assert clean.strip() == "ok-plain", repr(clean)
+
+
 def test_this_repos_own_gitignore_does_not_hide_its_project_half():
     """The stale line that motivated all of the above, pinned so it cannot come back."""
     rules = [
