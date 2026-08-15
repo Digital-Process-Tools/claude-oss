@@ -29,11 +29,53 @@ Skill(manager)
    tick** — settle it, then start over at this step. `no entries yet` means a first tick and
    nothing else.
 
-2. **Read the board**, batched into one call:
+2. **Read the board.** The three ops every repo has, batched into one call:
 
    ```bash
    supertool 'gh-prs' 'gh-issues' 'gh-branch'
    ```
+
+   Those three are the tracker. **Two more surfaces are part of this same board read**, because
+   steps 3 and 5 decide from both — and neither is universally available, so each is ordered with
+   the reading that tells you whether it applies. They belong here rather than in a step of their
+   own: this is one question — what is true right now — and a board split across two steps is a
+   board you can believe you finished before you reached the second half.
+
+   **The watcher fleet — probe first, then run.** `radar` lives behind a preset and refuses when no
+   tiers are registered, so do not reach for it blind. `radar:--state` is the read-only probe: it
+   spawns nothing, reaps nothing and calls no API.
+
+   ```bash
+   supertool 'radar:--state'
+   ```
+
+   It has three answers and the third is not the first. **The preset is not enabled here, or no
+   tier is registered** — there is no fleet to read, and the tick says so rather than passing over
+   it. **Tiers are registered** — run bare `radar` and read its delivery tally. **The probe itself
+   did not answer** — that is `unknown`, and it is reported, not skipped past.
+
+   Read the tally, not the fact that the call succeeded: **forwarded is not delivered**. A poller
+   that is down and a poller with nothing to say produce the same silence, so a channel nobody
+   probed is **not a quiet channel** — it is a channel with no reading, and reporting it as calm is
+   this loop's own defect class landing on the loop's own instrumentation.
+
+   Bare `radar` heals and forks pollers. That is a write, not a read, which is the reason the probe
+   is ordered separately rather than folded into it — you run the repair deliberately, having seen
+   what needs repairing.
+
+   **The worktrees — wherever `worktree_root` is set.** That key lives in `.oss.local.json`, the
+   machine-local half, and never in the committed project config; a repo whose local half sets none
+   has no worktree board to read, and that is a reading too.
+
+   ```bash
+   supertool 'git-worktrees'
+   ```
+
+   Which trees exist, who holds them and what merged is an input to step 3, not a step-5 cleanup
+   detail. **Read both of its columns in three states, and never round the third one up.**
+   `cannot tell` is not `idle`, and `merge unknown` is not `merged` — neither is permission: not to
+   brief a second agent into that tree, not to reap it. The skill's cleanup gate carries the rest,
+   including why the shell exit cannot be branched on.
 
 3. **Act on what is open before starting anything new.** A merged-but-unverified PR, a red default
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats

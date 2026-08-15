@@ -81,6 +81,7 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
 
 SETUP_MD = REPO_ROOT / "commands" / "setup.md"
 SCAFFOLD_MD = REPO_ROOT / "commands" / "scaffold.md"
+TICK_MD = REPO_ROOT / "commands" / "tick.md"
 README_MD = REPO_ROOT / "README.md"
 
 # Mentions no command, no settings file and no subject for identity.md.
@@ -204,6 +205,56 @@ def _says_the_tick_seam_cannot_be_previewed(text):
     return "/oss:tick" in text and bool(re.search(r"cannot be previewed", text, re.I))
 
 
+# --------------------------------------------------------------------------- #
+# The tick's board read has to order the two conditional readings (#187).
+#
+# `commands/tick.md` ordered one call -- `gh-prs`, `gh-issues`, `gh-branch` --
+# and named neither `radar` nor `git-worktrees` anywhere in the file, while
+# steps 3 and 5 went on to decide from both. Each omission produces an absence
+# that reads as a clean result: a watcher fleet nobody checked renders as a
+# quiet channel, a worktree board nobody read renders as no worktrees.
+#
+# The predicates below deliberately require an *invocation*, not a mention.
+# That is the whole distinction #187 turned on -- the skill cautions against
+# assuming `radar`, and the loop read the caution as permission to skip the
+# reading. A "does this file say radar" predicate passes on the caution, which
+# is why CAUTIONING below is a control in its own right and SILENT is not
+# enough here.
+# --------------------------------------------------------------------------- #
+
+
+def _invokes_op(text, op):
+    """A `supertool '<op>'` command line, wherever it appears in the prose."""
+    return bool(re.search(r"^\s*supertool\s+.*" + re.escape(op), text, re.M))
+
+
+def _orders_the_watcher_probe(text):
+    """The read-only probe is run, not merely named as a thing that exists."""
+    return _invokes_op(text, "radar:--state")
+
+
+def _says_an_unread_channel_is_not_a_quiet_one(text):
+    return bool(re.search(r"not a quiet channel", text, re.I)) and bool(
+        re.search(r"forwarded is not delivered", text, re.I)
+    )
+
+
+def _orders_the_worktree_board(text):
+    return _invokes_op(text, "git-worktrees")
+
+
+def _carries_the_three_state_worktree_rule(text):
+    """`cannot tell` is not `idle`, and `merge unknown` is not `merged`.
+
+    The skill states this at its cleanup gate, but nothing in the ordered steps
+    reached it -- so a loop following the steps literally could produce a wrong
+    reap without ever having read the rule that forbids it.
+    """
+    return bool(re.search(r"`cannot tell` is not `idle`", text)) and bool(
+        re.search(r"`merge unknown` is not `merged`", text)
+    )
+
+
 # (label, predicate, pattern whose lines carry the fact)
 SETUP_FACTS = [
     ("identity.md describes the agent", _names_the_agent_as_identity_subject, r"who the agent is"),
@@ -239,17 +290,33 @@ SCAFFOLD_FACTS = [
     ),
 ]
 
+TICK_FACTS = [
+    ("the watcher probe is run, not named", _orders_the_watcher_probe, r"radar:--state"),
+    (
+        "an unread channel is not a quiet one",
+        _says_an_unread_channel_is_not_a_quiet_one,
+        r"not a quiet channel|forwarded is not delivered",
+    ),
+    ("the worktree board is run, not named", _orders_the_worktree_board, r"git-worktrees"),
+    (
+        "the worktree verdicts are read in three states",
+        _carries_the_three_state_worktree_rule,
+        r"`cannot tell` is not `idle`|`merge unknown` is not `merged`",
+    ),
+]
+
 README_FACTS = [
     ("scaffold is in the launcher path", _names_scaffold_as_the_next_step, r"/oss:scaffold|tracked file"),
 ]
 
-ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + README_FACTS
+ALL_FACTS = SETUP_FACTS + SCAFFOLD_FACTS + TICK_FACTS + README_FACTS
 
 # (file, label, predicate, pattern whose lines carry the fact) for every carried fact,
 # so a new surface joins both the real-file assertion and its deletion control at once.
 CARRIED = (
     [(SETUP_MD,) + fact for fact in SETUP_FACTS]
     + [(SCAFFOLD_MD,) + fact for fact in SCAFFOLD_FACTS]
+    + [(TICK_MD,) + fact for fact in TICK_FACTS]
     + [(README_MD,) + fact for fact in README_FACTS]
 )
 CARRIED_IDS = ["{}: {}".format(entry[0].name, entry[1]) for entry in CARRIED]
@@ -265,6 +332,43 @@ def test_a_silent_file_fails_every_prose_predicate(label, predicate, _pattern):
     """The negative control. Without it, every assertion above also passes on a
     file that says nothing about the subject at all."""
     assert not predicate(SILENT), "{}: predicate passes on a file that says nothing".format(label)
+
+
+# A file that names both ops -- and only to warn about them. SILENT cannot catch
+# the confusion #187 was actually made of, because SILENT never says "radar" at
+# all: every "does the file mention radar" predicate fails it for the wrong
+# reason. This fixture is the caution the loop misread as an instruction.
+CAUTIONING = (
+    "# Tick\n"
+    "\n"
+    "Read the board.\n"
+    "\n"
+    "Do not assume ops that a repo's `.supertool.json` does not declare. `radar` and\n"
+    "`dashboard` live behind presets many repos never enable; check before writing an\n"
+    "instruction that depends on one. `git-worktrees` boards every tree with an\n"
+    "occupancy verdict, and the raw `git worktree` listing is refused.\n"
+)
+
+
+def test_the_cautioning_fixture_actually_names_both_ops():
+    """The positive control for the control below. A fixture that stopped naming
+    the ops would make the next test pass for the same reason SILENT does, and the
+    discrimination it exists to prove would go untested while still reporting green.
+    """
+    assert "radar" in CAUTIONING
+    assert "git-worktrees" in CAUTIONING
+
+
+@pytest.mark.parametrize("label,predicate,_pattern", TICK_FACTS, ids=[f[0] for f in TICK_FACTS])
+def test_a_cautioning_file_fails_every_tick_predicate(label, predicate, _pattern):
+    """Mentioning an op is not ordering it. `skills/manager/SKILL.md` cautions
+    against assuming `radar`, correctly, and the loop read that as licence to skip
+    the reading entirely -- so a predicate satisfied by a caution would certify the
+    exact state #187 reports as fixed."""
+    assert not predicate(CAUTIONING), (
+        "{}: predicate passes on a file that only cautions about the op. "
+        "A mention is not an instruction.".format(label)
+    )
 
 
 # --------------------------------------------------------------------------- #
