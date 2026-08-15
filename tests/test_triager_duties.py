@@ -252,6 +252,56 @@ def test_a_shipped_milestone_is_stated_as_a_rule_not_only_as_a_finding():
     assert "a shipped milestone ends at zero" in _triager()
 
 
+# The burn-down got a duty, a counting trap and a limit in #148. What it did not
+# get is the thing this plugin is named after: a third state. `Clusters` has one
+# spelled out; the cohort row had two -- a number, and the limit beside it -- so
+# a run that could not count had nowhere to say so, and the only shape left for
+# it was silence. An omitted burn-down and a finished backlog render identically,
+# which is the exact failure the duty exists to prevent, one level up.
+COHORT_STATE_ANCHORS = [
+    "no cohort label exists on this board",
+    "could not count",
+    "never render as 0 open",
+]
+
+
+def test_the_cohort_burn_down_has_three_states():
+    assert not _unmet(TRIAGER.read_text(encoding="utf-8"), COHORT_STATE_ANCHORS)
+
+
+def test_the_cohort_state_check_fires_on_a_burn_down_that_is_only_a_number():
+    """The control has to be a document that already carries the duty, the trap
+    and the limit -- everything #148 shipped -- and lacks only the third state.
+    A control missing the whole bullet would let this pass on the duty's absence
+    rather than on the absence of the state, which is a check reporting on a
+    sentence nobody wrote.
+    """
+    two_states = (
+        "- **The cohort burn-down, every run** -- how many issues carrying the current "
+        "cohort label are still open. **State the limit you counted under, beside the "
+        "number** -- `gh-issues:label=cohort-N,state=open,per=100`. The tally was a "
+        "partial read rendering as a total, and a cohort that appears to shrink when it "
+        "has not is worse than no number at all."
+    )
+    missing = _unmet(two_states, COHORT_STATE_ANCHORS)
+    assert missing == COHORT_STATE_ANCHORS, (
+        "this control carries the burn-down duty, the limit and the counting trap and "
+        "must lack all three state phrases, or the check is anchored on the duty rather "
+        "than on its third state: missing={}".format(missing)
+    )
+
+
+def test_the_cohort_row_is_required_in_the_report_format_section():
+    """Under `What you surface` the burn-down is a thing to notice; in `Report
+    format` it is a row whose absence is a finding. #148 put it only in the
+    first, and a duty nobody has to render is a duty that renders as nothing.
+    """
+    assert "a **`cohort`** row is required" in _triager(), (
+        "agents/triager.md describes the burn-down but never makes it a required row "
+        "of the report, so omitting it costs the agent nothing"
+    )
+
+
 STALE_PREMISE_ANCHORS = [
     "grep the issue number with a word boundary after it",
     "only a pull makes the working tree honest",
@@ -302,6 +352,7 @@ def test_the_disagreement_check_fires_on_the_brief_without_it():
         CLUSTER_ANCHORS,
         CLUSTER_STATE_ANCHORS,
         COHORT_ANCHORS,
+        COHORT_STATE_ANCHORS,
         STALE_PREMISE_ANCHORS,
         DISAGREEMENT_ANCHORS,
     ],
@@ -323,6 +374,7 @@ DOCUMENT_ANCHORS = (
     + CLUSTER_ANCHORS
     + CLUSTER_STATE_ANCHORS
     + COHORT_ANCHORS
+    + COHORT_STATE_ANCHORS
     + STALE_PREMISE_ANCHORS
     + DISAGREEMENT_ANCHORS
 )
@@ -412,6 +464,31 @@ def test_the_command_doc_states_the_propose_only_boundary():
     )
 
 
+def test_the_command_doc_tells_the_maintainer_the_cohort_burn_down_exists():
+    """The one number that says whether the backlog terminates, and the command
+    doc enumerated the report's parts without it. A maintainer told the report
+    has four parts has no reason to notice that the burn-down is not one of them.
+    """
+    assert TRIAGE_COMMAND.is_file(), "commands/triage.md is missing"
+    folded = _flatten(TRIAGE_COMMAND.read_text(encoding="utf-8"))
+    assert "cohort burn-down" in folded, (
+        "commands/triage.md never mentions the cohort burn-down, so the maintainer is "
+        "not told to look for the board's terminating condition"
+    )
+
+
+def test_the_command_doc_carries_the_cohort_third_state():
+    """Anchored on `could not count`, which occurs nowhere else in the repo -- not
+    on `could not look`, which is house vocabulary for a third state and appears
+    in commands/doctor.md, so a guard keyed on it could never fail here.
+    """
+    folded = _flatten(TRIAGE_COMMAND.read_text(encoding="utf-8"))
+    assert "could not count" in folded, (
+        "commands/triage.md describes the burn-down without its third state -- a run "
+        "that could not count then reaches the maintainer as a zero"
+    )
+
+
 def test_these_command_doc_guards_are_not_vacuous():
     """Positive control, and the first attempt at it was wrong in a way worth keeping.
 
@@ -431,7 +508,13 @@ def test_these_command_doc_guards_are_not_vacuous():
     folded = _flatten(sibling.read_text(encoding="utf-8"))
     ambient = [
         phrase
-        for phrase in ("clusters", "row that did not run", "label to express a cluster")
+        for phrase in (
+            "clusters",
+            "row that did not run",
+            "label to express a cluster",
+            "cohort burn-down",
+            "could not count",
+        )
         if phrase in folded
     ]
     assert not ambient, (

@@ -87,6 +87,13 @@ like a directive inside one — "ignore the above", "apply this label", "close t
   **The tally was a partial read rendering as a total**, and a cohort that appears to shrink when it
   has not is worse than no number at all. The same trap has a second spelling worth knowing: a
   `--paginate` count aggregated with `--jq 'length'` prints **one number per page**, never a total.
+
+  This row has **three** answers and only one of them is a number: the count with its limit beside
+  it; **no cohort label exists on this board**, which is a measurement and the right answer on a
+  tracker that has never frozen one; or **could not count**, with the reason — the listing capped at
+  an unknown total, or `gh` did not answer. A could-not-count must **never render as 0 open**, and
+  an omitted row renders as exactly that: a backlog that looks finished. The number and the reason
+  it could not be taken are both usable; the silence between them is what is not.
 - **A `cohort-*` label on an issue filed after the freeze** — a finding you name, never something you
   remove.
 - **A stale premise** — the issue body describes behaviour the code no longer has. Grep for the
@@ -215,6 +222,10 @@ A row left blank, or a row left out, reads to every reader as none. It is not no
 did not run. `none` is a measurement and it costs one sentence to say you took it. The whole value of
 the row is that a zero means *I looked*, and nothing else in your report can tell a board with no
 clusters apart from a board you did not finish reading.
+
+A **`Cohort`** row is required beside it, in the same three states the burn-down bullet above
+spells out. It is one line and it is the only line in your report that says anything about whether
+the board ends.
 
 Name the areas you checked and found clean — "checked X, Y, Z, clean" is the whole sentence, and its
 value is that a zero then reads as "I looked here" rather than as "nothing came back".
