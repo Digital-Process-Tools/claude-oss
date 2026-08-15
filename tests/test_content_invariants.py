@@ -1447,11 +1447,20 @@ def test_the_unresolvable_spawn_check_passes_on_prose_that_states_the_whole_cont
 
 
 def _dispatched_agent_names(documents):
-    """name -> the documents that spawn it. Scanned, never listed."""
+    """name -> the documents that spawn it. Scanned, never listed.
+
+    Rendered with `as_posix()` rather than `str()`, because the document paths this
+    returns are compared against literals written in this file. `str(Path("a/b.md"))`
+    is `a\\b.md` on Windows, so a POSIX literal in an assertion fails there and only
+    there -- which is what happened: all four Windows legs, on a helper whose own
+    author graded "no hardcoded POSIX literals in the new assertions" as reasoned.
+    Normalising at the producer fixes every assertion at once and cannot be
+    reintroduced by the next literal somebody writes.
+    """
     found = {}
     for path, text in documents:
         for name in AGENT_DISPATCH_RE.findall(text):
-            found.setdefault(name, set()).add(str(path))
+            found.setdefault(name, set()).add(Path(path).as_posix())
     return found
 
 
