@@ -129,6 +129,81 @@ def _says_the_harness_gate_is_a_fourth_one(text):
     )
 
 
+# --------------------------------------------------------------------------- #
+# The handoff is measured, not recommended (#136).
+#
+# `/oss:setup` used to close by *naming* `/oss:scaffold`. A setup that stopped
+# there and a setup that completed render identically -- clean run, clean `git
+# status`, half-furnished repo. The fix is that setup ends by running the
+# read-only plan, so the furniture gap arrives as a measured list. Three things
+# then have to stay true of the file, and prose alone would let any of them rot:
+# the plan is actually invoked, it is never the writing invocation, and the
+# outcomes it can produce are all three rather than two.
+# --------------------------------------------------------------------------- #
+
+# A `python3 ... scaffold.py ...` command line, wherever it appears in the prose.
+SCAFFOLD_LINE_RE = re.compile(r"^\s*(?:python3?|py)\s+\S*scaffold\.py\b.*$")
+
+WRITING_FLAGS = ("--apply", "--force-owned")
+
+
+def _scaffold_invocations(text):
+    """Every `scaffold.py` command line in *text*, as (line number, line)."""
+    return [
+        (number, line.strip())
+        for number, line in enumerate(text.splitlines(), 1)
+        if SCAFFOLD_LINE_RE.match(line)
+    ]
+
+
+def _writing_scaffold_invocations(name, text):
+    """Which of those invocations would write into the repository.
+
+    Tokenised rather than substring-matched, for the reason the assembler flags
+    below are: a line whose comment mentions `--apply` is not a line that passes
+    it, and a guard that reads a comment as a violation is as broken as one that
+    reads a comment as compliance. A line that will not tokenise is its own
+    finding -- an argument list nobody could read has not been checked.
+    """
+    offenders = []
+    for number, line in _scaffold_invocations(text):
+        try:
+            tokens = shlex.split(line, comments=True)
+        except ValueError as error:
+            offenders.append(
+                "{}:{}: unparseable arguments ({}): {}".format(name, number, error, line)
+            )
+            continue
+        hit = [flag for flag in WRITING_FLAGS if flag in tokens]
+        if hit:
+            offenders.append("{}:{}: passes {}: {}".format(name, number, " and ".join(hit), line))
+    return offenders
+
+
+def _runs_the_scaffold_plan(text):
+    """A read-only scaffold invocation is present -- the plan is run, not named."""
+    return any(
+        not _writing_scaffold_invocations("x", line)
+        for _number, line in _scaffold_invocations(text)
+    )
+
+
+def _says_a_failed_plan_is_not_a_failed_setup(text):
+    return bool(re.search(r"could not plan", text, re.I)) and bool(
+        re.search(r"not a failed setup", text, re.I)
+    )
+
+
+def _separates_the_offline_plan_from_the_forge_read(text):
+    return bool(re.search(r"read from the filesystem", text, re.I)) and bool(
+        re.search(r"only line that asks the forge", text, re.I)
+    )
+
+
+def _says_the_tick_seam_cannot_be_previewed(text):
+    return "/oss:tick" in text and bool(re.search(r"cannot be previewed", text, re.I))
+
+
 # (label, predicate, pattern whose lines carry the fact)
 SETUP_FACTS = [
     ("identity.md describes the agent", _names_the_agent_as_identity_subject, r"who the agent is"),
@@ -142,10 +217,26 @@ SETUP_FACTS = [
     ("both path spellings are covered", _covers_both_path_spellings, r"\./supertool|absolute path"),
     ("the two merge strings differ", _says_the_two_merge_strings_differ, r"different .{0,40}string"),
     ("the harness gate is the fourth", _says_the_harness_gate_is_a_fourth_one, r"fourth"),
+    ("the scaffold plan is run, not named", _runs_the_scaffold_plan, r"scaffold\.py"),
+    (
+        "a plan that could not run is not a failed setup",
+        _says_a_failed_plan_is_not_a_failed_setup,
+        r"could not plan|not a failed setup",
+    ),
+    (
+        "the offline plan and the forge read are told apart",
+        _separates_the_offline_plan_from_the_forge_read,
+        r"read from the filesystem|only line that asks the forge",
+    ),
 ]
 
 SCAFFOLD_FACTS = [
     ("tick is the next step", _names_tick_as_the_next_step, r"/oss:tick|furniture is in place"),
+    (
+        "the tick seam cannot be previewed",
+        _says_the_tick_seam_cannot_be_previewed,
+        r"cannot be previewed",
+    ),
 ]
 
 README_FACTS = [
@@ -408,6 +499,65 @@ def test_every_documented_assembler_invocation_passes_dir_and_changelog():
     assert not offenders, (
         "these invocations leave the assembler to guess its root, which under a plugin "
         "is the plugin's own repository:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_scaffold_detector_sees_an_invocation_and_its_flags():
+    """The detector before the two assertions that lean on it. A regex matching
+    nothing turns both into checks that never looked, and a flag test that never
+    fires turns the write-boundary sweep into one that looked and could not
+    report."""
+    plan = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json'
+    write = plan + " --apply"
+
+    assert len(_scaffold_invocations(plan + "\n" + write)) == 2
+    assert _scaffold_invocations("this paragraph mentions scaffold.py in prose") == []
+
+    # The must-fire half: the writing invocation is reported, and located.
+    offenders = _writing_scaffold_invocations("fixture.md", plan + "\n" + write)
+    assert len(offenders) == 1, offenders
+    assert offenders[0].startswith("fixture.md:2: passes --apply: ")
+
+    # The must-not-fire half, in the same fixture. Without it a detector that
+    # flagged every line would still pass the assertion above.
+    assert _writing_scaffold_invocations("fixture.md", plan) == []
+
+    # A comment naming the flag is not passing the flag.
+    assert _writing_scaffold_invocations("fixture.md", plan + "  # never --apply here") == []
+
+    # The third state. An argument list that would not tokenise is reported, not
+    # waved through -- a line nobody could read has not been checked.
+    unreadable = _writing_scaffold_invocations(
+        "fixture.md", 'python3 a/scaffold.py --config "unclosed'
+    )
+    assert len(unreadable) == 1 and "unparseable arguments" in unreadable[0]
+
+    # And the fact predicate reads that detector the right way round.
+    assert _runs_the_scaffold_plan(plan)
+    assert not _runs_the_scaffold_plan(write)
+    assert not _runs_the_scaffold_plan("no invocation at all")
+
+
+def test_setup_never_documents_a_writing_scaffold_invocation():
+    """The write boundary, as a test rather than a paragraph. `/oss:setup` writes
+    one untracked local file and nothing tracked, which is what makes it safe to
+    run anywhere; the moment its prose carries `--apply`, a first run commits
+    opinions into somebody's repository.
+
+    The `seen` assertion is this test's positive control -- a sweep over zero
+    invocations reports no offenders and reads exactly like a clean one. The
+    reporting half is shown firing in the detector test above.
+    """
+    text = SETUP_MD.read_text(encoding="utf-8")
+    seen = _scaffold_invocations(text)
+    assert seen, (
+        "commands/setup.md documents no scaffold.py invocation. Either setup stopped "
+        "running the plan -- which is #136 reopening -- or SCAFFOLD_LINE_RE no longer "
+        "matches how it is written; a pattern that matched nothing has checked nothing."
+    )
+    offenders = _writing_scaffold_invocations(SETUP_MD.name, text)
+    assert not offenders, (
+        "/oss:setup must only ever run the read-only plan:\n  " + "\n  ".join(offenders)
     )
 
 

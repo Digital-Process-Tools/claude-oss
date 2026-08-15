@@ -210,12 +210,60 @@ be read. The last one is not the third one — "I could not look" sends you some
 
 Run `/oss:doctor` and relay the verdict. Setup that has not been verified is a claim.
 
-Then name **`/oss:scaffold`** as the next step, whatever the verdict says. Setup writes nothing
-tracked, which is exactly what makes it safe to run anywhere and also why it leaves the repo
-half-furnished: config on disk, and no CLAUDE.md, no security policy, no issue templates, no
-changelog gate. Scaffold is separate because it writes tracked files, and tracked files want a
-branch, a diff and a review rather than a command that has already run.
+## Then measure the furniture rather than recommending it
 
-Say it even when doctor reports no gaps. A repo scaffolded before the owned files existed has no
-warning to trigger on, and a maintainer who stops here sees no failure at all — they see a clean
-setup run against a repo the loop assumes is furnished.
+Setup writes nothing tracked, which is exactly what makes it safe to run anywhere and also why it
+leaves the repo half-furnished: config on disk, and no CLAUDE.md, no security policy, no issue
+templates, no changelog gate. Naming the next command does not close that — a setup that stopped
+here and a setup that completed render identically: clean run, clean `git status`, half-furnished
+repo, no warning anywhere. So end by **running** the read-only plan:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json
+```
+
+**Run it unconditionally**, and relay what it printed. Not "only when something looks missing" —
+whether something is missing is the thing this run is measuring, so gating on it means deciding the
+answer before asking. A `PLAN: 0 to create` line does carry information: it separates *furnished*
+from *nobody looked*, which are the two states this repo is named after confusing.
+
+**Never `--apply`, and never from here.** This command writes one untracked local file; the flag
+that writes tracked files belongs to `/oss:scaffold`, on a branch, with a diff and a review. That
+boundary is the working part of the split and running the plan is what keeps it — the maintainer
+gets the measured gap without anything being written for them.
+
+### The three outcomes, and the third is the point
+
+| What the run printed | What it means | What to say |
+| --- | --- | --- |
+| `PLAN: N to create …`, N ≥ 1 | measured gap | relay the `create` lines verbatim, then name `/oss:scaffold` |
+| `PLAN: 0 to create …` | furnished, and checked | say so, and still name `/oss:scaffold` — the owned files are replaced on every run, so a repo scaffolded before they existed is furnished and stale at once |
+| a `FAIL` line, a non-zero exit, or no output at all | **could not plan** | say the furniture gap is *unmeasured*, and why |
+
+The third row is not the second one. *Nothing to do* and *I could not look* are opposite facts, and
+collapsing them here is the same defect this plan was added to close, one layer up.
+
+**A plan that could not run is not a failed setup.** By this point `.oss.json` is on disk and
+correct; the config write and the furniture measurement are two things, and only the second one
+failed. Report it that way — "config written, furniture gap unmeasured because X" — because a run
+reported as failed sends the maintainer to re-run the half that already worked.
+
+### Which lines are offline and which one is not
+
+The per-file lines — `create`, `present`, `replace`, `decline` — are **read from the filesystem**, so
+they answer on a machine with no network at all. The findings printed underneath are not uniformly
+local: the `label` finding is the **only line that asks the forge**, one `gh` call capped at 20
+seconds, and it degrades to its own stated `unknown` with a reason rather than to silence or to a
+guess. The `radar` and `tests` findings beside it are local reads like the plan itself.
+
+So an unreachable forge does not make the furniture gap unmeasurable — it makes one finding
+unmeasured. Relay them as the two different things they are. A `label` line that could not answer
+must never be relayed as a furniture verdict, and a furniture verdict must never be withheld because
+that line could not answer.
+
+### Then name the next step
+
+Name **`/oss:scaffold`** whatever the plan and the doctor verdict said. Scaffold is a separate
+command because it writes tracked files, and tracked files want a branch, a diff and a review rather
+than a command that has already run. The plan above is what makes naming it a measurement with a
+recommendation attached, rather than a recommendation on its own.
