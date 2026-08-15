@@ -163,6 +163,49 @@ checker that cannot answer must say so, name what went unchecked, and never rend
   defaulting a filter all look like fixes and all convert "it broke" into "it silently gave you
   something else". Ask which failure you are choosing.
 
+## A defect in a declared dependency is filed on that dependency's own tracker
+
+Finding a defect in something this project declares as a dependency, working around it, and leaving
+the board that owns the fix in the dark is the section above moved one repository over: the fix is
+known and nobody who could ship it has heard. **Filing it there is part of finishing the work**, not
+a favour to another project and not a decision about somebody else's roadmap. That last sentence is
+the refusal to watch for — it sounds like restraint, it was written by this loop, and it left a
+confirmed, reproduced, cross-repo defect unreported for weeks while the issues stacked behind it.
+
+**The bound is declared dependencies, and it is the manifest that says which.** Never write the
+trackers down; a list in shared prose is wrong the first time a plugin moves, and is the exact fact
+this file is not allowed to carry. `scripts/doctor.py` already derives both halves —
+`declared_dependencies()` reads the manifest and `dependency_repositories(names)` resolves each name
+to a repository URL off that dependency's own installed manifest.
+
+Within that set, two cases and they are not the same duty:
+
+- **A dependency the same maintainer owns.** File it. There are filing rights, the roadmap is the
+  same roadmap, and the only thing stopping it is the refusal above.
+- **An arbitrary third-party dependency.** A judgement, not a duty. There may be no filing rights,
+  no relationship, and a public tracker is a **disclosure channel** — say which of the two cases you
+  are in before you open anything.
+
+**The security exception is not optional, and it is a read rather than a list.** A finding in a row
+the ranking table above marks blocking does not go onto somebody else's public tracker as a reflex.
+It goes down the **embargo** path — whatever private reporting channel that project's own security
+policy names, which is a security tab, a disclosure address or a form rather than the word
+*embargo*, so read the policy instead of grepping for the term. Route those rows there and
+everything else to its issue tracker. **Read the rows off the table when you route** — a restated
+copy has already drifted out of step with a security policy that restated it, and the drifted copy
+is the one that gets quoted.
+
+Three outcomes, and the third is what actually happened:
+
+| Outcome | What it means |
+| --- | --- |
+| **filed** | the upstream issue exists; record its reference beside the local one |
+| **could not file** | the derivation returned no repository, the tracker did not resolve, or the filing failed — name which, and it stays outstanding |
+| **deliberately not filed** | it **is a decision with a reason**, never a default: no filing rights, a blocking row routed to the embargo path instead, or already reported upstream |
+
+A defect found, judged worth reporting, and then quietly not reported renders exactly like a
+dependency with no known defects. Which of the three happened is stated every time.
+
 ## Delegating
 
 Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
@@ -288,7 +331,13 @@ loop produces.
 - **The premise** — pre-flight, before delegating, never after. Nothing downstream catches a wrong
   brief.
 - **Blast radius by filename.** A fix in one subsystem touching only another subsystem's fixtures is
-  a question.
+  a question. So is the inverse: **a diff that changes a file convention and never touches the
+  diagnostic**. The repo's diagnostic is what tells a maintainer whether their repo matches what
+  this loop expects, and it either **reports the new convention** after this change or a derivation
+  it already consumes does — one of those has to be true, and which one is a question for the
+  author, not a finding against them. The failure it catches lives only in the composition of two
+  correct commits: a writer taught to decline a file, and a diagnostic still calling that file
+  missing with the remedy *run the writer*. No per-diff review sees that.
 - **Re-run the new suite against the default branch with the fix absent.**
 
 Not on the list, and this is what creeps back: reading the load-bearing function line by line. Across
@@ -527,6 +576,14 @@ Gates, each a call and not a feeling:
 1. **The default branch is green at leg level for the exact commit being tagged** — and count the
    *workflows*, not just the runs. A workflow declared in `.github/workflows/` but absent from the
    run list is `UNKNOWN`, never a pass.
+
+   **Resolve the commit before you ask about it: `git rev-parse HEAD`, never an abbreviated sha.**
+   That holds for whatever asks the forge which workflows ran — `gh-branch` above, or a raw
+   `gh run list --commit` when no op carries the field you need. A short sha returns `[]` and exits
+   0 from `gh run list --commit`, while the full **40-character** sha returns the runs on that same
+   commit. `git log --oneline` hands you the short form, so the empty list is the default result —
+   and an empty run list is indistinguishable from a commit no workflow ran on, which is this gate
+   counting nothing and reporting a pass.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean → proceed;
    findings → stop and file, **in round one**; **could not run → stop and say so.** Round two is
@@ -572,6 +629,13 @@ is smaller than the last.
 
 Cohort labels are the maintainer's act, by hand; **the triager must never write one.** The cohort is
 closure accounting, never a work order — priority decides what gets worked next.
+
+**The freeze is a label, and a label write can silently delete it.** `gh api -X PATCH issues/N -f
+'labels[]=…'` **replaces the whole label set** — so a later write setting priority or lane removes
+the cohort label, exit 0, nothing errors, and the freeze verified minutes earlier is wrong. Add with
+`POST issues/N/labels` or `gh issue edit N --add-label`; reach for `PATCH` only when replacing the
+whole set is what you mean. And re-count the cohort **after the last label write of the tick**,
+never before it — a count taken first measures a set that is still being edited.
 
 ## Loop mechanics
 
