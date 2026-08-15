@@ -1136,6 +1136,35 @@ def test_watch_channel_unreadable_when_the_document_is_not_an_object(tmp_path):
     assert doctor.watch_channel_state(tmp_path, env={})[0] == "unreadable"
 
 
+def test_watch_channel_unreadable_when_ops_is_present_and_the_wrong_shape(tmp_path):
+    """A broken `ops` yields no names, which is what a repo declaring none also
+    yields -- so folding the two renders an edited-and-broken file as `default`,
+    with a green line saying nothing is wrong. Absent `ops` is the control below."""
+    (tmp_path / doctor.WATCH_CONFIG).write_text('{"ops": []}', encoding="utf-8")
+    broken = doctor.watch_channel_state(tmp_path, env={})[0]
+    (tmp_path / doctor.WATCH_CONFIG).write_text('{"presets": ["git"]}', encoding="utf-8")
+    absent = doctor.watch_channel_state(tmp_path, env={})[0]
+    assert broken == "unreadable"
+    assert absent == "default"
+
+
+def test_watch_channel_conflict_still_names_a_path_override(tmp_path):
+    """Two things can be wrong at once and they have different remedies. Reporting
+    only the conflict drops the fact that the paths do not come from a name at all."""
+    doc = {"ops": {"radar": {"watch_name": "oss"}, "gh-prs": {"watch_name": "other"}}}
+    _supertool_config(tmp_path, doc)
+
+    without = doctor.watch_channel_state(tmp_path, env={})
+    with_override = doctor.watch_channel_state(
+        tmp_path, env={"SUPERTOOL_WATCH_SOCK": "/tmp/elsewhere"}
+    )
+
+    assert without[0] == "conflict"
+    assert "SUPERTOOL_WATCH_SOCK" not in without[1]
+    assert with_override[0] == "conflict"
+    assert "SUPERTOOL_WATCH_SOCK" in with_override[1]
+
+
 def test_watch_channel_declared_without_an_export_is_its_own_state(tmp_path):
     _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
     assert doctor.watch_channel_state(tmp_path, env={})[0] == "declared-only"

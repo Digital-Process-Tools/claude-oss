@@ -648,9 +648,17 @@ def _declared_watch_names(project_dir):
         return set(), "unreadable"
     if not isinstance(doc, dict):
         return set(), "unreadable"
+    # Absent and malformed are not the same answer. `ops` missing entirely is a
+    # repo that declares nothing, which is a real and common state; `ops` present
+    # and the wrong shape is a file somebody edited and broke, and folding it into
+    # the first renders that repo as `default` under a green line saying nothing is
+    # wrong. The top-level document three lines up is already split that way, and
+    # the asymmetry was the bug.
+    if "ops" not in doc:
+        return set(), None
     ops = doc.get("ops")
     if not isinstance(ops, dict):
-        return set(), None
+        return set(), "unreadable"
     return {
         block["watch_name"]
         for block in ops.values()
@@ -694,9 +702,17 @@ def watch_channel_state(project_dir, env=None):
     exported = environ.get(WATCH_NAME_ENV) or ""
 
     if len(names) > 1:
-        return "conflict", "{} op blocks in {} declare {} distinct names".format(
+        # Two things can be wrong at once, and they have different remedies: the
+        # file needs one name left in it, and the override needs unexporting.
+        # Returning only the first drops the second, which is the state that
+        # decides the paths -- so it travels in the detail rather than being
+        # discarded for arriving second.
+        detail = "{} op blocks in {} declare {} distinct names".format(
             len(names), WATCH_CONFIG, len(names)
         )
+        if overrides:
+            detail += ", and {} is set over them".format(", ".join(overrides))
+        return "conflict", detail
     if overrides:
         return "overridden", ", ".join(overrides)
 
