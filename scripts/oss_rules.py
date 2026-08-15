@@ -339,13 +339,28 @@ No exception for an image, a PDF or a notebook cell: none exists in this reposit
 appears, that is when it gets one -- not before.
 """
 
-def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None):
+#: The default for `rules(assembler=...)`, and it has to be a sentinel rather than `None`
+#: because `None` is a value a caller must be able to ask for: it is "there is no
+#: assembler in the tree these rules are going into", which renders the could-not-locate
+#: form. `_DERIVE` is the separate statement "read it off `repo_root` for me".
+_DERIVE = object()
+
+
+def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None, assembler=_DERIVE):
     """dimension -> {filename: body}, rendered for the tree it is going into.
 
     `repo_root` is what makes the changelog rule correct in more than one repository: the
     assembler's path is read off that tree rather than baked in. Called with no root, the
     changelog rule renders its could-not-locate form -- which is the honest answer to
     "what do the rules say" asked without a repository to say it about.
+
+    `assembler` overrides that read, for the one caller whose question is about a tree
+    that does not exist yet: `scaffold.plan_rules()` previews what `--apply` would put
+    here, and `--apply` installs the layer AFTER writing the vendored assembler. A
+    preview that read the tree as it stands would answer for a repository that is one
+    command out of date -- and would answer confidently, which is the defect it exists to
+    fix. The override is passed in rather than guessed at here because which files this
+    run is about to write is knowledge only the caller has, exactly like `gate`.
 
     `untagged` is the same kind of fact as `fragments_dir`: it belongs to one repository,
     the caller has read it out of that repository's `.oss.json`, and this module has no
@@ -355,10 +370,12 @@ def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None):
     no gate, the rule says that this was not established -- also honest, and the reason
     the parameter defaults to `None` rather than to "no gate found".
     """
+    if assembler is _DERIVE:
+        assembler = assembler_path(repo_root) if repo_root is not None else None
     return {
         "paths": {
             "changelog-fragments.md": changelog_fragments(
-                assembler_path(repo_root) if repo_root is not None else None,
+                assembler,
                 fragments_dir or DEFAULT_FRAGMENTS_DIR,
                 untagged,
                 gate,

@@ -1023,7 +1023,7 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
     return {"created": created, "replaced": replaced, "declined": declined}
 
 
-def show(repo_root, config, path=None, plugin_root=None, force_owned=False):
+def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rules_plan=None):
     """Render generated file contents for review, without writing anything.
 
     ``/oss:scaffold`` promises to relay what a generated file would contain before
@@ -1048,8 +1048,25 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False):
     is interpreted. The preview showing three fewer files than the very next command
     writes is the class this docstring already names -- #125 was that regression
     arriving through a flag rather than through the plan.
+
+    The ``01-oss`` rule layer is here too, and for the same reason the OWNED half is: it
+    is replaced wholesale on every run, so it is the destructive half of apply and the
+    one a preview is for (#182). Its bodies come from ``plan_rules()`` rather than being
+    rendered a second time here -- one function decides, the rest read the decision, or
+    the plan and the preview drift the way they did in #125. ``rules_plan`` lets a caller
+    that has already computed it hand it in; nothing else may be passed there, because a
+    preview assembled from somebody else's plan is no longer a preview of this run.
     """
     if path is not None:
+        # A path a person typed, against paths this plugin builds with `/` on every
+        # platform (see `_rule_layer_path`). The three membership tests below are string
+        # equality, so a Windows maintainer typing the separator their shell completes
+        # with was told the file "is not a known template, owned file or rule" -- which
+        # reads exactly like the file not existing. Normalising here can only turn a miss
+        # into a hit: nothing in the known set contains a backslash, and `show` renders
+        # generated content rather than reading the named file, so no normalisation can
+        # send it to a different file than the caller meant.
+        path = path.replace("\\", "/")
         # templates_for, not TEMPLATES: one default is named by the config -- the
         # fragment directory README. The bare form below walks plan(), which is
         # already config-aware, so looking a single path up in the module-level dict
@@ -1060,9 +1077,27 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False):
             return [(path, "create", render(path, config))]
         if path in OWNED:
             return [(path, "replace", render_owned(path, config, plugin_root))]
+        if path in rule_layer_paths():
+            # Rendered against this repository, so it needs the plan rather than the
+            # module-level shape `rule_layer_paths()` answered the membership test from.
+            layer = rules_plan or plan_rules(repo_root, config, force_owned=force_owned)
+            for entry in layer["entries"]:
+                if entry["path"] == path and entry["action"] == "replace":
+                    return [(path, "replace", entry["body"])]
+            # A rule this plugin ships that the preview could not render. Refused with
+            # the reason rather than returning [], which would say "there is no such
+            # file" about a file the very next --apply writes.
+            raise ScaffoldError(
+                "{!r} is in the {} rule layer and could not be previewed: {}".format(
+                    path,
+                    oss_rules.LAYER,
+                    layer["detail"] or "no reason was recorded",
+                )
+            )
         raise ScaffoldError(
-            "{!r} is not a known template or owned file. Known: {}".format(
-                path, ", ".join(sorted(set(templates) | set(OWNED)))
+            "{!r} is not a known template, owned file or rule. Known: {}".format(
+                path,
+                ", ".join(sorted(set(templates) | set(OWNED) | set(rule_layer_paths()))),
             )
         )
     shown = []
@@ -1073,7 +1108,364 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False):
             shown.append(
                 (entry["path"], "replace", render_owned(entry["path"], config, plugin_root))
             )
+    layer = rules_plan or plan_rules(repo_root, config, force_owned=force_owned)
+    for entry in layer["entries"]:
+        if entry["action"] == "replace":
+            shown.append((entry["path"], "replace", entry["body"]))
     return shown
+
+
+# Where the rules engine keeps its layers. Not a fact about any one repository -- it is
+# the dependency's own layout, and `oss_rules.LAYER` names the one directory under it
+# this plugin owns.
+RULES_LAYER_DIR = ".claude/jit-context"
+
+
+def _rule_layer_path(dimension, name):
+    """One repo-relative path inside the owned rule layer, forward slashes always.
+
+    The plan, the preview and the receipt all print these, and the suite compares them
+    against each other. A backslash out of `os.path.join` on Windows would make three
+    renderings of one path stop matching on one leg of the matrix and nowhere else.
+    """
+    return "/".join((RULES_LAYER_DIR, dimension, oss_rules.LAYER, name))
+
+
+def rule_layer_paths():
+    """Every path the layer can hold, without rendering anything.
+
+    `oss_rules.RULES` is the structural shape -- which rules exist in which dimension --
+    so this answers "is that path one of ours" for an error message without a gate walk
+    and without a tree to render against. What it must not be used for is the plan: the
+    bodies are rendered per repository, and only `plan_rules()` knows this one.
+    """
+    paths = []
+    for dimension, layer_rules in oss_rules.RULES.items():
+        for name in sorted(layer_rules):
+            paths.append(_rule_layer_path(dimension, name))
+        paths.append(_rule_layer_path(dimension, oss_rules.INDEX))
+    return sorted(paths)
+
+
+def _layer_scan(repo_root, dimensions):
+    """``(files, unreadable)`` for the owned layer, per dimension. Never raises.
+
+    ``install()`` removes the layer before rewriting it, so what is in there today and
+    not shipped today is deleted -- and that is the one destructive effect of this
+    command no rendering can predict, because it is a fact about the repository.
+
+    Only the dimensions this version renders are scanned, because they are the only ones
+    ``install()`` touches: an ``01-oss`` layer under a dimension the plugin has since
+    retired survives the run untouched, and listing it as a removal would be a confident
+    wrong answer of exactly the kind this function exists to avoid.
+
+    Two values, never one. ``FileNotFoundError`` and ``NotADirectoryError`` are facts
+    about the repository -- there is no such layer -- and anything else is a fact about
+    this process, which goes in ``unreadable``. Folding the second into an empty list
+    would report "nothing would be deleted here" for a directory nobody managed to read;
+    that is #124's shape and this module has paid for it once already. No second question
+    is put to the filesystem to explain the first one's failure: the exception in hand
+    decides which of the two it was.
+    """
+    root = Path(repo_root)
+    found = []
+    unreadable = []
+    for dimension in sorted(dimensions):
+        relative = "{}/{}/{}".format(RULES_LAYER_DIR, dimension, oss_rules.LAYER)
+        try:
+            names = os.listdir(str(root / RULES_LAYER_DIR / dimension / oss_rules.LAYER))
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        except OSError:
+            unreadable.append(_unreadable(relative, CAUSE_DIRECTORY_UNWALKABLE))
+            continue
+        for name in sorted(names):
+            found.append("{}/{}".format(relative, name))
+    return found, unreadable
+
+
+def _one_line(detail):
+    """A repo-derived detail, safe to drop into a line this loop prints.
+
+    The detail is built out of filenames in somebody else's repository, so it is data.
+    A newline in one ends the ``layer    `` line and starts whatever follows at column 0
+    of a CI log or a receipt -- which is #173 and #180's shape (a value reaching a
+    generated file and injecting at column 0) arriving through a different door, since a
+    newline is a legal POSIX filename character and nothing upstream refuses one.
+
+    Flattened rather than dropped, and rather than refused. The name is evidence about
+    the repository and the reader needs it; what it must not have is a line of its own.
+    ``oss_rules._inline()`` does the same job one layer over, for a Markdown code span,
+    and wraps in backticks that would be noise here.
+    """
+    return " ".join(str(detail).split())
+
+
+def _join_names(names):
+    """Sorted, deduped, and each one flattened onto a single line.
+
+    Every name in these lists comes out of the repository being inspected, so it is
+    data -- and this string is printed. It reaches ``plan()``'s three ``decline`` rows,
+    ``check_changelog_gate``'s finding, ``plan_rules()``'s ``layer`` note, and
+    ``/oss:doctor``'s owned-files line, which consumes this function's return value. A
+    newline is a legal POSIX filename character and nothing upstream refuses one, so a
+    file named across two lines ends the line it is printed on and starts the rest at
+    column 0 of a CI log or a receipt somebody parses. That is #173 and #180's shape
+    reaching a receipt rather than a generated file.
+
+    Fixed at the chokepoint rather than at the four call sites, for the reason
+    ``fragments_dir()`` gives one function up: one guard where the value is built beats
+    each caller remembering (#31), and one of those callers is in a file this change
+    could not edit.
+
+    Flattened, not dropped and not refused. The name is the evidence a maintainer needs
+    in order to judge whether the detected gate is real; what it must not have is a line
+    of its own.
+    """
+    return ", ".join(sorted(set(_one_line(name) for name in names)))
+
+
+def _rules_gate(repo_root, config, force_owned=False):
+    """The ``gate`` argument ``oss_rules.install()`` is called with, decided once.
+
+    Returns ``(gate, state, detail)`` -- the argument, plus the raw pair for whoever has
+    to explain it in prose.
+
+    ``--force-owned`` past a ``found`` or ``unknown`` gate writes the trio rather than
+    declining it, so handing the rule a ``found`` would make it report a decline that did
+    not happen: the same false sentence #117 fixed, pointing the other way. If the
+    checker is somehow still missing after that, why is genuinely unknown, which is what
+    ``None`` says.
+
+    Extracted so the preview and the write cannot disagree about it. That is the same
+    reason ``plan()`` owns the ``force_owned`` decision for the trio (#125): three
+    renderings of one decision made in three places is how the preview and the write came
+    apart the first time.
+    """
+    state, detail = _detect_changelog_gate(repo_root, config)
+    if force_owned and state in ("found", "unknown"):
+        return None, state, detail
+    return (state, detail), state, detail
+
+
+_RULE_REPLACE_REASON = (
+    "ours; the {} rule layer is replaced wholesale on every run, so this file is "
+    "rewritten whether or not anything in it changed"
+)
+_RULE_REMOVE_REASON = (
+    "in the {} layer today and not shipped by this version; the layer is deleted before "
+    "it is rewritten, so this file would go with it"
+)
+
+
+def plan_rules(repo_root, config, force_owned=False, entries=None):
+    """What ``--apply`` would do to the ``01-oss`` rule layer, said before it does it.
+
+    The layer was the one thing this command writes on every single run and the one thing
+    neither ``plan()`` nor ``show()`` reached, so a repository that already had every
+    default and already ran a changelog gate was told ``PLAN: 0 to create, 11 already
+    present, 3 declined`` for a run whose whole effect was to delete and rewrite six
+    files of markdown a hook injects into a model's context (#182). Nothing is destroyed
+    and nothing leaves the machine; a preview whose entire purpose is "no surprises"
+    reported a write-nothing run for a run that writes.
+
+    Returns a dict:
+
+    ``state``
+        ``"previewed"`` or ``"unknown"``. The second is the load-bearing one:
+        ``oss_rules`` refuses a gate state it has no sentence for rather than rendering
+        the most plausible one, and swallowing that refusal here would put the plan
+        straight back where the issue found it -- an empty rule section reading as a run
+        that touches no rules.
+    ``entries``
+        ``{"path", "action", "reason", "body"}``. ``replace`` for every file the run
+        would write, ``remove`` for every file in the layer today that it would not.
+        One row per file rather than one row for the layer, deliberately: that is the
+        vocabulary the rest of the plan already uses, and the layer's file count is not
+        stable across plugin versions -- which is an argument for showing it, not
+        against. ``body`` is what would be written, and is ``None`` on a ``remove``.
+    ``unreadable``
+        Layer directories this process could not list. Their contents are unknown rather
+        than empty, so the ``remove`` rows are incomplete rather than absent.
+    ``basis``
+        Where the two tree-dependent inputs came from, in prose. See below -- this is the
+        half a faithful preview turns on.
+    ``gate``
+        The ``gate`` argument ``--apply`` would hand ``oss_rules.install()``. Returned
+        rather than recomputed by the caller, because ``_detect_changelog_gate`` walks
+        the whole repository and this function has already paid for one.
+    ``detail``
+        Present only when ``state`` is ``"unknown"``: why.
+
+    **The tree it renders against is the tree after the writes, not the tree now.**
+    ``--apply`` installs the layer *after* ``apply()``, and that ordering is load-bearing
+    (#68, #117): the changelog rule names the fragment assembler by reading the tree for
+    it, and on a first-ever scaffold the vendored copy only exists once ``apply()`` has
+    written it. So this function does not read the assembler off disk when the plan says
+    this run would write one -- it takes the answer from the plan, and says in ``basis``
+    that it did. A preview that quietly picked one of the changelog rule's four sentences
+    would be a second confident wrong answer rather than a fix for the first.
+
+    The gate is read once here and once again by ``--apply`` after its writes, and the
+    two agree by construction rather than by luck: ``_detect_changelog_gate`` excludes
+    this plugin's own ``oss-changelog.yml`` and ``.oss/`` by name, and no template it
+    creates is a workflow or is named ``assemble_changelog*``, so nothing ``apply()``
+    writes can change the answer. That is a claim, so the suite measures it rather than
+    restating it -- ``tests/test_scaffold_rule_layer_preview.py`` renders the preview,
+    runs ``--apply``, and compares the bodies byte for byte down both branches.
+    """
+    if entries is None:
+        entries = plan(repo_root, config, force_owned=force_owned)
+
+    gate, gate_state, gate_detail = _rules_gate(repo_root, config, force_owned=force_owned)
+    assembler_owned = OWNED_DIR + "/assemble_changelog.py"
+    owned_action = dict(
+        (entry["path"], entry["action"]) for entry in entries if entry["path"] in OWNED
+    )
+
+    basis = []
+    if owned_action.get(assembler_owned) == "replace":
+        assembler = assembler_owned
+        basis.append(
+            "the changelog rule would name {} -- this run writes that file, so the layer "
+            "is rendered against the tree as it will be AFTER the writes, not as it "
+            "stands now.".format(assembler)
+        )
+    else:
+        assembler = oss_rules.assembler_path(repo_root)
+        if assembler:
+            basis.append(
+                "the changelog rule would name {}, read off the tree as it stands: this "
+                "run declines the owned trio, so it writes nothing that could change the "
+                "answer.".format(assembler)
+            )
+        else:
+            basis.append(
+                "there is no fragment assembler in this tree and this run would not "
+                "write one, so the changelog rule renders its could-not-locate form "
+                "rather than naming a path that would fail the first time anybody ran it."
+            )
+            basis.append(
+                "why it is missing is answered from the changelog-gate state {!r} ({}), "
+                "read before the writes -- the same answer --apply reads after them, "
+                "because the scan excludes this plugin's own oss-changelog.yml and {}/ "
+                "by name.".format(
+                    gate_state, gate_detail or "no detail", OWNED_DIR
+                )
+            )
+
+    try:
+        rendered = oss_rules.rules(
+            repo_root,
+            fragments_dir(config),
+            untagged_versions(config),
+            gate,
+            assembler=assembler,
+        )
+    except oss_rules.RulesError as exc:
+        return {
+            "state": "unknown",
+            "entries": [],
+            "unreadable": [],
+            "basis": basis,
+            "gate": gate,
+            "detail": (
+                "the {} rule layer could NOT be previewed ({}). --apply would still "
+                "delete and rewrite it, and how many files that is cannot be reported "
+                "here: this is a preview that failed, not a run that writes "
+                "nothing.".format(oss_rules.LAYER, exc)
+            ),
+        }
+
+    rows = []
+    would_write = []
+    for dimension in sorted(rendered):
+        layer_rules = rendered[dimension]
+        for name in sorted(layer_rules):
+            would_write.append((_rule_layer_path(dimension, name), layer_rules[name]))
+        would_write.append(
+            (
+                _rule_layer_path(dimension, oss_rules.INDEX),
+                "\n".join(oss_rules.index_rows(dimension, layer_rules)) + "\n",
+            )
+        )
+    for path, body in would_write:
+        rows.append(
+            {
+                "path": path,
+                "action": "replace",
+                "reason": _RULE_REPLACE_REASON.format(oss_rules.LAYER),
+                "body": body,
+            }
+        )
+
+    present, unreadable = _layer_scan(repo_root, rendered)
+    shipped = set(path for path, _body in would_write)
+    for path in sorted(set(present) - shipped):
+        rows.append(
+            {
+                "path": path,
+                "action": "remove",
+                "reason": _RULE_REMOVE_REASON.format(oss_rules.LAYER),
+                "body": None,
+            }
+        )
+
+    return {
+        "state": "previewed",
+        "entries": rows,
+        "unreadable": unreadable,
+        "basis": basis,
+        "gate": gate,
+        "detail": None,
+    }
+
+
+def rules_notes(rules_plan, include_basis=True):
+    """The sentences that have to be printed beside the rule rows.
+
+    Three kinds, and none of them is optional. The basis says which of the changelog
+    rule's four answers this preview picked and where that answer came from; an
+    unreadable layer says what the removal rows could not cover; and an ``unknown`` state
+    says the preview failed rather than found nothing.
+
+    ``include_basis`` is off in the apply path only, where the writes have already
+    happened and the receipt above says what they were -- the basis is a statement about
+    a tree that does not exist yet, which is a preview's job and not a receipt's.
+    """
+    lines = list(rules_plan["basis"]) if include_basis else []
+    for entry in rules_plan["unreadable"]:
+        lines.append(
+            "{} could not be listed ({}), so what --apply would delete from it is "
+            "unknown -- which is not the same as nothing.".format(
+                entry["path"], entry["cause"]
+            )
+        )
+    if rules_plan["state"] == "unknown":
+        lines.append(rules_plan["detail"])
+    return lines
+
+
+def rules_summary_clause(rules_plan):
+    """The rule layer's half of the ``PLAN:`` line.
+
+    ``PLAN: 0 to create, 11 already present, 3 declined`` was a true sentence that read
+    as a no-op, because the one thing the run actually did was not in the vocabulary the
+    summary counted in.
+    """
+    if rules_plan["state"] != "previewed":
+        return ", rule layer not previewed (see the 'layer' lines above)"
+    replaced = sum(1 for entry in rules_plan["entries"] if entry["action"] == "replace")
+    removed = sum(1 for entry in rules_plan["entries"] if entry["action"] == "remove")
+    clause = ", {} rule file(s) replaced in the {} layer".format(replaced, oss_rules.LAYER)
+    if removed:
+        clause += " and {} removed from it".format(removed)
+    if rules_plan["unreadable"]:
+        clause += (
+            " (plus an unknown number under {} layer director(ies) that could not be "
+            "listed)".format(len(rules_plan["unreadable"]))
+        )
+    return clause
 
 
 MIN_TOPICS = 3
@@ -1709,12 +2101,12 @@ def _detect_changelog_gate(repo_root, config):
         # unread part of the tree is still carried in the detail rather than dropped.
         # Both states decline the trio, so this changes nothing about what is written;
         # it changes what a maintainer reading the receipt is told they overrode.
-        detail = "already present: {}".format(", ".join(sorted(set(signals))))
+        detail = "already present: {}".format(_join_names(signals))
         if unreadable:
-            detail += "; and could not read: {}".format(", ".join(sorted(set(unreadable))))
+            detail += "; and could not read: {}".format(_join_names(unreadable))
         return "found", detail
     if unreadable:
-        return "unknown", "could not read: {}".format(", ".join(sorted(set(unreadable))))
+        return "unknown", "could not read: {}".format(_join_names(unreadable))
     return "none", ""
 
 
@@ -1987,8 +2379,25 @@ def _main(argv=None):
             print("FAIL --show cannot be combined with --apply -- show first, then apply separately")
             return 1
         show_path = args.show or None
+        # Computed once and handed in, so the notes below and the bodies printed after
+        # them are the same preview rather than two walks that could disagree. Skipped
+        # entirely for a single non-rule path: a gate walk that answers a question
+        # nobody asked is cost, and its notes would be noise over one file's body.
+        rules_plan = None
+        if show_path is None or show_path.replace("\\", "/") in rule_layer_paths():
+            rules_plan = plan_rules(
+                args.root, config, force_owned=args.force_owned, entries=entries
+            )
+            for line in rules_notes(rules_plan):
+                print("layer    {}".format(line))
         try:
-            shown = show(args.root, config, path=show_path, force_owned=args.force_owned)
+            shown = show(
+                args.root,
+                config,
+                path=show_path,
+                force_owned=args.force_owned,
+                rules_plan=rules_plan,
+            )
         except ScaffoldError as exc:
             print("FAIL {}".format(exc))
             return 1
@@ -2001,8 +2410,17 @@ def _main(argv=None):
         return 0
 
     if not args.apply:
+        rules_plan = plan_rules(
+            args.root, config, force_owned=args.force_owned, entries=entries
+        )
         for entry in entries:
             print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
+        # After the templates and the owned trio, because that is the order --apply
+        # writes in: the layer is installed last, against the tree the rest just made.
+        for entry in rules_plan["entries"]:
+            print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
+        for line in rules_notes(rules_plan):
+            print("layer    {}".format(line))
         _print_findings(args.root, config, force_owned=args.force_owned)
         declined_count = sum(1 for e in entries if e["action"] == "decline")
         summary = "PLAN: {} to create, {} already present".format(
@@ -2011,6 +2429,7 @@ def _main(argv=None):
         )
         if declined_count:
             summary += ", {} declined (already covered elsewhere)".format(declined_count)
+        summary += rules_summary_clause(rules_plan)
         print(summary)
         return 0
 
@@ -2045,14 +2464,29 @@ def _main(argv=None):
     # Re-detected here rather than carried out of `apply()`: this is the state of the
     # tree AFTER the writes, which is the tree the rule describes. On a first-ever
     # scaffold `.oss/` did not exist when `plan()` looked, and it does now.
-    gate_state, gate_detail = _detect_changelog_gate(args.root, config)
-    if args.force_owned and gate_state in ("found", "unknown"):
-        # The trio was written, not declined. Handing the rule a `found` here would make
-        # it report a decline that did not happen -- the same false sentence pointing the
-        # other way. If the checker is somehow still missing, why is genuinely unknown.
-        gate = None
-    else:
-        gate = (gate_state, gate_detail)
+    # The removal half of the layer's contract, said out loud. `install()` rmtree's the
+    # layer before rewriting it, so a rule this version no longer ships is deleted and
+    # nothing here used to mention it -- and a preview that promises a deletion the
+    # receipt never confirms is only half a fix for #182.
+    #
+    # `entries` is the pre-write plan, and reusing it here is safe rather than merely
+    # cheap: the only thing read out of it is the action on the OWNED files, and
+    # `plan()` decides those from the gate state and `--force-owned` alone, never from
+    # what is on disk. Recomputing would walk the whole repository again to reach the
+    # same answer.
+    rules_plan = plan_rules(
+        args.root, config, force_owned=args.force_owned, entries=entries
+    )
+    for entry in rules_plan["entries"]:
+        if entry["action"] == "remove":
+            print("removed  {}  ({})".format(entry["path"], entry["reason"]))
+    for line in rules_notes(rules_plan, include_basis=False):
+        print("layer    {}".format(line))
+
+    # The gate `plan_rules` already decided, through `_rules_gate`. Taken from there
+    # rather than asked for again: it costs a second walk of the repository, and two
+    # reads are two chances for the preview and the write to disagree.
+    gate = rules_plan["gate"]
     rules = oss_rules.install(
         args.root,
         fragments_dir=fragments_dir(config),
