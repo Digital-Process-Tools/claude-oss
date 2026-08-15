@@ -12,13 +12,20 @@ This is **not** part of `/oss:setup`. Setup writes one untracked local file and 
 tracked, so it is safe to run anywhere. Scaffolding writes files *into* the repo, which is a real
 change that wants a branch, a diff and a review.
 
+Setup does end by running the **plan** below — the read-only invocation, never `--apply` — so the
+furniture gap reaches the maintainer measured rather than recommended (#136). The plan writes
+nothing, so that costs the boundary nothing. Every write lives here.
+
 ## Show first
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.py" --root . --config .oss.json
 ```
 
-Prints one line per file: `create` or `present`. **Nothing is written.**
+Prints one line per file — `create` or `present` for a template, and `replace` or `decline` for each
+of the three OWNED files, which this bare invocation reports on every run and not only under
+`--apply`. **Nothing is written.** A repo that already has every default still gets three `replace`
+lines here; that is the destructive half of the apply, previewed.
 
 The plan runs the same four checks the apply does, and one of them — `label` — reads the
 repo's label list from the forge. So the preview is read-only but no longer strictly
@@ -349,6 +356,15 @@ maintainer loop — read the board, decide, delegate, review, merge on green. Th
 and the changelog gate are all things the loop assumes and none of them run anything by themselves.
 
 Name it whatever the scaffold run reported, including a run where every file was already `present`.
-`/oss:setup` closes by naming `/oss:scaffold` for the same reason: each command in this chain is
-correct about itself and says nothing about what follows it, so a maintainer who stops here sees no
-failure at all — a furnished repo, a clean run, and a loop nobody started.
+Each command in this chain is correct about itself and says nothing about what follows it, so a
+maintainer who stops here sees no failure at all — a furnished repo, a clean run, and a loop nobody
+started.
+
+**This seam is still carried by prose, and that is a weaker guarantee than the one upstream of it.**
+`/oss:setup` no longer merely names this command: since #136 it ends by running this command's own
+read-only plan, so the furniture gap arrives there as a measured list. The same treatment does not
+transfer here, because a tick is not read-only — it comments, labels, delegates and merges — and so
+it **cannot be previewed**. There is no dry run to print, which means nothing here can measure
+whether the loop was ever started. A repo that stops at this line looks exactly like one that ran a
+tick and found nothing to do, and no check in this repository can currently tell those apart. Said
+out loud so the closed seam upstream is not read as both seams closed.

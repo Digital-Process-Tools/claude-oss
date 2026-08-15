@@ -56,6 +56,12 @@ step**, and it is separate because it writes tracked files: they want a branch, 
 A repo that goes straight from setup to ticking never fails; it just runs the loop against furniture
 nobody added.
 
+So setup does not merely recommend the second step: it ends by running scaffold's own read-only plan
+and relaying it. Nothing is written — the gap arrives as a measured per-file list (`create`,
+`present`, `replace`, `decline`) rather than as a sentence suggesting you go and look, and a plan
+that could not run is reported as unmeasured rather than as nothing to do. Writing still happens only
+under `/oss:scaffold`.
+
 It does **not** set up a board. The session is started able to receive watch-channel events, but
 `radar` reads its tiers from that repo's own `.supertool.json`, and a fresh clone has none. The
 launcher says which of the two is missing rather than reporting the session as armed — a channel
