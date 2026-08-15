@@ -1979,8 +1979,14 @@ def assemble(changelog: Path, directory: Path, version: str, date: str,
                            "twice if the next release also consumes them"
                            .format(len(fragments), directory.name))
 
-        _receipt("ok", "{0} fragment(s) -> `## [{1}] - {2}` in {3}"
-                 .format(len(fragments), version, date, changelog.name), details)
+        # `emitted[0]` for the same reason the dry run uses it, and more so:
+        # this is the only line that reports the mutation, printed after
+        # CHANGELOG.md was rewritten and the fragments deleted. Composing the
+        # heading here a second time made it name a heading that is not in the
+        # file it had just written -- the receipt disagreeing with the tree it
+        # exists to describe.
+        _receipt("ok", "{0} fragment(s) -> `{1}` in {2}"
+                 .format(len(fragments), emitted[0], changelog.name), details)
         # Flushed inside the guard on purpose. A receipt that only reached a
         # buffer has not been delivered, and a pipe that closed under it
         # raises when the interpreter flushes at shutdown -- after the exit

@@ -359,3 +359,34 @@ def test_the_dry_run_receipt_quotes_the_plain_heading_when_there_is_no_title(tmp
     summary = result.stdout.splitlines()[0]
     assert "## [0.2.0] - 2026-08-14" in summary, result.stdout
     assert EM not in summary, result.stdout
+
+def test_the_receipt_for_a_real_fold_quotes_the_titled_heading(tmp_path):
+    """The dry run was not the only place composing the heading a second time.
+
+    The `ok` summary on the write path did it too, and that is the worse of
+    the two: it is the only thing that reports the mutation, printed after
+    CHANGELOG.md was rewritten and the fragments deleted. It named a heading
+    that is not in the file it had just written, and a maintainer reading the
+    receipt instead of the diff -- which is what a receipt is for -- would have
+    seen the plain heading and concluded `--title` had been ignored.
+    """
+    root, script_path = _repo(tmp_path, DATED)
+    result = _fold(root, script_path, "--title", "Quoted on the write path")
+    assert result.returncode == OK, result.stdout + result.stderr
+    summary = result.stdout.splitlines()[0]
+    assert "## [0.2.0] - 2026-08-14 {0} Quoted on the write path".format(EM) in summary, (
+        result.stdout)
+    # And it is the heading that is on disk, which is the claim the summary is
+    # making.
+    assert _heading_line(root) in summary
+
+
+def test_the_receipt_for_a_real_fold_quotes_the_plain_heading(tmp_path):
+    """The must-not-fire half, same fixture: the summary quotes the heading,
+    not the title, so an untitled fold's receipt is unchanged."""
+    root, script_path = _repo(tmp_path, DATED)
+    result = _fold(root, script_path)
+    assert result.returncode == OK, result.stdout + result.stderr
+    summary = result.stdout.splitlines()[0]
+    assert "## [0.2.0] - 2026-08-14" in summary, result.stdout
+    assert EM not in summary, result.stdout
