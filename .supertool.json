@@ -13,7 +13,9 @@
   },
   "ops": {
     "radar": {
-      "watch_name": "claude-oss"
+      "radar_tiers": {
+        "gh-prs": {}
+      }
     }
   }
 }
