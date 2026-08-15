@@ -155,7 +155,17 @@ RELEASE_DEFAULTS = {"commit_subject": DEFAULT_COMMIT_SUBJECT}
 # token ends up in git history with everyone assuming the schema rejected it.
 SECRET_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|credential)", re.IGNORECASE)
 
-REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
+# `\A...\Z`, not `^...$`, here and for every pattern below that validates a value
+# destined for a file this plugin writes. Python's `$` matches **before** a trailing
+# newline, so `^...$` accepted `owner/name` and `changelog.d` with a newline glued to
+# the end -- and such a newline does not escape a shell quote, it ends the YAML block
+# scalar the command sits in, so the generated workflow stops parsing and the
+# changelog gate it carries silently stops running (#173).
+#
+# The anchors live in the pattern rather than at the call site (`fullmatch` would also
+# close it) because a later caller reaching for `.match` or `.search` cannot then lose
+# them. `scripts/assemble_changelog.py` already spells it this way for the same reason.
+REPO_RE = re.compile(r"\A[^/\s]+/[^/\s]+\Z")
 
 # `changelog_dir` is the one value in this file that becomes shell source. `scaffold.py`
 # substitutes it into a `run:` line of the workflow it writes into somebody else's
@@ -167,7 +177,11 @@ REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 # the scaffold creates parent directories -- and admits nothing a shell, a regex or a
 # path resolver reads as an instruction. Tighter than this refuses a legitimate repo to
 # close a hole that quoting already closes; looser is theatre.
-CHANGELOG_DIR_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+#
+# Anchored `\A...\Z` per the note on REPO_RE: `^...$` admitted a trailing newline, and
+# this value lands on four separate lines of the generated workflow, so it was the
+# widest instance of that defect rather than the newest (#173).
+CHANGELOG_DIR_RE = re.compile(r"\A[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\Z")
 
 
 def changelog_dir_problem(value):
@@ -209,7 +223,12 @@ def changelog_dir_problem(value):
 #
 # Not `v1.2.3`: the tag spelling is `release.tag_pattern`'s business, and the audit this
 # feeds compares against `## [x.y.z]` headings, which carry the version.
-CHANGELOG_UNTAGGED_RE = re.compile(r"^\d+\.\d+\.\d+$")
+#
+# Anchored `\A...\Z` per the note on REPO_RE. The template quoting held, exactly as
+# this comment claimed -- and a newline is the one byte that needs no quote to escape:
+# it ended the `run:` block scalar instead (#173). Two mechanisms is still the design;
+# this is the second one being made to actually hold up its half.
+CHANGELOG_UNTAGGED_RE = re.compile(r"\A\d+\.\d+\.\d+\Z")
 
 
 def changelog_untagged_problem(value):

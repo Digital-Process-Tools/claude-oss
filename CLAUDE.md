@@ -155,6 +155,15 @@ separately rather than one list.
   exceptions derive from `BaseException`, so a `pytest.skip` inside the block sails past the `raises`
   and skips the enclosing test — a green tick over an assertion that never ran, reported as `1 skipped`
   where nobody reads it. Pin the outcome type when a test's subject is a skip.
+- **`$` matches before a trailing newline, so `^…$` is not a whole-string anchor.** Every value
+  validated in `oss_config.py` and spliced into a generated file used `^…$`, so `"changelog.d\n"`
+  and `"0.1.0\n"` validated (#173). The harm was not shell escape — a newline cannot leave a
+  single-quoted string — it ended the `run:` block scalar, so the workflow this plugin writes into
+  somebody else's repo stopped parsing and its changelog gate stopped running, with no failed check
+  on the pull request. `.oss.json` is tracked, so the value arrives by ordinary contribution. Anchor
+  `\A…\Z` **in the pattern**, not `fullmatch` at the call site, so a later caller reaching for
+  `.match` or `.search` cannot lose it. Assert the rendered file still parses, not that the regex
+  returned False: the regex is the cause and the parse is the harm.
 
 ## Layout
 
