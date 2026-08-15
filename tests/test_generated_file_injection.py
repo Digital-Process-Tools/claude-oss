@@ -116,6 +116,17 @@ def structure_problems(text):
             "missing top-level key(s) {}: the template did not render what this "
             "check was written to inspect".format(", ".join(missing))
         )
+    # `seen` is compared as a set above, and a set cannot report a duplicate. An
+    # injected line spelling a key the template already has -- `permissions: {}` --
+    # is neither unexpected nor missing, so both checks above pass on a document
+    # that is genuinely broken. Counted, not set-differenced, so the third shape of
+    # the same corruption is reported rather than absorbed.
+    duplicated = sorted({key for key in seen if seen.count(key) > 1})
+    if duplicated:
+        problems.append(
+            "duplicated top-level key(s) {}: a value broke out of its block and "
+            "landed on a key the document already has".format(", ".join(duplicated))
+        )
     return problems
 
 
@@ -150,6 +161,29 @@ def test_the_structure_check_sees_a_broken_workflow(monkeypatch, key, attribute,
         "makes the check blind, not the value safe".format(key)
     )
     assert any("column 0" in problem for problem in problems), problems
+
+
+@pytest.mark.parametrize(
+    "injected, expected",
+    [
+        ("' --changelog CHANGELOG.md", "column 0"),
+        ("evil: yes", "unexpected top-level key"),
+        ("permissions: write-all", "duplicated top-level key"),
+    ],
+)
+def test_the_structure_check_sees_each_shape_of_the_corruption(injected, expected):
+    """The checker has three arms, and each one is asked a question it must answer.
+
+    Splicing into the rendered text rather than through the renderer, because after
+    the fix no config value can carry a newline as far as the template -- and a
+    control that cannot be built is a control that silently is not there.
+    """
+    text = _render()
+    corrupted = text.replace("jobs:", injected + "\njobs:", 1)
+    assert corrupted != text, "the fixture did not splice; this control never ran"
+
+    problems = structure_problems(corrupted)
+    assert any(expected in problem for problem in problems), (injected, problems)
 
 
 def test_the_good_render_is_intact():
@@ -215,6 +249,13 @@ def test_a_line_break_in_repo_is_refused(value):
     problems = oss_config.validate(_config(repo=value))
     assert [p for p in problems if p.startswith("repo:")], problems
 
+    # And at the render-time funnel, not only inside `validate()`. `render()` reaches
+    # CLAUDE.md without going near `plan()`, so a guard that lives only in `validate()`
+    # is a guard that does not run for that caller -- which is what the other two
+    # values already had and this one did not.
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.render("CLAUDE.md", _config(repo=value))
+
 
 # --- the other side: do not trade the loud bug for the quiet one ----------
 #
@@ -250,6 +291,8 @@ def test_legitimate_repos_still_validate(value):
     assert [
         p for p in oss_config.validate(_config(repo=value)) if p.startswith("repo:")
     ] == []
+    assert scaffold.repo_slug(_config(repo=value)) == value
+    assert "# {}".format(value) in scaffold.render("CLAUDE.md", _config(repo=value))
 
 
 # --- the sweep, pinned ----------------------------------------------------
