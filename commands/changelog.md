@@ -98,6 +98,41 @@ This rewrites `CHANGELOG.md` and **deletes the fragments**. Do not run it outsid
 already gated: default branch green at leg level for the exact commit, nothing mid-review, security
 audit passed.
 
+### The heading, and `--title`
+
+The default heading is `## [x.y.z] - YYYY-MM-DD`, which is Keep a Changelog's own shape and stays
+the default. Some repositories put a sentence in the heading instead — what the release is about,
+or why the previous design was wrong — and until `--title` existed the only way to keep that while
+using this script was to fork it, which is an owned file that `/oss:scaffold --apply` replaces
+wholesale.
+
+```bash
+# a title: written after the date, `## [X.Y.Z] - YYYY-MM-DD — <title>`
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z --title 'What this release is about' --dir 'changelog.d' --changelog CHANGELOG.md
+
+# no title, deliberately: the plain heading, and the receipt records that somebody chose it
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z --title '' --dir 'changelog.d' --changelog CHANGELOG.md
+```
+
+**Its three states are three, not two, and the flag is not in `.oss.json` on purpose.** A title is
+a per-release editorial choice, so unlike `changelog_untagged` — one fixed fact about a
+repository's history — it has no single value a config file written once could hold. Where the
+*convention* lives is the changelog itself, which already states it: the fold reads the newest
+`## [x.y.z]` heading in the file it was handed and asks whether that one carries a title.
+
+- **Omitted**, against a file whose newest release heading carries a title: **refused**, nothing
+  written, nothing consumed. This is the quiet direction — writing the plain heading would succeed
+  and look right, and the break is visible only to somebody reading the new heading against the
+  ones above it.
+- **Omitted**, against a plain, bare, or absent history: the default heading, and the receipt says
+  which of those three it read. "No release heading to read a convention from" is not the same
+  answer as "read one and it was plain".
+- **`--title ''`**: the plain heading, recorded as a decision. This is the way to cut one plain
+  release in a repository that titles the rest.
+
+`--title` is read by the fold and by nothing else: passed to `--check`, `--check-links` or
+`--count` it is **refused** rather than ignored, for the same reason `--untagged` is.
+
 ## After
 
 The fold is not the release, and the tag is not the delivery. Bump every site in `version_sites` and
