@@ -14,7 +14,8 @@ maintainer believing something shipped that did not:
   skipped                  policy says this repo tags without publishing. A
                            decision, named out loud, never silence
   could-not-run            the notes could not be extracted, `gh` is not on PATH,
-  could-not-create         or the call failed. Not a release and not a skip
+  could-not-create         the call failed, or `.oss.json` is not a JSON object at
+                           all and so states no policy. Not a release and not a skip
 
 Exit codes, because a shell reads those and never reads prose:
 
