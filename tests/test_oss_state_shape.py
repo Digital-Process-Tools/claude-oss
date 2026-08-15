@@ -11,8 +11,8 @@ harness that produced nothing at all fails instead of passing.
 """
 
 import errno
-import io
 import json
+import platform
 import sys
 from pathlib import Path
 
@@ -263,57 +263,106 @@ def test_migrate_refuses_a_file_that_is_not_there(tmp_path):
 # injects the failure and reads the original back.
 
 
-class _PartialWriter:
-    """A handle that writes part of the payload and then fails, as ENOSPC does.
+# The injection seam, and why it is this one.
+#
+# `io.open` was the first choice and it is version-dependent, which CI settled: the
+# three cases below failed on ubuntu, macos AND windows at Python 3.10, and only 3.10.
+# CPython 3.10 alone routes `Path.open` through `self._accessor.open`, and
+# `_NormalAccessor.open = io.open` captures the function object when `pathlib` is
+# imported -- so rebinding the module attribute afterwards is invisible to it. 3.9
+# calls `io.open(...)` by name and 3.11 deleted the accessor, which is why the legs
+# either side were green.
+#
+# A patched module attribute is a claim about a lookup somebody else's code performs.
+# A method on the class the code under test calls by name -- `Path.write_text`,
+# `Path.read_bytes` -- is looked up at call time on every version, and it is the call
+# `migrate` itself makes rather than a layer underneath it.
+#
+# The measurement below is the second half, because "stable across the versions I
+# reasoned about" is still a claim. Each case attempts the exact operation it is about
+# to rely on, against a scratch file of the same shape, and skips with the interpreter
+# and the sentence naming what went untested when the injection did not take. Nothing
+# here asserts on a condition it did not establish.
 
-    Wrapping rather than subclassing: the point is that the failure lands *after* the
-    open, which is where the truncation already happened.
+
+def _is_sibling_of(path, target):
+    """Is ``path`` the state file, or a temp file written beside it?
+
+    The backup is excluded on purpose: it is written with the builtin `open`, and it
+    has to succeed for the case under test to be "the converted history could not be
+    written".
     """
-
-    def __init__(self, handle, limit):
-        self._handle = handle
-        self._limit = limit
-
-    def write(self, payload):
-        self._handle.write(payload[: self._limit])
-        self._handle.flush()
-        raise OSError(errno.ENOSPC, "No space left on device")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc_info):
-        self._handle.close()
+    name = Path(path).name
+    if name.endswith(oss_state.BACKUP_SUFFIX):
         return False
-
-    def __getattr__(self, name):
-        return getattr(self._handle, name)
+    return name == target.name or name.startswith(target.name + ".")
 
 
 def _explode_writes_near(monkeypatch, target, limit=5):
-    """Fail every write opened through `io.open` at ``target`` or a sibling temp file.
+    """Make the write of the converted history fail part-way, wherever it goes.
 
-    `io.open` is the seam `pathlib` goes through on 3.9 through 3.14, and it is the one
-    both an in-place `write_text` and a temp-file-then-rename write reach -- so this
-    cannot pass by the implementation moving out from under it. The backup is excluded
-    on purpose: it is written with the builtin `open`, and it has to succeed for the
-    case under test to be "the converted history could not be written".
+    Truncate-then-raise, because the whole of #174 is that the failure lands after the
+    file is already destroyed -- an injection that raised before writing would leave
+    the original intact on the old code too, and prove nothing.
     """
-    real_open = io.open
+    real_write_text = Path.write_text
     target = Path(target)
 
-    def opener(file, mode="r", *args, **kwargs):
-        handle = real_open(file, mode, *args, **kwargs)
-        if isinstance(file, int) or not any(ch in mode for ch in "wxa"):
-            return handle
-        name = Path(file).name
-        if name.endswith(oss_state.BACKUP_SUFFIX):
-            return handle
-        if name == target.name or name.startswith(target.name + "."):
-            return _PartialWriter(handle, limit)
-        return handle
+    def write_text(self, data, *args, **kwargs):
+        if not _is_sibling_of(self, target):
+            return real_write_text(self, data, *args, **kwargs)
+        with open(str(self), "w", encoding="utf-8") as handle:
+            handle.write(data[:limit])
+        raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr(io, "open", opener)
+    monkeypatch.setattr(Path, "write_text", write_text)
+
+
+def _untested_if_writes_survive(tmp_path, target):
+    """None if the write injection took, else the sentence to skip with.
+
+    A probe rather than a version check: which interpreters route `Path.write_text`
+    somewhere else is exactly what this cannot know in advance, and a table of versions
+    cannot report one it does not contain.
+    """
+    probe = Path(tmp_path) / (Path(target).name + ".injection-probe")
+    try:
+        probe.write_text("probe", encoding="utf-8")
+    except OSError:
+        return None
+    finally:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+    return (
+        "Path.write_text is patched and a write to {} still succeeded on Python {}, so "
+        "this harness cannot make a write fail here. UNTESTED on this interpreter: "
+        "that a failed write of the converted history leaves the original "
+        "intact.".format(probe.name, platform.python_version())
+    )
+
+
+def _untested_if_reads_survive(tmp_path):
+    """None if the read-back injection took, else the sentence to skip with."""
+    probe = Path(tmp_path) / ("probe.json" + oss_state.BACKUP_SUFFIX)
+    probe.write_bytes(b"probe")
+    try:
+        probe.read_bytes()
+    except OSError:
+        return None
+    finally:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+    return (
+        "Path.read_bytes is patched and a read of {} still succeeded on Python {}, so "
+        "this harness cannot make the read-back fail. UNTESTED on this interpreter: "
+        "that a backup which cannot be read back stops the conversion.".format(
+            probe.name, platform.python_version()
+        )
+    )
 
 
 def test_a_failed_write_leaves_the_original_the_receipt_calls_unchanged(
@@ -321,15 +370,21 @@ def test_a_failed_write_leaves_the_original_the_receipt_calls_unchanged(
 ):
     """The whole of #174: force the write to fail part-way, then read the file back.
 
-    The must-fire half is the state assertion. If the injection never fired -- an
-    interpreter whose `pathlib` does not route through `io.open`, say -- `migrate`
-    succeeds, the state is `migrated`, and this fails loudly rather than passing over a
-    file nobody managed to damage.
+    Two halves, and they answer different questions. The probe establishes that this
+    harness can make a write fail at all; without it a `migrated` result reads as a
+    product defect when it may be an injection that never fired -- an environment limit
+    rendered as a product verdict, which is what CI caught here on 3.10. Past the probe
+    the must-fire assertion is a real verdict: the failure was forced, so a conversion
+    that reports success has genuinely written over the original.
     """
     path = _pre_plugin(tmp_path, name="state.json")
     original = path.read_bytes()
 
     _explode_writes_near(monkeypatch, path)
+    untested = _untested_if_writes_survive(tmp_path, path)
+    if untested:
+        pytest.skip(untested)
+
     result = oss_state.migrate(path)
 
     assert result["state"] == oss_state.CANNOT_MIGRATE, "the injected failure never fired"
@@ -353,6 +408,9 @@ def test_a_failed_write_leaves_no_half_written_file_beside_the_original(
 
     with monkeypatch.context() as patched:
         _explode_writes_near(patched, path)
+        untested = _untested_if_writes_survive(tmp_path, path)
+        if untested:
+            pytest.skip(untested)
         assert oss_state.migrate(path)["state"] == oss_state.CANNOT_MIGRATE
 
     after_failure = sorted(p.name for p in tmp_path.iterdir())
@@ -393,6 +451,22 @@ def test_the_backup_is_read_back_before_the_original_is_touched(tmp_path, monkey
 
     with monkeypatch.context() as patched:
         patched.setattr(oss_state, "open", opener, raising=False)
+        # Same measurement as the two cases above, for a seam that needs it less:
+        # `oss_state.open` is the module's own global lookup and does not vary by
+        # version. Cheap enough that "less likely to break" is not a reason to assert
+        # on a condition nobody established.
+        probe = tmp_path / "probe.bin"
+        with oss_state.open(str(probe), "xb") as handle:
+            handle.write(b"12345678")
+        short = probe.stat().st_size == 4
+        probe.unlink()
+        if not short:
+            pytest.skip(
+                "oss_state.open is patched and a backup write still stored every byte "
+                "on Python {}, so this harness cannot fake a short write. UNTESTED on "
+                "this interpreter: that a backup which does not match the original "
+                "stops the conversion.".format(platform.python_version())
+            )
         result = oss_state.migrate(path)
 
     assert result["state"] == oss_state.CANNOT_MIGRATE, "the short write never fired"
@@ -414,19 +488,18 @@ def test_a_backup_that_cannot_be_read_back_is_its_own_answer(tmp_path, monkeypat
     """
     path = _pre_plugin(tmp_path, name="state.json")
     original = path.read_bytes()
-    real_open = io.open
+    real_read_bytes = Path.read_bytes
 
-    def opener(file, mode="r", *args, **kwargs):
-        if (
-            not isinstance(file, int)
-            and Path(file).name.endswith(oss_state.BACKUP_SUFFIX)
-            and "r" in mode
-        ):
+    def read_bytes(self):
+        if Path(self).name.endswith(oss_state.BACKUP_SUFFIX):
             raise OSError(errno.EIO, "Input/output error")
-        return real_open(file, mode, *args, **kwargs)
+        return real_read_bytes(self)
 
     with monkeypatch.context() as patched:
-        patched.setattr(io, "open", opener)
+        patched.setattr(Path, "read_bytes", read_bytes)
+        untested = _untested_if_reads_survive(tmp_path)
+        if untested:
+            pytest.skip(untested)
         result = oss_state.migrate(path)
 
     assert result["state"] == oss_state.CANNOT_MIGRATE, "the read-back never failed"
