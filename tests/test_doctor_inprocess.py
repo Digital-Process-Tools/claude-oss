@@ -12,6 +12,7 @@ So both: subprocess for the contract, in-process for the branches.
 import json
 import locale
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -570,6 +571,19 @@ def _fully_configured(root):
     """
     (root / "wt").mkdir(exist_ok=True)
     (root / ".max").mkdir(exist_ok=True)
+    # A registered radar tier AND a route to the op that reads it (#191). Both are
+    # needed and each is silent about the other, so a fixture carrying one of them
+    # is a repo whose board publishes nothing -- which is exactly the state this
+    # suite would then be calling `VERDICT: ok`.
+    (root / doctor.WATCH_CONFIG).write_text(
+        json.dumps(
+            {
+                "presets": [doctor.WATCH_PRESET],
+                "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+            }
+        ),
+        encoding="utf-8",
+    )
     # A list, because that is what /oss:tick writes and reads. It said `{}` until #149 --
     # this suite's own idea of a fully configured repo carried the one shape the tick
     # cannot use, and the doctor called it OK.
@@ -1271,3 +1285,384 @@ def test_main_reports_the_watch_channel(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert doctor.WATCH_NAME_ENV in out
     assert out.strip().splitlines()[-1].startswith("VERDICT:")
+
+# --- does anything publish to this repo's board? (#191) -----------------------
+#
+# The channel being open and the board being empty are different facts, and from
+# every vantage point outside this file they render identically: `watches` shows
+# a fleet, `channel:health` says FORWARDING, and nothing has ever been published.
+# So every arm below asserts a DISTINCT state -- two arms both producing a WARN
+# would reproduce the defect in the test.
+
+
+def _oss_config_doc(root, doc):
+    (root / doctor.OSS_CONFIG).write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_radar_publish_reports_a_declared_board_with_a_route(tmp_path):
+    """The must-not-fire arm. Its control is the test directly below, which uses
+    the same fixture and removes only the tiers."""
+    _supertool_config(
+        tmp_path,
+        {
+            "presets": ["git", doctor.WATCH_PRESET],
+            "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+        },
+    )
+    state, detail = doctor.radar_publish_state(tmp_path)
+    assert state == "publishes", (state, detail)
+
+
+def test_radar_publish_reports_no_tiers_against_the_same_fixture(tmp_path):
+    """The must-fire control for the test above, and the state measured on this
+    repository at the time #191 was filed: the tracked .supertool.json declares
+    no ops at all, so nothing publishes while doctor printed OK."""
+    _supertool_config(tmp_path, {"presets": ["git", doctor.WATCH_PRESET]})
+    assert doctor.radar_publish_state(tmp_path)[0] == "no-tiers"
+
+
+def test_radar_publish_no_config_file_is_its_own_state(tmp_path):
+    assert doctor.radar_publish_state(tmp_path)[0] == "no-config"
+
+
+def test_radar_publish_unreadable_is_not_the_same_as_declaring_none(tmp_path):
+    """A file that could not be parsed yields no tiers, which is exactly what a
+    file declaring none yields. Folding them sends a maintainer to add tiers to a
+    file that already has some and cannot be read."""
+    _supertool_config(tmp_path, {"presets": []})
+    quiet = doctor.radar_publish_state(tmp_path)[0]
+    (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")
+    broken = doctor.radar_publish_state(tmp_path)[0]
+    assert quiet == "no-tiers"
+    assert broken == "unreadable"
+
+
+def test_radar_publish_an_empty_tier_object_declares_no_tier(tmp_path):
+    _supertool_config(
+        tmp_path,
+        {"presets": [doctor.WATCH_PRESET], "ops": {"radar": {"radar_tiers": {}}}},
+    )
+    assert doctor.radar_publish_state(tmp_path)[0] == "no-tiers"
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {"ops": []},
+        {"ops": {"radar": "gh-prs"}},
+        {"ops": {"radar": {"radar_tiers": ["gh-prs"]}}},
+    ],
+)
+def test_radar_publish_malformed_is_not_the_same_as_declaring_none(tmp_path, doc):
+    """Edited-and-broken has a different remedy from never-declared, and reporting
+    the first as the second is a green-adjacent line about a file nobody can use."""
+    _supertool_config(tmp_path, dict(doc, presets=[doctor.WATCH_PRESET]))
+    assert doctor.radar_publish_state(tmp_path)[0] == "malformed"
+
+
+def test_radar_publish_tiers_declared_with_no_route_to_the_op(tmp_path):
+    """The other half measured in #191: tiers can be declared while the op that
+    reads them is not loaded here at all, and each half is silent about the other."""
+    _supertool_config(
+        tmp_path,
+        {
+            "presets": ["git", "github"],
+            "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+        },
+    )
+    assert doctor.radar_publish_state(tmp_path)[0] == "no-route"
+
+
+@pytest.mark.parametrize("presets", [None, "watch", ["watch", 3]])
+def test_radar_publish_route_unknown_when_presets_cannot_be_read(tmp_path, presets):
+    """The third state for the route half. `presets` absent or the wrong shape is
+    not evidence that the op is unrouted, and answering `no-route` there would
+    send a maintainer to add a preset that may already be in effect."""
+    doc = {"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}
+    if presets is not None:
+        doc["presets"] = presets
+    _supertool_config(tmp_path, doc)
+    assert doctor.radar_publish_state(tmp_path)[0] == "route-unknown"
+
+
+def test_radar_publish_never_prints_a_value_the_repo_chose(tmp_path):
+    """.supertool.json is contributor-writable in a managed repo, so a tier name
+    reaching this output lets a tracked file write the diagnosis."""
+    secret = "zzsentinelzz"
+    _supertool_config(
+        tmp_path,
+        {
+            "presets": [doctor.WATCH_PRESET, secret],
+            "ops": {"radar": {"radar_tiers": {secret: {}}}},
+        },
+    )
+    _state, detail = doctor.radar_publish_state(tmp_path)
+    assert secret not in detail
+
+
+def test_check_radar_publish_warns_on_an_empty_board_and_not_on_a_declared_one(
+    tmp_path, capsys
+):
+    _supertool_config(
+        tmp_path,
+        {
+            "presets": ["git", doctor.WATCH_PRESET],
+            "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+        },
+    )
+    doctor.check_radar_publish(tmp_path)
+    quiet = [state for state, _ in doctor.FINDINGS]
+    doctor.FINDINGS.clear()
+
+    _supertool_config(tmp_path, {"presets": ["git", doctor.WATCH_PRESET]})
+    doctor.check_radar_publish(tmp_path)
+    loud = [state for state, _ in doctor.FINDINGS]
+
+    assert quiet == ["OK"]
+    assert loud == ["WARN"]
+    assert capsys.readouterr().out.strip()
+
+
+def test_check_radar_publish_prints_ascii_only_in_every_state(tmp_path):
+    """Windows consoles encode with the codepage, not the source file's encoding,
+    so a non-ASCII byte here kills the process at the print -- after the work that
+    print was reporting already happened."""
+    docs = [
+        None,
+        {"presets": ["git"]},
+        {"presets": ["git"], "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
+        {"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
+        {"presets": [doctor.WATCH_PRESET], "ops": []},
+        {
+            "presets": [doctor.WATCH_PRESET],
+            "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+        },
+    ]
+    seen = set()
+    for doc in docs:
+        doctor.FINDINGS.clear()
+        target = tmp_path / doctor.WATCH_CONFIG
+        if doc is None:
+            if target.exists():
+                target.unlink()
+        else:
+            _supertool_config(tmp_path, doc)
+        seen.add(doctor.radar_publish_state(tmp_path)[0])
+        doctor.check_radar_publish(tmp_path)
+        for _state, message in doctor.FINDINGS:
+            message.encode("ascii")
+    # The loop is only worth its runtime if it actually walked the states. Six of
+    # the seven; `unreadable` needs a permission fixture and has its own test.
+    assert len(seen) == 6, sorted(seen)
+
+
+def test_check_radar_publish_survives_an_unreadable_supertool_config(tmp_path):
+    """exit 0 always: an OSError that is not absence arrives as a WARN, never as
+    a traceback. The deny is attempted rather than assumed."""
+    blocked = tmp_path / doctor.WATCH_CONFIG
+    blocked.write_text("{}", encoding="utf-8")
+    try:
+        blocked.chmod(0o000)
+        if os.access(str(blocked), os.R_OK):
+            pytest.skip(
+                "this process can read a 0o000 file (root, or a filesystem without "
+                "POSIX modes), so the unreadable arm cannot be reached here; the "
+                "malformed-document arm above still covers a file that parses to "
+                "nothing usable"
+            )
+        state, _detail = doctor.radar_publish_state(tmp_path)
+    finally:
+        blocked.chmod(0o644)
+    assert state == "unreadable"
+
+
+def test_the_preset_that_provides_radar_is_measured_against_supertool(tmp_path):
+    """WATCH_PRESET is a transcription of a fact in a declared dependency, so it is
+    measured against that dependency rather than asserted in a comment.
+
+    A project enabling no presets is asked for `radar`; supertool names the preset
+    that provides it in the refusal. If supertool is not installed, or its refusal
+    names no preset at all, that is reported as untested rather than as a pass --
+    an assertion that could not look must not render as one that looked.
+    """
+    if shutil.which("supertool") is None:
+        pytest.skip(
+            "supertool is not on PATH, so the preset name behind doctor.WATCH_PRESET "
+            "went unmeasured here; it remains a transcription only"
+        )
+    _supertool_config(tmp_path, {"presets": []})
+    probe = subprocess.run(
+        ["supertool", "radar:--state"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    blob = (probe.stdout or "") + (probe.stderr or "")
+    if "preset" not in blob:
+        pytest.skip(
+            "supertool's answer for an unrouted 'radar' names no preset here, so the "
+            "constant went unmeasured: " + " ".join(blob.split())[:200]
+        )
+    assert "'{}'".format(doctor.WATCH_PRESET) in blob, blob
+
+
+# --- the shared default socket is a finding, not a shrug (#191) ---------------
+
+
+def test_watch_channel_derives_a_name_when_oss_json_carries_a_repo(tmp_path):
+    """bin/oss-workspace derives the channel name from .oss.json's repo when
+    nothing declares or exports one, so `default` stopped meaning "the shared
+    socket" the moment that landed. The control is the test below: the same
+    fixture with the repo removed."""
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    state, detail = doctor.watch_channel_state(tmp_path, env={})
+    assert state == "derived", (state, detail)
+
+
+def test_watch_channel_is_the_shared_default_when_nothing_can_be_derived(tmp_path):
+    """The must-fire control for the test above."""
+    _oss_config_doc(tmp_path, {"default_branch": "main"})
+    state, detail = doctor.watch_channel_state(tmp_path, env={})
+    assert state == "default"
+    assert doctor.OSS_CONFIG in detail
+
+
+def test_watch_channel_default_names_which_of_three_reasons_it_was(tmp_path):
+    """One state, three remedies. The reason travels in the detail rather than
+    being dropped for arriving second."""
+    absent = doctor.watch_channel_state(tmp_path, env={})[1]
+    _oss_config_doc(tmp_path, {"repo": "   "})
+    empty = doctor.watch_channel_state(tmp_path, env={})[1]
+    (tmp_path / doctor.OSS_CONFIG).write_text("{not json", encoding="utf-8")
+    broken = doctor.watch_channel_state(tmp_path, env={})[1]
+    assert len({absent, empty, broken}) == 3, (absent, empty, broken)
+
+
+def test_watch_channel_a_declaration_still_wins_over_the_derivation(tmp_path):
+    """Precedence, mirroring bin/oss-workspace: export, then declaration, then
+    derivation. A derivable repo must not turn a declaration into `derived`."""
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    assert doctor.watch_channel_state(tmp_path, env={})[0] == "declared-only"
+    assert (
+        doctor.watch_channel_state(tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss"})[0]
+        == "agree"
+    )
+
+
+def test_watch_channel_state_never_prints_the_repo_it_derived_from(tmp_path):
+    _oss_config_doc(tmp_path, {"repo": "zzsentinelzz/zzrepozz"})
+    _state, detail = doctor.watch_channel_state(tmp_path, env={})
+    assert "zzsentinelzz" not in detail
+
+
+def test_check_watch_channel_warns_on_the_shared_socket_and_not_on_a_derivation(
+    tmp_path, capsys
+):
+    """The verdict, not the state, is what #191 reports: `default` printed OK and
+    the words "Nothing is broken" on a tree where every event this repo emitted
+    was discarded."""
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    doctor.check_watch_channel(tmp_path, env={})
+    quiet = [state for state, _ in doctor.FINDINGS]
+    doctor.FINDINGS.clear()
+
+    (tmp_path / doctor.OSS_CONFIG).unlink()
+    doctor.check_watch_channel(tmp_path, env={})
+    loud = [(state, message) for state, message in doctor.FINDINGS]
+
+    assert quiet == ["OK"]
+    assert [state for state, _ in loud] == ["WARN"]
+    assert "Nothing is broken" not in loud[0][1]
+    assert capsys.readouterr().out.strip()
+
+
+@pytest.mark.parametrize("doc", [{"repo": "owner/name"}, {"default_branch": "main"}])
+def test_check_watch_channel_says_the_holder_question_is_not_checked(tmp_path, doc):
+    """Which server holds the socket is the half that decides delivery, and it is
+    the half nothing here can see -- `channel:health` says so of itself, in its own
+    output. The decision to decline it is printed rather than left in a comment."""
+    _oss_config_doc(tmp_path, doc)
+    doctor.check_watch_channel(tmp_path, env={})
+    message = doctor.FINDINGS[0][1]
+    assert "not established" in message.lower(), message
+    assert "channel:health" in message, message
+
+
+def test_check_watch_channel_prints_ascii_only_in_the_derived_and_default_states(
+    tmp_path,
+):
+    for doc in ({"repo": "owner/name"}, {"default_branch": "main"}, None):
+        doctor.FINDINGS.clear()
+        target = tmp_path / doctor.OSS_CONFIG
+        if doc is None:
+            if target.exists():
+                target.unlink()
+        else:
+            _oss_config_doc(tmp_path, doc)
+        doctor.check_watch_channel(tmp_path, env={})
+        for _state, message in doctor.FINDINGS:
+            message.encode("ascii")
+
+
+def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
+    """Two copies of one rule, cross-checked rather than restated.
+
+    `bin/oss-workspace` decides derivability in an embedded heredoc; doctor decides
+    it in `_derivable_watch_name`. This runs the launcher's own program against the
+    same fixtures and asserts it prints a name exactly when doctor says it can --
+    a second measurement, not a second assertion. If the heredoc cannot be located
+    the guard fails loudly, because a copy that went unchecked must not render as
+    a copy that agreed.
+    """
+    launcher = (REPO_ROOT / "bin" / "oss-workspace").read_text(encoding="utf-8")
+    marker = "DERIVE_NAME"
+    opening = "<<'" + marker + "'"
+    closing = "\n" + marker + "\n"
+    tail = launcher.split(opening, 1)[1] if opening in launcher else ""
+    if "\n" not in tail or closing not in tail:
+        pytest.fail(
+            "bin/oss-workspace no longer carries a {} heredoc, so doctor's copy of "
+            "the derivation rule went unchecked".format(marker)
+        )
+    # The rest of the opening line belongs to the shell, not to the heredoc.
+    program = tail.split("\n", 1)[1].split(closing, 1)[0]
+    script = tmp_path / "derive.py"
+    script.write_text(program, encoding="utf-8")
+
+    target = tmp_path / doctor.OSS_CONFIG
+    cases = [
+        ({"repo": "owner/name"}, "yes"),
+        ({"repo": "   "}, "no-repo"),
+        ({"default_branch": "main"}, "no-repo"),
+        ("{not json", "unreadable"),
+        (None, "no-config"),
+    ]
+    for doc, expected in cases:
+        if doc is None:
+            if target.exists():
+                target.unlink()
+        elif isinstance(doc, str):
+            target.write_text(doc, encoding="utf-8")
+        else:
+            _oss_config_doc(tmp_path, doc)
+        assert doctor._derivable_watch_name(tmp_path) == expected, (doc, expected)
+        run = subprocess.run(
+            [sys.executable, str(script), str(target)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        printed = bool(run.stdout.strip())
+        assert printed == (expected == "yes"), (doc, run.stdout, run.stderr)
+
+
+def test_main_reports_whether_anything_publishes_to_the_board(tmp_path, monkeypatch):
+    _config(tmp_path)
+    _supertool_config(tmp_path, {"presets": ["git"]})
+    monkeypatch.delenv("SUPERTOOL_WATCH_NAME", raising=False)
+    monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
+    monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
+    assert doctor.main(["--root", str(tmp_path)]) == 0
+    assert [m for _s, m in doctor.FINDINGS if m.startswith("radar board:")]

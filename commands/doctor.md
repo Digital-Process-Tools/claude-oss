@@ -1,5 +1,5 @@
 ---
-description: Diagnose this repo's oss setup — config, dependencies, clone, worktree root, state file, watch channel.
+description: Diagnose this repo's oss setup — config, dependencies, clone, worktree root, state file, watch channel, radar board.
 allowed-tools: Bash
 ---
 
@@ -43,9 +43,11 @@ second one.
 
 ## The `watch channel` line
 
-One line, eight states, and none of them is a claim about which pollers are running. It compares two
-places — a `watch_name` in this repo's `.supertool.json`, and `SUPERTOOL_WATCH_NAME` in the
-environment this run inherited — and reports which channel the repo resolves to. The name derives a
+One line, nine states, and none of them is a claim about which pollers are running. It compares three
+places — a `watch_name` in this repo's `.supertool.json`, `SUPERTOOL_WATCH_NAME` in the environment
+this run inherited, and, when neither of those answers, the `repo` in `.oss.json` that
+`bin/oss-workspace` derives a name from (#191) — and reports which channel the repo resolves to.
+The name derives a
 socket and a poller-slot directory held by exactly one process, so repos resolving to one name share
 one fleet while each board renders as its own. That is the whole reason the line exists: the shared
 case and the private case are otherwise indistinguishable from inside either repo.
@@ -53,9 +55,16 @@ case and the private case are otherwise indistinguishable from inside either rep
 - `OK … and they match` / `declared in .supertool.json and nothing is exported over it` — fine.
   Neither says the fleet is private; nothing here enumerates pollers, and `supertool 'channel:health'`
   is what answers delivery.
-- `OK … shared default channel` — nothing declared, nothing exported. Not a defect and not silence:
-  this repo is on the default channel with every other repo that declares none, which is stated
-  rather than left to be inferred from a missing line.
+- `OK … bin/oss-workspace exports a name derived from it` — nothing declared and nothing exported,
+  but `.oss.json` carries a `repo`, so a session this launcher opens gets a socket of its own. It
+  covers sessions the launcher opens and nothing else: a `claude` started by hand in the directory
+  exports nothing and lands on the shared default.
+- `WARN … binds the SHARED default socket` — nothing declared, nothing exported, and nothing to
+  derive from. This used to read `OK … Nothing is broken`, and it was measured saying exactly that
+  on a repository where five events were read, five forwarded, zero dropped and none delivered
+  (#191). One process holds that socket, the first one wins, and the loser is never told. The line
+  names which of three reasons applied — no `.oss.json`, an unreadable one, or one with no `repo` —
+  because the remedies differ.
 - `WARN … is exported and .supertool.json declares no watch_name` — the filed case. A hand-copied
   `.claude/settings.local.json` puts one name into several repos, and each of them then reports a
   fleet that is not its own.
@@ -75,6 +84,44 @@ diagnosed repo wrote. The remedy is always in one of the two places the line nam
 The plugin does not configure this. `.oss.json` describes a repo's release and review process and a
 watcher socket is neither, and `.supertool.json` already carries the name to supertool's own ops
 with no plumbing. Do not offer to write the name into `.oss.json`; there is nowhere for it to go.
+
+**One thing neither line establishes**, and it is the half that decides delivery: *which process*
+holds the socket. `supertool 'channel:health'` performs a socket-holder probe and reports its own
+limit in as many words — *"NOT established: that the configured server is the one holding this
+socket. Two channel-capable servers would satisfy both halves apart."* That was the live state in
+#191: events read, forwarded and discarded, with nothing red anywhere. The diagnostic declines the
+question rather than guessing at it — answering it needs `lsof`, `ps`, a walk up a process tree and
+the harness's own server name, none of which exist on every platform and none of which doctor is a
+reliable child of — and it prints the decline rather than leaving it in a comment.
+
+## The `radar board` line
+
+The channel and the board are two questions (#191). The channel line above says *where* events would
+go; this one says whether anything ever puts one there. Two halves have to hold and each is silent
+about the other: a tier has to be **registered** in `ops.radar.radar_tiers`, and the op reading it
+has to be **routed** here by the `watch` preset. A repo with neither renders exactly like a healthy
+one — a session opens, `watches` shows a fleet, `channel:health` says FORWARDING, and nothing has
+ever published. That question lived until now as one line of session-start stderr from
+`bin/oss-workspace`, matched by a `grep` that also hits the word inside an unrelated key.
+
+- `OK … registers a board and a route to it` — both halves. It reads one declaration: it does not
+  run `radar`, does not reach a forge, and does not establish that any tier has ever emitted.
+- `WARN … registers no tier` / `there is no .supertool.json here` — nothing publishes. The line
+  carries the block to add.
+- `WARN … does not enable 'watch'` — tiers are registered and the op has no route here, so they
+  cannot run. Half a board is not a board.
+- `WARN … presets … is absent or not a list of strings` — the third state for the route half.
+  Answered neither as routed nor as unrouted, because `no-route` would send you to add a preset
+  that may already be in effect.
+- `WARN … is not an object` — a file somebody edited and broke, which is a different answer from a
+  repo that registers none and has a different remedy.
+- `WARN … could not be read` — the third state. Not `registers none`.
+
+No tier name is ever printed. `.supertool.json` is contributor-writable in a managed repo, and a
+tracked file must not get to write the diagnosis.
+
+`/oss:scaffold` asks the registration half of this at scaffold time and names the same block; the
+route half and the read-failure states are asked only here.
 
 ## The `owned files` lines, and what to do about them
 
