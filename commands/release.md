@@ -51,19 +51,18 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    the two swallows the other and the gate re-creates a layer down the defect it exists to catch — so
    the arms are separate here, and each one is stated rather than left to the omission above:
 
-   - **`unranked` — the agent classified it and no row fits.** It **blocks the tag until it is
-     ranked**, and ranking it is the way past: put it in a row, or earn it a new one in the table,
-     and the table decides from there. It is never carried forward by omission. The rows are a record
-     of what has already gone wrong rather than a partition of what can, so a finding outside all of
-     them has an *unknown* cost — and a gate whose cheapest mistake is a late release must not take
-     the cheap arm on an unknown. The escape hatch is deliberately the productive one: the table
-     grows by exactly the rows that were missing.
-   - **`could not rank` — the ranking table never reached the agent.** Nothing was measured, so this
-     is a fact about the wiring and says nothing whatever about the finding. Re-dispatch that round
-     with the table pasted into the payload verbatim, and record that you did. **If it comes back
-     `could not rank` again, the gate is `could not run` and the release stops** — the same contract
-     as a spawn that never started, for the same reason: an audit that could not perform its own read
-     is not an audit that found nothing.
+   - **`unranked` — the agent classified it and no row fits.** Rank it **here**, before the cap is
+     applied to it, and let the row decide from there: put it in a row, or earn it a new one in the
+     table. **The cap does not reach a finding that has no row yet**, so nothing is ever carried
+     forward unranked. The rows are a record of what has already gone wrong rather than a partition
+     of what can, so a finding outside all of them has an *unknown* cost, and the escape hatch is
+     deliberately the productive one: the table grows by exactly the rows that were missing.
+   - **`could not rank` — the ranking table never reached the agent.** Nothing was ranked, so the
+     audit did not complete: that is **`could not run`, and it stops the tag**, the same contract as
+     a spawn that never started. Re-dispatch with the ranking table pasted into the payload verbatim
+     and record that you did — that is how the answer gets computed, not an extra round. A rank
+     nothing computed says nothing whatever about the finding, and must never be read as a row that
+     happens not to block.
 
    The range is computed before anyone judges it, because "could not run" is a fact about the
    repository and not a reading:
@@ -125,7 +124,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.
 
-   Then, and only for the two computable states:
+   Then, and only for the two computable states of the range:
 
    ```
    Agent(subagent_type: "oss:release-auditor", run_in_background: false)

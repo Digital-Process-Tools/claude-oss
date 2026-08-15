@@ -168,6 +168,17 @@ VERDICT: could not run  — <the reason the script gave>
 `first release` replaces the range in the verdict line's tail, so a first release is never reported
 as a bare range that reads like any other.
 
+Then one line for the **checklist in effect**, before the classes and in every round:
+
+```
+checklist in effect: <the file you worked from> <version, or "version unknown">
+checklist in effect: could not tell — <what was missing>
+```
+
+It is reported whatever the classes came back as. A template that enumerates everything else and
+omits this one is how the line gets dropped: `clean` under a `could not tell` is a clean audit of
+unknown vintage, and without the line it reads as an ordinary clean one.
+
 Then, per class, one line each — every class named even when empty, because a class you skipped and a
 class that was clean look identical otherwise. Each finding: file, line, the class, **its ranking row**
 (or `unranked` / `could not rank`), what an attacker or a caller gets, and the one fact that would

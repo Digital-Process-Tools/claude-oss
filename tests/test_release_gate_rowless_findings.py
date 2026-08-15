@@ -46,6 +46,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RELEASE_COMMAND = REPO_ROOT / "commands" / "release.md"
 RELEASE_AUDITOR = REPO_ROOT / "agents" / "release-auditor.md"
 AUDITOR = REPO_ROOT / "agents" / "auditor.md"
+MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+
+# Both documents that decide what the gate does with a finding. The skill is in
+# this list because it always carried the rule and the command did not, which
+# is the divergence #175 actually was -- so a join anchored only on the command
+# would have gone green on half the loop.
+ROWLESS_CONSUMERS = (RELEASE_COMMAND, MANAGER_SKILL)
 
 # The vocabulary, as a registry with a sentence each rather than a discovery
 # run. A regex over prose would have its own third state -- "the defining
@@ -151,23 +158,36 @@ CHECKLIST_ANCHOR = "checklist in effect"
 CHECKLIST_THIRD_STATE = "could not tell"
 
 
+def _checklist_chunks(text):
+    """The chunks that are about the checklist read, not the whole document.
+
+    Scoped, and the scope is the finding this file's own first draft had:
+    `commands/release.md` has said "the probe **could not tell** how this repo
+    tags" since long before #176, in a paragraph about `tag_pattern`. A
+    whole-document substring test for the third state was therefore satisfied
+    by prose that has nothing to do with the checklist, and would have gone on
+    passing after the state it claims to check was deleted.
+    """
+    return [chunk.lower() for chunk in _chunks(text) if "checklist" in chunk.lower()]
+
+
 def _checklist_read_unmet(text):
     """What the release command owes the question "which checklist am I gating
     with", in `commands/release.md`.
     """
     unmet = set()
-    folded = text.lower()
-    if CHECKLIST_ANCHOR not in folded:
+    scoped = _checklist_chunks(text)
+    if CHECKLIST_ANCHOR not in text.lower():
         unmet.add("reads-which-checklist-is-in-effect")
-    if CHECKLIST_THIRD_STATE not in folded:
+    if not any(CHECKLIST_THIRD_STATE in chunk for chunk in scoped):
         unmet.add("has-a-could-not-tell-state")
-    if "never renders as a match" not in folded:
+    if not any("never renders as a match" in chunk for chunk in scoped):
         unmet.add("could-not-tell-never-renders-as-a-match")
     # A repo that merely installed the plugin legitimately runs whatever it
     # installed. Stopping its release over a version skew it did not choose
     # trades a reporting gap for a release nobody can cut, which is the same
     # trade `scope: null` already refuses one gate over.
-    if "annotate" not in folded:
+    if not any("annotate" in chunk for chunk in scoped):
         unmet.add("annotates-rather-than-stopping-a-repo-that-installed-it")
     return unmet
 
@@ -179,12 +199,30 @@ def _auditor_checklist_unmet(text):
     arrived in its brief.
     """
     unmet = set()
-    folded = text.lower()
-    if CHECKLIST_ANCHOR not in folded:
+    scoped = _checklist_chunks(text)
+    if CHECKLIST_ANCHOR not in text.lower():
         unmet.add("reports-which-checklist-reached-it")
-    if CHECKLIST_THIRD_STATE not in folded:
+    if not any(CHECKLIST_THIRD_STATE in chunk for chunk in scoped):
         unmet.add("has-a-could-not-tell-state")
     return unmet
+
+
+REPORT_FORMAT_HEADING = "## report format"
+
+
+def _report_format_unmet(text):
+    """A duty stated in prose and absent from the template that enumerates the
+    output is a duty that gets dropped: an agent copying the shape it was shown
+    emits exactly the lines the shape has. So the requirement is checked where
+    it is mechanically followed, not only where it is explained.
+    """
+    folded = text.lower()
+    at = folded.find(REPORT_FORMAT_HEADING)
+    if at < 0:
+        return {"has-a-report-format-section"}
+    if CHECKLIST_ANCHOR not in folded[at:]:
+        return {"the-template-has-a-slot-for-the-checklist-in-effect"}
+    return set()
 
 
 # ----------------------------------------------------------- the joins themselves
@@ -205,13 +243,27 @@ def test_the_agent_files_still_define_both_rowless_states():
         )
 
 
-def test_the_release_gate_has_an_arm_for_a_finding_with_no_row():
-    unmet = _rowless_arms_unmet(_doc(RELEASE_COMMAND))
+@pytest.mark.parametrize(
+    "path", ROWLESS_CONSUMERS, ids=[p.name for p in ROWLESS_CONSUMERS]
+)
+def test_the_release_gate_has_an_arm_for_a_finding_with_no_row(path):
+    unmet = _rowless_arms_unmet(_doc(path))
     assert not unmet, (
-        "commands/release.md blocks on membership in a blocking row, and a "
-        "finding that arrived without a row is in no row at all -- so the "
-        "exception does not fire and the two-round cap carries it forward "
-        "(#175). Unmet:\n  " + "\n  ".join(sorted(unmet))
+        "{} blocks on membership in a blocking row, and a finding that "
+        "arrived without a row is in no row at all -- so the exception does "
+        "not fire and the two-round cap carries it forward (#175). "
+        "Unmet:\n  ".format(path.name)
+        + "\n  ".join(sorted(unmet))
+    )
+
+
+def test_the_release_auditor_report_template_has_a_slot_for_the_checklist():
+    unmet = _report_format_unmet(_doc(RELEASE_AUDITOR))
+    assert not unmet, (
+        "agents/release-auditor.md requires the checklist in effect in its "
+        "prose and omits it from the template the agent actually copies, so "
+        "the line is dropped and a clean audit of unknown vintage reads as an "
+        "ordinary clean one (#176). Unmet:\n  " + "\n  ".join(sorted(unmet))
     )
 
 
@@ -335,6 +387,53 @@ def test_the_checklist_checks_pass_text_that_meets_them():
     )
     assert _checklist_read_unmet(meets_it) == set()
     assert _auditor_checklist_unmet(meets_it) == set()
+
+
+def test_the_checklist_check_fires_when_could_not_tell_is_unrelated_prose():
+    """The scoping control, and it is the bug this file shipped with in review:
+    a document can say "could not tell" about something else entirely. Here the
+    checklist section names no third state, and the only "could not tell" in
+    the text is a sentence about a tag pattern -- which is `commands/release.md`
+    as it actually reads, minus the state under test.
+    """
+    unrelated = (
+        "- `tag_pattern: null` -- stop. The probe could not tell how this repo "
+        "tags, and inventing one opens a second tag namespace.\n"
+        "\n"
+        "Record the checklist in effect: name the version. It differs annotates "
+        "rather than stopping, and never renders as a match.\n"
+    )
+    unmet = _checklist_read_unmet(unrelated)
+    assert unmet == {"has-a-could-not-tell-state"}, (
+        "an unrelated `could not tell` elsewhere in the document satisfies the "
+        "third-state check, so deleting the state under test would not fail "
+        "anything. Got: " + repr(sorted(unmet))
+    )
+
+
+def test_the_report_format_check_fires_on_a_template_without_the_slot():
+    no_section = "Say which checklist reached you. Report the checklist in effect.\n"
+    assert _report_format_unmet(no_section) == {"has-a-report-format-section"}
+
+    slot_missing = (
+        "Say which checklist reached you, and name the checklist in effect.\n"
+        "\n"
+        "## Report format\n"
+        "\n"
+        "VERDICT: clean -- range <range>, <n> commits, round <1|2>\n"
+        "Then, per class, one line each.\n"
+    )
+    unmet = _report_format_unmet(slot_missing)
+    assert unmet == {"the-template-has-a-slot-for-the-checklist-in-effect"}, (
+        "a duty stated only above the template passes, which is how the line "
+        "gets dropped by an agent copying the template. Got: "
+        + repr(sorted(unmet))
+    )
+
+    has_slot = slot_missing.replace(
+        "VERDICT: clean", "checklist in effect: <file> <version>\nVERDICT: clean"
+    )
+    assert _report_format_unmet(has_slot) == set()
 
 
 def test_the_vocabulary_check_fires_on_an_agent_that_defines_neither():
