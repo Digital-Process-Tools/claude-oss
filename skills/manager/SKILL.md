@@ -86,9 +86,9 @@ question whose answer is in the config, in the history or on this page is not a 
 round trip, and two of them were spent inside one release. When a stop is right it carries its
 reason, in the shape `tag_pattern: null` already has.
 
-**Deferring is a stall wearing a schedule's clothes.** *Loop mechanics* below names the tell — a
-closing line describing the schedule instead of the next action — and the positive half is the one
-that goes missing: while there is disjoint work available and an idle agent to take it, start it.
+**Deferring is a stall wearing a schedule's clothes.** *Loop mechanics* below already names the
+tell, and that sentence is the only copy of it — the positive half is what goes missing there:
+while there is disjoint work available and an idle agent to take it, start it.
 Waiting on CI is not a reason to stop working, and deferring to the next tick is not a decision.
 
 ### The third state applies to authority too

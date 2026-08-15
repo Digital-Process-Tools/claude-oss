@@ -299,9 +299,28 @@ ACTS_THAT_STOP = (
 )
 
 
+#: The two lead-ins that carry the polarity. Each act is required in the half its
+#: own lead-in introduces, and required absent from the other.
+LOOP_LIST_LEAD = "**The loop's, and it asks about none of them:**"
+STOP_LIST_LEAD = "**Stops, and names which of these it is:**"
+
+
 def _enumerates_both_sides_of_the_boundary(text):
-    return all(act in text for act in ACTS_THE_LOOP_TAKES) and all(
-        act in text for act in ACTS_THAT_STOP
+    """Both lists, and every act on the side its lead-in claims.
+
+    A membership test over the whole file was the first spelling and it was wrong:
+    it passes on prose naming every act and putting each on the wrong side, which
+    is not a hypothetical shape -- it is what this file becomes if the boundary is
+    later edited the wrong way round, and it is indistinguishable from the correct
+    file to any check that only asks whether the words are present. REVERSED_BOUNDARY
+    below is that file, and it is a control rather than an illustration.
+    """
+    if LOOP_LIST_LEAD not in text or STOP_LIST_LEAD not in text:
+        return False
+    ours = text.split(LOOP_LIST_LEAD, 1)[1].split(STOP_LIST_LEAD, 1)[0]
+    theirs = text.split(STOP_LIST_LEAD, 1)[1]
+    return all(act in ours and act not in theirs for act in ACTS_THE_LOOP_TAKES) and all(
+        act in theirs and act not in ours for act in ACTS_THAT_STOP
     )
 
 
@@ -558,6 +577,51 @@ PROBELESS_CAUTION = (
     "`dashboard` live behind presets many repos never enable; check before writing an\n"
     "instruction that depends on one.\n"
 )
+
+
+# Every act named, and each one under the lead-in for the other side. This is not
+# a silent file and not a vague one -- it is the file that results from editing the
+# boundary the wrong way round, and a predicate that only asks whether the words
+# appear cannot tell it from the real one.
+REVERSED_BOUNDARY = (
+    "## Who decides\n"
+    "\n"
+    "**The loop's, and it asks about none of them:** Tagging a release,\n"
+    "Publishing a release object, Force-pushing a shared branch, the embargo path.\n"
+    "\n"
+    "**Stops, and names which of these it is:**\n"
+    "\n"
+    "| Stop | Why |\n"
+    "| --- | --- |\n"
+    "| **merging on green** | somebody ought to look at it first |\n"
+    "| **closing and reopening** an issue | the maintainer's call |\n"
+    "| **reaping worktrees** | ask before removing anything |\n"
+)
+
+
+def test_a_boundary_stated_the_wrong_way_round_is_caught():
+    """The must-fire half for the one predicate whose subject is a *list*.
+
+    Two assertions before the discrimination, because both of the ways this test
+    can go quietly useless are invisible from its result:
+
+    - the fixture might stop naming the acts, which is what a typo in it produces,
+      and then the predicate fails it for the same reason it fails SILENT;
+    - the fixture might not actually be adversarial, and a control that the
+      superseded predicate ALSO rejected proves nothing about what replaced it.
+      So the superseded spelling is written out here and asserted to pass on it.
+    """
+    for act in ACTS_THE_LOOP_TAKES + ACTS_THAT_STOP:
+        assert act in REVERSED_BOUNDARY, act
+
+    membership_only = all(act in REVERSED_BOUNDARY for act in ACTS_THE_LOOP_TAKES) and all(
+        act in REVERSED_BOUNDARY for act in ACTS_THAT_STOP
+    )
+    assert membership_only, "the fixture is not the one the old predicate accepted"
+
+    assert not _enumerates_both_sides_of_the_boundary(REVERSED_BOUNDARY)
+    # And the must-not-fire half, against the file that has it the right way round.
+    assert _enumerates_both_sides_of_the_boundary(SKILL_MD.read_text(encoding="utf-8"))
 
 
 def test_the_authority_controls_actually_name_their_subjects():
