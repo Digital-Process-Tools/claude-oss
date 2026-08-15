@@ -122,15 +122,17 @@ it a second way — grep the new content back — before saying it.
    one; do not hand-edit the assembled file.
 
    **Nothing checks the docs half, so your report is the only record that it happened.** The
-   changelog half is gated on every pull request. A matching gate for this half was **measured
-   against this repo's last thirty merged pull requests rather than assumed**, and rejected on the
-   numbers: the trigger the changelog gate already computes fires on 27 of the 30 and is right about
-   6, the narrowest rule anybody proposed — a new file under a product path — fires on none of the
-   thirty at all, and the best of them is wrong two times in three. A gate wrong that often earns a
-   blanket override label inside a week, which converts an unmeasured duty into a measured and
-   routinely-overridden one; a gate that never fires cannot be told from one that is broken. So this
-   duty is **observed rather than enforced**: **open every path in `docs_targets` and report one line
-   per path** under `docs`, saying which of the three each is in.
+   changelog half is gated on every pull request. A matching gate for this half was **measured on this
+   plugin's own repository, against its last thirty merged pull requests** rather than assumed, and
+   rejected on the numbers: the trigger the changelog gate already computes fires on 27 of the 30 and
+   is right about 6, the narrowest rule anybody proposed — a new file under a product path — fires on
+   none of the thirty at all, and the best of them is wrong two times in three. Those counts are one
+   repository's history, named as such and not a fact about yours; what carries across is the shape.
+   A gate wrong that often earns a blanket override label inside a week, which converts an unmeasured
+   duty into a measured and routinely-overridden one; a gate that never fires cannot be told from one
+   that is broken. So this duty is **observed rather than enforced**: **open every path in
+   `docs_targets` and report one line per path** under `docs`, saying which of these three docs
+   states each is in — not to be confused with the diagnostic's own three, below.
 
    - **updated** — this diff changed it. No reason needed; the diff is the reason.
    - **no-change-needed** — you opened it and it is still true. **Say what you read it against**,
@@ -153,7 +155,8 @@ it a second way — grep the new content back — before saying it.
    existed only in the composition, so neither diff review could see it.
 
    The rule is **make sure the diagnostic reports it**, not *always edit `doctor.py`*. Say in your
-   report which of the three you are in:
+   report which of these three diagnostic states you are in — a separate question from the docs
+   states above, which happen to share the word *updated*:
 
    - **updated** — you changed the diagnostic in this diff, and its new output is in the report;
    - **already covered** — the value flows through a derivation the diagnostic already consumes, so
@@ -407,8 +410,9 @@ The fields, their enumerations and a worked example are in
 `${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
 this section would otherwise duplicate and drift from. What the old prose report asked for has not
 changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, review →
-`review`, platform claims → `claims`, the docs read and why each needed no change → `docs`, unfiled
-findings → `adjacent`, the note path → `note_path`.
+`review`, platform claims → `claims`, every `docs_targets` path with what happened to it — updated,
+read and still true, or not opened — → `docs`, unfiled findings → `adjacent`, the note path →
+`note_path`.
 
 ### Report the friction you hit in the tooling, not only in the code
 

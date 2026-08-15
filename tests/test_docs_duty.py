@@ -249,8 +249,11 @@ LIVE_BEFORE = [
 ANCHORS = [
     # the duty, stated as an action rather than as a value the config holds
     "open every path in `docs_targets` and report one line per path",
-    # why there is no gate: the measurement, not an opinion
-    "measured against this repo's last thirty merged pull requests rather than assumed",
+    # why there is no gate: the measurement, not an opinion -- and attributed to
+    # the repository it was taken on, because this brief ships into repositories
+    # whose merge history is not that one's. A fact about one repository never
+    # lives in shared code; a labelled anecdote about a named one does.
+    "measured on this plugin's own repository, against its last thirty merged pull requests",
     # the third state, named
     "an absent `docs` survey says nobody looked, not that the docs were fine",
     # the state most likely to be written without having been earned
@@ -304,9 +307,15 @@ def test_the_brief_routes_the_duty_to_the_report_field():
     once.
     """
     brief = _flatten(DEVELOPER.read_text(encoding="utf-8"))
-    assert "`docs`" in brief.split("### the pull request is yours to write")[0].split(
-        "no preamble"
-    )[0], "the brief never names the report field"
-    assert "docs read" in brief, (
-        "the report-format field mapping does not route the docs duty to `docs`"
+    marker = "what the old prose report asked for has not changed, only where it goes"
+    assert marker in brief, (
+        "the report-format mapping sentence was not found -- this assertion is about "
+        "its contents, so a mis-read of the document must fail here rather than pass "
+        "the check below vacuously"
+    )
+    mapping = brief.split(marker, 1)[1][:600]
+    assert "`docs`" in mapping, (
+        "the report-format field mapping does not route the docs duty to `docs`: {!r}".format(
+            mapping[:200]
+        )
     )
