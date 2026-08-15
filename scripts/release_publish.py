@@ -59,6 +59,20 @@ STATE_COULD_NOT_RUN = "could-not-run"
 STATE_CREATED = "created"
 STATE_COULD_NOT_CREATE = "could-not-create"
 
+# The whole of what `state` may say in this module. `notes_section` answers about the
+# changelog and answers under `notes` for this reason (#134): two vocabularies under
+# one key, in one module, with `receipt` and `_exit_code` accepting any dict, is one
+# obvious line away from a notes payload printing `state: FOUND` at the top of a
+# release receipt. Named here so the receipt can say when it was handed something
+# that is not one of these, rather than upper-casing it into a verdict.
+PUBLISH_STATES = (
+    STATE_CREATE,
+    STATE_SKIPPED,
+    STATE_COULD_NOT_RUN,
+    STATE_CREATED,
+    STATE_COULD_NOT_CREATE,
+)
+
 EXIT_OK = 0
 EXIT_COULD_NOT_RUN = 3
 EXIT_SKIPPED = 4
@@ -139,11 +153,17 @@ def notes_section(text, version):
                absence the tool produced, rendered as the notes somebody wrote
       missing  no heading for this version at all
 
+    They come back under `notes`, not `state` (#134). `state` names the publish
+    lifecycle everywhere else in this module -- create / skipped / could-not-run /
+    created / could-not-create -- and `receipt` and `_exit_code` read it off any dict
+    they are handed. Sharing the key made `missing` a value both vocabularies could
+    carry with nothing to tell them apart, which is a bug nobody had written yet.
+
     The last section in the file runs to the end of the file rather than off it, and
     a file with exactly one section is the same case with no next heading.
     """
     if not text or not version:
-        return {"state": "missing", "body": None, "reason": "no changelog text or no version"}
+        return {"notes": "missing", "body": None, "reason": "no changelog text or no version"}
 
     headings = _headings(text)
     for index, (label, start, _) in enumerate(headings):
@@ -155,14 +175,14 @@ def notes_section(text, version):
         body = text[start:end].strip()
         if not body:
             return {
-                "state": "empty",
+                "notes": "empty",
                 "body": None,
                 "reason": "the section for {} exists and has no body".format(version),
             }
-        return {"state": "found", "body": body, "reason": ""}
+        return {"notes": "found", "body": body, "reason": ""}
 
     return {
-        "state": "missing",
+        "notes": "missing",
         "body": None,
         "reason": "no `## [{}]` section in the changelog".format(_one_line(version, 60)),
     }
@@ -320,7 +340,19 @@ def receipt(payload):
     def row(label, value):
         lines.append("  {0:<9}: {1}".format(label, value))
 
-    row("state", str(payload.get("state", "?")).upper())
+    # Not upper-cased blind. The state row is the first line anybody reads, and a
+    # value from some other vocabulary rendered there -- `FOUND`, say -- reads as a
+    # verdict this module never gave (#134).
+    state = payload.get("state")
+    if state in PUBLISH_STATES:
+        row("state", str(state).upper())
+    else:
+        row(
+            "state",
+            "UNRECOGNISED ({0} is not a publish state)".format(
+                "no state" if state is None else "'" + _one_line(str(state), 60) + "'"
+            ),
+        )
     row("tag", payload.get("tag") or "-")
     row("repo", payload.get("repo") or "-")
     draft = payload.get("draft")
@@ -432,10 +464,10 @@ def main(argv=None):
         )
 
     section = notes_section(text, args.version)
-    if section["state"] != "found":
+    if section["notes"] != "found":
         return _emit(
             _could_not_run(
-                "no release notes ({0}): {1}".format(section["state"], section["reason"])
+                "no release notes ({0}): {1}".format(section["notes"], section["reason"])
             ),
             args.as_json,
         )

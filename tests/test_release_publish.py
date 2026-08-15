@@ -71,7 +71,7 @@ def _config(**release):
 
 def test_the_notes_are_the_section_body_and_stop_at_the_next_heading():
     found = release_publish.notes_section(CHANGELOG, "0.3.0")
-    assert found["state"] == "found"
+    assert found["notes"] == "found"
     assert "The thing that was added." in found["body"]
     assert "The thing that was fixed (#58)." in found["body"]
     # The positive control above is only worth having next to this: a body that ran
@@ -84,14 +84,14 @@ def test_the_notes_are_the_section_body_and_stop_at_the_next_heading():
 
 def test_the_last_section_in_the_file_runs_to_the_end_rather_than_off_it():
     found = release_publish.notes_section(CHANGELOG, "0.2.0")
-    assert found["state"] == "found"
+    assert found["notes"] == "found"
     assert "An older thing nobody is releasing today." in found["body"]
 
 
 def test_the_only_section_in_the_file_is_extractable():
     text = "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- First release.\n"
     found = release_publish.notes_section(text, "1.0.0")
-    assert found["state"] == "found"
+    assert found["notes"] == "found"
     assert found["body"].strip() == "### Added\n\n- First release."
 
 
@@ -102,11 +102,11 @@ def test_a_heading_with_no_body_is_empty_and_not_found():
     """
     text = "# Changelog\n\n## [0.4.0]\n\n## [0.3.0]\n\n- Something.\n"
     found = release_publish.notes_section(text, "0.4.0")
-    assert found["state"] == "empty"
+    assert found["notes"] == "empty"
     assert found["body"] in (None, "")
     # Positive control in the same fixture: the harness can see a body when there
     # is one, so `empty` above is a reading and not a broken extractor.
-    assert release_publish.notes_section(text, "0.3.0")["state"] == "found"
+    assert release_publish.notes_section(text, "0.3.0")["notes"] == "found"
 
 
 def test_a_heading_shaped_line_inside_a_fence_is_not_a_boundary():
@@ -127,7 +127,7 @@ def test_a_heading_shaped_line_inside_a_fence_is_not_a_boundary():
         "- Older.\n"
     )
     found = release_publish.notes_section(text, "0.3.0")
-    assert found["state"] == "found"
+    assert found["notes"] == "found"
     assert "- Before the fence." in found["body"]
     # The whole point. Without fence tracking the body stops at the fenced line and
     # this is the assertion that fails.
@@ -135,7 +135,7 @@ def test_a_heading_shaped_line_inside_a_fence_is_not_a_boundary():
     # Still bounded by the next *real* heading, so the fix did not simply widen it.
     assert "- Older." not in found["body"]
     # And the fenced line never becomes a section of its own.
-    assert release_publish.notes_section(text, "9.9.9")["state"] == "missing"
+    assert release_publish.notes_section(text, "9.9.9")["notes"] == "missing"
 
 
 def test_a_tilde_fence_closes_only_on_a_tilde_fence():
@@ -152,9 +152,9 @@ def test_a_tilde_fence_closes_only_on_a_tilde_fence():
         "- Real content.\n"
     )
     found = release_publish.notes_section(text, "1.0.0")
-    assert found["state"] == "found"
+    assert found["notes"] == "found"
     assert "- Real content." in found["body"]
-    assert release_publish.notes_section(text, "8.8.8")["state"] == "missing"
+    assert release_publish.notes_section(text, "8.8.8")["notes"] == "missing"
 
 
 def test_a_crlf_changelog_extracts_the_same_notes():
@@ -162,22 +162,22 @@ def test_a_crlf_changelog_extracts_the_same_notes():
     and `notes_section` is a pure function that can be handed the bytes directly.
     """
     found = release_publish.notes_section(CHANGELOG.replace("\n", "\r\n"), "0.3.0")
-    assert found["state"] == "found"
+    assert found["notes"] == "found"
     assert "The thing that was fixed (#58)." in found["body"].replace("\r\n", "\n")
     assert "An older thing nobody is releasing today." not in found["body"]
 
 
 def test_a_version_with_no_section_is_missing():
     found = release_publish.notes_section(CHANGELOG, "9.9.9")
-    assert found["state"] == "missing"
+    assert found["notes"] == "missing"
 
 
 def test_a_version_is_matched_whole_and_not_by_prefix():
     """`0.3` must not match `## [0.3.0]`, and `0.3.0` must not match `## [0.3.0-rc1]`."""
-    assert release_publish.notes_section(CHANGELOG, "0.3")["state"] == "missing"
+    assert release_publish.notes_section(CHANGELOG, "0.3")["notes"] == "missing"
     text = "## [0.3.0-rc1]\n\n- A candidate.\n"
-    assert release_publish.notes_section(text, "0.3.0")["state"] == "missing"
-    assert release_publish.notes_section(text, "0.3.0-rc1")["state"] == "found"
+    assert release_publish.notes_section(text, "0.3.0")["notes"] == "missing"
+    assert release_publish.notes_section(text, "0.3.0-rc1")["notes"] == "found"
 
 
 # ------------------------------------------------------------------- the command
@@ -865,3 +865,50 @@ def test_a_json_null_config_names_the_type_rather_than_an_empty_reason(tmp_path)
     reason = json.loads(done.stdout)["reason"]
     assert "NoneType" in reason, reason
     assert not reason.rstrip().endswith("--"), reason
+
+# ------------------------------------------------ two vocabularies, two keys (#134)
+
+
+def test_the_notes_answer_does_not_share_the_publish_state_key():
+    """`found`/`empty`/`missing` is not the publish lifecycle, so it is not `state`.
+
+    Both answers used to come back under `state`, in one module, and `receipt` and
+    `_exit_code` take any dict -- so a notes payload reaching either printed
+    `state: FOUND` at the top of a release receipt and exited 3. Nothing routed one
+    there, which is the whole #134 argument: a collision costs nothing right up to
+    the moment somebody writes the obvious line.
+    """
+    section = release_publish.notes_section(CHANGELOG, "0.3.0")
+    assert "state" not in section, (
+        "notes_section still answers under `state`; that key names the publish "
+        "lifecycle in this module"
+    )
+    assert section["notes"] == "found"
+    # Positive control in the same fixture: the publish vocabulary keeps `state`, so
+    # the assertion above is a rename and not the key vanishing from the module.
+    planned = release_publish.plan(
+        config=_config(create_release=True),
+        tag="v0.3.0",
+        notes_path="notes.md",
+        gh="/usr/bin/gh",
+    )
+    assert planned["state"] == release_publish.STATE_CREATE
+
+
+def test_a_receipt_names_a_state_it_does_not_recognise_rather_than_printing_it_as_one():
+    """A verdict line is the first thing read, and `STATE: FOUND` reads as success.
+
+    The receipt cannot know which vocabulary it was handed, so it says when the value
+    is not one of its own instead of upper-casing whatever arrived.
+    """
+    alien = release_publish.receipt({"state": "found", "tag": "v0.3.0"})
+    assert "FOUND" not in alien, alien
+    assert "not a publish state" in alien
+    assert "'found'" in alien
+    # Positive control, same fixture: a real publish state still renders plainly, so
+    # the assertion above is a guard firing rather than the row disappearing.
+    real = release_publish.receipt({"state": release_publish.STATE_CREATED, "tag": "v0.3.0"})
+    assert "CREATED" in real
+    assert "not a publish state" not in real
+    # And a payload with no state at all is unrecognised, not blank.
+    assert "not a publish state" in release_publish.receipt({"tag": "v0.3.0"})
