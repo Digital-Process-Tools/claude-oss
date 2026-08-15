@@ -1,5 +1,9 @@
 {
-  "presets": ["git", "github"],
+  "presets": [
+    "git",
+    "github",
+    "watch"
+  ],
   "validators": {
     "py": {
       "py-syntax": {
