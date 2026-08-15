@@ -13,6 +13,15 @@ itself, and both were red on the commit that preceded them:
    repos bind one watcher socket with a declaration each. The name belongs to
    a derivation from `.oss.json`, not to this file.
 
+The second one asserts an absence and nothing more. It does NOT assert that a
+name is derived anywhere: `bin/oss-workspace` grows that derivation in #192,
+which is a separate branch, and this file cannot see it. Until #192 lands,
+this repository is on the shared default socket #191 describes -- unchanged
+from before this branch, but now with `watch` live there is traffic to lose,
+so #192 is the one to merge first. Saying so here rather than leaving the
+green tick to imply otherwise: a passing absence test is not evidence that
+something else supplies the value.
+
 Each pairs with a positive control on a synthetic document, because an
 assertion that a key is absent also passes when the reader found nothing at
 all -- an unreadable file, a parser looking in the wrong place, a repo root
@@ -102,8 +111,9 @@ def test_no_repository_name_is_hand_typed_into_the_tracked_config():
     assert declared == {}, (
         "ops.{} declares a watch_name. A tracked file carrying one repository's "
         "name travels into the next repository somebody copies it to, and both "
-        "then bind one socket with a declaration each. bin/oss-workspace derives "
-        "the name from .oss.json instead.".format(sorted(declared))
+        "then bind one socket with a declaration each. The name is derived from "
+        ".oss.json by bin/oss-workspace once #192 lands; it is not typed here."
+        "".format(sorted(declared))
     )
 
 
