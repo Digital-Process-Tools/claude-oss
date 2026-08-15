@@ -12,14 +12,25 @@ paragraph is reflowed. A checker whose finding is about its own reading,
 dressed as a finding about the file, is the defect this plugin is named after
 pointed at the test suite.
 
-The negative control is PRIOR: the four passages of the document as they stood
-before this change, quoted from the pre-change file rather than paraphrased.
-Every anchor added here is asserted absent from it, because an anchor that
-already matched the wording on disk is a guard with no teeth, and five of those
-have shipped in this repository already. PRIOR is paired with LIVE_BEFORE --
-wording that was on disk before this change and is still on disk now -- so that
-an empty, truncated or mis-read PRIOR fails loudly instead of satisfying every
-"must not match" assertion for the wrong reason.
+The negative control is PRIOR: the four passages of the document this change
+amends, as they stood before it. Every anchor added here is asserted absent
+from it, because an anchor that already matched the wording on disk is a guard
+with no teeth, and five of those have shipped in this repository already. PRIOR
+is paired with LIVE_BEFORE -- wording that was on disk before this change and is
+still on disk now -- so that an empty, truncated or mis-read PRIOR fails loudly
+instead of satisfying every "must not match" assertion for the wrong reason.
+
+**PRIOR is abridged, and that is the one thing to know before adding an anchor
+to it.** Three of the four passages are elided in the middle: the cross-platform
+one drops the cp1252/`UnicodeEncodeError` sentence, the review one drops the
+`did not run` clause, and the report-format one drops the schema path and the
+arrow mappings. Every anchor this file ships today was checked against the whole
+pre-change blob (`git show <commit>~1:agents/developer.md`) and none of them
+falls in an elided span. An anchor added later that does fall in one would be
+asserted absent from text that never contained it, and would report as red-before
+while being green-before on disk -- which is this repository's own defect class
+aimed at the control that exists to prevent it. Check a new anchor against the
+blob, not against PRIOR.
 """
 
 from pathlib import Path
@@ -118,7 +129,7 @@ ADJACENT_POLICY = [
 
 PLATFORM_FIX_RULES = [
     "makes the assertion vacuous",
-    "sweep the file for the class",
+    "sweep the rest of that file for the class",
 ]
 
 THIRD_STATE_AS_DESIGN = [
@@ -167,6 +178,10 @@ def test_the_platform_rules_about_the_fix_land_inside_section_four():
     text = DEVELOPER.read_text(encoding="utf-8")
     start = text.find("4. **Cross-platform is not your machine.**")
     assert start != -1, "section 4 no longer opens with the wording the review section cites"
+    assert text.count("\n5. **") == 1, (
+        "more than one `5. **` marker: the slice below would bound section 4 at the "
+        "wrong one and truncate it, and this test would then fail without naming why"
+    )
     end = text.find("\n5. **", start)
     assert end != -1, "section 4 has no following item 5 to bound it"
     section_four = text[start:end]

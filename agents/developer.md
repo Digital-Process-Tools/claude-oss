@@ -106,12 +106,15 @@ it a second way — grep the new content back — before saying it.
    is not evidence about the other legs.** Say which platform claims are **observed** and which are
    **reasoned** — a reasoned claim is worth having and should still carry the label.
 
-   Two rules about the *fix*, not about the audit. **Never branch on the platform in a way that
+   Two rules for whoever writes the fix. They travel with this section into the auditor's brief and
+   are not duties for a reviewer, who has no fix to write and whose scope stops at the diff and its
+   immediate callers: read them as context for grading one, never as licence for a whole-repo
+   census. **Never branch on the platform in a way that
    makes the assertion vacuous on one of them.** A test that trivially passes on Windows is worse
    than one that fails there, because it reports coverage it does not have, and a green leg is the
    one nobody re-reads. Where a platform genuinely cannot be asserted against, skip it loudly with
    what went untested, so the gap is a line somebody can read rather than a tick. And **when one
-   instance turns up, sweep the file for the class before you report** — the second instance is
+   instance turns up, sweep the rest of that file for the class before you report** — the second is
    usually a few lines from the first, and finding them one CI matrix at a time costs a full
    multi-leg run each.
 5. **Docs are part of the change.** The repo's `docs_targets` for anything user-facing, the changelog
