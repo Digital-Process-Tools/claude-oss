@@ -40,6 +40,11 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    an unbounded "findings, therefore stop" makes every release hostage to diminishing returns. After
    round two, file the rest against the next milestone and ship.
 
+   **Except a finding in a row the ranking table marks blocking, which is not carry-forward
+   material.** It stops the tag in either round. Each finding comes back carrying its row, so this is
+   a read rather than a judgement — and without it the cap outranks the table by being later in the
+   document, which makes the gate's worst outcome a filed issue.
+
    The range is computed before anyone judges it, because "could not run" is a fact about the
    repository and not a reading:
 

@@ -31,17 +31,20 @@ not create one — creating labels is the maintainer's act.
 
 **Priority**, by what cannot be undone, then by who is walking away:
 
-| Class | Meaning |
-| --- | --- |
-| `destroys` | data gone, no copy anywhere |
-| `discloses` | something private leaves the machine |
-| `containment` | code reaches outside the project, or a new argument is treated as a path |
-| `fails-to-preserve` | the safeguard silently did not run; the data is still there |
-| `misreports` | says it did something it did not; nothing lost but trust |
+The classes are the ranking table in `${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md`, under "Deciding
+what to build" — read it there, every run. **Do not work from a copy and do not reconstruct it from
+memory.** This file carried its own copy until the table gained rows, at which point the copy was a
+confident, complete-looking taxonomy that no longer matched the one the release gate reads; nothing
+looked wrong, because a stale copy and a current one render identically.
 
-The first three outrank everything, including a loud external report. **Say so if an issue fits none
-of these** rather than forcing it into the nearest row — the class that does not exist yet is where
-the worst finding lands.
+Read two things off it: the class, and its **Blocks a release?** column. **A row the table marks
+blocking outranks everything, including a loud external report** — no count is written down here on
+purpose, because the blocking set has changed size once and a number beside it would not have.
+
+**Say so if an issue fits none of them** rather than forcing it into the nearest row — the class that
+does not exist yet is where the worst finding lands. And if the table did not reach you, say that
+instead of labelling from memory: an issue triaged against a taxonomy you could not read is not a
+triaged issue, and it is indistinguishable from one that was.
 
 **Lane**, by which files the work owns, because the expensive thing is context, not the fix. Read the
 lane labels off the repo; assign the one whose files the issue actually touches, and leave a genuine

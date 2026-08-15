@@ -78,6 +78,31 @@ it in your report: a third copy of that list is itself the drift defect this loo
 neither the file nor the brief reached you, report the whole platform band as `could not check`,
 naming which of the two was missing.
 
+## Ranking a finding, which is not the same as classing it
+
+The letters above are **search strategies** — how you go looking. They are not severities and they do
+not map one-to-one onto them: one strategy turns up findings that cost wildly different amounts, and
+one severity is reached from several strategies. Collapsing the two lists into one would lose that.
+
+The severities are the ranking table in `${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md`, under
+"Deciding what to build", together with the rule that decides which row a finding belongs in — each
+row earns its place because each invites a different fix, so when two rows fit, name the fix each
+would send a reviewer to make and pick the one that removes the defect. Read it there, or work from
+it if your brief carried it verbatim. **Do not restate the table here or in your report**: it ships
+once, and a second copy drifts.
+
+**Every finding you report carries both** — the letter it was found by, and the row it ranks in. The
+letter is what the author fixes; the row is what the release gate weighs. A finding with only a letter
+arrives at that gate unweighable.
+
+Two answers that are not the same and must never print the same:
+
+- **`unranked`** — you classified it and no row fits. Name the rows you considered and why each does
+  not. This is not a minor finding; the rows are a record of what has already gone wrong rather than
+  a partition of what can, and the row that does not exist yet is where the worst finding lands.
+- **`could not rank`** — the table did not reach you: neither the file nor the brief carried it. Say
+  which of the two was missing. This never renders as `unranked`, and never as an omitted row.
+
 ## What CI already covers decides the weight of a platform finding
 
 A platform finding is worth reporting in proportion to what nothing else will catch. That is a fact
@@ -132,8 +157,9 @@ class you skipped and a class that was clean look identical otherwise.
 For each class, exactly one of three verdicts:
 
 - **`clean`** — you looked at the whole class across the whole diff and found nothing.
-- **`finding`** — file, line, what a caller sees, and the one fact that would settle it. One line
-  each. Platform findings additionally carry their coverage grade.
+- **`finding`** — file, line, what a caller sees, the one fact that would settle it, and **the
+  ranking row** (or `unranked` / `could not rank`). One line each. Platform findings additionally
+  carry their coverage grade.
 - **`could not check`** — you could not look, or could only look at part of it. Name the reason and
   the part: an unreadable file, a diff you could not resolve, a referenced section that never
   arrived, a matrix you could not parse.
@@ -142,4 +168,5 @@ For each class, exactly one of three verdicts:
 belonged to a class, that is `clean`; if you did not get to it, that is `could not check`. An
 auditor that cannot say it failed to look is the defect it exists to find.
 
-End with one line: how many classes were checked, how many findings, how many `could not check`.
+End with one line: how many classes were checked, how many findings, how many `could not check`, and
+how many findings came back `unranked` or `could not rank`.
