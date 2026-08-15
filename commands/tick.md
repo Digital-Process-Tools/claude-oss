@@ -17,8 +17,17 @@ Skill(manager)
    state file records what was *believed* when it was written. The repo is what is true.
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" --help
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --last
    ```
+
+   **Actually run it, here, before any work.** This step used to print `--help`, which reads the
+   CLI and not the file — so the first thing that touched the state file was step 6, and a repo
+   whose file the script cannot use spent a whole tick before finding out (#149). A `FAIL` on this
+   line names what is wrong and what to run; the common one is a state file written by a
+   pre-plugin maintainer loop, an object keyed `tick_<ISO>` rather than a list of entries, which
+   `--migrate` converts in place while keeping the original beside it. **A `FAIL` here stops the
+   tick** — settle it, then start over at this step. `no entries yet` means a first tick and
+   nothing else.
 
 2. **Read the board**, batched into one call:
 

@@ -50,6 +50,11 @@ try:
 except ImportError:  # pragma: no cover - the module sits beside this file
     oss_rules = None
 
+try:
+    import oss_state
+except ImportError:  # pragma: no cover - the module sits beside this file
+    oss_state = None
+
 FINDINGS = []
 
 # Far above any message this file composes -- the only thing that can reach it is
@@ -274,7 +279,25 @@ def check_directory(label, value, config_found=True):
         report("WARN", "{}: {} does not exist".format(label, path))
 
 
+NO_STATE_MODULE = (
+    "not checked -- scripts/oss_state.py could not be imported, and the shape it "
+    "requires is defined there"
+)
+
+
 def check_state_file(project_dir, config):
+    """Is the named state file readable *by the script that will write it*?
+
+    Present was the old question and it is the wrong one (#149). A repo that ran a
+    maintainer loop before this plugin existed has a state file shaped as an object
+    keyed `tick_<ISO>`; `oss_state.read` wants a list, so every tick completes its work
+    and then cannot record any of it. Doctor is the step that can say so before the
+    work, which is the only place a maintainer can act on it.
+
+    Nothing here raises. `oss_state.describe` answers in three states and swallows
+    nothing into a fourth, so an unreadable file cannot arrive as a traceback through
+    doctor's *exit 0 always, one VERDICT line* contract.
+    """
     if config is None:
         unmeasured("state_file")
         return
@@ -283,10 +306,21 @@ def check_state_file(project_dir, config):
         report("WARN", "state_file: not set in config")
         return
     path = project_dir / str(value)
-    if path.is_file():
-        report("OK", "state_file: {}".format(path))
-    else:
+    if oss_state is None:
+        unmeasured("state_file", NO_STATE_MODULE)
+        return
+    found = oss_state.describe(path)
+    if found["state"] == oss_state.STATE_OK:
+        report("OK", "state_file: {} ({} entries)".format(path, len(found["entries"])))
+    elif found["state"] == oss_state.STATE_ABSENT:
         report("WARN", "state_file: {} not written yet (first tick will create it)".format(path))
+    else:
+        report(
+            "WARN",
+            "state_file: {} is there and /oss:tick cannot use it -- {}".format(
+                path, found["reason"]
+            ),
+        )
 
 
 MEMORY_DIR = ".remember"

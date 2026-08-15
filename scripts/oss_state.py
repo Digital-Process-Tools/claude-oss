@@ -62,25 +62,254 @@ class StateError(Exception):
     """The state file could not be read, or an entry was refused."""
 
 
-def read(path):
-    """Return the entries, oldest first. A missing file is an empty history."""
+# What `describe` answers, and the reason there are three of them rather than two.
+#
+#   ok           the file was read and holds a list of entries. `entries` is that list.
+#   absent       there is no file. A first tick, and not an error.
+#   unreadable   the file is there and the writer cannot use it -- unreadable bytes,
+#                unparseable JSON, or a shape that is not a list of entries. This is
+#                the state #149 was filed about: a pre-plugin state file is a dict
+#                keyed `tick_<ISO>`, and reporting it as "no entries yet" invites a
+#                maintainer to start fresh over a history they still have.
+STATE_OK = "ok"
+STATE_ABSENT = "absent"
+STATE_UNREADABLE = "unreadable"
+
+# Appended to the state file's own name for the copy `migrate` keeps.
+BACKUP_SUFFIX = ".pre-migration"
+
+MIGRATE_HINT = (
+    "convert it with: python3 <plugin>/scripts/oss_state.py <state_file> --migrate"
+)
+
+
+def describe(path):
+    """Which of the three states this path is in. Never raises.
+
+    Every caller that must not die on a bad file goes through here -- `read` for the
+    message, `/oss:doctor` for the finding -- so the classification cannot drift into
+    two versions that disagree about the same file.
+
+    The exception in hand answers absence: `FileNotFoundError` is "not there" and every
+    other `OSError` is "there and unusable". Asking the filesystem a second question to
+    tell them apart is the bug that killed the release gate in #76 -- `Path.exists()`
+    swallows some errnos and raises the rest, so the line added to explain a failed read
+    becomes a second way to fail.
+    """
     path = Path(path)
-    if not path.is_file():
-        return []
     try:
         raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {"state": STATE_ABSENT, "entries": None, "reason": None}
+    except UnicodeDecodeError as exc:
+        # Caught by name and before OSError, because it is neither: it is a ValueError,
+        # so an `except OSError` around the read -- which is what this was -- lets it
+        # through, and one stray byte reaches /oss:doctor as a traceback through a
+        # contract that is exit 0 always. A pre-plugin loop writing with the console's
+        # codepage rather than UTF-8 is the realistic way a state file gets one.
+        return {
+            "state": STATE_UNREADABLE,
+            "entries": None,
+            "reason": "could not decode it as UTF-8 ({})".format(exc),
+        }
     except OSError as exc:
-        raise StateError("{}: could not read ({})".format(path, exc))
+        return {
+            "state": STATE_UNREADABLE,
+            "entries": None,
+            "reason": "could not read it ({})".format(exc),
+        }
     try:
         entries = json.loads(raw)
     except ValueError as exc:
-        raise StateError(
-            "{}: could not parse ({}). Not resetting it -- the history is the point, "
-            "and a silent reset looks exactly like a first tick.".format(path, exc)
-        )
+        return {
+            "state": STATE_UNREADABLE,
+            "entries": None,
+            "reason": (
+                "could not parse it ({}). Not resetting it -- the history is the "
+                "point, and a silent reset looks exactly like a first tick.".format(exc)
+            ),
+        }
+    if isinstance(entries, dict):
+        return {
+            "state": STATE_UNREADABLE,
+            "entries": None,
+            "reason": (
+                "holds a JSON object, not a list of entries -- the shape a pre-plugin "
+                "maintainer skill wrote, keyed by timestamp. The history is intact and "
+                "nothing here will touch it: {}".format(MIGRATE_HINT)
+            ),
+        }
     if not isinstance(entries, list):
-        raise StateError("{}: expected a JSON list of entries".format(path))
-    return entries
+        return {
+            "state": STATE_UNREADABLE,
+            "entries": None,
+            "reason": "holds a JSON {}, not a list of entries".format(
+                type(entries).__name__
+            ),
+        }
+    return {"state": STATE_OK, "entries": entries, "reason": None}
+
+
+def read(path):
+    """Return the entries, oldest first. A missing file is an empty history."""
+    found = describe(path)
+    if found["state"] == STATE_ABSENT:
+        return []
+    if found["state"] == STATE_UNREADABLE:
+        raise StateError("{}: {}".format(Path(path), found["reason"]))
+    return found["entries"]
+
+
+# What `migrate` answers. `already-a-list` is not `migrated`: a caller that renders
+# both as success cannot tell a converted file from one that never needed converting,
+# and a caller that renders both as failure re-runs a conversion that already happened.
+MIGRATED = "migrated"
+ALREADY_A_LIST = "already-a-list"
+CANNOT_MIGRATE = "cannot-migrate"
+
+# The decision an entry gets when the shape it came from carried none. Stated rather
+# than guessed: this file is evidence, and a plausible-looking decision nobody wrote is
+# worse than an honest gap. The MAX_DECISION cap is deliberately not applied to a
+# decision being carried over -- truncating somebody's record to satisfy a rule written
+# after they wrote it discards the half that mattered.
+NO_DECISION = "migrated from a pre-plugin entry that carried no decision field"
+
+
+def _entry_from(key, value):
+    """One pre-plugin `tick_<ISO>: {...}` pair as an entry.
+
+    Lossless on purpose: the original object is kept whole under `detail`, so a fact
+    this code does not understand survives the conversion. Only `at` and `decision` are
+    derived, and `decision` is derived only when the source plainly carried one.
+    """
+    at = key[len("tick_"):] if key.startswith("tick_") else key
+    decision = value.get("decision")
+    if not isinstance(decision, str) or not decision.strip():
+        decision = NO_DECISION
+    return {"at": at, "decision": decision, "detail": value}
+
+
+def migrate(path):
+    """Convert a timestamp-keyed object of entries into the list shape, in place.
+
+    Three outcomes and each is a different sentence -- see `MIGRATED`. Nothing is
+    written unless the whole document converts, and the original is kept beside it at
+    ``<path>.pre-migration`` first, because the failure this guards against destroys a
+    history that exists precisely because it cannot be recomputed.
+    """
+    path = Path(path)
+    found = describe(path)
+    if found["state"] == STATE_OK:
+        return {
+            "state": ALREADY_A_LIST,
+            "entries": len(found["entries"]),
+            "reason": None,
+            "backup": None,
+        }
+    if found["state"] == STATE_ABSENT:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": "it is not there; the first tick will create it in the list shape",
+            "backup": None,
+        }
+
+    try:
+        # Bytes, not text: the backup below has to be the file as it stands, and
+        # `read_text` translates newlines -- a CRLF original would be copied back with
+        # its line endings rewritten, which is not the thing it is a copy of.
+        original = path.read_bytes()
+        document = json.loads(original.decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": "could not read it ({})".format(exc),
+            "backup": None,
+        }
+    if not isinstance(document, dict):
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": (
+                "it is a JSON {}, and only an object keyed by timestamp "
+                "converts".format(type(document).__name__)
+            ),
+            "backup": None,
+        }
+
+    bad = [key for key, value in document.items() if not isinstance(value, dict)]
+    if bad:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": (
+                "{} of {} values are not objects of facts ({!r} first), so an entry "
+                "for them would have to be invented -- refusing rather than writing a "
+                "record nobody wrote".format(len(bad), len(document), sorted(bad)[0])
+            ),
+            "backup": None,
+        }
+
+    # A dict carries no order, so one is imposed rather than inherited. Sorting by key
+    # is chronological for the `tick_<ISO>` shape and deterministic for anything else,
+    # which is the most that can be claimed without inventing a clock.
+    entries = [_entry_from(key, document[key]) for key in sorted(document)]
+
+    try:
+        body = json.dumps(entries, indent=2) + "\n"
+    except (TypeError, ValueError) as exc:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": "the converted history is not serialisable ({})".format(exc),
+            "backup": None,
+        }
+
+    backup = Path(str(path) + BACKUP_SUFFIX)
+    try:
+        # Exclusive create: an existing backup is an earlier attempt's original, and
+        # overwriting it is how a second run destroys the history the first one saved.
+        with open(str(backup), "xb") as handle:
+            handle.write(original)
+    except FileExistsError:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": (
+                "{} already exists -- an earlier attempt's original. Move it aside "
+                "yourself; overwriting it is the one thing this must never do.".format(
+                    backup
+                )
+            ),
+            "backup": str(backup),
+        }
+    except OSError as exc:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": "could not write the backup {} ({})".format(backup, exc),
+            "backup": None,
+        }
+
+    try:
+        path.write_text(body, encoding="utf-8")
+    except OSError as exc:
+        return {
+            "state": CANNOT_MIGRATE,
+            "entries": None,
+            "reason": (
+                "could not write the converted history ({}); the original is unchanged "
+                "and a copy of it is at {}".format(exc, backup)
+            ),
+            "backup": str(backup),
+        }
+    return {
+        "state": MIGRATED,
+        "entries": len(entries),
+        "reason": None,
+        "backup": str(backup),
+    }
 
 
 def append(path, at, decision, detail=None):
@@ -351,6 +580,14 @@ def _main(argv=None):
         action="store_true",
         help="print the intake ratio re-added across the whole history",
     )
+    group.add_argument(
+        "--migrate",
+        action="store_true",
+        help=(
+            "convert a pre-plugin state file -- an object keyed tick_<ISO> -- into the "
+            "list shape, keeping the original at <path>" + BACKUP_SUFFIX
+        ),
+    )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
     parser.add_argument(
@@ -384,13 +621,32 @@ def _main(argv=None):
     ]
 
     try:
-        if (args.read or args.last or args.trend) and intake_flags:
+        if (args.read or args.last or args.trend or args.migrate) and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
             # 0, with the reading mode's own output looking entirely normal.
             print(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(intake_flags))
             )
+            return 1
+        if args.migrate:
+            result = migrate(args.path)
+            if result["state"] == MIGRATED:
+                print(
+                    "OK {}: converted {} entries to the list shape; the original is at "
+                    "{}".format(args.path, result["entries"], result["backup"])
+                )
+                return 0
+            if result["state"] == ALREADY_A_LIST:
+                # Not an error and not a conversion. Saying "converted" here would
+                # report work that did not happen; saying FAIL would send a maintainer
+                # looking for a problem that is not there.
+                print(
+                    "OK {}: already the list shape, {} entries; nothing to "
+                    "convert".format(args.path, result["entries"])
+                )
+                return 0
+            print("FAIL {}: {}".format(args.path, result["reason"]))
             return 1
         if args.read:
             print(json.dumps(read(args.path), indent=2))
