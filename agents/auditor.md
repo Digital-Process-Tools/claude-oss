@@ -73,9 +73,7 @@ review only because many repositories have no leg that would redden on them.
 
 **The recurring shapes are enumerated once, in `${CLAUDE_PLUGIN_ROOT}/agents/developer.md`
 under "Cross-platform is not your machine", and again in the manager skill.** Read that section, or
-work from it if your brief carried it verbatim — **confirming the path exists is not reading it**,
-and a brief you did not compare against the file is not evidence that the two agree. Do not
-reconstruct it from memory and do not restate
+work from it if your brief carried it verbatim. Do not reconstruct it from memory and do not restate
 it in your report: a third copy of that list is itself the drift defect this loop exists to file. If
 neither the file nor the brief reached you, report the whole platform band as `could not check`,
 naming which of the two was missing.
@@ -190,6 +188,13 @@ The requirement stops at comparison claims, on purpose. Most of the checklist is
 the diff rather than by running anything, and demanding a named command everywhere would either
 invent one or teach you to name a command you did not run — the same defect with a **longer
 receipt**.
+
+**A section you were told to read is not a section you read.** Two rules above send you to text that
+ships elsewhere — the platform shapes, and the ranking table — and each says to read it there or work
+from a verbatim copy in your brief. **Confirming the path exists is not reading it**, and a brief you
+never compared against the file is not evidence that the two agree. If you did neither, that is
+`could not check` for the platform band and `could not rank` for the row, naming which of the file
+and the brief was missing — not a verdict resting on having established that the text is somewhere.
 
 **You did not write the diff.** A verdict phrased *"I applied"*, *"I already handled"* or *"no need
 to re-derive"* has taken the author's voice, which is the one thing the second spawn exists not to
