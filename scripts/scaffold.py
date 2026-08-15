@@ -43,7 +43,7 @@ class ScaffoldError(Exception):
 
 CLAUDE_MD = """# {repo}
 
-Default branch `{default_branch}`. This file is read by every agent that touches the
+Default branch {default_branch}. This file is read by every agent that touches the
 repo, so it carries what someone needs before their first change, and nothing that
 would be stale by next week.
 
@@ -268,17 +268,113 @@ def repo_slug(config):
     return value
 
 
-def _render_claude_md(config):
-    if config.get("test_command"):
-        test_line = "```\n{}\n```".format(config["test_command"])
-    else:
-        test_line = (
-            "The test command was **not detected** when this file was generated. "
-            "Find it and replace this paragraph -- a guess here becomes an instruction."
+def default_branch_name(config):
+    """This repository's default branch, refused here rather than at `plan()` alone.
+
+    The third of the three values `_render_claude_md` substitutes, and the second of
+    the two #173 left without one. Same reason as `repo_slug()`: `render()` reaches
+    CLAUDE.md without going near `plan()`, so a guard that lives only in `validate()`
+    is a guard that does not run for that caller (#180).
+
+    Null is refused here and not in `default_branch_problem()`, which returns None for
+    it so that `validate()` keeps sole ownership of the sentence about required keys
+    being null. Two layers, two different facts, one sentence each -- and the render
+    still refuses, because `Default branch `None`.` is an invented fact written into
+    somebody else's repository, which is precisely what this module's third rule
+    forbids.
+    """
+    value = config.get("default_branch")
+    if value is None:
+        raise ScaffoldError(
+            "default_branch: is null or absent, and this template renders a sentence "
+            "stating the branch name. A generated file is read as measured, so the "
+            "value is refused rather than written as 'None'."
         )
+    problem = oss_config.default_branch_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+    return value
+
+
+def test_command(config):
+    """This repository's test command, or None when the probe could not tell.
+
+    Null is a real answer here -- `_render_claude_md` writes the "not detected"
+    paragraph for it -- so this funnel refuses content, never absence.
+    """
+    value = config.get("test_command")
+    problem = oss_config.test_command_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+    return value
+
+
+def _longest_backtick_run(text):
+    longest = 0
+    run = 0
+    for char in text:
+        if char == "`":
+            run += 1
+            if run > longest:
+                longest = run
+        else:
+            run = 0
+    return longest
+
+
+def _fenced(text):
+    """`text` as a fenced code block whose fence it cannot close.
+
+    CommonMark closes a fence on a line of at least as many of the same character and
+    nothing else, so a fence longer than any backtick run in the content is closable
+    only by the closing fence written here. This is the render-time half of the pair:
+    `oss_config.test_command_problem` refuses the line break, which is the only way
+    the value could reach the start of a line at all, and this makes the fence hold
+    even for a value nobody validated -- a `test_command` of exactly ``` was a real
+    corruption with no line break anywhere in it.
+
+    Escaping alone would be a claim about a context the next editor of this template
+    can invalidate; refusal alone is a claim about the value and holds wherever it
+    goes. Both, and neither of them the only one standing there.
+    """
+    fence = "`" * max(3, _longest_backtick_run(text) + 1)
+    return "{0}\n{1}\n{0}".format(fence, text)
+
+
+def _code_span(text):
+    """`text` as a Markdown code span it cannot break out of.
+
+    Same construction one delimiter down. The padding space is CommonMark's own rule
+    for a span whose content starts or ends with a backtick: one space at each end is
+    stripped by the renderer, so ``` `` `main` `` ``` displays as `main` and not as a
+    span that ended early. The template no longer writes the backticks itself, because
+    a delimiter chosen by the template cannot depend on the value going inside it.
+    """
+    delimiter = "`" * (_longest_backtick_run(text) + 1)
+    padding = " " if text.startswith("`") or text.endswith("`") else ""
+    return "{0}{1}{2}{1}{0}".format(delimiter, padding, text)
+
+
+#: The paragraph that stands in for a `test_command` the probe could not determine.
+#: A module constant rather than an inline literal because it is one of the very few
+#: column-0 lines of a rendered CLAUDE.md that the template itself does not contain,
+#: and `tests/test_claude_md_injection.py` has to be able to tell it from a line a
+#: config value put there. A copy in the test would go stale silently.
+TEST_COMMAND_NOT_DETECTED = (
+    "The test command was **not detected** when this file was generated. "
+    "Find it and replace this paragraph -- a guess here becomes an instruction."
+)
+
+
+def _render_claude_md(config):
+    command = test_command(config)
+    if command:
+        test_line = _fenced(command)
+    else:
+        test_line = TEST_COMMAND_NOT_DETECTED
     return CLAUDE_MD.format(
         repo=repo_slug(config),
-        default_branch=config["default_branch"],
+        default_branch=_code_span(default_branch_name(config)),
         test_line=test_line,
     )
 
@@ -389,6 +485,24 @@ def untagged_declaration(config):
         "declaration exists to prevent.".format(
             ", ".join(value), "them" if len(value) > 1 else "it")
     )
+
+
+def untagged_versions(config):
+    """This repository's `changelog_untagged`, for the rule layer.
+
+    `untagged_declaration()` is the funnel for the generated workflow and returns a
+    rendered flag; the rule layer needs the list itself, and `oss_rules` renders it
+    into a fenced `bash` block of a Markdown rule -- the same substitution into the
+    same kind of generated file, one template family over. It had the same shape of
+    gap #180 is about: the only caller validates first, so the guard was real and it
+    was not at the chokepoint, which is exactly the asymmetry that made `render()`
+    reachable without one (#31, #173, #180).
+    """
+    value = config.get("changelog_untagged")
+    problem = oss_config.changelog_untagged_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+    return value
 
 
 def _render_fragments_readme(config):
@@ -1937,7 +2051,7 @@ def _main(argv=None):
         # explanation of `--untagged` and no version, so the reader had to derive this
         # repository's answer themselves -- twice, once here and once in the CI leg,
         # which is exactly the disagreement the key exists to make impossible (#101).
-        untagged=config.get("changelog_untagged"),
+        untagged=untagged_versions(config),
         gate=gate,
     )
     for path in rules:

@@ -191,6 +191,160 @@ def repo_problem(value):
     return None
 
 
+# The other two values that reach a file this plugin writes into somebody else's
+# repository, and the two #173 did not reach (#180).
+#
+# `scaffold._render_claude_md` substitutes three things into that repo's CLAUDE.md --
+# the file every agent there reads first. #173 gave `repo` a render-time chokepoint
+# and left these two with nothing but a `str` type check, in the same function and the
+# same commit. That sweep was over the *compiled patterns* in `scripts/`, honestly and
+# in both directions; a value with no pattern cannot appear in a sweep of patterns.
+# So these are written down beside the values, not beside the mechanism.
+#
+# Neither of them is a pattern. `test_command` is a shell command and a `\A...\Z`
+# allow-list over it is the thing that did not generalise: any pattern loose enough to
+# admit `pytest -k 'not slow' | tee out.txt` admits everything that matters anyway.
+# What is actually refused is a *character class*, chosen from the harm rather than
+# from the shape.
+
+#: Every character `str.splitlines()` treats as ending a line. Written down because
+#: `\n` and `\r` are not the whole set -- `\x85` and `\u2028` end a line for Python and
+#: for several Markdown renderers, and a validator that knows two of ten leaves the
+#: other eight able to put text at column 0. `tests/test_claude_md_injection.py`
+#: measures this constant against `splitlines()` rather than trusting it.
+LINE_BREAKS = "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+
+#: C0 control characters other than tab, plus DEL. None of these belongs in a shell
+#: command written into a JSON config, and refusing the class rather than the two
+#: characters of the exploit is what keeps the next line terminator from being news.
+_CONTROLS = frozenset(chr(point) for point in range(0x20) if point != 0x09) | {"\x7f"}
+
+_TEST_COMMAND_FORBIDDEN = frozenset(LINE_BREAKS) | _CONTROLS
+
+
+def test_command_problem(value):
+    """Why this `test_command` cannot be used, or None when it is fine.
+
+    A line break and nothing else, and that balance is the whole decision. This value
+    is a shell command: it legitimately carries quotes, pipes, `$`, `&&`, `#` and
+    backticks, and a rule refusing any of those refuses a legitimate repository to
+    close a hole that is not open. It lands inside a fenced code block, where a
+    backtick cannot close the fence unless it starts its own line -- so the line break
+    is not merely the floor, it is the entire mechanism. The fence is *also* widened at
+    render time to outrun any backtick run in the value: two mechanisms, neither of
+    them the only one standing there, the same design `changelog_untagged` already has.
+
+    Null is fine and means the probe could not tell what runs the tests; the renderer
+    writes the "not detected" paragraph, which is a third state and not a guess.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return (
+            "test_command: expected the shell command that runs this repository's "
+            "tests as a string, or null when the probe could not tell; got "
+            "{!r}.".format(value)
+        )
+    found = sorted(set(value) & _TEST_COMMAND_FORBIDDEN)
+    if found:
+        return (
+            "test_command: contains {}. This value is written into a fenced block of "
+            "the CLAUDE.md generated for another repository -- the file every agent "
+            "there reads first -- so a character that ends a line ends the fence and "
+            "puts everything after it at column 0, where it is indistinguishable from "
+            "prose the maintainer wrote; got {!r}.".format(
+                ", ".join(repr(char) for char in found), value
+            )
+        )
+    return None
+
+
+#: What `git check-ref-format` refuses outright, as characters. Not a transcription of
+#: a style guide: these are the bytes git itself will not accept in a ref name, so
+#: refusing them cannot refuse a branch that exists. `\x85`, `\u2028` and `\u2029` are
+#: added because git tolerates them and this value is written into a Markdown document
+#: where they end a line.
+#: The control set is built here rather than borrowed from `_CONTROLS`, which carves
+#: tab out because a shell command legitimately contains one. A ref name does not: git
+#: refuses EVERY ASCII control including tab, so reusing that constant made this set
+#: quietly one byte looser than the authority its own docstring cites. Found by review
+#: on #180, and it is why `tests/test_claude_md_injection.py` now measures this
+#: function against `git check-ref-format` itself instead of asserting the claim.
+_REF_CONTROLS = frozenset(chr(point) for point in range(0x20)) | {"\x7f"}
+
+_REF_FORBIDDEN = (
+    frozenset(" ~^:?*[") | {"\\"} | _REF_CONTROLS | frozenset(LINE_BREAKS)
+)
+
+
+def _git_ref_problem(name):
+    """Why `git check-ref-format` would refuse `name`, as a phrase, or None."""
+    if not name:
+        return "it is empty"
+    found = sorted(set(name) & _REF_FORBIDDEN)
+    if found:
+        return "it contains {}".format(", ".join(repr(char) for char in found))
+    if name == "@" or "@{" in name:
+        return "'@' alone and the sequence '@{' are reserved by git"
+    if ".." in name:
+        return "it contains '..'"
+    if name.startswith("-"):
+        return (
+            "it starts with '-', which every command line built from it reads as an "
+            "option rather than as a branch"
+        )
+    if name.startswith("/") or name.endswith("/") or "//" in name:
+        return "it has an empty path component"
+    if name.endswith("."):
+        return "it ends with a dot"
+    for component in name.split("/"):
+        if component.startswith(".") or component.endswith(".lock"):
+            return (
+                "the component {!r} starts with a dot or ends with '.lock'".format(
+                    component
+                )
+            )
+    return None
+
+
+def default_branch_problem(value):
+    """Why this `default_branch` cannot be used, or None when it is fine.
+
+    Not a pattern either, and for the opposite reason to `test_command`: there is an
+    authority for this value's shape and it is not this file. `git check-ref-format`
+    decides what a branch may be called, so the rule is transcribed from it rather
+    than invented -- which is what makes "keep every value that validates today
+    validating" checkable instead of hopeful. A name git would refuse cannot be any
+    repository's default branch.
+
+    That rule already excludes every line terminator, since git forbids all ASCII
+    control characters and the space. The three Unicode terminators git tolerates are
+    added, because the harm here is Markdown rather than git: this value is written
+    into a code span of a generated CLAUDE.md, and a backtick in it is handled at
+    render time by widening the span rather than by refusing a name git allows.
+
+    Null is accepted here and refused in two other places, each with its own sentence:
+    `validate()` reports it as a required key that is null, and `scaffold` refuses to
+    render, because "Default branch `None`" is an invented fact in a generated file.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return (
+            "default_branch: expected the branch name as a string; got "
+            "{!r}.".format(value)
+        )
+    problem = _git_ref_problem(value)
+    if problem:
+        return (
+            "default_branch: {}, so git itself would refuse it as a ref name. It is "
+            "also written into a code span of the CLAUDE.md generated for another "
+            "repository, where a character that ends a line puts the remainder at "
+            "column 0; got {!r}.".format(problem, value)
+        )
+    return None
+
+
 # `changelog_dir` is the one value in this file that becomes shell source. `scaffold.py`
 # substitutes it into a `run:` line of the workflow it writes into somebody else's
 # repository, so a value carrying `$(...)` is a command that runs in their CI -- and this
@@ -847,6 +1001,19 @@ def validate(config):
     repo = repo_problem(config.get("repo"))
     if repo:
         problems.append(repo)
+
+    # The other two values `scaffold._render_claude_md` substitutes into a generated
+    # CLAUDE.md. Reported here AND re-checked at the render chokepoint, for the reason
+    # `fragments_dir()` and `untagged_declaration()` are: `render()` reaches that
+    # template without going near `plan()`, so a guard living only here does not run
+    # for that caller (#180).
+    default_branch = default_branch_problem(config.get("default_branch"))
+    if default_branch:
+        problems.append(default_branch)
+
+    test_command = test_command_problem(config.get("test_command"))
+    if test_command:
+        problems.append(test_command)
 
     labels = config.get("labels")
     if labels is not None:
