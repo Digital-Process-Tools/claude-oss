@@ -46,10 +46,45 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: Syntax-check every script
+      # Both guards below scoped themselves with `git ls-files '*.sh'`, which returns
+      # exactly one path here -- scripts/doctor.sh. bin/oss-workspace is tracked, is
+      # POSIX sh and has no extension, so neither `bash -n` nor `shellcheck` had ever
+      # read the plugin's own entry point, on any leg, on any platform, in any release,
+      # and this leg was green throughout: a lint that ran and found nothing and a lint
+      # that never received the file both exit 0 (#193).
+      #
+      # The list is derived by extension OR shebang, in scripts/shell_sources.py, and
+      # the reasoning for deriving it rather than naming the file here is in that
+      # script's docstring. Two properties this job depends on:
+      #
+      #   * it exits 2 when it matches nothing, so an empty selection fails this leg
+      #     instead of running `shellcheck` with no arguments and exiting 0 -- the half
+      #     of the repair that would otherwise reintroduce the bug;
+      #   * it exits 3 when a tracked file could not be read, because `could not look`
+      #     is not `looked and found no shebang`.
+      #
+      # Redirection and not a pipe: the default shell here is `bash -e` without
+      # `pipefail`, so `... | tee list` would report tee's exit status and swallow both
+      # refusals.
+      - name: Enumerate shell sources
         run: |
-          for f in $(git ls-files '*.sh'); do bash -n "$f"; done
+          python3 scripts/shell_sources.py --root . > shell-sources.txt
+          echo "linting:"; cat shell-sources.txt
+      # `while ... done < file` and not `... | while`: a pipeline puts the loop in a
+      # subshell, and a `while` returns the status of the loop's completion rather than
+      # of its body, so a failing guard would be swallowed. The status is therefore
+      # carried out by hand -- `|| exit 1` below, and a flag in the shellcheck step so
+      # every file is reported rather than only the ones before the first failure.
+      #
+      # `xargs -d` would be shorter and is a GNU extension; this form is the one that
+      # can be run and watched fail on a maintainer's own machine, which is how the
+      # `| while` trap above was caught rather than reasoned about.
+      - name: Syntax-check every shell source
+        run: |
+          while IFS= read -r f; do bash -n "$f" || exit 1; done < shell-sources.txt
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          shellcheck -S warning $(git ls-files '*.sh')
+          fail=0
+          while IFS= read -r f; do shellcheck -S warning "$f" || fail=1; done < shell-sources.txt
+          exit "$fail"

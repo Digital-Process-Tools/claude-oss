@@ -124,6 +124,12 @@ python3 -m pytest tests/ -q
 CI runs the suite on ubuntu, macOS and Windows across Python 3.9-3.12. A green macOS run is not
 evidence on its own.
 
+A separate ubuntu leg runs `bash -n` and `shellcheck -S warning` over every tracked shell source.
+Which files those are is derived rather than listed — `python3 scripts/shell_sources.py` prints the
+list, selecting by extension or by shebang so an extensionless script is covered by the commit that
+adds it. It exits non-zero when it matches nothing, so an empty selection fails the leg instead of
+linting no files and passing.
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial
