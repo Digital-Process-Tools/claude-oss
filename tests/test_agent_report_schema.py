@@ -710,6 +710,101 @@ def test_a_payload_outside_the_report_directory_is_never_opened(tmp_path, monkey
         assert key not in said, "the refusal quoted the decoy back: {}".format(said)
 
 
+def _symlink_or_skip(link, target, target_is_directory=False):
+    """Create a symlink, or skip carrying what this platform actually said.
+
+    The fixture is a measurement, not a given. Symlink creation needs a privilege
+    or developer mode on Windows, so `os.symlink` raises for an unprivileged
+    runner, and some filesystems carry no links at all. Attempt the exact
+    operation the case needs and, when it does not take, say which platform, what
+    it raised and what therefore went untested -- never assert against a table of
+    platform error codes, and never let the skip read as a pass.
+
+    The link is then confirmed to *resolve* to its target rather than merely to
+    exist, because that resolution is the entire condition under test: a link
+    that resolved to itself would leave the refusal below passing for a reason
+    nobody chose.
+    """
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(
+            "{}: this platform would not create the symlink ({}, errno {!r}, winerror {!r}), "
+            "so 'a symlink inside the base pointing out of it is refused unopened' went "
+            "untested here".format(
+                sys.platform,
+                type(exc).__name__,
+                getattr(exc, "errno", None),
+                getattr(exc, "winerror", None),
+            )
+        )
+    try:
+        landed = link.resolve() == Path(target).resolve()
+    except OSError as exc:
+        pytest.skip(
+            "{}: the link was created but would not resolve ({}, errno {!r}), so "
+            "'a symlink inside the base pointing out of it is refused unopened' went "
+            "untested here".format(sys.platform, type(exc).__name__, getattr(exc, "errno", None))
+        )
+    if not landed:
+        pytest.skip(
+            "{}: {} was created but resolves to {} rather than to {}, so the escape this "
+            "case needs does not exist here and 'a symlink inside the base pointing out of "
+            "it is refused unopened' went untested".format(
+                sys.platform, link, link.resolve(), Path(target).resolve()
+            )
+        )
+    return link
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_a_symlink_inside_the_report_directory_pointing_out_is_never_opened(
+    tmp_path, monkeypatch, kind
+):
+    """The claimed property that nothing asserted until this test existed.
+
+    `_contained_path` resolves *both* sides, and three documents say so -- the
+    docstring on that function, the `pr_body.path` description in the schema, and
+    the 0.5.0 changelog entry. Every other containment case in this file names a
+    path that escapes lexically, so swapping `resolve()` for a normpath -- a
+    plausible future change, for Windows short names or to avoid a stat -- would
+    keep all of them green and silently make all three documents false.
+
+    This case escapes only under resolution: `reports/body.pr.json` is inside the
+    base by every reading except the one that follows the link. The decoy it
+    reaches for is a payload the forge would accept and it exists, so containment
+    is the only thing that has anything to say about it.
+    """
+    schema = report_schema.load_schema()
+    report, decoy, reports = _escaping_report(tmp_path, decoy=_payload())
+    if kind == "file":
+        named = _symlink_or_skip(reports / "body.pr.json", decoy)
+    else:
+        named = _symlink_or_skip(
+            reports / "sub", decoy.parent, target_is_directory=True
+        ) / decoy.name
+    report["pr_body"] = {"state": "written", "path": str(named)}
+
+    opened = _read_spy(monkeypatch)
+    errors = report_schema.validate_pr_body(report, schema, base_dir=reports)
+
+    assert _outside(opened, reports) == [], "it opened a file the report does not own"
+    assert str(decoy) not in [str(p) for p in opened]
+    assert errors, "a symlink out of the base has to be reported; silence is what nobody reads"
+
+    # The positive control, in the same fixture and on the same directory. Every
+    # assertion above also passes when the link was never created, when nothing
+    # resolved, or when the validator never ran at all -- this half is what fails
+    # instead of passing quietly in each of those cases.
+    ordinary = _report_with_payload(reports, name="ordinary.pr.json")
+    assert report_schema.validate_pr_body(ordinary, schema, base_dir=reports) == [], (
+        "the refusal above proves nothing if an ordinary sibling is refused too"
+    )
+    assert any(
+        p.name == "ordinary.pr.json" for p in opened
+    ), "the ordinary sibling went unread, so the harness saw nothing either way"
+
+
 def test_a_payload_beside_the_report_is_still_opened_and_validated(tmp_path, monkeypatch):
     """The positive control. `return []` would satisfy every assertion above."""
     schema = report_schema.load_schema()
