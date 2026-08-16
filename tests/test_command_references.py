@@ -337,6 +337,78 @@ def _carries_the_three_state_worktree_rule(text):
     )
 
 
+# --------------------------------------------------------------------------- #
+# The heal has to follow board membership, not sit at the top (#242).
+#
+# #187 added the read-only probe and #208 added the bare heal, and both landed
+# in step 2 because that is where the board read was. Radar has no discovery
+# feed -- its own footer says `discovery: radar ticks only` -- so a heal arms
+# pollers for what was open at the moment it ran and nothing after. Every pull
+# request the tick itself opened was therefore unwatched for its whole CI run,
+# and the loop fell back to polling `gh-pr:N:status` without noticing why.
+#
+# The predicates below are positional and terminal on purpose. Every existing
+# tick predicate is satisfied by the file this issue was filed against: it
+# ordered `radar:--state`, ordered bare `radar`, and carried all three of the
+# heal's outcomes -- at the top. So "does this file order a heal" cannot
+# separate the fixed file from the broken one, and only *where* can.
+# --------------------------------------------------------------------------- #
+
+#: The step that opens the pull request. `_heals_after_the_pull_request_is_opened`
+#: anchors on it rather than on a heading, because a step number is renumbered by
+#: any insertion above it and the op is not.
+PR_CREATE_RE = re.compile(r"^\s*supertool\s+'gh-pr-create:", re.M)
+
+
+def _heals_after_the_pull_request_is_opened(text):
+    """A bare `radar` *after* the op that opens the pull request.
+
+    Position is the whole finding. `_orders_the_bare_radar_heal` above is
+    satisfied by the step-2 heal alone, which is exactly the file #242 reports.
+    """
+    opened = PR_CREATE_RE.search(text)
+    if not opened:
+        return False
+    return any(m.start() > opened.end() for m in BARE_RADAR_RE.finditer(text))
+
+
+def _states_the_membership_rule_rather_than_a_list(text):
+    """A rule about when membership changed, said to be a rule.
+
+    A list of heal sites is easier to follow and rots as steps are added -- and
+    it was already one entry long and already wrong. The file has to say which
+    of the two it is, because a reader who cannot tell will treat the examples
+    as the whole set.
+    """
+    return bool(re.search(r"changed what is open", text, re.I)) and bool(
+        re.search(r"not a list of places", text, re.I)
+    )
+
+
+def _says_the_default_branch_has_no_poller_to_heal(text):
+    """The fact that decides rule-versus-list, rather than a preference.
+
+    Radar carries the default branch as a member row composed from `gh-branch`'s
+    four states; `N watched` never counts it. So the red-default-branch case has
+    nothing to arm, and no list of heal sites can ever cover it -- only reading
+    the board again does.
+    """
+    return bool(re.search(r"no poller to heal", text, re.I)) and bool(
+        re.search(r"`N watched` never counts it", text)
+    )
+
+
+def _ends_the_tick_on_the_boards_own_coverage_tokens(text):
+    """The terminal measurement that keeps the rule from being skippable.
+
+    Deliberately radar's own rendered tokens rather than a paraphrase: the board
+    already prints all three states, so a tick that re-reads it computes nothing.
+    A predicate keyed on prose about coverage would pass on a file that describes
+    the check and names nothing a reader could match against the output.
+    """
+    return "[unwatched]" in text and "watch coverage UNKNOWN" in text
+
+
 # The skill has to state its own authority (#185).
 #
 # `skills/manager/SKILL.md` said what to decide and how to evidence it, and never
@@ -525,6 +597,26 @@ TICK_FACTS = [
         "the worktree verdicts are read in three states",
         _carries_the_three_state_worktree_rule,
         r"`cannot tell` is not `idle`|`merge unknown` is not `merged`",
+    ),
+    (
+        "the heal follows the pull request it opened",
+        _heals_after_the_pull_request_is_opened,
+        r"supertool 'radar'|supertool 'gh-pr-create:",
+    ),
+    (
+        "membership is the rule, not a list of places",
+        _states_the_membership_rule_rather_than_a_list,
+        r"changed what is open|not a list of places",
+    ),
+    (
+        "the default branch has no poller to heal",
+        _says_the_default_branch_has_no_poller_to_heal,
+        r"no poller to heal|`N watched` never counts it",
+    ),
+    (
+        "the tick ends on the board's own coverage tokens",
+        _ends_the_tick_on_the_boards_own_coverage_tokens,
+        r"\[unwatched\]|watch coverage UNKNOWN",
     ),
 ]
 

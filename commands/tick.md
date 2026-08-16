@@ -92,6 +92,11 @@ Skill(manager)
    watcher, so `could not raise` is reported as itself or it is indistinguishable from a fleet that
    was already up.
 
+   **This is not the tick's only heal, and it is the one that covers the least.** Radar has no
+   discovery feed — its own board footer says `discovery: radar ticks only` — so this run arms
+   pollers for what is open *at the moment it runs* and for nothing opened after. Step 4 states the
+   rule that governs every later one, and *What ends a tick* is where it gets measured.
+
    **Relay the probe's channel line rather than swallowing it.** When `.supertool.json` declares no
    `watch_name` in any op block, the channel name came from the environment, and the probe says so
    in as many words: this socket and these poller slots **may be another project's fleet**. The heal
@@ -125,6 +130,38 @@ Skill(manager)
    pull request*, including why the op rather than `gh pr create`, why reading the body is what
    makes this a saving rather than a trick, and which of `head` and `base` the validator actually
    checks — neither is yours to retype.
+
+   **Then heal the board again, because you have just changed what is open.**
+
+   ```bash
+   supertool 'radar'
+   ```
+
+   **The rule is *board membership changed*, and it is deliberately not a list of places to heal.**
+   A list is easier to follow, and this file already had one: #187 added the probe and #208 added
+   the heal, and both landed in step 2 because that is where the board read was. So the pull request
+   the tick itself opened had no poller for its entire CI run, and the loop fell back to polling
+   `gh-pr:N:status` in a shell without ever noticing why it had to (#242). A list is complete until
+   somebody adds a step, and then it is wrong silently — the failure it produces is a missing
+   poller, and a missing poller is a silence.
+
+   Three cases the rule covers, and **one of them has nothing to heal at all**, which is the fact
+   that decides this rather than a preference for rules over lists:
+
+   - **A pull request was opened.** It has no poller, radar cannot discover it, and the heal is the
+     only thing that arms one.
+   - **A pull request merged or closed.** Its poller is correctly reaped, and a stacked follow-up
+     needs its own. Note that `No active watchers` is the **expected** state right after a merge and
+     the **defect** state right after an open — the same words for both, so the board's open count
+     is what tells them apart, never the watcher list on its own.
+   - **The default branch went red under a squash** — and here there is **no poller to heal**.
+     Radar carries the default branch as a *member row*, answered by composing `gh-branch`'s own
+     `GREEN` / `NOT GREEN` / `NO RUN` / `UNKNOWN`, and `N watched` never counts it. Nothing can be
+     armed for it; it is re-answered on each radar run. So this case is fixed by reading the board
+     again and by nothing else, and no list of heal sites could ever have contained it.
+
+   Running it costs one op and cannot double-arm: a slot already alive is neither healed nor
+   respawned, which is why the rule errs toward running it more often rather than less.
 
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call
@@ -165,6 +202,28 @@ Skill(manager)
 
 Not the wakeup. The wakeup is a safety net, and the tell that this went wrong is a closing line
 describing the schedule instead of the next action. Waiting on CI is not a reason to stop working.
+
+**And not while the board says something is unwatched.** Step 4's rule is easier to skip than a
+list would be — that is the one thing a list is better at — so the anchor is a *measurement* taken
+at the end, not a reminder placed at the top. Read the board once more before the tick closes:
+
+```bash
+supertool 'radar'
+```
+
+Read radar's own tokens, not the fact that the call succeeded. It already renders all three states,
+so nothing here computes anything:
+
+- **Covered** — `N open | N watched`, and no row carrying `[unwatched]`. `0 open | 0 watched` is
+  this state and not a gap; there is nothing to watch.
+- **A gap** — a row marked `[unwatched]`, or `N unwatched` in the summary line. Name the pull
+  request. The heal in step 4 is what clears it, and a tick that ends here says which one is bare
+  and that the fleet cannot find it by itself.
+- **`watch coverage UNKNOWN`** — the board is about a repo whose PR numbers cannot be told from this
+  clone's, so nothing was healed and nothing *could* be. That is the third state, it is not the
+  first, and reporting it as a covered board is this loop's own defect class landing on the loop.
+
+A terminal condition rather than a sixth entry on a list, so a step added later cannot escape it.
 
 ## If `.oss.json` is missing
 
