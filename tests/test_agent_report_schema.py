@@ -114,6 +114,19 @@ def _mutations():
         }
         return report
 
+    def finding_left_for_filing_without_reason(report):
+        report["review"]["findings"] = {
+            "state": "checked",
+            "items": [
+                {
+                    "class": "correctness",
+                    "disposition": "report-for-filing",
+                    "text": "x",
+                }
+            ],
+        }
+        return report
+
     def class_verdict_unreached_without_why(report):
         report["review"]["classes"]["items"][0] = {
             "class": "platform",
@@ -157,6 +170,7 @@ def _mutations():
         "survey-not-checked-carries-a-reason": survey_not_checked_without_reason,
         "survey-not-checked-carries-no-items": survey_not_checked_carrying_items,
         "refusal-carries-text-and-argument": refusal_without_argument,
+        "finding-left-for-filing-carries-a-reason": finding_left_for_filing_without_reason,
         "unreached-class-carries-a-why": class_verdict_unreached_without_why,
         "docs-target-left-alone-carries-a-why": docs_target_left_alone_without_why,
         "docs-target-unread-carries-a-why": docs_target_unread_without_why,
@@ -1361,3 +1375,111 @@ def test_prose_does_not_demand_a_bump_but_the_enforcement_lists_do():
         "the enforcement lists are inside the fingerprint on purpose; if that "
         "changes, change the sentence in x-honesty-versioning with it"
     )
+
+# ------------------------- a request rendered as a completed action (#254)
+#
+# `disposition: filed` was a value an agent could write for a review finding it
+# had judged out of its diff's scope. The word is past tense: read at the speed
+# a maintainer reads a report -- states first, then items, most of them `fixed`
+# -- it says *this has been filed*. It meant *this should be filed, by you, and
+# nothing has happened yet*. Twice in one day it meant nobody filed it (#144's
+# report, which surfaced only when the finding was rediscovered a day later and
+# became #241, and #193's, which the tracker had never heard of).
+#
+# So the contract renders a request and a completed action identically, which is
+# this repository's own defect class inside its own review format.
+#
+# The value is REMOVED rather than joined by a second one, and that is the
+# judgment this change makes. An agent must not file: its publishing clause is
+# unconditional -- do not push, do not open a pull request, do not comment on
+# the issue -- and opening a tracker issue is publishing, under the maintainer's
+# credentials, in the one place this plugin deliberately keeps agents out of
+# (the triager holds the tracker and is confined to labels, never content). A
+# vocabulary that lets an agent SAY `filed` makes a forbidden action spellable,
+# and the two instances above are exactly reports that spelled it while nothing
+# had been filed. So the enum carries no word for a completed filing at all, and
+# a report still using the old one is refused rather than quietly reinterpreted.
+#
+# `report-for-filing` is not a new word: it is what `adjacent.action` has always
+# used for the same act. One vocabulary across the report, present tense, and
+# unambiguously a request addressed to somebody else.
+
+
+def _finding_dispositions():
+    return set(_schema()["$defs"]["finding"]["properties"]["disposition"]["enum"])
+
+
+def test_a_review_finding_cannot_claim_a_completed_filing():
+    """The must-not-fire half. Paired below with a report that uses the removed
+    word, so an enum this test could not read would not pass for the wrong
+    reason.
+    """
+    assert "filed" not in _finding_dispositions(), (
+        "a past-tense disposition is back: an agent cannot file and a report "
+        "saying it did is indistinguishable from one asking somebody to"
+    )
+    assert "report-for-filing" in _finding_dispositions(), (
+        "the request state is gone, so a finding left for the maintainer has "
+        "nowhere to go but `open` -- which says nothing about who owes what"
+    )
+
+
+def test_the_filing_vocabulary_is_the_same_word_in_both_surveys():
+    """Two fields, one act. A second spelling is a second thing to grep for and
+    a second thing to get wrong, and the maintainer reads both surveys.
+    """
+    actions = set(_schema()["$defs"]["adjacent"]["properties"]["action"]["enum"])
+    assert "report-for-filing" in actions
+    assert "report-for-filing" in _finding_dispositions()
+
+
+def test_a_report_still_saying_filed_is_refused():
+    """The must-fire half of the pair above.
+
+    `"filed" not in enum` also passes against a schema whose `finding` def this
+    test failed to find, or whose enum went empty. This one drives the
+    validator: the old word has to be rejected, not merely absent from a list.
+    """
+    report = _example()
+    report["review"]["findings"] = {
+        "state": "checked",
+        "items": [{"class": "correctness", "disposition": "filed", "text": "x"}],
+    }
+    errors = report_schema.validate(report)
+    assert any("filed" in error for error in errors), (
+        "the removed disposition is still accepted: {}".format(errors)
+    )
+
+
+def test_a_finding_left_for_filing_carries_its_reason():
+    """The one thing worth enforcing once the word is unambiguous.
+
+    A `report-for-filing` finding is work handed to the maintainer, and what
+    they need in order to act is why the agent did not fix it -- the same
+    fix-it-or-file-it argument `adjacent` already asks for. With no reason it
+    is a sentence somebody has to reconstruct the judgment behind before they
+    can open anything, which is how a request becomes a thing to do later.
+    """
+    report = _example()
+    report["review"]["findings"] = {
+        "state": "checked",
+        "items": [
+            {
+                "class": "correctness",
+                "disposition": "report-for-filing",
+                "text": "the helper swallows OSError, so an unreadable tree reads as an empty one",
+            }
+        ],
+    }
+    errors = report_schema.validate(report)
+    assert any("report-for-filing" in error for error in errors), (
+        "a finding handed to the maintainer with no argument was accepted: "
+        "{}".format(errors)
+    )
+
+    # Must-not-fire, same fixture: the reason supplied.
+    report["review"]["findings"]["items"][0]["reason"] = (
+        "fixing it means changing what three callers receive for an unreadable "
+        "tree, which is a design decision this brief did not carry"
+    )
+    assert report_schema.validate(report) == []

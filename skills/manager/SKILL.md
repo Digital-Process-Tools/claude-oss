@@ -420,6 +420,14 @@ Every brief carries these:
    > `content`** — `edit` needs an `old` and a new file has none, so `paste` is the only route to a
    > file that does not exist yet, and your changelog fragment is always one. A raw heredoc runs no
    > validator and rolls nothing back. `supertool 'ops'` lists everything.
+   >
+   > **Write your report from the worktree root — `cd <worktree_root>` first — not from your branch
+   > directory.** The report, the note and the pull request payload live outside every worktree so
+   > they survive the tree being reaped, and supertool refuses a path outside the current working
+   > directory: from the branch directory you get `ERROR: path escapes cwd`, and the cost is a
+   > re-send of the whole payload rather than a retry of a short command. Do not reach for the env
+   > var or the `allow_outside_cwd` key the refusal offers — both widen every op for the rest of the
+   > session to buy one write. Move the cwd, not the guard.
 
    The op names are in there deliberately, and the creating one is the reason. A named op that
    supertool later renames fails *at the call*; an **omitted** one does not fail at all — it routes
@@ -430,6 +438,13 @@ Every brief carries these:
    copies on purpose — a brief has to be self-contained for an agent that never loads the other —
    and `tests/test_content_invariants.py` is where the fact lives once: it fails when either copy
    stops naming an op that can create a file.
+
+   The cwd paragraph is here for the same reason and is the same defect one op over (#266). The
+   brief guarantees a write outside every worktree and requires every write to go through supertool,
+   which refuses exactly that path — so an agent doing precisely what both halves say is refused on
+   the one write it was promised. The refusal is right; nothing naming the remedy is the bug, and it
+   cost two agents a re-sent heredoc before anyone wrote it down. Same test file holds it: a
+   document requiring the out-of-tree write must also name the refusal and the cwd that avoids it.
 
 2. **Name the hidden judgment call.** If you cannot state what the agent will have to decide, you
    have not read the issue closely enough to delegate it.
@@ -691,6 +706,15 @@ lives in `reason`, and that field exists so you keep arguing with findings inste
 them. The bullet above is not softened by the format — a load-bearing argued-down finding still gets
 checked, by hand, against the code. Fewer tokens must never become fewer things checked, and this is
 the sentence that decides whether the whole arrangement was worth making.
+
+**`"disposition": "report-for-filing"` is work handed to you, and it is the item most easily lost.**
+No agent can file: opening an issue is publishing, and the publishing clause is unconditional. So
+the schema carries no word for a completed filing at all — the value used to be `filed`, past tense,
+which reads as *done* at the speed anyone actually reads a report, and twice in one day it meant
+nobody filed it (#254). Both findings were real and both surfaced only because somebody reread the
+report a day later. Read every `report-for-filing` item as an open request with your name on it, and
+close it in the same pass that merges the pull request: the issue you open is the receipt, and the
+`reason` beside the item is the agent's argument for why it is yours rather than theirs.
 
 ### Verify the red, not the green
 

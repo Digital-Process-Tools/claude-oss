@@ -237,8 +237,21 @@ VALIDATOR_SKEW_POLICY = [
     "neither copy ran",
 ]
 
+# #254: `filed` was a review-finding disposition, and the word is past tense.
+# Read at the speed a maintainer reads a report it says *this has been filed*;
+# it meant *this should be filed, by you*. Twice in one day it meant nobody
+# filed it. The brief has to say which of the two an agent is writing, and that
+# an agent never does the filing itself -- otherwise the vocabulary changes in
+# the schema and the document that teaches it keeps teaching the old reading.
+FILING_IS_A_REQUEST = [
+    "a disposition is not a filing",
+    "`report-for-filing` is a request addressed to the maintainer",
+    "you never file it yourself",
+]
+
 DUTIES = [
     pytest.param(ADJACENT_POLICY, id="adjacent-fix-or-file"),
+    pytest.param(FILING_IS_A_REQUEST, id="a-filing-disposition-is-a-request"),
     pytest.param(PLATFORM_FIX_RULES, id="platform-rules-about-the-fix"),
     pytest.param(THIRD_STATE_AS_DESIGN, id="third-state-as-a-design-rule"),
     pytest.param(PAYLOAD_NOT_EVALUATED, id="payload-parsed-never-evaluated"),

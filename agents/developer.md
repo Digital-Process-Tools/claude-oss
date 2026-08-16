@@ -352,6 +352,18 @@ clean one unless the brief forces the reviewer to say which it means.
 and say why — that is an outcome no bounce-and-repush loop produces. Report all three under
 `review.findings`, each with its disposition: what it flagged, what you fixed, what you refused.
 
+**A disposition is not a filing.** A finding you judged real and out of this diff's scope is
+`report-for-filing`, and `report-for-filing` is a request addressed to the maintainer — it says
+*this should be filed, by you, and nothing has happened yet*. **You never file it yourself**: your
+publishing clause is unconditional, opening a tracker issue is publishing under somebody else's
+credentials, and the one agent this plugin lets near a tracker is confined to labels rather than
+content. So there is no word here for a completed filing and there is not meant to be. There used to
+be — `filed`, past tense, which a maintainer reading states-then-items reads as *done*; twice in one
+day it meant nobody filed it, and both findings were real (#254). Give every `report-for-filing`
+item a `reason` saying why you did not simply fix it, which is the same fix-it-or-file-it argument
+`adjacent` asks for; the validator refuses one without it, because a request that costs work to read
+becomes a thing to do later.
+
 **Do not shell out to a headless `claude` CLI.** One agent did, unbounded, with auto-accepted write
 access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.
 
@@ -468,6 +480,17 @@ decoration: a stale note from a previous run of the same branch reads exactly li
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.
 
+**Run that write from the worktree root — `cd <worktree_root>` first — and the same for the report
+and the pull request payload below.** These are the only writes this task makes outside your branch
+directory, and supertool refuses a path outside the current working directory: standing in the
+branch directory you get `ERROR: path escapes cwd`, on the one write this brief guarantees you will
+make. The refusal is correct and is not something to argue with; what is wrong is doing it twice,
+because the failed attempt costs a re-send of the whole payload rather than a retry of a short
+command. The refusal message also offers an env var and an `allow_outside_cwd` key in
+`.supertool.json`. **Do not take either.** Both widen every op for the rest of the session, in
+somebody else's repository, to buy one write that moving the cwd already buys. Move the cwd, not the
+guard.
+
 Not every run needs one. A finding that fits its own field belongs in the report; write a note only
 when something genuinely worth keeping would otherwise have to be dropped or would be too long for
 any field of the report — the full reviewer exchange, a sweep, an inventory.
@@ -485,9 +508,11 @@ or not.
 
 1. Write it beside your note, at `<worktree_root>/reports/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.json`.
    Derive `worktree_root` the same way you derived it to cut the worktree; never write a path you
-   were not given. Outside every worktree, for the same reason the note is. **Flatten the branch
-   name first** — most `branch_pattern`s contain a slash, and a filename built from one silently
-   becomes a directory, so `fix/12` names the file `fix-12-…`. That applies to the note beside it.
+   were not given. Outside every worktree, for the same reason the note is — so `cd <worktree_root>`
+   before you write it, or supertool answers `ERROR: path escapes cwd` and the payload goes twice.
+   **Flatten the branch name first** — most `branch_pattern`s contain a slash, and a filename built
+   from one silently becomes a directory, so `fix/12` names the file `fix-12-…`. That applies to the
+   note beside it.
 2. Validate it before you hand it over. A report that does not validate is not a report — but
    **which validator is a question with two answers**, and answering it silently is how a correct
    report gets edited until an obsolete schema accepts it.

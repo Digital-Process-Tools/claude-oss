@@ -82,6 +82,12 @@ _ANNOTATION_KEYS = {
 # nobody recorded. Adding an entry here is the act of declaring a new contract.
 CONTRACT_FINGERPRINTS = {
     2: "d687807f452f7aa4c4773519fcbc00ab3aff097c04facf1b5e2652bf931bcb70",
+    # 3 (#254): the review-finding disposition `filed` is gone and
+    # `report-for-filing` replaces it, and that value now needs a reason. Both
+    # directions are breaking, which is why the number moved: a version-2 copy
+    # refuses every version-3 report that uses the new word, and a version-3
+    # copy refuses every version-2 report that used the old one.
+    3: "940a1c68c40f5bca2c8f8a9a05cf32e241df709d0998a435db57b871caf0fcd5",
 }
 
 _TYPES = {
@@ -400,12 +406,33 @@ def _rule_review_survey(node, path, errors):
 
 
 def _rule_finding(node, path, errors):
+    """The two dispositions that hand something to the reader, and what each owes.
+
+    A refusal owes its argument: with no reason it reads exactly like a
+    well-argued one.
+
+    `report-for-filing` owes the same thing for the opposite reason. It is not a
+    verdict, it is work handed to the maintainer, and the schema deliberately has
+    no word for a completed filing -- an agent cannot file, so the only thing this
+    value can mean is a request (#254). What the maintainer needs before they can
+    act on one is why the agent did not simply fix it, which is the fix-it-or-file-it
+    argument `adjacent` already asks for. Without it the item is a sentence somebody
+    has to reconstruct a judgment behind, and a request that costs work to read is a
+    request that becomes a thing to do later.
+    """
     if not _text(node, "text"):
         errors.append("{}: a finding carries its sentence, not a boolean".format(_label(path)))
     if node.get("disposition") in ("refused", "argued-down") and not _text(node, "reason"):
         errors.append(
             "{}: disposition {!r} needs a reason -- a refusal with no argument reads "
             "exactly like a well-argued one".format(_label(path), node.get("disposition"))
+        )
+    if node.get("disposition") == "report-for-filing" and not _text(node, "reason"):
+        errors.append(
+            "{}: disposition 'report-for-filing' needs a reason -- this is work "
+            "handed to the maintainer, and without the argument for not fixing it "
+            "here they have to reconstruct the judgment before they can "
+            "file".format(_label(path))
         )
 
 

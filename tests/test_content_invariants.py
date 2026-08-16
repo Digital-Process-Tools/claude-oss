@@ -3102,3 +3102,194 @@ def test_a_wrapped_blockquoted_ending_is_not_read_as_an_omission():
     }
 
 
+# --------------------------- the one write the brief guarantees, and refuses (#266)
+#
+# Both documents require the report and the note to be written OUTSIDE every
+# worktree -- a sibling of the numbered worktree directories -- so the evidence
+# survives the tree being reaped. Both documents also require every file
+# operation to go through supertool. Supertool refuses a path outside the
+# current working directory:
+#
+#     ERROR: path escapes cwd: '<...>/reports/x.json' (resolved to '<...>')
+#
+# So an agent standing in its branch directory, doing exactly what both halves
+# say, is refused on the one write the brief guarantees it will make. The
+# refusal is correct and is not the defect. The defect is that nothing named the
+# remedy, so each agent rediscovers it -- and the cost is a re-send of a large
+# heredoc rather than a retry of a short command.
+#
+# The remedy is to move the cwd, not the guard: run the write from the worktree
+# root. The refusal message itself offers two other routes -- an env var and an
+# `allow_outside_cwd` key in `.supertool.json` -- and both widen every op for
+# the rest of the session in somebody else's repository, which is why the
+# documents name the cwd move and the check anchors on it.
+#
+# The anchor pair is deliberate. The refusal string alone would be satisfied by
+# a document that describes the problem and not the fix; the remedy alone would
+# be satisfied by a document whose instruction an agent has no reason to connect
+# to the error it is staring at.
+#
+# Two copies again, for the same reason as #250 above: agents/developer.md is
+# the spawned agent's own brief, and skills/manager/SKILL.md's material is
+# pasted into briefs for agents that never load developer.md. Neither can cite
+# the other and stay self-contained, so the fact lives once -- here.
+
+OUT_OF_TREE_WRITE_DOCUMENTS = WRITE_ROUTE_DOCUMENTS
+
+#: The sentence that puts a document under this obligation.
+OUT_OF_TREE_TRIGGER = "outside every worktree"
+
+#: What supertool actually prints, quoted so an agent recognises the refusal it
+#: is looking at rather than reading it as a bug in its own path.
+ESCAPES_CWD_REFUSAL = "path escapes cwd"
+
+#: The remedy, backticked. The bare `cd <worktree_root>` is a substring of the
+#: `cd <worktree_root>/NNN` already in developer.md's worktree fence, so an
+#: unbackticked anchor would have been satisfied before a word was written --
+#: a toothless anchor of exactly the kind the control below exists to catch.
+CWD_REMEDY = "`cd <worktree_root>`"
+
+
+def _requires_an_out_of_tree_write(text):
+    return OUT_OF_TREE_TRIGGER in _collapse(text).lower()
+
+
+def _out_of_tree_write_unmet(text):
+    """Findings about a document that requires a write supertool will refuse.
+
+    Conditional on purpose: a document that never asks for an out-of-tree write
+    is under no obligation to explain one, and reporting it would be noise. The
+    cost of a conditional predicate is that it goes quiet when the trigger
+    wording moves, which is what
+    `test_both_documents_still_require_an_out_of_tree_write` is for.
+    """
+    collapsed = _collapse(text).lower()
+    if OUT_OF_TREE_TRIGGER not in collapsed:
+        return set()
+    unmet = set()
+    if ESCAPES_CWD_REFUSAL not in collapsed:
+        unmet.add("the-refusal-is-not-quoted")
+    if CWD_REMEDY.lower() not in collapsed:
+        unmet.add("the-cwd-remedy-is-not-named")
+    return unmet
+
+
+def test_both_documents_naming_an_out_of_tree_write_name_how_to_make_it():
+    findings = {
+        str(path.relative_to(REPO_ROOT)): sorted(
+            _out_of_tree_write_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in OUT_OF_TREE_WRITE_DOCUMENTS
+        if _out_of_tree_write_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document requires a write outside every worktree and requires every "
+        "write to go through supertool, without naming the refusal that "
+        "combination produces or the cwd that avoids it: {}".format(findings)
+    )
+
+
+def test_both_documents_still_require_an_out_of_tree_write():
+    """The must-fire half of the pair, and the way this check goes quiet.
+
+    `_out_of_tree_write_unmet` returns an empty set for a document that never
+    asks for the write. If the trigger wording is reworded away in either
+    document, the check above starts reporting both documents clean while
+    neither says anything -- an absence produced by the checker, read as an
+    absence in the world.
+    """
+    silent = [
+        str(path.relative_to(REPO_ROOT))
+        for path in OUT_OF_TREE_WRITE_DOCUMENTS
+        if not _requires_an_out_of_tree_write(path.read_text(encoding="utf-8"))
+    ]
+    assert not silent, (
+        "no longer names the obligation the check above is conditional on, so "
+        "that check is now vacuous for it: {}".format(silent)
+    )
+
+
+# The developer brief's report-path instruction as it stood before this change.
+# Both anchors must fire on it, or they were satisfied by the wording they were
+# written against.
+PRIOR_OUT_OF_TREE_WRITE = """
+1. Write it beside your note, at `<worktree_root>/reports/<branch>-<UTC timestamp>.json`.
+   Derive `worktree_root` the same way you derived it to cut the worktree; never write a path you
+   were not given. Outside every worktree, for the same reason the note is. **Flatten the branch
+   name first** -- most `branch_pattern`s contain a slash, and a filename built from one silently
+   becomes a directory, so `fix/12` names the file `fix-12-...`. That applies to the note beside it.
+"""
+
+
+def test_the_out_of_tree_check_fires_on_the_pre_266_wording():
+    assert _out_of_tree_write_unmet(PRIOR_OUT_OF_TREE_WRITE) == {
+        "the-refusal-is-not-quoted",
+        "the-cwd-remedy-is-not-named",
+    }
+
+
+def test_the_pre_266_wording_would_have_been_read_as_triggering():
+    """Control on the control. If the fixture above did not trigger the
+    predicate, its two findings would be evidence about the trigger and not
+    about the anchors.
+    """
+    assert _requires_an_out_of_tree_write(PRIOR_OUT_OF_TREE_WRITE)
+
+
+def test_a_document_that_asks_for_no_out_of_tree_write_is_not_reported():
+    """The third state, with its must-fire in the same fixture.
+
+    Prose that never asks for the write is not clean and not broken -- it is
+    simply not under the obligation. What must not happen is that this and a
+    document under the obligation come back the same way, so the second half
+    adds the trigger sentence back and asserts both findings appear.
+    """
+    unrelated = "Write the fragment, run the suite, and commit."
+    assert _out_of_tree_write_unmet(unrelated) == set()
+
+    triggered = unrelated + " The report goes outside every worktree."
+    assert _out_of_tree_write_unmet(triggered) == {
+        "the-refusal-is-not-quoted",
+        "the-cwd-remedy-is-not-named",
+    }
+
+
+# The remedy said correctly, inside a blockquote, wrapped so both anchors
+# straddle a line break -- the shape the manager skill's pasted material has.
+WRAPPED_OUT_OF_TREE_REMEDY = (
+    "   > The report lives outside every worktree, so run the write from the\n"
+    "   > worktree root: `cd\n"
+    "   > <worktree_root>` first, because supertool refuses a path outside the\n"
+    "   > cwd with `ERROR: path escapes\n"
+    "   > cwd`.\n"
+)
+
+
+def test_a_wrapped_blockquoted_remedy_is_not_read_as_an_omission():
+    """Must-not-fire, with the controls that stop it being a free pass.
+
+    Both anchors are split by the wrap here: `cd <worktree_root>` by a
+    blockquote marker, `path escapes cwd` by a plain newline. A reader that
+    dropped either half of `_collapse` would report a correct document as
+    broken, and the wording would then be tuned until the broken reader was
+    happy.
+    """
+    assert _out_of_tree_write_unmet(WRAPPED_OUT_OF_TREE_REMEDY) == set()
+
+    line_at_a_time = WRAPPED_OUT_OF_TREE_REMEDY.lower()
+    assert ESCAPES_CWD_REFUSAL not in line_at_a_time, (
+        "the wrap control no longer wraps across the refusal string, so it "
+        "proves nothing about the collapse"
+    )
+    without_the_strip = " ".join(WRAPPED_OUT_OF_TREE_REMEDY.split()).lower()
+    assert CWD_REMEDY.lower() not in without_the_strip, (
+        "the blockquote control no longer wraps across the remedy, so it "
+        "proves nothing about the marker strip: {!r}".format(without_the_strip)
+    )
+
+    # Must-fire, same fixture: the remedy taken back out, trigger left in.
+    vague = "   > The report lives outside every worktree. Write it there.\n"
+    assert _out_of_tree_write_unmet(vague) == {
+        "the-refusal-is-not-quoted",
+        "the-cwd-remedy-is-not-named",
+    }
