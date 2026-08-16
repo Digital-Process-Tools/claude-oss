@@ -12,15 +12,22 @@ maintainer's full clone and fail every leg.
 
 What this file cannot do is the reason it is small. It cannot tell a section re-derived this morning
 from one whose marker was hand-edited, and it cannot read the tree the marker names. It converts
-"stale and silent" into "stale and dated", and nothing further.
+"stale and silent" into "stale and dated" -- and, since #206, into "stale and red while a release is
+pending", which is the only moment the answer is actionable.
 
-One thing it can do, added for #206: fail while a release is *pending*. Until then every check here
-was satisfied by `v0.3.0` -- a release this repo really did cut -- for the whole of the 0.4.0 cycle
-and into the 0.5.0 one, so the guard could not fail at the boundary it exists to make visible. The
-signal it was missing is on disk and needs no git: unfolded fragments in the changelog directory
-mean a release is being prepared, and at that moment the newest release the section names must be
-the newest release `CHANGELOG.md` records. Between releases there are no fragments and the check
-says so rather than passing quietly -- the third state is reported, not inferred.
+That last part is the addition. Until it, every check here was satisfied by `v0.3.0` -- a release
+this repo really did cut -- for the whole of the 0.4.0 cycle and into the 0.5.0 one, so the guard
+could not fail at the boundary it exists to make visible. The signal it was missing is on disk and
+needs no git: unfolded fragments in the changelog directory mean a release is being prepared, and at
+that moment the newest release the section's **marker paragraph** names must be the newest release
+`CHANGELOG.md` records. Between releases there are no fragments and the check says so rather than
+passing quietly -- the third state is reported, not inferred.
+
+The marker paragraph, not the whole section, because the section cites older releases in prose all
+the way through: reading the whole body would let a version mentioned in passing -- a pasted
+`doctor` line, a changelog quotation -- satisfy the check while the marker itself stayed a release
+behind. That is the guard passing for a reason nobody chose, which is the failure this addition
+exists to end rather than to relocate.
 
 This deliberately does not check any measurement inside the section. Asserting that the prose agrees
 with, say, a `doctor` check states the same claim twice and passes whenever both are wrong together.
@@ -155,6 +162,18 @@ CHANGELOG_RELEASE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 FRAGMENT = re.compile(r"\A\d+\.[a-z]+\.md\Z")
 
 
+def _marker_paragraph(body):
+    """The section's first non-empty paragraph -- where the marker lives by contract.
+
+    Returning "" rather than raising keeps the fabricated controls below usable, the same way
+    `_section` does; a caller that gets "" finds no release in it and fails on that.
+    """
+    for block in body.split("\n\n"):
+        if block.strip():
+            return block
+    return ""
+
+
 def _version_key(version):
     return tuple(int(part) for part in version.split("."))
 
@@ -224,13 +243,18 @@ def test_the_section_is_current_for_the_release_being_prepared():
     assert cut, "CHANGELOG.md records no released version, so the marker cannot be keyed to one"
     newest_cut = max(cut, key=_version_key)
 
-    named = _releases(_section(CLAUDE_MD.read_text(encoding="utf-8")))
-    assert named, "the section names no release; see the check above"
+    marker = _marker_paragraph(_section(CLAUDE_MD.read_text(encoding="utf-8")))
+    named = _releases(marker)
+    assert named, (
+        "the marker paragraph -- the first paragraph of the '{}' section -- names no release in "
+        "backticks. A version cited later in the prose is not a marker.".format(SECTION_HEADING)
+    )
     newest_named = max(named, key=_version_key)
 
     assert newest_named == newest_cut, (
         "{} fragment(s) are waiting to be folded, so a release is being prepared -- but the "
-        "newest release the '{}' section names is `v{}`, while `v{}` has already shipped. The "
+        "newest release the '{}' section's marker paragraph names is `v{}`, while `v{}` has "
+        "already shipped. The "
         "section is a release behind, and its own instruction is to re-derive it at each release "
         "rather than to edit its numbers. Re-run the commands against this tree and write what "
         "they return.".format(len(fragments), SECTION_HEADING, newest_named, newest_cut)
@@ -244,16 +268,46 @@ CURRENT = SECTION_HEADING + "\n\nMeasured at `35abbcf`, after `v0.4.0`, succeedi
 CHANGELOG_FIXTURE = "## [Unreleased]\n\n## [0.4.0] - 2026-08-15\n\n## [0.3.0] - 2026-08-15\n"
 
 
+#: The failure the whole-section read would have missed: a stale marker with the newly-cut version
+#: mentioned further down for an unrelated reason -- a pasted verdict, a quoted changelog line.
+LATE_MENTION = (
+    SECTION_HEADING
+    + "\n\nMeasured at `9aed28e`, after `v0.3.0`.\n"
+    + "\n### A subsection\n\nThe gate at `v0.4.0` shipped a check that says so.\n"
+)
+
+
 def test_the_staleness_detector_fires_and_stays_silent_on_a_current_section():
     cut = _changelog_releases(CHANGELOG_FIXTURE)
     assert cut == ["0.4.0", "0.3.0"], "the changelog release detector stopped matching headings"
     newest_cut = max(cut, key=_version_key)
 
-    stale = max(_releases(_section(STALE)), key=_version_key)
-    current = max(_releases(_section(CURRENT)), key=_version_key)
+    stale = max(_releases(_marker_paragraph(_section(STALE))), key=_version_key)
+    current = max(_releases(_marker_paragraph(_section(CURRENT))), key=_version_key)
 
     assert stale != newest_cut, "the detector would not have fired on the #206 section"
     assert current == newest_cut, "the detector fires on a section that is current"
+
+
+def test_a_version_mentioned_below_the_marker_does_not_launder_a_stale_marker():
+    """The reason the check reads one paragraph and not the section body.
+
+    Read whole, `LATE_MENTION` looks current -- `v0.4.0` is in it. Read at the marker, it is a
+    release behind, which is what it is. Both halves are asserted so that a `_marker_paragraph`
+    which started returning the whole body, or nothing at all, fails here rather than quietly
+    widening or emptying the check.
+    """
+    body = _section(LATE_MENTION)
+    newest_cut = max(_changelog_releases(CHANGELOG_FIXTURE), key=_version_key)
+
+    assert max(_releases(body), key=_version_key) == newest_cut, (
+        "the whole-section read stopped seeing the later mention, so this control no longer "
+        "distinguishes the two reads and would pass for the wrong reason"
+    )
+    assert max(_releases(_marker_paragraph(body)), key=_version_key) != newest_cut, (
+        "a version cited below the marker laundered a stale marker -- the check is reading more "
+        "than the first paragraph again"
+    )
 
 
 def test_a_fragment_is_told_from_the_readme_beside_it():

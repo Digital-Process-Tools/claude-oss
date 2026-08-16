@@ -264,12 +264,21 @@ to prevent it, and #206 is the filing.
 What settles it has to be a **second measurement, not a second assertion** — a test comparing the
 prose to a `doctor` check would state the same claim twice and pass whenever both were wrong
 together. The signal is on disk and needs neither git nor the network: **unfolded fragments in
-`changelog.d/` mean a release is being prepared**, and at that moment the newest release the section
-names must be the newest release `CHANGELOG.md` records. Run against the section this one replaces
-it fails, and the message is the whole finding: *20 fragment(s) are waiting to be folded, so a
-release is being prepared — but the newest release the section names is v0.3.0, while v0.4.0 has
-already shipped.* Between releases there are no fragments, nothing is on disk to key to, and the
-check **skips with what went untested** rather than passing quietly.
+`changelog.d/` mean a release is being prepared**, and at that moment the newest release the
+section's **marker paragraph** names must be the newest release `CHANGELOG.md` records. Run against
+the section this one replaces it fails, and the message is the whole finding: *20 fragment(s) are
+waiting to be folded, so a release is being prepared — but the newest release the marker paragraph
+names is v0.3.0, while v0.4.0 has already shipped.* Between releases there are no fragments, nothing
+is on disk to key to, and the check **skips with what went untested** rather than passing quietly.
+
+The marker paragraph and not the whole section, because the section cites older releases in prose
+throughout, and reading the body whole would let a version mentioned in passing — a pasted `doctor`
+line, a quoted changelog heading — satisfy the check while the marker itself stayed a release
+behind. That is the guard passing for a reason nobody chose, which is the same failure one paragraph
+further along rather than a fix for it. The audit of this change found exactly that, and the control
+that now pins it asserts *both* halves: the fixture must read as current whole and as stale at the
+marker, so a `_marker_paragraph` that quietly widened back to the body, or emptied, fails there
+rather than in a release six weeks later.
 
 Three things it still cannot do, said here rather than discovered later: it cannot tell a
 re-derivation from a hand-edited marker; it cannot read the tree the sha names, because
