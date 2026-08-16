@@ -34,6 +34,11 @@ def _layer(root, dimension):
 #: third; paths and vocabulary are two columns with the filename second.
 FILENAME_COLUMN = {"tools": 2, "paths": 1, "vocabulary": 1}
 
+#: The one entry filename that is not an entry. The dependency's builder skips it by name in
+#: every builder it has, and `doctor.JIT_ENTRY_SKIP` is the same constant on this side; a
+#: layer uses it to carry something that is not a rule without the something becoming one.
+NOT_A_RULE = "00-README.md"
+
 
 def test_there_are_rules_to_install():
     assert oss_rules.RULES, "no rules -- every check below would vacuously pass"
@@ -83,7 +88,17 @@ def test_every_indexed_file_exists(tmp_path):
 
 
 def test_every_rule_file_is_indexed(tmp_path):
-    """And the other half: a file with no row never fires."""
+    """And the other half: a file with no row never fires.
+
+    `00-README.md` is exempt, and the exemption is not this suite's invention: the
+    dependency's index builder skips that exact name in every one of its four builders, and
+    `doctor.JIT_ENTRY_SKIP` skips it too. It is how a layer records something that is not a
+    rule -- a deliberate gap, say -- without the record itself becoming one. Indexing it
+    here would produce a row the next rebuild deletes, which reads as drift.
+
+    The exemption is one name, not a pattern, so it cannot quietly grow to cover a rule that
+    genuinely lost its row.
+    """
     oss_rules.install(tmp_path)
     for dimension in oss_rules.RULES:
         layer = _layer(tmp_path, dimension)
@@ -92,7 +107,10 @@ def test_every_rule_file_is_indexed(tmp_path):
             line.split("\t")[column]
             for line in (layer / "00-index.tsv").read_text(encoding="utf-8").splitlines()
         }
-        on_disk = {p.name for p in layer.glob("*.md")}
+        on_disk = {p.name for p in layer.glob("*.md")} - {NOT_A_RULE}
+        assert on_disk, "{}: every entry was exempted -- nothing was checked".format(
+            dimension
+        )
         assert on_disk <= indexed, "not indexed: {}".format(sorted(on_disk - indexed))
 
 
@@ -251,7 +269,12 @@ def test_no_awk_escape_that_compiles_to_nothing():
 def test_tools_dimension_blocks_the_five_native_ops():
     rules = oss_rules.RULES.get("tools", {})
     assert rules, "no tools dimension shipped"
-    name, body = next(iter(rules.items()))
+    # Named, not positional. This read `next(iter(rules.items()))` and so asserted about
+    # whichever entry the dict happened to yield first -- which stopped being the only
+    # entry the moment the layer began carrying a non-rule beside it. A dict-order change
+    # would have turned this into an assertion about a file with no `tool:` line at all,
+    # failing on an index error rather than on anything about the rule it is named for.
+    body = rules["supertool-required.md"]
     block = body.split("\n---\n")[0]
     tool_line = [ln for ln in block.splitlines() if ln.startswith("tool:")][0]
     tools = set(tool_line.split(":", 1)[1].strip().split("|"))
