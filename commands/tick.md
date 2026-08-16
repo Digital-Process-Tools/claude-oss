@@ -160,8 +160,12 @@ Skill(manager)
      armed for it; it is re-answered on each radar run. So this case is fixed by reading the board
      again and by nothing else, and no list of heal sites could ever have contained it.
 
-   Running it costs one op and cannot double-arm: a slot already alive is neither healed nor
-   respawned, which is why the rule errs toward running it more often rather than less.
+   It cannot double-arm — a slot already alive is neither healed nor respawned — which is why the
+   rule errs toward running it more often rather than less. **What it is not is free**, and "one op"
+   understates it: each bare `radar` is a board read, so it lists the pull requests, reconciles the
+   check legs of each and re-answers the default branch. Following this rule takes a tick from one
+   such read to three. That is the price of the fix and it is deliberate: the alternative is a
+   poller that was never armed, and a missing poller reports as a quiet board.
 
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call
@@ -214,8 +218,11 @@ supertool 'radar'
 Read radar's own tokens, not the fact that the call succeeded. It already renders all three states,
 so nothing here computes anything:
 
-- **Covered** — `N open | N watched`, and no row carrying `[unwatched]`. `0 open | 0 watched` is
-  this state and not a gap; there is nothing to watch.
+- **Covered** — the summary carries `N watched` with the same `N` as `N open`, and no row carries
+  `[unwatched]`. Read the two tokens, not their adjacency: `N failing`, `N running`, `N green` and
+  `N unchecked` are printed between them whenever they are non-zero, so `N open | N watched` is what
+  a quiet board happens to look like rather than the shape to match on. `0 open | 0 watched` is this
+  state and not a gap; there is nothing to watch.
 - **A gap** — a row marked `[unwatched]`, or `N unwatched` in the summary line. Name the pull
   request. The heal in step 4 is what clears it, and a tick that ends here says which one is bare
   and that the fleet cannot find it by itself.
