@@ -2223,6 +2223,27 @@ JIT_LAYER_ENUMERATION = re.compile(
     r"""(["'])(\d\d-[A-Za-z0-9][A-Za-z0-9-]*(?:[ \t]+\d\d-[A-Za-z0-9][A-Za-z0-9-]*)+)\1"""
 )
 
+#: Where a Claude Code plugin declares the scripts the runtime executes. The manifest is
+#: what separates a hook from a file that merely sits in the same tree (#241): the
+#: installed 0.4.0 answered this check off `tests/test-layer-enumeration.sh`, the
+#: dependency's own positive control for its enumerator -- a true sentence reached through
+#: a file that enumerates nothing at run time, and one that would have printed `reads`
+#: with the broken fixed list still in the hooks. A path prefix would not do: 0.4.0's real
+#: enumeration lives in `scripts/common.sh`, beside eight scripts nothing wires to an
+#: event.
+JIT_HOOK_MANIFEST = ("hooks", "hooks.json")
+
+#: A `*.sh` path inside a hook command. `${CLAUDE_PLUGIN_ROOT}` is the documented spelling
+#: for the install root; anything else still holding a `$` after substitution is reported
+#: as unresolved rather than guessed at.
+JIT_HOOK_COMMAND_SCRIPT = re.compile(r"""[^\s"';|&()<>]*\.sh""")
+
+#: `source foo.sh` / `. foo.sh`. A hook's layer list may live in a file it sources -- up to
+#: 0.3.5 it lived in the three entry points, and in 0.4.0 the enumerator lives in
+#: `common.sh` -- so the hook set is the closure, not the manifest's own list.
+JIT_SOURCE_DIRECTIVE = re.compile(r"""(?:^|[\s;&|(])(?:\.|source)\s+(.*)$""")
+JIT_SCRIPT_BASENAME = re.compile(r"""([\w.+-]+\.sh)""")
+
 #: State -> level. `unread` is WARN and not OK, and not FAIL.
 #:
 #: Not OK: #146 chose OK for a sentence equally true on every machine forever, because a
@@ -2287,6 +2308,148 @@ def jit_hook_roots(record=None, cache_root=None):
         except OSError:
             roots = []
     return list(dict.fromkeys(roots)), version
+
+
+def _jit_manifest_paths(root):
+    """Where this plugin declares its hooks. ``.claude-plugin/plugin.json`` may name it."""
+    named = None
+    try:
+        doc = json.loads(
+            root.joinpath(".claude-plugin", "plugin.json").read_text(encoding="utf-8")
+        )
+        if isinstance(doc, dict) and isinstance(doc.get("hooks"), str):
+            named = doc["hooks"]
+    except (OSError, ValueError):
+        named = None
+    parts = _jit_path_parts(named) if named else None
+    if parts:
+        return [root.joinpath(*parts)]
+    return [root.joinpath(*JIT_HOOK_MANIFEST)]
+
+
+def _jit_path_parts(token):
+    """A manifest path as components, or ``None`` if it is not one this can resolve.
+
+    ``os.sep`` rather than a hardcoded separator: a Windows-style path in a manifest
+    splits on the platform that wrote it, and a backslash stays an ordinary filename
+    character on POSIX, where it legally is one. A component that would climb out of the
+    install root resolves to nothing rather than to a file outside the tree.
+    """
+    parts = [
+        part
+        for part in token.replace(os.sep, "/").split("/")
+        if part not in ("", ".")
+    ]
+    if not parts or ".." in parts:
+        return None
+    return parts
+
+
+def _jit_commands(node, out):
+    """Every ``command`` string anywhere in a hooks manifest, shape-agnostically."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "command" and isinstance(value, str):
+                out.append(value)
+            else:
+                _jit_commands(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _jit_commands(value, out)
+
+
+def _jit_hook_files(roots):
+    """``(hooks, problem, unresolved)`` -- which scripts the dependency actually runs.
+
+    #241. Reading every ``*.sh`` under the install root answers "does any file in this
+    tree contain a layer list", which is not the question: the tree also ships the
+    dependency's own test suite, and a fixture asserting that the enumerator works
+    contains the same string as the enumerator. It contains it *whether or not the
+    enumerator was ever fixed*, so that scan could not distinguish the two worlds it
+    exists to distinguish.
+
+    A hook is what the runtime executes: a script named by a ``command`` in the plugin's
+    hooks manifest, plus the transitive closure of what those scripts ``source``. Both
+    halves are needed and neither is a path convention -- 0.4.0 declares five commands
+    under ``scripts/`` and puts the enumeration in ``scripts/common.sh``, which it
+    declares nowhere and every hook sources.
+
+    ``problem`` is the third state: no manifest at all means there is no way to tell a
+    hook from a fixture, and that is a non-answer rather than a scan of everything.
+    ``unresolved`` collects declared or sourced targets that did not resolve to a file,
+    so a manifest pointing at nothing cannot read as a manifest pointing at nothing
+    wrong.
+    """
+    hooks, unresolved, manifests = [], [], []
+    for root in roots:
+        for manifest in _jit_manifest_paths(root):
+            try:
+                doc = json.loads(manifest.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError) as exc:
+                unresolved.append(
+                    "{}: {}".format(_one_line(manifest.name), _one_line(str(exc)))
+                )
+                manifests.append(manifest)
+                continue
+            manifests.append(manifest)
+            commands = []
+            _jit_commands(doc, commands)
+            for command in commands:
+                for token in JIT_HOOK_COMMAND_SCRIPT.findall(command):
+                    cleaned = token.replace("${CLAUDE_PLUGIN_ROOT}", "").replace(
+                        "$CLAUDE_PLUGIN_ROOT", ""
+                    )
+                    parts = None if "$" in cleaned else _jit_path_parts(cleaned)
+                    candidate = root.joinpath(*parts) if parts else None
+                    if candidate is not None and _jit_is_file(candidate):
+                        hooks.append(candidate)
+                    else:
+                        unresolved.append(_one_line(token))
+
+    if not manifests:
+        return [], "no hooks manifest", unresolved
+
+    # The sourced closure. Comments are skipped for the same reason the enumeration scan
+    # skips them: prose quoting a `source` line is not a `source` line.
+    seen, queue = set(), list(hooks)
+    ordered = []
+    while queue:
+        path = queue.pop(0)
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            # Left for the caller's scan to record: it reads the same files and its
+            # `unreadable` arm is where an incomplete read is supposed to land.
+            continue
+        for line in text.splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            directive = JIT_SOURCE_DIRECTIVE.search(line)
+            if not directive:
+                continue
+            basename = JIT_SCRIPT_BASENAME.search(directive.group(1))
+            if not basename:
+                continue
+            sourced = path.parent / basename.group(1)
+            if _jit_is_file(sourced):
+                queue.append(sourced)
+            else:
+                unresolved.append(_one_line(basename.group(1)))
+    return ordered, None, unresolved
+
+
+def _jit_is_file(path):
+    try:
+        return path.is_file()
+    except OSError:
+        return False
 
 
 def _jit_layer_verdict(project_dir, layer, record, cache_root):
@@ -2357,21 +2520,30 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
-    scripts, unreadable = [], []
-    for root in roots:
-        try:
-            scripts.extend(sorted(root.rglob("*.sh")))
-        except OSError as exc:
-            unreadable.append(
-                "{}: {}".format(_one_line(root.name), _one_line(str(exc)))
-            )
+    scripts, hook_problem, unresolved = _jit_hook_files(roots)
+    if hook_problem:
+        return (
+            "could-not-determine",
+            "{} is recorded as installed and carries no hook manifest ({}), so which of "
+            "its scripts the runtime executes -- as opposed to ships -- is not something "
+            "this can tell, and a scan of every file in the tree would be answered by "
+            "the dependency's own test fixtures (#241). Nothing was measured.".format(
+                named, "/".join(JIT_HOOK_MANIFEST)
+            ),
+        )
     if not scripts:
         return (
             "could-not-determine",
-            "{} is recorded as installed and no hook script (*.sh) was found under it, "
-            "so what reads {} was never measured".format(named, layer),
+            "{} is recorded as installed and no hook script (*.sh) was found under it -- "
+            "its hook manifest named nothing this could resolve to a file{} -- so what "
+            "reads {} was never measured".format(
+                named,
+                " ({})".format("; ".join(unresolved[:3])) if unresolved else "",
+                layer,
+            ),
         )
 
+    unreadable = []
     naming, omitting = [], []
     for path in scripts:
         try:
@@ -2429,6 +2601,24 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
+    outside = _jit_layer_lists_outside(roots, scripts)
+    if outside:
+        # The judgement call in #241, taken the honest way: a layer list in a file the
+        # runtime never executes is *reported as the reason this is unknown*, not
+        # silently dropped. Dropping it renders identically to a tree with no layer list
+        # anywhere, and the file that supplied the wrong kind of evidence is the single
+        # most useful thing a reader can be handed.
+        return (
+            "could-not-determine",
+            "{} hook script(s) of {} were read and none carries a fixed layer list. The "
+            "only layer list(s) found are outside the hook set ({}) -- files the runtime "
+            "never executes, typically that plugin's own test fixtures, which name {} "
+            "whether or not anything enumerates it. So this is unknown, not a pass: a "
+            "fixture answered this check for a whole release (#241).".format(
+                len(scripts), named, ", ".join(outside[:3]), layer
+            ),
+        )
+
     return (
         "could-not-determine",
         "{} hook script(s) of {} were read and none carries a fixed layer list, so "
@@ -2438,6 +2628,34 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             len(scripts), named, layer
         ),
     )
+
+
+def _jit_layer_lists_outside(roots, scripts):
+    """``["name:line", ...]`` -- layer lists in the install tree that no hook reaches.
+
+    Read only to *explain* a non-answer, never to produce one. Anything found here is by
+    construction a file the runtime does not execute.
+    """
+    inside = {str(path) for path in scripts}
+    sites = []
+    for root in roots:
+        try:
+            candidates = sorted(root.rglob("*.sh"))
+        except OSError:
+            continue
+        for path in candidates:
+            if str(path) in inside:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(text.splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if JIT_LAYER_ENUMERATION.search(line):
+                    sites.append(_one_line("{}:{}".format(path.name, number)))
+    return sites
 
 
 def jit_layer_readers(project_dir, layer=None, record=None, cache_root=None):
