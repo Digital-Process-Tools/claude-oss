@@ -29,10 +29,39 @@ Skill(manager)
 
 Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
 
-1. **The default branch is green at leg level for the exact commit being tagged.** Count the
-   *workflows*, not the runs — one declared in `.github/workflows/` but absent from the run list is
-   `UNKNOWN`, never a pass. `supertool 'gh-branch'`, which is conjunctive over every workflow on the
-   head SHA.
+1. **The default branch is green at leg level for the exact commit being tagged.** `supertool
+   'gh-branch'`, which is conjunctive over every workflow on the head SHA. Count the *workflows*,
+   not the runs — and read the answer in **three** states, because that is how many the op gives
+   you and how many the world has:
+
+   - **covered and green** — the workflow ran on this commit and every leg passed.
+   - **declared, and could not have run on this commit** — its triggers do not include the event
+     that produced the commit. The op says so in as many words, under *Declared in
+     .github/workflows at this commit with no run on it*. Not a pass and **not a blocker** — but it
+     **contributes no coverage**, so a commit where every declared workflow lands here is
+     **uncovered, not green**, and gate 1 is not satisfied by it.
+   - **declared, should have run, and did not** — `UNKNOWN`, and it **blocks**. This is the state
+     the two-state sentence this replaces was written for, and it is unchanged and just as strict.
+
+   Two states over an op that answers in three collapses the middle onto an outside, and both
+   collapses are wrong the same way. Read as `UNKNOWN` it blocks every release a repository with a
+   `pull_request`-only workflow will ever cut — which is structural, not transient, so the block
+   never clears. Waved through, it takes the third state with it, because at the point of decision
+   a workflow that was silently skipped looks exactly like one that could not have run.
+
+   **Name the middle state in the release report, and say where its coverage did come from.**
+   *"Tagged with `<workflow>` not covered on this commit, covered on each pull request"* is a
+   sentence a reader can check; silence about it is indistinguishable from not having looked, which
+   is the whole of this plugin's defect class pointed at its own gate. The workflow name comes out
+   of the op's own output at the moment you write the report — the placeholder above is a
+   placeholder deliberately, because a name typed into this file is the remembered verdict below
+   arriving one paragraph early.
+
+   **Re-read it from the op on every release; never carry the verdict forward** and never write
+   down which workflow it was. *No push trigger* is a measurement of an `on:` block somebody can
+   change, and on the day it changes the workflow moves from the middle state to the blocking one
+   with nothing announcing it — a remembered verdict then waves through the one case the gate
+   exists for. Which workflow it is, is a per-repo fact and belongs in no document here.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
@@ -196,10 +225,26 @@ receipt says the fold happened; a maintainer who wants `1.0.0` here has to overr
 rather than notice nothing.
 
 And the section alone never decides it. A removal need not break anything — `113.removed.md` in this
-repository is exactly that case — so the verdict is a declared field on the fragment,
-`- Compatibility: breaking|compatible - <reason>`, documented in `changelog.d/README.md`. Required on
-`removed`, optional elsewhere, and an unrecognised value is `could not decide` rather than a quiet
-pass.
+repository is exactly that case — so the verdict is a declared field on the fragment, written in the
+body as an ordinary bullet:
+
+```markdown
+- Compatibility: breaking|compatible - <reason>
+```
+
+Required on `removed`, optional elsewhere, and an unrecognised value is `could not decide` rather
+than a quiet pass. The reason after the verdict is required too: a bare flag is the same unsourced
+verdict one field further along.
+
+**The syntax is written out here rather than pointed at, and that is deliberate (#225).** The
+fragments README is a *default* under the ownership contract — created once when the directory is
+made, then the repository's own file forever — so shared prose cannot know what any given repo's
+copy says, and a repo scaffolded before the section existed **may not document it at all**. Its
+path is `changelog_dir`, which is per-repo, so naming a directory here would be a fact about one
+repository sitting in a document every repository reads. Nobody is stranded either way: the
+refusal above quotes the bullet in full, which is the sentence that reaches every repository, new
+or old, at the moment it is needed. Newly scaffolded repositories get the section as well, because
+the template now carries it.
 
 ## Then
 
