@@ -976,3 +976,293 @@ def test_the_documented_verification_call_validates_the_file_it_names(tmp_path, 
                 placeholder, capsys.readouterr().out
             )
         )
+
+
+# --- the contract number, and what a copy does with a contract it does not hold ---
+#
+# schema_version was `const: 1` in every copy of this schema ever shipped, across at
+# least three mutually incompatible contracts (#221). That is worse than shipping no
+# version at all: an unversioned artifact is honestly silent, while a marker frozen at
+# 1 renders identically whether it moved or not -- this repository's own defect class,
+# sitting inside the field named to prevent it. `const` did not merely fail to record a
+# version, it forbade recording one.
+#
+# Three things are pinned below, and they are three because each is useless alone.
+# That the shape pass has no opinion about the number, since a report from a newer
+# contract is unvalidatable rather than malformed. That the version pass therefore has
+# three outcomes rather than two. And that the number cannot be left behind when the
+# contract moves, which is a guard that has to fail loudest exactly when it has nothing
+# to compare against.
+
+
+def _contract_version():
+    return _schema()["x-schema-version"]
+
+
+def _write_report(tmp_path, report, name="report.json"):
+    path = tmp_path / name
+    path.write_text(json.dumps(report), encoding="utf-8")
+    return path
+
+
+def _verdict_lines(stdout, word):
+    return [line for line in stdout.splitlines() if line.startswith(word + " ")]
+
+
+def test_the_schema_declares_the_contract_version_it_implements():
+    version = _contract_version()
+    assert isinstance(version, int) and not isinstance(version, bool)
+    assert version >= 2, (
+        "1 is reserved for every report written before anyone counted. Measured on "
+        "2026-08-16 against the reports on disk: 57 of 71 say 1 and 14 name no version "
+        "at all, and neither set can be dated retroactively -- so the first value that "
+        "carries information is 2"
+    )
+
+
+def test_the_shape_pass_has_no_opinion_about_the_version_number():
+    """Removing the const is half the fix; the other half must not land here.
+
+    A report from a newer contract is not malformed, so the shape pass -- which
+    answers "does this satisfy the contract I hold" -- is the wrong place to
+    decide it. If this ever fails, the version question has leaked back into the
+    pass that cannot express the third state.
+    """
+    from_the_future = _example()
+    from_the_future["schema_version"] = _contract_version() + 1
+    assert report_schema.validate(from_the_future) == [], (
+        "a report from a newer contract was refused by the shape pass, which renders "
+        "it identically to a malformed one"
+    )
+    # Positive control: no opinion about the value is not no check on the field.
+    not_a_version = _example()
+    not_a_version["schema_version"] = str(_contract_version())
+    assert report_schema.validate(not_a_version), (
+        "schema_version stopped being required to be an integer"
+    )
+
+
+def test_the_version_pass_has_three_outcomes_and_not_two():
+    schema = _schema()
+    current = _example()
+    current["schema_version"] = _contract_version()
+    assert report_schema.version_verdict(current, schema)[0] == "current"
+
+    older = dict(current, schema_version=1)
+    state, sentence = report_schema.version_verdict(older, schema)
+    assert state == "mismatch"
+    assert "1" in sentence and str(_contract_version()) in sentence, sentence
+
+    silent = dict(current)
+    del silent["schema_version"]
+    assert report_schema.version_verdict(silent, schema)[0] == "undecidable"
+
+    unversioned = {k: v for k, v in schema.items() if k != "x-schema-version"}
+    state, sentence = report_schema.version_verdict(current, unversioned)
+    assert state == "undecidable", (
+        "a schema that does not name its own contract cannot certify a report against "
+        "it, and must not answer 'current' because it found nothing to disagree with"
+    )
+    assert sentence
+
+
+def test_a_report_from_another_contract_is_unvalidatable_rather_than_invalid(tmp_path):
+    """The three verdicts in one fixture, because the first arm is a negative.
+
+    "must not say INVALID" also passes for a validator that says nothing, or that
+    says UNVALIDATABLE about everything. So the malformed report and the correct
+    one are checked in the same fixture, and each has to land on its own word.
+    """
+    older = _report_with_payload(tmp_path, name="older.pr.json")
+    older["schema_version"] = 1
+    older.pop("docs")  # what a report against contract 1 actually looks like
+    done = _run(str(_write_report(tmp_path, older, "older.json")))
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert _verdict_lines(done.stdout, "UNVALIDATABLE"), done.stdout
+    assert not _verdict_lines(done.stdout, "INVALID"), (
+        "a report written against a contract this copy does not hold was announced as "
+        "malformed -- the collapse the version field exists to prevent"
+    )
+
+    malformed = _report_with_payload(tmp_path, name="bad.pr.json")
+    malformed["schema_version"] = _contract_version()
+    malformed.pop("docs")
+    done = _run(str(_write_report(tmp_path, malformed, "bad.json")))
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert _verdict_lines(done.stdout, "INVALID"), done.stdout
+    assert not _verdict_lines(done.stdout, "UNVALIDATABLE"), done.stdout
+
+    good = _report_with_payload(tmp_path, name="good.pr.json")
+    done = _run(str(_write_report(tmp_path, good, "good.json")))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _verdict_lines(done.stdout, "ok"), done.stdout
+
+
+def test_an_unvalidatable_report_still_reports_what_it_could_see(tmp_path):
+    """Declining to look would be this plugin's own defect class, one layer along.
+
+    The shape pass still runs against a report from another contract, because the
+    findings are real information. They are printed under a sentence saying which
+    contract they answer, so they cannot be read as defects in the report.
+    """
+    older = _report_with_payload(tmp_path, name="older.pr.json")
+    older["schema_version"] = 1
+    older.pop("docs")
+    done = _run(str(_write_report(tmp_path, older, "older.json")))
+    assert "docs" in done.stdout, done.stdout
+    assert "not necessarily" in done.stdout.lower(), done.stdout
+
+
+def test_main_returns_the_third_code_in_process_too(tmp_path, capsys):
+    """The subprocess arm above cannot be seen by coverage, and a branch nobody
+    can see is one nobody notices going missing. Also pins the return value of
+    main() itself rather than a shell's view of it."""
+    older = _report_with_payload(tmp_path, name="older.pr.json")
+    older["schema_version"] = 1
+    assert report_schema.main([str(_write_report(tmp_path, older, "older.json"))]) == 2
+    printed = capsys.readouterr().out
+    assert printed.startswith("UNVALIDATABLE "), printed
+    assert "not necessarily" in printed.lower(), (
+        "a report this copy cannot speak for must say so even when the shape pass "
+        "found nothing -- a clean shape pass against the wrong contract is not a "
+        "clean report"
+    )
+
+
+def test_every_verdict_names_the_contract_it_was_decided_against(tmp_path):
+    """#212's remedy, which const: 1 made useless -- both copies printed 1.
+
+    The assertion is on the parenthetical and not on the bare number. Review of
+    the first version of this test caught it passing for free: pytest's tmp path
+    contains a digit run, so `"2" in stdout` was true with the feature deleted --
+    a test that would still pass if the code did nothing, guarding the one row
+    the remedy lives on.
+    """
+    good = _report_with_payload(tmp_path, name="good.pr.json")
+    done = _run(str(_write_report(tmp_path, good)))
+    assert "(report schema version {})".format(_contract_version()) in done.stdout, (
+        done.stdout
+    )
+
+
+def test_a_schema_that_names_no_contract_cannot_certify_a_report(tmp_path):
+    """The other side of undecidable, through the command line.
+
+    A copy handed a schema that does not declare its own version knows the report's
+    number and nothing to compare it with. That is the same epistemic state as a
+    mismatch and must not resolve to ok.
+    """
+    unversioned = {k: v for k, v in _schema().items() if k != "x-schema-version"}
+    schema_path = tmp_path / "unversioned.schema.json"
+    schema_path.write_text(json.dumps(unversioned), encoding="utf-8")
+    good = _report_with_payload(tmp_path, name="good.pr.json")
+    done = _run("--schema", str(schema_path), str(_write_report(tmp_path, good)))
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert _verdict_lines(done.stdout, "UNVALIDATABLE"), done.stdout
+
+    # And it must not flip back to INVALID the moment the shape pass finds
+    # anything. Review caught exactly that: the ranking asked whether there were
+    # errors before asking whether this copy had any standing to call a report
+    # wrong, so a copy that had just said it cannot name its own contract went on
+    # to announce a verdict on somebody else's. The findings are still printed;
+    # only the word changes, and the word is the whole of #221.
+    also_broken = _report_with_payload(tmp_path, name="broken.pr.json")
+    also_broken.pop("docs")
+    done = _run(
+        "--schema", str(schema_path),
+        str(_write_report(tmp_path, also_broken, "broken.json")),
+    )
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert _verdict_lines(done.stdout, "UNVALIDATABLE"), done.stdout
+    assert not _verdict_lines(done.stdout, "INVALID"), done.stdout
+    assert "docs" in done.stdout, "the findings it could still see went missing"
+    assert "None" not in done.stdout, (
+        "a contract this copy cannot name must be described, not formatted as None"
+    )
+
+
+# --- the guard on the bump ----------------------------------------------------
+#
+# A number nobody is required to change will not change; that is the whole history of
+# this field. The fingerprint is taken over what a validator enforces and not over the
+# prose, so rewording a description does not demand a bump while adding a required key
+# does -- which is the line the policy draws, because `additionalProperties: false`
+# makes every added key breaking in one direction.
+
+
+def test_the_shipped_schema_matches_its_recorded_contract_fingerprint():
+    assert report_schema.contract_drift(_schema()) is None
+
+
+def test_an_unrecorded_version_fails_loudly_rather_than_finding_nothing_to_compare():
+    """The trap #221 names by hand, and the reason this guard is worth having.
+
+    A hash comparison whose natural failure mode is "no record, nothing to say"
+    passes hardest at the moment it is needed: right after someone bumps the
+    version. Both arms here are must-fire.
+    """
+    moved = dict(_schema())
+    moved["x-schema-version"] = 99
+    problem = report_schema.contract_drift(moved)
+    assert problem and "99" in problem, problem
+
+    assert report_schema.contract_drift(_schema(), record={}) is not None, (
+        "an empty record must fail every version rather than pass every version"
+    )
+
+
+def test_enforcing_content_that_moved_without_a_bump_is_caught():
+    changed = _schema()
+    changed["required"] = [key for key in changed["required"] if key != "docs"]
+    assert report_schema.contract_drift(changed) is not None
+
+
+def test_a_property_named_like_an_annotation_is_still_part_of_the_contract():
+    """The strip is by key name, and property names live in the same dicts.
+
+    This schema has a property literally called `title`, under
+    $defs/forge_payload/properties, and validate_pr_body refuses a payload whose
+    title is empty. The first version of the fingerprint walked into that map and
+    stripped it, so retyping or deleting a real constraint demanded no bump and
+    the guard reported clean -- an under-fire, which is the direction a guard
+    fails in silently. Both arms are must-fire.
+    """
+    forge = "forge_payload"
+    retyped = _schema()
+    retyped["$defs"][forge]["properties"]["title"] = {"type": "integer"}
+    assert report_schema.contract_drift(retyped) is not None
+
+    deleted = _schema()
+    del deleted["$defs"][forge]["properties"]["title"]
+    assert report_schema.contract_drift(deleted) is not None
+
+
+def test_prose_does_not_demand_a_bump_but_the_enforcement_lists_do():
+    """The must-not-fire half, and the line it draws, both pinned.
+
+    Without a must-not-fire arm the guard would be satisfied by a hash over the
+    whole file, which reddens every pull request that touches a sentence and
+    trains the reflex of bumping the number to make CI green -- a number moved to
+    silence a guard carries no more information than one that never moves.
+
+    The second half is the deliberate over-fire, argued rather than assumed.
+    x-enforced and x-enforced-on-disk read as prose and nothing in _walk consumes
+    them, but they are the schema's own statement of what a validator refuses,
+    paired one-to-one with the mutation table above. A change there is nearly
+    always a contract change; the false positive is a rename, and the cost of an
+    unnecessary bump is one recorded fingerprint, where the cost of a missed one
+    is two copies claiming the same version for different contracts.
+    """
+    reworded = _schema()
+    reworded["description"] = "Rewritten."
+    reworded["properties"]["issue"]["description"] = "Also rewritten."
+    reworded["x-honesty"] = "Rewritten too."
+    reworded["x-convention"] = list(reworded["x-convention"]) + ["and another one"]
+    assert report_schema.contract_drift(reworded) is None
+
+    listed = _schema()
+    listed["x-enforced"] = list(listed["x-enforced"]) + ["something-new"]
+    assert report_schema.contract_drift(listed) is not None, (
+        "the enforcement lists are inside the fingerprint on purpose; if that "
+        "changes, change the sentence in x-honesty-versioning with it"
+    )

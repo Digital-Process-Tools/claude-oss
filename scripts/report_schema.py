@@ -18,8 +18,17 @@ booleans -- the sentence is what an orchestrator can still argue with.
 
   python3 scripts/report_schema.py REPORT.json [REPORT.json ...]
 
-Exit 0 when every report validates, 1 otherwise. A missing or unparseable file is an
-error, never a pass: a report that could not be read is not a report with no findings.
+Three verdicts, three exit codes, because two of them used to be one. `ok` is 0 and
+`INVALID` is 1; `UNVALIDATABLE` is 2 and means this copy does not hold the contract the
+report names -- a newer report, an older one, or a schema that does not declare its own
+version. That is not the same as malformed, and printing it as `INVALID` is how a
+correct report written yesterday reads as a broken one today. A missing or unparseable
+file is an error, never a pass: a report that could not be read is not a report with no
+findings.
+
+Every verdict row names the contract it was decided against, on the pass as well as on
+the failure. A validator that announces its version only when it objects cannot be
+compared with another copy, which is the whole reason the announcement exists.
 
 Handed the pull request payload instead of the report -- the two land in one directory
 one suffix apart -- it says so by name and names the call to run. Enumerating the
@@ -29,6 +38,7 @@ is hand-writing `head`, the one value nothing downstream verifies.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -45,9 +55,33 @@ _KEYWORDS = {
     "items", "$ref", "allOf",
     # ours
     "x-items", "x-rule",
+    # the contract number, read by the version pass below rather than by _walk
+    "x-schema-version",
     # annotations, carried for readers and ignored on purpose
     "$schema", "$id", "$defs", "$comment", "title", "description", "examples",
-    "x-honesty", "x-honesty-on-disk", "x-enforced", "x-enforced-on-disk", "x-convention",
+    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning",
+    "x-enforced", "x-enforced-on-disk", "x-convention",
+}
+
+# Keys that carry prose for a reader and change nothing a validator does. Stripped
+# before the contract is fingerprinted, so rewording a description does not demand a
+# version bump -- and so the guard on the bump does not train the reflex of moving the
+# number to make CI green. x-schema-version is stripped too: the fingerprint answers
+# "what does this contract require", which has to be independent of its own label or
+# the comparison is circular.
+_ANNOTATION_KEYS = {
+    "title", "description", "examples", "$comment",
+    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-convention",
+    "x-schema-version",
+}
+
+# One entry per version this schema has ever declared, mapping it to the fingerprint of
+# the enforcing content at that version. 1 is absent on purpose and always will be: it
+# is what every report written before anyone counted says, across at least three
+# mutually incompatible schemas, and no fingerprint can be recovered for a contract
+# nobody recorded. Adding an entry here is the act of declaring a new contract.
+CONTRACT_FINGERPRINTS = {
+    2: "d687807f452f7aa4c4773519fcbc00ab3aff097c04facf1b5e2652bf931bcb70",
 }
 
 _TYPES = {
@@ -64,6 +98,174 @@ _TYPES = {
 def load_schema(path=None):
     path = Path(path) if path else SCHEMA_PATH
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# --- the contract number ------------------------------------------------------
+#
+# schema_version was `const: 1` in every copy of the schema ever shipped, across at
+# least three contracts that refuse each other's reports (#221). A frozen marker is
+# worse than no marker: an unversioned artifact is honestly silent, while a version
+# field that reads 1 whatever the contract is answers confidently and wrongly. And
+# `const` did not merely fail to record a version -- it forbade recording one, so the
+# remedy #212 proposed (have the validator announce which schema it validated against)
+# would have printed 1 from both copies and CONFIRMED the skew rather than revealed it.
+#
+# The three states below are the whole point. A copy of this validator holds exactly
+# ONE contract. It can compare two numbers; it cannot compute the relationship between
+# its contract and another version's, because it does not have the other one. So a
+# newer report and an older report are the same epistemic state -- unvalidatable by
+# this copy -- and neither is invalid. Collapsing either into "invalid" recreates #212
+# one layer down: the maintainer hit exactly that on 2026-08-16, when a report written
+# the day before came back as a bare `INVALID ... missing required key 'docs'` with
+# nothing to distinguish an older contract from a malformed file.
+
+VERSION_CURRENT = "current"
+VERSION_MISMATCH = "mismatch"
+VERSION_UNDECIDABLE = "undecidable"
+
+
+def contract_version(schema):
+    """The contract number the schema declares, or None if it declares none."""
+    value = schema.get("x-schema-version") if isinstance(schema, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def version_verdict(report, schema):
+    """Return `(state, sentence)`: which contract this report claims, versus ours.
+
+    Three states, and the third is load-bearing:
+
+    - `current`   -- the numbers agree. The sentence still names the number, because
+                     announcing the contract on a PASS is the whole of #212's remedy.
+    - `mismatch`  -- both sides named a contract and they differ. Not invalid.
+    - `undecidable` -- one side named nothing. A report with no version, or a schema
+                     that does not declare its own, leaves nothing to compare; that is
+                     not agreement, and answering `current` by default would be a
+                     verdict produced by the absence of a disagreement.
+    """
+    ours = contract_version(schema)
+    theirs = report.get("schema_version") if isinstance(report, dict) else None
+    if isinstance(theirs, bool) or not isinstance(theirs, int):
+        theirs = None
+
+    if ours is None:
+        return VERSION_UNDECIDABLE, (
+            "the schema this copy loaded declares no x-schema-version, so it cannot say "
+            "which contract it implements and cannot certify this report against it"
+        )
+    if theirs is None:
+        return VERSION_UNDECIDABLE, (
+            "this report names no schema_version, so there is nothing to compare with "
+            "the contract this copy implements (version {})".format(ours)
+        )
+    if theirs == ours:
+        return VERSION_CURRENT, "report schema version {}".format(ours)
+    newer = theirs > ours
+    return VERSION_MISMATCH, (
+        "this report was written against report schema version {} and this copy "
+        "implements version {} -- {} contract, which this copy does not hold. That "
+        "is not a defect in the report.{}".format(
+            theirs, ours,
+            "a newer" if newer else "an older",
+            " Install a plugin copy at or above the one that wrote it."
+            if newer else "",
+        )
+    )
+
+
+# Maps whose keys are NAMES rather than schema keywords. Stripping by key name inside
+# one of these deletes a real constraint: this document has a property literally called
+# `title` at $defs/forge_payload/properties, which validate_pr_body enforces, and a
+# strip that walked into it silently blessed retyping or deleting it. Found by review
+# on the first version of this fingerprint (#221), which is exactly the failure mode a
+# guard like this has -- it under-fires quietly and the guard still reports clean.
+_NAME_MAPS = {"properties", "$defs"}
+
+
+def _strip_annotations(node, keys_are_names=False):
+    if isinstance(node, dict):
+        return {
+            key: _strip_annotations(value, key in _NAME_MAPS and not keys_are_names)
+            for key, value in node.items()
+            if keys_are_names or key not in _ANNOTATION_KEYS
+        }
+    if isinstance(node, list):
+        return [_strip_annotations(item, False) for item in node]
+    return node
+
+
+def semantic_fingerprint(schema):
+    """sha256 over what this schema ENFORCES, with the prose stripped.
+
+    Not a hash of the file. A hash of the file would fire on every reworded
+    sentence, which within a week teaches the reflex of bumping the version to
+    make CI green -- and a number moved to silence a guard carries no more
+    information than one that never moves at all.
+
+    The enforcement LISTS are deliberately inside it, though nothing in _walk
+    reads them: x-enforced and x-enforced-on-disk are the schema's own statement
+    of what a validator refuses, paired one-to-one with a mutation table, so a
+    change there is nearly always a contract change. The false positive is a
+    rename and costs one recorded fingerprint; the false negative costs two
+    copies claiming one version for two contracts.
+
+    What it cannot see, said here rather than discovered later: this fingerprints
+    the DOCUMENT. The cross-field rules live in _RULES as Python, and a contract
+    change made entirely there -- a rule function that starts refusing something
+    new, with no keyword moving in the schema -- changes what this validator
+    accepts and leaves this hash untouched. That gap is real and unguarded.
+
+    And the value is method-dependent: changing what gets stripped changes every
+    fingerprint without changing any contract, so the recorded entry is re-taken
+    rather than the version bumped when this function moves.
+    """
+    canonical = json.dumps(
+        _strip_annotations(schema), sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def contract_drift(schema=None, record=None):
+    """Has the contract moved without the number? Return a sentence, or None.
+
+    Three outcomes, and the one that matters is the unrecorded version. A hash
+    guard whose natural failure mode is "no record, nothing to compare" passes
+    hardest at the single moment it is worth anything -- immediately after
+    somebody bumps the number -- which is this repository's own defect class
+    inside the guard written to prevent it. So an unknown version is a finding,
+    never a shrug, and it carries the fingerprint to record.
+    """
+    schema = load_schema() if schema is None else schema
+    record = CONTRACT_FINGERPRINTS if record is None else record
+    version = contract_version(schema)
+    if version is None:
+        return (
+            "the schema declares no integer x-schema-version, so nothing can be "
+            "compared against it -- a contract with no number cannot be told from one "
+            "that never moved"
+        )
+    fingerprint = semantic_fingerprint(schema)
+    if version not in record:
+        return (
+            "schema version {} has no recorded fingerprint. If the contract moved, "
+            "record {} against {} in CONTRACT_FINGERPRINTS; if it did not, the number "
+            "was bumped for nothing and should go back.".format(
+                version, fingerprint, version
+            )
+        )
+    if record[version] != fingerprint:
+        return (
+            "the schema's enforcing content fingerprints as {} but version {} was "
+            "recorded as {}. Something a validator acts on changed without the "
+            "contract number moving, so an older copy would refuse a report this one "
+            "accepts and both would claim version {}.".format(
+                fingerprint, version, record[version], version
+            )
+        )
+    return None
 
 
 def _resolve(sub, root):
@@ -472,22 +674,46 @@ def _wrong_file(path):
     )
 
 
-def validate_file(path, schema=None, check_pr_body=True):
+def inspect_file(path, schema=None, check_pr_body=True):
+    """Return `(version_state, version_sentence, errors)` for one report on disk.
+
+    The version state and the shape errors are returned side by side rather than
+    merged, because they answer different questions and merging them is the whole
+    of #221: "this does not satisfy the contract I hold" and "I do not hold the
+    contract this claims" are one string apart and worlds apart in what to do next.
+
+    A file that could not be read or parsed has no version to state -- that is
+    `undecidable` carrying the read failure, never `current` by default.
+    """
     path = Path(path)
+    schema = load_schema() if schema is None else schema
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        return ["{}: cannot read the report ({})".format(path, exc)]
+        return VERSION_UNDECIDABLE, "the report could not be read", [
+            "{}: cannot read the report ({})".format(path, exc)
+        ]
     try:
         report = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return ["{}: not valid json ({})".format(path, exc)]
-    if _is_forge_payload(report, schema if schema is not None else load_schema()):
-        return [_wrong_file(path)]
+        return VERSION_UNDECIDABLE, "the report could not be parsed", [
+            "{}: not valid json ({})".format(path, exc)
+        ]
+    if _is_forge_payload(report, schema):
+        # A category error, not a contract question. Naming a version here would
+        # invite correcting a correct payload.
+        return VERSION_UNDECIDABLE, "this is not a report", [_wrong_file(path)]
+
+    state, sentence = version_verdict(report, schema)
     errors = validate(report, schema)
     if check_pr_body:
         errors = errors + validate_pr_body(report, schema, base_dir=path.parent)
-    return errors
+    return state, sentence, errors
+
+
+def validate_file(path, schema=None, check_pr_body=True):
+    """The shape half of inspect_file, for callers that only want the findings."""
+    return inspect_file(path, schema, check_pr_body)[2]
 
 
 def _line(stream, text):
@@ -525,25 +751,75 @@ def main(argv=None):
         return 1
 
     failed = False
+    unvalidatable = False
+    ours = contract_version(schema)
     for report in args.reports:
         try:
-            errors = validate_file(report, schema, check_pr_body=not args.shape_only)
+            state, sentence, errors = inspect_file(
+                report, schema, check_pr_body=not args.shape_only
+            )
         except ValueError as exc:
             # A broken schema, not a broken report. It must not surface as a traceback
             # and it must never surface as a report with nothing wrong with it.
             _line(sys.stderr, "the schema itself is unusable: {}".format(exc))
             return 1
-        if errors:
+
+        # Three verdicts, ranked, and the ranking turns on ONE question: can this copy
+        # speak for this report at all? It cannot when the numbers differ, and it
+        # cannot when the schema it loaded declares no number -- in that second case
+        # it holds no stateable contract, so it has no standing to call anything
+        # invalid, however much the shape pass found. Shape findings must never
+        # promote a foreign contract to INVALID: they answer a question about OUR
+        # contract, and letting them decide the word is the confident wrong answer
+        # #221 is about. What is left under `undecidable` is a report that named no
+        # version -- a defect in the file, which the shape pass has already named as
+        # a missing required key, so it lands on INVALID with everything else.
+        cannot_speak = (
+            state == VERSION_MISMATCH
+            or ours is None
+            or (state == VERSION_UNDECIDABLE and not errors)
+        )
+        if cannot_speak:
+            unvalidatable = True
+            held = "version {}".format(ours) if ours is not None else (
+                "the schema this copy loaded, which names no contract"
+            )
+            _line(sys.stdout, "UNVALIDATABLE {}".format(report))
+            _line(sys.stdout, "  {}".format(sentence))
+            if errors:
+                _line(sys.stdout, (
+                    "  the shape pass ran anyway, against {}. These are findings "
+                    "about the contract THIS copy holds and are not necessarily "
+                    "defects in the report:".format(held)
+                ))
+                for error in errors:
+                    _line(sys.stdout, "    {}".format(error))
+            else:
+                _line(sys.stdout, (
+                    "  the shape pass found nothing, but it answered a question about "
+                    "{} and not about the contract this report claims, so it is not "
+                    "necessarily a clean report.".format(held)
+                ))
+        elif errors:
             failed = True
-            _line(sys.stdout, "INVALID {}".format(report))
+            _line(sys.stdout, "INVALID {} ({})".format(report, sentence))
             for error in errors:
                 _line(sys.stdout, "  {}".format(error))
         else:
-            _line(sys.stdout, "ok {}".format(report))
+            # The version is named on the pass too. A validator that announces the
+            # contract only when it objects tells two copies apart exactly when
+            # nobody is comparing them, which was #212's remedy defeating itself.
+            _line(sys.stdout, "ok {} ({})".format(report, sentence))
         if args.shape_only:
             # A check that was skipped must never render as a check that passed.
             _line(sys.stdout, "  shape only: the pull request payload was not read")
-    return 1 if failed else 0
+    if failed:
+        return 1
+    # 2 is not 0 and not 1 on purpose: a caller that only tests for zero still stops,
+    # and one that cares can tell "this copy cannot speak for this report" from "this
+    # report is wrong". argparse also exits 2 on a bad command line; that arrives with
+    # a usage block on stderr and no verdict row on stdout, which distinguishes it.
+    return 2 if unvalidatable else 0
 
 
 if __name__ == "__main__":
