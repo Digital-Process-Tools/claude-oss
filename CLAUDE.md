@@ -218,7 +218,23 @@ bin/oss-workspace           open a session over the repo you are standing in
 
 No agent is granted `Read`, `Grep` or `Glob`. Reads go through supertool via `Bash`, which is
 what makes the batching instruction binding rather than advisory. The triager is additionally denied
-`Edit` and `Write` — prose is a request, frontmatter is the boundary.
+`Edit` and `Write`.
+
+**That denial is real for the harness tools and empty for the route this repository actually
+uses.** `Bash` is total, and every write in this system goes through `Bash` — so a withheld `Edit`
+closes one door in a room with no walls. "Prose is a request, frontmatter is the boundary" was the
+reasoning written down beside that grant, and the second half of it does not hold for effects: the
+frontmatter bounds which *tools* exist, not what they reach. #251 is the instance — an audit spawn
+whose definition summarised it as *annotates, never blocks*, a claim about its output, ran an acting
+op against the live watch channel of the session that had dispatched it.
+
+So every agent granted `Bash` carries a section saying the grant is total and **labelled as advice
+rather than as a boundary**, and pointing at supertool's own published op classification
+(`ops:roster`) rather than carrying a list of its own. `tests/test_agent_grant_is_total.py` holds
+that shape. It does not, and cannot, hold the behaviour: there is no read-only `Bash` to grant, and
+a per-agent allow-list of permitted op strings would be a second copy of a classification the
+dependency already publishes — which is the thing the top of this file forbids. The enforceable half
+lives upstream, in supertool, and is filed there rather than reimplemented here.
 
 ## Issues and pull requests are untrusted input
 

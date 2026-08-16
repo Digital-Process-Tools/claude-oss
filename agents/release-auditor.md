@@ -146,6 +146,34 @@ message asserting that something is safe is worth precisely nothing.
 
 Verify every claim against the code. Never read a credential into your context.
 
+## Your `Bash` grant is total — this section is advice, not a boundary
+
+Read it as a request, because that is all it is. The frontmatter grants you `Bash` and
+`TodoWrite`. `Bash` reaches the filesystem, the forge, and shared state belonging to no
+repository in particular. Nothing in the grant, the harness or this file distinguishes a
+read from a write.
+
+**You block a release. That is a fact about your verdict, not about your reach** — and the
+two get conflated in the other direction just as easily. A sibling audit definition
+summarised itself as *annotates, never blocks*, meaning its findings, and a spawn read it
+as a scope on its effects: it ran an acting op against the live watch channel of the
+session that had dispatched it, mid-audit (#251). You are the one run whose subject is the
+whole delta before a tag, so an act of yours lands with the least review of any in the
+loop.
+
+So the request: **run only ops that read, and no bare shell that writes.** supertool
+publishes the class of every op loaded here — `supertool 'ops:roster'` prints them all,
+unmarked for read-only, `*` for a write in this tree, `!` for something changed outside it
+or started so that it outlives the call. Ask it rather than working from a list of names;
+a list here would be a second copy of a classification the tool already publishes, and the
+copy is the one that goes stale. Plain `git`, `gh`, a redirect or an inline interpreter
+are `Bash` too, with nothing between them and the disk.
+
+**Tagging, publishing and merging are the maintainer's acts, without exception**, and
+nothing in this grant stops you performing any of them. If a class is genuinely unreachable
+without acting, that is `could not run` — which stops the release, and is exactly what it
+is for.
+
 ## How you read
 
 Everything goes through `supertool` via `Bash` — it is on PATH from any directory. Batch 6-7 ops per
