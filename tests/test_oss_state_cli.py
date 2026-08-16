@@ -193,6 +193,55 @@ def test_a_refused_entry_says_the_intake_pair_was_not_recorded_after_the_fail(tm
     assert len(oss_state.read(path)) == 1
 
 
+def test_a_malformed_detail_still_says_the_intake_pair_was_dropped(tmp_path):
+    """The refusal that fires before the record is attached still drops a measured pair.
+
+    `--detail` is parsed in the same run that carries the counts, so a refusal there was
+    a pair going nowhere with nothing said about it -- this issue's own defect one branch
+    over, and it was live until the record was built ahead of the parse.
+    """
+    path = tmp_path / "state.json"
+    argv = [str(path), "--decision", "merged #4"] + INTAKE_ARGV
+
+    # must fire: the same argv with a well-formed detail lands and receipts, so the
+    # assertion below cannot pass against a run that printed nothing.
+    landed = _piped(argv + ["--detail", '{"pr": 222}'])
+    assert landed.returncode == 0, landed.stdout
+    assert _first(landed.stdout.splitlines(), "RECORDED intake") is not None
+
+    refused = _piped(argv + ["--detail", "{oops"])
+    assert refused.returncode == 1, refused.stdout
+    lines = refused.stdout.splitlines()
+    assert _first(lines, "FAIL") == 0, lines
+    assert _first(lines, "NOT RECORDED") == 1, lines
+    assert "3 filings" in lines[1]
+    assert len(oss_state.read(path)) == 1
+
+
+def test_the_trend_line_is_labelled_as_a_computation_not_a_receipt(tmp_path):
+    """`--trend` renders the same sentence and stores nothing, so it carries its own
+    label. Paired with a run that does write, because "no RECORDED here" is worth
+    nothing unless RECORDED appears somewhere."""
+    path = tmp_path / "state.json"
+
+    # must fire
+    landed = _piped([str(path), "--decision", "merged #4"] + INTAKE_ARGV)
+    assert landed.returncode == 0, landed.stdout
+    landed_lines = landed.stdout.splitlines()
+    assert _first(landed_lines, "RECORDED intake") is not None, landed_lines
+    assert _first(landed_lines, "TREND") is None, landed_lines
+
+    # must not fire: a read-only mode receipts nothing
+    before = path.read_text(encoding="utf-8")
+    trend = _piped([str(path), "--trend"])
+    assert trend.returncode == 0, trend.stdout
+    lines = trend.stdout.splitlines()
+    assert _first(lines, "TREND intake") is not None, lines
+    assert [line for line in lines if line.startswith("RECORDED")] == []
+    assert _first(lines, "NOT RECORDED") is None, lines
+    assert path.read_text(encoding="utf-8") == before
+
+
 def test_a_write_that_cannot_land_is_a_fail_line_and_leaves_the_history_intact(
     tmp_path, capsys
 ):

@@ -3,7 +3,7 @@
 Written every tick, read first every tick. Deliberately thin -- status only, never
 diffs. Reasoning that only matters to a pull request belongs in that pull request.
 
-Two decisions worth stating, because both are refusals:
+Three decisions worth stating, because each of them is a refusal:
 
 * **A corrupt file raises.** Starting fresh would destroy the history the file exists
   to keep, and the tick that did it would be indistinguishable from a first tick.
@@ -840,7 +840,11 @@ def _main(argv=None):
             return refuse(
                 "--at is required with --decision; the timestamp is not read from a clock"
             )
-        detail = json.loads(args.detail) if args.detail else None
+        # The pair is built before `--detail` is parsed, and the order is the point: a
+        # malformed `--detail` is a refusal, and a refusal raised while `pending_intake`
+        # was still None dropped a pair somebody had measured without a line saying so --
+        # which is this issue's own defect one branch over. Two `if intake_flags:` blocks
+        # rather than one, because the second half needs the parsed detail.
         if intake_flags:
             missing = [
                 name
@@ -862,6 +866,8 @@ def _main(argv=None):
                 why=args.intake_why,
             )
             pending_intake = record
+        detail = json.loads(args.detail) if args.detail else None
+        if intake_flags:
             if detail is None:
                 detail = {}
             if not isinstance(detail, dict):
