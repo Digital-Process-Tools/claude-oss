@@ -199,15 +199,24 @@ it can say:
 - **`… could not be determined …`**, at `WARN` — nothing was measured, and **the line always names the
   reason** — read it rather than the verdict. Some are about reaching the dependency at all: it is
   not in the install record, its unpacked tree was not found, a hook file would not decode, or the
-  hooks carry no fixed layer list. Others are about reaching its *hooks*: it declares no hook
-  manifest, so nothing
-  separates a hook from a fixture; its manifest names no file that exists; or **a layer list was
-  found, and only outside the hook set** — which is reported as the reason rather than dropped,
-  because a string in a test fixture is evidence about the fixture and about nothing else.
-  That last one is what this repository's own `doctor` prints today. The no-fixed-list reason is the
-  expected shape of the upstream fix, so it too is *unknown* rather than a pass **or** a gap. Do not
-  relay any of the seven as either — an incomplete scan never settles this question, and a scan that
-  found the right string in the wrong file has not looked where it matters.
+  hooks carry no fixed layer list. Others are about reaching its *hooks*, and they are distinct
+  answers rather than one: it declares no hook manifest at all, so nothing separates a hook from a
+  fixture; the `hooks` path its `.claude-plugin/plugin.json` declares is one this refuses to
+  resolve — and it does **not** quietly fall back to the conventional location, because reading a
+  file the plugin did not name is this check's own defect one directory over; the manifest would
+  not parse; the manifest parsed and named nothing resolvable; or **a layer list was found, and
+  only outside the hook set** — reported as the reason rather than dropped, because a string in a
+  test fixture is evidence about the fixture and about nothing else. **That last reason is what this
+  repository's own `doctor` prints today.** The no-fixed-list one is the expected shape of the
+  upstream fix, so it too is *unknown* rather than a pass **or** a gap.
+
+  Either terminal message may also end with `N path(s) under it could not be walked or read (…), so
+  this did not see the whole tree`. That is a modifier, not a reason: it says the scan behind the
+  sentence was incomplete, which is the difference between *looked everywhere and found nothing* and
+  *could not look everywhere*.
+
+  Do not relay any of these as a pass or as a gap — an incomplete scan never settles this question,
+  and a scan that found the right string in the wrong file has not looked where it matters.
 - **`this repo has no .claude/jit-context/*/01-oss/ …`**, at `OK` — nothing to read, so nothing to
   warn about. `/oss:scaffold` writes the layer if you want it.
 
