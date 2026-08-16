@@ -43,7 +43,7 @@ second one.
 
 ## The `watch channel` line
 
-One line, eleven states, and none of them is a claim about which pollers are running. It compares
+One line, twelve states, and none of them is a claim about which pollers are running. It compares
 three places — a `watch_name` in this repo's `.supertool.json`, `SUPERTOOL_WATCH_NAME` in the
 environment this run inherited, and the `repo` in `.oss.json` that `bin/oss-workspace` derives a
 name from (#191) — and reports which channel the repo resolves to. The name derives a
@@ -62,8 +62,10 @@ case and the private case are otherwise indistinguishable from inside either rep
   derive from. This used to read `OK … Nothing is broken`, and it was measured saying exactly that
   on a repository where five events were read, five forwarded, zero dropped and none delivered
   (#191). One process holds that socket, the first one wins, and the loser is never told. The line
-  names which of three reasons applied — no `.oss.json`, an unreadable one, or one with no `repo` —
-  because the remedies differ.
+  names which of six reasons applied — no `.oss.json`, one this process could not read, one that read
+  and parsed and is not an object, one with no `repo`, one whose `repo` the validator refuses, or a
+  validator that would not import — because the remedies differ. The second and third are separate
+  since #216: a mode and a shape are not the same errand.
 - `OK … so this is the export bin/oss-workspace makes for this repo` — an export with no
   declaration beside it, and it is **exactly** what `.oss.json`'s `repo` derives to. Since #192 this
   is the ordinary state of every managed repo, and it used to render as the accusation below.
@@ -71,9 +73,11 @@ case and the private case are otherwise indistinguishable from inside either rep
   comparison rather than inferred from an absence. A hand-copied `.claude/settings.local.json` puts
   one name into several repos, and each of them then reports a fleet that is not its own.
 - `WARN … whether this is the export bin/oss-workspace derives … is unknown` — an export is set and
-  there is no `.oss.json`, or it cannot be read, or it carries no `repo`, so there is nothing to
-  compare against. Not answered as copied, which would accuse on no evidence, and not as derived,
-  which would clear on none. The line names which of the three it was.
+  there is no `.oss.json`, or it cannot be read, or it read and parsed and is not an object, or it
+  carries no `repo`, or its `repo` is one the validator refuses, or the validator would not import —
+  so there is nothing to compare against. Not answered as copied, which would accuse on no evidence,
+  and not as derived, which would clear on none. The line names which of the six it was, and since
+  #216 "could not read it" and "read it, and it is the wrong shape" are two of them.
 - `WARN … declared in .supertool.json, exported as SUPERTOOL_WATCH_NAME and the two differ` — the
   export wins for pollers spawned here, so this repo's declaration is not in effect.
 - `WARN … op blocks … declare N distinct names` — `bin/oss-workspace` exports none of them rather
@@ -81,8 +85,14 @@ case and the private case are otherwise indistinguishable from inside either rep
 - `WARN … SUPERTOOL_WATCH_SOCK … is set, which overrides the name entirely` — deliberate on
   supertool's side, because that path is what a running poller already captured. It still means the
   comparison above decides nothing, so it is not reported as agreement.
-- `WARN … .supertool.json is there and could not be read` — the third state. Not `declares none`:
-  that reads as a repo on the default channel, and it is not one.
+- `WARN … .supertool.json is there and could not be read` — the read or the parse failed. Not
+  `declares none`: that reads as a repo on the default channel, and it is not one.
+- `WARN … .supertool.json is not an object` / `` `ops` in .supertool.json is not an object`` — the
+  file **was** read and it did parse; only its shape is wrong. Reported separately from the line
+  above since #216, where both shapes said *could not be read* and sent the reader to permissions, a
+  lock or an encoding rather than to the document. Two failure states exist because they have
+  different remedies, so collapsing them costs exactly what having them buys. `scaffold.check_radar`
+  has always answered this shape correctly; it is `doctor` that was wrong, and the fix went here.
 
 **No name is ever printed** — the declaration, the export, both places to look, and nothing the
 diagnosed repo wrote. The remedy is always in one of the two places the line names.
