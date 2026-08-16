@@ -43,7 +43,7 @@ second one.
 
 ## The `watch channel` line
 
-One line, eleven states, and none of them is a claim about which pollers are running. It compares
+One line, twelve states, and none of them is a claim about which pollers are running. It compares
 three places — a `watch_name` in this repo's `.supertool.json`, `SUPERTOOL_WATCH_NAME` in the
 environment this run inherited, and the `repo` in `.oss.json` that `bin/oss-workspace` derives a
 name from (#191) — and reports which channel the repo resolves to. The name derives a
@@ -81,8 +81,14 @@ case and the private case are otherwise indistinguishable from inside either rep
 - `WARN … SUPERTOOL_WATCH_SOCK … is set, which overrides the name entirely` — deliberate on
   supertool's side, because that path is what a running poller already captured. It still means the
   comparison above decides nothing, so it is not reported as agreement.
-- `WARN … .supertool.json is there and could not be read` — the third state. Not `declares none`:
-  that reads as a repo on the default channel, and it is not one.
+- `WARN … .supertool.json is there and could not be read` — the read or the parse failed. Not
+  `declares none`: that reads as a repo on the default channel, and it is not one.
+- `WARN … .supertool.json is not an object` / `` `ops` in .supertool.json is not an object`` — the
+  file **was** read and it did parse; only its shape is wrong. Reported separately from the line
+  above since #216, where both shapes said *could not be read* and sent the reader to permissions, a
+  lock or an encoding rather than to the document. Two failure states exist because they have
+  different remedies, so collapsing them costs exactly what having them buys. `scaffold.check_radar`
+  has always answered this shape correctly; it is `doctor` that was wrong, and the fix went here.
 
 **No name is ever printed** — the declaration, the export, both places to look, and nothing the
 diagnosed repo wrote. The remedy is always in one of the two places the line names.

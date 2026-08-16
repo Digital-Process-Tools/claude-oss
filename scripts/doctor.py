@@ -709,40 +709,62 @@ RADAR_REMEDY = (
 def _supertool_document(project_dir):
     """This repo's `.supertool.json` as a mapping, in three states rather than two.
 
-    Returns `(doc, problem)`. `(None, None)` is the file not being there, which is
-    an answer; `(None, "unreadable")` is a file that is there and could not be
-    parsed, which is not. Folding those two renders a broken file as a repo that
-    declares nothing, under a line saying nothing is wrong.
+    Returns `(doc, problem, detail)`. `(None, None, "")` is the file not being
+    there, which is an answer; `"unreadable"` is a file that is there and the read
+    or the parse failed; `"malformed"` is a file that read and parsed and is not
+    an object. Folding absence into either renders a broken file as a repo that
+    declares nothing, under a line saying nothing is wrong -- and folding the
+    third into the second is #216: `[]` is valid JSON, the read succeeded, and
+    reporting "could not be read" sends the maintainer to permissions, a lock or
+    an encoding when the remedy is to fix the document's shape. Two failure
+    states exist precisely because they send the reader somewhere different, so
+    collapsing them costs exactly what having them buys.
 
-    The exception in hand decides which: `FileNotFoundError` is absence, anything
-    else is unreadable. Asking the filesystem a second question to explain why the
-    first failed is how `Path.exists()` took the release gate down from inside the
-    `except` that was meant to make it survive a bad read.
+    THREE and not four. "It parsed and the key we wanted is absent" is a real and
+    common state, but it is not this function's to answer: the two callers want
+    different keys (`ops.radar.radar_tiers` and `ops.*.watch_name`), and each
+    already names that absence in its own vocabulary -- `no-tiers` for one,
+    `default` / `declared-only` for the other. A fourth return here would have to
+    know which key its caller wanted, which moves a caller's question into a
+    shared helper and answers it for whoever did not ask.
+
+    The exception in hand decides absence from unreadable: `FileNotFoundError` is
+    absence, anything else is unreadable. Asking the filesystem a second question
+    to explain why the first failed is how `Path.exists()` took the release gate
+    down from inside the `except` that was meant to make it survive a bad read.
+    The malformed arm needs no exception at all -- nothing failed.
     """
     path = Path(project_dir) / WATCH_CONFIG
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return None, None
+        return None, None, ""
     except (OSError, ValueError, UnicodeDecodeError):
-        return None, "unreadable"
+        return None, "unreadable", "{} is there and could not be read".format(
+            WATCH_CONFIG
+        )
     if not isinstance(doc, dict):
-        return None, "unreadable"
-    return doc, None
+        # Same sentence `scaffold.check_radar` already prints for this shape, and
+        # for the same reason -- not because the two checkers are asserted to
+        # agree, which would pass just as happily on two that are both wrong, but
+        # because the shape itself earns it.
+        return None, "malformed", "{} is not an object".format(WATCH_CONFIG)
+    return doc, None, ""
 
 
 def _declared_watch_names(project_dir):
     """The distinct `ops.*.watch_name` values in this repo's `.supertool.json`.
 
-    Returns `(names, problem)`. `problem` is None when the file was read -- which
-    includes the file not being there, because absence is an answer and an
-    unreadable file is not.
+    Returns `(names, problem, detail)`. `problem` is None when the file was read
+    and its shape was usable -- which includes the file not being there, because
+    absence is an answer and a broken file is not. Otherwise it is `"unreadable"`
+    or `"malformed"`, carried through from `_supertool_document` or decided here.
     """
-    doc, problem = _supertool_document(project_dir)
+    doc, problem, detail = _supertool_document(project_dir)
     if problem:
-        return set(), problem
+        return set(), problem, detail
     if doc is None:
-        return set(), None
+        return set(), None, ""
     # Absent and malformed are not the same answer. `ops` missing entirely is a
     # repo that declares nothing, which is a real and common state; `ops` present
     # and the wrong shape is a file somebody edited and broke, and folding it into
@@ -750,17 +772,21 @@ def _declared_watch_names(project_dir):
     # wrong. The top-level document three lines up is already split that way, and
     # the asymmetry was the bug.
     if "ops" not in doc:
-        return set(), None
+        return set(), None, ""
     ops = doc.get("ops")
     if not isinstance(ops, dict):
-        return set(), "unreadable"
+        # `malformed`, not `unreadable`. The comment above has said these are two
+        # answers since it was written, and the line under it returned the third
+        # one's name -- the file read and parsed perfectly. That is #216's row,
+        # one caller over from the one it tabulated.
+        return set(), "malformed", "`ops` in {} is not an object".format(WATCH_CONFIG)
     return {
         block["watch_name"]
         for block in ops.values()
         if isinstance(block, dict)
         and isinstance(block.get("watch_name"), str)
         and block["watch_name"]
-    }, None
+    }, None, ""
 
 
 def radar_publish_state(project_dir):
@@ -788,9 +814,13 @@ def radar_publish_state(project_dir):
     `.supertool.json` is contributor-writable in a managed repo, which is how a
     tracked file gets to write a diagnostic's own output lines.
     """
-    doc, problem = _supertool_document(project_dir)
-    if problem == "unreadable":
-        return "unreadable", "{} is there and could not be read".format(WATCH_CONFIG)
+    doc, problem, detail = _supertool_document(project_dir)
+    if problem:
+        # Both of the helper's failure names are already states of this function's
+        # own vocabulary, and each carries the sentence its shape earned. Passing
+        # them through rather than re-deciding here is what stops the two drifting
+        # apart again: #216 was this line naming one state for both.
+        return problem, detail
     if doc is None:
         return "no-config", "there is no {} here".format(WATCH_CONFIG)
 
@@ -971,11 +1001,11 @@ def _derivable_watch_name(project_dir):
 
 
 def watch_channel_state(project_dir, env=None):
-    """Which watch channel does this repo actually resolve to? Eleven answers.
+    """Which watch channel does this repo actually resolve to? Twelve answers.
 
-    `unreadable` / `conflict` / `overridden` / `mismatch` / `undeclared-export` /
-    `undeclared-export-unknown` / `derived-export` / `agree` / `declared-only` /
-    `derived` / `default`, and the count is the point. The filed
+    `unreadable` / `malformed` / `conflict` / `overridden` / `mismatch` /
+    `undeclared-export` / `undeclared-export-unknown` / `derived-export` /
+    `agree` / `declared-only` / `derived` / `default`, and the count is the point. The filed
     symptom -- four repos on one poller slot -- was NOT a repo whose declaration
     disagreed with its environment. It was four repos declaring nothing at all with
     one hand-copied export between them, so a check that only compared a
@@ -985,7 +1015,9 @@ def watch_channel_state(project_dir, env=None):
 
     `unreadable` is separate from every state above for the same reason: a file
     that could not be parsed yields no names, which looks exactly like a file that
-    was read and declared none.
+    was read and declared none. `malformed` is separate from `unreadable` for the
+    opposite reason -- the file WAS read, and naming a successful read as a failed
+    one sends the reader to permissions instead of to the document (#216).
 
     The environment read is this process's, and that is the honest scope: a poller
     spawned from this session inherits it. It says nothing about a session already
@@ -997,9 +1029,14 @@ def watch_channel_state(project_dir, env=None):
     gets to write a diagnostic's own output lines.
     """
     environ = os.environ if env is None else env
-    names, problem = _declared_watch_names(project_dir)
-    if problem == "unreadable":
-        return "unreadable", "{} is there and could not be read".format(WATCH_CONFIG)
+    names, problem, problem_detail = _declared_watch_names(project_dir)
+    if problem:
+        # `unreadable` and `malformed` both stop the read, and they are two answers
+        # rather than one: the first sends the reader to permissions, a lock or an
+        # encoding, the second to the document. Reporting the second as the first
+        # is #216. Neither may fall through to the states below, where `default`
+        # would tell a repo with a broken file that it declares nothing.
+        return problem, problem_detail
 
     overrides = [key for key in WATCH_PATH_ENV if environ.get(key)]
     exported = environ.get(WATCH_NAME_ENV) or ""
@@ -1109,6 +1146,15 @@ def check_watch_channel(project_dir, env=None):
             "watch channel: {}, so whether this repo declares a watch_name is unknown "
             "-- not answered as 'declares none', because that reads as a repo on the "
             "default channel.".format(detail),
+        )
+        return
+    if state == "malformed":
+        report(
+            "WARN",
+            "watch channel: {}, so no watch_name could be read from it. The file WAS "
+            "read and it parsed -- this is a document somebody edited into the wrong "
+            "shape, not a permission, a lock or an encoding, and not a repo that "
+            "declares none. Fix the shape rather than the file's mode.".format(detail),
         )
         return
     if state == "conflict":

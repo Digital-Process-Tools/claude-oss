@@ -1174,21 +1174,95 @@ def test_watch_channel_default_is_not_the_same_state_as_an_unreadable_file(tmp_p
     assert broken == "unreadable"
 
 
-def test_watch_channel_unreadable_when_the_document_is_not_an_object(tmp_path):
+def test_watch_channel_malformed_when_the_document_is_not_an_object(tmp_path):
+    """A file that parsed is never reported as one that could not be read (#216).
+
+    `[]` is valid JSON. The read succeeded, the parse succeeded, and the only
+    thing wrong is the document's shape -- so `unreadable` here sends the reader
+    to permissions, a lock or an encoding, none of which is true. The control is
+    the arm below it, which is genuinely unparseable and must still say so."""
     (tmp_path / doctor.WATCH_CONFIG).write_text("[]", encoding="utf-8")
-    assert doctor.watch_channel_state(tmp_path, env={})[0] == "unreadable"
+    parsed = doctor.watch_channel_state(tmp_path, env={})
+    (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")
+    unparseable = doctor.watch_channel_state(tmp_path, env={})[0]
+    assert parsed[0] == "malformed", parsed
+    assert "not an object" in parsed[1]
+    assert unparseable == "unreadable"
 
 
-def test_watch_channel_unreadable_when_ops_is_present_and_the_wrong_shape(tmp_path):
-    """A broken `ops` yields no names, which is what a repo declaring none also
-    yields -- so folding the two renders an edited-and-broken file as `default`,
-    with a green line saying nothing is wrong. Absent `ops` is the control below."""
+def test_watch_channel_malformed_when_ops_is_present_and_the_wrong_shape(tmp_path):
+    """Three states, and the middle one is the whole point.
+
+    A broken `ops` yields no names, which is what a repo declaring none also
+    yields -- so folding those two renders an edited-and-broken file as `default`
+    under a green line. But it read and parsed perfectly, so folding it the other
+    way into `unreadable` names the wrong cause. Both controls are here: absent
+    `ops` must stay `default`, and an unparseable file must stay `unreadable`."""
     (tmp_path / doctor.WATCH_CONFIG).write_text('{"ops": []}', encoding="utf-8")
-    broken = doctor.watch_channel_state(tmp_path, env={})[0]
+    broken = doctor.watch_channel_state(tmp_path, env={})
     (tmp_path / doctor.WATCH_CONFIG).write_text('{"presets": ["git"]}', encoding="utf-8")
     absent = doctor.watch_channel_state(tmp_path, env={})[0]
-    assert broken == "unreadable"
+    (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")
+    unparseable = doctor.watch_channel_state(tmp_path, env={})[0]
+    assert broken[0] == "malformed", broken
+    assert "`ops`" in broken[1] and "not an object" in broken[1]
     assert absent == "default"
+    assert unparseable == "unreadable"
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("[]", "malformed"),
+        ('"oss"', "malformed"),
+        ("3", "malformed"),
+        ("null", "malformed"),
+        ('{"ops": []}', "malformed"),
+        ("{not json", "unreadable"),
+        ("", "unreadable"),
+    ],
+)
+def test_a_document_that_parsed_is_never_reported_as_unreadable(tmp_path, raw, expected):
+    """Asserted against the INPUT SHAPE, not against `scaffold.check_radar`.
+
+    #205's lesson: two checkers returning the same string would satisfy an
+    agreement assertion just as happily when both are wrong, which is how the
+    false comment at doctor.py:666 survived. So each shape is named here with the
+    answer the shape itself earns, and both of doctor's readers of this file are
+    held to it -- the divergence #216 tabulated was one reader of the two."""
+    (tmp_path / doctor.WATCH_CONFIG).write_text(raw, encoding="utf-8")
+    radar = doctor.radar_publish_state(tmp_path)
+    channel = doctor.watch_channel_state(tmp_path, env={})
+    assert radar[0] == expected, radar
+    assert channel[0] == expected, channel
+
+
+def test_check_watch_channel_sends_a_broken_shape_to_the_document_not_to_permissions(
+    tmp_path, capsys
+):
+    """The harm #216 reports is a message, so the message is what is asserted.
+
+    Without an arm of its own, `malformed` falls through to the `default` line --
+    "none declared ... and nothing to derive one from" -- which is a remedy for a
+    file that is fine. The control is the same fixture made genuinely unparseable,
+    which must still say it could not be read."""
+    (tmp_path / doctor.WATCH_CONFIG).write_text('{"ops": []}', encoding="utf-8")
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env={})
+    shaped = list(doctor.FINDINGS)
+
+    (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env={})
+    unread = list(doctor.FINDINGS)
+    capsys.readouterr()
+
+    assert [state for state, _ in shaped] == ["WARN"], shaped
+    assert "not an object" in shaped[0][1], shaped
+    assert "could not be read" not in shaped[0][1], shaped
+    assert "none declared" not in shaped[0][1], shaped
+    assert "could not be read" in unread[0][1], unread
+    shaped[0][1].encode("ascii")
 
 
 def test_watch_channel_conflict_still_names_a_path_override(tmp_path):
