@@ -412,6 +412,122 @@ elif [ -n "$watch_name" ]; then
     export SUPERTOOL_WATCH_NAME="$watch_name"
 fi
 
+# Will the consumer actually ACCEPT this name? (#231)
+#
+# Everything above decides what to export. Nothing above knows whether the thing on
+# the other end will use it. Measured against this organisation's real slugs on
+# 2026-08-16: `Digital-Process-Tools/claude-oss` derives a 32-character name that
+# supertool accepts exactly at its cap, while `claude-supertool` (38) and
+# `claude-jit-context` (40) derive names it discards and falls back to the shared
+# default socket — the state #191 exists to eliminate, reached while this script's
+# own output implies a private channel. Two of the three repositories this plugin
+# runs on are in it. This one works by one character, which is why nobody saw it.
+#
+# REPORT, do not refuse, and do not transcribe. A copy of supertool's NAME_RE in
+# this repository would drift from the installed one, and refusing on a cap this
+# copy carried would take a working channel away from a repo whose consumer accepts
+# the name. So the rule is ASKED FOR: read out of the installed
+# presets/watch/naming.py at run time, which is a fact about the version actually on
+# this machine rather than a fact about when this file was last edited.
+#
+# Three states, and silence belongs to exactly one of them:
+#
+#   accepted        say nothing. A line printed on every healthy launch is furniture,
+#                   and furniture is how the line that matters stops being read.
+#   rejected        say so loudly, with the name, its length and the rule, because
+#                   "too long" without a number is unactionable.
+#   could not ask   say so loudly TOO, with the name and its length. Silence here
+#                   would be indistinguishable from acceptance, which is the absence
+#                   this plugin is named after.
+#
+# With no supertool installed at all there is no fourth state to report: the consumer
+# block below already says so with its own remedy, and a second line would be
+# furniture on a path where it is never actionable.
+if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then
+"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER' || true
+import importlib.util, json, os, sys
+
+name = sys.argv[1]
+
+# The registry, not a glob of the cache: the cache keeps every version ever
+# installed and a glob answers with whichever sorts last, which is a version this
+# session is not running. Same resolution and same order as FIND_CONSUMER below.
+registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+try:
+    with open(registry, encoding="utf-8") as handle:
+        doc = json.load(handle)
+except (OSError, ValueError):
+    # Reported by the consumer block below, with the remedy. Not restated here.
+    raise SystemExit(0)
+
+installs = [
+    entry.get("installPath")
+    for key, entries in (doc.get("plugins") or {}).items()
+    if key.split("@")[0] == "supertool"
+    for entry in entries or []
+    if entry.get("installPath")
+]
+if not installs:
+    raise SystemExit(0)
+
+
+def cannot_ask(why):
+    # The name is quoted with %r, which escapes a newline or anything a terminal
+    # would act on -- and this arm is reachable with an UNVALIDATED name, because an
+    # already-exported SUPERTOOL_WATCH_NAME wins and never goes through the gate.
+    sys.stderr.write(
+        "oss-workspace: could not ask the installed supertool whether it will accept "
+        "the watch channel name %r (%d characters) -- %s. So this session is on a "
+        "private socket or on the shared default one and nothing here can tell you "
+        "which. supertool 'channel:health'\n" % (name, len(name), why))
+
+
+rule_path = ""
+for path in installs:
+    candidate = os.path.join(path, "presets", "watch", "naming.py")
+    if os.path.isfile(candidate):
+        rule_path = candidate
+        break
+if not rule_path:
+    cannot_ask("none of %s holds presets/watch/naming.py, so that version either "
+               "predates the watch preset or keeps its rule somewhere else"
+               % ", ".join(installs))
+    raise SystemExit(0)
+
+# Reading the rule means executing the dependency's module. That is a smaller
+# exposure than this script already takes -- the consumer from the same install is
+# about to be registered as an MCP server and spawned -- and it is the only way to
+# get the rule of the version actually installed rather than a copy of one.
+#
+# SystemExit is caught beside Exception because a module calling sys.exit() on
+# import would otherwise end this block with no receipt, which reads as accepted.
+# KeyboardInterrupt is deliberately NOT caught: a launcher must stay interruptible.
+try:
+    spec = importlib.util.spec_from_file_location("_oss_watch_naming", rule_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rule = module.NAME_RE
+    pattern = rule.pattern
+    accepted = bool(rule.match(name))
+except (Exception, SystemExit) as err:
+    cannot_ask("%s could not be read (%s)" % (rule_path, type(err).__name__))
+    raise SystemExit(0)
+
+if accepted:
+    raise SystemExit(0)
+
+sys.stderr.write(
+    "oss-workspace: the installed supertool will DISCARD the watch channel name %r "
+    "(%d characters): it does not match %s, that version's own rule, read from %s. "
+    "The name was exported anyway -- refusing it here would be this plugin carrying "
+    "a copy of somebody else's rule -- so the consumer falls back to the SHARED "
+    "DEFAULT socket, which is what this line exists to make visible. Shorten the "
+    "derived name by declaring watch_name in an op block of this repo's "
+    ".supertool.json. supertool 'channel:health'\n"
+    % (name, len(name), pattern, rule_path))
+ASK_CONSUMER
+fi
+
 # The consumer ships with the SUPERTOOL plugin, not with this one, and its path
 # is resolved from installed_plugins.json rather than by globbing the cache: the
 # cache keeps every version ever installed, so a glob answers with whichever
