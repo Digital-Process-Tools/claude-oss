@@ -2667,3 +2667,438 @@ def test_a_document_naming_neither_op_is_still_reported():
     }
 
 
+# ---------------------------------------------------------------------------
+# #247: the op table's heading hands a whole class of operations to one route,
+# and rows of the table directly under it route that class the other way.
+#
+# Read a line at a time, which is the opposite of the collapse the #250 checks
+# above need, and for a reason about the format rather than convenience: an ATX
+# heading and a GFM table row are each terminated by a newline, so collapsing
+# whitespace would fuse every row into one and destroy the structure being read.
+# The wrap trap does not reach here -- there is no legal wrap inside a row to
+# miss -- and `test_the_op_table_rows_are_found_at_all` fails if the row parser
+# stops seeing the table, which is the way this check could go quiet.
+
+MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+
+# `\r` is in both trailing classes, and it is not decoration. These are the
+# suite's only `$`-anchored multiline patterns, and there is no `.gitattributes`
+# here, so a Windows checkout is free to arrive as CRLF. Measured rather than
+# argued: fed text that still carries a CR, `_routes_in_rows` returns `{}` and
+# `_op_table_heading_unmet` returns `set()` -- a silent clean, this repository's
+# own defect class. `Path.read_text` translates the newlines before either
+# pattern sees them, so that path is unreachable through the callers above; the
+# class is closed here anyway because one character is cheaper than a guard, and
+# `test_a_crlf_document_is_read_the_same_as_an_lf_one` measures it.
+_HEADING_RE = re.compile(r"(?m)^(#{1,6})[ \t]+(.*?)[ \t\r]*$")
+
+# A heading sentence that hands a class of operations to a named route. The
+# class span stops at `.`, `;` and `|` so two sentences in one heading are two
+# claims, and a table row can never be read as the tail of a heading claim.
+_ROUTE_CLAIM_RE = re.compile(
+    r"\b(read|reads|reading|write|writes|writing)\b[^.;|]*?"
+    r"\bgo(?:es)?\s+through\s+`?([A-Za-z][\w-]*)`?",
+    re.IGNORECASE,
+)
+
+_CLASS_WORDS = {
+    "read": "reads",
+    "reads": "reads",
+    "reading": "reads",
+    "write": "writes",
+    "writes": "writes",
+    "writing": "writes",
+}
+
+_TABLE_ROW_RE = re.compile(r"(?m)^\|(?P<need>[^|\n]*)\|(?P<op>.*?)\|[ \t\r]*$")
+_BACKTICK_RE = re.compile(r"`([^`]*)`")
+_SUPERTOOL_OP_RE = re.compile(r"\A((?:gh|git)-[a-z0-9-]+)")
+
+#: The trailing segment of an op name that makes the op a write. Named rather
+#: than read off the row's `need` cell: that cell is English and drifts, while
+#: an op name is a spelling the dependency owns. The control below asserts this
+#: set still classifies the writes the table carries, so an op renamed out of
+#: the set fails there rather than quietly reclassifying itself as a read.
+WRITE_VERB_SUFFIXES = ("create", "edit", "merge", "close", "delete", "comment", "update")
+
+
+def _sections(text):
+    """[(heading text, body)] for every ATX heading in `text`."""
+    headings = list(_HEADING_RE.finditer(text))
+    sections = []
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        sections.append((heading.group(2), text[heading.end():end]))
+    return sections
+
+
+def _routes_in_rows(body):
+    """{"reads"|"writes": {route, ...}} observed in `body`'s table rows.
+
+    Only supertool op spellings are classified. A raw `gh ...` in a cell is left
+    unclassified on purpose: guessing its class would let this check invent the
+    contradiction it is looking for.
+    """
+    observed = {}
+    for row in _TABLE_ROW_RE.finditer(body):
+        for span in _BACKTICK_RE.findall(row.group("op")):
+            op = _SUPERTOOL_OP_RE.match(span)
+            if not op:
+                continue
+            name = op.group(1)
+            klass = "writes" if name.rsplit("-", 1)[-1] in WRITE_VERB_SUFFIXES else "reads"
+            observed.setdefault(klass, set()).add("supertool")
+    return observed
+
+
+def _op_table_heading_unmet(text):
+    """Findings about a heading that routes a class the rows beneath it contradict.
+
+    Two keys, and they are two different claims. The contradiction key is #247
+    as filed: the heading and the rows disagree today. The taxonomy key is the
+    rule the instance argues for -- a heading naming a route for a whole class
+    is a second, coarser copy of what the table already answers per row, and the
+    copy that drifts is the one that gets quoted. A correct taxonomy still fires
+    it, deliberately: the per-row answer cannot drift from itself, so the heading
+    should defer to the rows rather than restate them.
+    """
+    unmet = set()
+    for heading, body in _sections(text):
+        claims = list(_ROUTE_CLAIM_RE.finditer(heading))
+        if not claims:
+            continue
+        rows = _routes_in_rows(body)
+        for claim in claims:
+            klass = _CLASS_WORDS[claim.group(1).lower()]
+            claimed = claim.group(2).lower().strip("`")
+            unmet.add("heading-routes-a-class-instead-of-deferring-to-the-rows")
+            observed = rows.get(klass, set())
+            if not observed:
+                # The third state, and it is the one this check would otherwise
+                # have produced itself. The claim loop used to sit behind an
+                # `if not rows: continue`, so a heading routing a class over a
+                # table that would not parse -- a malformed row, a fence, a
+                # table that moved -- came back byte-identical to a heading with
+                # nothing to answer for. `test_the_op_table_rows_are_found_at_all`
+                # does not cover it: that guard is document-wide, so a second
+                # table elsewhere in the file keeps it green while this section
+                # goes unread.
+                unmet.add(
+                    "heading-routes-{}-but-no-row-under-it-could-be-read".format(klass)
+                )
+            elif claimed not in observed:
+                unmet.add(
+                    "heading-says-{}-go-through-{}-but-a-row-uses-{}".format(
+                        klass, claimed, "-".join(sorted(observed))
+                    )
+                )
+    return unmet
+
+
+def test_the_op_table_heading_does_not_route_a_class_the_rows_contradict():
+    findings = sorted(_op_table_heading_unmet(MANAGER_SKILL.read_text(encoding="utf-8")))
+    assert not findings, (
+        "the manager skill's op table is introduced by a heading that hands a whole "
+        "class of operations to one route, while the rows under it answer per row -- "
+        "the heading is the part that is skimmed and quoted, and it is the copy that "
+        "drifts (#247): {}".format(findings)
+    )
+
+
+def test_the_op_table_rows_are_found_at_all():
+    """Without this, the check above passes on a table the parser stopped seeing."""
+    text = MANAGER_SKILL.read_text(encoding="utf-8")
+    routes = {}
+    for _, body in _sections(text):
+        for klass, seen in _routes_in_rows(body).items():
+            routes.setdefault(klass, set()).update(seen)
+    assert routes.get("writes") == {"supertool"}, routes
+    assert routes.get("reads") == {"supertool"}, routes
+
+
+# The heading and the write rows exactly as this document carried them before
+# #247, kept as a literal because CI checks out at depth 1.
+PRE_247_OP_TABLE = r"""## Reads go through supertool. Writes go through `gh`.
+
+| Need | Op |
+| --- | --- |
+| The board | `gh-issues`, `gh-labels` |
+| Filing | `gh-issue-create:@FILE` |
+| Opening a pull request | `gh-pr-create:@FILE` |
+| Correcting a published body | `gh-pr-edit:N:@FILE` |
+| Merging | `gh-pr-merge:N:squash\|force` |
+"""
+
+
+def test_the_route_claim_check_fires_on_the_pre_247_heading():
+    """Positive control. Both keys, and the contradiction names both routes."""
+    assert _op_table_heading_unmet(PRE_247_OP_TABLE) == {
+        "heading-routes-a-class-instead-of-deferring-to-the-rows",
+        "heading-says-writes-go-through-gh-but-a-row-uses-supertool",
+    }
+
+
+def test_a_heading_that_defers_to_the_rows_is_clean_and_the_rows_were_still_read():
+    """Must-not-fire, with the control that stops it being a free pass.
+
+    The second assertion is load-bearing: a heading naming no route is clean
+    here whether the rows were parsed or not, so the same fixture has to show
+    the row parser still classifying the writes it contains.
+    """
+    deferring = PRE_247_OP_TABLE.replace(
+        "## Reads go through supertool. Writes go through `gh`.",
+        "## Which call to make: the op table answers it, row by row",
+    )
+    assert _op_table_heading_unmet(deferring) == set()
+
+    body = _sections(deferring)[0][1]
+    assert _routes_in_rows(body) == {"reads": {"supertool"}, "writes": {"supertool"}}
+
+
+def test_a_correct_taxonomy_in_the_heading_is_still_reported():
+    """The third shape, and the decision #247 asked for, written down as a test.
+
+    A heading that routes the class *correctly* is not a contradiction -- and it
+    is still refused, because it is a second copy of an answer the rows already
+    give. Only the taxonomy key fires, so the two findings stay distinguishable.
+    """
+    accurate = PRE_247_OP_TABLE.replace(
+        "Writes go through `gh`.", "Writes go through supertool."
+    )
+    assert _op_table_heading_unmet(accurate) == {
+        "heading-routes-a-class-instead-of-deferring-to-the-rows"
+    }
+
+
+def test_a_claim_over_an_unreadable_table_is_reported_not_skipped():
+    """The third state, and it is the auditor's fixture rather than an invented one.
+
+    A heading routes a class; the row that would answer it is malformed and does
+    not parse; a second, unrelated table elsewhere in the document parses fine.
+    Before this, the claim loop sat behind `if not rows: continue`, so this came
+    back `set()` -- clean -- while `test_the_op_table_rows_are_found_at_all` also
+    stayed green off the *other* table, because that guard is document-wide. Two
+    checks, neither able to see the section that went unread.
+    """
+    unreadable = (
+        "## Writes go through `gh`.\n"
+        "\n"
+        "| Need | Op |\n"
+        "| --- | --- |\n"
+        "  Merging | `gh-pr-merge:N` |\n"  # no leading pipe: not a row
+        "\n"
+        "## Something else entirely\n"
+        "\n"
+        "| Need | Op |\n"
+        "| --- | --- |\n"
+        "| Opening a pull request | `gh-pr-create:@FILE` |\n"
+    )
+    # Must-fire: the section whose table did not parse is named, not skipped.
+    assert _op_table_heading_unmet(unreadable) == {
+        "heading-routes-a-class-instead-of-deferring-to-the-rows",
+        "heading-routes-writes-but-no-row-under-it-could-be-read",
+    }
+
+    # The two controls that make the above a finding rather than a coincidence.
+    claiming, second = _sections(unreadable)[0], _sections(unreadable)[1]
+    assert _routes_in_rows(claiming[1]) == {}, _routes_in_rows(claiming[1])
+    assert _routes_in_rows(second[1]) == {"writes": {"supertool"}}
+
+    # Same fixture, the row given its leading pipe back: the contradiction the
+    # unreadable table was hiding is what the check reports instead.
+    readable = unreadable.replace("  Merging |", "| Merging |")
+    assert _op_table_heading_unmet(readable) == {
+        "heading-routes-a-class-instead-of-deferring-to-the-rows",
+        "heading-says-writes-go-through-gh-but-a-row-uses-supertool",
+    }
+
+
+def test_a_crlf_document_is_read_the_same_as_an_lf_one():
+    """The platform control, and it is a measurement rather than a table.
+
+    CI runs three operating systems and this repository ships no
+    `.gitattributes`, so a Windows checkout may arrive CRLF. Rather than assert
+    an outcome for a platform this never ran on, the same document is fed in
+    both line endings and the two answers are compared -- which is a claim about
+    the patterns, not about the runner. The must-fire half is the comparison
+    itself: an LF answer of `set()` would make the equality meaningless, so the
+    fixture is the pre-#247 table, whose LF answer is two findings.
+    """
+    lf = PRE_247_OP_TABLE
+    crlf = lf.replace("\n", "\r\n")
+    assert "\r" in crlf and crlf != lf
+
+    assert _op_table_heading_unmet(lf) == _op_table_heading_unmet(crlf)
+    assert len(_op_table_heading_unmet(crlf)) == 2, sorted(_op_table_heading_unmet(crlf))
+    assert _routes_in_rows(_sections(crlf)[0][1]) == {
+        "reads": {"supertool"},
+        "writes": {"supertool"},
+    }
+
+
+def test_a_table_under_a_heading_that_claims_nothing_is_clean():
+    """A document that says nothing about routing has nothing to contradict."""
+    quiet = PRE_247_OP_TABLE.replace(
+        "## Reads go through supertool. Writes go through `gh`.", "## The ops"
+    )
+    assert _op_table_heading_unmet(quiet) == set()
+
+
+# ---------------------------------------------------------------------------
+# #244: a tick that stops because the board is momentarily quiet reports the
+# same closing line as a tick that stopped because there was nothing to do --
+# and a tick that never read the board reports it too. Three endings, and the
+# two that are not endings have to be unable to render as the one that is.
+#
+# Read off a whitespace-collapsed, blockquote-stripped copy, unlike the #247
+# checks above: this is running prose in two documents that wrap at 100
+# columns, so an anchor phrase straddles a line break as a matter of course.
+
+#: (path, heading pattern). Two documents on purpose, and they are two
+#: different things: the skill is the loop's own rules and the command is what
+#: a maintainer invokes. #244 was observed against the skill; the command
+#: carried the same sentence, so fixing one would have reached half the callers.
+TICK_ENDING_DOCUMENTS = (
+    (REPO_ROOT / "skills" / "manager" / "SKILL.md", r"loop mechanics"),
+    (REPO_ROOT / "commands" / "tick.md", r"what ends a tick"),
+)
+
+#: Each key is a way the ending can render as an absence. The naming and
+#: sourcing anchors are the load-bearing pair: without them "blocked" with no
+#: item named and "nothing left" off a board nobody read are the same bytes as
+#: a finished loop, which is this repository's own defect class pointed at its
+#: own loop.
+TICK_ENDING_ANCHORS = (
+    ("the-work-started-ending-is-not-named", r"work started"),
+    ("the-blocked-ending-is-not-named", r"\bblocked\b"),
+    ("the-nothing-left-ending-is-not-named", r"nothing left"),
+    (
+        "blocked-does-not-require-every-remaining-item-named",
+        r"named individually|names? (?:each|every) (?:remaining )?item|"
+        r"a count is not a naming",
+    ),
+    (
+        "nothing-left-is-not-sourced-from-a-read-that-answered",
+        r"unread board|board (?:that|which) did not answer|did not answer",
+    ),
+    ("the-read-that-sources-nothing-left-is-not-named", r"`gh-issues`"),
+    (
+        "the-two-non-terminal-states-are-not-excluded-as-endings",
+        r"not an end(?:ing)?\b|only the (?:last|third)",
+    ),
+)
+
+
+def _tick_ending_unmet(text, heading_pattern):
+    """Findings about how a document says a tick ends.
+
+    Returns the section-absent key rather than an empty set when the heading
+    cannot be found: a section that moved and a section that says the right
+    thing must not render alike, which is the same rule this check exists to
+    put into the prose.
+    """
+    body = None
+    for heading, section in _sections(text):
+        if re.search(heading_pattern, heading, re.IGNORECASE):
+            body = section
+            break
+    if body is None:
+        return {"the-tick-ending-section-is-absent"}
+    collapsed = _collapse(body).lower()
+    return {
+        key for key, pattern in TICK_ENDING_ANCHORS
+        if not re.search(pattern, collapsed)
+    }
+
+
+def test_both_documents_state_a_tick_ending_that_cannot_be_faked():
+    findings = {}
+    for path, heading in TICK_ENDING_DOCUMENTS:
+        unmet = sorted(_tick_ending_unmet(path.read_text(encoding="utf-8"), heading))
+        if unmet:
+            findings[str(path.relative_to(REPO_ROOT))] = unmet
+    assert not findings, (
+        "a tick that idled, a tick that is blocked on named work, and a tick with "
+        "nothing left all close on the same line, so the loop hands back to the "
+        "maintainer and calls it done (#244): {}".format(findings)
+    )
+
+
+def test_the_tick_ending_documents_exist():
+    """A path that stopped resolving would make the check above vacuously green."""
+    missing = [str(p) for p, _ in TICK_ENDING_DOCUMENTS if not p.is_file()]
+    assert not missing, missing
+
+
+# The skill's *Loop mechanics* section as it stood before #244. Every anchor
+# above must fire on it, or the check passes on the wording it replaced.
+PRE_244_LOOP_MECHANICS = """## Loop mechanics
+
+Arm the loop at the end of the first tick, every time, including when this skill was invoked
+directly. A skill invocation does not create a loop.
+
+Agent completions notify for free -- never poll for them. **CI is the only thing that needs a timer**,
+sized to the observed matrix. Nothing outstanding but somebody else's work -> stop the loop
+(`stop: true`) and say so out loud, because a loop that stops silently is indistinguishable from one
+that was never armed.
+"""
+
+
+def test_the_tick_ending_check_fires_on_the_pre_244_wording():
+    """Positive control: the sentence #244 was filed against fails every anchor."""
+    assert _tick_ending_unmet(PRE_244_LOOP_MECHANICS, r"loop mechanics") == {
+        key for key, _ in TICK_ENDING_ANCHORS
+    }
+
+
+def test_a_moved_heading_is_reported_rather_than_passing():
+    """The third state. A section that is not there has not been checked."""
+    assert _tick_ending_unmet(PRE_244_LOOP_MECHANICS, r"what ends a tick") == {
+        "the-tick-ending-section-is-absent"
+    }
+
+
+# The anchors satisfied, wrapped so two of them straddle a line break inside a
+# blockquote -- the shape a hand-wrapped bulleted list in these documents has.
+WRAPPED_TICK_ENDING = (
+    "## Loop mechanics\n"
+    "\n"
+    "> A tick ends in one of three states, and only the last is an end:\n"
+    "> work started; blocked, with every remaining item named\n"
+    "> individually and what it waits on; or nothing left, which `gh-issues`\n"
+    "> and `gh-prs` both answered and both answered empty. An unread\n"
+    "> board is not an empty one, a call that did not answer is unknown,\n"
+    "> and unknown is not an ending.\n"
+)
+
+
+def test_a_wrapped_blockquoted_ending_is_not_read_as_an_omission():
+    """Must-not-fire, with the two controls that stop it being a free pass."""
+    assert _tick_ending_unmet(WRAPPED_TICK_ENDING, r"loop mechanics") == set()
+
+    line_at_a_time = WRAPPED_TICK_ENDING.lower()
+    assert "named individually" not in line_at_a_time, (
+        "the wrap control no longer wraps across an anchor phrase, so it proves "
+        "nothing about the collapse"
+    )
+    without_the_strip = " ".join(WRAPPED_TICK_ENDING.split()).lower()
+    assert "named individually" not in without_the_strip, (
+        "the blockquote control no longer wraps mid-phrase, so it proves nothing "
+        "about the marker strip: {!r}".format(without_the_strip)
+    )
+
+    # Must-fire, same fixture: the naming requirement and the source taken out.
+    vague = WRAPPED_TICK_ENDING.replace(
+        "blocked, with every remaining item named\n> individually and what it waits on",
+        "blocked",
+    ).replace(
+        "An unread\n> board is not an empty one, a call that did not answer is unknown,\n"
+        "> and unknown is not an ending.",
+        "Nothing else matters.",
+    )
+    assert _tick_ending_unmet(vague, r"loop mechanics") == {
+        "blocked-does-not-require-every-remaining-item-named",
+        "nothing-left-is-not-sourced-from-a-read-that-answered",
+    }
+
+
