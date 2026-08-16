@@ -1077,9 +1077,10 @@ ScheduleWakeup(delaySeconds=…, prompt="/manager", reason="<what specifically i
 ```
 
 Agent completions notify for free — never poll for them. **CI is the only thing that needs a timer**,
-sized to the observed matrix. Nothing outstanding but somebody else's work → stop the loop
-(`stop: true`) and say so out loud, because a loop that stops silently is indistinguishable from one
-that was never armed.
+sized to the observed matrix. Nothing outstanding but somebody else's work — a review, a CI run, an
+upstream fix, and **never your own backlog** — means stop the loop (`stop: true`) and say so out loud,
+because a loop that stops silently is indistinguishable from one that was never armed. Which of the
+three states below you are in decides whether this sentence applies at all.
 
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.

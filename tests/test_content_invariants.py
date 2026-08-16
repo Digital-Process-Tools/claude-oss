@@ -2764,15 +2764,29 @@ def _op_table_heading_unmet(text):
     """
     unmet = set()
     for heading, body in _sections(text):
-        rows = _routes_in_rows(body)
-        if not rows:
+        claims = list(_ROUTE_CLAIM_RE.finditer(heading))
+        if not claims:
             continue
-        for claim in _ROUTE_CLAIM_RE.finditer(heading):
+        rows = _routes_in_rows(body)
+        for claim in claims:
             klass = _CLASS_WORDS[claim.group(1).lower()]
             claimed = claim.group(2).lower().strip("`")
             unmet.add("heading-routes-a-class-instead-of-deferring-to-the-rows")
             observed = rows.get(klass, set())
-            if observed and claimed not in observed:
+            if not observed:
+                # The third state, and it is the one this check would otherwise
+                # have produced itself. The claim loop used to sit behind an
+                # `if not rows: continue`, so a heading routing a class over a
+                # table that would not parse -- a malformed row, a fence, a
+                # table that moved -- came back byte-identical to a heading with
+                # nothing to answer for. `test_the_op_table_rows_are_found_at_all`
+                # does not cover it: that guard is document-wide, so a second
+                # table elsewhere in the file keeps it green while this section
+                # goes unread.
+                unmet.add(
+                    "heading-routes-{}-but-no-row-under-it-could-be-read".format(klass)
+                )
+            elif claimed not in observed:
                 unmet.add(
                     "heading-says-{}-go-through-{}-but-a-row-uses-{}".format(
                         klass, claimed, "-".join(sorted(observed))
@@ -2853,6 +2867,49 @@ def test_a_correct_taxonomy_in_the_heading_is_still_reported():
     )
     assert _op_table_heading_unmet(accurate) == {
         "heading-routes-a-class-instead-of-deferring-to-the-rows"
+    }
+
+
+def test_a_claim_over_an_unreadable_table_is_reported_not_skipped():
+    """The third state, and it is the auditor's fixture rather than an invented one.
+
+    A heading routes a class; the row that would answer it is malformed and does
+    not parse; a second, unrelated table elsewhere in the document parses fine.
+    Before this, the claim loop sat behind `if not rows: continue`, so this came
+    back `set()` -- clean -- while `test_the_op_table_rows_are_found_at_all` also
+    stayed green off the *other* table, because that guard is document-wide. Two
+    checks, neither able to see the section that went unread.
+    """
+    unreadable = (
+        "## Writes go through `gh`.\n"
+        "\n"
+        "| Need | Op |\n"
+        "| --- | --- |\n"
+        "  Merging | `gh-pr-merge:N` |\n"  # no leading pipe: not a row
+        "\n"
+        "## Something else entirely\n"
+        "\n"
+        "| Need | Op |\n"
+        "| --- | --- |\n"
+        "| Opening a pull request | `gh-pr-create:@FILE` |\n"
+    )
+    # Must-fire: the section whose table did not parse is named, not skipped.
+    assert _op_table_heading_unmet(unreadable) == {
+        "heading-routes-a-class-instead-of-deferring-to-the-rows",
+        "heading-routes-writes-but-no-row-under-it-could-be-read",
+    }
+
+    # The two controls that make the above a finding rather than a coincidence.
+    claiming, second = _sections(unreadable)[0], _sections(unreadable)[1]
+    assert _routes_in_rows(claiming[1]) == {}, _routes_in_rows(claiming[1])
+    assert _routes_in_rows(second[1]) == {"writes": {"supertool"}}
+
+    # Same fixture, the row given its leading pipe back: the contradiction the
+    # unreadable table was hiding is what the check reports instead.
+    readable = unreadable.replace("  Merging |", "| Merging |")
+    assert _op_table_heading_unmet(readable) == {
+        "heading-routes-a-class-instead-of-deferring-to-the-rows",
+        "heading-says-writes-go-through-gh-but-a-row-uses-supertool",
     }
 
 
