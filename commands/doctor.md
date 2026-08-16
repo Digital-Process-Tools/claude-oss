@@ -62,8 +62,10 @@ case and the private case are otherwise indistinguishable from inside either rep
   derive from. This used to read `OK … Nothing is broken`, and it was measured saying exactly that
   on a repository where five events were read, five forwarded, zero dropped and none delivered
   (#191). One process holds that socket, the first one wins, and the loser is never told. The line
-  names which of three reasons applied — no `.oss.json`, an unreadable one, or one with no `repo` —
-  because the remedies differ.
+  names which of six reasons applied — no `.oss.json`, one this process could not read, one that read
+  and parsed and is not an object, one with no `repo`, one whose `repo` the validator refuses, or a
+  validator that would not import — because the remedies differ. The second and third are separate
+  since #216: a mode and a shape are not the same errand.
 - `OK … so this is the export bin/oss-workspace makes for this repo` — an export with no
   declaration beside it, and it is **exactly** what `.oss.json`'s `repo` derives to. Since #192 this
   is the ordinary state of every managed repo, and it used to render as the accusation below.
@@ -71,9 +73,11 @@ case and the private case are otherwise indistinguishable from inside either rep
   comparison rather than inferred from an absence. A hand-copied `.claude/settings.local.json` puts
   one name into several repos, and each of them then reports a fleet that is not its own.
 - `WARN … whether this is the export bin/oss-workspace derives … is unknown` — an export is set and
-  there is no `.oss.json`, or it cannot be read, or it carries no `repo`, so there is nothing to
-  compare against. Not answered as copied, which would accuse on no evidence, and not as derived,
-  which would clear on none. The line names which of the three it was.
+  there is no `.oss.json`, or it cannot be read, or it read and parsed and is not an object, or it
+  carries no `repo`, or its `repo` is one the validator refuses, or the validator would not import —
+  so there is nothing to compare against. Not answered as copied, which would accuse on no evidence,
+  and not as derived, which would clear on none. The line names which of the six it was, and since
+  #216 "could not read it" and "read it, and it is the wrong shape" are two of them.
 - `WARN … declared in .supertool.json, exported as SUPERTOOL_WATCH_NAME and the two differ` — the
   export wins for pollers spawned here, so this repo's declaration is not in effect.
 - `WARN … op blocks … declare N distinct names` — `bin/oss-workspace` exports none of them rather

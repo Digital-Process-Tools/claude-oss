@@ -1732,6 +1732,52 @@ def test_the_refused_state_prints_ascii_even_for_a_non_ascii_repo(tmp_path):
     assert "u4e2d" in message, message
 
 
+def test_oss_json_that_parsed_is_not_reported_as_one_that_could_not_be_read(tmp_path):
+    """#216's class, on the OTHER config file this module reads.
+
+    `_derivable_watch_name` folded a parsed-but-wrong-shape `.oss.json` into
+    `unreadable` exactly as `_supertool_document` did, and the sentence reaches the
+    reader through the same `watch channel` line. Both controls are in the fixture:
+    a genuinely unparseable file must stay `unreadable`, and an absent one must stay
+    `no-config` -- the state that would otherwise absorb this one silently."""
+    target = tmp_path / doctor.OSS_CONFIG
+    target.write_text("[]", encoding="utf-8")
+    parsed = doctor._derivable_watch_name(tmp_path)
+    target.write_text("{not json", encoding="utf-8")
+    unparseable = doctor._derivable_watch_name(tmp_path)[0]
+    target.unlink()
+    absent = doctor._derivable_watch_name(tmp_path)[0]
+    assert parsed[0] == "malformed", parsed
+    assert parsed[1] == "" and parsed[2] == "", parsed
+    assert unparseable == "unreadable"
+    assert absent == "no-config"
+
+
+@pytest.mark.parametrize("env", [{}, {"SUPERTOOL_WATCH_NAME": "oss-supertool"}])
+def test_check_watch_channel_sends_a_broken_oss_json_to_the_document(tmp_path, env):
+    """The harm is the printed sentence, in both states that render this reason.
+
+    With no export the line is `default`; with one it is
+    `undeclared-export-unknown`. Each carries its own reason dictionary, so a key
+    added to one and not the other would raise a KeyError here rather than print
+    the wrong remedy -- and before the fix both printed "could not be read" for a
+    file that was read. The control is the same fixture made unparseable."""
+    (tmp_path / doctor.OSS_CONFIG).write_text("[]", encoding="utf-8")
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env=env)
+    shaped = doctor.FINDINGS[0][1]
+
+    (tmp_path / doctor.OSS_CONFIG).write_text("{not json", encoding="utf-8")
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env=env)
+    unread = doctor.FINDINGS[0][1]
+
+    assert "not an object" in shaped, shaped
+    assert "could not be read" not in shaped, shaped
+    assert "could not be read" in unread, unread
+    shaped.encode("ascii")
+
+
 def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
     """Two copies of one rule, cross-checked rather than restated.
 
@@ -1768,6 +1814,12 @@ def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
         # arrive as `no-repo` -- the remedy is to correct a value, not add a key.
         ({"repo": ".."}, "refused"),
         ({"repo": "../../etc"}, "refused"),
+        # #216's class, one config file over: `[]` reads and parses, so reporting
+        # it as `unreadable` sends the reader to permissions rather than to the
+        # document. The launcher half of this cross-check needs no change -- it
+        # was already required to print no name here, and still must.
+        ("[]", "malformed"),
+        ('"owner/name"', "malformed"),
     ]
     for doc, expected in cases:
         if doc is None:

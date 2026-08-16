@@ -933,10 +933,18 @@ def _derivable_watch_name(project_dir):
     """Can `bin/oss-workspace` derive a channel name for this repo, and which?
 
     Returns `(state, name, why)`, state being `yes` / `no-config` / `unreadable` /
-    `no-repo` / `refused` / `no-validator`. `name` is empty for everything but
-    `yes`, so a caller cannot get a name out of a state that did not produce one,
-    and `why` carries the validator's own sentence for `refused` and is empty for
-    every other state.
+    `malformed` / `no-repo` / `refused` / `no-validator`. `name` is empty for
+    everything but `yes`, so a caller cannot get a name out of a state that did not
+    produce one, and `why` carries the validator's own sentence for `refused` and is
+    empty for every other state.
+
+    `malformed` is `unreadable`'s twin and arrived with #216, which filed the same
+    fold against the two `.supertool.json` readers below. `[]` is valid JSON: the
+    read succeeded and the parse succeeded, so answering "could not be read" sends
+    the reader to permissions, a lock or an encoding when the remedy is to fix the
+    document. Note this is the SEVENTH state and not a sixth spelling of one -- the
+    two have different remedies, which is the whole reason `unreadable` was split
+    off `no-config` in the first place.
 
     The launcher derives the name from `.oss.json`'s `repo` when nothing declares
     or exports one (#191), so "nothing declared" stopped meaning "the shared
@@ -974,7 +982,10 @@ def _derivable_watch_name(project_dir):
     except (OSError, ValueError, UnicodeDecodeError):
         return "unreadable", "", ""
     if not isinstance(doc, dict):
-        return "unreadable", "", ""
+        # Nothing failed here -- no exception, no second question to the
+        # filesystem. The file read and parsed and is the wrong shape, which is a
+        # different remedy from a mode, a lock or an encoding (#216).
+        return "malformed", "", ""
     repo = doc.get("repo")
     # Blank before invalid, matching the launcher arm for arm: "declares no repo"
     # and "declares one nobody can use" are two remedies, and the validator would
@@ -1082,6 +1093,10 @@ def watch_channel_state(project_dir, env=None):
                 "no-config": "there is no {} to compare it against".format(OSS_CONFIG),
                 "unreadable": "{} is there and could not be read, so there was "
                 "nothing to compare it against".format(OSS_CONFIG),
+                # Separate from `unreadable` above: this one WAS read (#216).
+                "malformed": "{} is not an object, so the launcher derives nothing "
+                "to compare it against -- the file was read and it parsed, so the "
+                "remedy is its shape".format(OSS_CONFIG),
                 "no-repo": "{} carries no repo to compare it against".format(
                     OSS_CONFIG
                 ),
@@ -1114,13 +1129,21 @@ def watch_channel_state(project_dir, env=None):
         return "derived", "nothing declared in {} and {} unset, and {} carries a repo".format(
             WATCH_CONFIG, WATCH_NAME_ENV, OSS_CONFIG
         )
-    # One state, five remedies -- write a config, fix a config, add a key, correct
-    # a value, repair this tool. The reason travels in the detail rather than being
-    # dropped for arriving second, the same way `conflict` carries its override.
+    # One state, six remedies -- write a config, unblock a config, reshape a config,
+    # add a key, correct a value, repair this tool. The reason travels in the detail
+    # rather than being dropped for arriving second, the same way `conflict` carries
+    # its override. "Unblock" and "reshape" are two of those six and not one (#216):
+    # a file the process cannot read and a file it read and cannot use send the
+    # reader to different places.
     return "default", {
         "no-config": "there is no {} to derive one from".format(OSS_CONFIG),
         "unreadable": "{} is there and could not be read, so nothing could be "
         "derived from it".format(OSS_CONFIG),
+        # Separate from `unreadable` above: this one WAS read (#216).
+        "malformed": "{} is not an object, so nothing could be derived from it -- "
+        "the file was read and it parsed, so the remedy is its shape".format(
+            OSS_CONFIG
+        ),
         "no-repo": "{} carries no repo to derive one from".format(OSS_CONFIG),
         "refused": "{} carries a repo the config validator refuses ({}), and the "
         "launcher refuses it too rather than folding it into a socket path "
