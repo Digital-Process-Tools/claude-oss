@@ -78,6 +78,18 @@ It does **not** set up a board. The session is started able to receive watch-cha
 launcher says which of the two is missing rather than reporting the session as armed — a channel
 nobody publishes to looks exactly like a quiet board.
 
+The channel's **name** gets the same treatment, because a name that does not arrive intact puts the
+session on the socket shared with every repo that declares none, which renders as a quiet board too.
+One rule decides what a name may be, and both roads reach it: a `watch_name` declared in the repo's
+`.supertool.json` and a name derived from `repo` in `.oss.json` are checked by the same function, and
+a value that cannot be used as a path component is refused out loud rather than exported. What that
+rule deliberately does not decide is whether supertool will *accept* the name — it has its own
+pattern, with a length cap. Rather than carry a copy of it here to go stale, the launcher reads that
+rule out of the installed supertool and reports what it finds, in three states: accepted says
+nothing, a name the consumer will discard is named with its length and the rule that refused it, and
+**not being able to ask** — no rule where the launcher looks, a module that will not load — is said
+just as loudly, because silence there is indistinguishable from acceptance.
+
 Install the launcher once:
 
 ```
