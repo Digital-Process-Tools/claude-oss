@@ -331,7 +331,9 @@ the call just refused:
 
 - **Read** -- `supertool 'read:PATH'`
 - **Edit** -- `supertool 'edit:@-'` (a TOML payload on stdin) or `supertool 'edit:::OLD:::NEW:::PATH'`
-- **Write** -- `supertool 'write:PATH'`
+- **Write** -- `supertool 'paste:@-'` (a TOML payload on stdin, fields `path` and `content`) or
+  `supertool 'paste:::PATH:::CONTENT'` -- `paste` creates missing parent directories and rewrites an
+  existing file, so it covers both halves of a Write
 - **Glob** -- `supertool 'glob:PATTERN'`
 - **Grep** -- `supertool 'grep:PATTERN:PATH'`
 
