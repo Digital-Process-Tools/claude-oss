@@ -1065,6 +1065,150 @@ def test_the_unreadable_detail_is_one_line_for_a_consumer_that_does_not_print(tm
     assert len(findings[0]["detail"].splitlines()) == 1, findings[0]["detail"]
 
 
+# --------------------------------- a rule-layer filename forging a row of the receipt
+#
+# #223, and the second instance of #204's class in this file in two releases. The names
+# in `.claude/jit-context/<dim>/01-oss/` are walked out of the MANAGED repository, so
+# they are data. `_layer_scan` joined one into a `remove` row with a bare `.format()`,
+# and three print statements -- none of them among the four `d02e95a` flattened -- put
+# that row on stdout. A newline in the name ends the row and starts whatever follows at
+# column 0, where it is indistinguishable from a line scaffold wrote itself.
+#
+# The payload forges the run's own `WROTE:` summary, which is why the "every line begins
+# with a known label" assertion is NOT on its own enough on the apply path: `WROTE:` is a
+# label the receipt really uses. The teeth are in the pair -- the label sweep, plus
+# "exactly one WROTE: line and it is the one reporting what was actually written".
+#
+# The sweep is deliberately over the WHOLE receipt rather than over the three rows the
+# fix touches. A per-site fix is what #204 did and it is how this recurred; asserting the
+# rendered receipt as a whole is what makes a print statement added next year fail here
+# rather than in a release audit.
+
+_FORGED_WROTE = "WROTE: 0 template(s), replaced 0 file(s) in the 01-oss rule layer"
+_FORGED_RULE_NAME = "stale.md\n" + _FORGED_WROTE + "\nremoved  everything.md"
+_FLAT_RULE_NAME = " ".join(_FORGED_RULE_NAME.split())
+
+_PLAN_LABELS = {
+    "create", "replace", "remove", "declined", "present",
+    "layer", "tests", "label", "radar", "changelog", "PLAN:", "NOTE",
+}
+_APPLY_LABELS = {
+    "created", "ours", "declined", "removed", "replaced",
+    "layer", "tests", "label", "radar", "changelog", "WROTE:", "NOTE",
+}
+
+
+def _rule_layer_file_named(root, name):
+    """Put `name` in a managed repo's own rule layer, or skip saying what went untested.
+
+    A measurement, never a given. A newline is a legal POSIX filename character and it
+    was constructible on APFS, but several filesystems refuse one and Windows refuses it
+    outright. The skip carries the errno and the exception type rather than asserting
+    against a table of platform error codes, and the listdir check below is the second
+    half of the same rule: a filesystem that stored the name under some other spelling
+    never established the condition either.
+    """
+    directory = root / ".claude" / "jit-context" / "paths" / scaffold.oss_rules.LAYER
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        (directory / name).write_text("stale\n", encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        pytest.skip(
+            "this filesystem would not create a file named across two lines in the "
+            "rule layer (errno {}, {}): untested here is whether a rule-layer filename "
+            "carrying a newline can forge a row of scaffold's receipt".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+    if name not in os.listdir(str(directory)):
+        pytest.skip(
+            "the file was created and this filesystem does not return that name from "
+            "listdir, so the newline never reaches the receipt: untested here is "
+            "whether a rule-layer filename carrying a newline can forge a row"
+        )
+    present, _unreadable = scaffold._layer_scan(root, {"paths": {}})
+    assert any(entry.endswith(name) for entry in present), present
+    return directory
+
+
+def _receipt(tmp_path, monkeypatch, *extra):
+    """Everything the CLI printed, with the one network seam pinned."""
+    project, local = oss_config.split(_config())
+    (tmp_path / oss_config.CONFIG_NAME).write_text(json.dumps(project), encoding="utf-8")
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        scaffold, "_forge_label_names", lambda root, config: ([], "pinned by the test")
+    )
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        scaffold._main(
+            [
+                "--root",
+                str(tmp_path),
+                "--config",
+                str(tmp_path / oss_config.CONFIG_NAME),
+            ]
+            + list(extra)
+        )
+    return out.getvalue()
+
+
+def test_a_rule_layer_filename_with_a_newline_cannot_forge_a_row_of_the_plan(
+    tmp_path, monkeypatch
+):
+    """The plan path: `scripts/scaffold.py --root . --config .oss.json`, no --apply."""
+    _rule_layer_file_named(tmp_path, _FORGED_RULE_NAME)
+    output = _receipt(tmp_path, monkeypatch)
+
+    # Must fire. The name is the evidence a maintainer needs in order to know what
+    # --apply would delete; a fix that dropped it would satisfy every assertion below
+    # and tell them nothing. It also proves the fixture reached the removal arm.
+    assert _FLAT_RULE_NAME in output, output
+
+    # Must not fire.
+    for line in output.splitlines():
+        assert not line.startswith("WROTE:"), output
+        assert line.split(" ", 1)[0] in _PLAN_LABELS, output
+
+
+def test_a_rule_layer_filename_with_a_newline_cannot_forge_a_row_of_the_apply_receipt(
+    tmp_path, monkeypatch
+):
+    """The apply receipt, where the forged `WROTE:` landed eleven lines above the real
+    one and a reader taking the first was told nothing had been written."""
+    _rule_layer_file_named(tmp_path, _FORGED_RULE_NAME)
+    output = _receipt(tmp_path, monkeypatch, "--apply")
+
+    # Must fire, twice over: the name survives, and the run's real summary is present.
+    assert _FLAT_RULE_NAME in output, output
+    wrote = [line for line in output.splitlines() if line.startswith("WROTE:")]
+    assert len(wrote) == 1, wrote
+    assert wrote[0] != _FORGED_WROTE, output
+    assert re.match(
+        r"^WROTE: [1-9]\d* template\(s\), replaced [1-9]\d* file\(s\) ", wrote[0]
+    ), wrote[0]
+
+    # Must not fire.
+    for line in output.splitlines():
+        assert line.split(" ", 1)[0] in _APPLY_LABELS, output
+
+
+def test_every_rule_plan_row_is_one_line_for_a_consumer_that_does_not_print(tmp_path):
+    """The invariant the three print statements now rely on, asserted on the structure
+    rather than on any one caller: a consumer added later inherits it without having to
+    remember. Paired with the two receipt tests above, which are what would catch a
+    repo-derived value entering the receipt through some other door."""
+    _rule_layer_file_named(tmp_path, _FORGED_RULE_NAME)
+    rules_plan = scaffold.plan_rules(tmp_path, _config())
+    rows = rules_plan["entries"]
+    assert any(row["action"] == "remove" for row in rows), rows
+    for row in rows:
+        assert len(row["path"].splitlines()) == 1, row
+        assert len(row["reason"].splitlines()) == 1, row
+
+
 # ------------------------------------------- collision with an existing changelog gate
 #
 # #86 / #105: `present` used to be computed per path, not per function. A repo that
