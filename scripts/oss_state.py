@@ -9,6 +9,14 @@ Two decisions worth stating, because both are refusals:
   to keep, and the tick that did it would be indistinguishable from a first tick.
 * **An over-long decision raises rather than truncating.** A truncation silently
   discards the half that mattered and leaves something that still reads as a record.
+* **Nothing success-shaped is printed before the entry is on disk.** The intake sentence
+  used to be computed and printed before the decision was validated, so a refused write
+  reached the caller as a well-formed metric line with the ``FAIL`` underneath it -- and
+  one tick filtered for the metric, saw it, and lost its entry (#222). The CLI's three
+  labels keep the cases apart: ``RECORDED`` receipts an entry that landed, ``NOT
+  RECORDED`` names a pair this run dropped and always follows the ``FAIL``, and ``TREND``
+  marks the read-only sum that stores nothing. An exit code is the right mechanism and it
+  is not sufficient when a human or an agent is reading the transcript.
 
 Timestamps are arguments, never read from the clock in here. A function that reads the
 clock cannot be tested for what it writes, and this file is evidence.
@@ -411,7 +419,19 @@ def migrate(path):
 
 
 def append(path, at, decision, detail=None):
-    """Add one entry. Returns the entry as written."""
+    """Add one entry. Returns the entry as written.
+
+    The write is atomic -- a sibling temp file renamed over the history -- for the same
+    reason ``migrate``'s is: a plain rewrite truncates at ``open`` and a failure after
+    that point leaves a half-file where a history was. That matters more than it looks,
+    because the failure arm below tells the caller the history is unchanged, and an
+    atomic rename is what makes that sentence true rather than hopeful.
+
+    The cost is stated rather than hidden: the rename needs the *directory* to be
+    writable, where the old in-place rewrite needed only the file. A state file somebody
+    can write inside a directory they cannot is now a refusal, and a loud one, rather
+    than a write that risks the history.
+    """
     if not decision or not decision.strip():
         raise StateError(
             "an entry needs a decision. A tick that records only that it happened "
@@ -440,8 +460,27 @@ def append(path, at, decision, detail=None):
         raise StateError("entry is not serialisable ({})".format(exc))
 
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
+    tmp = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+        )
+        os.close(handle)
+        tmp = Path(tmp_name)
+        tmp.write_text(body, encoding="utf-8")
+        _carry_mode(path, tmp)
+        os.replace(str(tmp), str(path))
+    except OSError as exc:
+        # A raise rather than a return, and a StateError rather than the OSError: every
+        # other refusal in here is a StateError, and the CLI's one handler turns those
+        # into a FAIL line. An OSError went straight through it as a traceback -- exit
+        # non-zero, but no FAIL for a caller to watch for.
+        leftover = _discard(tmp)
+        raise StateError(
+            "could not write the entry ({}); the history is unchanged -- it is only "
+            "ever replaced by an atomic rename{}".format(exc, leftover)
+        )
     return entry
 
 
@@ -718,6 +757,33 @@ def _main(argv=None):
         if value is not None
     ]
 
+    # The intake pair, once it has been built and while the entry carrying it has not
+    # landed. `refuse` reads it, so a refusal after the counts were taken can say the
+    # counts went nowhere -- otherwise a pair somebody measured is dropped in silence,
+    # and `--trend` counts that tick as one that recorded nothing. (#222)
+    pending_intake = None
+
+    def refuse(message):
+        """Print the verdict, then what the run did not record. In that order.
+
+        Nothing success-shaped may reach the caller ahead of a FAIL. The refused run
+        used to print the intake sentence first, and a caller filtering for the metric
+        read it as a record that had landed. `NOT RECORDED` is deliberately a different
+        string from the `RECORDED` receipt, rather than the same sentence with a caveat
+        appended: a filter that catches one must not catch the other.
+        """
+        print("FAIL {}".format(message))
+        if pending_intake is not None:
+            # The flush is the whole ordering guarantee, and printing in the right order
+            # is not. stdout is block-buffered the moment it is a pipe rather than a
+            # terminal, while stderr is not, so a FAIL printed first still surfaces
+            # second under `2>&1 | tee` -- which is how a transcript is read. Verified
+            # against a real pipe rather than a captured buffer; capsys keeps the two
+            # streams apart and cannot see this at all.
+            sys.stdout.flush()
+            print("NOT RECORDED " + intake_line(pending_intake), file=sys.stderr)
+        return 1
+
     try:
         if (args.read or args.last or args.trend or args.migrate) and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
@@ -759,13 +825,21 @@ def _main(argv=None):
             # into `jq` still gets JSON while a human still gets the sentence. The
             # sentence is the point: a caller formatting `ratio or 0` renders
             # could-not-count as zero, which is the finding it is not.
-            print(intake_line(trend), file=sys.stderr)
+            #
+            # `TREND`, because the same renderer serves two jobs and only one of them is
+            # a receipt. This one is a computation over a history that already exists --
+            # nothing was written by this call -- and an unlabelled sentence leaves that
+            # to the reader. The three labels are the whole vocabulary: RECORDED for an
+            # entry on disk, NOT RECORDED for a pair this run dropped, TREND for a sum
+            # nobody asked to store. (#222)
+            print("TREND " + intake_line(trend), file=sys.stderr)
             print(json.dumps(trend, indent=2))
             return 0
 
         if not args.at:
-            print("FAIL --at is required with --decision; the timestamp is not read from a clock")
-            return 1
+            return refuse(
+                "--at is required with --decision; the timestamp is not read from a clock"
+            )
         detail = json.loads(args.detail) if args.detail else None
         if intake_flags:
             missing = [
@@ -777,36 +851,40 @@ def _main(argv=None):
                 # Half a record is worse than none: a numerator with no denominator and
                 # no window is a number nobody can read, sitting in the history looking
                 # like one somebody can.
-                print(
-                    "FAIL an intake record needs all of --filings, --merged-prs and "
+                return refuse(
+                    "an intake record needs all of --filings, --merged-prs and "
                     "--window; missing {}".format(", ".join(missing))
                 )
-                return 1
             record = intake(
                 None if args.filings is UNKNOWN_COUNT else args.filings,
                 None if args.merged_prs is UNKNOWN_COUNT else args.merged_prs,
                 window=args.window,
                 why=args.intake_why,
             )
+            pending_intake = record
             if detail is None:
                 detail = {}
             if not isinstance(detail, dict):
-                print("FAIL --detail must be a JSON object when an intake record is attached")
-                return 1
+                return refuse(
+                    "--detail must be a JSON object when an intake record is attached"
+                )
             if "intake" in detail:
-                print("FAIL --detail already carries an 'intake' key; pass one or the other")
-                return 1
+                return refuse(
+                    "--detail already carries an 'intake' key; pass one or the other"
+                )
             detail["intake"] = record
-            print(intake_line(record), file=sys.stderr)
         entry = append(args.path, args.at, args.decision, detail=detail)
+        # After the write, never before. The line is a receipt for an entry that is on
+        # disk, and a receipt printed ahead of the write it receipts is one that a
+        # refusal, a crash or a filtered transcript turns into a false pass. (#222)
+        if pending_intake is not None:
+            print("RECORDED " + intake_line(pending_intake), file=sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
-        print("FAIL {}".format(exc))
-        return 1
+        return refuse(str(exc))
     except ValueError as exc:
-        print("FAIL --detail is not valid JSON ({})".format(exc))
-        return 1
+        return refuse("--detail is not valid JSON ({})".format(exc))
 
 
 if __name__ == "__main__":
