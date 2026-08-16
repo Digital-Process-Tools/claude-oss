@@ -661,6 +661,11 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     _dependencies_current(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    # `plugin copy scope` is a WARN whenever nothing named the root this invocation
+    # resolved from, and that is not a gap in the repo -- it is the check saying it
+    # could not establish which copy answered. A clean verdict therefore needs the
+    # invocation to name one, which is exactly what `/oss:doctor` now passes (#262).
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(doctor.PLUGIN_ROOT))
     monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
     doctor.main()
