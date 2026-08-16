@@ -453,11 +453,60 @@ or not.
    were not given. Outside every worktree, for the same reason the note is. **Flatten the branch
    name first** — most `branch_pattern`s contain a slash, and a filename built from one silently
    becomes a directory, so `fix/12` names the file `fix-12-…`. That applies to the note beside it.
-2. Validate it before you hand it over. A report that does not validate is not a report:
+2. Validate it before you hand it over. A report that does not validate is not a report — but
+   **which validator is a question with two answers**, and answering it silently is how a correct
+   report gets edited until an obsolete schema accepts it.
+
+   `${CLAUDE_PLUGIN_ROOT}` resolves to the **installed plugin cache**: whatever version was last
+   installed on this machine, which is not the tree you are standing in. In an ordinary managed
+   repository that is the right answer and the only one available — there is no local copy. In a
+   clone of this plugin your report is written against the branch's schema, so the branch's copy is
+   the authority and the cache is a stranger that happens to be on disk. Measured 2026-08-16: the
+   cache at `0.3.0` refused a report the clone at `0.4.0` called `ok`, with `<report>: unknown key
+   'docs'` — naming as an error the very field the current schema requires.
+
+   So do not choose between them. **Run both when both exist**:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <path>
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <path>   # the installed cache
+   python3 ./scripts/report_schema.py <path>                         # this tree, if it ships one
    ```
+
+   Look before you run the second one. In a managed repository that file is *expected* to be
+   absent, so the interpreter's "no such file" there is the ordinary case and not a validator that
+   failed — do not read it as the `neither copy ran` outcome below.
+
+   **Only one copy exists** — the ordinary managed-repository case, and it is the majority. That
+   copy's answer is simply the answer: `ok` is done, findings mean the report is wrong, fix the
+   report. There is no second opinion to have and nothing to record. Everything below is about the
+   case where two copies both ran:
+
+   - **Both say `ok`** — done.
+   - **They agree on findings** — the report is wrong. Fix the report.
+   - **They disagree** — **that is schema skew**, a fact about the tooling and not a finding about
+     your report. **Do not edit the report to satisfy the copy that refuses it**: that is the
+     failure this rule exists for, and it deletes precisely the fields the newer schema added. The
+     local copy is the authority **only when this repository is the plugin itself**: read `name`
+     out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and out of this repository's own
+     `.claude-plugin/plugin.json`, and they must be the same plugin. (`commands/release.md` already
+     compares those same two manifests for the version; this is the same read, one field over.)
+     That test is deliberately stricter than *a file of that name exists
+     here*: a managed repository may ship a `scripts/report_schema.py` of its own for reasons that
+     have nothing to do with this plugin, and **a coincidence of filename is not a claim of
+     authorship**. Where the manifest does not name this plugin, the cache wins.
+   - **Neither copy ran** — a missing interpreter, a permission block, a cache path that resolved
+     to nothing. Not the local copy being absent, which is the ordinary case above and has already
+     been answered. The report is then `could not validate`, which is not `valid`, and saying `ok` here
+     is the absence this plugin is named after. Record it exactly as loudly as a skew: an
+     `adjacent` item prefixed `tooling:` naming what you attempted and what stopped it, plus a line
+     in the two lines back. There are no verdicts to quote here — that is the point, and it is why
+     this branch needs an instruction of its own. A run in which nothing could be validated and a
+     run that validated clean otherwise reach the maintainer as the same silence.
+
+   Record a skew either way and never silently: both verdicts verbatim, as an `adjacent` item
+   prefixed `tooling:`, and in the two lines back. Your report is not the only thing the cache is
+   old for — every `${CLAUDE_PLUGIN_ROOT}` invocation in this loop runs out of that same copy, the
+   maintainer's state writes and release gate included, and nothing else reports the skew.
 
 3. Reply with the absolute path and **at most two lines** — the same sentence you put in `summary`,
    plus anything that genuinely cannot wait a turn: a permission block, a refusal you expect an
