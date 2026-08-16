@@ -151,6 +151,16 @@ it was taken at, is **[What is not proven yet](CLAUDE.md)** — re-derived at ea
 edited. It is deliberately not restated here: a second copy is the one that drifts, and this
 section is the proof of it.
 
+**Installing this plugin does not put a maintainer loop in your repository.** The workflow it
+installs is a changelog gate that fires on a pull request; every other step of the loop is a slash
+command somebody types. The one thing it starts on a clock is a `.github/dependabot.yml`, seeded
+once if you do not already have one and yours to delete — and nothing here reviews or merges what
+that opens. Nothing schedules a tick, a re-scaffold or an update of an owned file, so a repository
+that installed the plugin and was never ticked again looks, from here, exactly like a healthy one.
+What that would take is recorded in
+**[Autonomy: what the loop reaches, and what it does not](docs/autonomy.md)**, which is a record of
+the gap and deliberately not a design.
+
 ## Development
 
 ```
