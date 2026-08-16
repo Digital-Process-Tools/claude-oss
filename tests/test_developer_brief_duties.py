@@ -106,6 +106,29 @@ auditor's classes separately: report `did not run` where it did not run. An abse
 not an absence in the world.
 """
 
+# The report-validation step exactly as it stood on disk before #212, un-elided.
+# Every anchor in VALIDATOR_SKEW_POLICY falls inside this span, so an elision here
+# would assert an anchor absent from text that never carried it. It is quoted from
+# `git show 584509c:agents/developer.md` -- the two numbered steps around the fenced
+# command, plus the sentence that follows the fence, because that is the whole of
+# what the document said about which validator to run: it named one, and said
+# nothing about there being a second.
+PRIOR_REPORT_VALIDATION = """
+2. Validate it before you hand it over. A report that does not validate is not a report:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <path>
+   ```
+
+3. Reply with the absolute path and **at most two lines** -- the same sentence you put in `summary`,
+   plus anything that genuinely cannot wait a turn: a permission block, a refusal you expect an
+   argument about.
+
+The fields, their enumerations and a worked example are in
+`${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
+this section would otherwise duplicate and drift from.
+"""
+
 # Wording that was on disk before this change and is still on disk after it.
 # If PRIOR cannot be read, these fail -- which is what stops the "must not
 # match" assertions above from passing vacuously.
@@ -114,12 +137,13 @@ LIVE_BEFORE = [
     "cross-platform is not your machine",
     "an absence you produced is not an absence in the world",
     "an empty return is indistinguishable from a clean one",
+    "a report that does not validate is not a report",
 ]
 
 
 def _prior():
     """Every pre-change passage this file controls against, as one blob."""
-    return PRIOR + PRIOR_REVIEW_RETURN
+    return PRIOR + PRIOR_REVIEW_RETURN + PRIOR_REPORT_VALIDATION
 
 
 def test_the_developer_document_exists_and_is_prose():
@@ -186,12 +210,36 @@ EMPTY_RETURN_POLICY = [
     "two samples is not a measurement",
 ]
 
+# #212: `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin cache, which is a
+# different tree from the clone the report was written in. Measured on this machine:
+# the cache at 0.3.0 refuses a report the clone at 0.4.0 calls `ok`, with
+# `<report>: unknown key 'docs'` -- and the refusal reads as a finding about the
+# report. The brief documented exactly one validator, so an agent that ran it had no
+# way to see that a second answer existed.
+#
+# The anchors are the decisions the fix has to state, not its wording:
+#   - that there are two validators and the question of which one is real;
+#   - that both are run when both exist, rather than one being chosen silently;
+#   - that a disagreement is named as skew rather than absorbed into the report;
+#   - the identifier for "this clone is the plugin", which is stricter than "a file
+#     of that name exists here" on purpose;
+#   - and the third state, for when neither copy could be run at all.
+VALIDATOR_SKEW_POLICY = [
+    "which validator is a question with two answers",
+    "run both when both exist",
+    "that is schema skew",
+    "a coincidence of filename is not a claim of authorship",
+    "do not edit the report to satisfy the copy that refuses it",
+    "neither copy ran",
+]
+
 DUTIES = [
     pytest.param(ADJACENT_POLICY, id="adjacent-fix-or-file"),
     pytest.param(PLATFORM_FIX_RULES, id="platform-rules-about-the-fix"),
     pytest.param(THIRD_STATE_AS_DESIGN, id="third-state-as-a-design-rule"),
     pytest.param(PAYLOAD_NOT_EVALUATED, id="payload-parsed-never-evaluated"),
     pytest.param(EMPTY_RETURN_POLICY, id="a-spawn-that-returned-nothing"),
+    pytest.param(VALIDATOR_SKEW_POLICY, id="cache-vs-clone-validator-skew"),
 ]
 
 
@@ -244,6 +292,28 @@ def test_the_review_section_still_hands_section_four_over_verbatim():
         DEVELOPER.read_text(encoding="utf-8"),
         ["hand it §4 above", "verbatim in the brief"],
     ) == []
+
+
+def test_the_validation_step_still_names_the_plugin_rooted_command():
+    """The must-fire half of the skew pair, and the reason it is not redundant.
+
+    Everything in VALIDATOR_SKEW_POLICY is about *not* trusting the cache blindly,
+    and every one of those anchors would still pass on a document that had deleted
+    the `${CLAUDE_PLUGIN_ROOT}` invocation outright. That would be the wrong fix: in
+    a managed repository the cache is the only validator there is, and a brief that
+    told the agent to run `./scripts/report_schema.py` there would name a path that
+    does not exist. So both spellings have to survive the change -- the plugin-rooted
+    one because it is the only one a managed repo has, the local one because without
+    it there is no second answer and no skew to observe.
+    """
+    text = DEVELOPER.read_text(encoding="utf-8")
+    assert '"${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py"' in text, (
+        "the brief no longer names the plugin-rooted validator, which is the only "
+        "one a managed repository has"
+    )
+    assert "./scripts/report_schema.py" in text, (
+        "the brief names no local validator, so the skew it describes cannot be observed"
+    )
 
 
 def test_the_adjacent_policy_matches_the_vocabulary_the_schema_enforces():
