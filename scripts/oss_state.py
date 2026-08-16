@@ -932,6 +932,4 @@ def _main(argv=None):
 
 
 if __name__ == "__main__":
-    import sys
-
     sys.exit(_main())
