@@ -889,6 +889,49 @@ def test_the_refusal_did_not_delete_the_declared_route(tmp_path):
     assert "SHARED DEFAULT" not in done.stderr, done.stderr
 
 
+def test_a_refusal_does_not_claim_the_shared_socket_when_an_export_already_won(tmp_path):
+    """The gate refuses a name, and the session is on a private channel anyway.
+
+    An already-exported SUPERTOOL_WATCH_NAME wins over both roads, so when the gate
+    refuses what it holds, the session lands on the EXPORT -- not on the shared
+    default socket. Saying "SHARED DEFAULT" there reports a state the process is
+    demonstrably not in, which is the misreport this repository is named after
+    pointed at its own receipt. Found by review; reproduced before it was fixed:
+    the session ran on `a-live-fleet` while stderr said the shared socket.
+
+    Worse than the wrong half is the missing half. Refusing blanks `$watch_name`,
+    and the pre-existing "an export wins and both values are named" line only fires
+    when `$watch_name` is non-empty -- so the reader was told the wrong thing and
+    not told the right one.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "../../../tmp/pwned")
+    done, argv = run(repo, with_channel=True, watch_name_env="a-live-fleet")
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "a-live-fleet", done.stderr
+    # Still refused, and still said out loud: the value is named so a maintainer
+    # knows which file to fix even though it lost to the environment anyway.
+    assert "watch name" in done.stderr, done.stderr
+    assert "SHARED DEFAULT" not in done.stderr, done.stderr
+    # And the channel it IS on is named, because the refusal alone reads as a repo
+    # with no channel at all.
+    assert "a-live-fleet" in done.stderr, done.stderr
+
+
+def test_a_refusal_with_no_export_still_names_the_shared_socket(tmp_path):
+    """The must-fire half of the pair above, same fixture, one variable changed.
+
+    Without it, a fix that simply deleted the sentence from every refusal would
+    satisfy the assertion above and take the true warning with it.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "../../../tmp/pwned")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
 def test_a_declared_name_cannot_be_checked_without_the_validator(tmp_path):
     """The third state, and it has to refuse rather than fall through.
 

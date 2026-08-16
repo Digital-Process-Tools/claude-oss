@@ -354,19 +354,60 @@ fi
 # falling through to an unvalidated export the moment the validator goes missing is
 # the absence this plugin is named after, and a future edit that produced a name
 # without python would otherwise reopen the bypass silently.
+#
+# The gate is told what is ALREADY exported, and that is not decoration. An existing
+# SUPERTOOL_WATCH_NAME wins over both roads, so when the gate refuses what it holds,
+# the session lands on that export — NOT on the shared default socket. Claiming the
+# shared socket there reports a state the process is demonstrably not in, and it
+# takes the true half with it: refusing blanks `$watch_name`, and the "an export
+# wins" line below only fires while `$watch_name` is non-empty, so the reader was
+# told the wrong thing and not told the right one. Found by review on this change.
+#
+# The two sibling arms above — DERIVE_NAME's refusals and READ_NAME's conflict and
+# unreadable receipts — make the same unconditional claim and were not touched here:
+# that is the class rather than this instance, it wants the same argument made in
+# three more heredocs, and it is reported for filing rather than ridden in on this.
 if [ -n "$watch_name" ]; then
     if [ -z "$python_bin" ]; then
-        echo "oss-workspace: no working python, so the watch channel name" \
-             "($watch_name_source) could not be checked and was not exported. This" \
-             "session is on the SHARED DEFAULT socket. supertool 'channel:health'" >&2
+        if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
+            echo "oss-workspace: no working python, so the watch channel name" \
+                 "($watch_name_source) could not be checked. SUPERTOOL_WATCH_NAME is" \
+                 "already exported as ${SUPERTOOL_WATCH_NAME} and wins, so this" \
+                 "session uses that channel. supertool 'channel:health'" >&2
+        else
+            echo "oss-workspace: no working python, so the watch channel name" \
+                 "($watch_name_source) could not be checked and was not exported." \
+                 "This session is on the SHARED DEFAULT socket." \
+                 "supertool 'channel:health'" >&2
+        fi
         watch_name=""
-    elif ! "$python_bin" - "$watch_name" "$watch_name_source" "$plugin_root/scripts" <<'CHECK_NAME'
+    elif ! "$python_bin" - "$watch_name" "$watch_name_source" "$plugin_root/scripts" \
+                          "${SUPERTOOL_WATCH_NAME:-}" <<'CHECK_NAME'
 import sys
 
 # Imported, not restated. A second spelling of a rule is a second rule, and this
 # script has already paid for that once: the character class DERIVE_NAME used to
 # carry permitted `.`, `..` and a leading `-` where scaffold and doctor refused them.
 sys.path.insert(0, sys.argv[3])
+
+# Which socket the session ACTUALLY lands on when this gate refuses. An already
+# exported SUPERTOOL_WATCH_NAME wins over both roads, so refusing here costs nothing
+# and the session stays on that channel; only when there is no export does a refusal
+# mean the shared default. One sentence for the state that is true, computed once,
+# because a receipt that describes the wrong state is worse than no receipt: it is
+# read, believed, and stops the reader looking. Quoted with %r for the same reason
+# `problem` is — this value comes from the environment and never met the validator.
+already = sys.argv[4]
+if already:
+    landed = (
+        "SUPERTOOL_WATCH_NAME is already exported as %r and wins, so this session "
+        "uses that channel and nothing was exported over it." % already
+    )
+else:
+    landed = (
+        "Nothing was exported and this session is on the SHARED DEFAULT socket."
+    )
+
 try:
     import oss_config
 except Exception as err:
@@ -374,9 +415,9 @@ except Exception as err:
     # guard in exactly the case where it is missing.
     sys.stderr.write(
         "oss-workspace: the config validator could not be loaded from %s (%s), so the "
-        "watch channel name (%s) could not be checked and was not exported. This "
-        "session is on the SHARED DEFAULT socket. supertool 'channel:health'\n"
-        % (sys.argv[3], type(err).__name__, sys.argv[2]))
+        "watch channel name (%s) could not be checked. %s "
+        "supertool 'channel:health'\n"
+        % (sys.argv[3], type(err).__name__, sys.argv[2], landed))
     raise SystemExit(1)
 
 problem = oss_config.watch_name_problem(sys.argv[1])
@@ -387,9 +428,8 @@ if problem:
     # raising. Both measured rather than assumed (#207), and the reason nothing here
     # needs a sanitiser in front of it.
     sys.stderr.write(
-        "oss-workspace: %s -- %s. Nothing was exported and this session is on the "
-        "SHARED DEFAULT socket. supertool 'channel:health'\n"
-        % (sys.argv[2], problem))
+        "oss-workspace: %s -- %s. %s supertool 'channel:health'\n"
+        % (sys.argv[2], problem, landed))
     raise SystemExit(1)
 CHECK_NAME
     then
