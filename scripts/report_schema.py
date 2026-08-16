@@ -175,6 +175,27 @@ def _rule_survey(node, path, errors):
         )
 
 
+def _rule_review_survey(node, path, errors):
+    """The survey rules, plus the one state only a delegated survey can be in.
+
+    A spawn can execute, consume its budget and hand back an empty final message.
+    Reported honestly and structurally that is `findings: []` under state
+    `checked` -- byte-identical to a clean review, which is how #200 lost real
+    findings. So the state is `returned-nothing`, and the whole content of it is
+    the reason: which spawn went quiet, and what is lost. Items are allowed here
+    and forbidden under `not-checked`, because a caller that re-derived part of
+    the review from its own transcript has something to report and nobody it can
+    attribute it to.
+    """
+    _rule_survey(node, path, errors)
+    if node.get("state") == "returned-nothing" and not _text(node, "reason"):
+        errors.append(
+            "{}: state 'returned-nothing' needs a reason -- name the spawn that came "
+            "back empty and what was lost; without it this reads exactly like a "
+            "review that ran and found nothing".format(_label(path))
+        )
+
+
 def _rule_finding(node, path, errors):
     if not _text(node, "text"):
         errors.append("{}: a finding carries its sentence, not a boolean".format(_label(path)))
@@ -235,6 +256,7 @@ def _rule_pr_body(node, path, errors):
 
 _RULES = {
     "survey": _rule_survey,
+    "review-survey": _rule_review_survey,
     "finding": _rule_finding,
     "class-verdict": _rule_class_verdict,
     "docs-target": _rule_docs_target,

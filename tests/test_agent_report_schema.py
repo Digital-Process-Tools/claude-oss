@@ -145,6 +145,10 @@ def _mutations():
         report["pr_body"] = {"state": "not-written", "path": None}
         return report
 
+    def review_returned_nothing_without_reason(report):
+        report["review"]["findings"] = {"state": "returned-nothing", "items": []}
+        return report
+
     return {
         "required-keys": missing_required_key,
         "types": wrong_type,
@@ -160,6 +164,9 @@ def _mutations():
         "unobserved-test-phase-carries-a-reason": test_phase_skipped_without_reason,
         "written-pr-body-carries-a-path": pr_body_written_without_path,
         "unwritten-pr-body-carries-a-reason": pr_body_absent_without_reason,
+        "review-survey-returned-nothing-carries-a-reason": (
+            review_returned_nothing_without_reason
+        ),
     }
 
 
@@ -182,6 +189,68 @@ def test_every_enforced_claim_has_a_mutation_that_proves_it():
     assert claimed == proven, "claimed but unproven: {}; proven but unclaimed: {}".format(
         sorted(claimed - proven), sorted(proven - claimed)
     )
+
+
+def test_a_review_spawn_that_came_back_empty_is_spellable_and_is_not_clean():
+    """The accept half of #200.
+
+    A spawn that executed and returned an empty final message is neither
+    `checked` nor `not-checked`: the review happened and its output is lost. So
+    the state has to be a fourth one, and it has to be able to carry whatever
+    fragments the caller could re-derive -- unlike `not-checked`, which must
+    carry none.
+    """
+    report = _example()
+    report["review"]["findings"] = {
+        "state": "returned-nothing",
+        "reason": (
+            "the reviewer spawn executed and its final message was empty; two of "
+            "three findings re-derived from my own transcript, one is unrecoverable"
+        ),
+        "items": [
+            {
+                "class": "correctness",
+                "disposition": "open",
+                "text": "re-derived from my own transcript, not from the reviewer's return",
+            }
+        ],
+    }
+    assert report_schema.validate(report) == []
+
+
+def test_returned_nothing_is_refused_for_the_missing_reason_not_for_the_enum():
+    """Teeth on the mutation of the same name.
+
+    `returned-nothing` was refused before this change too -- by enum membership --
+    so a mutation asserting only "errors is non-empty" would pass just as loudly
+    against a schema that never grew the state at all. Pin what the refusal is
+    about, or the proof in x-enforced is a proof of the wrong rule.
+    """
+    report = _example()
+    report["review"]["findings"] = {"state": "returned-nothing", "items": []}
+    errors = report_schema.validate(report)
+    assert errors, "a returned-nothing review with no reason was accepted"
+    assert any("reason" in error for error in errors), errors
+    assert not any("is not one of" in error for error in errors), (
+        "still refused by enum membership, so the state was never added: " + repr(errors)
+    )
+
+
+def test_returned_nothing_did_not_leak_into_every_survey():
+    """Scope control, paired with a must-fire half.
+
+    A spawn can go quiet; a docs sweep cannot -- there is no second party to lose.
+    Widening the shared survey enum would make `returned-nothing` spellable on
+    `docs`, `claims`, `adjacent` and `blocked`, where it means nothing and would
+    read as a state somebody chose.
+    """
+    clean = _example()
+    clean["docs"]["state"] = "checked"
+    assert report_schema.validate(clean) == [], "the control itself does not validate"
+
+    leaked = _example()
+    leaked["docs"] = {"state": "returned-nothing", "reason": "x", "items": []}
+    assert report_schema.validate(leaked), "returned-nothing is spellable on a plain survey"
 
 
 def test_enforced_and_convention_are_disjoint_and_both_populated():
