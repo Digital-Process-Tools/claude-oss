@@ -3167,6 +3167,32 @@ def plugin_tree_digest(root):
     given, so ``scripts -> /`` in a tracked repo would be an unbounded read inside a
     diagnostic contracted to always finish. Declining is recorded as unreadable, which
     is what it is: nothing under it was seen.
+
+    **A symlinked file is declined on the same rule (#279), and the top-level decline
+    used to be the whole of it.** ``os.walk`` yields a symlinked file as an ordinary
+    entry in ``filenames`` and ``read_bytes()`` follows it, so ``agents/leaked.md ->``
+    anywhere had that file's bytes folded into the digest while ``unreadable`` stayed
+    empty -- a receipt that could not be told from a tree with no symlink in it.
+
+    Declining is chosen over resolving-and-containment-checking, and the two produce
+    different digests for the same repository, so it is a decision rather than a detail.
+    Resolving keeps a legitimately symlinked file inside the tree measurable; it also
+    requires deciding what "inside" means against ``realpath``, which is where the
+    platforms stop agreeing -- ``/var`` against ``/private/var``, case folding, short
+    names -- and a containment test that is wrong on one leg reads a file outside the
+    tree with a receipt saying it did not. Declining needs no such test, matches the
+    decline already applied to a symlinked directory so one sentence covers both, and
+    fails toward *unknown*. The cost is real and is not hidden: a symlinked file inside
+    the tree is not compared, and says so in ``unreadable``.
+
+    Non-regular files are a **separate** refusal, and the one that stopped a release:
+    a FIFO inside the tree with no symlink involved blocks in ``open()`` until somebody
+    writes to it, so this never returned at all and ``doctor``'s *exit 0 always, one
+    VERDICT line* contract was unreachable from a launcher that runs it before every
+    session. Both refusals ride on one ``os.lstat``, which neither follows a link nor
+    opens anything. That is a guard against a hang and a misread, not a security
+    boundary: nothing here defends against a path swapped between the ``lstat`` and the
+    read, and a diagnostic is the wrong place to claim it does.
     """
     root = Path(root)
     files = {}
@@ -3188,19 +3214,50 @@ def plugin_tree_digest(root):
             for filename in sorted(filenames):
                 targets.append(Path(dirpath) / filename)
     for relative in COMPARED_FILES:
-        targets.append(root.joinpath(*relative.split("/")))
+        parts = relative.split("/")
+        # The `lstat` below refuses a symlinked leaf, and refuses nothing above it: an
+        # ancestor is followed before the leaf is ever stat'ed, so `.claude-plugin ->`
+        # elsewhere reads a manifest outside the tree exactly the way the leaf used to
+        # (#279). The compared *directories* need no equivalent -- their tops are checked
+        # above and `os.walk` declines symlinked subdirectories on its own.
+        walked, linked = root, None
+        for part in parts[:-1]:
+            walked = walked / part
+            if os.path.islink(str(walked)):
+                linked = _relative_key(root, walked)
+                break
+        if linked:
+            unreadable[relative] = (
+                "declined: {} is a symlink, so nothing under it was read".format(linked)
+            )
+            continue
+        targets.append(root.joinpath(*parts))
 
     for path in targets:
+        key = _relative_key(root, path)
+        try:
+            status = os.lstat(str(path))
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            unreadable[key] = exc.__class__.__name__
+            continue
+        if stat.S_ISLNK(status.st_mode):
+            unreadable[key] = "declined: it is a symlink, so what it points at was not read"
+            continue
+        if not stat.S_ISREG(status.st_mode):
+            unreadable[key] = (
+                "declined: it is not a regular file, so opening it could never return"
+            )
+            continue
         try:
             data = path.read_bytes()
         except FileNotFoundError:
             continue
         except OSError as exc:
-            unreadable[_relative_key(root, path)] = exc.__class__.__name__
+            unreadable[key] = exc.__class__.__name__
             continue
-        files[_relative_key(root, path)] = hashlib.sha256(
-            data.replace(b"\r\n", b"\n")
-        ).hexdigest()
+        files[key] = hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
     return files, unreadable
 
 
