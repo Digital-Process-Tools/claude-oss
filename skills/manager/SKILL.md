@@ -155,6 +155,27 @@ the body under it, so both cuts select against the answer. If the output is too 
 a jq expression means you are rebuilding a render the op already has. Writes still need raw `gh` —
 there is no op for tagging, releasing or deleting a ref.
 
+**A sentence here saying no op exists is a claim about a dependency's inventory, and it was true
+only when it was written** — including the one directly above. `supertool 'ops'` settles it in one
+call, so probe before acting on one. Inventories grow, and this file has already been wrong in
+exactly that direction.
+
+**The two directions do not fail alike, which is why this rule is about the negative and not about
+naming ops.** An op named here that supertool has since removed or renamed fails *at the call*: the
+invocation errors, nothing is written, and you cannot proceed believing you did the thing. A
+sentence saying no op exists routes you to a raw call that **runs** — and the raw call is the one
+with no closing-reference check and no read-back on what it wrote. #195 is that failure in full:
+this file described an edit to a published body as something no op covered, while supertool shipped
+`gh-pr-edit`, and sent maintainers to the one publishing path in this loop with nothing checking
+what it published. The negative is both the likelier claim to rot and the costlier when it does.
+
+So **name the op when one exists**, rather than falling back on "use an op if there is one". The
+generic form does not rot and it also does not carry the reason — *why* this route rather than the
+raw one — and it leaves a discovery to a reader who is mid-review and will not run it. A rule nobody
+performs is a guard nominally on and effectively off, which is this file's own defect class.
+`tests/test_manager_op_inventory_claims.py` fails on the negative shape, with the pre-#195 sentence
+as its positive control.
+
 Do not assume ops that a repo's `.supertool.json` does not declare. `radar` and `dashboard` live
 behind presets many repos never enable; check before writing an instruction that depends on one.
 
