@@ -266,10 +266,33 @@ def test_tools_dimension_blocks_the_five_native_ops():
 def test_tools_rule_names_the_replacement_op():
     """A block whose message is only 'don't' costs the reader the round trip it was trying
     to save. The body must name the supertool op that replaces each blocked call.
+
+    Derived from the frontmatter, and the op is checked against the shipped-spelling
+    inventory rather than against the blocked tool's own name lowercased. The version of
+    this test that looped over `("read:", "edit:", "write:", ...)` is how #197 shipped:
+    it built the expected op out of the tool it replaces, so it asserted the presence of
+    the very spelling that does not resolve, and would have passed just as happily
+    against `frobnicate:PATH` on the Read row.
     """
+    import test_shipped_op_spellings as spellings
+
     body = oss_rules.RULES["tools"]["supertool-required.md"]
-    for op in ("read:", "edit:", "write:", "glob:", "grep:"):
-        assert op in body, "no mention of the replacement op '{}'".format(op)
+    block = body.split("\n---\n")[0]
+    tool_line = [ln for ln in block.splitlines() if ln.startswith("tool:")][0]
+    tools = tool_line.split(":", 1)[1].strip().split("|")
+    assert len(tools) == 5, tools
+    for tool in tools:
+        rows = [ln for ln in body.splitlines() if ln.startswith("- **{}**".format(tool))]
+        assert len(rows) == 1, "{}: expected one bullet naming its replacement, got {}".format(
+            tool, rows
+        )
+        named = [op for op, _ in spellings.op_spellings(rows[0])]
+        assert named, "{}: the row names no supertool invocation: {}".format(tool, rows[0])
+        undeclared = [op for op in named if op not in spellings.OP_INVENTORY]
+        assert not undeclared, (
+            "{}: the row sends a blocked reader to {}, which is not a declared op -- "
+            "the remedy for a refusal has to resolve".format(tool, undeclared)
+        )
 
 
 def test_tools_index_row_is_the_six_column_shape():
