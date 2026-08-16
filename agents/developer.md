@@ -43,8 +43,18 @@ the wrong repository.
 ## Use supertool for every file operation
 
 It is on PATH from any directory. Batch 6-7 ops per call — `read`, `grep`, `glob`, `map`, `around`,
-`between`, `tree` — never one read per file. Pipe edits in as a TOML payload on stdin, with
-`supertool 'edit:@-'` and a heredoc carrying `path`, `old` and `new` fields.
+`between`, `tree` — never one read per file. Pipe writes in as a TOML payload on stdin, and **which
+op depends on whether the file already exists**:
+
+- **Changing a file** — `supertool 'edit:@-'` with a heredoc carrying `path`, `old` and `new`.
+- **Creating one** — `supertool 'paste:@-'` with a heredoc carrying `path` and `content`. `paste`
+  creates missing parent directories and rewrites an existing file, so it covers the whole of a
+  Write.
+
+`edit` needs an `old`, and a file that does not exist has none, so `paste` is the only route to a new
+file. **Your changelog fragment is always a new file**, so every task reaches this at least once. A
+raw `cat > file <<EOF` is not a substitute and does not fail loudly when you use it: it runs no
+post-write validator, cannot roll back, and tells you nothing about what it wrote.
 
 Use triple-single-quoted literal strings for the field values. **A literal block processes no
 escapes**, so write exactly the bytes you want on disk — doubling a backslash puts two on disk, and
@@ -58,7 +68,7 @@ rule and the escape rule above fail in opposite directions, and both fail silent
 still parses either way: one puts too many bytes on disk, the other puts the wrong ones.
 
 You have **no** `Read`/`Edit`/`Write` tool to fall back to. `supertool 'ops'` lists everything, and
-`supertool 'help:edit'` shows the payload fields.
+`supertool 'help:edit'` and `supertool 'help:paste'` show the payload fields for each.
 
 **Do not pipe an op through `head`, `tail`, `sed` or `cut`.** The ops put the verdict at the top;
 both cuts select against the answer. Narrow the op instead.

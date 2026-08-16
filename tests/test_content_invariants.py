@@ -11,6 +11,7 @@ meant to anchor on, because a pattern that matched nothing has checked nothing.
 
 import json
 import re
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -2474,5 +2475,195 @@ def test_a_section_that_fences_nothing_is_its_own_answer():
     section = _verification_section(silent)
     assert _fenced_write_routes(section) is None
     assert _raw_writes_ahead_of_the_op(section) is None
+
+
+# ------------------------------------- the route to a file that does not exist yet (#250)
+#
+# Both documents that instruct an agent how to write a file named `edit` and nothing
+# else. `edit` takes an `old`, a new file has none, and every pull request in this
+# repository is required to add a changelog fragment -- which is always a new file. So
+# the one mandatory write in every task had no documented op, and agents fell back to a
+# raw heredoc: no post-write validator, no rollback, no receipt.
+#
+# The omission does not fail at the call the way a renamed op does. The heredoc runs.
+# That is why this is a checked invariant rather than a thing anyone would notice: it
+# reads as success. The jit rule that *does* name `paste` is `tool: Read|Edit|Write|Glob|
+# Grep`, so a Bash heredoc never fires it -- the pointer route is unreachable for exactly
+# this failure, which is the argument for naming the op in the brief instead.
+#
+# The paragraph is deliberately still in two places: agents/developer.md is the spawned
+# agent's own brief, and the blockquote in skills/manager/SKILL.md is pasted verbatim
+# into briefs for agents that never load developer.md. Neither can cite the other and
+# still be self-contained. The cost of keeping two copies is paid here -- this check is
+# the single copy of the *fact*, and it fails when either document loses it.
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from test_shipped_op_spellings import op_spellings  # noqa: E402
+
+WRITE_ROUTE_DOCUMENTS = (
+    REPO_ROOT / "agents" / "developer.md",
+    REPO_ROOT / "skills" / "manager" / "SKILL.md",
+)
+
+#: Ops that can bring a file into existence. `paste` is the one supertool ships;
+#: the tuple is the seam for a second, so a rename fails here rather than silently.
+CREATING_OPS = ("paste",)
+
+
+_BLOCKQUOTE_MARKER_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
+
+
+def _collapse(text):
+    """Blockquote markers dropped, then whitespace collapsed to single spaces.
+
+    Case is left alone, unlike `_flatten`: op names are matched here, and folding
+    case would let `PASTE` in a heading count as an invocation.
+
+    The marker strip is not cosmetic. The paragraph in skills/manager/SKILL.md is a
+    blockquote, so a wrap inside it inserts a `> ` and not just a newline -- with
+    whitespace collapsed alone, a phrase split across that wrap comes back with a
+    stray `>` wedged into the middle of it, and a document that says the right thing
+    is reported as one that does not. That was observed while writing this check,
+    against the wording this change lands, not reasoned about afterwards.
+    """
+    return " ".join(_BLOCKQUOTE_MARKER_RE.sub("", text).split())
+
+
+def _write_route_unmet(text):
+    """Findings about how a document tells an agent to write a file.
+
+    Read off a whitespace-collapsed copy on purpose. These documents wrap at 100
+    columns, and `supertool 'edit:@-'` already sits with the newline immediately
+    before it in agents/developer.md; one more word on that line and the wrap falls
+    between the command and its quoted argument, where a line-at-a-time reader sees
+    no invocation at all and reports the document clean. That is the #229 trap --
+    a checker whose finding is about its own reading -- and it is guarded below by a
+    control rather than by this docstring.
+    """
+    collapsed = _collapse(text)
+    ops = {op for op, _ in op_spellings(collapsed)}
+    creating = ops.intersection(CREATING_OPS)
+    unmet = set()
+    if not creating:
+        unmet.add("no-creating-op-is-named")
+    if "edit" in ops and not creating:
+        unmet.add("edit-is-named-with-no-way-to-create-a-file")
+    if "`path` and `content`" not in collapsed:
+        unmet.add("the-creating-op-s-payload-fields-are-not-named")
+    return unmet
+
+
+def test_both_write_route_documents_name_an_op_that_can_create_a_file():
+    findings = {
+        str(path.relative_to(REPO_ROOT)): sorted(
+            _write_route_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in WRITE_ROUTE_DOCUMENTS
+        if _write_route_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document that instructs an agent to write files names no op that can "
+        "create one, so the changelog fragment every pull request must add has no "
+        "documented route and the agent falls back to a validator-free heredoc: "
+        "{}".format(findings)
+    )
+
+
+def test_the_write_route_documents_exist():
+    """A path that stopped resolving would make the check above vacuously green."""
+    missing = [str(p) for p in WRITE_ROUTE_DOCUMENTS if not p.is_file()]
+    assert not missing, missing
+
+
+# The developer brief's paragraph as it stood before this change. Every anchor added
+# above must fire on it, or the check passes on the wording it was written against.
+PRIOR_WRITE_ROUTE = """
+It is on PATH from any directory. Batch 6-7 ops per call -- `read`, `grep`, `glob`, `map`, `around`,
+`between`, `tree` -- never one read per file. Pipe edits in as a TOML payload on stdin, with
+`supertool 'edit:@-'` and a heredoc carrying `path`, `old` and `new` fields.
+"""
+
+
+def test_the_write_route_check_fires_on_the_pre_250_wording():
+    assert _write_route_unmet(PRIOR_WRITE_ROUTE) == {
+        "no-creating-op-is-named",
+        "edit-is-named-with-no-way-to-create-a-file",
+        "the-creating-op-s-payload-fields-are-not-named",
+    }
+
+
+# A document that says the right thing, wrapped so the newline falls between
+# `supertool` and its quoted argument. Hand-wrapped prose does this; the reflow is
+# not aware of the inline code span.
+WRAPPED_CREATING_OP = (
+    "To create a file, pipe a TOML payload into `supertool\n"
+    "'paste:@-'` carrying `path` and `content`. To change an existing one, use\n"
+    "`supertool 'edit:@-'` with `path`, `old` and `new`.\n"
+)
+
+
+def test_a_line_wrapped_invocation_is_not_read_as_an_omission():
+    """Must-not-fire, with the two controls that stop it being a free pass.
+
+    The middle assertion is the load-bearing one: read a line at a time, this text
+    names no creating op at all. If the collapse were dropped, the check above would
+    start reporting a correct document as broken -- and, worse, the wording that
+    replaces it would be tuned until the line-based reader was happy.
+    """
+    assert _write_route_unmet(WRAPPED_CREATING_OP) == set()
+
+    line_at_a_time = {op for op, _ in op_spellings(WRAPPED_CREATING_OP)}
+    assert "paste" not in line_at_a_time, (
+        "the wrap control no longer wraps across the invocation, so it proves "
+        "nothing about the collapse: {}".format(sorted(line_at_a_time))
+    )
+
+    # Must-fire, in the same fixture: same wrapping, creating op taken back out.
+    without_paste = WRAPPED_CREATING_OP.replace("`supertool\n'paste:@-'`", "a heredoc")
+    assert _write_route_unmet(without_paste) == {
+        "no-creating-op-is-named",
+        "edit-is-named-with-no-way-to-create-a-file",
+    }
+
+
+# The same instruction inside a blockquote, wrapped mid-phrase -- the shape the
+# manager skill's brief template actually has. The wrap inserts a `> ` here, not
+# just a newline.
+WRAPPED_INSIDE_A_BLOCKQUOTE = (
+    "   > To create a file, `supertool 'paste:@-'` carrying `path` and\n"
+    "   > `content`; to change one, `supertool 'edit:@-'` with `path`, `old` and\n"
+    "   > `new`.\n"
+)
+
+
+def test_a_blockquote_wrap_does_not_read_as_a_missing_payload_field():
+    """Must-not-fire. Found by running the check against the wording this change
+    lands: collapsing whitespace alone left "`path` and > `content`", so the
+    document was reported for omitting the very fields it names.
+    """
+    assert _write_route_unmet(WRAPPED_INSIDE_A_BLOCKQUOTE) == set()
+
+    without_the_strip = " ".join(WRAPPED_INSIDE_A_BLOCKQUOTE.split())
+    assert "`path` and `content`" not in without_the_strip, (
+        "the blockquote control no longer wraps mid-phrase, so it proves nothing "
+        "about the marker strip: {!r}".format(without_the_strip)
+    )
+
+    # Must-fire, same fixture: the payload fields taken back out.
+    vague = WRAPPED_INSIDE_A_BLOCKQUOTE.replace("`path` and\n   > `content`", "a payload")
+    assert _write_route_unmet(vague) == {"the-creating-op-s-payload-fields-are-not-named"}
+
+
+def test_a_document_naming_neither_op_is_still_reported():
+    """The third state. Prose that instructs no write at all must not come back
+    clean just because it never mentioned `edit` -- the conditional anchor is
+    satisfied by silence, and the unconditional one is what catches it.
+    """
+    silent = "Read the file, decide what it should say, and make it say that."
+    assert _write_route_unmet(silent) == {
+        "no-creating-op-is-named",
+        "the-creating-op-s-payload-fields-are-not-named",
+    }
 
 
