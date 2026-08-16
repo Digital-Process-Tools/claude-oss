@@ -212,9 +212,13 @@ def test_a_tracked_file_it_cannot_read_is_reported_rather_than_skipped(tmp_path)
 # ------------------------------------------------------------------- the workflow
 
 
-def _shell_job():
-    """The `shell:` job's lines, from its key to the next job at the same indent."""
-    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+def _shell_job_lines(text):
+    """The `shell:` job's lines, from its key to the next job at the same indent.
+
+    Takes the text rather than reading the file, so the checks below can be pointed at
+    a fixture that is known to be wrong and watched fire.
+    """
+    lines = text.splitlines()
     start = None
     for index, line in enumerate(lines):
         if line.rstrip() == "  shell:":
@@ -227,6 +231,43 @@ def _shell_job():
             break
         body.append(line)
     return body
+
+
+def _shell_job():
+    return _shell_job_lines(WORKFLOW.read_text(encoding="utf-8"))
+
+
+def _extension_selectors(text):
+    """Lines of the `shell:` job that pick files by extension, comments excluded.
+
+    Comment lines are dropped, and that is not a loophole: the workflow's own comments
+    quote the glob to record why it was removed, and a check that could not tell a
+    quoted defect from an executed one would forbid documenting the fix.
+    """
+    code = [line for line in _shell_job_lines(text) if not line.strip().startswith("#")]
+    return [line.strip() for line in code if "*.sh" in line]
+
+
+#: The `shell:` job exactly as it stood at ce26035, the parent of the commit that fixed
+#: #193. The positive control for the two `not in` checks below: they are substring
+#: tests, and a substring test that has silently stopped matching -- a renamed job key,
+#: an indent change, a `_shell_job_lines` that returns nothing -- passes against any
+#: workflow at all, including this one.
+THE_JOB_AS_IT_WAS = """jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Syntax-check every script
+        run: |
+          for f in $(git ls-files '*.sh'); do bash -n "$f"; done
+      - name: shellcheck
+        run: |
+          shellcheck -S warning $(git ls-files '*.sh')
+
+  other:
+    runs-on: ubuntu-latest
+"""
 
 
 def test_the_shell_job_exists_and_has_a_body():
@@ -244,11 +285,15 @@ def test_the_shell_job_does_not_select_its_files_by_extension():
     that way is not a narrow selection -- it is a selection that structurally cannot see
     the file most worth reading.
     """
-    # Comment lines are dropped, and that is not a loophole: this file's own comments
-    # quote the glob to record why it was removed, and an assertion that cannot tell a
-    # quoted defect from an executed one would forbid documenting the fix.
-    code = [line for line in _shell_job() if not line.strip().startswith("#")]
-    offenders = [line.strip() for line in code if "*.sh" in line]
+    control = _extension_selectors(THE_JOB_AS_IT_WAS)
+    assert len(control) == 2, (
+        "the check cannot see the defect it is looking for: pointed at the job as it "
+        "stood at ce26035 it found {!r} instead of both `git ls-files '*.sh'` lines. "
+        "A `not in` that has stopped matching passes against every workflow there "
+        "is.".format(control)
+    )
+
+    offenders = _extension_selectors(WORKFLOW.read_text(encoding="utf-8"))
     assert not offenders, (
         "the shell job still selects files by extension: {}. `bin/oss-workspace` is "
         "tracked POSIX sh with no extension and is invisible to that glob, which is "
@@ -257,6 +302,12 @@ def test_the_shell_job_does_not_select_its_files_by_extension():
 
 
 def test_the_shell_job_derives_its_file_list_from_the_enumerator():
+    control = _shell_job_lines(THE_JOB_AS_IT_WAS)
+    assert control and not any("shell_sources.py" in line for line in control), (
+        "the control job, which predates the enumerator, reads as using it -- so this "
+        "check cannot distinguish a job that derives its list from one that does not"
+    )
+
     body = _shell_job()
     assert any("shell_sources.py" in line for line in body), (
         "the shell job does not run scripts/shell_sources.py. Naming each script in "
