@@ -481,6 +481,22 @@ rather than the claim**, which is the thing your own hands cannot do better:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <the report path the agent replied with>
 ```
 
+**This call has three answers, and the third is not a finding about the report.** The path above is
+`${CLAUDE_PLUGIN_ROOT}`, which resolves into the **installed** plugin — a copy that can implement an
+older contract than the clone the work was done in, and routinely does, because a merged fix is
+invisible to the running loop until a tag is cut and installed. So:
+
+- **`ok`**, with the contract version it validated against — the routine answer.
+- **A finding** — the report is wrong, and the message says how.
+- **`UNVALIDATABLE`, exit 2** — the report names a contract *this copy does not hold*. That is a
+  statement about the **validator**, not about the report, and it is the answer to relay rather than
+  a defect to chase. A copy predating that verdict spells the same fact as
+  `INVALID … schema_version: expected N, got M`, which reads as a finding and is not one.
+
+When the two disagree, **the clone is the authority** — it is the tree the work was done in and the
+tree the release will ship. Nothing distinguishes the two copies by name; both manifests read `oss`,
+so the disagreement is only visible if you know to look for it.
+
 **The report path, not the payload path** — and the reason is the same one that makes the call worth
 making. The `head` comparison above only exists where *both* documents are in hand: the validator
 opens the payload named at `pr_body.path` and compares its `head` to the report's `branch`. Handed
