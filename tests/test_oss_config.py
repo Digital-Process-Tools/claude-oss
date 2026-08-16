@@ -384,8 +384,21 @@ def test_a_symlinked_target_escaping_the_root_is_refused(tmp_path):
     outside.mkdir()
     try:
         (root / "evil").symlink_to(outside, target_is_directory=True)
-    except (OSError, NotImplementedError):
-        pytest.skip("this platform will not create a directory symlink without privileges")
+    except (OSError, NotImplementedError) as exc:
+        # The fixture is a measurement, not a given: symlink creation needs a
+        # privilege on Windows. Say which platform declined, what it raised and
+        # what therefore went untested -- a bare "will not create" reads as a
+        # property nobody had to check.
+        pytest.skip(
+            "{}: this platform would not create a directory symlink ({}, errno {!r}, "
+            "winerror {!r}), so 'a symlinked worktree target escaping the root is "
+            "refused' went untested here".format(
+                sys.platform,
+                type(exc).__name__,
+                getattr(exc, "errno", None),
+                getattr(exc, "winerror", None),
+            )
+        )
     with pytest.raises(oss_config.ContainmentError):
         oss_config.resolve_worktree(root, "evil")
 
