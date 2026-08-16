@@ -476,10 +476,21 @@ or not.
    absent, so the interpreter's "no such file" there is the ordinary case and not a validator that
    failed — do not read it as the `neither copy ran` outcome below.
 
+   **`UNVALIDATABLE` is not `INVALID`, and it is the answer you are most likely to get right now.**
+   A copy that prints `UNVALIDATABLE` and exits `2` is saying it does not hold the contract your
+   report names — a newer `schema_version` than it implements, an older one, or a schema declaring
+   no version at all. **It is not a finding about your report and you must not edit the report to
+   make it go away.** It carries the two numbers in one line, which is the skew stated by the tool
+   rather than reconstructed from a manifest comparison, so quote that line. A copy predating this
+   verdict says `INVALID … schema_version: expected N, got M` instead; that spelling is the same
+   fact and is read the same way. Only findings that are *not* about the version are yours to fix.
+
    **Only one copy exists** — the ordinary managed-repository case, and it is the majority. That
    copy's answer is simply the answer: `ok` is done, findings mean the report is wrong, fix the
-   report. There is no second opinion to have and nothing to record. Everything below is about the
-   case where two copies both ran:
+   report — **except `UNVALIDATABLE`, which means that copy cannot speak for your report at all**.
+   One copy does not make an unheld contract a defect: record it as a `tooling:` item and leave the
+   report alone. There is no second opinion to have otherwise, and nothing else to record.
+   Everything below is about the case where two copies both ran:
 
    - **Both say `ok`** — done.
    - **They agree on findings** — the report is wrong. Fix the report.

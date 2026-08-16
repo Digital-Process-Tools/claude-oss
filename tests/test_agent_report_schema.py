@@ -1130,10 +1130,19 @@ def test_main_returns_the_third_code_in_process_too(tmp_path, capsys):
 
 
 def test_every_verdict_names_the_contract_it_was_decided_against(tmp_path):
-    """#212's remedy, which const: 1 made useless -- both copies printed 1."""
+    """#212's remedy, which const: 1 made useless -- both copies printed 1.
+
+    The assertion is on the parenthetical and not on the bare number. Review of
+    the first version of this test caught it passing for free: pytest's tmp path
+    contains a digit run, so `"2" in stdout` was true with the feature deleted --
+    a test that would still pass if the code did nothing, guarding the one row
+    the remedy lives on.
+    """
     good = _report_with_payload(tmp_path, name="good.pr.json")
     done = _run(str(_write_report(tmp_path, good)))
-    assert str(_contract_version()) in done.stdout, done.stdout
+    assert "(report schema version {})".format(_contract_version()) in done.stdout, (
+        done.stdout
+    )
 
 
 def test_a_schema_that_names_no_contract_cannot_certify_a_report(tmp_path):
@@ -1150,6 +1159,26 @@ def test_a_schema_that_names_no_contract_cannot_certify_a_report(tmp_path):
     done = _run("--schema", str(schema_path), str(_write_report(tmp_path, good)))
     assert done.returncode == 2, done.stdout + done.stderr
     assert _verdict_lines(done.stdout, "UNVALIDATABLE"), done.stdout
+
+    # And it must not flip back to INVALID the moment the shape pass finds
+    # anything. Review caught exactly that: the ranking asked whether there were
+    # errors before asking whether this copy had any standing to call a report
+    # wrong, so a copy that had just said it cannot name its own contract went on
+    # to announce a verdict on somebody else's. The findings are still printed;
+    # only the word changes, and the word is the whole of #221.
+    also_broken = _report_with_payload(tmp_path, name="broken.pr.json")
+    also_broken.pop("docs")
+    done = _run(
+        "--schema", str(schema_path),
+        str(_write_report(tmp_path, also_broken, "broken.json")),
+    )
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert _verdict_lines(done.stdout, "UNVALIDATABLE"), done.stdout
+    assert not _verdict_lines(done.stdout, "INVALID"), done.stdout
+    assert "docs" in done.stdout, "the findings it could still see went missing"
+    assert "None" not in done.stdout, (
+        "a contract this copy cannot name must be described, not formatted as None"
+    )
 
 
 # --- the guard on the bump ----------------------------------------------------
@@ -1188,12 +1217,52 @@ def test_enforcing_content_that_moved_without_a_bump_is_caught():
     assert report_schema.contract_drift(changed) is not None
 
 
-def test_a_reworded_description_does_not_demand_a_bump():
-    """The must-not-fire half. Without it the guard would be satisfied by a hash
-    over the whole file, which would redden every pull request that touches a
-    sentence and train the reflex of bumping the number to make CI green."""
+def test_a_property_named_like_an_annotation_is_still_part_of_the_contract():
+    """The strip is by key name, and property names live in the same dicts.
+
+    This schema has a property literally called `title`, under
+    $defs/forge_payload/properties, and validate_pr_body refuses a payload whose
+    title is empty. The first version of the fingerprint walked into that map and
+    stripped it, so retyping or deleting a real constraint demanded no bump and
+    the guard reported clean -- an under-fire, which is the direction a guard
+    fails in silently. Both arms are must-fire.
+    """
+    forge = "forge_payload"
+    retyped = _schema()
+    retyped["$defs"][forge]["properties"]["title"] = {"type": "integer"}
+    assert report_schema.contract_drift(retyped) is not None
+
+    deleted = _schema()
+    del deleted["$defs"][forge]["properties"]["title"]
+    assert report_schema.contract_drift(deleted) is not None
+
+
+def test_prose_does_not_demand_a_bump_but_the_enforcement_lists_do():
+    """The must-not-fire half, and the line it draws, both pinned.
+
+    Without a must-not-fire arm the guard would be satisfied by a hash over the
+    whole file, which reddens every pull request that touches a sentence and
+    trains the reflex of bumping the number to make CI green -- a number moved to
+    silence a guard carries no more information than one that never moves.
+
+    The second half is the deliberate over-fire, argued rather than assumed.
+    x-enforced and x-enforced-on-disk read as prose and nothing in _walk consumes
+    them, but they are the schema's own statement of what a validator refuses,
+    paired one-to-one with the mutation table above. A change there is nearly
+    always a contract change; the false positive is a rename, and the cost of an
+    unnecessary bump is one recorded fingerprint, where the cost of a missed one
+    is two copies claiming the same version for different contracts.
+    """
     reworded = _schema()
     reworded["description"] = "Rewritten."
     reworded["properties"]["issue"]["description"] = "Also rewritten."
+    reworded["x-honesty"] = "Rewritten too."
     reworded["x-convention"] = list(reworded["x-convention"]) + ["and another one"]
     assert report_schema.contract_drift(reworded) is None
+
+    listed = _schema()
+    listed["x-enforced"] = list(listed["x-enforced"]) + ["something-new"]
+    assert report_schema.contract_drift(listed) is not None, (
+        "the enforcement lists are inside the fingerprint on purpose; if that "
+        "changes, change the sentence in x-honesty-versioning with it"
+    )

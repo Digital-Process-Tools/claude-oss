@@ -81,7 +81,7 @@ _ANNOTATION_KEYS = {
 # mutually incompatible schemas, and no fingerprint can be recovered for a contract
 # nobody recorded. Adding an entry here is the act of declaring a new contract.
 CONTRACT_FINGERPRINTS = {
-    2: "00e10e31d6d57ed0d936bf617ce5449df5c4cdb5667f1f9e2953ee4c3e8f3201",
+    2: "d687807f452f7aa4c4773519fcbc00ab3aff097c04facf1b5e2652bf931bcb70",
 }
 
 _TYPES = {
@@ -175,15 +175,24 @@ def version_verdict(report, schema):
     )
 
 
-def _strip_annotations(node):
+# Maps whose keys are NAMES rather than schema keywords. Stripping by key name inside
+# one of these deletes a real constraint: this document has a property literally called
+# `title` at $defs/forge_payload/properties, which validate_pr_body enforces, and a
+# strip that walked into it silently blessed retyping or deleting it. Found by review
+# on the first version of this fingerprint (#221), which is exactly the failure mode a
+# guard like this has -- it under-fires quietly and the guard still reports clean.
+_NAME_MAPS = {"properties", "$defs"}
+
+
+def _strip_annotations(node, keys_are_names=False):
     if isinstance(node, dict):
         return {
-            key: _strip_annotations(value)
+            key: _strip_annotations(value, key in _NAME_MAPS and not keys_are_names)
             for key, value in node.items()
-            if key not in _ANNOTATION_KEYS
+            if keys_are_names or key not in _ANNOTATION_KEYS
         }
     if isinstance(node, list):
-        return [_strip_annotations(item) for item in node]
+        return [_strip_annotations(item, False) for item in node]
     return node
 
 
@@ -194,6 +203,23 @@ def semantic_fingerprint(schema):
     sentence, which within a week teaches the reflex of bumping the version to
     make CI green -- and a number moved to silence a guard carries no more
     information than one that never moves at all.
+
+    The enforcement LISTS are deliberately inside it, though nothing in _walk
+    reads them: x-enforced and x-enforced-on-disk are the schema's own statement
+    of what a validator refuses, paired one-to-one with a mutation table, so a
+    change there is nearly always a contract change. The false positive is a
+    rename and costs one recorded fingerprint; the false negative costs two
+    copies claiming one version for two contracts.
+
+    What it cannot see, said here rather than discovered later: this fingerprints
+    the DOCUMENT. The cross-field rules live in _RULES as Python, and a contract
+    change made entirely there -- a rule function that starts refusing something
+    new, with no keyword moving in the schema -- changes what this validator
+    accepts and leaves this hash untouched. That gap is real and unguarded.
+
+    And the value is method-dependent: changing what gets stripped changes every
+    fingerprint without changing any contract, so the recorded entry is re-taken
+    rather than the version bumped when this function moves.
     """
     canonical = json.dumps(
         _strip_annotations(schema), sort_keys=True, separators=(",", ":"),
@@ -738,30 +764,41 @@ def main(argv=None):
             _line(sys.stderr, "the schema itself is unusable: {}".format(exc))
             return 1
 
-        # Three verdicts, ranked. A contract this copy does not hold dominates: the
-        # shape findings under it answer a question about OUR contract, so calling
-        # the file INVALID on their strength is the confident wrong answer #221 is
-        # about. `undecidable` only reaches UNVALIDATABLE when there is nothing else
-        # to say -- an unreadable file, a payload handed to the wrong validator or a
-        # report with no schema_version at all is a defect in the file, and the shape
-        # pass has already named it.
-        if state == VERSION_MISMATCH or (state == VERSION_UNDECIDABLE and not errors):
+        # Three verdicts, ranked, and the ranking turns on ONE question: can this copy
+        # speak for this report at all? It cannot when the numbers differ, and it
+        # cannot when the schema it loaded declares no number -- in that second case
+        # it holds no stateable contract, so it has no standing to call anything
+        # invalid, however much the shape pass found. Shape findings must never
+        # promote a foreign contract to INVALID: they answer a question about OUR
+        # contract, and letting them decide the word is the confident wrong answer
+        # #221 is about. What is left under `undecidable` is a report that named no
+        # version -- a defect in the file, which the shape pass has already named as
+        # a missing required key, so it lands on INVALID with everything else.
+        cannot_speak = (
+            state == VERSION_MISMATCH
+            or ours is None
+            or (state == VERSION_UNDECIDABLE and not errors)
+        )
+        if cannot_speak:
             unvalidatable = True
+            held = "version {}".format(ours) if ours is not None else (
+                "the schema this copy loaded, which names no contract"
+            )
             _line(sys.stdout, "UNVALIDATABLE {}".format(report))
             _line(sys.stdout, "  {}".format(sentence))
             if errors:
                 _line(sys.stdout, (
-                    "  the shape pass ran anyway, against version {}. These are "
-                    "findings about the contract THIS copy holds and are not "
-                    "necessarily defects in the report:".format(ours)
+                    "  the shape pass ran anyway, against {}. These are findings "
+                    "about the contract THIS copy holds and are not necessarily "
+                    "defects in the report:".format(held)
                 ))
                 for error in errors:
                     _line(sys.stdout, "    {}".format(error))
             else:
                 _line(sys.stdout, (
                     "  the shape pass found nothing, but it answered a question about "
-                    "version {} and not about the contract this report claims, so it "
-                    "is not necessarily a clean report.".format(ours)
+                    "{} and not about the contract this report claims, so it is not "
+                    "necessarily a clean report.".format(held)
                 ))
         elif errors:
             failed = True
