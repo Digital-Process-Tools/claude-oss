@@ -2334,6 +2334,15 @@ def _jit_path_parts(token):
     splits on the platform that wrote it, and a backslash stays an ordinary filename
     character on POSIX, where it legally is one. A component that would climb out of the
     install root resolves to nothing rather than to a file outside the tree.
+
+    Two components are refused, and the second is Windows-only in effect but guarded
+    unconditionally because a guard that only fires on the platform that broke is a guard
+    nobody re-reads. ``..`` climbs out. A component carrying a colon is a drive or a
+    stream specifier: ``PureWindowsPath("C:/plugin").joinpath("D:", "x.sh")`` is
+    ``D:x.sh`` -- the anchor resets and the join lands outside the install root
+    entirely, which would then be stat'ed and read. A colon is not a legal filename
+    character on Windows and is vanishingly rare on POSIX, so refusing it costs nothing
+    and is one refusal rather than a table of platform behaviours.
     """
     parts = [
         part
@@ -2341,6 +2350,8 @@ def _jit_path_parts(token):
         if part not in ("", ".")
     ]
     if not parts or ".." in parts:
+        return None
+    if any(":" in part for part in parts):
         return None
     return parts
 
@@ -2579,12 +2590,19 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
-    if unreadable:
+    incomplete = unreadable + unresolved
+    if incomplete:
+        # `unresolved` belongs here and not only in the empty-hook-set arm above. A
+        # manifest declaring two hooks where one is missing, and where the one that
+        # survived omits the layer, is not evidence of a gap: the missing hook is exactly
+        # where the enumeration might have been. An incomplete scan cannot say `unread`,
+        # for the same reason an unreadable file cannot.
         return (
             "could-not-determine",
-            "{} hook file(s) under {} would not be read ({}), so the scan is incomplete "
-            "and nothing here says whether {} is read".format(
-                len(unreadable), named, "; ".join(unreadable[:3]), layer
+            "{} hook file(s) under {} would not be read, or were declared or sourced and "
+            "not found ({}), so the scan is incomplete and nothing here says whether {} "
+            "is read".format(
+                len(incomplete), named, "; ".join(incomplete[:3]), layer
             ),
         )
 

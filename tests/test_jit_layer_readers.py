@@ -14,13 +14,29 @@ deliberately not cited here any more: the three this docstring used to name move
 fix, which is the failure mode `agents/developer.md` warns about in general terms and this
 file demonstrated in particular.
 
+**What counts as a hook is itself a measurement, and getting that wrong is #241.** The
+scan used to read every `*.sh` under the install root, and in 0.4.0 the only match in the
+whole tree is line 494 of the dependency's own `tests/test-layer-enumeration.sh` -- a
+fixture asserting that its enumerator works, which contains the layer list whether or not
+anything enumerates anything. The check therefore printed `reads` for a reason that would
+have held equally with the broken fixed list still in the hooks, which is what the first
+test below fabricates. Since #241 a hook is what the runtime executes: a script named by a
+`command` in the dependency's `hooks/hooks.json`, plus the closure of what those scripts
+`source`. Neither half alone is enough and neither is a path convention -- 0.4.0 declares
+four entry points under `scripts/` and puts its enumerator in `scripts/common.sh`, which it
+declares nowhere and every hook sources, beside four more scripts nothing wires to an event.
+
 Four states, and the third and fourth are the point:
 
   reads                 a hook's layer enumeration names our layer
-  unread                every enumeration found omits it -- a real gap, WARN
+  unread                every enumeration found in the hook set omits it -- a real gap, WARN
   could-not-determine   nothing was measured: the dependency is not installed, its
-                        tree was not found, a hook would not read, or no hook carries
-                        a fixed enumeration at all
+                        tree was not found, it carries no hook manifest so nothing
+                        separates a hook from a fixture, its manifest resolved to no
+                        file, a hook would not read, or no hook carries a fixed
+                        enumeration at all -- including the case where the only layer
+                        list in the tree sits outside the hook set, which is reported
+                        as the reason rather than dropped
   no-layer              this repo has no such layer, so there is nothing to read
 
 `could-not-determine` covers the case that matters most for durability. The upstream
@@ -327,6 +343,53 @@ def test_a_hook_manifest_that_will_not_parse_is_could_not_determine(tmp_path):
 
     cache, record = _cache(tmp_path / "control", {"pre-tool-hook.sh": NAMES})
     assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_declared_hook_that_is_missing_cannot_leave_the_rest_saying_unread(tmp_path):
+    """An incomplete hook set cannot report a gap, for the same reason an unreadable one
+    cannot: the hook that did not resolve is exactly where the enumeration might have
+    been.
+
+    Must-fire half on the identical tree: with both declared hooks present and both
+    omitting the layer, the gap is real and `unread` is the answer.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": OMITS},
+        declare=["pre-tool-hook.sh", "gone-hook.sh"],
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "gone-hook.sh" in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": OMITS, "gone-hook.sh": OMITS},
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "unread"
+
+
+def test_a_manifest_component_that_would_leave_the_install_root_resolves_to_nothing():
+    """`_jit_path_parts` is the chokepoint, and it is asserted on every platform.
+
+    The drive-letter case is Windows-only in effect -- `PureWindowsPath("C:/a").joinpath(
+    "D:", "x.sh")` is `D:x.sh`, outside the root the join was anchored on -- but the guard
+    is unconditional, so the assertion is not vacuous on the legs that cannot exhibit it.
+    Paired with the ordinary paths it must keep accepting, so a `_jit_path_parts` that
+    refused everything would fail here rather than pass.
+    """
+    assert doctor._jit_path_parts("scripts/pre-tool-hook.sh") == [
+        "scripts",
+        "pre-tool-hook.sh",
+    ]
+    assert doctor._jit_path_parts("/scripts/pre-tool-hook.sh") == [
+        "scripts",
+        "pre-tool-hook.sh",
+    ]
+    assert doctor._jit_path_parts("../../etc/evil.sh") is None
+    assert doctor._jit_path_parts("D:/evil/x.sh") is None
+    assert doctor._jit_path_parts("C:evil.sh") is None
+    assert doctor._jit_path_parts("") is None
 
 
 def test_an_enumeration_inside_a_comment_is_not_a_measurement(tmp_path):
