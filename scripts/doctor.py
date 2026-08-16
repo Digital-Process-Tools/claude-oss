@@ -2389,8 +2389,11 @@ def _jit_manifest_paths(root):
     diagnostic answering a question nobody asked.
 
     ``.claude-plugin/plugin.json`` may name the file. When it names one this cannot
-    resolve -- ``..``, a drive, empty -- ``rejected`` carries the string **as the plugin
-    wrote it** and there are no entries at all. It deliberately does not fall back to the
+    resolve -- ``..``, a drive, a backslash, empty -- ``rejected`` carries the string **as
+    the plugin wrote it**, followed by the refusal's own reason in parentheses, and there
+    are no entries at all. Both halves are needed: the string alone left #258's
+    backslash case looking like a typo in a filename, and the reason alone would name a
+    rule without the value it was applied to. It deliberately does not fall back to the
     convention, and that is the stronger of the two available answers: falling back reads
     a file the plugin did not name, which is #241's own substitution one field over. The
     cheap half of that bug is a message quoting the wrong path; the expensive half is a
@@ -2407,41 +2410,61 @@ def _jit_manifest_paths(root):
     except (OSError, ValueError):
         named = None
     if named:
-        parts = _jit_path_parts(named)
+        parts, reason = _jit_path_parts(named)
         if not parts:
-            return [], _one_line(named)
+            return [], "{} ({})".format(_one_line(named), reason)
         return [(root.joinpath(*parts), "/".join(parts))], None
     parts = list(JIT_HOOK_MANIFEST)
     return [(root.joinpath(*parts), "/".join(parts))], None
 
 
 def _jit_path_parts(token):
-    """A manifest path as components, or ``None`` if it is not one this can resolve.
+    """``(parts, reason)`` -- a manifest path as components, or why it was not resolved.
 
-    ``os.sep`` rather than a hardcoded separator: a Windows-style path in a manifest
-    splits on the platform that wrote it, and a backslash stays an ordinary filename
-    character on POSIX, where it legally is one. A component that would climb out of the
-    install root resolves to nothing rather than to a file outside the tree.
+    ``/`` is the separator on every platform and a backslash is refused rather than
+    guessed at. Splitting on ``os.sep`` made the answer a property of the runner (#258):
+    ``custom\\hooks.json`` was two components on Windows and one literal filename on the
+    eight POSIX legs, so one declaration produced ``reads`` on a fifth of the matrix and
+    ``could-not-determine`` -- blaming a file that was in fact present -- on the rest.
 
-    Two components are refused, and the second is Windows-only in effect but guarded
-    unconditionally because a guard that only fires on the platform that broke is a guard
-    nobody re-reads. ``..`` climbs out. A component carrying a colon is a drive or a
-    stream specifier: ``PureWindowsPath("C:/plugin").joinpath("D:", "x.sh")`` is
+    Refusing is the conservative half of a real choice and the permissive half was
+    available: treating ``\\`` as a separator everywhere would resolve a Windows-authored
+    declaration on all thirteen legs, uniformly. It is declined because a backslash is a
+    legal filename character on POSIX, so accepting it reads a file the manifest did not
+    name whenever the guess is wrong -- #241's substitution one field over, and here it
+    would convert an honest non-answer into a confident one. Nothing here can tell the two
+    intentions apart, and there is no authority this could transcribe and measure saying
+    which the runtime accepts, so the value goes to the third state carrying its reason
+    rather than to a guess. A plugin that wants to be read writes ``/``, which resolves
+    everywhere.
+
+    Two further components are refused, and the second is Windows-only in effect but
+    guarded unconditionally because a guard that only fires on the platform that broke is
+    a guard nobody re-reads. ``..`` climbs out. A component carrying a colon is a drive or
+    a stream specifier: ``PureWindowsPath("C:/plugin").joinpath("D:", "x.sh")`` is
     ``D:x.sh`` -- the anchor resets and the join lands outside the install root
     entirely, which would then be stat'ed and read. A colon is not a legal filename
     character on Windows and is vanishingly rare on POSIX, so refusing it costs nothing
     and is one refusal rather than a table of platform behaviours.
+
+    The reason is returned rather than logged because the caller writes it into the
+    message: an unresolvable declaration and an absent file are two situations, and #258
+    was the second one's sentence being printed about the first.
     """
-    parts = [
-        part
-        for part in token.replace(os.sep, "/").split("/")
-        if part not in ("", ".")
-    ]
-    if not parts or ".." in parts:
-        return None
+    if "\\" in token:
+        return None, (
+            "a backslash, which is a separator on Windows and an ordinary filename "
+            "character on POSIX -- nothing here can tell which was meant, and guessing "
+            "would read a file the plugin did not name"
+        )
+    parts = [part for part in token.split("/") if part not in ("", ".")]
+    if not parts:
+        return None, "no component left to resolve"
+    if ".." in parts:
+        return None, "a component that climbs out of the install root"
     if any(":" in part for part in parts):
-        return None
-    return parts
+        return None, "a component carrying a colon, which resets the anchor of a join"
+    return parts, None
 
 
 def _jit_commands(node, out):
@@ -2509,7 +2532,7 @@ def _jit_hook_files(roots):
                     cleaned = token.replace("${CLAUDE_PLUGIN_ROOT}", "").replace(
                         "$CLAUDE_PLUGIN_ROOT", ""
                     )
-                    parts = None if "$" in cleaned else _jit_path_parts(cleaned)
+                    parts = None if "$" in cleaned else _jit_path_parts(cleaned)[0]
                     candidate = root.joinpath(*parts) if parts else None
                     if candidate is not None and _jit_is_file(candidate):
                         hooks.append(candidate)
