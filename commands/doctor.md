@@ -67,7 +67,11 @@ does is not.
   `${CLAUDE_PLUGIN_ROOT}`, so the copy below is the one the harness resolved this command from.
 - `WARN … names <a>, but doctor.py ran from <b>` — a flag or an environment variable disagreeing
   with the file that actually executed. The tree that ran is the one reported; the attestation is
-  not evidence about it.
+  not evidence about it. **`/oss:doctor` cannot produce this state**: the launcher resolves the
+  script from `${CLAUDE_PLUGIN_ROOT}` and the command passes the same variable, so the two agree by
+  construction. It fires for a hand invocation naming a root, and for a script run out of one
+  checkout inside a session that exported `CLAUDE_PLUGIN_ROOT` pointing at another — which is the
+  ordinary shape of running a worktree's `doctor.py` from a maintainer session.
 - `WARN … not established` — nobody named a root, so the copy below is inferred from the script's
   own location. That is the ordinary state of `python3 scripts/doctor.py` run by hand, and it is a
   gap in the measurement rather than a fault in the repo. Do not relay it as a finding about the

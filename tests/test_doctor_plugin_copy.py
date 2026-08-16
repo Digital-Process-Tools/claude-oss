@@ -43,18 +43,26 @@ def clean_findings():
 
 
 def _plugin_tree(root, name="oss", version="0.5.0", contract="1"):
-    """A tree of the shape this check compares. `contract` is the thing that moves."""
+    """A tree of the shape this check compares. `contract` is the thing that moves.
+
+    Every file is written as BYTES with LF endings, never `write_text`. Text mode uses
+    `newline=None`, which translates to CRLF on Windows -- and then
+    `test_line_endings_alone_are_not_reported_as_a_skew`, which writes CRLF into the
+    other side, would be writing the bytes that were already there. Deleting the
+    normalisation from the code under test would leave all four Windows legs green:
+    coverage reported and not had, on the leg nobody re-reads.
+    """
     (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-    (root / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": name, "version": version}) + "\n", encoding="utf-8"
+    (root / ".claude-plugin" / "plugin.json").write_bytes(
+        (json.dumps({"name": name, "version": version}) + "\n").encode("utf-8")
     )
     for sub in ("agents", "commands", "skills", "scripts"):
         (root / sub).mkdir(parents=True, exist_ok=True)
-    (root / "commands" / "doctor.md").write_text("run the diagnostic\n", encoding="utf-8")
-    (root / "skills" / "manager.md").write_text("the loop\n", encoding="utf-8")
-    (root / "agents" / "developer.md").write_text("one issue\n", encoding="utf-8")
-    (root / "scripts" / "report_schema.py").write_text(
-        "SCHEMA_VERSION = {}\n".format(contract), encoding="utf-8"
+    (root / "commands" / "doctor.md").write_bytes(b"run the diagnostic\n")
+    (root / "skills" / "manager.md").write_bytes(b"the loop\n")
+    (root / "agents" / "developer.md").write_bytes(b"one issue\n")
+    (root / "scripts" / "report_schema.py").write_bytes(
+        "SCHEMA_VERSION = {}\n".format(contract).encode("utf-8")
     )
     return root
 
@@ -238,6 +246,61 @@ def test_an_unreadable_file_makes_the_comparison_incomplete_rather_than_clean(tm
     assert level == "WARN", message
     assert "could not be read" in message, message
     assert "identical" not in message, message
+    # The three assertions above are ALL satisfied by the SKEW branch, which appends
+    # the same sentence -- so without these two this test passes against the very bug
+    # it is named for. Two byte-identical trees with one unreadable file are UNKNOWN,
+    # not different, and the branch this test exists for is the one that says so.
+    assert "SKEW" not in message, message
+    assert "could not be answered" in message, message
+
+
+def test_an_unreadable_file_is_not_counted_into_a_real_difference(tmp_path):
+    """The must-fire beside it: a genuine difference elsewhere is still a SKEW, and the
+    unreadable path is not counted into the tally.
+    """
+    answered, checkout = _identical_pair(tmp_path)
+    (checkout / "skills" / "manager.md").write_text("the loop, revised\n", encoding="utf-8")
+    victim = checkout / "scripts" / "report_schema.py"
+    if not _deny_read(victim):
+        pytest.skip(
+            "the mode bit did not deny a read on this platform/filesystem; whether an "
+            "unreadable path is counted into a real skew went untested here"
+        )
+    try:
+        level, message = _line(_provenance(answered, checkout), COPY)
+    finally:
+        os.chmod(str(victim), stat.S_IRUSR | stat.S_IWUSR)
+
+    assert level == "WARN", message
+    assert "SKEW" in message, message
+    assert "differ in 1 of" in message, message
+    assert "skills/manager.md" in message, message
+    assert "could not be read" in message, message
+
+
+def test_a_symlinked_compared_directory_is_declined_rather_than_followed(tmp_path):
+    """`os.walk` always traverses the top it is given, symlink or not, so a tracked
+    `scripts -> /` would be an unbounded read inside a diagnostic contracted to finish.
+    """
+    answered, checkout = _identical_pair(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("not ours\n", encoding="utf-8")
+    victim = checkout / "scripts"
+    for entry in victim.iterdir():
+        entry.unlink()
+    victim.rmdir()
+    try:
+        victim.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(
+            "symlink refused ({}); the declined-symlink branch went untested".format(exc)
+        )
+
+    level, message = _line(_provenance(answered, checkout), COPY)
+    assert level == "WARN", message
+    assert "symlink" in message, message
+    assert "secret.txt" not in message, message
 
 
 def _deny_read(path):

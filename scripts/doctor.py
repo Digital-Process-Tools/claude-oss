@@ -3128,8 +3128,16 @@ SESSION_CAVEAT = (
 )
 
 
+def _relative_key(root, path):
+    """A relative POSIX key, or the flattened absolute path when it is not under root."""
+    try:
+        return Path(path).relative_to(root).as_posix()
+    except ValueError:
+        return _one_line(str(path), limit=120)
+
+
 def plugin_tree_digest(root):
-    """``({relative posix path: sha256}, [unreadable detail])``.
+    """``({relative posix path: sha256}, {relative posix path: why it could not be read})``.
 
     Two returns rather than one, for the reason ``_workflow_scan`` has two: a walk
     that could not enter a subtree and a subtree with nothing in it produce the same
@@ -3148,24 +3156,34 @@ def plugin_tree_digest(root):
     than hidden: a difference that is ONLY line endings is invisible here.
 
     Keys are relative POSIX paths, so the two sides compare equal on Windows, where
-    the walk yields backslashes.
+    the walk yields backslashes. The unreadable half is keyed the same way on purpose:
+    the caller has to be able to subtract those keys from the comparison, because a
+    path present on one side and unreadable on the other is *unknown*, not different,
+    and reporting it as a difference is the loud-but-wrong answer this whole check
+    exists to avoid.
+
+    A compared directory that is a symlink is declined rather than followed.
+    ``os.walk`` refuses symlinked *sub*directories and always traverses the top it was
+    given, so ``scripts -> /`` in a tracked repo would be an unbounded read inside a
+    diagnostic contracted to always finish. Declining is recorded as unreadable, which
+    is what it is: nothing under it was seen.
     """
     root = Path(root)
     files = {}
-    unreadable = []
+    unreadable = {}
 
     def onerror(exc):
         if isinstance(exc, FileNotFoundError):
             return
-        unreadable.append(
-            "{}: {}".format(
-                _one_line(getattr(exc, "filename", "?"), limit=120), exc.__class__.__name__
-            )
-        )
+        unreadable[_relative_key(root, getattr(exc, "filename", "?"))] = exc.__class__.__name__
 
     targets = []
     for name in COMPARED_DIRECTORIES:
-        for dirpath, dirnames, filenames in os.walk(str(root / name), onerror=onerror):
+        top = root / name
+        if os.path.islink(str(top)):
+            unreadable[name] = "declined: it is a symlink, so nothing under it was read"
+            continue
+        for dirpath, dirnames, filenames in os.walk(str(top), onerror=onerror):
             dirnames[:] = sorted(d for d in dirnames if d not in SKIPPED_DIRECTORIES)
             for filename in sorted(filenames):
                 targets.append(Path(dirpath) / filename)
@@ -3178,15 +3196,11 @@ def plugin_tree_digest(root):
         except FileNotFoundError:
             continue
         except OSError as exc:
-            unreadable.append(
-                "{}: {}".format(_one_line(str(path), limit=120), exc.__class__.__name__)
-            )
+            unreadable[_relative_key(root, path)] = exc.__class__.__name__
             continue
-        try:
-            key = path.relative_to(root).as_posix()
-        except ValueError:  # pragma: no cover - every target is built under root
-            continue
-        files[key] = hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+        files[_relative_key(root, path)] = hashlib.sha256(
+            data.replace(b"\r\n", b"\n")
+        ).hexdigest()
     return files, unreadable
 
 
@@ -3231,7 +3245,7 @@ def _tree_identity(root, files, unreadable=()):
     incomplete = ""
     if unreadable:
         incomplete = ", and {} path(s) could not be read ({}), so this digest is over " \
-            "less than the whole tree".format(len(unreadable), _named_few(list(unreadable)))
+            "less than the whole tree".format(len(unreadable), _named_few(_detail_list(unreadable)))
     return "{}, content {} over {} file(s){}".format(
         _git_head(root), digest.hexdigest()[:12], len(files), incomplete
     )
@@ -3275,6 +3289,42 @@ def plugin_attestation(flag, env_value):
     if env_value:
         return Path(os.path.expanduser(str(env_value))), "CLAUDE_PLUGIN_ROOT"
     return None, None
+
+
+def _under_blocked(key, blocked):
+    """Is `key` inside something nobody could read?
+
+    Prefix matching, not equality: ``os.walk``'s error handler names the DIRECTORY it
+    could not enter, and the files under it exist on the other side under their own
+    keys. Comparing by equality alone would subtract the directory and then score every
+    file beneath it as present-on-one-side-only, which is the same wrong answer one
+    level up.
+    """
+    if key in blocked:
+        return True
+    return any(key.startswith(entry + "/") for entry in blocked)
+
+
+def _detail_list(unreadable):
+    """``{key: why}`` flattened to sorted ``key (why)`` strings, for printing."""
+    return ["{} ({})".format(key, unreadable[key]) for key in sorted(unreadable)]
+
+
+def _merge_unreadable(left, right):
+    """Both sides' unknowns, keyed the same way, with the side named when they differ.
+
+    A key unreadable on both sides is one unknown, not two -- counting it twice would
+    make the printed count disagree with the set that was actually subtracted from the
+    comparison, and the count is the only thing telling a reader how much of the answer
+    is missing.
+    """
+    merged = dict(left)
+    for key, why in right.items():
+        if key in merged and merged[key] != why:
+            merged[key] = "{} on one side, {} on the other".format(merged[key], why)
+        else:
+            merged[key] = why
+    return merged
 
 
 def _named_few(names, limit=3):
@@ -3398,14 +3448,22 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
 
     their_files, their_unreadable = plugin_tree_digest(project_dir)
     their_identity = _tree_identity(project_dir, their_files, their_unreadable)
-    every = set(files) | set(their_files)
+
+    # A path unreadable on either side is UNKNOWN, not different. It is absent from
+    # that side's map, so a plain symmetric difference scores it as a file present on
+    # one side only and reports two byte-identical trees as a SKEW -- the loud-but-wrong
+    # answer, in the check written to avoid exactly that. Subtracted here, and reported
+    # separately below, because "we could not look at this one" is its own state.
+    blocked = _merge_unreadable(unreadable, their_unreadable)
+    every = {
+        key for key in (set(files) | set(their_files)) if not _under_blocked(key, blocked)
+    }
     differing = sorted(key for key in every if files.get(key) != their_files.get(key))
-    blocked = unreadable + their_unreadable
     version = _version_sentence(ours.get("version"), theirs.get("version"))
     incomplete = ""
     if blocked:
         incomplete = " {} path(s) could not be read ({}), so this did not compare the " \
-            "whole tree.".format(len(blocked), _named_few(blocked))
+            "whole tree.".format(len(blocked), _named_few(_detail_list(blocked)))
 
     if differing:
         lines.append(
@@ -3437,7 +3495,7 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
                 "it did compare match. The copy that answered is {} ({}); the "
                 "checkout being diagnosed is {} ({}).".format(
                     len(blocked),
-                    _named_few(blocked),
+                    _named_few(_detail_list(blocked)),
                     len(every),
                     script_root,
                     identity,
