@@ -275,6 +275,52 @@ def _says_an_unread_channel_is_not_a_quiet_one(text):
     )
 
 
+# --------------------------------------------------------------------------- #
+# The bare heal is a step of its own, with its own three outcomes (#208).
+#
+# #187 landed the read-only probe and stopped there: the file ordered
+# `radar:--state`, then said "tiers are registered -- run bare `radar`" in
+# prose and named no outcome for that run. So all three states the step carried
+# were states of the *probe*, and a bare call that errored, a bare call that
+# refused for want of a tier, and a bare call that healed nothing all left the
+# tick with the same thing to report -- nothing. That is the absence this
+# repository is named after, sitting inside the step written to close it.
+#
+# The predicates below require the write half to be invoked, its refusal to be
+# stated as a non-failure, and the probe's channel-ownership line to be relayed
+# rather than swallowed -- a step that forks pollers into a fleet whose name
+# came from the environment is healing something that may not be this repo's.
+# --------------------------------------------------------------------------- #
+
+#: A bare `supertool 'radar'` line. Deliberately anchored on the whole argument:
+#: `_invokes_op(text, "radar")` also matches the `radar:--state` probe, so the
+#: loose spelling would certify the exact file #208 was filed against.
+BARE_RADAR_RE = re.compile(r"^\s*supertool\s+'radar'\s*$", re.M)
+
+
+def _orders_the_bare_radar_heal(text):
+    """The write half is run, not described as a thing that exists."""
+    return bool(BARE_RADAR_RE.search(text))
+
+
+def _carries_the_bare_radar_outcomes(text):
+    """The refusal is a state, and the failure to run is a different state."""
+    return bool(re.search(r"could not raise", text, re.I)) and bool(
+        re.search(r"must not be reported as a failure", text, re.I)
+    )
+
+
+def _relays_the_channel_ownership_warning(text):
+    return "watch_name" in text and bool(re.search(r"another project's fleet", text))
+
+
+def _says_an_empty_poller_list_is_not_an_absent_fleet(text):
+    """`pollers : none` is what the probe prints for the case the heal exists for."""
+    return bool(re.search(r"pollers\s*:\s*none", text, re.I)) and bool(
+        re.search(r"the second answer, not the first", text, re.I)
+    )
+
+
 def _orders_the_worktree_board(text):
     return _invokes_op(text, "git-worktrees")
 
@@ -457,6 +503,22 @@ TICK_FACTS = [
         "an unread channel is not a quiet one",
         _says_an_unread_channel_is_not_a_quiet_one,
         r"not a quiet channel|forwarded is not delivered",
+    ),
+    ("the bare heal is run, not named", _orders_the_bare_radar_heal, r"supertool 'radar'"),
+    (
+        "the bare run has its own three outcomes",
+        _carries_the_bare_radar_outcomes,
+        r"could not raise|must not be reported as a failure",
+    ),
+    (
+        "the channel-ownership warning is relayed",
+        _relays_the_channel_ownership_warning,
+        r"watch_name|another project's fleet",
+    ),
+    (
+        "an empty poller list is not an absent fleet",
+        _says_an_empty_poller_list_is_not_an_absent_fleet,
+        r"pollers\s*:\s*none|the second answer, not the first",
     ),
     ("the worktree board is run, not named", _orders_the_worktree_board, r"git-worktrees"),
     (

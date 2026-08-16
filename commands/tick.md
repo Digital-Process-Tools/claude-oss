@@ -60,17 +60,49 @@ Skill(manager)
 
    It has three answers and the third is not the first. **The preset is not enabled here, or no
    tier is registered** — there is no fleet to read, and the tick says so rather than passing over
-   it. **Tiers are registered** — run bare `radar` and read its delivery tally. **The probe itself
-   did not answer** — that is `unknown`, and it is reported, not skipped past.
+   it. **Tiers are registered** — run the heal below. **The probe itself did not answer** — that is
+   `unknown`, and it is reported, not skipped past.
+
+   **A tier that resolved over `pollers : none` is the second answer, not the first.** That is the
+   case the heal exists for, and it is the one that reads like the absence of a fleet: a repo which
+   registered a board and has never spawned a poller prints an empty list, exactly as a repo with
+   no board would. What settles which answer you are in is whether the probe resolved a tier module,
+   never how long its poller list is. Read it the other way and the board stays unraised across
+   every tick that repo ever runs, with nothing anywhere reporting a fault.
+
+   ```bash
+   supertool 'radar'
+   ```
+
+   Bare `radar` heals and forks pollers. That is a write, not a read, which is why the probe is a
+   separate call rather than folded into it — you run the repair deliberately, having seen what
+   needs repairing. It respawns watchers for open pull requests with no live poller and puts the
+   default branch on the board as a member, which is the red-default-branch case no pull request
+   covers. `radar:--state` buys none of that: it spawns nothing and reaps nothing, so a tick that
+   only probes has reported a fleet it also declined to bring up.
+
+   **The heal has its own three outcomes, and they are not the probe's.** *Raised* — the tiers
+   resolved and the board printed; report its counts. *Not configured* — no tier is registered, so
+   the op refuses by design and names the fix. That is the correct state for a repo that never opted
+   in, it is where most managed repos are, and it **must not be reported as a failure**. *Could not
+   raise* — it is registered and it still did not run, and the step says which: the `watch` preset
+   is absent from `presets`, which `/oss:doctor` reports as `no-route` — not its `route-unknown`,
+   which is the different answer for a `presets` key that could not be read at all — or the spawn
+   itself errored. A heal that errored and a heal that found nothing to repair both end with no new
+   watcher, so `could not raise` is reported as itself or it is indistinguishable from a fleet that
+   was already up.
+
+   **Relay the probe's channel line rather than swallowing it.** When `.supertool.json` declares no
+   `watch_name` in any op block, the channel name came from the environment, and the probe says so
+   in as many words: this socket and these poller slots **may be another project's fleet**. The heal
+   is a write into whatever that name resolves to, so a tick that forks pollers without repeating
+   the line has reported a repair it cannot attribute — and an attribution nobody can check is worth
+   less than one nobody claimed.
 
    Read the tally, not the fact that the call succeeded: **forwarded is not delivered**. A poller
    that is down and a poller with nothing to say produce the same silence, so a channel nobody
    probed is **not a quiet channel** — it is a channel with no reading, and reporting it as calm is
    this loop's own defect class landing on the loop's own instrumentation.
-
-   Bare `radar` heals and forks pollers. That is a write, not a read, which is why the probe is a
-   separate call rather than folded into it — you run the repair deliberately, having seen what
-   needs repairing.
 
 3. **Act on what is open before starting anything new.** A merged-but-unverified PR, a red default
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
