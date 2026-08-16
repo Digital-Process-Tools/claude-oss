@@ -82,8 +82,15 @@ The channel's **name** gets the same treatment, because a name that does not arr
 session on the socket shared with every repo that declares none, which renders as a quiet board too.
 One rule decides what a name may be, and both roads reach it: a `watch_name` declared in the repo's
 `.supertool.json` and a name derived from `repo` in `.oss.json` are checked by the same function, and
-a value that cannot be used as a path component is refused out loud rather than exported. What that
-rule deliberately does not decide is whether supertool will *accept* the name — it has its own
+a value that cannot be used as a path component is refused out loud rather than exported. A refusal
+names the channel the session **actually** landed on rather than assuming the shared one: an already
+exported `SUPERTOOL_WATCH_NAME` wins over both roads, so a refusal there costs nothing and the session
+stays on that channel, and the receipt says so. There is a third road out of the declared route too — a
+name a repo declares and this console's encoding cannot carry. The name is read back through the
+launcher's own stdout, so an unencodable one cannot arrive at all; it is reported as declared-and-
+unrenderable rather than printed mangled or silently derived over, because a declaration that exists
+is not a declaration that is absent. What that rule deliberately does not decide is whether supertool
+will *accept* the name — it has its own
 pattern, with a length cap. Rather than carry a copy of it here to go stale, the launcher reads that
 rule out of the installed supertool and reports what it finds, in three states: accepted says
 nothing, a name the consumer will discard is named with its length and the rule that refused it, and

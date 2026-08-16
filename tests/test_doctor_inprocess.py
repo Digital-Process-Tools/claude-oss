@@ -2059,10 +2059,21 @@ def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
     ]
     accepted = 0
     refused = 0
+    # Since #270 the block takes a third argument: the one sentence saying where the
+    # session actually landed, computed once by the shell and handed to every arm. It
+    # used to be spelled out inside each heredoc, which is why one arm got fixed and
+    # eight did not. This caller has no session, so it passes a sentinel and asserts
+    # the sentinel comes back -- restating the real sentence here would put a second
+    # spelling of it in the repository, which is the defect being closed.
+    #
+    # What the sentence SAYS, in both directions and per arm, is measured in
+    # tests/test_workspace_launcher.py against the launcher actually running.
+    landing = "LANDING-SENTENCE-FROM-THE-CALLER."
     for repo in repos:
         _oss_config_doc(tmp_path, {"repo": repo})
         run = subprocess.run(
-            [sys.executable, str(script), str(target), str(REPO_ROOT / "scripts")],
+            [sys.executable, str(script), str(target),
+             str(REPO_ROOT / "scripts"), landing],
             capture_output=True,
             text=True,
             timeout=120,
@@ -2077,7 +2088,7 @@ def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
             refused += 1
             # A refusal that says nothing is the shared default socket reached in
             # silence, which is the state this whole check exists to report.
-            assert "SHARED DEFAULT" in run.stderr, (repo, run.stderr)
+            assert landing in run.stderr, (repo, run.stderr)
         else:
             accepted += 1
     # Both halves of the table were exercised. Without this the guard passes
