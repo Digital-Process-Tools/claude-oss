@@ -799,6 +799,106 @@ def test_a_repo_with_a_space_is_refused_rather_than_sanitised_into_a_name(tmp_pa
 # exists) and it wants its own change.
 
 
+# --- a DECLARED name the launcher exported verbatim (#230) --------------------
+#
+# `.supertool.json` is tracked too, so a declared `watch_name` arrives by ordinary
+# contribution exactly the way `repo` does. #207 routed the DERIVED route through
+# `oss_config`; the declared route three lines above it was left exporting whatever
+# it read. Measured on this script before the fix: `../../../tmp/pwned` was exported
+# as `../../../tmp/pwned`, and a name carrying a newline was exported carrying it.
+#
+# The fix is not "validate the declared name with the function the derived route
+# uses" -- that function takes an `owner/name` slug and folds it, and a declared name
+# is not a slug. It is that both routes now produce a value of the same KIND, a watch
+# channel name, and there is one statement of what such a value may be
+# (`oss_config.watch_name_problem`) with one call site in this script, after the two
+# routes converge. A bypass is a route that does not reach the gate, and there is
+# now nowhere else a name is produced.
+#
+# What the rule refuses is chosen from the harm this plugin can argue on its own:
+# the consumer turns the name into a socket path and a state directory, so a value
+# that is not usable as a path component is refused. It is deliberately NOT the
+# consumer's `NAME_RE`, which also caps the length and constrains the first
+# character. Refusing on those would take a working private channel away from a
+# repository whose consumer accepts it -- a future supertool raising the cap, say.
+# That question is asked of the consumer and reported instead (#231).
+
+REFUSED_DECLARED_NAMES = [
+    "../../../tmp/pwned",
+    "..",
+    "sub/dir",
+    "has space",
+]
+
+
+@pytest.mark.parametrize("value", REFUSED_DECLARED_NAMES)
+def test_a_declared_watch_name_that_is_not_a_path_component_is_refused(tmp_path, value):
+    """Read out of the process the launcher exec'd, never out of the script's text.
+
+    Before the fix each of these was exported verbatim, so the empty string here
+    cannot be produced by a launcher that does nothing.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, value)
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    # The route is named, because a maintainer with both files has to know which one
+    # to open -- and the derivation did not silently run in its place.
+    assert ".supertool.json" in done.stderr, done.stderr
+    assert _exported_watch_name(repo) != "owner-name", done.stderr
+
+
+def test_a_declared_name_carrying_a_newline_is_refused(tmp_path):
+    """Separate from the parametrised case so the value survives the fixture.
+
+    A newline in a declared name reached the export intact before the fix. It is
+    kept out of `REFUSED_DECLARED_NAMES` because a pytest test id built from it is
+    unreadable, not because it is a different defect.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "a" + chr(10) + "b")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
+def test_the_refusal_did_not_delete_the_declared_route(tmp_path):
+    """The must-fire half of the pair above, in the same fixture shape.
+
+    Without it, a launcher that stopped honouring declarations altogether -- or one
+    that refused every name -- would satisfy every assertion above, and the whole
+    point of reading `.supertool.json` would be silently deleted by the fix.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "declared-by-hand")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "declared-by-hand", done.stderr
+    assert "SHARED DEFAULT" not in done.stderr, done.stderr
+
+
+def test_a_declared_name_cannot_be_checked_without_the_validator(tmp_path):
+    """The third state, and it has to refuse rather than fall through.
+
+    The gate imports `oss_config` from this plugin's own tree. A tree with no
+    `scripts/` is "could not check", and exporting the declared name anyway there
+    would make the guard disappear in exactly the case where it is missing -- the
+    absence this repository is named after, one layer down. The name is a valid one
+    on purpose: what is under test is the missing validator, not the value.
+    """
+    repo = _repo(tmp_path / "repo")
+    _declare_watch_name(repo, "declared-by-hand")
+    done, argv = run(
+        repo, with_channel=True, launcher=_launcher_without_its_scripts(tmp_path)
+    )
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
 def _launcher_without_its_scripts(tmp_path):
     """A copy of the launcher under a plugin root carrying no `scripts/`.
 
