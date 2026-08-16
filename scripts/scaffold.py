@@ -1284,6 +1284,19 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
         vocabulary the rest of the plan already uses, and the layer's file count is not
         stable across plugin versions -- which is an argument for showing it, not
         against. ``body`` is what would be written, and is ``None`` on a ``remove``.
+
+        **Every ``path`` here is a single line, including the ``remove`` rows built
+        from filenames in the managed repository** (#223). Callers print these rows
+        without re-flattening, so the guarantee is the structure's rather than each
+        caller's -- see the comment on the ``remove`` row below for why that is the
+        fix and another flatten-at-the-print is not.
+
+        Two statements print these rows today: ``_main``'s plan loop and its apply
+        receipt. ``show()`` reads the same list and takes only ``replace`` rows, so it
+        never carried the payload. #223 named three prints; the third is ``plan()``'s
+        template rows, whose paths this module ships and which were never a hole. The
+        number is exactly what must not be load-bearing, which is why the guarantee is
+        stated here rather than counted at the call sites.
     ``unreadable``
         Layer directories this process could not list. Their contents are unknown rather
         than empty, so the ``remove`` rows are incomplete rather than absent.
@@ -1404,7 +1417,39 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
     for path in sorted(set(present) - shipped):
         rows.append(
             {
-                "path": path,
+                # Flattened here, and here only (#223). These names are walked out of
+                # the MANAGED repository's own layer directory, so they are data, and a
+                # newline in one is legal POSIX and refused by nothing upstream. Left
+                # raw, the `remove` row ends at the newline and the rest of the filename
+                # starts at column 0 of the receipt -- where a payload spelling
+                # `WROTE: 0 template(s), replaced 0 file(s) ...` is indistinguishable
+                # from the line this command prints itself, eleven lines further down,
+                # for a run that wrote fourteen files and replaced seven.
+                #
+                # THE CHOKEPOINT, not the print statements, and that choice is the whole
+                # fix. #182 added these rows; #204 flattened four OTHER rows at their
+                # prints and its message said every receipt row was covered. Both
+                # commits are correct alone -- the rule-layer rows are printed by two
+                # further statements that were not in that four, so no per-diff review
+                # could see the hole. Repeating #204's per-site shape here would leave
+                # the next print statement somebody adds in exactly the same position.
+                # This is the one place a repository-derived name enters `entries`, so
+                # flattening it here is an invariant every consumer inherits without
+                # knowing it exists: both prints, `show()` if the removal rows ever gain
+                # a body, and `doctor` if it ever renders them.
+                #
+                # At the row rather than in `_layer_scan`: `present` is set-differenced
+                # against `shipped` two lines up, and flattening before that comparison
+                # would let a repo file whose name differs from a shipped one only in
+                # whitespace collide with it and lose its `remove` row entirely -- a
+                # deletion that happens and is not reported, which is a worse bug than
+                # the one being fixed. The comparison keeps the bytes on disk; only the
+                # rendering is flattened.
+                #
+                # Flattened, not dropped and not refused, for `_one_line`'s own reason:
+                # the name is the evidence a maintainer needs in order to judge a
+                # deletion. What it must not have is a line of its own.
+                "path": _one_line(path),
                 "action": "remove",
                 "reason": _RULE_REMOVE_REASON.format(oss_rules.LAYER),
                 "body": None,
