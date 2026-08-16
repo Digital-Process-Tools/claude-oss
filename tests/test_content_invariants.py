@@ -2243,3 +2243,127 @@ def test_the_doctor_convention_check_fires_on_the_documents_as_they_were():
     )
 
 
+# --- #195: a body write is confirmed by re-reading the body, never by the exit ---
+#
+# The section documented one write call and stopped there. That call was observed
+# failing against a `gh` old enough to still request `projectCards` -- the edit did
+# not land, and the error named a field the caller never asked for, so it reads as
+# Projects noise rather than as an unwritten body. The mechanism is a version
+# accident and will age out; the invariant is that the record is confirmed by
+# looking at what was published. So the anchor is on the read-back, not on which
+# call does the writing -- a section that swaps `gh pr edit` for the REST route,
+# or back again once `gh` is current, still has to satisfy this.
+
+VERIFICATION_HEADING = "### Your verification is a different voice, so append it"
+
+# Calls that replace a pull request body. Both are whole-body writes; neither
+# route has a partial append, which is why an unread result is a lost record
+# rather than a partial one.
+BODY_WRITE_CALLS = ("gh pr edit", "-X PATCH")
+
+# The read-back, named as the op rather than as a phrase: the invariant is that
+# the section sends the reader to the published body, not that it says the word.
+BODY_READ_BACK = "gh-pr:"
+
+
+def _verification_section(text=None):
+    """The section's text, or None if the heading moved.
+
+    None and "" are different answers: a heading that moved is not a section with
+    nothing in it, and the findability test below is what keeps the checks from
+    passing over the first case.
+    """
+    text = MANAGER_SKILL.read_text(encoding="utf-8") if text is None else text
+    at = text.find(VERIFICATION_HEADING)
+    if at < 0:
+        return None
+    tail = text[at + len(VERIFICATION_HEADING):]
+    stop = tail.find("\n## ")
+    return tail if stop < 0 else tail[:stop]
+
+
+def _writes_without_read_back(section):
+    """The body-write calls in SECTION with no read-back anywhere after them.
+
+    () means every write named is followed by one. A section naming no write at
+    all also returns (), which is why the findability test asserts a write is
+    present -- otherwise deleting the call would read as compliance.
+    """
+    unconfirmed = []
+    for call in BODY_WRITE_CALLS:
+        at = section.rfind(call)
+        if at < 0:
+            continue
+        if BODY_READ_BACK not in section[at:]:
+            unconfirmed.append(call)
+    return tuple(unconfirmed)
+
+
+def test_the_verification_section_is_findable_and_names_a_write():
+    """Vacuity guard for the check below, in both directions."""
+    section = _verification_section()
+    assert section is not None, (
+        "no {!r} in skills/manager/SKILL.md -- the read-back check would pass "
+        "over nothing".format(VERIFICATION_HEADING)
+    )
+    named = [call for call in BODY_WRITE_CALLS if call in section]
+    assert named, (
+        "the verification section names none of {!r}, so it documents no way to "
+        "record a verification at all -- the read-back check below would pass "
+        "vacuously".format(BODY_WRITE_CALLS)
+    )
+
+
+def test_every_body_write_in_the_verification_section_is_confirmed_by_a_read_back():
+    """#195. The documented append did not land and the section had no step that
+    would have noticed. Whichever call writes the body, the section has to send
+    the reader back to the published body afterwards.
+    """
+    section = _verification_section()
+    assert section is not None
+    unconfirmed = _writes_without_read_back(section)
+    assert unconfirmed == (), (
+        "the verification section names {!r} with no {!r} read-back after it: a "
+        "verification reported from the command's exit is a record nobody "
+        "read".format(unconfirmed, BODY_READ_BACK)
+    )
+
+
+def test_the_read_back_check_fires_on_the_section_as_it_was():
+    """Positive control, and the reason the check above is worth its lines. This
+    is the section as it stood before #195 -- one write call, correct about voice,
+    silent on confirming that the write landed. The anchor must be unmet against
+    it, or it was satisfied by wording the file already had.
+    """
+    before = (
+        VERIFICATION_HEADING + "\n\n"
+        "If you verified something the agent could not, append a `## Verified by "
+        "the maintainer` section to the body -- never edit the agent's text into "
+        "agreement with you.\n\n"
+        "This happens at review time, not at creation time, and there is no op "
+        "for it: `gh-pr-create` consumes the payload once and there is no "
+        "`gh-pr-edit`. Use raw `gh`:\n\n"
+        "```bash\n"
+        "gh pr edit <N> --body-file <a file holding the agent's body plus your "
+        "appended section>\n"
+        "```\n\n"
+        "Read the agent's body back out first rather than reconstructing it -- "
+        "`--body-file` replaces the whole body, so an append built from memory "
+        "silently truncates the record you were protecting.\n"
+    )
+    assert _verification_section(before) is not None, "the control lost its own heading"
+    assert _writes_without_read_back(_verification_section(before)) == ("gh pr edit",)
+    # Must-fire half: a passing state is reachable, not merely absent. Note the
+    # control above already says "read the agent's body back out" -- that is about
+    # the body before the write. Only a read after it satisfies this.
+    after = (
+        VERIFICATION_HEADING + "\n\n"
+        "```bash\n"
+        "gh pr edit <N> --body-file <FILE>\n"
+        "```\n\n"
+        "Then read the published body back with `gh-pr:<N>:full` and confirm your "
+        "section is in it. The exit status is not the confirmation.\n"
+    )
+    assert _writes_without_read_back(_verification_section(after)) == ()
+
+

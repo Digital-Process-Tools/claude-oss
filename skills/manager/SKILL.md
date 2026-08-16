@@ -512,6 +512,47 @@ gh pr edit <N> --body-file <a file holding the agent's body plus your appended s
 Read the agent's body back out first rather than reconstructing it — `--body-file` replaces the
 whole body, so an append built from memory silently truncates the record you were protecting.
 
+**Then read the published body back, and treat that read as the confirmation** — not the exit
+status, and not the absence of an error. `gh-pr:<N>:full`, and your section is in it or it is not.
+**`:full` is load-bearing**: plain `gh-pr:<N>` truncates a long body, and an appended section sits
+at the end, so the cheaper read is exactly the one that cannot see the thing it was called to
+confirm. A verification reported from a command's return is a record nobody read, and that is
+indistinguishable from a verification nobody performed.
+
+That is not a general caution. **#195 is that failure, observed here.** `gh pr edit` resolves the
+pull request through a GraphQL query that also asks for `projectCards`, a Projects (classic) field
+GitHub now refuses. The call exits non-zero naming `repository.pullRequest.projectCards` — a field
+you never asked for, about a feature you are not using — and leaves the body unchanged. The command
+is loud and the *edit* is silent, and the error reads as deprecation noise rather than as an
+unwritten body, which is what makes it dismissible. Two things bound it, both measured rather than
+assumed:
+
+- **It is not about your repository.** The field is refused for every repository, so this does not
+  depend on classic project cards existing anywhere.
+- **It is about your `gh`.** A current `gh` consults a detector and drops the field where Projects
+  (classic) is unsupported (cli/cli#13069); a `gh` predating that fix asks for it unconditionally
+  and fails every time.
+
+**So the first move is `gh --version` and an upgrade, not a workaround.** Where you are stuck on an
+old `gh`, the REST route writes the same body and touches no project fields:
+
+```bash
+gh api -X PATCH repos/<OWNER>/<REPO>/pulls/<N> -F body=@<FILE>
+```
+
+**That is named as a fallback with a reason and an expiry, deliberately not as the mechanism.**
+Pinning a lower-level call as doctrine outlives the defect it routes around, and leaves the skill
+teaching a workaround with nothing left to say why. Whichever call does the writing, the read-back
+above is what makes the verification real — it is the half that survives `gh` being fixed, or
+breaking again somewhere else.
+
+**When the append is the repair for a missing closing reference, the read-back is the whole point.**
+`gh-pr-create` refuses a body with no `Closes #N` at creation, which is the earliest anything can
+see it. If the repair no-ops and you report it from the exit, the two failures compose: the pull
+request merges with the issue still open and the board reading clean — the exact failure the merge
+gates warn about, reached through the tool that was supposed to prevent it. `gh-pr:<N>:full` renders
+a bound issue as an `## Issue #N —` header; until it does, the reference is not bound.
+
 What belongs in it is only what the agent could not have written: an independent reproduction or red
 run, a premise of the brief the agent falsified, and your acceptance or rejection of its argued-down
 findings. **Nothing else — an appendix restating the agent's claims in your voice is worse than no
