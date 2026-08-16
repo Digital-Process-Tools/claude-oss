@@ -7,6 +7,438 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-16
+
+### Added
+
+- An agent's report now carries a `docs` survey: one line per path in the repo's `docs_targets`,
+  each `updated`, `no-change-needed` or `not-read`. `docs_targets` was required by both agent-facing
+  documents and read by no code at all, so a docs duty performed and one skipped rendered identically
+  in a merged pull request. The key is required rather than optional, because an absent survey was
+  the exact state being closed (#164).
+- `no-change-needed` and `not-read` are refused without a `why`, and the schema publishes both
+  refusals in `x-enforced` with a mutation proving each. "No change needed" with no reason is the
+  sentence a run that never opened the file also writes; an unread doc is a gap somebody can act on
+  rather than the absence of a finding (#164).
+- The matching CI gate was **measured and rejected** rather than assumed, against this repository's
+  own last thirty merged pull requests. Six of them changed `README.md` for the docs duty. The
+  trigger `.github/workflows/changelog.yml` already computes fires on 27 of the 30 and is right about
+  6; the best rule anybody proposed is wrong two times in three; the narrowest one — a new file under
+  a product path — fires on none of the thirty at all. A gate wrong that often earns a blanket
+  override label within a week, converting an unmeasured duty into a measured and routinely
+  overridden one, and a gate that never fires cannot be told from one that is broken. The counts sit
+  in `agents/developer.md` and `tests/test_docs_duty.py`, with a pointer and no second copy of the
+  numbers beside the gate that tempts the symmetry (#164).
+
+- The changelog fold takes `--title`, so a repository whose release headings carry a sentence can
+  keep them without forking `.oss/assemble_changelog.py` — an owned file that `/oss:scaffold
+  --apply` replaces wholesale, which made the fork lose itself silently at the next update. The
+  default stays `## [x.y.z] - YYYY-MM-DD`, Keep a Changelog's own shape; a title is written after
+  the date. The convention is read out of the changelog rather than declared in `.oss.json`,
+  because a heading style is a per-release editorial choice and has no single value a file written
+  once could hold: with the flag omitted against a file whose newest release heading carries a
+  title, the fold refuses instead of quietly writing a plainer one, and `--title ''` cuts a
+  deliberately untitled release and is recorded as the decision it is (#170).
+
+- `scripts/release_version.py` proposes the release number from the changelog fragments, in three
+  states: `proposed` (exit 0) carries the number with its evidence — the section counts, the change
+  class, the line and the fragments that declared a compatibility verdict; `could not decide`
+  (exit 3) and `no baseline` (exit 4) **name no number at all**, because a default bump over a
+  breaking change is indistinguishable in the tag from a considered one. It proposes and never
+  writes, bumps or tags: the maintainer accepts it or overrides the proposal and records which
+  (#171).
+- The rule is written down rather than decided per release: **in a `0.x` line a breaking change is a
+  minor, and at `1.0.0` or later it is a major.** In a `0.x` line that makes `breaking` and
+  `feature` the same number, so the receipt says the fold happened — a maintainer who wants `1.0.0`
+  has to override rather than notice nothing (#171).
+- A `removed` fragment now declares whether it breaks compatibility, as an ordinary bullet:
+  `- Compatibility: breaking|compatible - <reason>`. It is required on `removed` and optional
+  everywhere else, an unrecognised verdict or one with no reason is `could not decide` rather than a
+  quiet pass, and the fragments that declared nothing are reported by count instead of being folded
+  in silently. #171's own evidence was `changelog.d/113.removed.md`, whose author knew the answer and
+  wrote it in the one place a checker could not see (#171).
+- `commands/release.md` and `skills/manager/SKILL.md` both carry the rule, and the release gate that
+  sweeps `version_sites` now says where the number it sweeps for came from (#171).
+
+- `/oss:release` now has an answer for a call the harness refuses. The plugin documented supertool's
+  own confirmation gate and its three opt-outs and said nothing about the permission layer in front of
+  them, which can deny a call before supertool or `gh` sees it, is not cleared by an allowlist entry,
+  and is not stable — the identical call has come back denied and then been permitted with no
+  configuration change, now reproduced at four distinct calls rather than only at the merge. The
+  release path is where that costs most, because every deniable call sits after the changelog has been
+  folded, the fragments deleted and the version sites bumped (#186).
+- A denial is now named as a fourth answer and never as one of `release_publish.py`'s three.
+  `created`, `skipped` and `could-not-create` are verdicts the script earned by running; a refused
+  call has no exit code, so reporting it as `could-not-create` — or as the range gate's
+  `could-not-run` — would state a fact about the repository nobody measured. It reuses the word the
+  loop already uses at the merge: **denied**, named exactly, handed to the maintainer to run or to
+  permit. The three-outcome list above it now says out loud that it is not exhaustive (#186).
+- Three refusals go with it: do not reword the call past the classifier (a different spelling is a
+  different command string, and hand-assembling the `gh` call loses `--verify-tag`), do not retry in a
+  loop (one re-invocation of the identical call is a probe, reported either way; a second denial is
+  handed over), and never read a denial as a gate that passed or as a release that shipped (#186).
+- A denied release now says where it stopped and where it resumes, per step rather than in one
+  sentence covering both: a denial at the tag push leaves everything local, and a denial at the
+  publish leaves the tag already on the remote and only the release object missing. Otherwise a
+  refusal lands in the *released by manifest and never tagged* state by accident. The ordering trade
+  behind that — fold first, or tag first — is stated rather than quietly taken (#186).
+
+- `/oss:doctor` now answers whether anything publishes to this repo's board, in seven states. A
+  radar tier has to be registered in `.supertool.json` *and* the op reading it has to be routed
+  here, each half is silent about the other, and neither was diagnosed anywhere: the question lived
+  as one line of session-start stderr in `bin/oss-workspace`, decided by a `grep` that also matches
+  the word inside an unrelated key. This repository was measured with neither half in place while
+  the diagnostic printed OK (#191). Registered-but-unroutable, never-registered, edited-and-broken
+  and could-not-read are four different answers with four different remedies, and a `presets` list
+  that cannot be read is reported as unknown rather than as unrouted.
+
+### Changed
+
+- The manager skill now states its own authority. It said what to decide and how to evidence it and
+  never who decides, and the omission had a direction: every ambiguity resolved toward stopping and
+  asking. A new *Who decides* section names the test — who has to be involved to undo it, not
+  whether the act is reversible, which mis-sorts a squash merge and an issue close — and then writes
+  out **both** lists, because a principle without a list is where the stalling comes back. It also
+  says what replaces asking: decide, state the assumption, act, report it prominently, which
+  preserves the reversal rather than the question. Two things that look like stops are argued off
+  the list: filing on a dependency's own tracker is a duty the skill already carries, and a blocking
+  row stops the *release*, which the loop does to itself without asking. `agents/developer.md`
+  points at the section rather than copying it — the agent's boundary was written down and the
+  maintainer's was not, and that asymmetry is the issue (#185).
+- The caution against assuming a preset op now names the probe that answers it. `radar:--state` is
+  read-only — it spawns nothing, reaps nothing, calls no API — and it answers in three states. A
+  caution naming no probe was read as permission to skip the reading entirely, which produced a
+  whole tick with no reading of the watcher fleet at all; `commands/tick.md` carries the ordered
+  half of the same fix, and this is the skill half (#187).
+
+- This repository's own `.supertool.json` loads the `watch` preset and declares the `gh-prs` radar
+  tier, so a maintainer session receives pull-request and CI state as it changes instead of polling
+  it with a `sleep` loop in the orchestrator's shell. `scripts/scaffold.py`'s `check_radar` had
+  reported this repo as `no-tiers` since radar shipped — a session able to receive channel events
+  with nothing publishing any — and now returns clean against it. No `ops.radar.watch_name` is
+  declared beside it, deliberately: a repository name hand-typed into a tracked file travels into
+  the next repository somebody copies that file to, and both then bind one watcher socket with a
+  declaration each. Until #192 lands the derivation in `bin/oss-workspace`, this repository is on
+  the shared default socket that #191 describes, which is where it already was — but with the
+  `watch` preset now live there is traffic to lose, so #192 is the one to merge first. Nothing
+  about the `.supertool.json` that `/oss:scaffold` writes into a managed repo changes (#189).
+
+- The manager skill now states that the manager never writes the diff. A maintainer who implements
+  has not saved a delegation, they have removed the only independent read the change will get: the
+  review gates all assume two parties, and reviewing your own diff renders identically to reviewing
+  somebody else's while checking nothing (#191).
+- README no longer tells you to run `oss-workspace` twenty-eight lines before the symlink that puts
+  it on `PATH`, and its Status section no longer claims no issue has gone from triage to a merge —
+  which stopped being true well before anyone edited it (#191).
+
+### Fixed
+
+- **`/oss:scaffold`'s preview reported a write-nothing run for a run that writes** (#182). The
+  `01-oss` rule layer is replaced wholesale on every single `--apply`, and it was the only
+  wholesale-replaced target neither `plan()` nor `--show` reached: against a repository that already
+  had every default and already ran a changelog gate under another name, the plan printed `PLAN: 0 to
+  create, 11 already present, 3 declined` for a run whose entire effect was to delete and rewrite six
+  files of markdown that a hook injects into a model's context on a match. The owned trio has had
+  `replace` rows out of a bare `--show` since #5 precisely because that is the destructive half of
+  apply; the layer had none of that treatment.
+
+  It now previews like the trio, one row per file — the layer's file count is not stable across
+  plugin versions, which is an argument for showing it rather than against — and the `PLAN:` line
+  counts it. `--show` prints the rule bodies in full, which is the content most worth reading before
+  it lands, and takes a rule path for a single one.
+
+  Two things the trio did not need. A file in the layer today that this version no longer ships
+  previews as `remove`, because `install()` deletes the layer before rewriting it, and `--apply`
+  prints a matching `removed` line so the promise and the receipt agree. And the changelog rule's
+  body depends on a gate read and an assembler lookup that `--apply` performs *after* its own writes,
+  so the preview renders against the tree as it will be **after** those writes — `oss_rules.rules()`
+  takes an `assembler` override for it — and prints a `layer` line saying which input came from the
+  plan rather than from disk. That the two reads agree is a claim about `_detect_changelog_gate`
+  excluding this plugin's own files by name, so it is measured rather than asserted: the suite
+  renders the preview, runs `--apply`, and compares the bodies byte for byte down both branches.
+
+  Three states, not two. A layer directory this process cannot list is reported as unreadable rather
+  than as holding nothing to delete, and a layer that cannot be rendered at all — `oss_rules` refuses
+  a gate state it has no sentence for — makes the summary say `rule layer not previewed` instead of
+  silently omitting the rows, which would have put the plan straight back where the issue found it.
+- **A filename in the inspected repository could start a line of its own in `/oss:scaffold`'s
+  output** (found reviewing #182). `_detect_changelog_gate` builds its detail out of paths it found
+  while walking somebody else's tree, and that string is printed by `plan()`'s three `decline` rows,
+  by the `changelog` finding, by #182's new `layer` note and by `/oss:doctor`'s owned-files line. A
+  newline is a legal POSIX filename character and nothing upstream refused one, so a file named
+  across two lines ended the line it was printed on and put the rest at column 0 of a CI log --
+  #173 and #180's shape reaching a receipt rather than a generated file. Names are now flattened
+  where the detail is built, so every consumer is covered including the one in a file this change
+  did not touch; they are flattened rather than dropped, because the name is the evidence a
+  maintainer needs in order to judge whether the detected gate is real.
+
+- **`--show` refused a path typed with the local separator** (found reviewing #182). Every generated
+  path this plugin knows is built with `/` on every platform, and `--show`'s lookup is string
+  equality, so `--show .github\ISSUE_TEMPLATE\bug_report.md` was answered "is not a known template,
+  owned file or rule" -- indistinguishable, to the caller, from the file not existing. Separators are
+  normalised before the lookup. #182 is what made this worth fixing now: it is the first change to
+  advertise a path (`.claude/jit-context/paths/01-oss/oss-config.md`) deep enough that anybody would
+  type one.
+
+- `/oss:tick` step 2 now orders the two board readings the loop was deciding from without ever
+  taking. `git-worktrees` joins the batched board call unconditionally — it is available wherever
+  supertool is and boards every tree whether or not `worktree_root` is set, so gating it on that
+  key would have reproduced the very absence being fixed — and the three-state reading rule travels
+  with it, so `cannot tell` cannot become `idle` and `merge unknown` cannot become `merged` in the
+  one place the loop actually reads. The watcher fleet gets its own call because it is conditional
+  and because the bare `radar` heals and forks pollers: the read-only `radar:--state` probe is
+  ordered first, in three answers. Both omissions produced an absence that read as a clean result —
+  a fleet nobody checked renders as a quiet channel, a worktree board nobody read renders as no
+  worktrees (#187).
+
+- The manager skill's one verification call pointed at `pr_body.path`, so the documented way to see
+  the check rather than the claim reported `INVALID` with fourteen missing keys and three unknown
+  ones on a completely correct pull request payload. It now names the report path, which is the only
+  file that can answer the check the paragraph relies on: `payload.head` is compared against the
+  report's `branch`, and handed the payload alone there is no branch to compare against. Validating
+  the report opens the payload too, so one path still covers both. `scripts/report_schema.py` now
+  recognises a payload handed to it and refuses it by name with the call to run instead of
+  enumerating the report keys a payload was never going to have — an accurate wall that reads as a
+  finding about the file and whose next move is hand-writing `head`, the one value nothing
+  downstream verifies (#190).
+
+- `bin/oss-workspace` now derives the watch channel name from `.oss.json`'s `repo` when
+  `.supertool.json` declares none, instead of exporting nothing and leaving the session on the
+  shared, unnamed `/tmp/supertool-watch.sock`. A second channel-capable consumer could win that
+  socket, and every event the session emitted was then read, forwarded and discarded with no
+  failure anywhere: `channel:health` reported FORWARDING throughout, correctly, because it cannot
+  see which server holds the socket. A declaration still wins over the derivation, an existing
+  export still wins over both and now names where the loser came from, and a repo with nothing to
+  derive from is told it is on the shared socket rather than put there quietly (#191).
+- Op blocks that declare *different* watch names are a fourth case and stay refused: nothing is
+  exported and nothing is derived, because those ops are already on two channels and a name derived
+  from `repo` would be a third one that nothing in the repo publishes to — an uncontested socket
+  carrying no events, which reads as healthy. Undeclared and contradictory reached the derivation
+  identically for one commit on this branch, so the refusal was printed to stderr and a derived name
+  exported anyway; the two are now distinct states and the message says which one you are in and
+  that the session is on the shared default socket (#191).
+- A `.supertool.json` that exists and will not parse is refused on the same grounds: what it
+  declares is unknown rather than absent, so nothing is derived from it either, and its message no
+  longer promises the default channel while exporting a derived name. A repo with *no*
+  `.supertool.json` is absence, and still derives (#191).
+- `/oss:doctor` no longer reports the shared default watch socket as `OK ... Nothing is broken`. It
+  is a WARN, because it is the state #191 measured with five events read, five forwarded, zero
+  dropped and none delivered. The diagnostic also knows about the derivation the launcher now
+  performs: nothing declared and nothing exported is two states, not one — a repo whose `.oss.json`
+  carries a `repo` gets its own socket and is told the derivation only covers sessions the launcher
+  opens, and a repo with nothing to derive from is told which of three reasons it was. Whether the
+  process holding that socket is the server the session subscribes to is stated as *not
+  established*, here or by `channel:health`, rather than left unmentioned (#191).
+- `/oss:scaffold` writes a `.supertool.json` registering a `radar` tier, and the preset list it wrote
+  beside it did not enable `watch` — which is what provides `radar`. Every repo this plugin
+  scaffolded therefore received a board with no route to it: the ops load, a session opens,
+  `channel:health` reports FORWARDING, and nothing can ever publish. That is byte-identical to a
+  healthy board, shipped as the plugin's own default. The template now enables `watch`, and the
+  plugin's own diagnostic reads the template in a test, so the two cannot drift apart quietly
+  (#191). Found while implementing the diagnostic; outside that change's own footprint.
+- `/oss:doctor` no longer accuses every managed repo of a hand-copied `SUPERTOOL_WATCH_NAME`. Once
+  `bin/oss-workspace` began deriving that export from `.oss.json`'s `repo`, an export with no
+  `watch_name` beside it became the ordinary state of the loop — and it is precisely the shape the
+  `undeclared-export` warning was written to accuse, so the diagnostic started naming a remedy it
+  would be wrong to follow. The state is split rather than deleted, because the copied case is real
+  and must keep firing: an export equal to what this repo's own `repo` derives to is reported as the
+  launcher's own export, one that differs is still the filed case, and a repo with no `.oss.json`,
+  an unreadable one or no `repo` gets a third answer that accuses nobody and clears nobody. Neither
+  this change's diff nor the launcher's shows the seam; it existed only in their composition (#191).
+
+- The manager skill told a maintainer to record a verification with raw `gh pr edit --body-file`,
+  and said in as many words that no op existed for it. Both halves were wrong. That call resolves the
+  pull request through a GraphQL query that also asks for `projectCards`, a Projects (classic) field
+  GitHub now refuses: it exits non-zero naming a field the caller never asked for and leaves the body
+  unchanged. The command is loud and the *edit* is silent, so it reads as deprecation noise rather
+  than as an unwritten body — and an unrecorded verification is indistinguishable from one nobody
+  performed. Worse in the case the skill sends you there for: `gh-pr-create` refuses a body with no
+  `Closes #N` at the earliest point anything can see it, and the documented repair then no-ops, so
+  the pull request merges with the issue still open and the board reading clean. The section now
+  names `gh-pr-edit:<N>:@FILE`, which already existed and was built for this: it writes through REST,
+  re-parses the published body for the closing reference *before* writing in three states — survived,
+  dropped, or could not be read at all — and compares the response against the bytes it sent
+  *afterwards*, so only a write it read back exits `0`. The op table gained the row, and gained
+  `[:full]` on `gh-pr:N`, because a plain read truncates a long body and an appended section sits at
+  the end — the cheap read is the one that cannot see what it was called to confirm. Two facts the
+  issue filed as unknown were measured rather than assumed, and both argue against the workaround it
+  proposed: the field is refused for **every** repository, so this does not depend on classic project
+  cards existing anywhere, and it is a `gh` version accident already fixed upstream (cli/cli#13069),
+  so the raw call will start working again on its own and pinning a hand-rolled REST replacement as
+  doctrine would have outlived the defect it routed around (#195).
+
+- The shipped `01-oss` rule that blocks `Read`, `Edit`, `Write`, `Glob` and `Grep` handed a blocked
+  agent `supertool 'write:PATH'` as the remedy for a refused `Write`, and there is no `write` op --
+  so the one rule whose job is to answer "now what" answered with a call that does not resolve, at
+  the moment the agent had just been stopped. The row now names `paste`, in both the payload form
+  (`paste:@-`, fields `path` and `content`) and the inline one, and says what a reader needs to know
+  to stop probing: `paste` creates missing parent directories and rewrites an existing file, so it
+  covers both halves of a `Write` rather than only the create half (#197).
+- Fixed in **both copies** — `scripts/oss_rules.py`, which is what `/oss:scaffold` installs into
+  every managed repository, and this repo's own installed copy under `.claude/jit-context/`. A fix
+  to one and not the other reaches nobody, or everybody except here (#197).
+- `tests/test_shipped_op_spellings.py` closes the class rather than the line: every
+  `supertool 'OP...'` spelling in shipped prose — skills, agents, commands, both copies of the rule
+  layer — must be declared in an inventory carrying where it resolves, and every declaration must
+  still be named by shipped prose, so a stale entry cannot sit there blessing a spelling nobody
+  ships. It found two spellings beyond the reported one that no earlier sweep had read, because the
+  extractor reads *every* argument of a batched call (#197).
+- The check is three-state on purpose. `ops:roster` lists the ops **loaded here**, and which load
+  depends on which presets a project enables, so an op absent from a roster is not an op that
+  resolves nowhere: preset-gated declarations are measured only where that preset is loaded, and a
+  roster that could not be read — no `supertool` on PATH, which is every CI leg — **skips naming
+  how many spellings went unmeasured** rather than passing quietly. The declaration layer runs
+  everywhere and is what fails in CI (#197).
+
+- A self-review that ran and handed back an empty final message no longer renders as a review that
+  found nothing (#200). `review.classes` and `review.findings` carry a fourth state,
+  `returned-nothing` — distinct from `checked`, which claimed a clean review, and from
+  `not-checked`, which claims nobody looked — and `scripts/report_schema.py` refuses it without a
+  reason naming which spawn went quiet and what was lost. No other survey can spell it: a docs
+  sweep has no second party to go quiet. `agents/developer.md` now says how to detect the empty
+  return, allows exactly one fresh re-spawn that does not erase the first outcome, and records the
+  decision against granting `SendMessage` to ask a reviewer to repeat itself.
+
+- A workflow filename can no longer forge a row of `/oss:scaffold`'s receipt. `check_test_ci` built
+  its `unreadable` detail with a bare `", ".join(...)` over paths walked out of the *managed*
+  repository, four hundred lines from the `_join_names` flattener that shipped in the same delta for
+  exactly this — so a file whose name carries a newline followed by
+  `changelog OK: this repo already runs a gate.yml` (a self-referential symlink, which git tracks,
+  and which reaches that arm through `ELOOP`) ended the `tests` line and put an invented `changelog`
+  verdict at column 0. The paths now go through `_join_names`, and the whole `path (cause)` pair is
+  flattened rather than the path alone, so the cause staying line-break-free is a property of the
+  construction rather than of a fact continuing to hold. Every one of the four rows is now also
+  flattened at the point it is printed, because #204 was a builder that forgot and a fifth row added
+  later would be another. The same commit excused `check_changelog_label` on the grounds that forge
+  label names "cannot carry a newline through the forge": that claim about GitHub's API was never
+  established, and it is aimed at a value this function never prints — no label name is interpolated
+  into either detail. What does reach the line is the `reason` from `_forge_label_names`, built out
+  of `--root` and whatever `git` or `gh` wrote to stderr, and that is now flattened, which needs no
+  claim about anyone's API (#204).
+
+- `scaffold.check_radar` reads both halves of the question, and the remedy it prints no longer
+  produces the state `/oss:doctor` refuses. Registration (`ops.radar.radar_tiers`) is half of a
+  working board; the `watch` preset that routes the `radar` op reading it is the other, and this
+  checker asked only the first — so a repo carrying tiers and no preset was called clean by the one
+  thing that could still reach it, `.supertool.json` being a default that is never replaced. Worse,
+  the remedy printed here named the tiers and not the preset, so a maintainer who followed it landed
+  in exactly the `route-unknown` state `doctor` reports. `check_radar` now answers in six states —
+  `unreadable`, `malformed`, `no-tiers`, `route-unknown`, `no-route`, clean — and the comment in
+  `doctor.py` claiming its remedy was "the same remedy `scaffold.check_radar` names", false when it
+  was written, is replaced by a test that writes scaffold's remedy to disk and asks *both* checkers
+  about the result: a measurement rather than a second assertion that two strings match. A
+  `.supertool.json` that parses as JSON and is not a config is now reported as `malformed` instead
+  of raising `AttributeError` out of `/oss:scaffold` from a file any contributor can edit, and the
+  absent-config arm is decided from the exception in hand rather than from a `Path.exists()` that
+  returns False for a config it merely could not read. The `radar` row of the receipt, which nothing
+  in the suite printed, is now covered (#205).
+
+- `bin/oss-workspace` derived `SUPERTOOL_WATCH_NAME` from `.oss.json`'s `repo` with a character class
+  of its own that permitted `.`, `..` and a leading `-` — the one consumer of that value in this
+  plugin that did not route through `oss_config.repo_problem`, and the one that runs at session start,
+  before `/oss:tick`, before `doctor`, before anything else validates it. `repo: ".."` derived the name
+  `..` and `repo: "../../etc"` derived `..-..-etc`, each of which the consumer turns into a socket path
+  and a poller state directory. `.oss.json` is tracked, so the value arrives by ordinary contribution.
+  The derivation now lives in `oss_config.watch_channel_name`, which validates before it folds and
+  **refuses rather than sanitises** — the fourth arm of a shape the launcher already had: no
+  `.oss.json`, an unreadable one and one declaring no repo each derive nothing, say so on stderr and
+  open the session anyway. Exiting over a bad config would trade the product for an enhancement, and
+  substituting another name would invent a private socket nobody publishes to. Two consequences worth
+  knowing: a `repo` with whitespace around it is now refused where it used to be folded into a name,
+  and `scripts/doctor.py` no longer carries the second spelling of the fold its own docstring asked to
+  have deleted — it reads the same function, and reports two new states, `refused` (the value is
+  invalid, so the remedy is to correct it rather than add a key) and `no-validator` (the diagnostic
+  could not import the validator, which is a hole in the tool rather than in your config) (#207).
+- Whether such a name would have *traversed* was left unestablished by the report, and it is now
+  measured rather than assumed: supertool 0.46.0 applies a name pattern of its own to
+  `SUPERTOOL_WATCH_NAME` and refuses `..` outright. So the harm that is observed is not traversal — it
+  is a launcher handing its consumer a name the consumer discards, putting the session on the shared
+  default socket by a route nothing reported. Which of the two it is depends on a version of somebody
+  else's package; that the value was never validated does not (#207).
+- `/oss:doctor`'s `refused` message escapes the offending repo value before it reaches `report()`.
+  That funnel replaces anything outside printable ASCII with `?`, which is the right guard and stays
+  the authority — but a CJK repo then rendered as `repo-??`, a receipt reporting that a value is
+  wrong while making that value unidentifiable, and the remedy is to correct that exact value (#207).
+- The doctor suite popped `SUPERTOOL_WATCH_NAME` for the same reason it already pins `PATH` and
+  `HOME`. `doctor.main()` reads the real environment and `bin/oss-workspace` exports that variable into
+  every session it opens, so `test_verdict_says_ok_only_when_nothing_warned` was red for anybody
+  running the suite from inside a maintainer session — correctly, about their machine — and green in
+  CI, which exports nothing. Found while fixing #207 and unrelated to its mechanism (#207).
+
+- `/oss:tick`'s watcher step now runs the heal as well as the probe, and the heal carries its own
+  three outcomes. #187 ordered `radar:--state` and left the bare `radar` in prose with no outcome
+  named for it, so every state the step could report was a state of the *probe*: a heal that
+  errored, a heal that refused for want of a registered tier, and a heal that found nothing to
+  repair all left the tick with nothing to say, which is indistinguishable from a fleet already up.
+  The step now invokes `supertool 'radar'`, and reports *raised* with its counts, *not configured*
+  as the correct state for a repo that never opted in rather than as a failure, or *could not
+  raise* naming which — the `watch` preset absent from `presets`, which `/oss:doctor` reports as
+  `no-route` and not as its `route-unknown`, or a spawn that errored. Two readings travel with it:
+  a resolved tier over an empty poller list is the case the heal exists for and not the absence of
+  a fleet, and the probe's warning that an undeclared `watch_name` leaves the channel named by the
+  environment is relayed rather than swallowed, because the heal is a write into whatever that name
+  resolves to (#208).
+
+- The documented report-validation command ran the *installed plugin cache* against a report written
+  to the *clone's* schema, so a correct report was refused and the refusal read as a finding about
+  the report (#212). `${CLAUDE_PLUGIN_ROOT}` resolves to whatever version was last installed —
+  measured here, the cache at `0.3.0` answered `<report>: unknown key 'docs'` where the clone at
+  `0.4.0` answered `ok`, naming as an error the field the current schema requires. An agent that
+  trusted it would have edited a correct report until an obsolete schema accepted it.
+  `agents/developer.md` now tells the agent to run **both** copies when both exist and separates the
+  outcomes that are about the report from the ones that are about the tooling. The ordinary managed
+  repository, where only the cache exists, is named first and is unchanged: that copy's answer is
+  the answer. Where two copies both ran, a disagreement is named as schema skew, recorded as an
+  `adjacent` `tooling:` item, and never absorbed into the report; and *neither copy ran* is a third
+  state with a recording duty of its own, because a run that could validate nothing and a run that
+  validated clean otherwise reach the maintainer as the same silence. Which copy is authoritative is
+  decided by `.claude-plugin/plugin.json` naming this plugin, not by a local
+  `scripts/report_schema.py` merely existing — a coincidence of filename is not a claim of
+  authorship, and in a managed repository the cache is correct and is the only copy there is.
+
+- A filename in the managed repository's own `01-oss` rule layer can no longer forge a row of
+  `/oss:scaffold`'s receipt — including the run's own `WROTE:` summary. `plan_rules` built its
+  `remove` rows from a bare `"{}/{}".format(...)` over names walked out of that repository, and
+  two print statements put those rows on stdout without flattening, so a file whose name carries a
+  newline followed by `WROTE: 0 template(s), replaced 0 file(s) in the 01-oss rule layer` produced a
+  second `WROTE:` line eleven lines above the real one — and a reader taking the first was told
+  nothing had been written by a run that wrote 14 files and replaced 7. This is #204's class a
+  second time: `1f6232b` (#182) added these rows, `d02e95a` (#204) flattened four *other* rows and
+  its message said every receipt row was covered — each commit correct alone, the defect only in the
+  composition. Fixed at the chokepoint rather than at the two prints: the repository-derived name
+  is flattened at the one place it enters `plan_rules`' `entries`, so every consumer — both
+  prints, `--show`, `doctor` — inherits a single-line `path` without having to remember, and the
+  next print statement added is not in the position these two were. Flattened after the
+  `present - shipped` comparison rather than before it, so a name differing from a shipped one only
+  in whitespace cannot collide with it and silently lose its removal row. The tests assert the
+  rendered receipt on both the plan and the `--apply` path — every line begins with a label the
+  receipt really uses, and there is exactly one `WROTE:` line, reporting non-zero counts — paired
+  with a must-fire assertion that the filename is still reported, since a fix that dropped the name
+  would satisfy every negative assertion and tell a maintainer nothing. The fixture is a
+  measurement: a newline in a filename is refused by some filesystems and by Windows, and each arm
+  skips carrying the errno and what went untested rather than asserting against a table of platform
+  error codes (#223).
+
+### Security
+
+- Report validation is contained to the directory of the report it was handed. `pr_body.path` is
+  written by an agent and the file it names is opened, parsed and quoted back by the maintainer's
+  own process — an unknown key is echoed by name, and a value is echoed wherever a `const`, an
+  `enum` or a type mismatch fires — so the path decides which files that process reads and reports
+  on. It is now resolved against the report's own directory and refused, without being opened, when
+  it lands anywhere else. An absolute path is still accepted, which is what an agent working in a
+  worktree writes: what is checked is where the path resolves to, not how it is spelled, and both
+  sides are resolved, so a symlink pointing out of the directory is refused too. Containment that
+  cannot be decided — no directory to anchor against, or a path that will not resolve — is a
+  refusal carrying a sentence rather than a read that nothing objected to. The refusal names the
+  path through a one-line sanitiser, since a receipt whose rows are `ok <file>` and `INVALID
+  <file>` can be forged by a newline in a value chosen elsewhere. No `pattern` was added to the
+  schema: containment depends on where the report itself is, which a regex cannot see, and a second
+  checker answering a narrower question about the same input is its own defect. The capability
+  predates `v0.4.0`; what changed in this range is that the documented verification call moved from
+  the payload path to the report path (#201), which is the route that reaches it — so the delta
+  contains this and neither commit does (#232).
+
 ## [0.4.0] - 2026-08-15
 
 ### Added
@@ -1802,7 +2234,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.2.0
