@@ -58,6 +58,23 @@ AGENT_SENTINEL = "AGENT-RULE-FIRED"
 BASH_SENTINEL = "BASH-CONTROL-FIRED"
 
 
+def _layer_label():
+    """How `doctor` names this layer in its own output, on the platform running the test.
+
+    `check_jit_rules` builds the label from `layer.relative_to(rules_dir)`, a `PurePath`,
+    so it joins with a backslash on Windows and a forward slash everywhere else. A literal
+    forward-slash spelling matched nothing on all four Windows legs -- and because the
+    filter then returned an empty list, the failure surfaced as the positive control
+    firing (`the tools layer was not reported at all`), which reads as the diagnostic
+    having gone silent rather than as the test having asked in the wrong dialect. The
+    control was right; the question was wrong.
+
+    Derived rather than branched on `os.name`: the separator this needs is whichever one
+    `PurePath` will use, and `os.path.join` is the same answer from the same source.
+    """
+    return os.path.join("tools", oss_rules.LAYER)
+
+
 # --- 1. the gap is real, with the control that makes an absence mean something ----------
 
 
@@ -158,7 +175,7 @@ def test_the_diagnostic_does_not_count_the_gap_record_as_a_rule(tmp_path, capsys
     lines = [
         line
         for line in capsys.readouterr().out.splitlines()
-        if "tools/{}".format(oss_rules.LAYER) in line
+        if _layer_label() in line
     ]
     assert lines, "the tools layer was not reported at all"
     reported = lines[0]
@@ -188,7 +205,7 @@ def test_the_failure_arms_do_not_count_the_gap_record_either(tmp_path, capsys):
     reported = [
         line
         for line in capsys.readouterr().out.splitlines()
-        if "tools/{}".format(oss_rules.LAYER) in line
+        if _layer_label() in line
     ]
     assert reported, "the tools layer was not reported at all"
     assert "{} rule(s)".format(rules) in reported[0], reported[0]
