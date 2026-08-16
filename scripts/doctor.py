@@ -663,12 +663,27 @@ RADAR_TIERS_KEY = "radar_tiers"
 # leaving the claim asserted in this comment.
 WATCH_PRESET = "watch"
 
-# The same remedy `scaffold.check_radar` names, and the same reason it names it
-# rather than merging it in: `.supertool.json` is never overwritten by this plugin,
-# so an existing one is the repo's own. A config file edited behind somebody's back
-# is worse than a board they have to turn on. Composed from the constants above so
-# a drift in one of them reaches the remedy rather than leaving it confidently
-# telling a maintainer to add a key that no longer exists.
+# A second, independently composed copy of `scaffold.RADAR_REMEDY_CONFIG` -- and the
+# comment that used to stand here said it was "the same remedy `scaffold.check_radar`
+# names", which was false when it was written: scaffold's named the tiers and not the
+# preset, so a maintainer who followed it landed in the `route-unknown` state this file
+# refuses, and scaffold then called the result clean (#205).
+#
+# They now agree, and what holds them together is a measurement rather than a comment:
+# `tests/test_scaffold.py::test_scaffolds_own_radar_remedy_satisfies_both_checkers`
+# writes scaffold's mapping to disk and asks BOTH checkers about the result. One shared
+# constant was the other option and it is not available: `doctor` imports `scaffold`
+# optionally, with a stated fallback for when that import fails, so a constant reached
+# through it degrades to a second value anyway, and the reverse import direction is a
+# cycle. A prose claim that two values are equal is also the weaker guard -- it passes
+# whenever both are wrong together, which is precisely how this one survived.
+#
+# The reason for naming the remedy rather than merging it in IS shared, and is a rule
+# rather than a value: `.supertool.json` is never overwritten by this plugin, so an
+# existing one is the repo's own, and a config file edited behind somebody's back is
+# worse than a board they have to turn on. Composed from the constants above so a drift
+# in one of them reaches the remedy rather than leaving it confidently telling a
+# maintainer to add a key that no longer exists.
 RADAR_REMEDY_CONFIG = {
     "presets": [WATCH_PRESET],
     "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},

@@ -23,6 +23,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import doctor  # noqa: E402
 import oss_config  # noqa: E402
 import scaffold  # noqa: E402
 
@@ -121,11 +122,96 @@ def test_an_existing_config_without_radar_tiers_is_reported(tmp_path):
     assert "radar_tiers" in findings[0]["detail"]
 
 
-def test_an_existing_config_with_radar_tiers_is_clean(tmp_path):
+def test_an_existing_config_with_a_registered_and_routed_tier_is_clean(tmp_path):
+    """The positive control for every route assertion below: this arm can come back
+    clean, so a `check_radar` reporting something for every config would fail here.
+    """
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps(
+            {"presets": ["watch"], "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}
+        ),
+        encoding="utf-8",
+    )
+    assert scaffold.check_radar(tmp_path) == []
+
+
+def test_a_registered_tier_with_no_presets_list_is_route_unknown(tmp_path):
+    """#205. Registration is half the question. A tier registered under a config that
+    declares no `presets` has no observed route to the op that reads it, and answering
+    `[]` there is the absence this plugin is named after -- `doctor` already says
+    `route-unknown` for the identical file.
+    """
     (tmp_path / ".supertool.json").write_text(
         '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
     )
+    findings = scaffold.check_radar(tmp_path)
+    assert findings and findings[0]["state"] == "route-unknown"
+    assert scaffold.WATCH_PRESET in findings[0]["detail"]
+
+
+def test_a_registered_tier_under_presets_that_omit_watch_is_no_route(tmp_path):
+    """Distinct from the one above on purpose: a `presets` list that is there and does
+    not carry `watch` is a measured absence, not an unread one, and the two send a
+    maintainer to different edits.
+    """
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps(
+            {"presets": ["git"], "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}
+        ),
+        encoding="utf-8",
+    )
+    findings = scaffold.check_radar(tmp_path)
+    assert findings and findings[0]["state"] == "no-route"
+
+
+def test_scaffolds_own_radar_remedy_satisfies_both_checkers(tmp_path):
+    """#205's core. A remedy is a claim about what would fix the thing, and the only
+    way to find out is to run both checks over it -- asserting that the two remedy
+    strings match would pass just as happily on two remedies that fix nothing.
+
+    This is the second measurement that replaces the deleted "the same remedy" comment
+    in `doctor.py`: the two are composed independently and held together here by what
+    they do, not by a shared constant.
+    """
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps(scaffold.RADAR_REMEDY_CONFIG), encoding="utf-8"
+    )
     assert scaffold.check_radar(tmp_path) == []
+    assert doctor.radar_publish_state(tmp_path)[0] == "publishes"
+
+
+def test_a_supertool_config_that_is_json_but_not_a_config_is_reported_not_raised(
+    tmp_path,
+):
+    """`.supertool.json` is contributor-writable in a managed repo. Every one of these
+    parses as JSON and none is a config, and `check_radar` reached an `AttributeError`
+    on each -- a traceback out of `/oss:scaffold`, from a tracked file.
+    """
+    bodies = (
+        "[]",
+        '"x"',
+        '{"ops": "nope"}',
+        '{"ops": {"radar": 3}}',
+        '{"ops": {"radar": {"radar_tiers": 3}}}',
+    )
+    for body in bodies:
+        (tmp_path / ".supertool.json").write_text(body, encoding="utf-8")
+        findings = scaffold.check_radar(tmp_path)
+        assert findings, body
+        assert findings[0]["state"] in ("unreadable", "malformed"), body
+
+
+def test_the_radar_row_reaches_the_printed_receipt(tmp_path):
+    """scaffold's `radar    ` row was uncovered by the suite (#205). A finding nothing
+    prints is a finding nobody reads, and the suite could not tell those two apart.
+    """
+    (tmp_path / ".supertool.json").write_text('{"presets": ["git"]}', encoding="utf-8")
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        scaffold._print_findings(tmp_path, _config(repo=""))
+    rows = [line for line in buffer.getvalue().splitlines() if line.startswith("radar ")]
+    assert len(rows) == 1, buffer.getvalue()
+    assert scaffold.RADAR_TIERS_KEY in rows[0]
 
 
 def test_an_unreadable_config_is_unknown_not_off(tmp_path):
@@ -889,6 +975,86 @@ def test_scaffold_writes_no_test_workflow(tmp_path):
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     workflows = sorted(p.name for p in (tmp_path / ".github" / "workflows").iterdir())
     assert workflows == ["oss-changelog.yml"]
+
+
+# ------------------------------------------- a filename forging a row of the receipt
+#
+# #204. A workflow filename is walked out of the MANAGED repository, so it is data. A
+# newline in one ends the `tests    ` line and starts the rest at column 0, where it is
+# indistinguishable from a row scaffold wrote itself. The payload below is chosen to
+# forge the `changelog` row specifically, which is why the "every line begins with a
+# known label" assertion further down is NOT on its own enough: the forged line begins
+# with a known label too. It is the pair that has teeth.
+
+_FORGED_ROW = "changelog OK: this repo already runs a gate.yml"
+_FORGED_WORKFLOW_NAME = "ci.yml could not be read\n" + _FORGED_ROW
+
+
+def _workflow_named_that_will_not_stat(root, name):
+    """Put `name` in the workflow directory in a state the scan reports `unreadable`.
+
+    A measurement, never a given. A newline is a legal POSIX filename character and a
+    self-referential symlink is what git actually tracks, but several filesystems
+    refuse one or the other, and Windows refuses the symlink without a privilege. Every
+    arm that could not establish the condition skips carrying the errno and the
+    sentence naming what went untested -- it never asserts against a table of platform
+    error codes, and it never asserts on a condition it did not establish.
+    """
+    directory = root / ".github" / "workflows"
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(name, str(directory / name))
+    except OSError as exc:
+        pytest.skip(
+            "this filesystem would not create a self-referential symlink named across "
+            "two lines (errno {}, {}): untested here is whether a workflow filename "
+            "carrying a newline can forge a row of scaffold's receipt".format(
+                exc.errno, type(exc).__name__
+            )
+        )
+    _files, unreadable = scaffold._workflow_scan(root)
+    if not any(entry["path"].endswith(name) for entry in unreadable):
+        pytest.skip(
+            "the symlink was created and this platform still stats it, so the "
+            "`unreadable` arm was never reached: untested here is whether a workflow "
+            "filename carrying a newline can forge a row of scaffold's receipt"
+        )
+    return unreadable
+
+
+def test_a_workflow_filename_with_a_newline_cannot_forge_a_row_of_the_receipt(tmp_path):
+    """The harm is a line at column 0 of what `/oss:scaffold` prints, so that is what
+    is asserted -- not the return value of a joiner, which would pass over a caller
+    that never called it.
+    """
+    _workflow_named_that_will_not_stat(tmp_path, _FORGED_WORKFLOW_NAME)
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        scaffold._print_findings(tmp_path, _config(test_command="pytest", repo=""))
+    output = buffer.getvalue()
+
+    # Must fire. The filename is evidence about the repo and the reader needs it: a
+    # fix that dropped the name would pass every assertion below and tell a maintainer
+    # nothing. It also proves the fixture reached the arm at all.
+    assert _FORGED_ROW in output, output
+
+    # Must not fire.
+    for line in output.splitlines():
+        assert not line.startswith(_FORGED_ROW), output
+    labels = {"radar", "tests", "label", "changelog"}
+    for line in output.splitlines():
+        assert line.split(" ", 1)[0] in labels, output
+
+
+def test_the_unreadable_detail_is_one_line_for_a_consumer_that_does_not_print(tmp_path):
+    """`doctor` renders this same finding from its own row, so the flattening has to be
+    in the detail rather than only at scaffold's own print.
+    """
+    _workflow_named_that_will_not_stat(tmp_path, _FORGED_WORKFLOW_NAME)
+    findings = scaffold.check_test_ci(tmp_path, _config(test_command="pytest"))
+    assert findings and findings[0]["state"] == "unreadable"
+    assert scaffold.CAUSE_ENTRY_UNSTATTABLE in findings[0]["causes"]
+    assert len(findings[0]["detail"].splitlines()) == 1, findings[0]["detail"]
 
 
 # ------------------------------------------- collision with an existing changelog gate

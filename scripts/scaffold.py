@@ -1581,36 +1581,179 @@ def _check_topics(probe):
     return None
 
 
+RADAR_CONFIG = ".supertool.json"
+
+RADAR_OP = "radar"
+RADAR_TIERS_KEY = "radar_tiers"
+
+# `watch` is what PROVIDES `radar` (#191). Registering tiers without enabling it
+# leaves a board with no route to the op that reads it -- byte-identical, from
+# outside, to a board nothing has published to yet.
+WATCH_PRESET = "watch"
+
+# The remedy, composed from the constants above so a drift in one of them reaches the
+# sentence rather than leaving it confidently naming a key that no longer exists.
+#
+# `doctor.RADAR_REMEDY_CONFIG` is a second, independently composed copy, and that is a
+# decision rather than an oversight. `doctor` imports `scaffold` -- optionally, with a
+# stated fallback for when the import fails -- so the reverse direction is a cycle, and
+# a constant behind an optional import degrades to a second value anyway. What holds
+# the two together is not a shared name but a measurement:
+# `tests/test_scaffold.py::test_scaffolds_own_radar_remedy_satisfies_both_checkers`
+# writes THIS mapping to disk and asks BOTH checkers about the result. Asserting that
+# the two strings match would pass just as happily on two remedies that fix nothing.
+RADAR_REMEDY_CONFIG = {
+    "presets": [WATCH_PRESET],
+    "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},
+}
+
+RADAR_REMEDY = (
+    "Add {} -- and where `presets` is already there, add '{}' to the list it has "
+    "rather than replacing it.".format(
+        json.dumps(RADAR_REMEDY_CONFIG, sort_keys=True), WATCH_PRESET
+    )
+)
+
+
 def check_radar(repo_root):
     """Is a board configured, or only the ability to receive one?
 
     `.supertool.json` is never overwritten -- an existing one is the repo's own. So
-    when it is there and declares no radar tiers, the missing block is named rather
+    when it is there and the board is not wired, the missing block is named rather
     than merged in: a config file edited behind someone's back is worse than a board
     they have to turn on.
+
+    **Two independent halves, and each is silent about the other** (#205). A tier has
+    to be REGISTERED under `ops.radar.radar_tiers`, and the op that reads it has to be
+    ROUTED here by the `watch` preset. This used to ask only the first, so a repo
+    scaffolded before #191 -- carrying tiers and no preset, and unreachable by the
+    template fix, because `.supertool.json` is a default and defaults are never
+    replaced -- was called clean by the one thing that could still reach it. Worse, the
+    remedy printed here produced exactly that state: it named the tiers and not the
+    preset, so following the advice yielded a board that cannot publish and a checker
+    that then said nothing was wrong.
+
+    `doctor.radar_publish_state` answers the same question in seven states and is the
+    fuller reading; this is the scaffold-time half of it, and the remedy the two print
+    is held together by a test that runs both over it rather than by a shared constant.
+
+    The detail names counts, keys and constants -- never a tier name. `.supertool.json`
+    is contributor-writable in a managed repo, which is how a tracked file would get to
+    write a line of this tool's own output.
     """
-    path = Path(repo_root) / ".supertool.json"
-    if not path.exists():
-        return []
+    path = Path(repo_root) / RADAR_CONFIG
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # A fact about the repo: there is no config, so the template writes one with
+        # radar already wired and there is nothing to report. Decided from the
+        # exception already in hand rather than by asking `exists()` a second question
+        # -- `Path.exists()` swallows a short list of errnos and returns False for the
+        # rest of them, which would render an unreadable config as an absent one.
+        return []
+    except OSError as exc:
+        return _radar_unreadable(type(exc).__name__)
+    try:
+        doc = json.loads(raw)
+    except ValueError as exc:
+        return _radar_unreadable(type(exc).__name__)
+
+    # Present-and-broken is not the same answer as never-declared, and the remedies
+    # differ: one is an edit to make, the other is an edit to undo. Each of these
+    # shapes parses as JSON, is not a config, and used to reach an `AttributeError`
+    # here -- a traceback out of `/oss:scaffold` from a file a contributor can edit.
+    if not isinstance(doc, dict):
+        return _radar_malformed("{} is not an object".format(RADAR_CONFIG))
+    ops = doc.get("ops")
+    if "ops" in doc and not isinstance(ops, dict):
+        return _radar_malformed("`ops` in {} is not an object".format(RADAR_CONFIG))
+    block = ops.get(RADAR_OP) if isinstance(ops, dict) else None
+    if block is not None and not isinstance(block, dict):
+        return _radar_malformed(
+            "`ops.{}` in {} is not an object".format(RADAR_OP, RADAR_CONFIG)
+        )
+    tiers = block.get(RADAR_TIERS_KEY) if isinstance(block, dict) else None
+    if tiers is not None and not isinstance(tiers, dict):
+        return _radar_malformed(
+            "`ops.{}.{}` in {} is not an object".format(
+                RADAR_OP, RADAR_TIERS_KEY, RADAR_CONFIG
+            )
+        )
+
+    if not tiers:
         return [
             {
-                "state": "unreadable",
-                "detail": ".supertool.json could not be read ({}) -- radar state unknown, "
-                "which is not the same as radar being off".format(type(exc).__name__),
+                "state": "no-tiers",
+                "detail": (
+                    "no radar tiers in {}, so a session can receive channel events and "
+                    "nothing publishes any. {}".format(RADAR_CONFIG, RADAR_REMEDY)
+                ),
             }
         ]
-    tiers = ((doc.get("ops") or {}).get("radar") or {}).get("radar_tiers")
-    if tiers:
-        return []
+
+    registered = "{} tier(s) registered in `ops.{}.{}`".format(
+        len(tiers), RADAR_OP, RADAR_TIERS_KEY
+    )
+    presets = doc.get("presets")
+    if not isinstance(presets, list) or not all(
+        isinstance(entry, str) for entry in presets
+    ):
+        # NOT `no-route`. `presets` absent or unreadable means this read could not tell
+        # whether the op is routed, and answering "it is not" would send a maintainer
+        # to add a preset that may already be in effect.
+        return [
+            {
+                "state": "route-unknown",
+                "detail": (
+                    "{} in {}, and whether the `{}` op they feed is routed here could "
+                    "not be read: `presets` is absent or is not a list of strings. A "
+                    "registered tier with no route publishes nothing, which from "
+                    "outside is a healthy empty board. {}".format(
+                        registered, RADAR_CONFIG, RADAR_OP, RADAR_REMEDY
+                    )
+                ),
+            }
+        ]
+    if WATCH_PRESET not in presets:
+        return [
+            {
+                "state": "no-route",
+                "detail": (
+                    "{} in {}, and the `{}` preset that provides the `{}` op reading "
+                    "them is not enabled -- so nothing can publish to this board, and "
+                    "that is byte-identical from outside to a board nobody has posted "
+                    "to yet. {}".format(
+                        registered,
+                        RADAR_CONFIG,
+                        WATCH_PRESET,
+                        RADAR_OP,
+                        RADAR_REMEDY,
+                    )
+                ),
+            }
+        ]
+    return []
+
+
+def _radar_unreadable(reason):
     return [
         {
-            "state": "no-tiers",
-            "detail": 'no radar tiers in .supertool.json, so a session can receive '
-            'channel events and nothing publishes any. Add: '
-            '"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}',
+            "state": "unreadable",
+            "detail": "{} could not be read ({}) -- radar state unknown, which is not "
+            "the same as radar being off".format(RADAR_CONFIG, reason),
+        }
+    ]
+
+
+def _radar_malformed(what):
+    return [
+        {
+            "state": "malformed",
+            "detail": (
+                "{}, so no radar tier could be read from it. That is a file somebody "
+                "edited and broke rather than a repo that registers none, and the two "
+                "have different remedies.".format(what)
+            ),
         }
     ]
 
@@ -1819,7 +1962,19 @@ def check_changelog_label(labels, reason=None):
                     "hatch, and whether the repo has that label could not be read: {}. "
                     "An unchecked label is not an absent one. {}".format(
                         CHANGELOG_ESCAPE_LABEL,
-                        reason or "no reason recorded",
+                        # Flattened (#204). The commit that introduced `_join_names`
+                        # excused this function on the grounds that a forge label name
+                        # "cannot carry a newline through the forge" -- a claim about
+                        # GitHub's API rather than about this code, and one nobody
+                        # established. It is also aimed at the wrong value: no label
+                        # name is interpolated into either detail here; `labels` is only
+                        # ever tested for membership. What DOES reach the line is
+                        # `reason`, built by `_forge_label_names` out of `--root`, the
+                        # origin URL and whatever `git` or `gh` wrote to stderr. So the
+                        # claim is not established and is not relied on: the value that
+                        # is printed is flattened, which needs no claim about anyone's
+                        # API.
+                        _one_line(reason) if reason else "no reason recorded",
                         _LABEL_COMMANDS,
                     )
                 ),
@@ -2273,7 +2428,24 @@ def check_test_ci(repo_root, config):
                     "workflow that does may be one of the files above.".format(
                         command=command,
                         dir=WORKFLOW_DIR,
-                        paths=", ".join(
+                        # Through `_join_names`, not a bare join (#204). Every `path`
+                        # here is walked out of the MANAGED repository's workflow
+                        # directory, so it is data: a newline is a legal POSIX filename
+                        # character, nothing upstream refuses one, and git tracks a file
+                        # named across two lines happily -- a self-referential symlink
+                        # with such a name reaches this very arm through `ELOOP`. Left
+                        # unflattened it ended the `tests    ` line and put the rest at
+                        # column 0 of scaffold's receipt, where it reads as a row this
+                        # tool wrote about something else entirely.
+                        #
+                        # The whole composed string is flattened, not just the path:
+                        # `cause` is one of `WORKFLOW_SCAN_CAUSES` today and so cannot
+                        # carry a line break, and pairing them before the joiner means
+                        # that stays true by construction rather than by that fact
+                        # continuing to hold. Flattened rather than dropped -- the name
+                        # is the evidence a maintainer needs; what it must not have is a
+                        # line of its own.
+                        paths=_join_names(
                             "{0} ({1})".format(path, cause) for path, cause in seen
                         ),
                     )
@@ -2308,20 +2480,42 @@ def _print_findings(repo_root, config, force_owned=False):
 
     ``force_owned`` reaches the changelog finding only, and only so it stops denying a
     write the same run just made.
+
+    **Every detail is flattened as it is printed** (#204). Each of these four rows is
+    built partly out of values from the repository being inspected -- a workflow
+    filename, a `.supertool.json` key, whatever `git` or `gh` said when it declined --
+    and a newline in any of them ends the row and starts the rest at column 0, where it
+    is indistinguishable from a row this tool wrote. Each builder also flattens its own
+    value, which is where the fix belongs for a consumer that does not print (`doctor`
+    renders `check_test_ci`'s finding from its own row). This is the second guard, and
+    it is here rather than only there because #204 was exactly a builder that forgot:
+    the flattener and the bypass shipped in the same delta, four hundred lines apart. A
+    fifth row added later cannot forget this one.
     """
     for finding in check_radar(repo_root):
-        print("radar    {}".format(finding["detail"]))
+        _print_row("radar", finding)
     for finding in check_test_ci(repo_root, config):
-        print("tests    {}".format(finding["detail"]))
+        _print_row("tests", finding)
     # Read the label list rather than assuming it. The state was always three-valued;
     # what used to happen here was a hardcoded None, so `missing` could not be reached
     # in a real run and every scaffold printed the identical reminder. The read is
     # read-only and degrades to `unknown` with the reason, never to silence.
     names, reason = _forge_label_names(repo_root, config)
     for finding in check_changelog_label(names, reason=reason):
-        print("label    {}".format(finding["detail"]))
+        _print_row("label", finding)
     for finding in check_changelog_gate(repo_root, config, force_owned=force_owned):
-        print("changelog {}".format(finding["detail"]))
+        _print_row("changelog", finding)
+
+
+def _print_row(label, finding):
+    """One row of the receipt: the label, then the detail on a single line.
+
+    The alignment is preserved rather than recomputed -- `changelog` is one character
+    wider than the four-space gap the other three use, and that is what the receipt has
+    always printed.
+    """
+    gap = " " if len(label) >= len("changelog") else " " * (9 - len(label))
+    print("{}{}{}".format(label, gap, _one_line(finding["detail"])))
 
 
 def _main(argv=None):
