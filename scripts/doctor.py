@@ -2311,7 +2311,13 @@ def jit_hook_roots(record=None, cache_root=None):
 
 
 def _jit_manifest_paths(root):
-    """Where this plugin declares its hooks. ``.claude-plugin/plugin.json`` may name it."""
+    """``[(path, as-written)]`` -- where this plugin declares its hooks.
+
+    ``.claude-plugin/plugin.json`` may name the file, so the second element is carried
+    rather than recomputed: the "no hook manifest" message names the path that was looked
+    for, and a message naming the convention while a manifest key named something else is
+    a diagnostic answering a question nobody asked.
+    """
     named = None
     try:
         doc = json.loads(
@@ -2322,9 +2328,9 @@ def _jit_manifest_paths(root):
     except (OSError, ValueError):
         named = None
     parts = _jit_path_parts(named) if named else None
-    if parts:
-        return [root.joinpath(*parts)]
-    return [root.joinpath(*JIT_HOOK_MANIFEST)]
+    if not parts:
+        parts = list(JIT_HOOK_MANIFEST)
+    return [(root.joinpath(*parts), "/".join(parts))]
 
 
 def _jit_path_parts(token):
@@ -2391,9 +2397,10 @@ def _jit_hook_files(roots):
     so a manifest pointing at nothing cannot read as a manifest pointing at nothing
     wrong.
     """
-    hooks, unresolved, manifests = [], [], []
+    hooks, unresolved, manifests, looked = [], [], [], []
     for root in roots:
-        for manifest in _jit_manifest_paths(root):
+        for manifest, written in _jit_manifest_paths(root):
+            looked.append(_one_line(written))
             try:
                 doc = json.loads(manifest.read_text(encoding="utf-8"))
             except FileNotFoundError:
@@ -2420,7 +2427,7 @@ def _jit_hook_files(roots):
                         unresolved.append(_one_line(token))
 
     if not manifests:
-        return [], "no hooks manifest", unresolved
+        return [], "; ".join(dict.fromkeys(looked)) or "/".join(JIT_HOOK_MANIFEST), unresolved
 
     # The sourced closure. Comments are skipped for the same reason the enumeration scan
     # skips them: prose quoting a `source` line is not a `source` line.
@@ -2539,7 +2546,7 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "its scripts the runtime executes -- as opposed to ships -- is not something "
             "this can tell, and a scan of every file in the tree would be answered by "
             "the dependency's own test fixtures (#241). Nothing was measured.".format(
-                named, "/".join(JIT_HOOK_MANIFEST)
+                named, hook_problem
             ),
         )
     if not scripts:

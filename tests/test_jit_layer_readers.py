@@ -325,6 +325,54 @@ def test_a_manifest_naming_a_script_that_is_not_there_is_could_not_determine(tmp
     assert "gone-hook.sh" in finding["detail"], finding["detail"]
 
 
+def test_a_manifest_the_plugin_json_names_is_the_one_looked_for(tmp_path):
+    """`.claude-plugin/plugin.json` may name the manifest, and the message must say which.
+
+    Must-not-fire half first: the named manifest is absent, and the detail has to name
+    *that* path rather than the convention -- a diagnostic reporting `hooks/hooks.json`
+    missing while the plugin declared `custom/hooks.json` answers a question nobody asked.
+    Must-fire half: the same declaration with the file present resolves the hook, which is
+    also the only assertion that the named path is honoured at all.
+    """
+    declaration = json.dumps({"name": PLUGIN, "hooks": "custom/hooks.json"})
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={".claude-plugin/plugin.json": declaration},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "custom/hooks.json" in finding["detail"], finding["detail"]
+    assert "(hooks/hooks.json)" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={
+            ".claude-plugin/plugin.json": declaration,
+            "custom/hooks.json": json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-hook.sh",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+        },
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
 def test_a_hook_manifest_that_will_not_parse_is_could_not_determine(tmp_path):
     """Present and unreadable is not the same as present and empty.
 
