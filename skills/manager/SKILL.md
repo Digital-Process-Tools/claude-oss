@@ -130,7 +130,7 @@ rows rot first:
 sibling spells it `priority:high`. Run `gh-labels` before writing any label name, and never invent a
 label that does not exist on the repo.
 
-## Reads go through supertool. Writes go through `gh`.
+## Which call to make: the op table answers it, row by row
 
 | Need | Op |
 | --- | --- |
@@ -143,6 +143,13 @@ label that does not exist on the repo.
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Correcting a published body | `gh-pr-edit:N:@FILE` — same payload shape; refuses a dropped `Closes #N` and verifies the write landed |
 | Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
+
+**The route is the row, not a class.** Where a row names an op, that op *is* the route — writes
+included: filing, opening, correcting and merging all have one. Raw `gh` is for the needs no row
+covers. This used to be a heading asserting that reads went through supertool and writes through
+`gh`, which four rows of the table beneath it had already contradicted (#247); a heading names a
+taxonomy, a taxonomy is a second and coarser copy of what the rows answer one at a time, and the
+copy that drifts is the one that gets skimmed and quoted. A per-row answer cannot drift from itself.
 
 The ops are not wrappers. `gh-pr:N:status` returns state, mergeability, conflicts, branch **and the
 check tally already summed** — the exact arithmetic that gets got wrong by hand.
@@ -1076,6 +1083,29 @@ that was never armed.
 
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.
+
+**What ends a tick, and only one of these three does.** *Somebody else's work* above means a review,
+a CI run, an upstream fix. **It has never meant your own backlog**, and reading it that way is what
+turns a momentarily quiet board into a finish line — observed at the close of the 0.5.0 tick, which
+reported nothing pending with nineteen issues open, every one of them filed by this loop (#244). So
+close every tick by saying, in as many words, which of these it is in:
+
+- **Work started** — something was delegated in this tick. Name what, and where it is running. Not
+  an ending: the tick continues, and arming a wakeup to wait on it is the tell above in its other
+  spelling.
+- **Blocked** — every remaining open item named individually, each with what it waits on and who
+  owns that. **A count is not a naming**, and neither is *the rest are blocked*: if you cannot write
+  the list, you are not in this state. Also not an ending.
+- **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty.
+
+**An unread board is not an empty one.** If either call did not answer, that is `unknown`, and
+unknown is not an ending: say which call failed and what therefore went unread. Without that, a loop
+that stopped because there was nothing to do and a loop that stopped because it did not look close
+on the same line — this file's own defect class landing on the loop itself.
+
+**A release is a step in this list, not an exit from it.** The tag is the moment merged work becomes
+reachable by the running loop, so the tick after one has more to do than the tick before it. #235 is
+what reading a tag as a finish line already cost.
 
 ## State
 

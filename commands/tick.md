@@ -199,13 +199,31 @@ Skill(manager)
    ```
 
    Agent completions notify for free — never poll for them. CI is the only thing that needs a timer.
-   If nothing is outstanding but somebody else's work, stop the loop with `stop: true` **and say so
-   out loud**: a loop that stops silently is indistinguishable from one that was never armed.
+   If nothing is outstanding but somebody else's work — a review, a CI run, an upstream fix, and
+   **never your own backlog** — stop the loop with `stop: true` **and say so out loud**: a loop that
+   stops silently is indistinguishable from one that was never armed. Which of the three states
+   below you are in decides whether that sentence applies at all.
 
 ## What ends a tick
 
 Not the wakeup. The wakeup is a safety net, and the tell that this went wrong is a closing line
 describing the schedule instead of the next action. Waiting on CI is not a reason to stop working.
+
+**And only one of three states is an end.** Say which one, in as many words, as the tick closes
+(#244):
+
+- **Work started** — something was delegated in this tick. Name what and where it is running. The
+  tick continues; do not arm a wakeup and wait on it.
+- **Blocked** — every remaining open item named individually, each with what it waits on and who
+  owns that. **A count is not a naming**, and neither is *the rest are blocked*: if you cannot write
+  the list, you are not in this state. Still not an end.
+- **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty.
+
+**An unread board is not an empty one.** If either call did not answer, that is `unknown`, it is not
+the third state, and the tick says which call failed and what went unread instead. A tick that
+stopped because there was nothing to do and a tick that stopped because it did not look otherwise
+close on the same line. A release is a step in this list too — the tag is when merged work becomes
+reachable by the running loop, so the tick after one has more to do, not less (#235).
 
 **And not while the board says something is unwatched.** Step 4's rule is easier to skip than a
 list would be — that is the one thing a list is better at — so the anchor is a *measurement* taken
