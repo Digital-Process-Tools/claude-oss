@@ -165,13 +165,21 @@ def test_a_registered_tier_under_presets_that_omit_watch_is_no_route(tmp_path):
 
 
 def test_scaffolds_own_radar_remedy_satisfies_both_checkers(tmp_path):
-    """#205's core. A remedy is a claim about what would fix the thing, and the only
-    way to find out is to run both checks over it -- asserting that the two remedy
-    strings match would pass just as happily on two remedies that fix nothing.
+    """The remedy half of #205, and only that half -- said plainly, because the first
+    version of this docstring called itself "#205's core" and a reviewer was right that
+    it is not. A config carrying both halves comes back clean from the check that reads
+    one half and from the check that reads two, so this test would pass unchanged
+    against the pre-fix `check_radar`. What it does pin is the defect the old REMEDY
+    was: the remedy scaffold printed omitted `presets`, so applying it verbatim left
+    `doctor` at `route-unknown`, and the `doctor` assertion below fails against that
+    remedy. The route-reading defect is pinned by the two tests above it, which were
+    red.
 
-    This is the second measurement that replaces the deleted "the same remedy" comment
-    in `doctor.py`: the two are composed independently and held together here by what
-    they do, not by a shared constant.
+    A remedy is a claim about what would fix the thing, and the only way to find out is
+    to run both checks over it -- asserting that the two remedy strings match would pass
+    just as happily on two remedies that fix nothing. That is the second measurement
+    replacing the deleted "the same remedy" comment in `doctor.py`: the two values are
+    composed independently and held together here by what they do.
     """
     (tmp_path / ".supertool.json").write_text(
         json.dumps(scaffold.RADAR_REMEDY_CONFIG), encoding="utf-8"
