@@ -756,6 +756,13 @@ if [ -n "${OSS_WORKSPACE_SKIP_DOCTOR:-}" ]; then
 elif [ ! -f "$doctor_sh" ]; then
     echo "oss-workspace: the setup diagnostic was not found at $doctor_sh, so whether $repo_root is configured is UNKNOWN. The plugin checkout looks incomplete. Opening the session anyway." >&2
 else
+    # Announced BEFORE it runs, not only after. The diagnostic reaches the network
+    # for dependency versions with a 25s timeout per declared dependency and a 20s
+    # one per probed binary, so an offline or hung network turns a 0.4s launch into
+    # a minute-long stare at nothing -- and the escape hatch below was, until this
+    # line existed, undiscoverable until after the first slow launch. This is the
+    # one place furniture earns its keep: it is the line a user reads while waiting.
+    echo "oss-workspace: running the setup diagnostic over $repo_root before the session starts. It reaches the network for dependency versions, so it can take a few seconds; OSS_WORKSPACE_SKIP_DOCTOR=1 skips it." >&2
     # `bash <path>` rather than executing it, and that is measured rather than
     # stylistic: scripts/doctor.sh is tracked mode 644, so its own `#!` line is
     # never used and running it directly dies with `Permission denied` -- which
@@ -795,7 +802,7 @@ else
                 # "ran and was clean" indistinguishable from "never ran"; furniture
                 # on every healthy launch is how the line that matters stops being
                 # read.
-                echo "oss-workspace: setup diagnostic (VERDICT: ok). Run /oss:doctor inside the session for the full report." >&2
+                echo "oss-workspace: setup diagnostic: VERDICT: ok" >&2
                 ;;
             "usable with gaps"*|"not usable"*)
                 # Relayed WHOLE rather than summarised to its verdict. /oss:doctor's

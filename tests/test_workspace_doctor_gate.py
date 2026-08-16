@@ -173,6 +173,38 @@ def test_the_diagnostic_runs_before_the_session_opens(tmp_path):
     assert argv, done.stderr
 
 
+def test_the_run_is_announced_before_it_starts_with_the_way_out(tmp_path):
+    """The diagnostic reaches the network -- 25s per declared dependency, 20s per
+    probed binary -- so offline it can turn a 0.4s launch into a minute-long stare at
+    nothing. The escape hatch is useless if it is only discoverable from a line that
+    prints after the wait, so the notice goes out BEFORE the run and carries the
+    variable's name.
+    """
+    root, _ = _plugin(tmp_path, "echo 'VERDICT: ok'\n")
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "running the setup diagnostic" in done.stderr, done.stderr
+    assert "OSS_WORKSPACE_SKIP_DOCTOR" in done.stderr, done.stderr
+    # Ordering is the whole claim: a notice printed after the verdict is a notice
+    # nobody waiting ever saw.
+    assert done.stderr.index("running the setup diagnostic") < done.stderr.index(
+        "VERDICT: ok"
+    ), done.stderr
+
+
+def test_the_announcement_is_not_printed_when_nothing_is_run(tmp_path):
+    """The must-not-fire half. A notice that prints unconditionally would say a
+    diagnostic is running in the one case where none is.
+    """
+    root, log = _plugin(tmp_path, "echo 'VERDICT: ok'\n")
+    done, argv = run(
+        _repo(tmp_path / "repo"), root, env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": "1"}
+    )
+    assert argv, done.stderr
+    assert _doctor_argv(log) == []
+    assert "running the setup diagnostic" not in done.stderr, done.stderr
+
+
 def test_the_resolved_root_is_passed_so_no_warning_is_manufactured(tmp_path):
     """Invoked with neither `--root` nor `CLAUDE_PROJECT_DIR` the diagnostic prints
     `WARN project dir guessed from cwd` and downgrades an otherwise-`ok` tree to
@@ -191,10 +223,11 @@ def test_the_resolved_root_is_passed_so_no_warning_is_manufactured(tmp_path):
 # --- the four verdicts, each told apart ----------------------------------------
 
 
-def test_ok_is_one_line_and_not_a_loud_one(tmp_path):
-    """The must-not-fire half. Furniture on every healthy launch is how the line that
-    matters stops being read -- but silence would make "ran and was clean"
-    indistinguishable from "never ran", so it is one line and no more.
+def test_ok_is_a_verdict_and_not_the_whole_report(tmp_path):
+    """The must-not-fire half. A healthy launch costs the pre-run notice and the
+    verdict, and nothing else: furniture on every launch is how the line that matters
+    stops being read, while silence would make "ran and was clean" indistinguishable
+    from "never ran". The diagnostic's own OK lines stay behind /oss:doctor.
     """
     root, _ = _plugin(tmp_path, "echo 'OK everything'\necho 'VERDICT: ok'\n")
     done, argv = run(_repo(tmp_path / "repo"), root)

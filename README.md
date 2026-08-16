@@ -107,8 +107,12 @@ print the same thing otherwise.
 
 It costs what the diagnostic costs. Measured on macOS against a repo with `supertool`, `gh` and node
 on PATH: the launcher opens in **0.45 s** without it and **2.5 s** with it, most of that the
-dependency-version check reaching the network. Set `OSS_WORKSPACE_SKIP_DOCTOR=1` to skip it — the
-skip is announced, with the state of the repo reported as unknown rather than fine.
+dependency-version check reaching the network — which is bounded at 25 s per declared dependency and
+20 s per probed binary, so an offline or hung network is slower than that, not faster. Set
+`OSS_WORKSPACE_SKIP_DOCTOR=1` (any non-empty value) to skip it — the skip is announced, with the
+state of the repo reported as unknown rather than fine. The run is also announced *before* it
+starts, carrying that variable's name, because an escape hatch you can only read about after the
+wait is one nobody waiting has.
 
 Install the launcher once:
 
