@@ -98,13 +98,36 @@ separately rather than one list.
   confident reason belonging to somebody else. #253 filed one false-looking sentence in it and the
   sentence was fine; the file was not. **Deleted rather than forked**, because forking means
   maintaining 541 lines of another project's issue history for a gate nobody decided to adopt.
-  `assemble_changelog.py` stays because it is the opposite case on the only axis that matters: 33
-  tracked files mention it and it ships into every scaffolded repo. (33 as the check itself counts,
-  not as `git grep -l assemble_changelog.py` counts — that `.` is a regex wildcard and says 34.)
+  `assemble_changelog.py` stays because it is the opposite case on the only axis that matters: 27
+  tracked files mention it and it ships into every scaffolded repo. (27 as the check itself counts,
+  excluding narrative sources. A `git grep -l assemble_changelog.py` says 34 — that `.` is a regex
+  wildcard — and counting every file says 33. Quote the number the check produces, or the prose and
+  the guard disagree about what they are both describing.)
   The axis is **whether anything uses it**, not whether its prose looks wrong — and
-  `tests/test_unwired_scripts_253.py`
-  checks that one, and deliberately not "does it cite a test we do not have", which fires on all
-  six of the deleted file's citations and would flag correct vendoring as a defect.
+  `tests/test_unwired_scripts_253.py` checks that one, deliberately not "does it cite a test we do
+  not have", which fires on all six of the deleted file's citations and would flag correct
+  vendoring as a defect.
+- **A check for unreferenced files must not count the documentation of a deletion, and a changelog
+  fragment is the case with teeth.** The first version of `tests/test_unwired_scripts_253.py`
+  excluded `CHANGELOG.md` alone, reasoning that append-only history would make the check
+  permanently unable to fire. The same argument applies word for word to the `CLAUDE.md` trap
+  bullet above, to the `changelog.d/` fragment, and to the checking module's own regression test —
+  and the commit that deleted `coverage_gate.py` added all three, so the general check called the
+  file **wired** by the three files whose entire subject is that it was deleted for being unwired.
+  The fragment is worse than the other two: `changelog.d/` is emptied at the fold, so a file whose
+  only reference is its own fragment is wired today and unwired the moment a release is cut — a red
+  build on a release branch caused by nothing in that branch's diff, landing on whoever cut it.
+  Narrative sources are excluded as a set, and the module excludes itself by deriving its own path
+  from `__file__` rather than spelling it out.
+- **`scripts/` and `bin/` are surveyed whole, with no extension test, because a suffix filter is
+  #193 wearing a different hat.** `git ls-files '*.sh'` matched one path while `bin/oss-workspace`
+  — tracked, POSIX `sh`, extensionless — was parsed by no leg for its whole life, and the leg
+  stayed green because a lint that found nothing and a lint that never received the file both exit
+  0. A file skipped by a suffix test is not an offender and not unknown; it is simply never looked
+  at. `scripts/shell_sources.py` exists to solve that by extension **or** shebang — and the
+  unwired check deliberately does not call it, because dropping the classification entirely is
+  stronger than classifying better: after the suffix test is gone there is no question left to ask,
+  and `shell_sources.py` answers "is this shell", which was never the question.
 - **A forge reads workflows only from `.github/workflows/` itself.** Subdirectories are unsupported
   and a symlink there fails outright — hence the `oss-` filename prefix as the only ownership
   signal available.
