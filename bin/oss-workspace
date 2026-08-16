@@ -319,6 +319,124 @@ DERIVE_NAME
 )
 fi
 
+# ONE gate, both routes (#230).
+#
+# Above this line a name arrives by two roads: DECLARED in this repo's tracked
+# .supertool.json, or DERIVED from `repo` in .oss.json. #207 routed the second
+# through oss_config and left the first exporting whatever it read — a guard and its
+# bypass a hundred lines apart in one file. Measured before the fix: a declared name
+# of `../../../tmp/pwned` was exported as `../../../tmp/pwned`, and one carrying a
+# newline was exported carrying it.
+#
+# The fix is not "validate the declared name with the function the derived route
+# uses". That function takes an `owner/name` slug and folds it; a declared name is
+# not a slug and would be refused for having no `/`. What both roads produce is a
+# value of the same KIND — a watch channel name — so there is now one statement of
+# what such a value may be, and it is called HERE, once, after the roads converge.
+# That is what makes "no bypass" a property of the code rather than a promise: a
+# bypass is a road that does not reach the gate, and there is no other road.
+#
+# What the rule refuses is narrow on purpose, and the cost of getting it wrong falls
+# on somebody who declared a name deliberately. It refuses only what this plugin can
+# argue without knowing anything about supertool: a value that is not usable as a
+# PATH COMPONENT, because the consumer renders the name into a socket path and a
+# poller state directory. It does NOT apply the consumer's own NAME_RE, which caps
+# the length at 32 and constrains the first character — transcribing that here would
+# put a second spelling of somebody else's rule in this repository to drift, and
+# would take a working private channel away from any repo whose consumer accepts a
+# name this copy does not. That question is asked of the consumer and reported
+# instead (#231).
+#
+# A refusal is the same shape as every other arm here: export nothing, say so on
+# stderr, open the session anyway. And it refuses when it CANNOT CHECK, which is why
+# the `-z "$python_bin"` arm exists at all: `$watch_name` can only be non-empty when
+# a python was found, so that arm is unreachable today. It is written because
+# falling through to an unvalidated export the moment the validator goes missing is
+# the absence this plugin is named after, and a future edit that produced a name
+# without python would otherwise reopen the bypass silently.
+#
+# The gate is told what is ALREADY exported, and that is not decoration. An existing
+# SUPERTOOL_WATCH_NAME wins over both roads, so when the gate refuses what it holds,
+# the session lands on that export — NOT on the shared default socket. Claiming the
+# shared socket there reports a state the process is demonstrably not in, and it
+# takes the true half with it: refusing blanks `$watch_name`, and the "an export
+# wins" line below only fires while `$watch_name` is non-empty, so the reader was
+# told the wrong thing and not told the right one. Found by review on this change.
+#
+# The two sibling arms above — DERIVE_NAME's refusals and READ_NAME's conflict and
+# unreadable receipts — make the same unconditional claim and were not touched here:
+# that is the class rather than this instance, it wants the same argument made in
+# three more heredocs, and it is reported for filing rather than ridden in on this.
+if [ -n "$watch_name" ]; then
+    if [ -z "$python_bin" ]; then
+        if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
+            echo "oss-workspace: no working python, so the watch channel name" \
+                 "($watch_name_source) could not be checked. SUPERTOOL_WATCH_NAME is" \
+                 "already exported as ${SUPERTOOL_WATCH_NAME} and wins, so this" \
+                 "session uses that channel. supertool 'channel:health'" >&2
+        else
+            echo "oss-workspace: no working python, so the watch channel name" \
+                 "($watch_name_source) could not be checked and was not exported." \
+                 "This session is on the SHARED DEFAULT socket." \
+                 "supertool 'channel:health'" >&2
+        fi
+        watch_name=""
+    elif ! "$python_bin" - "$watch_name" "$watch_name_source" "$plugin_root/scripts" \
+                          "${SUPERTOOL_WATCH_NAME:-}" <<'CHECK_NAME'
+import sys
+
+# Imported, not restated. A second spelling of a rule is a second rule, and this
+# script has already paid for that once: the character class DERIVE_NAME used to
+# carry permitted `.`, `..` and a leading `-` where scaffold and doctor refused them.
+sys.path.insert(0, sys.argv[3])
+
+# Which socket the session ACTUALLY lands on when this gate refuses. An already
+# exported SUPERTOOL_WATCH_NAME wins over both roads, so refusing here costs nothing
+# and the session stays on that channel; only when there is no export does a refusal
+# mean the shared default. One sentence for the state that is true, computed once,
+# because a receipt that describes the wrong state is worse than no receipt: it is
+# read, believed, and stops the reader looking. Quoted with %r for the same reason
+# `problem` is — this value comes from the environment and never met the validator.
+already = sys.argv[4]
+if already:
+    landed = (
+        "SUPERTOOL_WATCH_NAME is already exported as %r and wins, so this session "
+        "uses that channel and nothing was exported over it." % already
+    )
+else:
+    landed = (
+        "Nothing was exported and this session is on the SHARED DEFAULT socket."
+    )
+
+try:
+    import oss_config
+except Exception as err:
+    # Could not check is not clean. Exporting the name anyway here would delete the
+    # guard in exactly the case where it is missing.
+    sys.stderr.write(
+        "oss-workspace: the config validator could not be loaded from %s (%s), so the "
+        "watch channel name (%s) could not be checked. %s "
+        "supertool 'channel:health'\n"
+        % (sys.argv[3], type(err).__name__, sys.argv[2], landed))
+    raise SystemExit(1)
+
+problem = oss_config.watch_name_problem(sys.argv[1])
+if problem:
+    # `problem` quotes the value back with `{!r}`, which escapes a newline, a control
+    # character and anything a terminal would act on — and sys.stderr defaults to
+    # `backslashreplace`, so a codepage that cannot represent it escapes rather than
+    # raising. Both measured rather than assumed (#207), and the reason nothing here
+    # needs a sanitiser in front of it.
+    sys.stderr.write(
+        "oss-workspace: %s -- %s. %s supertool 'channel:health'\n"
+        % (sys.argv[2], problem, landed))
+    raise SystemExit(1)
+CHECK_NAME
+    then
+        watch_name=""
+    fi
+fi
+
 # An exported value is the one a running poller already captured, and moving the
 # paths underneath a live fleet is a documented failure. So an export wins — and
 # both values are named, because a name losing quietly is the other half of it.
@@ -332,6 +450,122 @@ if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
     fi
 elif [ -n "$watch_name" ]; then
     export SUPERTOOL_WATCH_NAME="$watch_name"
+fi
+
+# Will the consumer actually ACCEPT this name? (#231)
+#
+# Everything above decides what to export. Nothing above knows whether the thing on
+# the other end will use it. Measured against this organisation's real slugs on
+# 2026-08-16: `Digital-Process-Tools/claude-oss` derives a 32-character name that
+# supertool accepts exactly at its cap, while `claude-supertool` (38) and
+# `claude-jit-context` (40) derive names it discards and falls back to the shared
+# default socket — the state #191 exists to eliminate, reached while this script's
+# own output implies a private channel. Two of the three repositories this plugin
+# runs on are in it. This one works by one character, which is why nobody saw it.
+#
+# REPORT, do not refuse, and do not transcribe. A copy of supertool's NAME_RE in
+# this repository would drift from the installed one, and refusing on a cap this
+# copy carried would take a working channel away from a repo whose consumer accepts
+# the name. So the rule is ASKED FOR: read out of the installed
+# presets/watch/naming.py at run time, which is a fact about the version actually on
+# this machine rather than a fact about when this file was last edited.
+#
+# Three states, and silence belongs to exactly one of them:
+#
+#   accepted        say nothing. A line printed on every healthy launch is furniture,
+#                   and furniture is how the line that matters stops being read.
+#   rejected        say so loudly, with the name, its length and the rule, because
+#                   "too long" without a number is unactionable.
+#   could not ask   say so loudly TOO, with the name and its length. Silence here
+#                   would be indistinguishable from acceptance, which is the absence
+#                   this plugin is named after.
+#
+# With no supertool installed at all there is no fourth state to report: the consumer
+# block below already says so with its own remedy, and a second line would be
+# furniture on a path where it is never actionable.
+if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then
+"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER' || true
+import importlib.util, json, os, sys
+
+name = sys.argv[1]
+
+# The registry, not a glob of the cache: the cache keeps every version ever
+# installed and a glob answers with whichever sorts last, which is a version this
+# session is not running. Same resolution and same order as FIND_CONSUMER below.
+registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+try:
+    with open(registry, encoding="utf-8") as handle:
+        doc = json.load(handle)
+except (OSError, ValueError):
+    # Reported by the consumer block below, with the remedy. Not restated here.
+    raise SystemExit(0)
+
+installs = [
+    entry.get("installPath")
+    for key, entries in (doc.get("plugins") or {}).items()
+    if key.split("@")[0] == "supertool"
+    for entry in entries or []
+    if entry.get("installPath")
+]
+if not installs:
+    raise SystemExit(0)
+
+
+def cannot_ask(why):
+    # The name is quoted with %r, which escapes a newline or anything a terminal
+    # would act on -- and this arm is reachable with an UNVALIDATED name, because an
+    # already-exported SUPERTOOL_WATCH_NAME wins and never goes through the gate.
+    sys.stderr.write(
+        "oss-workspace: could not ask the installed supertool whether it will accept "
+        "the watch channel name %r (%d characters) -- %s. So this session is on a "
+        "private socket or on the shared default one and nothing here can tell you "
+        "which. supertool 'channel:health'\n" % (name, len(name), why))
+
+
+rule_path = ""
+for path in installs:
+    candidate = os.path.join(path, "presets", "watch", "naming.py")
+    if os.path.isfile(candidate):
+        rule_path = candidate
+        break
+if not rule_path:
+    cannot_ask("none of %s holds presets/watch/naming.py, so that version either "
+               "predates the watch preset or keeps its rule somewhere else"
+               % ", ".join(installs))
+    raise SystemExit(0)
+
+# Reading the rule means executing the dependency's module. That is a smaller
+# exposure than this script already takes -- the consumer from the same install is
+# about to be registered as an MCP server and spawned -- and it is the only way to
+# get the rule of the version actually installed rather than a copy of one.
+#
+# SystemExit is caught beside Exception because a module calling sys.exit() on
+# import would otherwise end this block with no receipt, which reads as accepted.
+# KeyboardInterrupt is deliberately NOT caught: a launcher must stay interruptible.
+try:
+    spec = importlib.util.spec_from_file_location("_oss_watch_naming", rule_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rule = module.NAME_RE
+    pattern = rule.pattern
+    accepted = bool(rule.match(name))
+except (Exception, SystemExit) as err:
+    cannot_ask("%s could not be read (%s)" % (rule_path, type(err).__name__))
+    raise SystemExit(0)
+
+if accepted:
+    raise SystemExit(0)
+
+sys.stderr.write(
+    "oss-workspace: the installed supertool will DISCARD the watch channel name %r "
+    "(%d characters): it does not match %s, that version's own rule, read from %s. "
+    "The name was exported anyway -- refusing it here would be this plugin carrying "
+    "a copy of somebody else's rule -- so the consumer falls back to the SHARED "
+    "DEFAULT socket, which is what this line exists to make visible. Shorten the "
+    "derived name by declaring watch_name in an op block of this repo's "
+    ".supertool.json. supertool 'channel:health'\n"
+    % (name, len(name), pattern, rule_path))
+ASK_CONSUMER
 fi
 
 # The consumer ships with the SUPERTOOL plugin, not with this one, and its path

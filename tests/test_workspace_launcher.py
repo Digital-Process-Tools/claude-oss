@@ -153,19 +153,28 @@ def _mcp_calls(cwd):
     ]
 
 
-def _with_channel_consumer(home, bindir):
+def _with_channel_consumer(home, bindir, naming=None):
     """Plant what the script needs to register a channel: a `bun`, and a supertool
     plugin whose install path holds the consumer.
 
     The path is read from installed_plugins.json rather than globbed out of the
     cache, so the fixture writes that registry -- a glob answers with whichever
     version sorts last, and that is a version the session is not running.
+
+    `naming` is the text of the consumer's `presets/watch/naming.py`, which is where
+    that version keeps the rule deciding whether it will accept a name at all (#231).
+    None plants no such file, which is a third state rather than the absence of one:
+    the launcher then has a consumer it cannot ask.
     """
     _executable(bindir / "bun", "#!/bin/sh\nexit 0\n")
     install = home / ".claude" / "plugins" / "cache" / "dpt-plugins" / "supertool" / "9.9.9"
     consumer = install / "notifiers" / "claude-channel" / "channel.ts"
     consumer.parent.mkdir(parents=True)
     consumer.write_text("// stub\n", encoding="utf-8")
+    if naming is not None:
+        rule = install / "presets" / "watch" / "naming.py"
+        rule.parent.mkdir(parents=True)
+        rule.write_text(naming, encoding="utf-8")
     registry = home / ".claude" / "plugins" / "installed_plugins.json"
     registry.write_text(
         json.dumps({
@@ -182,7 +191,7 @@ def _with_channel_consumer(home, bindir):
 
 
 def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
-        watch_name_env=None, launcher=None):
+        watch_name_env=None, launcher=None, naming=None):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
@@ -197,7 +206,7 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
     home = Path(cwd) / "_home"
     (home / ".claude" / "plugins").mkdir(parents=True, exist_ok=True)
     if with_channel:
-        _with_channel_consumer(home, bindir)
+        _with_channel_consumer(home, bindir, naming=naming)
 
     env = dict(os.environ)
     env["HOME"] = str(home)
@@ -797,6 +806,331 @@ def test_a_repo_with_a_space_is_refused_rather_than_sanitised_into_a_name(tmp_pa
 # filing rather than fixed here: it is a different defect (a declared name that
 # kills the reader, so the launcher silently derives over a declaration that
 # exists) and it wants its own change.
+
+
+# --- a DECLARED name the launcher exported verbatim (#230) --------------------
+#
+# `.supertool.json` is tracked too, so a declared `watch_name` arrives by ordinary
+# contribution exactly the way `repo` does. #207 routed the DERIVED route through
+# `oss_config`; the declared route three lines above it was left exporting whatever
+# it read. Measured on this script before the fix: `../../../tmp/pwned` was exported
+# as `../../../tmp/pwned`, and a name carrying a newline was exported carrying it.
+#
+# The fix is not "validate the declared name with the function the derived route
+# uses" -- that function takes an `owner/name` slug and folds it, and a declared name
+# is not a slug. It is that both routes now produce a value of the same KIND, a watch
+# channel name, and there is one statement of what such a value may be
+# (`oss_config.watch_name_problem`) with one call site in this script, after the two
+# routes converge. A bypass is a route that does not reach the gate, and there is
+# now nowhere else a name is produced.
+#
+# What the rule refuses is chosen from the harm this plugin can argue on its own:
+# the consumer turns the name into a socket path and a state directory, so a value
+# that is not usable as a path component is refused. It is deliberately NOT the
+# consumer's `NAME_RE`, which also caps the length and constrains the first
+# character. Refusing on those would take a working private channel away from a
+# repository whose consumer accepts it -- a future supertool raising the cap, say.
+# That question is asked of the consumer and reported instead (#231).
+
+REFUSED_DECLARED_NAMES = [
+    "../../../tmp/pwned",
+    "..",
+    "sub/dir",
+    "has space",
+]
+
+
+@pytest.mark.parametrize("value", REFUSED_DECLARED_NAMES)
+def test_a_declared_watch_name_that_is_not_a_path_component_is_refused(tmp_path, value):
+    """Read out of the process the launcher exec'd, never out of the script's text.
+
+    Before the fix each of these was exported verbatim, so the empty string here
+    cannot be produced by a launcher that does nothing.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, value)
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    # The route is named, because a maintainer with both files has to know which one
+    # to open -- and the derivation did not silently run in its place.
+    assert ".supertool.json" in done.stderr, done.stderr
+    assert _exported_watch_name(repo) != "owner-name", done.stderr
+
+
+def test_a_declared_name_carrying_a_newline_is_refused(tmp_path):
+    """Separate from the parametrised case so the value survives the fixture.
+
+    A newline in a declared name reached the export intact before the fix. It is
+    kept out of `REFUSED_DECLARED_NAMES` because a pytest test id built from it is
+    unreadable, not because it is a different defect.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "a" + chr(10) + "b")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
+def test_the_refusal_did_not_delete_the_declared_route(tmp_path):
+    """The must-fire half of the pair above, in the same fixture shape.
+
+    Without it, a launcher that stopped honouring declarations altogether -- or one
+    that refused every name -- would satisfy every assertion above, and the whole
+    point of reading `.supertool.json` would be silently deleted by the fix.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "declared-by-hand")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "declared-by-hand", done.stderr
+    assert "SHARED DEFAULT" not in done.stderr, done.stderr
+
+
+def test_a_refusal_does_not_claim_the_shared_socket_when_an_export_already_won(tmp_path):
+    """The gate refuses a name, and the session is on a private channel anyway.
+
+    An already-exported SUPERTOOL_WATCH_NAME wins over both roads, so when the gate
+    refuses what it holds, the session lands on the EXPORT -- not on the shared
+    default socket. Saying "SHARED DEFAULT" there reports a state the process is
+    demonstrably not in, which is the misreport this repository is named after
+    pointed at its own receipt. Found by review; reproduced before it was fixed:
+    the session ran on `a-live-fleet` while stderr said the shared socket.
+
+    Worse than the wrong half is the missing half. Refusing blanks `$watch_name`,
+    and the pre-existing "an export wins and both values are named" line only fires
+    when `$watch_name` is non-empty -- so the reader was told the wrong thing and
+    not told the right one.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "../../../tmp/pwned")
+    done, argv = run(repo, with_channel=True, watch_name_env="a-live-fleet")
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "a-live-fleet", done.stderr
+    # Still refused, and still said out loud: the value is named so a maintainer
+    # knows which file to fix even though it lost to the environment anyway.
+    assert "watch name" in done.stderr, done.stderr
+    assert "SHARED DEFAULT" not in done.stderr, done.stderr
+    # And the channel it IS on is named, because the refusal alone reads as a repo
+    # with no channel at all.
+    assert "a-live-fleet" in done.stderr, done.stderr
+
+
+def test_a_refusal_with_no_export_still_names_the_shared_socket(tmp_path):
+    """The must-fire half of the pair above, same fixture, one variable changed.
+
+    Without it, a fix that simply deleted the sentence from every refusal would
+    satisfy the assertion above and take the true warning with it.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "../../../tmp/pwned")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
+def test_a_declared_name_cannot_be_checked_without_the_validator(tmp_path):
+    """The third state, and it has to refuse rather than fall through.
+
+    The gate imports `oss_config` from this plugin's own tree. A tree with no
+    `scripts/` is "could not check", and exporting the declared name anyway there
+    would make the guard disappear in exactly the case where it is missing -- the
+    absence this repository is named after, one layer down. The name is a valid one
+    on purpose: what is under test is the missing validator, not the value.
+    """
+    repo = _repo(tmp_path / "repo")
+    _declare_watch_name(repo, "declared-by-hand")
+    done, argv = run(
+        repo, with_channel=True, launcher=_launcher_without_its_scripts(tmp_path)
+    )
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
+# --- a name the consumer will discard, and nobody said so (#231) --------------
+#
+# `oss_config.watch_channel_name` folds `owner/name` into `owner-name` with no length
+# and no leading-character constraint, and nothing in this plugin knows the
+# consumer's own rule. Measured against this organisation's real slugs on 2026-08-16:
+# `Digital-Process-Tools/claude-oss` derives a 32-character name that supertool
+# accepts EXACTLY at its cap, and `claude-supertool` (38) and `claude-jit-context`
+# (40) derive names it discards -- so the session lands on the shared default socket,
+# the state #191 exists to eliminate, while the launcher's own output implies a
+# private one. This repository works by one character, which is why nobody saw it.
+#
+# The fix is to REPORT, not to refuse, and not to transcribe. A copy of supertool's
+# `NAME_RE` in this repository would drift, and refusing on a cap this copy carries
+# would take a working channel away from a repo whose installed consumer accepts the
+# name. So the launcher ASKS the consumer: it reads the rule out of the installed
+# `presets/watch/naming.py` at run time, in three states -- accepted (silent),
+# rejected (loud), and could not ask (loud, and the name and its length are printed
+# so a reader can judge).
+#
+# Every fixture below plants a rule that is NOT supertool's, on purpose. A test whose
+# fixture spells the real pattern is satisfied by a launcher carrying a copy of it,
+# which is the one implementation this issue rules out. Only the last pair uses the
+# real one, and it is labelled as a reproduction of the issue's table rather than as
+# the rule under test.
+
+#: A consumer rule deliberately unlike the real one: lower-case, at most 8. If the
+#: launcher carried a copy of supertool's pattern instead of reading this file, the
+#: rejected cases below would come back accepted.
+#:
+#: The `-` is in the class because the fold turns the slug's one slash into a dash,
+#: so EVERY derived name carries one: a class without it can never accept anything
+#: and the must-fire half of each pair below becomes vacuous. Found by that half
+#: failing, which is the only reason it is in the fixture and not a live defect.
+FIXTURE_NAMING = (
+    "import re\n"
+    "NAME_RE = re.compile(r'^[a-z-]{1,8}" + chr(92) + "Z')\n"
+)
+
+
+def test_a_name_the_consumer_will_discard_is_reported(tmp_path):
+    """`owner-name` is 10 characters, and the planted rule caps at 8.
+
+    Still exported: refusing here would be this plugin enforcing somebody else's
+    rule, and the harm the issue measures is silence, not the export.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=True, naming=FIXTURE_NAMING)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+    assert "DISCARD" in done.stderr, done.stderr
+    assert "owner-name" in done.stderr, done.stderr
+    # The length, because "this name is too long" is unactionable without it, and
+    # the issue's whole table is a length table.
+    assert "10 characters" in done.stderr, done.stderr
+    # The rule quoted back is the one read off disk, not one this repo carries.
+    assert "[a-z-]{1,8}" in done.stderr, done.stderr
+
+
+def test_a_name_the_consumer_accepts_is_not_reported(tmp_path):
+    """The must-fire half, in the same fixture with the same planted rule.
+
+    Without it every assertion above is satisfied by a launcher that prints the
+    warning unconditionally -- which is a warning that has become furniture, and
+    furniture on the healthy path is how a real one stops being read.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text('{"repo": "own/nam"}', encoding="utf-8")
+    done, argv = run(repo, with_channel=True, naming=FIXTURE_NAMING)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "own-nam", done.stderr
+    assert "DISCARD" not in done.stderr, done.stderr
+    assert "could not ask" not in done.stderr, done.stderr
+
+
+def test_a_consumer_with_no_naming_rule_is_could_not_ask_rather_than_accepted(tmp_path):
+    """The third state, and the one this repository is named after.
+
+    A consumer is installed and its rule is not where this launcher looks -- an
+    older version, a moved file. Silence there is indistinguishable from a name the
+    consumer accepts, so it says it could not ask and prints what it could not check.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=True, naming=None)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+    assert "could not ask" in done.stderr, done.stderr
+    assert "owner-name" in done.stderr, done.stderr
+    assert "10 characters" in done.stderr, done.stderr
+
+
+def test_a_naming_rule_that_will_not_load_is_could_not_ask(tmp_path):
+    """Reading the rule means executing the consumer's module, so it can fail.
+
+    Failing into "accepted" would be the same absence one layer down. `SystemExit`
+    is caught alongside `Exception` on purpose: a module that calls `sys.exit` on
+    import must not take the launcher's session with it.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(
+        repo, with_channel=True, naming="raise RuntimeError('boom')\n"
+    )
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+    assert "could not ask" in done.stderr, done.stderr
+
+
+def test_a_naming_module_that_exits_on_import_does_not_end_the_session(tmp_path):
+    repo = _repo(tmp_path)
+    done, argv = run(
+        repo, with_channel=True, naming="import sys\nsys.exit(3)\n"
+    )
+    assert argv, done.stderr
+    assert "could not ask" in done.stderr, done.stderr
+
+
+def test_a_naming_module_with_no_rule_in_it_is_could_not_ask(tmp_path):
+    """`NAME_RE` renamed or removed upstream. Not an acceptance."""
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=True, naming="PATTERN = 'x'\n")
+    assert argv, done.stderr
+    assert "could not ask" in done.stderr, done.stderr
+
+
+def test_no_consumer_at_all_says_nothing_here(tmp_path):
+    """The consumer block already reports an absent supertool with its own remedy.
+
+    A second line saying the name could not be checked adds nothing an absent
+    consumer does not already imply, and a warning printed on a path where it is
+    never actionable is the definition of furniture.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=False)
+    assert argv, done.stderr
+    assert "could not ask" not in done.stderr, done.stderr
+    assert "DISCARD" not in done.stderr, done.stderr
+
+
+# The issue's own table, reproduced. The pattern here IS supertool's, copied from
+# `presets/watch/naming.py` in versions 0.40.0 through 0.46.0 and measured on
+# 2026-08-16 -- as a FIXTURE standing in for an installed dependency, which is what
+# a fixture is for. It is not the rule under test: the tests above plant a different
+# one, and they are what proves the launcher reads the file rather than carrying a
+# copy. If this pattern goes stale, these two tests stop reproducing the issue and
+# no shipped behaviour changes with it.
+SUPERTOOL_NAMING = (
+    "import re\n"
+    "NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}" + chr(92) + "Z')\n"
+)
+
+
+def test_the_slug_this_plugin_is_deployed_on_that_derives_a_rejected_name(tmp_path):
+    """`Digital-Process-Tools/claude-supertool` -> 38 characters, discarded."""
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text(
+        '{"repo": "Digital-Process-Tools/claude-supertool"}', encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True, naming=SUPERTOOL_NAMING)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "Digital-Process-Tools-claude-supertool"
+    assert "DISCARD" in done.stderr, done.stderr
+    assert "38 characters" in done.stderr, done.stderr
+
+
+def test_the_slug_that_works_by_one_character_is_still_accepted(tmp_path):
+    """`Digital-Process-Tools/claude-oss` -> 32, exactly at the cap.
+
+    The must-fire half of the pair above and the reason nobody saw this: a check
+    keyed on a real slug is the only fixture that could ever have caught it, and
+    the suite's own `owner/name` is structurally incapable of it.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text(
+        '{"repo": "Digital-Process-Tools/claude-oss"}', encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True, naming=SUPERTOOL_NAMING)
+    assert argv, done.stderr
+    name = _exported_watch_name(repo)
+    assert name == "Digital-Process-Tools-claude-oss", done.stderr
+    assert len(name) == 32, name
+    assert "DISCARD" not in done.stderr, done.stderr
 
 
 def _launcher_without_its_scripts(tmp_path):

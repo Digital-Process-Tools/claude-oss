@@ -191,7 +191,7 @@ def repo_problem(value):
     return None
 
 
-# The one consumer of `repo` that did not route through the guard above (#207).
+# The consumer of `repo` that did not route through the guard above (#207).
 #
 # `bin/oss-workspace` derives SUPERTOOL_WATCH_NAME from `repo` at SESSION START --
 # before /oss:tick, before doctor, before anything else reads the config -- and did
@@ -200,11 +200,22 @@ def repo_problem(value):
 # them into a name and exported it, and supertool turns that name into a socket path
 # and a poller state directory.
 #
+# The sentence this comment used to open with -- "the ONE consumer of `repo` that did
+# not route through the guard" -- was read as a claim that the launcher had no other
+# unguarded route to SUPERTOOL_WATCH_NAME, and that was false when it was written.
+# The launcher has a second route which does not consume `repo` at all: a `watch_name`
+# DECLARED in a managed repository's tracked `.supertool.json`, which it exported
+# verbatim (#230). The rule for what a derived name may be therefore is not the whole
+# rule for what an EXPORTED name may be, and `watch_name_problem` below is the second
+# half. Uniqueness claims in a comment are what stop the next reader looking.
+#
 # Whether such a name TRAVERSES is a fact about the dependency's path construction
 # rather than about this module, and the issue recorded it unestablished. Routing
 # through `repo_problem` is what makes the question moot: a validated slug carries
 # exactly one slash, the fold below always turns it into a dash, so the result holds
-# no separator and can never be `.` or `..` exactly.
+# no separator and can never be `.` or `..` exactly. That claim is a measurement in
+# `tests/test_watch_name.py`, which folds every accepted slug in its fixture and puts
+# the result through `watch_name_problem`, rather than prose nobody re-checks.
 WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -320,6 +331,86 @@ _REF_CONTROLS = frozenset(chr(point) for point in range(0x20)) | {"\x7f"}
 _REF_FORBIDDEN = (
     frozenset(" ~^:?*[") | {"\\"} | _REF_CONTROLS | frozenset(LINE_BREAKS)
 )
+
+
+#: What a watch channel name may not carry, chosen from the harm rather than from a
+#: shape -- the same decision `test_command_problem` makes above, and for the same
+#: reason: there is no pattern here that is both tight enough to be worth having and
+#: loose enough not to refuse a channel that works.
+#:
+#: The harm is a PATH one. supertool renders the name into a socket path and a poller
+#: state directory, so a separator escapes the directory it was meant to name, and a
+#: line break or a control character puts arbitrary text into every receipt that
+#: quotes it -- including this plugin's own stderr.
+#:
+#: `_REF_CONTROLS` is reused rather than `_CONTROLS`, which carves tab out because a
+#: shell command legitimately holds one. A path component does not, and #180 already
+#: paid for a set that was quietly one byte looser than its own docstring.
+#:
+#: It lives here, below `_REF_CONTROLS` and `LINE_BREAKS`, rather than beside
+#: `watch_channel_name` where it reads better: both names are defined further down
+#: this file, and the first draft of this constant sat above them and raised
+#: `NameError` at import. Module order is not a style question.
+_WATCH_NAME_FORBIDDEN = (
+    frozenset("/") | {chr(92)} | _REF_CONTROLS | frozenset(LINE_BREAKS)
+)
+
+
+def watch_name_problem(value):
+    """Why this watch channel name cannot be used, or None when it is fine.
+
+    The single statement of what a watch channel name may be, for BOTH routes that
+    produce one. `bin/oss-workspace` reads a name declared in a managed repository's
+    tracked `.supertool.json` and derives one from `repo` when nothing declares it;
+    #207 guarded the second and left the first exporting whatever it read, so the
+    guard and its bypass sat a few lines apart in one file (#230). The launcher now
+    calls this once, after the two routes converge, which is what makes "no bypass" a
+    property of the code rather than a promise: there is nowhere else a name is made.
+
+    What it deliberately does NOT do is decide whether the consumer will ACCEPT the
+    name. supertool has its own `NAME_RE`, which caps the length at 32 and constrains
+    the first character. Transcribing that here would put a second spelling of
+    somebody else's rule in this repository to drift -- the thing #207 declined to do
+    and this repo's own rules forbid -- and it would take a working private channel
+    away from any repository whose consumer accepts a name this copy does not, which
+    is exactly what a raised cap in a later supertool would produce. That question is
+    asked of the installed consumer at run time and REPORTED, not refused (#231).
+
+    So the floor is narrow on purpose: what is refused here is refused because this
+    plugin can argue the harm on its own, knowing nothing about the dependency.
+
+    A bare `str` return rather than the `(name, problem)` pair `watch_channel_name`
+    hands back: this validates and never derives, so there is no second value.
+    """
+    if not isinstance(value, str):
+        return (
+            "watch name: expected the channel name as a string, got {!r}".format(value)
+        )
+    if not value:
+        return (
+            "watch name: it is empty, and an empty path component names the directory "
+            "above rather than a channel"
+        )
+    found = set(value) & _WATCH_NAME_FORBIDDEN
+    # `isspace()` rather than a space literal: the set above already holds every line
+    # break, and what is left is the rest of Unicode's whitespace, which a socket path
+    # can technically carry and no receipt quoting it can be read against.
+    found |= {char for char in value if char.isspace()}
+    if found:
+        return (
+            "watch name: contains {}. The consumer renders this value into a socket "
+            "path and a poller state directory, so a separator escapes the directory "
+            "it was meant to name and a line break puts arbitrary text into every "
+            "receipt that quotes it; got {!r}".format(
+                ", ".join(repr(char) for char in sorted(found)), value
+            )
+        )
+    if value in (".", ".."):
+        return (
+            "watch name: {!r} names a directory that already exists rather than a "
+            "channel".format(value)
+        )
+    return None
 
 
 def _git_ref_problem(name):
