@@ -753,6 +753,11 @@ Three steps, not one:
    the head SHA and states GREEN / NOT GREEN / NO RUN / UNKNOWN apart. Not `gh run list --limit 1`,
    which returns whichever *workflow* started last and reports its conclusion as the commit's.
 
+   Read its third state here too, and not only at the release gate. A `pull_request`-triggered
+   workflow **could not have run on the squash commit**, so it is neither a pass nor a failure; the
+   op prints that under the table, and it is the most common thing on this line to be
+   **misread as a red default branch** — a merge reported as having broken `main` when nothing ran.
+
 Step 3 costs one call. Skipping it means the default branch is red for hours while the board reads
 clean, and the person who notices is the one who asked you to watch it.
 
@@ -876,8 +881,17 @@ see arriving is indistinguishable from deciding on a whim.
 Gates, each a call and not a feeling:
 
 1. **The default branch is green at leg level for the exact commit being tagged** — and count the
-   *workflows*, not just the runs. A workflow declared in `.github/workflows/` but absent from the
-   run list is `UNKNOWN`, never a pass.
+   *workflows*, not just the runs. `gh-branch` answers in **three** states and so does this gate:
+
+   - the workflow ran here and passed — covered;
+   - it is declared and **could not have run on this commit**, because its triggers do not include
+     the event that produced the commit. Not a pass, **not a blocker**, and it
+     **contributes no coverage** — name it in the report with where its coverage came from;
+   - it is declared, **should have run, and did not** — `UNKNOWN`, and it blocks. Unchanged.
+
+   The middle one is a measurement of an `on:` block, so re-read it from the op each release rather
+   than remembering it: a workflow that gains a `push:` trigger moves to the blocking state with
+   nothing announcing it.
 
    **Resolve the commit before you ask about it: `git rev-parse HEAD`, never an abbreviated sha.**
    That holds for whatever asks the forge which workflows ran — `gh-branch` above, or a raw

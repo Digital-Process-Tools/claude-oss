@@ -534,6 +534,83 @@ def _points_at_the_managers_authority_clause(text):
     )
 
 
+# --------------------------------------------------------------------------- #
+# Gate 1 is stated over an op that answers in three states (#229).
+#
+# `gh-branch` separates "declared and could not have run on this commit" from
+# "declared, should have run, and did not". The gate's prose had room for only
+# the second, so a `pull_request`-only workflow -- which structurally never runs
+# on a push commit -- read the same as a workflow that was silently skipped.
+# Both collapses are wrong: as `UNKNOWN` it blocks every release this repository
+# will ever cut, and waved through it takes the blocking state with it.
+#
+# So the predicates below require all three arms to be present and separable.
+# A file naming only two of them fails, and so does one that names the middle
+# arm and grades it a pass.
+# --------------------------------------------------------------------------- #
+
+
+def _states_gate_one_in_three_states(text):
+    return (
+        bool(re.search(r"could not have run on this commit", text))
+        and bool(re.search(r"should have run, and did not", text))
+        and "UNKNOWN" in text
+        and bool(re.search(r"[Nn]ot a pass and", text))
+        and bool(re.search(r"not a blocker", text))
+    )
+
+
+def _says_the_middle_state_adds_no_coverage(text):
+    """Not a blocker is not the same as covered.
+
+    The arm most likely to be written carelessly: "not a blocker" reads as
+    "fine", and a commit whose every declared workflow lands here would then be
+    green over zero workflows -- the gate counting nothing and reporting a pass,
+    which is the failure the workflow-not-run rule exists for in the first place.
+    """
+    return bool(re.search(r"contributes no coverage", text)) and bool(
+        re.search(r"uncovered, not green", text)
+    )
+
+
+def _requires_the_report_to_name_the_middle_state(text):
+    return bool(re.search(r"[Nn]ame the middle state in the release report", text)) and bool(
+        re.search(r"where its coverage did come from", text)
+    )
+
+
+def _forbids_remembering_the_trigger_verdict(text):
+    """The middle state is a measurement of an `on:` block, so it can go stale.
+
+    A workflow that gains a `push:` trigger moves from the middle arm to the
+    blocking one with nothing announcing it, so a verdict carried forward from
+    the last release waves through the exact case the gate exists for.
+    """
+    return bool(re.search(r"[Rr]e-read it from the op on every release", text)) and bool(
+        re.search(r"never carry the verdict forward", text)
+    )
+
+
+def _reads_the_branch_op_in_three_states(text):
+    return (
+        bool(re.search(r"could not have run on this commit", text))
+        and bool(re.search(r"should have run, and did not", text))
+        and bool(re.search(r"contributes no coverage", text))
+    )
+
+
+def _reads_the_third_state_at_the_merge_check_too(text):
+    """Same op, same third state, one step earlier in the loop.
+
+    #229 was filed against the release gate, but the op prints the same line
+    after every squash merge -- and there the middle arm is routinely misread as
+    the default branch having gone red.
+    """
+    return bool(re.search(r"could not have run on the squash commit", text)) and bool(
+        re.search(r"misread as a red default branch", text)
+    )
+
+
 # (label, predicate, pattern whose lines carry the fact)
 SETUP_FACTS = [
     ("identity.md describes the agent", _names_the_agent_as_identity_subject, r"who the agent is"),
@@ -674,7 +751,22 @@ SKILL_PROBE_FACTS = [
     ),
 ]
 
-SKILL_FACTS = SKILL_AUTHORITY_FACTS + SKILL_PROBE_FACTS
+# The skill states gate 1 and the post-merge branch check over the same op, so
+# the same three states have to reach both (#229).
+SKILL_GATE_FACTS = [
+    (
+        "the branch op is read in three states",
+        _reads_the_branch_op_in_three_states,
+        r"could not have run on this commit|contributes no coverage",
+    ),
+    (
+        "the third state is read at the merge check too",
+        _reads_the_third_state_at_the_merge_check_too,
+        r"could not have run on the squash commit|misread as a red default branch",
+    ),
+]
+
+SKILL_FACTS = SKILL_AUTHORITY_FACTS + SKILL_PROBE_FACTS + SKILL_GATE_FACTS
 
 DEVELOPER_FACTS = [
     (
@@ -705,6 +797,32 @@ RELEASE_FACTS = [
         r"where a denied release resumes|never reports as released",
     ),
 ]
+
+# Gate 1 in three states, and the compatibility field sourced where it is used.
+RELEASE_GATE_FACTS = [
+    (
+        "gate 1 is stated in three states",
+        _states_gate_one_in_three_states,
+        r"could not have run on this commit|should have run, and did not",
+    ),
+    (
+        "the middle state contributes no coverage",
+        _says_the_middle_state_adds_no_coverage,
+        r"contributes no coverage|uncovered, not green",
+    ),
+    (
+        "the release report names the middle state",
+        _requires_the_report_to_name_the_middle_state,
+        r"[Nn]ame the middle state in the release report",
+    ),
+    (
+        "the trigger verdict is re-read, never remembered",
+        _forbids_remembering_the_trigger_verdict,
+        r"never carry the verdict forward",
+    ),
+]
+
+RELEASE_FACTS = RELEASE_FACTS + RELEASE_GATE_FACTS
 
 ALL_FACTS = (
     SETUP_FACTS + SCAFFOLD_FACTS + TICK_FACTS + SKILL_FACTS
@@ -932,6 +1050,83 @@ def test_a_narrating_file_fails_every_release_predicate(label, predicate, _patte
         "{}: predicate passes on a file that names the subject and decides nothing. "
         "Naming the fragments is not sourcing the number, and knowing that denials "
         "happen is not having an answer for one.".format(label)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Controls for the three-state gate (#229) and the sourced field (#225).
+#
+# SILENT and NARRATING cannot catch either one. The gate's old sentence was not
+# silent about workflows -- it was *precise* about two of the three states, and
+# a "does this file discuss workflows that did not run" predicate passes on it
+# word for word. So the control is the superseded sentence itself, quoted.
+# --------------------------------------------------------------------------- #
+
+# Gate 1 exactly as it stood before #229: correct, and two states wide.
+TWO_STATE_GATE = (
+    "# Release\n"
+    "\n"
+    "1. **The default branch is green at leg level for the exact commit being tagged.**\n"
+    "   Count the *workflows*, not the runs — one declared in `.github/workflows/` but\n"
+    "   absent from the run list is `UNKNOWN`, never a pass. `supertool 'gh-branch'`,\n"
+    "   which is conjunctive over every workflow on the head SHA.\n"
+)
+
+# The other collapse, and the one a maintainer in a hurry actually writes: the
+# middle state named, and graded a pass. This fixture reaches the middle arm's
+# own words, so a predicate that merely greps for them passes here and the
+# three-state claim goes untested while reporting green.
+WAVED_THROUGH = (
+    "# Release\n"
+    "\n"
+    "1. **The default branch is green at leg level for the exact commit being tagged.**\n"
+    "   `supertool 'gh-branch'`. A workflow with no push trigger\n"
+    "   could not have run on this commit, so it is not `UNKNOWN` and the gate\n"
+    "   passes over it.\n"
+)
+
+GATE_CONTROL_FACTS = RELEASE_GATE_FACTS + SKILL_GATE_FACTS
+
+
+def test_the_gate_controls_actually_name_their_subjects():
+    """The positive control for the three controls below.
+
+    Each fixture has to reach the words its predicate looks for, or the tests
+    under it pass for the same reason SILENT does and prove nothing.
+    """
+    for subject in ("UNKNOWN", "gh-branch", "workflows", "run list"):
+        assert subject in TWO_STATE_GATE, subject
+    assert "could not have run on this commit" in WAVED_THROUGH
+
+
+@pytest.mark.parametrize(
+    "label,predicate,_pattern", GATE_CONTROL_FACTS, ids=[f[0] for f in GATE_CONTROL_FACTS]
+)
+def test_the_superseded_two_state_gate_fails_every_gate_predicate(label, predicate, _pattern):
+    """Precise about two states is what the defect looked like.
+
+    A predicate satisfied by the sentence #229 was filed against would certify
+    exactly the state being fixed.
+    """
+    assert not predicate(TWO_STATE_GATE), (
+        "{}: predicate passes on the two-state sentence #229 was filed "
+        "against.".format(label)
+    )
+
+
+@pytest.mark.parametrize(
+    "label,predicate,_pattern", GATE_CONTROL_FACTS, ids=[f[0] for f in GATE_CONTROL_FACTS]
+)
+def test_a_waved_through_middle_state_fails_every_gate_predicate(label, predicate, _pattern):
+    """Naming the middle state is not separating it.
+
+    The other half of the discrimination: this fixture says the middle arm's own
+    words and then grades it a pass, which is the second of the two wrong
+    collapses and the one no keyword search can tell from the fix.
+    """
+    assert not predicate(WAVED_THROUGH), (
+        "{}: predicate passes on a file that names the middle state and grades "
+        "it a pass.".format(label)
     )
 
 
