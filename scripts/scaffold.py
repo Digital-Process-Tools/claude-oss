@@ -1289,7 +1289,14 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
         from filenames in the managed repository** (#223). Callers print these rows
         without re-flattening, so the guarantee is the structure's rather than each
         caller's -- see the comment on the ``remove`` row below for why that is the
-        fix and a third flatten-at-the-print is not.
+        fix and another flatten-at-the-print is not.
+
+        Two statements print these rows today: ``_main``'s plan loop and its apply
+        receipt. ``show()`` reads the same list and takes only ``replace`` rows, so it
+        never carried the payload. #223 named three prints; the third is ``plan()``'s
+        template rows, whose paths this module ships and which were never a hole. The
+        number is exactly what must not be load-bearing, which is why the guarantee is
+        stated here rather than counted at the call sites.
     ``unreadable``
         Layer directories this process could not list. Their contents are unknown rather
         than empty, so the ``remove`` rows are incomplete rather than absent.
@@ -1422,14 +1429,14 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
                 # THE CHOKEPOINT, not the print statements, and that choice is the whole
                 # fix. #182 added these rows; #204 flattened four OTHER rows at their
                 # prints and its message said every receipt row was covered. Both
-                # commits are correct alone -- the rule-layer rows are printed by three
+                # commits are correct alone -- the rule-layer rows are printed by two
                 # further statements that were not in that four, so no per-diff review
                 # could see the hole. Repeating #204's per-site shape here would leave
-                # the fifth print statement somebody adds next year in exactly the same
-                # position. This is the one place a repository-derived name enters
-                # `entries`, so flattening it here is an invariant every consumer
-                # inherits without knowing it exists: the three prints, `--show` if the
-                # removal rows ever gain a body, and `doctor` if it ever renders them.
+                # the next print statement somebody adds in exactly the same position.
+                # This is the one place a repository-derived name enters `entries`, so
+                # flattening it here is an invariant every consumer inherits without
+                # knowing it exists: both prints, `show()` if the removal rows ever gain
+                # a body, and `doctor` if it ever renders them.
                 #
                 # At the row rather than in `_layer_scan`: `present` is set-differenced
                 # against `shipped` two lines up, and flattening before that comparison

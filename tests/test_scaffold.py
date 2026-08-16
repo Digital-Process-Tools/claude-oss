@@ -1070,17 +1070,18 @@ def test_the_unreadable_detail_is_one_line_for_a_consumer_that_does_not_print(tm
 # #223, and the second instance of #204's class in this file in two releases. The names
 # in `.claude/jit-context/<dim>/01-oss/` are walked out of the MANAGED repository, so
 # they are data. `_layer_scan` joined one into a `remove` row with a bare `.format()`,
-# and three print statements -- none of them among the four `d02e95a` flattened -- put
-# that row on stdout. A newline in the name ends the row and starts whatever follows at
-# column 0, where it is indistinguishable from a line scaffold wrote itself.
+# and two print statements -- neither among the four `d02e95a` flattened -- put that row
+# on stdout. A newline in the name ends the row and starts whatever follows at column 0,
+# where it is indistinguishable from a line scaffold wrote itself. (#223 named three
+# prints; the third renders `plan()`'s template rows, whose paths this plugin ships.)
 #
 # The payload forges the run's own `WROTE:` summary, which is why the "every line begins
 # with a known label" assertion is NOT on its own enough on the apply path: `WROTE:` is a
 # label the receipt really uses. The teeth are in the pair -- the label sweep, plus
 # "exactly one WROTE: line and it is the one reporting what was actually written".
 #
-# The sweep is deliberately over the WHOLE receipt rather than over the three rows the
-# fix touches. A per-site fix is what #204 did and it is how this recurred; asserting the
+# The sweep is deliberately over the WHOLE receipt rather than over the rows the fix
+# touches. A per-site fix is what #204 did and it is how this recurred; asserting the
 # rendered receipt as a whole is what makes a print statement added next year fail here
 # rather than in a release audit.
 
@@ -1196,7 +1197,7 @@ def test_a_rule_layer_filename_with_a_newline_cannot_forge_a_row_of_the_apply_re
 
 
 def test_every_rule_plan_row_is_one_line_for_a_consumer_that_does_not_print(tmp_path):
-    """The invariant the three print statements now rely on, asserted on the structure
+    """The invariant both print statements now rely on, asserted on the structure
     rather than on any one caller: a consumer added later inherits it without having to
     remember. Paired with the two receipt tests above, which are what would catch a
     repo-derived value entering the receipt through some other door."""
