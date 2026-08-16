@@ -2243,27 +2243,40 @@ def test_the_doctor_convention_check_fires_on_the_documents_as_they_were():
     )
 
 
-# --- #195: a body write is confirmed by re-reading the body, never by the exit ---
+# --- #195: the verification is written by the op that reads back what it wrote ---
 #
-# The section documented one write call and stopped there. That call was observed
-# failing against a `gh` old enough to still request `projectCards` -- the edit did
-# not land, and the error named a field the caller never asked for, so it reads as
-# Projects noise rather than as an unwritten body. The mechanism is a version
-# accident and will age out; the invariant is that the record is confirmed by
-# looking at what was published. So the anchor is on the read-back, not on which
-# call does the writing -- a section that swaps `gh pr edit` for the REST route,
-# or back again once `gh` is current, still has to satisfy this.
+# The section documented raw `gh pr edit --body-file` and stopped there. That call
+# asks GraphQL for `projectCards`, which GitHub has sunset, so it exits non-zero
+# and leaves the body unchanged -- and the error names a field the caller never
+# asked for, so it reads as Projects noise rather than as an unwritten body. The
+# supertool `gh-pr-edit` op exists for exactly this and does the half that matters:
+# it re-parses the published body for the closing reference before it writes, and
+# compares what came back against the bytes it sent afterwards, so a write that
+# landed something else is never rendered as a success.
+#
+# The anchor is that the op is named AS A CALL and that no raw route is presented
+# ahead of it. Two deliberate choices, both of which a looser anchor would have got
+# wrong:
+#
+#   * `gh-pr-edit:` carries the colon. The pre-#195 text contained the bare name --
+#     inside a sentence asserting the op did not exist -- so an anchor on
+#     "gh-pr-edit" alone would have been satisfied by the very wording it was
+#     written to replace. That is the toothless prose test this file exists to
+#     avoid, and it was one character away.
+#   * Position, not mere presence. An earlier draft asked only that some read-back
+#     token appear somewhere after the write; a section could satisfy that with an
+#     unrelated later mention of `gh-pr:` and still teach the bug. Requiring the raw
+#     routes to sit after the op means a raw call can only ever read as a fallback.
 
 VERIFICATION_HEADING = "### Your verification is a different voice, so append it"
 
-# Calls that replace a pull request body. Both are whole-body writes; neither
-# route has a partial append, which is why an unread result is a lost record
-# rather than a partial one.
-BODY_WRITE_CALLS = ("gh pr edit", "-X PATCH")
+# The op that owns the write, named as a call rather than as a word.
+VERIFIED_WRITE_CALL = "gh-pr-edit:"
 
-# The read-back, named as the op rather than as a phrase: the invariant is that
-# the section sends the reader to the published body, not that it says the word.
-BODY_READ_BACK = "gh-pr:"
+# Routes that replace a body with nothing checking what landed. Both are
+# whole-body writes; neither has a partial append, which is why an unread result
+# is a lost record rather than a partial one.
+RAW_BODY_WRITES = ("gh pr edit", "-X PATCH")
 
 
 def _verification_section(text=None):
@@ -2282,58 +2295,75 @@ def _verification_section(text=None):
     return tail if stop < 0 else tail[:stop]
 
 
-def _writes_without_read_back(section):
-    """The body-write calls in SECTION with no read-back anywhere after them.
+def _raw_writes_ahead_of_the_op(section):
+    """Raw body-write routes SECTION presents before it names the verified op.
 
-    () means every write named is followed by one. A section naming no write at
-    all also returns (), which is why the findability test asserts a write is
-    present -- otherwise deleting the call would read as compliance.
+    () means every raw route named sits after the op, so it can only read as a
+    fallback. A section that never names the op at all returns every raw route it
+    does name -- which is the pre-#195 state, where the only route offered was the
+    raw one and the text said in as many words that no op existed.
     """
-    unconfirmed = []
-    for call in BODY_WRITE_CALLS:
-        at = section.rfind(call)
+    at_op = section.find(VERIFIED_WRITE_CALL)
+    ahead = []
+    for call in RAW_BODY_WRITES:
+        at = section.find(call)
         if at < 0:
             continue
-        if BODY_READ_BACK not in section[at:]:
-            unconfirmed.append(call)
-    return tuple(unconfirmed)
+        if at_op < 0 or at < at_op:
+            ahead.append(call)
+    return tuple(ahead)
 
 
 def test_the_verification_section_is_findable_and_names_a_write():
-    """Vacuity guard for the check below, in both directions."""
+    """Vacuity guard, in both directions: the checks below read this section, and
+    one of them passes over a section naming no write route at all.
+    """
     section = _verification_section()
     assert section is not None, (
-        "no {!r} in skills/manager/SKILL.md -- the read-back check would pass "
-        "over nothing".format(VERIFICATION_HEADING)
+        "no {!r} in skills/manager/SKILL.md -- both checks below would pass over "
+        "nothing".format(VERIFICATION_HEADING)
     )
-    named = [call for call in BODY_WRITE_CALLS if call in section]
+    named = [call for call in RAW_BODY_WRITES + (VERIFIED_WRITE_CALL,) if call in section]
     assert named, (
-        "the verification section names none of {!r}, so it documents no way to "
-        "record a verification at all -- the read-back check below would pass "
-        "vacuously".format(BODY_WRITE_CALLS)
+        "the verification section names no way to write a body at all, so it "
+        "documents no way to record a verification -- deleting the call would "
+        "otherwise read as compliance"
     )
 
 
-def test_every_body_write_in_the_verification_section_is_confirmed_by_a_read_back():
-    """#195. The documented append did not land and the section had no step that
-    would have noticed. Whichever call writes the body, the section has to send
-    the reader back to the published body afterwards.
+def test_the_verification_section_names_the_verified_write_op_as_a_call():
+    """#195. The documented append did not land and nothing in the section would
+    have noticed. The op is what makes the record real: it refuses a dropped
+    closing reference before the write and compares what came back against what it
+    sent after it, so the section has to hand a maintainer that call.
     """
     section = _verification_section()
     assert section is not None
-    unconfirmed = _writes_without_read_back(section)
-    assert unconfirmed == (), (
-        "the verification section names {!r} with no {!r} read-back after it: a "
-        "verification reported from the command's exit is a record nobody "
-        "read".format(unconfirmed, BODY_READ_BACK)
+    assert VERIFIED_WRITE_CALL in section, (
+        "the verification section does not name {!r} -- without it the append is "
+        "confirmed by a command's exit, and a verification nobody read back is "
+        "indistinguishable from one nobody performed".format(VERIFIED_WRITE_CALL)
     )
 
 
-def test_the_read_back_check_fires_on_the_section_as_it_was():
-    """Positive control, and the reason the check above is worth its lines. This
-    is the section as it stood before #195 -- one write call, correct about voice,
-    silent on confirming that the write landed. The anchor must be unmet against
-    it, or it was satisfied by wording the file already had.
+def test_no_raw_body_write_is_offered_ahead_of_the_verified_op():
+    """A raw route may appear as a fallback and be worth explaining -- #195's whole
+    argument is about which mechanism the skill teaches. It may not come first.
+    """
+    section = _verification_section()
+    assert section is not None
+    ahead = _raw_writes_ahead_of_the_op(section)
+    assert ahead == (), (
+        "the verification section offers {!r} before it names {!r}, so the route "
+        "with no read-back reads as the mechanism".format(ahead, VERIFIED_WRITE_CALL)
+    )
+
+
+def test_the_anchors_fire_on_the_section_as_it_was():
+    """Positive control, and the reason the two checks above are worth their lines.
+    This is the section as it stood before #195 -- one raw call, correct about
+    voice, and explicitly asserting that no op existed. Both anchors must be unmet
+    against it, or they were satisfied by wording the file already had.
     """
     before = (
         VERIFICATION_HEADING + "\n\n"
@@ -2351,19 +2381,24 @@ def test_the_read_back_check_fires_on_the_section_as_it_was():
         "`--body-file` replaces the whole body, so an append built from memory "
         "silently truncates the record you were protecting.\n"
     )
-    assert _verification_section(before) is not None, "the control lost its own heading"
-    assert _writes_without_read_back(_verification_section(before)) == ("gh pr edit",)
-    # Must-fire half: a passing state is reachable, not merely absent. Note the
-    # control above already says "read the agent's body back out" -- that is about
-    # the body before the write. Only a read after it satisfies this.
+    section = _verification_section(before)
+    assert section is not None, "the control lost its own heading"
+    # The bare name is present and must not count -- this is the character the
+    # anchor turns on.
+    assert "gh-pr-edit" in section
+    assert VERIFIED_WRITE_CALL not in section
+    assert _raw_writes_ahead_of_the_op(section) == ("gh pr edit",)
+    # Must-fire half, so a passing state is reachable rather than merely absent.
     after = (
         VERIFICATION_HEADING + "\n\n"
         "```bash\n"
-        "gh pr edit <N> --body-file <FILE>\n"
+        "supertool 'gh-pr-edit:<N>:@<FILE>'\n"
         "```\n\n"
-        "Then read the published body back with `gh-pr:<N>:full` and confirm your "
-        "section is in it. The exit status is not the confirmation.\n"
+        "Use the op rather than raw `gh pr edit`, which asks GraphQL for a sunset "
+        "field and leaves the body unchanged. The REST route "
+        "`gh api -X PATCH ...` is a fallback, not the mechanism.\n"
     )
-    assert _writes_without_read_back(_verification_section(after)) == ()
+    assert VERIFIED_WRITE_CALL in _verification_section(after)
+    assert _raw_writes_ahead_of_the_op(_verification_section(after)) == ()
 
 
