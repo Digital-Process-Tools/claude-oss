@@ -360,9 +360,10 @@ credentials, and the one agent this plugin lets near a tracker is confined to la
 content. So there is no word here for a completed filing and there is not meant to be. There used to
 be — `filed`, past tense, which a maintainer reading states-then-items reads as *done*; twice in one
 day it meant nobody filed it, and both findings were real (#254). Give every `report-for-filing`
-item a `reason` saying why you did not simply fix it, which is the same fix-it-or-file-it argument
-`adjacent` asks for; the validator refuses one without it, because a request that costs work to read
-becomes a thing to do later.
+item a `reason` saying why you did not simply fix it — the same judgment *fix it or file it* above
+asks of an `adjacent` item, and **not the same contract**: `adjacent` has no `reason` field, so there
+the argument rides inside `text` and nothing checks that it arrived, while here it is refused when
+empty. A request that costs work to read becomes a thing to do later.
 
 **Do not shell out to a headless `claude` CLI.** One agent did, unbounded, with auto-accepted write
 access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.

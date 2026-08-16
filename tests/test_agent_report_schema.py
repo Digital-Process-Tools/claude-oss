@@ -1455,10 +1455,13 @@ def test_a_finding_left_for_filing_carries_its_reason():
     """The one thing worth enforcing once the word is unambiguous.
 
     A `report-for-filing` finding is work handed to the maintainer, and what
-    they need in order to act is why the agent did not fix it -- the same
-    fix-it-or-file-it argument `adjacent` already asks for. With no reason it
+    they need in order to act is why the agent did not fix it. With no reason it
     is a sentence somebody has to reconstruct the judgment behind before they
     can open anything, which is how a request becomes a thing to do later.
+
+    `adjacent` records the same judgment and is deliberately not held to the same
+    contract -- it has no `reason` field, so its argument rides inside `text`
+    unchecked. Asserted rather than left to prose, by the pair below.
     """
     report = _example()
     report["review"]["findings"] = {
@@ -1483,3 +1486,38 @@ def test_a_finding_left_for_filing_carries_its_reason():
         "tree, which is a design decision this brief did not carry"
     )
     assert report_schema.validate(report) == []
+
+
+def test_the_adjacent_survey_is_deliberately_not_held_to_the_same_contract():
+    """The asymmetry the docstring above claims, asserted rather than described.
+
+    Two fields record the same act under the same word, and only one is checked.
+    That is a real difference and it is easy to state backwards -- so it is
+    pinned here: `adjacent` has no `reason` slot at all, and an item carrying
+    none is accepted. If a `reason` is ever added there, this fails and whoever
+    adds it decides in the same breath whether it is enforced, instead of
+    leaving two surveys that look symmetrical and are not.
+    """
+    adjacent = _schema()["$defs"]["adjacent"]
+    assert "reason" not in adjacent["properties"], (
+        "adjacent grew a reason field; decide whether it is enforced and say so "
+        "in _rule_finding's docstring, which currently states it is not"
+    )
+    assert adjacent["additionalProperties"] is False
+
+    report = _example()
+    report["adjacent"] = {
+        "state": "checked",
+        "items": [
+            {
+                "text": "the sibling helper has the same swallowed OSError",
+                "file": None,
+                "in_blast_radius": False,
+                "action": "report-for-filing",
+            }
+        ],
+    }
+    assert report_schema.validate(report) == [], (
+        "an adjacent item left for filing with no argument is refused, so the "
+        "two surveys are symmetrical after all and the docstring is wrong"
+    )

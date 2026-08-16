@@ -415,10 +415,17 @@ def _rule_finding(node, path, errors):
     verdict, it is work handed to the maintainer, and the schema deliberately has
     no word for a completed filing -- an agent cannot file, so the only thing this
     value can mean is a request (#254). What the maintainer needs before they can
-    act on one is why the agent did not simply fix it, which is the fix-it-or-file-it
-    argument `adjacent` already asks for. Without it the item is a sentence somebody
-    has to reconstruct a judgment behind, and a request that costs work to read is a
-    request that becomes a thing to do later.
+    act on one is why the agent did not simply fix it.
+
+    That is the same judgment the developer brief demands of an `adjacent` item, and
+    it is NOT the same contract, which is worth saying rather than implying: an
+    `adjacent` item has no `reason` field at all -- `$defs/adjacent` is
+    `additionalProperties: false` over `text`, `file`, `in_blast_radius` and
+    `action`, and `_RULES` has no entry for it -- so there the argument rides inside
+    the free-text `text` and nothing checks that it arrived. Here it is a field of
+    its own and it is refused when empty. Claiming parity would be this repository's
+    own defect class in a docstring: an enforcement asserted by the prose next to the
+    checker rather than by the checker.
     """
     if not _text(node, "text"):
         errors.append("{}: a finding carries its sentence, not a boolean".format(_label(path)))
