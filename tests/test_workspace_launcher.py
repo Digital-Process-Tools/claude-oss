@@ -191,7 +191,7 @@ def _with_channel_consumer(home, bindir, naming=None):
 
 
 def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
-        watch_name_env=None, launcher=None, naming=None):
+        watch_name_env=None, launcher=None, naming=None, env_extra=None):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
@@ -218,6 +218,12 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
     env.pop("SUPERTOOL_WATCH_NAME", None)
     if watch_name_env is not None:
         env["SUPERTOOL_WATCH_NAME"] = watch_name_env
+    # `env_extra` is deliberately narrow rather than a general escape hatch: #271 is
+    # about what a STRICT stdout does to a declared name, and PYTHONIOENCODING is the
+    # only lever that establishes a strict stdout in a child interpreter. A test that
+    # asserted on a codepage instead would be asserting on the runner.
+    if env_extra:
+        env.update(env_extra)
     # Minimal PATH, deliberately: with the real claude reachable, the "missing
     # claude" case found it and EXECUTED it -- a test suite that launches a live
     # agent session in a temp directory. Only the stub, the interpreter and the
@@ -801,11 +807,18 @@ def test_a_repo_with_a_space_is_refused_rather_than_sanitised_into_a_name(tmp_pa
 # macOS and Linux, where UTF-8 writes the character through. A test whose verdict
 # is decided by the runner's locale reports coverage it does not have.
 #
-# `sys.stdout` is the stream that IS strict, and the one place foreign text
-# reaches it -- `print("name=" + names[0])` in READ_NAME above -- is reported for
-# filing rather than fixed here: it is a different defect (a declared name that
-# kills the reader, so the launcher silently derives over a declaration that
-# exists) and it wants its own change.
+# `sys.stdout` is the stream that IS strict, and the one place foreign text reaches
+# it -- the declared name printed by READ_NAME -- was filed as #271 and is fixed at
+# the bottom of this file. It was a different defect on a different stream: not a
+# receipt that mangles a value, but a TRANSPORT that drops one, so the launcher
+# derived a name over a declaration that exists. This paragraph said "reported for
+# filing rather than fixed here" for a whole release, and #271 exists because the
+# decision was recorded in a test comment where nobody could find it.
+#
+# DERIVE_NAME's `print(name)` is the same stream and is NOT at risk, by construction
+# rather than by luck: `oss_config.WATCH_NAME_UNSAFE_RE` folds everything outside
+# [A-Za-z0-9._-] to a dash before the value is printed, so what reaches stdout there
+# is ASCII whatever `repo` held.
 
 
 # --- a DECLARED name the launcher exported verbatim (#230) --------------------
@@ -1158,3 +1171,401 @@ def test_a_validator_that_cannot_be_imported_derives_nothing_and_says_so(tmp_pat
     assert _exported_watch_name(repo) == "", done.stderr
     assert "SHARED DEFAULT" in done.stderr, done.stderr
     assert "owner-name" not in done.stderr, done.stderr
+
+# --- every refusing arm names the channel the session is ACTUALLY on (#270) ----
+#
+# `7b2841c` fixed ONE arm -- the gate's -- by handing the winning export into it and
+# computing one sentence for the state that is actually true. The reason only one got
+# fixed is that every arm stated the sentence independently, so there was nothing to
+# find and nothing to change in the other six.
+#
+# Six, not three. The issue names "DERIVE_NAME's refusals" as one arm; DERIVE_NAME
+# has FIVE refusal sites, and one of them -- the validator that will not import --
+# has its "SHARED DEFAULT" split across two source lines by string concatenation, so
+# it is invisible to the obvious grep for the phrase. A count taken from that grep
+# would have left it behind exactly the way the first three were left behind.
+#
+# Both directions, per arm, because a one-directional assertion passes against a fix
+# that deletes the sentence everywhere -- which is a worse receipt than the wrong one.
+# The must-fire half is the no-export run; the must-not-fire half is the export run.
+# Each case also carries a sentence proving ITS OWN arm ran, so a fixture that quietly
+# reached some other branch cannot satisfy the pair.
+
+
+def _deep_json():
+    """JSON nested deep enough that the parser gives up on it.
+
+    `json.load` raises `RecursionError` here, which is a `RuntimeError` and so is
+    caught by neither `except FileNotFoundError` nor `except (OSError, ValueError)`
+    in either heredoc. The block then exits non-zero having printed nothing, the
+    trailing `|| true` swallows it, and "the reader died" arrives at the shell as
+    "the file declares none" -- the same swallow #271 is about, one exception over.
+    """
+    return "[" * 60000 + "]" * 60000
+
+
+def _arm_read_conflict(tmp_path, repo):
+    _declare_disagreeing_watch_names(repo, "alpha", "beta")
+    return {}
+
+
+def _arm_read_unreadable(tmp_path, repo):
+    (repo / ".supertool.json").write_text("{not valid json", encoding="utf-8")
+    return {}
+
+
+def _arm_read_crashed(tmp_path, repo):
+    (repo / ".supertool.json").write_text(_deep_json(), encoding="utf-8")
+    return {}
+
+
+def _arm_derive_no_config(tmp_path, repo):
+    (repo / ".oss.json").unlink()
+    return {}
+
+
+def _arm_derive_unreadable_config(tmp_path, repo):
+    (repo / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    return {}
+
+
+def _arm_derive_crashed(tmp_path, repo):
+    (repo / ".oss.json").write_text(_deep_json(), encoding="utf-8")
+    return {}
+
+
+def _arm_derive_no_repo(tmp_path, repo):
+    (repo / ".oss.json").write_text('{"default_branch": "main"}', encoding="utf-8")
+    return {}
+
+
+def _arm_derive_refused_repo(tmp_path, repo):
+    (repo / ".oss.json").write_text('{"repo": ".."}', encoding="utf-8")
+    return {}
+
+
+def _arm_derive_no_validator(tmp_path, repo):
+    return {"launcher": _launcher_without_its_scripts(tmp_path)}
+
+
+# (prepare, a sentence only THIS arm prints)
+WATCH_REFUSAL_ARMS = [
+    (_arm_read_conflict, "disagree about watch_name"),
+    (_arm_read_unreadable, ".supertool.json could not be read"),
+    (_arm_read_crashed, ".supertool.json ended with status"),
+    (_arm_derive_no_config, ".oss.json, so nothing could be derived"),
+    (_arm_derive_unreadable_config, ".oss.json could not be read"),
+    (_arm_derive_crashed, ".oss.json ended with status"),
+    (_arm_derive_no_repo, "declares no repo"),
+    (_arm_derive_refused_repo, "expected 'owner/name'"),
+    (_arm_derive_no_validator, "config validator could not be loaded"),
+]
+
+WATCH_REFUSAL_IDS = [
+    "read_conflict",
+    "read_unreadable",
+    "read_crashed",
+    "derive_no_config",
+    "derive_unreadable_config",
+    "derive_crashed",
+    "derive_no_repo",
+    "derive_refused_repo",
+    "derive_no_validator",
+]
+
+
+def _require_json_recursion_crash(tmp_path):
+    """Establish the condition rather than assert a limit from a table.
+
+    The recursion limit is an interpreter fact, and a depth that overflows every build
+    this suite has run on is still not a depth that overflows the next one. So the
+    crash is MEASURED against this interpreter, and a build that survives it skips
+    carrying what went untested.
+    """
+    deep = Path(tmp_path) / "_deep_probe.json"
+    deep.write_text(_deep_json(), encoding="utf-8")
+    probe = subprocess.run(
+        [sys.executable, "-c", "import json,sys; json.load(open(sys.argv[1]))", str(deep)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    deep.unlink()
+    if probe.returncode == 0:
+        pytest.skip(
+            "this interpreter parsed 60000-deep JSON without raising (rc=0), so the "
+            "'the reader crashed and said nothing' arm of READ_NAME/DERIVE_NAME went "
+            "untested here: what is unverified is that a crash is reported rather than "
+            "read as 'this file declares none'"
+        )
+    if "RecursionError" not in probe.stderr:
+        pytest.skip(
+            "60000-deep JSON failed on this interpreter with %r rather than "
+            "RecursionError, so the fixture is not establishing the uncaught-exception "
+            "condition the crash arm is about, and that arm went untested"
+            % probe.stderr.strip().splitlines()[-1:]
+        )
+
+
+def _maybe_require_crash(prepare, tmp_path):
+    if prepare in (_arm_read_crashed, _arm_derive_crashed):
+        _require_json_recursion_crash(tmp_path)
+
+
+@pytest.mark.parametrize("prepare,fired", WATCH_REFUSAL_ARMS, ids=WATCH_REFUSAL_IDS)
+def test_a_refusing_arm_names_the_export_the_session_landed_on(tmp_path, prepare, fired):
+    """An already-exported SUPERTOOL_WATCH_NAME wins over both roads, so a refusal here
+    costs nothing and the session stays on that channel. Saying "SHARED DEFAULT"
+    reports a state the process is demonstrably not in -- and takes the true half with
+    it, because refusing blanks `$watch_name` and the pre-existing "an export wins"
+    line only fires while that variable is non-empty.
+
+    Reproduced on all of these before the fix: the session ran on `a-live-fleet` while
+    stderr claimed the shared socket.
+    """
+    _maybe_require_crash(prepare, tmp_path)
+    repo = _repo(tmp_path / "repo")
+    extra = prepare(tmp_path, repo)
+    done, argv = run(repo, with_channel=True, watch_name_env="a-live-fleet", **extra)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "a-live-fleet", done.stderr
+    # This arm ran. Without it the pair is satisfiable by a fixture that quietly
+    # reached some other branch and refused there for a different reason.
+    assert fired in done.stderr, done.stderr
+    # `ASK_CONSUMER` also quotes the exported name, so the name alone proves nothing.
+    # This sentence belongs to the refusal and exists only once the arm computes it.
+    assert "already exported as" in done.stderr, done.stderr
+    assert "SHARED DEFAULT" not in done.stderr, done.stderr
+
+
+@pytest.mark.parametrize("prepare,fired", WATCH_REFUSAL_ARMS, ids=WATCH_REFUSAL_IDS)
+def test_a_refusing_arm_with_no_export_still_names_the_shared_socket(tmp_path, prepare, fired):
+    """The must-fire half, same fixture, one variable changed.
+
+    Without it, a fix that deleted the sentence from every arm would satisfy the test
+    above and delete the true warning along with the false one.
+    """
+    _maybe_require_crash(prepare, tmp_path)
+    repo = _repo(tmp_path / "repo")
+    extra = prepare(tmp_path, repo)
+    done, argv = run(repo, with_channel=True, **extra)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert fired in done.stderr, done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    assert "already exported as" not in done.stderr, done.stderr
+
+
+@pytest.mark.parametrize("prepare", [_arm_read_crashed, _arm_derive_crashed],
+                         ids=["read_crashed", "derive_crashed"])
+def test_a_reader_that_crashed_does_not_derive_over_what_it_could_not_read(tmp_path, prepare):
+    """#271's mechanism reached by a different exception, and the reason `|| true` was
+    narrowed rather than left alone.
+
+    A `.supertool.json` the reader could not finish has NOT declared none, and a
+    `.oss.json` the deriver could not finish has not failed to carry a repo. Before the
+    fix the non-zero exit was swallowed, the empty stdout was read as `undeclared`, and
+    the launcher derived `owner-name` over a file nobody had established the contents
+    of -- silently, with no line on either stream.
+    """
+    _require_json_recursion_crash(tmp_path)
+    repo = _repo(tmp_path / "repo")
+    prepare(tmp_path, repo)
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "owner-name" not in done.stderr, done.stderr
+
+
+# --- a declared name this console cannot carry (#271) -------------------------
+#
+# `READ_NAME` prints the declared name to stdout and the shell reads it back. stdout is
+# STRICT, so a name the stream's encoding cannot represent raises `UnicodeEncodeError`,
+# `|| true` swallows it, and the launcher derives a name over a declaration that exists
+# and is perfectly valid on the machine that wrote it. The platform axis is the point:
+# cp1252 on Windows against a `.supertool.json` written on a UTF-8 machine, and
+# `.supertool.json` is tracked, so the value arrives by ordinary contribution.
+#
+# Three candidate behaviours, and the honest one is the third state. Printing the name
+# mangled is a receipt nobody can act on and an export nobody asked for; refusing to
+# launch trades the product for an enhancement. *A name is declared and this stream
+# cannot carry it* is neither, and it is the same shape as `conflict` and `unreadable`
+# one branch over: export nothing, derive nothing, say so, open the session.
+#
+# The condition is ESTABLISHED, not asserted from a table of codepages: a strict
+# encoding is forced onto the child interpreter and that interpreter is then asked
+# whether an unencodable print actually raises. A run that cannot establish it skips
+# carrying what went untested. Asserting on a runner whose locale happens to be UTF-8
+# would be a verdict decided by the runner, which is the vacuous-on-one-platform shape
+# the comment block above `REFUSED_DECLARED_NAMES` already had to delete once.
+
+UNENCODABLE_NAME = "café-chaîne"
+STRICT_ASCII = {"PYTHONIOENCODING": "ascii:strict"}
+
+
+def _require_strict_unencodable_stdout():
+    # `chr(233)` rather than the character in the source: the probe source is handed
+    # to the child as an argv, and argv is decoded with the filesystem encoding, so a
+    # literal here would make the fixture depend on the very thing under test.
+    probe = subprocess.run(
+        [sys.executable, "-c", "print(chr(233))"],
+        env=dict(os.environ, PYTHONIOENCODING="ascii:strict"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    if probe.returncode == 0:
+        pytest.skip(
+            "PYTHONIOENCODING=ascii:strict did not make this interpreter refuse to "
+            "print chr(233) (rc=0, stdout=%r), so a stdout that cannot carry a declared "
+            "name could not be established here and #271's arm went untested: what is "
+            "unverified is that such a name is REPORTED rather than derived over"
+            % probe.stdout
+        )
+    if "UnicodeEncodeError" not in probe.stderr:
+        pytest.skip(
+            "printing chr(233) under PYTHONIOENCODING=ascii:strict failed with %r "
+            "rather than UnicodeEncodeError, so the fixture is not establishing the "
+            "condition #271 is about and that arm went untested"
+            % probe.stderr.strip().splitlines()[-1:]
+        )
+
+
+def test_a_declared_name_this_stream_cannot_carry_is_reported_not_derived_over(tmp_path):
+    """Reproduced before the fix: `.supertool.json` declared the name below, the
+    launcher exported `owner-name`, and stderr carried not one word about it.
+    """
+    _require_strict_unencodable_stdout()
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, UNENCODABLE_NAME)
+    done, argv = run(repo, with_channel=True, env_extra=STRICT_ASCII)
+    assert argv, done.stderr
+    # The defect itself: a derivation ran on top of a declaration that exists.
+    assert _exported_watch_name(repo) != "owner-name", done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    # The receipt names the file, the value, and the stream that could not carry it.
+    assert ".supertool.json" in done.stderr, done.stderr
+    assert "cannot carry" in done.stderr, done.stderr
+    # `ascii()`, so the receipt is renderable on the very stream that refused the
+    # value. Quoting it raw would kill the receipt with the thing it is reporting.
+    assert r"caf\xe9" in done.stderr, done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+
+
+def test_a_strict_stream_does_not_refuse_a_name_it_can_carry(tmp_path):
+    """The must-fire half. Without it, a fix that refused every declared name under a
+    strict stream -- or simply stopped exporting declarations at all -- would pass the
+    test above, and the launcher would never open a private channel on Windows again.
+    """
+    _require_strict_unencodable_stdout()
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, "plain-declared-name")
+    done, argv = run(repo, with_channel=True, env_extra=STRICT_ASCII)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "plain-declared-name", done.stderr
+    assert "cannot carry" not in done.stderr, done.stderr
+
+
+def test_a_non_ascii_declared_name_survives_a_stream_that_can_carry_it(tmp_path):
+    """The other must-fire half, on the other axis: the refusal is a property of the
+    STREAM, not of the name. A fix keyed on "does this name contain non-ASCII" would
+    take a working channel away from a UTF-8 machine, which is most of them.
+
+    The exported value is asserted as "neither empty nor the derived name" rather than
+    by equality, deliberately: the stub reads the name back out of the environment as
+    bytes, so an equality assertion would also be measuring the fidelity of an
+    environment round-trip through the shell -- a different claim, on a different axis,
+    and not the one this test is making.
+    """
+    repo = _repo(tmp_path)
+    _declare_watch_name(repo, UNENCODABLE_NAME)
+    done, argv = run(repo, with_channel=True, env_extra={"PYTHONIOENCODING": "utf-8"})
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) not in ("", "owner-name"), done.stderr
+    assert "cannot carry" not in done.stderr, done.stderr
+
+# --- the landing sentence has a third state of its own ------------------------
+#
+# Computing the sentence once (#270) turns each heredoc into a program with an
+# argument, and an argument has a missing case. These blocks are extracted and run by
+# a second caller -- `tests/test_doctor_inprocess.py` runs DERIVE_NAME against its own
+# fixtures to cross-check doctor's copy of the derivation rule -- and that caller has
+# no session to report on.
+#
+# Defaulting to "this session is on the SHARED DEFAULT socket" would have put a
+# confident wrong sentence in the mouth of every caller that forgot the argument,
+# which is #270 reintroduced one layer down by its own fix. Crashing would have made a
+# program that answers "is this derivable" answer with a traceback instead. So it is
+# the third state, and this pair is what stops it silently becoming either of the
+# other two.
+
+HEREDOC_MARKERS = ["READ_NAME", "DERIVE_NAME", "CHECK_NAME"]
+
+
+def _extract_heredoc(marker):
+    launcher = LAUNCHER.read_text(encoding="utf-8")
+    opening = "<<'" + marker + "'"
+    closing = "\n" + marker + "\n"
+    tail = launcher.split(opening, 1)[1] if opening in launcher else ""
+    if "\n" not in tail or closing not in tail:
+        pytest.fail(
+            "bin/oss-workspace no longer carries a %s heredoc, so its short-argv "
+            "behaviour went unchecked -- and a block that went unchecked must not read "
+            "as one that agreed" % marker
+        )
+    return tail.split("\n", 1)[1].split(closing, 1)[0]
+
+
+LANDING_SENTENCE = "LANDED-ON-A-CHANNEL-THIS-TEST-NAMED."
+
+
+def _heredoc_argv(marker, tmp_path):
+    """Everything each block takes EXCEPT the landing sentence, which is always last.
+
+    The earlier arguments are chosen so that every block reaches a refusal arm and
+    prints its sentence: a `.oss.json`/`.supertool.json` that will not parse, and a
+    watch name (`..`) the gate refuses. A block that succeeded would print no sentence
+    at all, and the assertion below would then be measuring nothing.
+    """
+    (tmp_path / "broken.json").write_text("{not valid json", encoding="utf-8")
+    return {
+        "READ_NAME": [str(tmp_path / "broken.json")],
+        "DERIVE_NAME": [str(tmp_path / "broken.json"), str(REPO_ROOT / "scripts")],
+        "CHECK_NAME": ["..", "declared in a test", str(REPO_ROOT / "scripts")],
+    }[marker]
+
+
+def _run_heredoc(marker, tmp_path, argv):
+    script = tmp_path / (marker.lower() + ".py")
+    script.write_text(_extract_heredoc(marker), encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, str(script)] + argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    return done.stdout + done.stderr
+
+
+@pytest.mark.parametrize("marker", HEREDOC_MARKERS)
+def test_a_block_given_no_landing_sentence_says_so_rather_than_naming_a_socket(tmp_path, marker):
+    """Every argument the block takes except the last one -- which is exactly what
+    `tests/test_doctor_inprocess.py` hands DERIVE_NAME today.
+    """
+    combined = _run_heredoc(marker, tmp_path, _heredoc_argv(marker, tmp_path))
+    assert "Traceback" not in combined, combined
+    assert "was not established" in combined, combined
+    assert "SHARED DEFAULT" not in combined, combined
+
+
+@pytest.mark.parametrize("marker", HEREDOC_MARKERS)
+def test_a_block_given_a_landing_sentence_prints_that_one(tmp_path, marker):
+    """The must-fire half. Without it, a block that had lost the argument entirely --
+    and so said "was not established" on every real launch -- would pass the test
+    above, and every receipt in this file would stop naming a channel.
+    """
+    argv = _heredoc_argv(marker, tmp_path) + [LANDING_SENTENCE]
+    combined = _run_heredoc(marker, tmp_path, argv)
+    assert "Traceback" not in combined, combined
+    assert LANDING_SENTENCE in combined, combined
+    assert "was not established" not in combined, combined

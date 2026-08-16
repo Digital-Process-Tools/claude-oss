@@ -121,6 +121,40 @@ if [ -z "$python_bin" ]; then
          "session opens without a channel." >&2
 fi
 
+# ONE sentence for where this session ACTUALLY lands when any arm below refuses, and
+# it is computed here rather than restated by each arm (#270).
+#
+# An already-exported SUPERTOOL_WATCH_NAME wins over both roads, so a refusal costs
+# nothing and the session stays on that channel; only when there is no export does a
+# refusal mean the shared default socket. `7b2841c` computed that sentence inside the
+# gate below and left every other refusal site claiming the shared socket
+# unconditionally -- a state the process is demonstrably not in, and it takes the true
+# half with it, because refusing blanks `$watch_name` and the "an export wins" line
+# further down only fires while that variable is non-empty.
+#
+# There were NINE such sites, not the three the issue names: DERIVE_NAME carries five
+# and one of those has its "SHARED DEFAULT" split across two source lines by string
+# concatenation, so a grep for the phrase does not find it. Nine independent statements
+# of one fact is exactly what let one get fixed and the rest not, so there is now one
+# statement and every arm is handed the answer.
+#
+# `ascii()`, not `%r`: repr leaves non-ASCII alone, and this sentence is written to the
+# stdout of child interpreters and to consoles whose codepage may not carry it. An
+# ASCII-by-construction receipt needs no error handler and no platform to be measured.
+# That is #271's hazard reached from the other side, and a construction rather than an
+# assertion that a construction is safe.
+watch_landing="Nothing was exported and this session is on the SHARED DEFAULT socket, shared with every other repo that declares none."
+if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
+    watch_landing_name=$SUPERTOOL_WATCH_NAME
+    if [ -n "$python_bin" ]; then
+        # A failure here is not worth a receipt of its own: the fallback is the raw
+        # value, which is what every other shell arm in this file already prints.
+        watch_landing_name=$("$python_bin" -c 'import sys; sys.stdout.write(ascii(sys.argv[1]))' "$SUPERTOOL_WATCH_NAME" 2>/dev/null) \
+            || watch_landing_name=$SUPERTOOL_WATCH_NAME
+    fi
+    watch_landing="SUPERTOOL_WATCH_NAME is already exported as $watch_landing_name and wins, so this session uses that channel and nothing was exported over it."
+fi
+
 # The channel NAME is this repo's state and is read from its own .supertool.json,
 # then exported — a stdio MCP server the harness spawns inherits this process's
 # environment, which is what carries the name to the consumer.
@@ -128,14 +162,22 @@ fi
 # There are FOUR answers here, not one name-or-nothing, which is why this block
 # prints a tagged line rather than a bare name:
 #
-#   name=<x>    exactly one distinct declared name — export it
-#   conflict    two or more op blocks declare different names, already reported
-#               on stderr. A state this script cannot resolve, so it exports
-#               nothing AND derives nothing (see the guard below).
-#   unreadable  the file exists and will not parse, so what it declares is
-#               UNKNOWN rather than absent — also refused, for the same reason.
-#   (nothing)   no .supertool.json, or none of its op blocks declares a name —
-#               absence, and the case the derivation exists for.
+#   name=<x>     exactly one distinct declared name — export it
+#   conflict     two or more op blocks declare different names, already reported
+#                on stderr. A state this script cannot resolve, so it exports
+#                nothing AND derives nothing (see the guard below).
+#   unreadable   the file exists and will not parse, so what it declares is
+#                UNKNOWN rather than absent — also refused, for the same reason.
+#   unencodable  a name IS declared and this session's stdout cannot carry it, so
+#                it cannot be read back (#271). Refused for the same reason: a
+#                declaration that exists is not a declaration that is absent.
+#   (nothing)    no .supertool.json, or none of its op blocks declares a name —
+#                absence, and the case the derivation exists for.
+#
+# And a sixth answer that is not a tag, because the block did not get far enough to
+# print one: a NON-ZERO EXIT with no answer. That used to be swallowed whole by a
+# trailing `|| true` and arrive as the empty string, which reads as "declares none",
+# which derives. It is caught by status below instead.
 #
 # All three of the last used to arrive as an empty string, and the derivation
 # guard below tested emptiness, so a refusal was printed to stderr and a derived
@@ -151,9 +193,21 @@ fi
 watch_name=""
 watch_name_state=undeclared
 read_name_out=""
+read_name_status=0
 if [ -n "$python_bin" ]; then
-read_name_out=$("$python_bin" - "$repo_root/.supertool.json" <<'READ_NAME' || true
+read_name_out=$("$python_bin" - "$repo_root/.supertool.json" "$watch_landing" <<'READ_NAME'
 import json, sys
+
+# The one landing sentence is passed IN (#270). A caller that passes none gets a third
+# state rather than a crash or a confident claim about a socket: this program is
+# extracted and run by other callers -- `tests/test_doctor_inprocess.py` does exactly
+# that to DERIVE_NAME below -- and such a caller has no session to report on.
+# Defaulting to "the shared default socket" would put a confident wrong sentence in
+# the mouth of anybody who forgot the argument, which is the defect being fixed here.
+landed = sys.argv[2] if len(sys.argv) > 2 else (
+    "Where this session landed was not established: no landing sentence reached "
+    "this block."
+)
 
 # The exception in hand decides which answer this is, the same way DERIVE_NAME
 # below decides it — absence and unreadability are two states and asking the
@@ -174,8 +228,8 @@ except (OSError, ValueError) as err:
     sys.stderr.write(
         "oss-workspace: %s could not be read (%s), so no channel name was exported "
         "and none was derived either — what that file declares is unknown, not "
-        "absent. This session is on the SHARED DEFAULT socket. "
-        "supertool 'channel:health'\n" % (sys.argv[1], type(err).__name__))
+        "absent. %s supertool 'channel:health'\n"
+        % (sys.argv[1], type(err).__name__, landed))
     raise SystemExit(0)
 
 ops = doc.get("ops") if isinstance(doc, dict) else None
@@ -186,7 +240,40 @@ names = sorted({
     and block["watch_name"]
 })
 if len(names) == 1:
-    print("name=" + names[0])
+    name = names[0]
+    # stdout is the TRANSPORT here, not a display: the shell reads this line back and
+    # exports what it holds. So the question is whether this stream can CARRY the name,
+    # and it is answered by encoding the actual bytes rather than by consulting a table
+    # of codepages — the platform is measured, never assumed (#271).
+    #
+    # An explicit strict encode rather than a try/except around the write, because the
+    # two failures are not the same one. `PYTHONIOENCODING` can put a `replace` handler
+    # on this stream, and a mangled name would then be exported with no exception for
+    # any handler to catch: a private socket nobody publishes to, which is the quiet
+    # half of this bug and the half a try/except cannot see.
+    encoding = sys.stdout.encoding or "utf-8"
+    try:
+        ("name=" + name).encode(encoding, "strict")
+    except (UnicodeEncodeError, LookupError) as err:
+        # The third state, and the only honest one. Printing the name mangled is a
+        # receipt nobody can act on plus an export nobody asked for; refusing to launch
+        # trades the product for an enhancement. This says what is true — a name is
+        # declared and this stream cannot carry it — in the same shape as `conflict`
+        # and `unreadable` above: export nothing, derive nothing, say so, open anyway.
+        #
+        # The tag and the value's rendering are ASCII by construction: `ascii()` on the
+        # name, a plain word on stdout. A receipt quoting the value raw would be killed
+        # by the very thing it is reporting.
+        print("unencodable")
+        sys.stderr.write(
+            "oss-workspace: %s declares watch_name %s, which this session's stdout "
+            "(%s) cannot carry (%s) — so it could not be read back and nothing was "
+            "exported, and nothing was derived over it either, because a declaration "
+            "that exists is not a declaration that is absent. %s "
+            "supertool 'channel:health'\n"
+            % (sys.argv[1], ascii(name), encoding, type(err).__name__, landed))
+        raise SystemExit(0)
+    print("name=" + name)
 elif names:
     # Tagged on stdout AND explained on stderr, because the two have to agree:
     # the tag stops the derivation below from firing, and this sentence is the
@@ -197,15 +284,34 @@ elif names:
         "and none derived from .oss.json either: the ops are already on different "
         "channels, so a name derived from the repo would be one nothing here "
         "publishes to — an uncontested socket carrying no events, which reads as "
-        "healthy. This session is on the SHARED DEFAULT socket. Fix that file, "
-        "then run supertool 'channel:health'\n" % ", ".join(names))
+        "healthy. %s Fix that file, then run supertool 'channel:health'\n"
+        % (", ".join(names), landed))
 READ_NAME
-)
-case "$read_name_out" in
-    name=*)   watch_name=${read_name_out#name=}; watch_name_state=declared ;;
-    conflict)   watch_name_state=conflict ;;
-    unreadable) watch_name_state=unreadable ;;
-esac
+) || read_name_status=$?
+# The trailing `|| true` that used to sit on the heredoc opener above swallowed two
+# different failures into one silence: a stdout that could not carry the declared name
+# (#271, now answered inside the block by the `unencodable` tag) and any OTHER uncaught
+# exception — a RecursionError out of `json.load` on a deeply nested file, say, which
+# is neither OSError nor ValueError. Both arrived at the `case` below as the empty
+# string, which reads as `undeclared`, which derives over a file nobody read.
+#
+# The swallow is still here, because a launcher must open the session: `set -e` would
+# otherwise turn a bad `.supertool.json` into no session at all. What changed is that
+# it is no longer silent and no longer means "this file declares none".
+if [ "$read_name_status" -ne 0 ]; then
+    watch_name_state=crashed
+    echo "oss-workspace: reading $repo_root/.supertool.json ended with status" \
+         "$read_name_status and no answer, so what it declares is unknown rather" \
+         "than absent — nothing was exported and nothing was derived." \
+         "$watch_landing supertool 'channel:health'" >&2
+else
+    case "$read_name_out" in
+        name=*)      watch_name=${read_name_out#name=}; watch_name_state=declared ;;
+        conflict)    watch_name_state=conflict ;;
+        unreadable)  watch_name_state=unreadable ;;
+        unencodable) watch_name_state=unencodable ;;
+    esac
+fi
 fi
 
 # Nothing declared a name (#191). Falling through here exports nothing, so the
@@ -235,10 +341,23 @@ fi
 # either swaps a loud wrong state (the shared socket, announced) for a quiet one
 # (a private socket nobody publishes to, indistinguishable from working).
 watch_name_source="declared in $repo_root/.supertool.json"
+derive_name_status=0
 if [ "$watch_name_state" = undeclared ] && [ -n "$python_bin" ]; then
     watch_name_source="derived from repo in $repo_root/.oss.json"
-    watch_name=$("$python_bin" - "$repo_root/.oss.json" "$plugin_root/scripts" <<'DERIVE_NAME' || true
+    watch_name=$("$python_bin" - "$repo_root/.oss.json" "$plugin_root/scripts" "$watch_landing" <<'DERIVE_NAME'
 import json, sys
+
+# The one landing sentence is passed IN (#270), and a caller that passes none gets a
+# third state rather than a confident claim about a socket. That caller is real:
+# `tests/test_doctor_inprocess.py` extracts this program and runs it against its own
+# fixtures to cross-check doctor's copy of the derivation rule, and it has no session
+# to report on. A crash there would have made this program answer a question about
+# derivability with a traceback; a default of "the shared default socket" would have
+# had it answer confidently about a session that does not exist.
+landed = sys.argv[3] if len(sys.argv) > 3 else (
+    "Where this session landed was not established: no landing sentence reached "
+    "this block."
+)
 
 # The rule for what `repo` may be lives in scripts/oss_config.py, where
 # scaffold.repo_slug and doctor already read it. This block used to carry a
@@ -255,9 +374,8 @@ except Exception as err:
     # where it is missing, which is the absence this plugin is named after.
     sys.stderr.write(
         "oss-workspace: the config validator could not be loaded from %s (%s), so "
-        "no channel name could be derived and this session is on the SHARED "
-        "DEFAULT socket. supertool 'channel:health'\n"
-        % (sys.argv[2], type(err).__name__))
+        "no channel name could be derived. %s supertool 'channel:health'\n"
+        % (sys.argv[2], type(err).__name__, landed))
     raise SystemExit(0)
 
 # The exception in hand decides which answer this is. Asking the filesystem a
@@ -268,23 +386,21 @@ try:
         doc = json.load(handle)
 except FileNotFoundError:
     sys.stderr.write(
-        "oss-workspace: no %s, so nothing could be derived and this session is on "
-        "the SHARED DEFAULT socket with every other repo that declares none. "
-        "supertool 'channel:health'\n" % sys.argv[1])
+        "oss-workspace: no %s, so nothing could be derived. %s "
+        "supertool 'channel:health'\n" % (sys.argv[1], landed))
     raise SystemExit(0)
 except (OSError, ValueError) as err:
     sys.stderr.write(
         "oss-workspace: %s could not be read (%s), so no channel name could be "
-        "derived and this session is on the SHARED DEFAULT socket. "
-        "supertool 'channel:health'\n" % (sys.argv[1], type(err).__name__))
+        "derived. %s supertool 'channel:health'\n"
+        % (sys.argv[1], type(err).__name__, landed))
     raise SystemExit(0)
 
 repo = doc.get("repo") if isinstance(doc, dict) else None
 if not isinstance(repo, str) or not repo.strip():
     sys.stderr.write(
-        "oss-workspace: %s declares no repo, so nothing could be derived and this "
-        "session is on the SHARED DEFAULT socket. supertool 'channel:health'\n"
-        % sys.argv[1])
+        "oss-workspace: %s declares no repo, so nothing could be derived. %s "
+        "supertool 'channel:health'\n" % (sys.argv[1], landed))
     raise SystemExit(0)
 
 # The value is validated before it is folded, by the same function scaffold and
@@ -304,19 +420,36 @@ if problem:
     # `backslashreplace`, so a codepage that cannot represent the value escapes it
     # rather than raising. Both measured rather than assumed (#207).
     sys.stderr.write(
-        "oss-workspace: %s -- %s. Nothing was derived and this session is on the "
-        "SHARED DEFAULT socket. The launcher refuses what every other consumer of "
-        "this value refuses rather than folding it into a name that becomes a "
-        "socket path. supertool 'channel:health'\n" % (sys.argv[1], problem))
+        "oss-workspace: %s -- %s. Nothing was derived: the launcher refuses what "
+        "every other consumer of this value refuses rather than folding it into a "
+        "name that becomes a socket path. %s supertool 'channel:health'\n"
+        % (sys.argv[1], problem, landed))
     raise SystemExit(0)
 
 # The fold still runs after the validator: an accepted slug is any pair of
 # non-slash, non-whitespace runs, so characters a socket path should not hold
 # still reach it. What the validator adds is that the one slash always becomes a
 # dash, so the result carries no separator and is never `.` or `..`.
+# ASCII by construction, so this print cannot raise the way READ_NAME's could
+# (#271): `oss_config.WATCH_NAME_UNSAFE_RE` folds everything outside [A-Za-z0-9._-]
+# to a dash before the value reaches here. That is a property of the fold rather
+# than of the input, which is why this arm needs no encode check and the declared
+# route does. Confirmed against the fold, not assumed from the character class.
 print(name)
 DERIVE_NAME
-)
+) || derive_name_status=$?
+    # Same swallow, same reason, same narrowing as READ_NAME above. A DERIVE_NAME that
+    # dies (RecursionError out of `json.load`, say — neither OSError nor ValueError)
+    # left `$watch_name` empty and printed NOTHING on either stream, so the session
+    # landed on the shared default socket with no line saying so. That is this repo's
+    # own defect class: the absence was produced by the tool.
+    if [ "$derive_name_status" -ne 0 ]; then
+        watch_name=""
+        echo "oss-workspace: deriving from $repo_root/.oss.json ended with status" \
+             "$derive_name_status and no answer, so no channel name was derived and" \
+             "what that file carries is unknown rather than absent." \
+             "$watch_landing supertool 'channel:health'" >&2
+    fi
 fi
 
 # ONE gate, both routes (#230).
@@ -355,34 +488,21 @@ fi
 # the absence this plugin is named after, and a future edit that produced a name
 # without python would otherwise reopen the bypass silently.
 #
-# The gate is told what is ALREADY exported, and that is not decoration. An existing
-# SUPERTOOL_WATCH_NAME wins over both roads, so when the gate refuses what it holds,
-# the session lands on that export — NOT on the shared default socket. Claiming the
-# shared socket there reports a state the process is demonstrably not in, and it
-# takes the true half with it: refusing blanks `$watch_name`, and the "an export
-# wins" line below only fires while `$watch_name` is non-empty, so the reader was
-# told the wrong thing and not told the right one. Found by review on this change.
-#
-# The two sibling arms above — DERIVE_NAME's refusals and READ_NAME's conflict and
-# unreadable receipts — make the same unconditional claim and were not touched here:
-# that is the class rather than this instance, it wants the same argument made in
-# three more heredocs, and it is reported for filing rather than ridden in on this.
+# The gate is handed `$watch_landing`, the sentence computed once at the top of this
+# block, and so is every sibling arm above it. That was the whole of #270: this gate
+# learned the true state on `7b2841c` and the other eight refusal sites went on
+# claiming the shared default socket unconditionally, which is a state the process is
+# demonstrably not in whenever SUPERTOOL_WATCH_NAME is already exported — and it takes
+# the true half with it, because refusing blanks `$watch_name` and the "an export
+# wins" line below only fires while that variable is non-empty.
 if [ -n "$watch_name" ]; then
     if [ -z "$python_bin" ]; then
-        if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]; then
-            echo "oss-workspace: no working python, so the watch channel name" \
-                 "($watch_name_source) could not be checked. SUPERTOOL_WATCH_NAME is" \
-                 "already exported as ${SUPERTOOL_WATCH_NAME} and wins, so this" \
-                 "session uses that channel. supertool 'channel:health'" >&2
-        else
-            echo "oss-workspace: no working python, so the watch channel name" \
-                 "($watch_name_source) could not be checked and was not exported." \
-                 "This session is on the SHARED DEFAULT socket." \
-                 "supertool 'channel:health'" >&2
-        fi
+        echo "oss-workspace: no working python, so the watch channel name" \
+             "($watch_name_source) could not be checked and was not exported." \
+             "$watch_landing supertool 'channel:health'" >&2
         watch_name=""
     elif ! "$python_bin" - "$watch_name" "$watch_name_source" "$plugin_root/scripts" \
-                          "${SUPERTOOL_WATCH_NAME:-}" <<'CHECK_NAME'
+                          "$watch_landing" <<'CHECK_NAME'
 import sys
 
 # Imported, not restated. A second spelling of a rule is a second rule, and this
@@ -390,23 +510,19 @@ import sys
 # carry permitted `.`, `..` and a leading `-` where scaffold and doctor refused them.
 sys.path.insert(0, sys.argv[3])
 
-# Which socket the session ACTUALLY lands on when this gate refuses. An already
-# exported SUPERTOOL_WATCH_NAME wins over both roads, so refusing here costs nothing
-# and the session stays on that channel; only when there is no export does a refusal
-# mean the shared default. One sentence for the state that is true, computed once,
-# because a receipt that describes the wrong state is worse than no receipt: it is
-# read, believed, and stops the reader looking. Quoted with %r for the same reason
-# `problem` is — this value comes from the environment and never met the validator.
-already = sys.argv[4]
-if already:
-    landed = (
-        "SUPERTOOL_WATCH_NAME is already exported as %r and wins, so this session "
-        "uses that channel and nothing was exported over it." % already
-    )
-else:
-    landed = (
-        "Nothing was exported and this session is on the SHARED DEFAULT socket."
-    )
+# Which socket the session ACTUALLY lands on when this gate refuses, computed ONCE in
+# the shell above and handed to every arm that needs it (#270). A receipt describing
+# the wrong state is worse than no receipt: it is read, believed, and stops the reader
+# looking. This block used to compute the sentence itself, which made it correct and
+# the eight sibling arms wrong — the cost of a fact stated nine times.
+#
+# Short argv is a third state here too, for the same reason it is in the two blocks
+# above: this program is a program, and a caller that passes no sentence must not be
+# handed a confident one.
+landed = sys.argv[4] if len(sys.argv) > 4 else (
+    "Where this session landed was not established: no landing sentence reached "
+    "this block."
+)
 
 try:
     import oss_config
