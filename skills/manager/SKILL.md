@@ -135,12 +135,13 @@ label that does not exist on the repo.
 | Need | Op |
 | --- | --- |
 | The board | `gh-issues`, `gh-issues:nomilestone`, `gh-issues:label=…`, `gh-labels` |
-| PR state + summed check tally | `gh-pr:N` / `gh-pr:N:status` |
+| PR state + summed check tally | `gh-pr:N[:full]` / `gh-pr:N:status` — plain `gh-pr:N` truncates a long body |
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
 | Worktree ownership + merge state | `git-worktrees`, `git-worktrees:PATH` — the raw `git worktree` listing is refused |
 | Filing | `gh-issue-create:@FILE` |
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
+| Correcting a published body | `gh-pr-edit:N:@FILE` — same payload shape; refuses a dropped `Closes #N` and verifies the write landed |
 | Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
 
 The ops are not wrappers. `gh-pr:N:status` returns state, mergeability, conflicts, branch **and the
@@ -501,16 +502,52 @@ not a new ceremony.
 
 **This happens at review time, not at creation time** — you have verified nothing when you open the
 pull request, and your verification is the *Reviewing* section below. So it is an edit to a body
-that already exists, and there is no op for it: `gh-pr-create` consumes the payload once and there
-is no `gh-pr-edit`. Use raw `gh`, which the op table above already sanctions for writes nothing
-wraps:
+that already exists, and that has its own op:
 
 ```bash
-gh pr edit <N> --body-file <a file holding the agent's body plus your appended section>
+supertool 'gh-pr-edit:<N>:@<FILE>'
 ```
 
-Read the agent's body back out first rather than reconstructing it — `--body-file` replaces the
-whole body, so an append built from memory silently truncates the record you were protecting.
+The payload is the shape `gh-pr-create` takes. **Read the published body out first and build the
+payload from it** rather than reconstructing it — the write replaces the whole body, so an append
+built from memory silently truncates the record you were protecting.
+
+**Use the op rather than raw `gh pr edit`, and #195 is the whole reason.** `gh pr edit` resolves the
+pull request through a GraphQL query that also asks for `projectCards`, a Projects (classic) field
+GitHub now refuses. It exits non-zero naming `repository.pullRequest.projectCards` — a field you
+never asked for, about a feature you are not using — and **leaves the body unchanged**. The command
+is loud and the *edit* is silent, and the error reads as deprecation noise rather than as an
+unwritten body, which is what makes it dismissible: a maintainer following the old wording believed
+a verification was recorded and the pull request carried none. Two things bound it, both measured
+rather than assumed, and neither is the reason to prefer the op:
+
+- **It is not about your repository.** The field is refused for **every** repository, so this does
+  not depend on classic project cards existing anywhere.
+- **It is about your `gh`.** A current `gh` consults a detector and drops the field where Projects
+  (classic) is unsupported (cli/cli#13069); a `gh` predating that fix asks for it unconditionally
+  and fails every time. So the raw call will start working again on its own, which is exactly why
+  pinning a hand-rolled replacement for it would have been the wrong fix.
+
+**The mechanism was never the load-bearing half — the read-back is.** The op writes through REST,
+then compares the body the response carried against the bytes it sent and reports `EXACT`,
+`NORMALISED`, `MISMATCH` or `UNKNOWN`, and only the first two exit `0`. That is this repository's own
+rule enforced rather than remembered: **a write that landed something else is never rendered as a
+success**, and a verification reported from a command's return is a record nobody read —
+indistinguishable from a verification nobody performed. If you ever do reach for a raw call you have
+taken that guarantee back into your own hands, so re-read the published body yourself with
+`gh-pr:<N>:full` and confirm your section is in it. `:full` is load-bearing there: a plain read
+truncates a long body and an appended section sits at the end, so the cheap read is precisely the one
+that cannot see what it was called to confirm.
+
+**The op also closes the composition that made this worse than a broken command.** `gh-pr-create`
+refuses a body with no `Closes #N` at creation, the earliest point anything can see it. When the
+repair *is* that reference, a silent no-op merges the pull request with the issue still open and the
+board reading clean — the exact failure the merge gates warn about, reached through the tool that was
+supposed to prevent it. `gh-pr-edit` re-parses the published body with the same reader `gh-pr` uses
+before it writes, in three states — the references survived, one was **dropped**, or the body **could
+not be read at all** — and refuses on either of the last two, because those are not the same answer.
+A deliberate re-scope says so with the `unlink` token rather than arriving indistinguishable from an
+accident.
 
 What belongs in it is only what the agent could not have written: an independent reproduction or red
 run, a premise of the brief the agent falsified, and your acceptance or rejection of its argued-down

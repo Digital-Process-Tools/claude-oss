@@ -2243,3 +2243,236 @@ def test_the_doctor_convention_check_fires_on_the_documents_as_they_were():
     )
 
 
+# --- #195: the verification is written by the op that reads back what it wrote ---
+#
+# The section documented raw `gh pr edit --body-file` and stopped there. That call
+# asks GraphQL for `projectCards`, which GitHub has sunset, so it exits non-zero
+# and leaves the body unchanged -- and the error names a field the caller never
+# asked for, so it reads as Projects noise rather than as an unwritten body. The
+# supertool `gh-pr-edit` op exists for exactly this and does the half that matters:
+# it re-parses the published body for the closing reference before it writes, and
+# compares what came back against the bytes it sent afterwards, so a write that
+# landed something else is never rendered as a success.
+#
+# The anchor is that the op is INVOKED IN A FENCE and that no raw route is fenced
+# ahead of it. Three deliberate choices, each one a way an earlier draft of this
+# check was shown to be satisfiable while the section still taught the bug:
+#
+#   * `gh-pr-edit:` carries the colon. The pre-#195 text contained the bare name --
+#     inside a sentence asserting the op did not exist -- so an anchor on
+#     "gh-pr-edit" alone would have been satisfied by the very wording it was
+#     written to replace. That is the toothless prose test this file exists to
+#     avoid, and it was one character away.
+#   * Fences, not prose. A reviewer defeated the previous version by mentioning the
+#     op in an aside and fencing raw `gh pr edit` as the thing to run. A call the
+#     reader is handed is a fenced call; anything else is commentary. That evasion
+#     is kept as test_naming_the_op_in_prose_does_not_satisfy_the_anchor rather than
+#     as a comment, because a defeated check should fail if it is ever reinstated.
+#   * Position, not mere presence. An earlier draft asked only that some read-back
+#     token appear somewhere after the write; a section could satisfy that with an
+#     unrelated later mention of `gh-pr:` and still teach the bug. Requiring the raw
+#     routes to sit after the op means a raw call can only ever read as a fallback.
+#
+# And the helpers answer in three states rather than two: () clean, a tuple for the
+# finding, None for a section that fences no call at all. That last is not the good
+# case, and returning () for it is how this check would go quietly inert.
+
+VERIFICATION_HEADING = "### Your verification is a different voice, so append it"
+
+# The op that owns the write, named as a call rather than as a word.
+VERIFIED_WRITE_CALL = "gh-pr-edit:"
+
+# Routes that replace a body with nothing checking what landed. Both are
+# whole-body writes; neither has a partial append, which is why an unread result
+# is a lost record rather than a partial one.
+RAW_BODY_WRITES = ("gh pr edit", "-X PATCH")
+
+
+def _verification_section(text=None):
+    """The section's text, or None if the heading moved.
+
+    None and "" are different answers: a heading that moved is not a section with
+    nothing in it, and the findability test below is what keeps the checks from
+    passing over the first case.
+    """
+    text = MANAGER_SKILL.read_text(encoding="utf-8") if text is None else text
+    at = text.find(VERIFICATION_HEADING)
+    if at < 0:
+        return None
+    tail = text[at + len(VERIFICATION_HEADING):]
+    stop = tail.find("\n## ")
+    return tail if stop < 0 else tail[:stop]
+
+
+def _fenced_write_routes(section):
+    """Which fenced block of SECTION invokes which write route.
+
+    Returns (op_at, raw_at) over fenced blocks only -- the index of the first
+    fence invoking the verified op or None, and each raw route mapped to its
+    first fence. Returns None when SECTION fences no write route at all.
+
+    Three states, and the third is the point. A prose mention is not a call: a
+    section can name the op in passing and still fence raw `gh pr edit` as the
+    thing to run, which is the reported bug wearing the fix's clothes. And
+    "nothing was fenced" is not "everything fenced is fine" -- collapsing those
+    two is how the pre-#195 hole reopens the day the findability guard is edited.
+    """
+    fences = section.split("```")[1::2]
+    op_at = None
+    raw_at = {}
+    for i, fence in enumerate(fences):
+        if op_at is None and VERIFIED_WRITE_CALL in fence:
+            op_at = i
+        for call in RAW_BODY_WRITES:
+            if call in fence and call not in raw_at:
+                raw_at[call] = i
+    if op_at is None and not raw_at:
+        return None
+    return op_at, raw_at
+
+
+def _raw_writes_ahead_of_the_op(section):
+    """Raw routes fenced before the op is, () if none, None if nothing is fenced.
+
+    () is clean, a non-empty tuple is the finding, and None is "this section
+    offers no runnable call at all" -- which is neither of the other two and must
+    not render as the first.
+    """
+    found = _fenced_write_routes(section)
+    if found is None:
+        return None
+    op_at, raw_at = found
+    return tuple(
+        call for call, at in sorted(raw_at.items()) if op_at is None or at < op_at
+    )
+
+
+def test_the_verification_section_is_findable_and_fences_a_write():
+    """Vacuity guard for the two checks below, in both directions: the heading has
+    to be there, and the section has to fence some write route at all. Without the
+    second half, deleting every call would read as compliance.
+    """
+    section = _verification_section()
+    assert section is not None, (
+        "no {!r} in skills/manager/SKILL.md -- both checks below would pass over "
+        "nothing".format(VERIFICATION_HEADING)
+    )
+    assert _fenced_write_routes(section) is not None, (
+        "the verification section fences no way to write a body at all, so it "
+        "documents no way to record a verification"
+    )
+
+
+def test_the_verification_section_invokes_the_verified_write_op():
+    """#195. The documented append did not land and nothing in the section would
+    have noticed. The op is what makes the record real -- it refuses a dropped
+    closing reference before the write and compares what came back against what it
+    sent after it -- so the section has to hand a maintainer that call, in a fence,
+    as the thing to run.
+    """
+    section = _verification_section()
+    found = _fenced_write_routes(section)
+    assert found is not None
+    op_at, _ = found
+    assert op_at is not None, (
+        "no fenced block in the verification section invokes {!r} -- without it "
+        "the append is confirmed by a command's exit, and a verification nobody "
+        "read back is indistinguishable from one nobody "
+        "performed".format(VERIFIED_WRITE_CALL)
+    )
+
+
+def test_no_raw_body_write_is_fenced_ahead_of_the_verified_op():
+    """A raw route may appear as a fallback and be worth explaining -- #195's whole
+    argument is about which mechanism the skill teaches. It may not be the one the
+    reader is handed first.
+    """
+    section = _verification_section()
+    ahead = _raw_writes_ahead_of_the_op(section)
+    assert ahead is not None, "nothing fenced; the findability guard should have caught this"
+    assert ahead == (), (
+        "the verification section fences {!r} before {!r}, so the route with no "
+        "read-back reads as the mechanism".format(ahead, VERIFIED_WRITE_CALL)
+    )
+
+
+PRE_195_SECTION = (
+    VERIFICATION_HEADING + "\n\n"
+    "If you verified something the agent could not, append a `## Verified by "
+    "the maintainer` section to the body -- never edit the agent's text into "
+    "agreement with you.\n\n"
+    "This happens at review time, not at creation time, and there is no op "
+    "for it: `gh-pr-create` consumes the payload once and there is no "
+    "`gh-pr-edit`. Use raw `gh`:\n\n"
+    "```bash\n"
+    "gh pr edit <N> --body-file <a file holding the agent's body plus your "
+    "appended section>\n"
+    "```\n\n"
+    "Read the agent's body back out first rather than reconstructing it -- "
+    "`--body-file` replaces the whole body, so an append built from memory "
+    "silently truncates the record you were protecting.\n"
+)
+
+
+def test_the_anchors_fire_on_the_section_as_it_was():
+    """Positive control, and the reason the two checks above are worth their lines.
+    This is the section as it stood before #195 -- one raw call, correct about
+    voice, and explicitly asserting that no op existed. Both anchors must be unmet
+    against it, or they were satisfied by wording the file already had.
+    """
+    section = _verification_section(PRE_195_SECTION)
+    assert section is not None, "the control lost its own heading"
+    # The bare name is present in the sentence denying the op exists, and must not
+    # count. This is the character the anchor turns on.
+    assert "gh-pr-edit" in section
+    op_at, raw_at = _fenced_write_routes(section)
+    assert op_at is None
+    assert raw_at == {"gh pr edit": 0}
+    assert _raw_writes_ahead_of_the_op(section) == ("gh pr edit",)
+    # Must-fire half, so a passing state is reachable rather than merely absent.
+    after = (
+        VERIFICATION_HEADING + "\n\n"
+        "```bash\n"
+        "supertool 'gh-pr-edit:<N>:@<FILE>'\n"
+        "```\n\n"
+        "Use the op rather than raw `gh pr edit`, which asks GraphQL for a sunset "
+        "field and leaves the body unchanged.\n"
+    )
+    assert _raw_writes_ahead_of_the_op(_verification_section(after)) == ()
+
+
+def test_naming_the_op_in_prose_does_not_satisfy_the_anchor():
+    """The evasion a reviewer built against the first version of this check, kept
+    as a case rather than as a note. An anchor on the op's presence anywhere is
+    satisfied by an aside, leaving the raw call as the only thing fenced -- which
+    is the reported bug wearing the fix's clothes.
+    """
+    evasion = (
+        VERIFICATION_HEADING + "\n\n"
+        "There has been talk of a `gh-pr-edit:` op for this; until then, run:\n\n"
+        "```bash\n"
+        "gh pr edit <N> --body-file <FILE>\n"
+        "```\n"
+    )
+    section = _verification_section(evasion)
+    op_at, raw_at = _fenced_write_routes(section)
+    assert op_at is None, "a prose mention was counted as an invocation"
+    assert raw_at == {"gh pr edit": 0}
+    assert _raw_writes_ahead_of_the_op(section) == ("gh pr edit",)
+
+
+def test_a_section_that_fences_nothing_is_its_own_answer():
+    """The third state. A section with no fenced call has not been checked and
+    found clean -- there was nothing to check. It must not return () and read as
+    the good case; the findability guard is what turns it into a failure.
+    """
+    silent = (
+        VERIFICATION_HEADING + "\n\n"
+        "Append a `## Verified by the maintainer` section. Say what you verified "
+        "and how.\n"
+    )
+    section = _verification_section(silent)
+    assert _fenced_write_routes(section) is None
+    assert _raw_writes_ahead_of_the_op(section) is None
+
+
