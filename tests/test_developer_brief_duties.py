@@ -112,7 +112,11 @@ not an absence in the world.
 # `git show 584509c:agents/developer.md` -- the two numbered steps around the fenced
 # command, plus the sentence that follows the fence, because that is the whole of
 # what the document said about which validator to run: it named one, and said
-# nothing about there being a second.
+# nothing about there being a second. Em dashes are transcribed as `--`, the same
+# convention PRIOR and PRIOR_REVIEW_RETURN above already use, so this is not a
+# byte-exact copy; no anchor below spans one, and `_flatten` does not fold dashes,
+# so an anchor that did span one would report red-before while being green-before
+# on disk. Check a new anchor against the blob, not against this constant.
 PRIOR_REPORT_VALIDATION = """
 2. Validate it before you hand it over. A report that does not validate is not a report:
 
