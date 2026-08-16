@@ -148,7 +148,10 @@ def test_the_intake_receipt_prints_only_when_the_entry_landed(tmp_path, capsys):
     assert len(oss_state.read(path)) == 1
 
 
-def _piped(argv):
+NON_ASCII = "café"
+
+
+def _piped(argv, env=None):
     """Run the CLI as a real process with the two streams merged into one pipe.
 
     `capsys` keeps stdout and stderr apart, so it cannot see the ordering this asserts:
@@ -156,11 +159,14 @@ def _piped(argv):
     surfaces second unless something flushes. A transcript is read as one merged stream,
     so that is what the fixture has to be.
     """
+    child = dict(os.environ)
+    child.update(env or {})
     return subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "oss_state.py")] + argv,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
+        env=child,
     )
 
 
@@ -216,6 +222,53 @@ def test_a_malformed_detail_still_says_the_intake_pair_was_dropped(tmp_path):
     assert _first(lines, "NOT RECORDED") == 1, lines
     assert "3 filings" in lines[1]
     assert len(oss_state.read(path)) == 1
+
+
+def test_a_verdict_survives_a_console_the_path_does_not_fit_in(tmp_path):
+    """The one line this issue guarantees must not die at the `print` that carries it.
+
+    Everything printed is encoded with the console's encoding, and stdout's handler is
+    `strict`. A `FAIL` naming a path -- which is what an OSError's message is -- then
+    raises on any character the codepage has no room for, which on Windows is the
+    ordinary case for a non-Latin-1 username. `PYTHONIOENCODING=ascii` reproduces it on
+    any platform, so this is observed rather than reasoned about a leg nobody ran.
+
+    And the raise was not even loud: `UnicodeEncodeError` is a `ValueError`, so it
+    landed in the `--detail` handler and came out as `FAIL --detail is not valid JSON`
+    on a run with no `--detail`.
+    """
+    directory = tmp_path / NON_ASCII
+    try:
+        directory.mkdir()
+        path = directory / "state.json"
+        path.write_text("{ not json", encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        # Attempted, not assumed. A filesystem that cannot hold the name is a real
+        # answer, and it has to be a loud skip naming what went untested rather than an
+        # error that reads as the product failing.
+        pytest.skip(
+            "this filesystem would not take a path component of {!r} ({}), so the "
+            "codepage arm of the FAIL line went untested here".format(NON_ASCII, exc)
+        )
+    ascii_console = {"PYTHONIOENCODING": "ascii"}
+
+    # must fire: the same run on a console that fits the path prints the real verdict,
+    # so the assertions below cannot pass against a CLI that says nothing either way.
+    wide = _piped([str(path), "--migrate"], env={"PYTHONIOENCODING": "utf-8"})
+    assert wide.returncode == 1, wide.stdout
+    assert _first(wide.stdout.splitlines(), "FAIL") == 0, wide.stdout
+    assert "could not read it" in wide.stdout
+
+    narrow = _piped([str(path), "--migrate"], env=ascii_console)
+    assert narrow.returncode == 1, narrow.stdout
+    lines = narrow.stdout.splitlines()
+    assert _first(lines, "FAIL") == 0, lines
+    assert "could not read it" in narrow.stdout, lines
+    assert "state.json" in narrow.stdout, lines
+    # The misattribution, named rather than implied: no --detail was passed, so nothing
+    # may claim one was wrong.
+    assert "--detail" not in narrow.stdout, lines
+    assert path.read_text(encoding="utf-8") == "{ not json"
 
 
 def test_the_trend_line_is_labelled_as_a_computation_not_a_receipt(tmp_path):

@@ -36,6 +36,7 @@ Python 3.9 compatible.
 import json
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 
@@ -697,6 +698,36 @@ def _count_argument(text):
     return value
 
 
+def _say(text, stream=None):
+    """Write one line that cannot die on the console's codepage.
+
+    Anything printed is encoded with the console's encoding, not the source file's, and
+    stdout's error handler is ``strict`` where stderr's is ``backslashreplace``. Every
+    ``FAIL`` line here can carry a path -- an ``OSError``'s message names the file it
+    could not write -- and a path can hold a character cp1252 has no room for, which is
+    the ordinary case for a Windows account whose username is not Latin-1. The ``print``
+    then raises before the line arrives, and the verdict this whole issue exists to
+    guarantee is the one thing lost.
+
+    Worse, and measured rather than argued: ``UnicodeEncodeError`` is a ``ValueError``,
+    so the raise landed in ``_main``'s ``except ValueError`` and came out as ``FAIL
+    --detail is not valid JSON`` on a run with no ``--detail`` at all. A crash would
+    have been the loud failure; that is the quiet one.
+
+    Reproduced with ``PYTHONIOENCODING=ascii`` and a state path holding one non-ASCII
+    byte -- observed on POSIX, and the same mechanism on a Windows console, where it is
+    reasoned rather than run.
+    """
+    stream = sys.stdout if stream is None else stream
+    encoding = getattr(stream, "encoding", None)
+    if encoding:
+        # Round-tripped rather than written as bytes: the stream is a text stream and
+        # this keeps it one. `backslashreplace` on the way out means an unrepresentable
+        # character arrives as an escape somebody can read, not as a dropped line.
+        text = text.encode(encoding, "backslashreplace").decode(encoding, "replace")
+    print(text, file=stream)
+
+
 def _main(argv=None):
     """CLI for /oss:tick.
 
@@ -704,7 +735,6 @@ def _main(argv=None):
     the library takes one: a clock inside this file makes what it writes untestable.
     """
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(description="Read and append maintainer tick state.")
     parser.add_argument("path", help="the state file, from .oss.json's state_file")
@@ -772,7 +802,7 @@ def _main(argv=None):
         string from the `RECORDED` receipt, rather than the same sentence with a caveat
         appended: a filter that catches one must not catch the other.
         """
-        print("FAIL {}".format(message))
+        _say("FAIL {}".format(message))
         if pending_intake is not None:
             # The flush is the whole ordering guarantee, and printing in the right order
             # is not. stdout is block-buffered the moment it is a pipe rather than a
@@ -781,14 +811,14 @@ def _main(argv=None):
             # against a real pipe rather than a captured buffer; capsys keeps the two
             # streams apart and cannot see this at all.
             sys.stdout.flush()
-            print("NOT RECORDED " + intake_line(pending_intake), file=sys.stderr)
+            _say("NOT RECORDED " + intake_line(pending_intake), sys.stderr)
         return 1
 
     try:
         if (args.read or args.last or args.trend or args.migrate) and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
             # 0, with the reading mode's own output looking entirely normal.
-            print(
+            _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(intake_flags))
             )
@@ -796,7 +826,7 @@ def _main(argv=None):
         if args.migrate:
             result = migrate(args.path)
             if result["state"] == MIGRATED:
-                print(
+                _say(
                     "OK {}: converted {} entries to the list shape; the original is at "
                     "{}".format(args.path, result["entries"], result["backup"])
                 )
@@ -805,12 +835,12 @@ def _main(argv=None):
                 # Not an error and not a conversion. Saying "converted" here would
                 # report work that did not happen; saying FAIL would send a maintainer
                 # looking for a problem that is not there.
-                print(
+                _say(
                     "OK {}: already the list shape, {} entries; nothing to "
                     "convert".format(args.path, result["entries"])
                 )
                 return 0
-            print("FAIL {}: {}".format(args.path, result["reason"]))
+            _say("FAIL {}: {}".format(args.path, result["reason"]))
             return 1
         if args.read:
             print(json.dumps(read(args.path), indent=2))
@@ -832,7 +862,7 @@ def _main(argv=None):
             # to the reader. The three labels are the whole vocabulary: RECORDED for an
             # entry on disk, NOT RECORDED for a pair this run dropped, TREND for a sum
             # nobody asked to store. (#222)
-            print("TREND " + intake_line(trend), file=sys.stderr)
+            _say("TREND " + intake_line(trend), sys.stderr)
             print(json.dumps(trend, indent=2))
             return 0
 
@@ -884,12 +914,20 @@ def _main(argv=None):
         # disk, and a receipt printed ahead of the write it receipts is one that a
         # refusal, a crash or a filtered transcript turns into a false pass. (#222)
         if pending_intake is not None:
-            print("RECORDED " + intake_line(pending_intake), file=sys.stderr)
+            _say("RECORDED " + intake_line(pending_intake), sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
         return refuse(str(exc))
-    except ValueError as exc:
+    except json.JSONDecodeError as exc:
+        # The exact exception `json.loads` raises, not the `ValueError` it derives from.
+        # A broad `ValueError` here caught `UnicodeEncodeError` -- raised by a `print`
+        # whose text the console's codepage could not hold -- and rendered it as `FAIL
+        # --detail is not valid JSON` on a run carrying no `--detail` at all. A verdict
+        # about the wrong flag, stated with the same confidence as a right one. `_say`
+        # stops that raise happening; this stops the next unrelated `ValueError` being
+        # confidently misattributed, which is the half that keeps working when somebody
+        # adds a line here later.
         return refuse("--detail is not valid JSON ({})".format(exc))
 
 
