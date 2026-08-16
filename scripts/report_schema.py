@@ -30,6 +30,7 @@ is hand-writing `head`, the one value nothing downstream verifies.
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -277,6 +278,73 @@ def validate(report, schema=None):
     return errors
 
 
+def _one_line(text, limit=200):
+    """Text from outside this script, reduced to one printable ASCII line.
+
+    pr_body.path is chosen by whoever wrote the report. A newline in one forges a
+    receipt row -- this command prints `ok <file>` and `INVALID <file>` and a
+    reader scanning the output cannot tell a forged row from a real one -- and a
+    control character rewrites what the terminal already printed.
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
+
+def _contained_path(base_dir, raw_path):
+    """Resolve the payload's path against the report's own directory.
+
+    Returns `(path, problem)`, exactly one of them None -- and the third state is
+    the point. A path that cannot be *decided* about is refused with a sentence
+    rather than opened on the grounds that nothing objected.
+
+    The join is `base / raw_path` and that single expression is the whole fix,
+    because pathlib drops the base when the right-hand side is absolute. So an
+    absolute path is neither specially accepted nor specially refused: it is
+    resolved like any other and then has to land inside the base, which it does
+    whenever the report names its payload the way a report is supposed to -- by
+    the absolute path of a sibling. That is why containment is not decorative
+    here and why refusing absolute paths outright, which would break every report
+    written so far, is not needed to get it. On Windows the same expression is
+    also what disarms `C:/...`: the drive-absolute spelling discards the base, so
+    a guard reading the raw string for a leading separator would never see it,
+    while a containment test on the joined result cannot miss it.
+
+    Both sides are resolved, so a symlink sitting inside the base and pointing out
+    of it is refused too -- resolving reads link targets and opens nothing.
+    Comparison is on `os.path.normcase` parts: exact, drive-aware, and immune to
+    the case-folding difference between the platforms.
+    """
+    if base_dir is None:
+        return None, (
+            "pr_body.path: no directory to resolve the payload against, so it was not "
+            "opened. The payload is checked by resolving it against the report's own "
+            "directory; without one there is nothing to contain it to, and that is a "
+            "check that could not run rather than a check that passed."
+        )
+    try:
+        base = Path(base_dir).resolve()
+        candidate = (base / raw_path).resolve()
+    except OSError as exc:
+        return None, (
+            "pr_body.path: could not resolve {} well enough to tell whether it stays "
+            "inside the report's own directory ({}), so it was not opened.".format(
+                _one_line(raw_path, 120), _one_line(exc, 80)
+            )
+        )
+    root = [os.path.normcase(part) for part in base.parts]
+    if [os.path.normcase(part) for part in candidate.parts][: len(root)] != root:
+        return None, (
+            "pr_body.path: {} resolves outside the report's own directory, so it was "
+            "not opened. A report names the payload it wrote beside itself; a path "
+            "leading anywhere else names a file the report does not own, and opening "
+            "one means this process reading it and quoting parts of it back.".format(
+                _one_line(raw_path, 120)
+            )
+        )
+    return candidate, None
+
+
 def validate_pr_body(report, schema=None, base_dir=None):
     """Open the pull request payload the report says it wrote, and check its shape.
 
@@ -301,14 +369,16 @@ def validate_pr_body(report, schema=None, base_dir=None):
         # The shape pass already refuses this. Saying it twice buries the other errors.
         return []
 
-    path = Path(raw_path)
-    if not path.is_absolute() and base_dir is not None:
-        path = Path(base_dir) / path
+    path, problem = _contained_path(base_dir, raw_path)
+    if problem is not None:
+        return [problem]
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         return [
-            "pr_body.path: cannot open the payload the report says it wrote ({})".format(exc)
+            "pr_body.path: cannot open the payload the report says it wrote ({})".format(
+                _one_line(exc)
+            )
         ]
     try:
         payload = json.loads(raw)
@@ -316,7 +386,9 @@ def validate_pr_body(report, schema=None, base_dir=None):
         return [
             "pr_body.path: {} is not the JSON payload a forge consumes ({}). A bare "
             "markdown body is the shape the next step refuses, and the refusal lands "
-            "on somebody else after your session has ended.".format(path, exc)
+            "on somebody else after your session has ended.".format(
+                _one_line(path), _one_line(exc)
+            )
         ]
 
     schema = schema if schema is not None else load_schema()

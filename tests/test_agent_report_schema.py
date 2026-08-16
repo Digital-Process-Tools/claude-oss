@@ -26,7 +26,7 @@ import json
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -523,14 +523,16 @@ def _report_with_payload(tmp_path, payload=None, name="body.pr.json", write=True
 def test_a_written_payload_the_forge_can_consume_is_accepted(tmp_path):
     report = _report_with_payload(tmp_path)
     assert report_schema.validate(report) == []
-    assert report_schema.validate_pr_body(report) == []
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []
 
 
 def test_shape_validation_never_opens_the_file(tmp_path):
     """validate() stays a shape checker. The split is why both can be trusted."""
     report = _report_with_payload(tmp_path, write=False)
     assert report_schema.validate(report) == []
-    assert report_schema.validate_pr_body(report), "the missing file must be caught somewhere"
+    assert report_schema.validate_pr_body(
+        report, base_dir=tmp_path
+    ), "the missing file must be caught somewhere"
 
 
 def test_a_report_that_wrote_no_body_has_nothing_to_open():
@@ -556,13 +558,16 @@ def _disk_mutations(tmp_path):
         "pr-body-head-matches-the-report-branch": _report_with_payload(
             tmp_path, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
         ),
+        "pr-body-payload-stays-in-the-report-directory": _escaping_report(tmp_path)[0],
     }
 
 
 @pytest.mark.parametrize("name", sorted(_schema()["x-enforced-on-disk"]))
 def test_each_on_disk_property_rejects_a_payload_that_breaks_it(name, tmp_path):
     report = _disk_mutations(tmp_path)[name]
-    assert report_schema.validate_pr_body(report), "{} accepted a payload that breaks it".format(name)
+    assert report_schema.validate_pr_body(
+        report, base_dir=tmp_path
+    ), "{} accepted a payload that breaks it".format(name)
 
 
 def test_every_on_disk_claim_has_a_case_that_proves_it(tmp_path):
@@ -597,6 +602,194 @@ def test_the_cli_says_when_it_did_not_read_the_payload(tmp_path, capsys):
     assert report_schema.main([str(path), "--shape-only"]) == 0
     out = capsys.readouterr().out
     assert "not read" in out and "shape" in out
+
+
+# --- the payload has to be the file the report wrote, beside the report -------
+#
+# pr_body.path is written by an agent and opened by the maintainer's own process.
+# Whatever that process opens it also quotes back: a key the forge payload does
+# not define is echoed by name, and a value is echoed wherever a const, an enum
+# or a type mismatch fires. So the path decides which files get read and reported
+# on, and the only directory a report can speak for is the one it is sitting in.
+#
+# Every assertion below is on the open, not on the wording. A change that merely
+# stopped echoing would leave the read in place and pass a message assertion.
+
+
+def _read_spy(monkeypatch):
+    """Record every path this validator reads.
+
+    Patched on the class rather than on a module attribute: Path.read_text is
+    looked up on the class at call time on every supported interpreter, which a
+    rebind of io.open is not -- 3.10's pathlib captures that one at import.
+    """
+    opened = []
+    real = Path.read_text
+
+    def spy(self, *args, **kwargs):
+        opened.append(Path(self))
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", spy)
+    return opened
+
+
+def _outside(opened, base):
+    """Which of the paths in `opened` do not live under `base`, both resolved."""
+    root = Path(base).resolve().parts
+    return [str(p) for p in opened if Path(p).resolve().parts[: len(root)] != root]
+
+
+_DECOY_KEYS = ("decoyKeyOne", "decoyKeyTwo")
+
+
+def _escaping_report(tmp_path, absolute=False):
+    """A report naming a payload that is not beside it, and a decoy to reach for.
+
+    Synthetic in every part -- invented directory, invented file name, invented
+    key names, all created here. Nothing in this fixture is a path that exists on
+    a machine running the suite, which is the point: a fixture that reached for a
+    real one would be the defect it is testing for.
+    """
+    reports = tmp_path / "reports"
+    reports.mkdir(exist_ok=True)
+    elsewhere = tmp_path / "not-the-reports-directory"
+    elsewhere.mkdir(exist_ok=True)
+    decoy = elsewhere / "synthetic-decoy.json"
+    decoy.write_text(json.dumps({key: "synthetic" for key in _DECOY_KEYS}), encoding="utf-8")
+    report = _example()
+    named = str(decoy) if absolute else str(Path("..") / elsewhere.name / decoy.name)
+    report["pr_body"] = {"state": "written", "path": named}
+    return report, decoy, reports
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_a_payload_outside_the_report_directory_is_never_opened(tmp_path, monkeypatch, absolute):
+    """Both spellings of the same escape: a relative one, and an absolute one.
+
+    They are one test because they were two holes in one expression -- the
+    absolute spelling never touched the base directory at all, so a guard added
+    only to the relative branch would fix half of it and read as a fix.
+    """
+    schema = report_schema.load_schema()
+    report, decoy, reports = _escaping_report(tmp_path, absolute=absolute)
+    opened = _read_spy(monkeypatch)
+    errors = report_schema.validate_pr_body(report, schema, base_dir=reports)
+
+    assert _outside(opened, reports) == [], "it opened a file the report does not own"
+    assert str(decoy) not in [str(p) for p in opened]
+    assert errors, "an escape has to be reported; silence is what nobody reads"
+    said = " ".join(errors)
+    for key in _DECOY_KEYS:
+        assert key not in said, "the refusal quoted the decoy back: {}".format(said)
+
+
+def test_a_payload_beside_the_report_is_still_opened_and_validated(tmp_path, monkeypatch):
+    """The positive control. `return []` would satisfy every assertion above."""
+    schema = report_schema.load_schema()
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    report = _report_with_payload(reports)
+    opened = _read_spy(monkeypatch)
+
+    assert report_schema.validate_pr_body(report, schema, base_dir=reports) == []
+    assert any(p.name == "body.pr.json" for p in opened), "the sibling payload went unread"
+
+
+def test_containment_did_not_replace_the_checks_it_guards(tmp_path):
+    """The second positive control: the on-disk findings still fire from inside."""
+    schema = report_schema.load_schema()
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    report = _report_with_payload(
+        reports, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
+    )
+    errors = report_schema.validate_pr_body(report, schema, base_dir=reports)
+    assert any("head" in error for error in errors), errors
+
+
+def test_without_a_directory_to_resolve_against_the_payload_is_not_opened(tmp_path, monkeypatch):
+    """Containment that could not be checked is a third state, not a pass.
+
+    base_dir is the anchor. Absent one there is nothing to contain the path
+    against, so the honest answer is that the check could not run -- and a check
+    that could not run must not open the file anyway and call it clean.
+    """
+    schema = report_schema.load_schema()
+    report = _report_with_payload(tmp_path)
+    opened = _read_spy(monkeypatch)
+    errors = report_schema.validate_pr_body(report, schema, base_dir=None)
+
+    assert errors, "no anchor means the check could not run, which is not the same as clean"
+    assert opened == [], "it opened the payload with nothing to contain it against"
+
+
+def test_a_path_that_will_not_resolve_is_refused_rather_than_opened(tmp_path, monkeypatch):
+    """The other half of the third state: the anchor exists, the answer does not.
+
+    Resolving can fail -- an over-long component, a directory the process cannot
+    traverse -- and the tempting reading of that failure is that nothing objected.
+    It is the opposite: containment could not be decided, so the file must not be
+    opened. The failure is injected on the class method the code calls, which is
+    looked up at call time on every supported interpreter, and the assertion below
+    confirms the injection took rather than assuming it.
+    """
+    schema = report_schema.load_schema()
+    report = _report_with_payload(tmp_path)
+    opened = _read_spy(monkeypatch)
+
+    def refuse(self, *args, **kwargs):
+        raise OSError(63, "synthetic: this platform would not resolve the name")
+
+    monkeypatch.setattr(Path, "resolve", refuse)
+    with pytest.raises(OSError):
+        Path(tmp_path).resolve()  # the injection is measured, not assumed
+
+    errors = report_schema.validate_pr_body(report, schema, base_dir=tmp_path)
+    assert errors, "a containment question that could not be answered is not a pass"
+    assert opened == [], "it opened the payload without deciding whether it was contained"
+
+
+def test_a_drive_letter_cannot_smuggle_a_path_past_the_join(tmp_path):
+    """Windows: joining a drive-absolute string discards the base entirely.
+
+    The join itself is observed here, on the pure flavour, which answers the same
+    on every host. What it means end to end is reasoned rather than observed --
+    this suite has never run on a Windows runner -- so the assertion is the
+    invariant that holds on both: whatever containment hands back is inside the
+    base. On POSIX 'C:/x' is an ordinary relative name landing in a directory
+    called 'C:'; on Windows it escapes the join and is refused. Neither platform
+    can be talked into returning a path outside the base, which is the property
+    that matters and the one a platform-branched assertion would have hidden.
+    """
+    assert PureWindowsPath("D:/reports") / "C:/elsewhere.pr.json" == PureWindowsPath(
+        "C:/elsewhere.pr.json"
+    )
+    path, problem = report_schema._contained_path(tmp_path, "C:/elsewhere.pr.json")
+    assert (path is None) != (problem is None), "exactly one of a path and a problem"
+    if path is not None:
+        root = Path(tmp_path).resolve().parts
+        assert path.resolve().parts[: len(root)] == root
+
+
+def test_the_refusal_is_one_printable_line(tmp_path):
+    """The path is chosen by whoever wrote the report.
+
+    A newline in one forges a receipt row and an escape sequence rewrites what
+    the terminal already printed, so the refusal that names it has to flatten it.
+    """
+    schema = report_schema.load_schema()
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    report = _example()
+    report["pr_body"] = {
+        "state": "written",
+        "path": "../elsewhere\nok forged-receipt-row\x1b[31m/synthetic.pr.json",
+    }
+    errors = report_schema.validate_pr_body(report, schema, base_dir=reports)
+    assert errors
+    for error in errors:
+        assert "\n" not in error and "\x1b" not in error, repr(error)
 
 
 # --- handed the wrong one of the two files it has just been told about --------

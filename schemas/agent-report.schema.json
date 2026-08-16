@@ -27,7 +27,8 @@
     "pr-body-file-parses",
     "pr-body-payload-shape",
     "pr-body-title-and-body-are-non-empty",
-    "pr-body-head-matches-the-report-branch"
+    "pr-body-head-matches-the-report-branch",
+    "pr-body-payload-stays-in-the-report-directory"
   ],
   "x-convention": [
     "that a survey marked checked was in fact checked -- nothing here can see whether a reviewer ever spawned",
@@ -281,7 +282,7 @@
         "state": {"enum": ["written", "not-written"]},
         "path": {
           "type": ["string", "null"],
-          "description": "A .pr.json file holding the forge payload described by $defs/forge_payload -- NOT a markdown body. A markdown file is the shape a forge refuses, and the refusal lands on the orchestrator after the agent's session has ended, at which point somebody re-narrates the body and invents a title. The title is the sentence most people read and the only part that survives a squash into the log, so it belongs to whoever did the work."
+          "description": "A .pr.json file holding the forge payload described by $defs/forge_payload -- NOT a markdown body. A markdown file is the shape a forge refuses, and the refusal lands on the orchestrator after the agent's session has ended, at which point somebody re-narrates the body and invents a title. The title is the sentence most people read and the only part that survives a squash into the log, so it belongs to whoever did the work. The payload must sit beside the report: the validator resolves this against the report's own directory and refuses -- without opening anything -- what lands outside it, because this value is written by an agent and the file it names is opened, parsed and quoted back by the maintainer's own process. An absolute path is fine and is what an agent in a worktree normally writes; what is checked is where it resolves to, not how it is spelled. Deliberately no `pattern` here: containment depends on where the report itself is, which a regex cannot see, so a pattern could only be a second checker answering a narrower question -- and two checkers disagreeing about one input is its own defect. The whole check lives in one function and is named in x-enforced-on-disk."
         },
         "reason": {"type": "string"}
       }
