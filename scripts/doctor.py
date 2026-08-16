@@ -2311,12 +2311,21 @@ def jit_hook_roots(record=None, cache_root=None):
 
 
 def _jit_manifest_paths(root):
-    """``[(path, as-written)]`` -- where this plugin declares its hooks.
+    """``(entries, rejected)`` -- where this plugin declares its hooks.
 
-    ``.claude-plugin/plugin.json`` may name the file, so the second element is carried
-    rather than recomputed: the "no hook manifest" message names the path that was looked
-    for, and a message naming the convention while a manifest key named something else is
-    a diagnostic answering a question nobody asked.
+    ``entries`` is ``[(path, as-written)]``. The second element is carried rather than
+    recomputed: the "no hook manifest" message names the path that was looked for, and a
+    message naming the convention while a manifest key named something else is a
+    diagnostic answering a question nobody asked.
+
+    ``.claude-plugin/plugin.json`` may name the file. When it names one this cannot
+    resolve -- ``..``, a drive, empty -- ``rejected`` carries the string **as the plugin
+    wrote it** and there are no entries at all. It deliberately does not fall back to the
+    convention, and that is the stronger of the two available answers: falling back reads
+    a file the plugin did not name, which is #241's own substitution one field over. The
+    cheap half of that bug is a message quoting the wrong path; the expensive half is a
+    conventional manifest happening to sit there, which would have produced a confident
+    ``reads`` with nothing anywhere recording that the declaration was ignored.
     """
     named = None
     try:
@@ -2327,10 +2336,13 @@ def _jit_manifest_paths(root):
             named = doc["hooks"]
     except (OSError, ValueError):
         named = None
-    parts = _jit_path_parts(named) if named else None
-    if not parts:
-        parts = list(JIT_HOOK_MANIFEST)
-    return [(root.joinpath(*parts), "/".join(parts))]
+    if named:
+        parts = _jit_path_parts(named)
+        if not parts:
+            return [], _one_line(named)
+        return [(root.joinpath(*parts), "/".join(parts))], None
+    parts = list(JIT_HOOK_MANIFEST)
+    return [(root.joinpath(*parts), "/".join(parts))], None
 
 
 def _jit_path_parts(token):
@@ -2398,15 +2410,23 @@ def _jit_hook_files(roots):
     wrong.
     """
     hooks, unresolved, manifests, looked = [], [], [], []
+    unparsed, rejected = [], []
     for root in roots:
-        for manifest, written in _jit_manifest_paths(root):
+        entries, refused = _jit_manifest_paths(root)
+        if refused:
+            rejected.append(refused)
+        for manifest, written in entries:
             looked.append(_one_line(written))
             try:
                 doc = json.loads(manifest.read_text(encoding="utf-8"))
             except FileNotFoundError:
                 continue
             except (OSError, ValueError) as exc:
-                unresolved.append(
+                # Unreadable is not empty. These used to join `unresolved` and share the
+                # "named nothing this could resolve to a file" sentence with a manifest
+                # that parsed to `{}` -- the right state, asserting the wrong thing about
+                # the file, with the truth demoted to a parenthetical.
+                unparsed.append(
                     "{}: {}".format(_one_line(manifest.name), _one_line(str(exc)))
                 )
                 manifests.append(manifest)
@@ -2426,8 +2446,31 @@ def _jit_hook_files(roots):
                     else:
                         unresolved.append(_one_line(token))
 
+    if rejected:
+        return (
+            [],
+            "declares its hooks at {} in .claude-plugin/plugin.json, which is not a path "
+            "this can resolve inside the install tree. It deliberately did not fall back "
+            "to the conventional location: measuring a file the plugin did not name is "
+            "how a fixture came to answer this check (#241). Nothing was measured.".format(
+                "; ".join(dict.fromkeys(rejected))
+            ),
+            unresolved,
+            unparsed,
+        )
+
     if not manifests:
-        return [], "; ".join(dict.fromkeys(looked)) or "/".join(JIT_HOOK_MANIFEST), unresolved
+        return (
+            [],
+            "carries no hook manifest ({}), so which of its scripts the runtime executes "
+            "-- as opposed to ships -- is not something this can tell, and a scan of "
+            "every file in the tree would be answered by the dependency's own test "
+            "fixtures (#241). Nothing was measured.".format(
+                "; ".join(dict.fromkeys(looked)) or "/".join(JIT_HOOK_MANIFEST)
+            ),
+            unresolved,
+            unparsed,
+        )
 
     # The sourced closure. Comments are skipped for the same reason the enumeration scan
     # skips them: prose quoting a `source` line is not a `source` line.
@@ -2460,7 +2503,7 @@ def _jit_hook_files(roots):
                 queue.append(sourced)
             else:
                 unresolved.append(_one_line(basename.group(1)))
-    return ordered, None, unresolved
+    return ordered, None, unresolved, unparsed
 
 
 def _jit_is_file(path):
@@ -2538,18 +2581,25 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
-    scripts, hook_problem, unresolved = _jit_hook_files(roots)
+    scripts, hook_problem, unresolved, unparsed = _jit_hook_files(roots)
     if hook_problem:
+        # `hook_problem` is a whole clause rather than a keyword, because the two cases it
+        # covers -- no manifest, and a manifest path this refused -- have nothing in
+        # common but their state, and a shared sentence with the difference in a
+        # parenthetical is the defect two arms below used to have.
         return (
             "could-not-determine",
-            "{} is recorded as installed and carries no hook manifest ({}), so which of "
-            "its scripts the runtime executes -- as opposed to ships -- is not something "
-            "this can tell, and a scan of every file in the tree would be answered by "
-            "the dependency's own test fixtures (#241). Nothing was measured.".format(
-                named, hook_problem
-            ),
+            "{} is recorded as installed and {}".format(named, hook_problem),
         )
     if not scripts:
+        if unparsed:
+            return (
+                "could-not-determine",
+                "{} is recorded as installed and no hook script (*.sh) was found under "
+                "it -- its hook manifest would not be read ({}) -- so what reads {} was "
+                "never measured. That is a fact about the file, not about its "
+                "contents.".format(named, "; ".join(unparsed[:3]), layer),
+            )
         return (
             "could-not-determine",
             "{} is recorded as installed and no hook script (*.sh) was found under it -- "
@@ -2597,7 +2647,7 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
-    incomplete = unreadable + unresolved
+    incomplete = unreadable + unresolved + unparsed
     if incomplete:
         # `unresolved` belongs here and not only in the empty-hook-set arm above. A
         # manifest declaring two hooks where one is missing, and where the one that
@@ -2626,7 +2676,13 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
-    outside = _jit_layer_lists_outside(roots, scripts)
+    outside, unwalkable = _jit_layer_lists_outside(roots, scripts)
+    partial = (
+        " {} path(s) under it could not be walked or read ({}), so this did not see the "
+        "whole tree.".format(len(unwalkable), "; ".join(unwalkable[:3]))
+        if unwalkable
+        else ""
+    )
     if outside:
         # The judgement call in #241, taken the honest way: a layer list in a file the
         # runtime never executes is *reported as the reason this is unknown*, not
@@ -2639,8 +2695,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "only layer list(s) found are outside the hook set ({}) -- files the runtime "
             "never executes, typically that plugin's own test fixtures, which name {} "
             "whether or not anything enumerates it. So this is unknown, not a pass: a "
-            "fixture answered this check for a whole release (#241).".format(
-                len(scripts), named, ", ".join(outside[:3]), layer
+            "fixture answered this check for a whole release (#241).{}".format(
+                len(scripts), named, ", ".join(outside[:3]), layer, partial
             ),
         )
 
@@ -2649,38 +2705,68 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         "{} hook script(s) of {} were read and none carries a fixed layer list, so "
         "whether {} is read could not be determined from the hooks on disk. That is "
         "what an enumerate-the-directory implementation looks like -- the shape the "
-        "upstream fix takes -- which is why this is unknown rather than a gap.".format(
-            len(scripts), named, layer
+        "upstream fix takes -- which is why this is unknown rather than a gap.{}".format(
+            len(scripts), named, layer, partial
         ),
     )
 
 
 def _jit_layer_lists_outside(roots, scripts):
-    """``["name:line", ...]`` -- layer lists in the install tree that no hook reaches.
+    """``(sites, unreadable)`` -- layer lists in the install tree that no hook reaches.
 
     Read only to *explain* a non-answer, never to produce one. Anything found here is by
     construction a file the runtime does not execute.
+
+    ``os.walk(onerror=...)`` and not ``Path.rglob``. This function is the one place left
+    that walks the whole install tree, and the first version of it wrapped ``rglob`` in
+    ``except OSError`` -- which ``CLAUDE.md``'s traps list already records as unable to
+    fire, because pathlib's recursive glob swallows ``PermissionError`` mid-walk and
+    yields nothing for that subtree. So "the tree holds no layer list outside the hook
+    set" and "this could not read the tree" came back identical, in a function whose
+    entire job is explaining why something could not be determined. There is no argument
+    to ``rglob`` that makes it speak; the walk has to be one that reports.
+
+    ``unreadable`` is returned separately rather than folded into ``sites`` for the same
+    reason ``_workflow_scan`` returns two lists: an empty ``sites`` already means "read
+    the whole tree, found nothing", and that is a different sentence.
     """
     inside = {str(path) for path in scripts}
-    sites = []
+    sites, unreadable = [], []
+
+    def _note(exc):
+        where = getattr(exc, "filename", None) or ""
+        unreadable.append(
+            "{}: {}".format(
+                _one_line(os.path.basename(str(where))), _one_line(str(exc))
+            )
+        )
+
     for root in roots:
-        try:
-            candidates = sorted(root.rglob("*.sh"))
-        except OSError:
-            continue
-        for path in candidates:
-            if str(path) in inside:
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            for number, line in enumerate(text.splitlines(), 1):
-                if line.lstrip().startswith("#"):
+        for directory, _subdirectories, names in os.walk(str(root), onerror=_note):
+            for name in sorted(names):
+                if not name.endswith(".sh"):
                     continue
-                if JIT_LAYER_ENUMERATION.search(line):
-                    sites.append(_one_line("{}:{}".format(path.name, number)))
-    return sites
+                path = Path(directory) / name
+                if str(path) in inside:
+                    continue
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    # Not a gap in the walk: a binary or mis-encoded file cannot be a
+                    # shell script carrying a layer list, and saying the tree was not
+                    # fully seen because of one would be a false alarm.
+                    continue
+                except OSError as exc:
+                    unreadable.append(
+                        "{}: {}".format(_one_line(name), _one_line(str(exc)))
+                    )
+                    continue
+                for number, line in enumerate(text.splitlines(), 1):
+                    if line.lstrip().startswith("#"):
+                        continue
+                    if JIT_LAYER_ENUMERATION.search(line):
+                        sites.append(_one_line("{}:{}".format(name, number)))
+    return sites, unreadable
 
 
 def jit_layer_readers(project_dir, layer=None, record=None, cache_root=None):

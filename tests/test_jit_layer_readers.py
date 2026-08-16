@@ -50,8 +50,11 @@ honestly, and it would measure the machine rather than the code.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -373,11 +376,50 @@ def test_a_manifest_the_plugin_json_names_is_the_one_looked_for(tmp_path):
     assert _one(_project(tmp_path), cache, record)["state"] == "reads"
 
 
-def test_a_hook_manifest_that_will_not_parse_is_could_not_determine(tmp_path):
-    """Present and unreadable is not the same as present and empty.
+def test_a_manifest_path_the_plugin_declared_and_this_cannot_resolve_is_not_a_fallback(tmp_path):
+    """A declaration this cannot resolve is a non-answer, not a licence to guess.
 
-    Paired with a parseable manifest over the identical tree, so this cannot pass against
-    a reader that fails on every manifest.
+    Falling back to the convention measures a file the plugin did not name, which is the
+    #241 substitution one field over -- and in the second half below it is worse than a
+    wrong path in a message: a conventional manifest happening to sit there would have
+    produced a confident `reads` with nothing anywhere saying the declared key was
+    ignored. Both halves must name what was declared.
+
+    The positive control is `test_a_manifest_the_plugin_json_names_is_the_one_looked_for`,
+    which asserts `reads` on a declaration that *does* resolve -- so this cannot pass
+    against a reader that refuses every declaration.
+    """
+    declaration = json.dumps({"name": PLUGIN, "hooks": "../../etc/hooks.json"})
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={".claude-plugin/plugin.json": declaration},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "../../etc/hooks.json" in finding["detail"], finding["detail"]
+    assert "hooks/hooks.json" not in finding["detail"], finding["detail"]
+
+    # The half that would otherwise answer `reads` off a file nobody named: a perfectly
+    # good manifest at the conventional location, and a declaration pointing elsewhere.
+    cache, record = _cache(
+        tmp_path / "second",
+        {"pre-tool-hook.sh": NAMES},
+        extra={".claude-plugin/plugin.json": declaration},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "../../etc/hooks.json" in finding["detail"], finding["detail"]
+
+
+def test_a_hook_manifest_that_will_not_parse_says_so_rather_than_that_it_named_nothing(tmp_path):
+    """Unreadable and empty are two states and used to share one sentence.
+
+    Both halves are must-fire, on the same fixture shape: a manifest that will not parse,
+    and one that parses to `{}`. Each has to say its own thing and must not say the
+    other's, which is what makes this a discrimination rather than two spellings of
+    `could-not-determine`.
     """
     cache, record = _cache(
         tmp_path,
@@ -388,9 +430,68 @@ def test_a_hook_manifest_that_will_not_parse_is_could_not_determine(tmp_path):
     finding = _one(_project(tmp_path), cache, record)
     assert finding["state"] == "could-not-determine", finding
     assert "hooks.json" in finding["detail"], finding["detail"]
+    assert "would not be read" in finding["detail"], finding["detail"]
+    assert "named nothing" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "empty",
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={"hooks/hooks.json": "{}"},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "named nothing" in finding["detail"], finding["detail"]
+    assert "would not be read" not in finding["detail"], finding["detail"]
 
     cache, record = _cache(tmp_path / "control", {"pre-tool-hook.sh": NAMES})
     assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_subtree_that_cannot_be_walked_is_reported_not_swallowed(tmp_path, request):
+    """`Path.rglob` swallows `PermissionError` while walking and yields nothing.
+
+    So the `except OSError` this scan used to carry could never fire for the case it was
+    written for, and "the whole tree holds no layer list" came back identical to "this
+    could not read the tree" -- with the second one then quoted as the reason the check
+    could not determine. `CLAUDE.md` records that trap against `scaffold.py`; this is the
+    same walk, in code added by #241.
+
+    The deny is *measured*, never assumed: root ignores the mode bit, some filesystems
+    ignore it, and Windows' `os.chmod` on a directory toggles a read-only attribute that
+    does not stop a listing. The exact operation `os.walk` performs is attempted, and the
+    test skips with what went untested when it did not take.
+    """
+    hooks = {"pre-tool-hook.sh": ENUMERATED}
+    fixture = {"vendor/test-layer-enumeration.sh": FIXTURE}
+
+    # Must-fire half, readable: the site is found and named.
+    cache, record = _cache(tmp_path / "readable", hooks, extra=fixture)
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "test-layer-enumeration.sh" in finding["detail"], finding["detail"]
+
+    cache, record = _cache(tmp_path / "denied", hooks, extra=fixture)
+    closed = cache / "dpt-plugins" / PLUGIN / VERSION / "vendor"
+    original = closed.stat().st_mode
+    closed.chmod(0o000)
+    request.addfinalizer(lambda: closed.chmod(original))
+    try:
+        os.listdir(str(closed))
+    except OSError:
+        pass
+    else:
+        pytest.skip(
+            "chmod 000 did not deny os.listdir on this platform/user, so the "
+            "unwalkable-subtree arm went untested here: {}".format(closed)
+        )
+
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "did not see the whole tree" in finding["detail"], finding["detail"]
+    assert "vendor" in finding["detail"], finding["detail"]
+    # The failure this replaces: the subtree vanished and the sentence read as complete.
+    assert "test-layer-enumeration.sh" not in finding["detail"], finding["detail"]
 
 
 def test_a_declared_hook_that_is_missing_cannot_leave_the_rest_saying_unread(tmp_path):
