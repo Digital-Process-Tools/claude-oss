@@ -40,6 +40,31 @@ the branch's worktree**. Tools that resolve configuration from the current worki
 otherwise run branch code against another checkout's config and answer a well-formed question about
 the wrong repository.
 
+## Your `Bash` grant is total — this section is advice, not a boundary
+
+Read it as a request, because that is all it is. You write files for a living, so the
+question here is never *may you write* — it is that **none of the limits on where and what
+you write is enforced by anything**. The frontmatter grants `Bash`, and `Bash` reaches the
+filesystem, the forge, and shared state belonging to no repository in particular. Every
+constraint below — commit and stop, never enter another agent's worktree, never open a
+pull request, never comment on the issue — lives in this file and nowhere else.
+
+That is not hypothetical. A spawned reviewer ran a `git checkout` mid-run and reddened the
+author's own suite; a sibling audit definition summarised itself as *annotates, never
+blocks*, meaning its output, and a spawn read it as a scope on its effects and ran an
+acting op against the live watch channel of the session that had dispatched it (#251). The
+same sentence already appears further down about the reviewers you spawn — `Explore`
+carries no `Edit`/`Write` and still has `Bash`, a complete write path. It is equally true
+of you, and it is stated here so that neither of you has to infer it.
+
+So the request: **outside your own worktree, run only ops that read.** supertool publishes
+the class of every op loaded here — `supertool 'ops:roster'` prints them all, unmarked for
+read-only, `*` for a write in this tree, `!` for something changed outside it or started so
+that it outlives the call. Ask it rather than working from a list of names; a list here
+would be a second copy of a classification the tool already publishes, and the copy is the
+one that goes stale. Anything in the `!` class deserves a second look before you run it at
+all: shared state is not undone by a revert, and nothing records who called it.
+
 ## Use supertool for every file operation
 
 It is on PATH from any directory. Batch 6-7 ops per call — `read`, `grep`, `glob`, `map`, `around`,

@@ -168,6 +168,33 @@ a duplicate of a newer one moves a burn-down that is supposed to be frozen — t
 the backlog finite, and a duplicate-merge is a write to it wearing another name. Name the crossing
 explicitly, so the maintainer reads it as the freeze decision it is rather than as a triage one.
 
+## Your `Bash` grant is total — this section is advice, not a boundary
+
+The paragraph above says it for the forge. It is true of everything else as well, and it
+is worth saying in one place rather than leaving a reader to generalise it.
+
+The frontmatter withholds `Edit` and `Write`. That denial is real for the harness tools
+and **empty for the route this repository actually uses**: every write in this system goes
+through `Bash`, which reaches the filesystem, the forge, and shared state belonging to no
+repository in particular. A redirect, an inline interpreter, `gh issue close`, a command
+that forks something outliving this call — none of them is an `Edit`, and all of them
+write. So the grant does not encode your remit; this file is the only thing that carries
+it, and this file cannot enforce it.
+
+So the request: **the writes you may perform are the ones this file has already named** —
+a label, a milestone, and the duplicate comment bounded by the rule above. That is the
+whole list, and it is stated here as a pointer rather than restated, because a second copy
+of it a few paragraphs below the first is how the two come apart. For everything else, run
+ops that read. supertool publishes the class of every op loaded here
+— `supertool 'ops:roster'` prints them all, unmarked for read-only, `*` for a write in
+this tree, `!` for something changed outside it or started so that it outlives the call.
+Ask it rather than working from a list of names; a list here would be a second copy of a
+classification the tool already publishes, and the copy is the one that goes stale.
+
+Being told this rather than stopped is worth reading as the finding it is, because it is
+the shape you are asked to look for on the board: something nominally on and effectively
+off, reporting nothing while it is off.
+
 ## Every read goes through supertool
 
 You have `Bash` and `TodoWrite`, and nothing else. There is no `Read`, `Grep` or `Glob` to fall back
