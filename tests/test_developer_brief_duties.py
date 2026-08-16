@@ -81,6 +81,31 @@ asked for has not changed, only where it goes: files, red and green, review, pla
 unfiled findings, the note path.
 """
 
+# The review passage as it stood on disk before #200, un-elided. The three
+# passages above are abridged; this one is not, and must not become so -- every
+# anchor in EMPTY_RETURN_POLICY falls inside it, so an elision here would assert
+# an anchor absent from text that never carried it.
+PRIOR_REVIEW_RETURN = """
+**Your final message is the only thing that reaches you -- everything a spawn wrote before that line
+is invisible to the caller.** State this in both briefs: the final message IS the return value, and
+if a reviewer found nothing it must say `NO FINDINGS` and name what it checked, because a reply
+ending in "findings reported above" returns empty, and an empty return is indistinguishable from a
+clean one unless the brief forces the reviewer to say which it means.
+
+**Independence lives in the reviewer; judgment stays with you.** Argue down a finding that is wrong
+and say why -- that is an outcome no bounce-and-repush loop produces. Report all three under
+`review.findings`, each with its disposition: what it flagged, what you fixed, what you refused.
+
+**Do not shell out to a headless `claude` CLI.** One agent did, unbounded, with auto-accepted write
+access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.
+
+**A review that did not execute must never render as a review that found nothing.** That holds for
+both spawns, for an empty final message from either one -- treat it as `did not run`, never as
+clean, and say so in your own report rather than silently omitting the review -- and for each of the
+auditor's classes separately: report `did not run` where it did not run. An absence you produced is
+not an absence in the world.
+"""
+
 # Wording that was on disk before this change and is still on disk after it.
 # If PRIOR cannot be read, these fail -- which is what stops the "must not
 # match" assertions above from passing vacuously.
@@ -88,7 +113,13 @@ LIVE_BEFORE = [
     "a literal block processes no escapes",
     "cross-platform is not your machine",
     "an absence you produced is not an absence in the world",
+    "an empty return is indistinguishable from a clean one",
 ]
+
+
+def _prior():
+    """Every pre-change passage this file controls against, as one blob."""
+    return PRIOR + PRIOR_REVIEW_RETURN
 
 
 def test_the_developer_document_exists_and_is_prose():
@@ -112,7 +143,7 @@ def test_the_negative_control_is_readable():
     "was red before" claim below is unsupported and must be read as `did not
     run`, not as passed.
     """
-    assert _unmet(PRIOR, LIVE_BEFORE) == [], "PRIOR is not the pre-change document"
+    assert _unmet(_prior(), LIVE_BEFORE) == [], "PRIOR is not the pre-change document"
     assert _unmet(DEVELOPER.read_text(encoding="utf-8"), LIVE_BEFORE) == [], (
         "the live document lost wording the control depends on"
     )
@@ -143,11 +174,24 @@ PAYLOAD_NOT_EVALUATED = [
     "put a real newline in the literal",
 ]
 
+# #200: a spawn that executes and returns an empty final message. The brief
+# already covered a spawn that never ran and a spawn whose name did not resolve.
+# It did not cover the quiet one, and an honest report of it was byte-identical
+# to a clean review.
+EMPTY_RETURN_POLICY = [
+    "returned-nothing",
+    "consume its budget, and return an empty final message",
+    "one fresh re-spawn, and it does not erase the first outcome",
+    "granting `sendmessage` to ask the reviewer to repeat itself",
+    "two samples is not a measurement",
+]
+
 DUTIES = [
     pytest.param(ADJACENT_POLICY, id="adjacent-fix-or-file"),
     pytest.param(PLATFORM_FIX_RULES, id="platform-rules-about-the-fix"),
     pytest.param(THIRD_STATE_AS_DESIGN, id="third-state-as-a-design-rule"),
     pytest.param(PAYLOAD_NOT_EVALUATED, id="payload-parsed-never-evaluated"),
+    pytest.param(EMPTY_RETURN_POLICY, id="a-spawn-that-returned-nothing"),
 ]
 
 
@@ -161,7 +205,7 @@ def test_the_anchors_were_red_against_the_pre_change_wording(anchors):
     """The must-not-fire half. An anchor matching PRIOR is one that would have
     passed before a word of this change was written.
     """
-    matched = [anchor for anchor in anchors if anchor in _flatten(PRIOR)]
+    matched = [anchor for anchor in anchors if anchor in _flatten(_prior())]
     assert matched == [], f"toothless anchors, already on disk: {matched}"
 
 

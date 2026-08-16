@@ -326,6 +326,55 @@ clean, and say so in your own report rather than silently omitting the review �
 auditor's classes separately: report `did not run` where it did not run. An absence you produced is
 not an absence in the world.
 
+### When a spawn runs and comes back empty
+
+That rule has a loud half and a quiet half, and only the loud half was ever written down. A spawn
+that errors is handled below. This is the other one: a spawn can **execute, consume its budget, and
+return an empty final message** — the review happened, the conclusions are gone. Reported honestly
+and structurally that is `findings: []` under `state: checked`, which is byte-identical to a clean
+review, and it has already cost this repository real findings that nobody can now recover.
+
+So it gets its own state. `review.classes` and `review.findings` carry a fourth one,
+**`returned-nothing`**, that no other survey in the report can spell — `checked` would render a real
+review as a clean one, and `not-checked` claims nobody looked, which understates what is missing.
+The validator refuses it without a reason.
+
+**How you decide you are in it.** Both briefs already require a sentinel — `NO FINDINGS`, and what
+was checked — precisely so silence is distinguishable from cleanliness. So read **the final message
+you actually received** and sort it in three: it names findings; or it says `NO FINDINGS` and names
+what it checked; or it is empty, whitespace-only, or says neither of those. The third is
+`returned-nothing`. Do not infer a verdict from what you believe the spawn did while it ran — you
+did not see that, and a transcript you happen to hold is evidence about your own session, not a
+return value.
+
+**What the report must say, and it is a required field rather than good manners.** Set the state to
+`returned-nothing` and put in `reason` which spawn came back empty and **what is lost, counted**.
+Anything you can re-derive from your own context goes in `items` with disposition `open`, never
+`fixed`: you are reconstructing somebody else's reading and cannot check the reconstruction. Say in
+the same breath how many you could not recover at all. `returned-nothing` carrying items is the
+normal shape, not a contradiction — and `checked` is unavailable to you from the moment one spawn
+comes back empty, however completely the other one answered.
+
+**One fresh re-spawn, and it does not erase the first outcome.** Spawn a new agent of the same type
+with the same brief, once, and stop there; a second empty return is a finding, not a third attempt.
+Whatever the retry hands back, the state stays `returned-nothing` and the reason names both
+attempts. Converting *the reviewer said nothing* into *no findings* is the bug; converting it into
+*I retried and it worked, nothing to see* is the same bug one layer up.
+
+**Decided against, so that it is a decision rather than an omission: granting `SendMessage` to ask
+the reviewer to repeat itself.** That was the missing capability the agents who hit this named, and
+it is still the wrong answer. It widens a delegated agent from *spawns its own reviewers* to *can
+address any live agent*, including the sibling lanes working other issues in the same round; and it
+does not recover the lost message anyway, because an agent asked to repeat regenerates — what comes
+back is a fresh review wearing the first one's authority. A fresh spawn buys the same thing and
+says what it is.
+
+**None of this is a finding about a particular agent type.** It was the same reviewer type both
+times it was observed and the auditor half returned normally both times, but that is two
+observations across two agent types, two briefs and two task shapes, and nothing separates those
+three explanations. **Two samples is not a measurement**, so nothing in this subsection names an
+agent type: the rule is mechanism-agnostic and applies to whatever you spawned.
+
 ### When the spawn itself fails
 
 **A spawn that errors because the name does not resolve is `could not run`.** Not a clean audit,
