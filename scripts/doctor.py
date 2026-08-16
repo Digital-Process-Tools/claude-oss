@@ -899,40 +899,14 @@ def check_radar_publish(project_dir):
     )
 
 
-def _derive_watch_name(repo):
-    """The launcher's sanitisation, mirrored -- and this is the second spelling.
-
-    `bin/oss-workspace` holds the first, in an embedded heredoc, and it is the
-    authority: it is what actually exports the variable. This copy exists because
-    the diagnostic has to answer a question that needs the VALUE, not merely
-    whether one exists -- is the export in this environment the one this repo
-    derives, or one copied from somewhere else? -- and there is no route to the
-    launcher's answer that a diagnostic can take. Importing is impossible (the
-    launcher is a shell script and derives before any plugin import is
-    guaranteed); executing it is a subprocess in the hot path of a check whose
-    whole design is that it does not take one.
-
-    Two spellings of one rule is this repository's own governing rule violated, so
-    it is paid for rather than waved through: `_derive_watch_name` is measured
-    against the launcher's own program in
-    `tests/test_doctor_inprocess.py::test_doctor_derives_the_same_name_as_the_launcher_does`,
-    over a table of repos including spaces, colons, dots and non-ASCII -- the
-    launcher is run, its stdout compared to this function's return. A second
-    measurement, not a second assertion.
-
-    The single home this should eventually have is a shared module both sides
-    read. That is not this change: `bin/oss-workspace` is held by another lane,
-    and reaching into it mid-run is a conflict somebody else resolves by hand.
-    """
-    return re.sub(r"[^A-Za-z0-9._-]", "-", repo.strip())
-
-
 def _derivable_watch_name(project_dir):
     """Can `bin/oss-workspace` derive a channel name for this repo, and which?
 
-    Returns `(state, name)`, state being `yes` / `no-config` / `unreadable` /
-    `no-repo`. `name` is empty for everything but `yes`, so a caller cannot get a
-    name out of a state that did not produce one.
+    Returns `(state, name, why)`, state being `yes` / `no-config` / `unreadable` /
+    `no-repo` / `refused` / `no-validator`. `name` is empty for everything but
+    `yes`, so a caller cannot get a name out of a state that did not produce one,
+    and `why` carries the validator's own sentence for `refused` and is empty for
+    every other state.
 
     The launcher derives the name from `.oss.json`'s `repo` when nothing declares
     or exports one (#191), so "nothing declared" stopped meaning "the shared
@@ -940,24 +914,60 @@ def _derivable_watch_name(project_dir):
     broken` would have gone on saying it. This is the half of that change the
     diagnostic owes its reader.
 
-    The three non-`yes` answers are kept apart because they are three different
-    remedies, and because a caller comparing an export against a derivation needs
-    to know it had nothing to compare against, rather than being handed an empty
-    string that every export differs from.
+    The non-`yes` answers are kept apart because they are different remedies, and
+    because a caller comparing an export against a derivation needs to know it had
+    nothing to compare against, rather than being handed an empty string that every
+    export differs from.
+
+    `refused` and `no-validator` arrived with #207, and this function no longer
+    carries a second spelling of the fold. It used to: `_derive_watch_name`
+    mirrored the launcher's `re.sub` because the rule had no shared home, and its
+    own docstring said the single home was the eventual fix but that
+    `bin/oss-workspace` was held by another lane. #207 held both, so the rule moved
+    to `oss_config.watch_channel_name` and both sides read it now. The cross-check
+    test stays and is not redundant: what it measures is the launcher's own
+    PROGRAM -- its argv wiring, its import path, and that it refuses where this
+    does -- which is still a second measurement rather than a second assertion.
+
+    `no-validator` is this check's own third state. `oss_config` is imported
+    optionally at the top of this module, and a diagnostic answering `no-repo`
+    when it could not load the validator would report a hole in somebody's config
+    for a hole in its own tooling.
     """
+    if oss_config is None:
+        return "no-validator", "", ""
     path = Path(project_dir) / OSS_CONFIG
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return "no-config", ""
+        return "no-config", "", ""
     except (OSError, ValueError, UnicodeDecodeError):
-        return "unreadable", ""
+        return "unreadable", "", ""
     if not isinstance(doc, dict):
-        return "unreadable", ""
+        return "unreadable", "", ""
     repo = doc.get("repo")
-    if isinstance(repo, str) and repo.strip():
-        return "yes", _derive_watch_name(repo)
-    return "no-repo", ""
+    # Blank before invalid, matching the launcher arm for arm: "declares no repo"
+    # and "declares one nobody can use" are two remedies, and the validator would
+    # fold them into one sentence.
+    if not isinstance(repo, str) or not repo.strip():
+        return "no-repo", "", ""
+    name, problem = oss_config.watch_channel_name(repo)
+    if problem:
+        # Folded here, at the single point that produces it. `repo` is somebody's
+        # config value and the validator quotes it back with `{!r}`, so this is the
+        # first watch-channel message that can carry a character the console's
+        # codepage cannot represent.
+        #
+        # This is NOT what stops a UnicodeEncodeError -- `report()` already funnels
+        # every finding through `_one_line`, which replaces anything outside
+        # printable ASCII with `?`, and that guard is load-bearing and stays the
+        # authority. What this adds is that the receipt still NAMES the value: a
+        # CJK repo reduces to `repo-??` under `_one_line`, which reports that
+        # something is wrong with a value it has just made unidentifiable, and the
+        # remedy is to correct that exact value. `backslashreplace` first means
+        # `_one_line` receives ASCII and changes nothing.
+        return "refused", "", problem.encode("ascii", "backslashreplace").decode("ascii")
+    return "yes", name, ""
 
 
 def watch_channel_state(project_dir, env=None):
@@ -1026,7 +1036,7 @@ def watch_channel_state(project_dir, env=None):
         # it. So the accusation has to be earned by a comparison rather than
         # inferred from an absence -- and the original case is real, so the state is
         # split rather than deleted.
-        derivable, derived = _derivable_watch_name(project_dir)
+        derivable, derived, why = _derivable_watch_name(project_dir)
         if derivable != "yes":
             # Neither answer is available. Reporting `undeclared-export` here would
             # accuse on no evidence, and reporting `derived-export` would clear on
@@ -1038,6 +1048,15 @@ def watch_channel_state(project_dir, env=None):
                 "no-repo": "{} carries no repo to compare it against".format(
                     OSS_CONFIG
                 ),
+                # The reason travels rather than being flattened into "no repo":
+                # the remedy is to fix a value, not to add a key (#207).
+                "refused": "{} carries a repo the config validator refuses ({}), so "
+                "the launcher derives nothing to compare it against".format(
+                    OSS_CONFIG, why
+                ),
+                "no-validator": "the config validator could not be imported, so "
+                "nothing could be derived to compare it against -- this is a hole "
+                "in the diagnostic, not in {}".format(OSS_CONFIG),
             }[derivable]
         if derived == exported:
             return "derived-export", "{} matches what {}'s repo derives to".format(
@@ -1053,19 +1072,25 @@ def watch_channel_state(project_dir, env=None):
     # #191 the launcher derives a name from `.oss.json`'s `repo` at that point, so
     # this is two states: a repo that gets its own socket, and a repo that lands on
     # the SHARED one because there was nothing to derive from.
-    derivable, _derived = _derivable_watch_name(project_dir)
+    derivable, _derived, why = _derivable_watch_name(project_dir)
     if derivable == "yes":
         return "derived", "nothing declared in {} and {} unset, and {} carries a repo".format(
             WATCH_CONFIG, WATCH_NAME_ENV, OSS_CONFIG
         )
-    # One state, three remedies -- write a config, fix a config, add a key. The
-    # reason travels in the detail rather than being dropped for arriving second,
-    # the same way `conflict` carries its override.
+    # One state, five remedies -- write a config, fix a config, add a key, correct
+    # a value, repair this tool. The reason travels in the detail rather than being
+    # dropped for arriving second, the same way `conflict` carries its override.
     return "default", {
         "no-config": "there is no {} to derive one from".format(OSS_CONFIG),
         "unreadable": "{} is there and could not be read, so nothing could be "
         "derived from it".format(OSS_CONFIG),
         "no-repo": "{} carries no repo to derive one from".format(OSS_CONFIG),
+        "refused": "{} carries a repo the config validator refuses ({}), and the "
+        "launcher refuses it too rather than folding it into a socket path "
+        "(#207)".format(OSS_CONFIG, why),
+        "no-validator": "the config validator could not be imported, so whether a "
+        "name is derivable is unknown -- this is a hole in the diagnostic, not in "
+        "{}".format(OSS_CONFIG),
     }[derivable]
 
 

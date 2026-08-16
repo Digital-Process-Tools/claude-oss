@@ -34,6 +34,26 @@ def clean_findings():
     doctor.FINDINGS.clear()
 
 
+@pytest.fixture(autouse=True)
+def _unpin_the_watch_channel(monkeypatch):
+    """`SUPERTOOL_WATCH_NAME` is popped for the same reason PATH and HOME are.
+
+    `doctor.main()` reads the real environment, and `bin/oss-workspace` EXPORTS this
+    variable into every session it opens -- so running this suite from inside a
+    maintainer session made `test_verdict_says_ok_only_when_nothing_warned` red with
+    `watch channel: SUPERTOOL_WATCH_NAME is exported ... not what .oss.json's repo
+    derives to`, correctly, about the developer's machine rather than about the code.
+    CI has nothing exported, so the leg that would have caught it is the one that
+    cannot: green in the matrix, red on the machine of anybody who uses the launcher
+    this plugin ships.
+
+    Autouse and popped BEFORE the test body, so the tests that set it deliberately
+    (`monkeypatch.setenv`, or an explicit `env=` argument) still decide their own
+    answer. Found while fixing #207; the mechanism is unrelated to it.
+    """
+    monkeypatch.delenv("SUPERTOOL_WATCH_NAME", raising=False)
+
+
 def _config(root, **overrides):
     config = {
         "repo": "owner/name",
@@ -1615,6 +1635,29 @@ def test_check_watch_channel_prints_ascii_only_in_the_derived_and_default_states
             message.encode("ascii")
 
 
+def test_the_refused_state_prints_ascii_even_for_a_non_ascii_repo(tmp_path):
+    """`refused` (#207) is the first watch-channel message to embed the config's
+    own value, so the guard above stopped covering the states that can print one.
+
+    The encodability half is not the interesting one and is not what was broken:
+    `report()` funnels everything through `_one_line`, which already replaces
+    anything outside printable ASCII with `?`, so doctor's `exit 0 always, one
+    VERDICT line` contract was never at risk here. It is asserted anyway, because
+    it is the property that must not regress if that funnel is ever bypassed.
+
+    The half that WAS broken is the second one. `_one_line` reduces a CJK repo to
+    `repo-??`, so the receipt reported that a value is invalid while making that
+    value unidentifiable -- and the remedy is to correct that exact value. Escaping
+    before the funnel keeps the receipt able to name what it is complaining about.
+    """
+    _oss_config_doc(tmp_path, {"repo": "repo-中文"})
+    doctor.check_watch_channel(tmp_path, env={})
+    message = doctor.FINDINGS[0][1]
+    message.encode("ascii")
+    assert "repo-" in message, message
+    assert "u4e2d" in message, message
+
+
 def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
     """Two copies of one rule, cross-checked rather than restated.
 
@@ -1647,6 +1690,10 @@ def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
         ({"default_branch": "main"}, "no-repo"),
         ("{not json", "unreadable"),
         (None, "no-config"),
+        # #207: a repo the validator refuses is a fifth answer, and it must not
+        # arrive as `no-repo` -- the remedy is to correct a value, not add a key.
+        ({"repo": ".."}, "refused"),
+        ({"repo": "../../etc"}, "refused"),
     ]
     for doc, expected in cases:
         if doc is None:
@@ -1658,7 +1705,7 @@ def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
             _oss_config_doc(tmp_path, doc)
         assert doctor._derivable_watch_name(tmp_path)[0] == expected, (doc, expected)
         run = subprocess.run(
-            [sys.executable, str(script), str(target)],
+            [sys.executable, str(script), str(target), str(REPO_ROOT / "scripts")],
             capture_output=True,
             text=True,
             timeout=120,
@@ -1838,13 +1885,18 @@ def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
     """The drift guard, at the level that matters now: the VALUE, not just whether
     one exists.
 
-    doctor has to reproduce the launcher's sanitisation to tell a derived export
-    from a copied one, so there are two spellings of one rule and this is what
-    stops them parting. It runs `bin/oss-workspace`'s own embedded program against
-    a table of repos and compares its stdout to `doctor._derive_watch_name`. A
-    second measurement, not a second assertion. If the heredoc cannot be located
-    the guard fails loudly: a copy that went unchecked must not render as a copy
-    that agreed.
+    Since #207 there is only one spelling of the rule -- `oss_config` holds it and
+    both doctor and the launcher read it -- so this no longer guards two copies of
+    a regex. It guards the launcher's own PROGRAM: that its argv wiring reaches
+    the validator at all, that the value it prints is the validator's, and that it
+    prints NOTHING for the values the validator refuses. Everything between
+    `.oss.json` on disk and stdout is still only measurable by running it.
+
+    So the table below is deliberately split, and both halves are asserted: a
+    launcher that had lost its import would print nothing for every row and pass
+    any assertion phrased only as "refused rows are silent". If the heredoc cannot
+    be located the guard fails loudly -- a copy that went unchecked must not render
+    as a copy that agreed.
     """
     launcher = (REPO_ROOT / "bin" / "oss-workspace").read_text(encoding="utf-8")
     marker = "DERIVE_NAME"
@@ -1874,21 +1926,33 @@ def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
         "...",
         "/",
     ]
+    accepted = 0
+    refused = 0
     for repo in repos:
         _oss_config_doc(tmp_path, {"repo": repo})
         run = subprocess.run(
-            [sys.executable, str(script), str(target)],
+            [sys.executable, str(script), str(target), str(REPO_ROOT / "scripts")],
             capture_output=True,
             text=True,
             timeout=120,
         )
-        assert run.stdout.strip("\n") == doctor._derive_watch_name(repo), (
+        name, problem = oss_config.watch_channel_name(repo)
+        assert run.stdout.strip("\n") == ("" if problem else name), (
             repo,
             run.stdout,
             run.stderr,
         )
-        # And the guard is only worth its runtime if the launcher actually spoke.
-        assert run.stdout.strip(), (repo, run.stderr)
+        if problem:
+            refused += 1
+            # A refusal that says nothing is the shared default socket reached in
+            # silence, which is the state this whole check exists to report.
+            assert "SHARED DEFAULT" in run.stderr, (repo, run.stderr)
+        else:
+            accepted += 1
+    # Both halves of the table were exercised. Without this the guard passes
+    # against a launcher that refuses everything and against one that refuses
+    # nothing, which are the two ways #207 can be got wrong.
+    assert accepted >= 3 and refused >= 3, (accepted, refused)
 
 
 # --- the remedies these checks print, measured rather than asserted -----------

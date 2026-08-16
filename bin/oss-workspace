@@ -221,6 +221,13 @@ fi
 # elsewhere, and two unrelated repos cloned to the same basename collide silently,
 # which is this same defect reached by a different road.
 #
+# Tracked means it arrives by ordinary contribution, so it is VALIDATED before it
+# is folded, through the same `oss_config.repo_problem` that scaffold and doctor
+# use, and refused rather than sanitised when that fails (#207). That refusal is a
+# FIFTH answer in the same shape as the four above: nothing derived, said out loud,
+# session opens anyway. A launcher that exited over a bad config would trade the
+# product for an enhancement.
+#
 # It fires on `undeclared` ONLY — never on `conflict`, never on `unreadable`. A
 # repo whose op blocks contradict each other has not failed to choose a channel,
 # it has chosen two, and neither is the one a derivation would invent; a repo
@@ -230,8 +237,28 @@ fi
 watch_name_source="declared in $repo_root/.supertool.json"
 if [ "$watch_name_state" = undeclared ] && [ -n "$python_bin" ]; then
     watch_name_source="derived from repo in $repo_root/.oss.json"
-    watch_name=$("$python_bin" - "$repo_root/.oss.json" <<'DERIVE_NAME' || true
-import json, re, sys
+    watch_name=$("$python_bin" - "$repo_root/.oss.json" "$plugin_root/scripts" <<'DERIVE_NAME' || true
+import json, sys
+
+# The rule for what `repo` may be lives in scripts/oss_config.py, where
+# scaffold.repo_slug and doctor already read it. This block used to carry a
+# character class of its own that permitted `.`, `..` and a leading `-` -- the one
+# consumer of `repo` in this plugin with a guard of its own, running at SESSION
+# START, before anything that would have refused the value (#207). A second
+# spelling of a rule is a second rule, so it is imported rather than restated.
+sys.path.insert(0, sys.argv[2])
+try:
+    import oss_config
+except Exception as err:
+    # A third state, and it is not the clean one. Falling back to the old
+    # unvalidated fold here would make the guard disappear in exactly the case
+    # where it is missing, which is the absence this plugin is named after.
+    sys.stderr.write(
+        "oss-workspace: the config validator could not be loaded from %s (%s), so "
+        "no channel name could be derived and this session is on the SHARED "
+        "DEFAULT socket. supertool 'channel:health'\n"
+        % (sys.argv[2], type(err).__name__))
+    raise SystemExit(0)
 
 # The exception in hand decides which answer this is. Asking the filesystem a
 # second question to explain why the first failed is how Path.exists() took the
@@ -260,9 +287,34 @@ if not isinstance(repo, str) or not repo.strip():
         % sys.argv[1])
     raise SystemExit(0)
 
-# The name derives a filesystem path, so anything a path cannot hold is folded to
-# a dash rather than reaching one.
-print(re.sub(r"[^A-Za-z0-9._-]", "-", repo.strip()))
+# The value is validated before it is folded, by the same function scaffold and
+# doctor use. Refusing rather than sanitising here is the FOURTH arm of the shape
+# above -- nothing derived, said out loud, session opens anyway -- and it is the
+# right trade for a launcher: the channel is an enhancement, the session is the
+# product, and a substituted name would be a private socket nobody publishes to.
+#
+# The raw value is validated, not `repo.strip()`: a slug with whitespace around it
+# is refused by every other consumer, and a launcher accepting what the rest of the
+# plugin rejects is exactly the asymmetry this closes.
+name, problem = oss_config.watch_channel_name(repo)
+if problem:
+    # `problem` quotes the repo value back with `{!r}`, which escapes a newline, a
+    # control character and anything a terminal would act on -- so nothing here
+    # needs a sanitiser in front of it, and `sys.stderr` defaults to
+    # `backslashreplace`, so a codepage that cannot represent the value escapes it
+    # rather than raising. Both measured rather than assumed (#207).
+    sys.stderr.write(
+        "oss-workspace: %s -- %s. Nothing was derived and this session is on the "
+        "SHARED DEFAULT socket. The launcher refuses what every other consumer of "
+        "this value refuses rather than folding it into a name that becomes a "
+        "socket path. supertool 'channel:health'\n" % (sys.argv[1], problem))
+    raise SystemExit(0)
+
+# The fold still runs after the validator: an accepted slug is any pair of
+# non-slash, non-whitespace runs, so characters a socket path should not hold
+# still reach it. What the validator adds is that the one slash always becomes a
+# dash, so the result carries no separator and is never `.` or `..`.
+print(name)
 DERIVE_NAME
 )
 fi

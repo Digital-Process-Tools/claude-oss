@@ -752,3 +752,73 @@ def test_a_merge_method_that_cannot_be_told_apart_stays_null(tmp_path, monkeypat
     probe, problems = oss_config.gather(tmp_path)
     assert problems == []
     assert probe["merge_method"] is None
+
+
+# ----------------------------------------------- the watch channel name (#207)
+#
+# `bin/oss-workspace` derived `SUPERTOOL_WATCH_NAME` from `repo` with a bare
+# `re.sub`, which permitted `.`, `..` and a leading `-` -- the one consumer of
+# `repo` in this plugin that did not route through `repo_problem`. The derivation
+# lives here now so the launcher has one call to make and the rule has one home.
+
+
+@pytest.mark.parametrize("value", ["..", ".", "../../etc"])
+def test_the_watch_name_refuses_exactly_what_repo_problem_refuses(value):
+    """The three values #207 tabulates, and the SAME sentence for each.
+
+    Equality against `repo_problem` rather than a substring match: a second
+    wording invented here would drift from the one `scaffold` and `doctor` print,
+    and one fact with two sentences is how a guard stops being recognisable as
+    the guard it duplicates.
+    """
+    name, problem = oss_config.watch_channel_name(value)
+    assert name is None
+    assert problem == oss_config.repo_problem(value)
+
+
+def test_a_valid_slug_still_derives_a_name():
+    """The must-fire half. Every refusal test above is satisfied by a function
+    that returns `(None, "...")` unconditionally.
+    """
+    assert oss_config.watch_channel_name("owner/name") == ("owner-name", None)
+
+
+def test_sanitising_still_happens_after_the_validator():
+    """`repo_problem` accepts any pair of non-slash, non-whitespace runs, so the
+    validator is not a replacement for the fold -- `+` passes it and a socket path
+    should not carry one.
+    """
+    assert oss_config.watch_channel_name("Org.Name/re+po")[0] == "Org.Name-re-po"
+
+
+def test_a_null_repo_is_refused_here_though_repo_problem_defers_it():
+    """The two disagree on exactly one value, deliberately.
+
+    `repo_problem(None)` returns None because `validate()` owns the sentence about
+    a required key being null, and repeating it would put two sentences on one
+    fact. There is no `validate()` in the launcher's path, so a null arriving here
+    unrefused would derive `None` and export it -- the same asymmetry one layer in.
+    """
+    assert oss_config.repo_problem(None) is None
+    name, problem = oss_config.watch_channel_name(None)
+    assert name is None
+    assert "None" in problem
+
+
+@pytest.mark.parametrize("value", ["owner/name", "../..", "./..", "-a/-b",
+                                   "Org.Name/re+po"])
+def test_no_accepted_slug_derives_a_name_that_is_a_traversal(value):
+    """The property the refusal buys, stated rather than left to the three values.
+
+    `repo_problem` accepts `../..` -- two runs of non-slash, non-whitespace -- so
+    the fix is not "no dots survive". What it guarantees is narrower and is the
+    part that matters: the one slash a valid slug carries always becomes a dash,
+    so the result holds no separator and can never be `.` or `..` exactly. That is
+    what makes the question #207 left open -- component or infix -- moot, which is
+    the issue's own argument for routing through the validator.
+    """
+    assert oss_config.repo_problem(value) is None, "fixture is not an accepted slug"
+    name, problem = oss_config.watch_channel_name(value)
+    assert problem is None
+    assert "/" in value and "/" not in name
+    assert name not in (".", "..")
