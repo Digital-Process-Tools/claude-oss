@@ -89,6 +89,22 @@ separately rather than one list.
   `.github/scripts/` and a fixed parent count until #65; the derivation changed and the warning
   beside it did not, so `commands/changelog.md` carried the fix for one shape of the bug and the
   description of another.
+- **A vendored file is a document about the repository it came from, and it keeps being one after
+  you copy it.** `scripts/coverage_gate.py` was a verbatim copy of claude-supertool's coverage gate,
+  wired into nothing here for its whole life. Every claim in it was true — *there*. Its enforced
+  floors named `presets/` and `_supertool.py`; its "measured, not enforced" entry for `scripts/`
+  gave that repo's reason about `git push --force-with-lease` helpers, and this repo's entire
+  product is in `scripts/`, so asking it about `doctor.py` returned `measured` — unfloored, with a
+  confident reason belonging to somebody else. #253 filed one false-looking sentence in it and the
+  sentence was fine; the file was not. **Deleted rather than forked**, because forking means
+  maintaining 541 lines of another project's issue history for a gate nobody decided to adopt.
+  `assemble_changelog.py` stays because it is the opposite case on the only axis that matters: 33
+  tracked files mention it and it ships into every scaffolded repo. (33 as the check itself counts,
+  not as `git grep -l assemble_changelog.py` counts — that `.` is a regex wildcard and says 34.)
+  The axis is **whether anything uses it**, not whether its prose looks wrong — and
+  `tests/test_unwired_scripts_253.py`
+  checks that one, and deliberately not "does it cite a test we do not have", which fires on all
+  six of the deleted file's citations and would flag correct vendoring as a defect.
 - **A forge reads workflows only from `.github/workflows/` itself.** Subdirectories are unsupported
   and a symlink there fails outright — hence the `oss-` filename prefix as the only ownership
   signal available.
