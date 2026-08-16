@@ -90,6 +90,30 @@ nothing, a name the consumer will discard is named with its length and the rule 
 **not being able to ask** — no rule where the launcher looks, a module that will not load — is said
 just as loudly, because silence there is indistinguishable from acceptance.
 
+Before the session starts working, the launcher runs `/oss:doctor`'s diagnostic over the repo it just
+resolved, so a broken setup surfaces at second zero rather than after a tick has been spent against
+it. The verdict is parsed, never the exit status: the diagnostic **exits 0 always**, by contract, so
+`doctor.sh || warn` reads a pass on `not usable -- 4 failure(s)` exactly as loudly as on `ok`. A
+healthy repo costs one line; anything else relays the diagnostic's whole output, because once the
+answer is not `ok` a launcher has no standing to decide which line you needed. It **never refuses to
+open** — a maintainer whose config is broken is exactly the person who needs a session in which to
+fix it.
+
+Six answers, and the last three are why this is not a one-liner: `ok`, `usable with gaps`, `not
+usable`, `could not run`, a verdict word this launcher does not recognise, and **no verdict line at
+all**. That last one splits again by whether the diagnostic printed nothing or could not be started,
+which the launcher tells apart and says. A check that never fired and a check that found nothing
+print the same thing otherwise.
+
+It costs what the diagnostic costs. Measured on macOS against a repo with `supertool`, `gh` and node
+on PATH: the launcher opens in **0.45 s** without it and **2.5 s** with it, most of that the
+dependency-version check reaching the network — which is bounded at 25 s per declared dependency and
+20 s per probed binary, so an offline or hung network is slower than that, not faster. Set
+`OSS_WORKSPACE_SKIP_DOCTOR=1` (any non-empty value) to skip it — the skip is announced, with the
+state of the repo reported as unknown rather than fine. The run is also announced *before* it
+starts, carrying that variable's name, because an escape hatch you can only read about after the
+wait is one nobody waiting has.
+
 Install the launcher once:
 
 ```
