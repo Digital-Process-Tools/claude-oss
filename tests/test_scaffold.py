@@ -425,6 +425,34 @@ def test_show_lists_the_fragments_readme_among_what_it_would_create(tmp_path):
     assert created.get("changelog.d/README.md") == "create"
 
 
+def test_the_fragments_readme_documents_the_compatibility_bullet():
+    """`release_version.py` refuses a `removed` fragment that declares nothing (#225).
+
+    The README scaffold writes is the one document a fragment author opens, and
+    it is a *default* under the ownership contract -- created once when absent,
+    then theirs forever -- so a repo scaffolded without this section never gets
+    it retroactively. Shipping the template without it mints a fresh instance of
+    #225 into every repository scaffolded from here.
+    """
+    body = scaffold.render("changelog.d/README.md", _config())
+    assert "## Compatibility" in body
+    assert "- Compatibility: breaking|compatible - <reason>" in body
+    assert "removed" in body
+
+
+def test_the_compatibility_section_follows_a_renamed_fragment_directory():
+    """The section must not be keyed to the default directory name.
+
+    Every other heading in this template is directory-agnostic; a section added
+    with `changelog.d` written into it would be correct in this repository and
+    wrong in the repositories the template exists for -- which is the shape of
+    the defect being fixed, one file over.
+    """
+    body = scaffold.render("news.d/README.md", _config(changelog_dir="news.d"))
+    assert "- Compatibility: breaking|compatible - <reason>" in body
+    assert "changelog.d" not in body
+
+
 # ------------------------------------------------------------------ fragment dir
 #
 # The scaffold installs a workflow that polices a fragment directory. Until the

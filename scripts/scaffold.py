@@ -416,6 +416,33 @@ A single top-level `-` list. No headings, no raw HTML, no unclosed fences. Name 
 issue in the text as well as in the file name — the file name is metadata, and
 metadata does not survive being read out of context.
 
+## Compatibility, on a `removed` fragment
+
+A `removed` fragment must say whether the removal breaks anything, as an ordinary
+bullet in the body:
+
+```markdown
+- Compatibility: breaking|compatible - <reason>
+```
+
+The release number is proposed from these fragments, and a `removed` fragment that
+declares nothing stops the proposal rather than defaulting quietly — a patch bump
+over a breaking change is indistinguishable in the tag from a considered one. A word
+that is neither `breaking` nor `compatible` stops it too, so a value nothing
+recognises never grades as compatible.
+
+The reason after the verdict is required: a bare flag is the same unsourced verdict
+one field further along, and the sentence is the part worth having.
+
+Only `removed` is required to carry one. Every other section may, and a fragment that
+says nothing is read as compatible with the count of such fragments reported out
+loud. A field on every fragment is a field on every fragment to get wrong, so it is
+required exactly where the question is genuinely open.
+
+It is a plain bullet rather than front matter, so the assembler needs no special case
+and the claim ships into `CHANGELOG.md` where a user reads it, instead of being
+metadata deleted at the fold.
+
 ## Nothing user-visible in this change?
 
 Label the pull request `no-changelog`. **That label is not created for you.** Writing

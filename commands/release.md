@@ -225,10 +225,26 @@ receipt says the fold happened; a maintainer who wants `1.0.0` here has to overr
 rather than notice nothing.
 
 And the section alone never decides it. A removal need not break anything — `113.removed.md` in this
-repository is exactly that case — so the verdict is a declared field on the fragment,
-`- Compatibility: breaking|compatible - <reason>`, documented in `changelog.d/README.md`. Required on
-`removed`, optional elsewhere, and an unrecognised value is `could not decide` rather than a quiet
-pass.
+repository is exactly that case — so the verdict is a declared field on the fragment, written in the
+body as an ordinary bullet:
+
+```markdown
+- Compatibility: breaking|compatible - <reason>
+```
+
+Required on `removed`, optional elsewhere, and an unrecognised value is `could not decide` rather
+than a quiet pass. The reason after the verdict is required too: a bare flag is the same unsourced
+verdict one field further along.
+
+**The syntax is written out here rather than pointed at, and that is deliberate (#225).** The
+fragments README is a *default* under the ownership contract — created once when the directory is
+made, then the repository's own file forever — so shared prose cannot know what any given repo's
+copy says, and a repo scaffolded before the section existed **may not document it at all**. Its
+path is `changelog_dir`, which is per-repo, so naming a directory here would be a fact about one
+repository sitting in a document every repository reads. Nobody is stranded either way: the
+refusal above quotes the bullet in full, which is the sentence that reaches every repository, new
+or old, at the moment it is needed. Newly scaffolded repositories get the section as well, because
+the template now carries it.
 
 ## Then
 

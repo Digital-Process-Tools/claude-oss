@@ -611,6 +611,30 @@ def _reads_the_third_state_at_the_merge_check_too(text):
     )
 
 
+# --------------------------------------------------------------------------- #
+# The compatibility field is sourced where it is used (#225).
+#
+# `commands/release.md` claimed the bullet is "documented in
+# `changelog.d/README.md`". True of this repository's copy and false of the file
+# scaffold writes -- and the fragments README is a *default* under the ownership
+# contract, created once and then the repo's own forever, so shared prose cannot
+# know what it says. The path was wrong twice over: `changelog_dir` is per-repo,
+# so `changelog.d` is a fact about this repository sitting in shared prose.
+#
+# Hence the negative half. Its positive control is PROMISING below, which
+# satisfies both positive clauses and fails on the hardcoded path alone.
+# --------------------------------------------------------------------------- #
+
+FRAGMENTS_README_PATH_RE = re.compile(r"changelog[.]d/README[.]md")
+COMPATIBILITY_BULLET = "- Compatibility: breaking|compatible - <reason>"
+
+
+def _sources_the_compatibility_syntax_without_promising_a_readme(text):
+    if FRAGMENTS_README_PATH_RE.search(text):
+        return False
+    return COMPATIBILITY_BULLET in text and bool(re.search(r"may not document it at all", text))
+
+
 # (label, predicate, pattern whose lines carry the fact)
 SETUP_FACTS = [
     ("identity.md describes the agent", _names_the_agent_as_identity_subject, r"who the agent is"),
@@ -819,6 +843,11 @@ RELEASE_GATE_FACTS = [
         "the trigger verdict is re-read, never remembered",
         _forbids_remembering_the_trigger_verdict,
         r"never carry the verdict forward",
+    ),
+    (
+        "the compatibility syntax is sourced, not pointed at",
+        _sources_the_compatibility_syntax_without_promising_a_readme,
+        r"may not document it at all|Compatibility: breaking",
     ),
 ]
 
@@ -1085,6 +1114,19 @@ WAVED_THROUGH = (
     "   passes over it.\n"
 )
 
+# #225's line, quoted, plus the sentence the fix adds. Everything the positive
+# half of the predicate asks for is here -- the bullet in full and the warning
+# that an older repo may not carry it -- so the ONLY thing this fixture fails on
+# is the hardcoded README path. Without it the negative half never fires and
+# nothing distinguishes the fix from the defect.
+PROMISING = (
+    "# Release\n"
+    "\n"
+    "The verdict is a declared field on the fragment,\n"
+    "`- Compatibility: breaking|compatible - <reason>`, documented in `changelog.d/README.md`.\n"
+    "Required on `removed`. A repo scaffolded earlier may not document it at all.\n"
+)
+
 GATE_CONTROL_FACTS = RELEASE_GATE_FACTS + SKILL_GATE_FACTS
 
 
@@ -1097,6 +1139,8 @@ def test_the_gate_controls_actually_name_their_subjects():
     for subject in ("UNKNOWN", "gh-branch", "workflows", "run list"):
         assert subject in TWO_STATE_GATE, subject
     assert "could not have run on this commit" in WAVED_THROUGH
+    assert COMPATIBILITY_BULLET in PROMISING
+    assert "may not document it at all" in PROMISING
 
 
 @pytest.mark.parametrize(
@@ -1128,6 +1172,20 @@ def test_a_waved_through_middle_state_fails_every_gate_predicate(label, predicat
         "{}: predicate passes on a file that names the middle state and grades "
         "it a pass.".format(label)
     )
+
+
+def test_pointing_at_a_repos_own_readme_fails_the_compatibility_predicate():
+    """The must-fire half of a negative assertion (#225).
+
+    `_sources_the_compatibility_syntax_without_promising_a_readme` refuses a
+    hardcoded fragments README path. Refusal is invisible from a green suite, so
+    the fixture is built to satisfy everything else and fail on that alone.
+    """
+    assert not _sources_the_compatibility_syntax_without_promising_a_readme(PROMISING)
+    # And the must-not-fire half, same fixture with the path taken out.
+    without_the_path = PROMISING.replace(", documented in `changelog.d/README.md`", "")
+    assert not FRAGMENTS_README_PATH_RE.search(without_the_path)
+    assert _sources_the_compatibility_syntax_without_promising_a_readme(without_the_path)
 
 
 # --------------------------------------------------------------------------- #
