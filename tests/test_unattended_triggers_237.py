@@ -70,7 +70,8 @@ def triggers(text):
     """
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        if line.rstrip() not in ("on:", '"on":', "'on':"):
+        head = line.split("#", 1)[0].rstrip() if not line.lstrip().startswith("#") else line
+        if head not in ("on:", '"on":', "'on':"):
             continue
         events = []
         for following in lines[index + 1 :]:
@@ -146,12 +147,26 @@ def test_no_workflow_starts_by_itself():
 
 
 def test_every_workflow_declares_a_human_trigger():
-    """The positive half: silence is not enough, something must fire on a human act."""
+    """The positive half: silence is not enough, something must fire on a human act.
+
+    `None` is kept out of the triggerless list rather than folded into it with
+    `or []`. Both would fail the test, but the message would name the wrong
+    cause -- "declares no human trigger" for a file whose triggers this run
+    could not read -- which is the defect class this repository is named after,
+    one layer inside the check written to hold that line.
+    """
     triggerless = []
+    unreadable = []
     for label, text in _workflow_sources():
-        events = triggers(text) or []
-        if not any(event in ATTENDED for event in events):
+        events = triggers(text)
+        if events is None:
+            unreadable.append(label)
+        elif not any(event in ATTENDED for event in events):
             triggerless.append("{}: {}".format(label, events))
+    assert not unreadable, (
+        "no `on:` block found in: {}. Not the same finding as the one below -- this run "
+        "could not read these files, rather than reading them and finding no human trigger."
+    ).format(", ".join(unreadable))
     assert not triggerless, (
         "workflow(s) with no human trigger: {}. A file that fires on nothing passes the "
         "check above for the wrong reason."
@@ -240,6 +255,51 @@ def test_shorthand_list_form_is_not_silently_read_as_empty():
     and the sweep fails loudly rather than calling the file clean. Known limit,
     pinned here so it is a decision rather than a surprise."""
     assert triggers(SHORTHAND) is None
+
+
+# --- the one scheduled surface this plugin does seed, accounted for rather than invisible ---
+
+DEPENDABOT = ".github/dependabot.yml"
+
+
+def test_the_seeded_dependabot_config_is_still_the_scheduled_one():
+    """`docs/autonomy.md` names exactly one thing this plugin puts in a managed
+    repository that runs on a clock, and this is it: a default -- created once
+    when absent, theirs forever after -- telling the forge's own dependency bot
+    to open a pull request on a weekly schedule.
+
+    It is checked here rather than swept with the workflows because it is not a
+    workflow and its schedule is correct. The reason it needs a check at all is
+    that it is the counter-example to the sentence beside it: a sweep that found
+    only `push` and `pull_request` triggers, with this file out of scope, would
+    have licensed "nothing runs on its own" -- which was the first version of
+    that sentence and was wrong.
+
+    Fails if the schedule leaves, which would make the document's exception
+    stale, and fails if the file leaves `TEMPLATES`, which would make it
+    fictional.
+    """
+    assert DEPENDABOT in scaffold.TEMPLATES, (
+        "{} is no longer a default this plugin seeds. docs/autonomy.md names it as the "
+        "one scheduled thing an install puts in a repository -- that is now fiction."
+    ).format(DEPENDABOT)
+    body = scaffold.TEMPLATES[DEPENDABOT](_config())
+    assert "schedule:" in body and "interval:" in body, (
+        "{} no longer declares a schedule: {!r}. The document's one stated exception to "
+        "'nothing runs on its own' has gone, so the sentence has to be re-derived."
+    ).format(DEPENDABOT, body)
+
+
+def test_dependabot_is_a_default_and_not_an_owned_file():
+    """Which contract it lands under is the whole of what the document claims
+    about consent: a default is written once when absent and is theirs forever,
+    so a repository that deletes it is never given it back. An owned file would
+    be replaced wholesale on every run, which is a different promise."""
+    assert DEPENDABOT not in scaffold.OWNED, (
+        "{} became an owned file. docs/autonomy.md says the only clock an install "
+        "starts is one the repository can delete and keep deleted; replacing it "
+        "wholesale on every run breaks that."
+    ).format(DEPENDABOT)
 
 
 # --- the document exists and README's pointer to it resolves ---

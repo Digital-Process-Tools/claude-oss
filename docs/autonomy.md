@@ -17,20 +17,31 @@ Half one is exercised on every tick. Half two has no runtime at all, and that is
 
 **Every workflow this repository runs, and every workflow it writes into a repository that installs
 it, fires on `push` or `pull_request` — a human act. Nothing fires on a clock or on a dispatch from
-outside.**
+outside. The one thing an install does start on a clock is a `.github/dependabot.yml` seeded once
+when absent, and nothing in this plugin merges what that opens.**
 
-That sentence is measured by `tests/test_unattended_triggers_237.py`, which reads the `on:` block of
+Both halves are measured by `tests/test_unattended_triggers_237.py`. It reads the `on:` block of
 this repository's own workflows and of every workflow in `scaffold.OWNED`, and fails three ways:
 when an unattended trigger appears, when a workflow declares no human trigger either, and when a
 workflow's trigger block cannot be read at all. The third is the one that matters — a sweep that
-could not look must not render as a sweep that found nothing.
+could not look must not render as a sweep that found nothing. The dependabot exception is checked
+separately, and is checked at all because it is the counter-example: the first version of the
+sentence above did not have it, and was wrong. A sweep whose scope quietly excludes the one case
+that would contradict it reports the answer it was scoped to give.
 
-The consequence follows from the ownership contract rather than from anything about scheduling. The
-only executable artifact this plugin installs into a managed repository is the changelog gate — a
-`pull_request`-triggered workflow and the assembler it calls. Everything else the loop does is a
-slash command someone types into a session: `/oss:tick`, `/oss:scaffold`, `/oss:doctor`,
-`/oss:release`. So on the far side of an install there is nothing that can run when nobody is
-looking, and no smarter brief changes that.
+The consequence follows from the ownership contract rather than from anything about scheduling.
+The executable artifacts an install puts in a managed repository are the changelog gate — a
+`pull_request`-triggered workflow and the assembler it calls — and that dependabot config.
+Everything else the loop does is a slash command someone types into a session: `/oss:tick`,
+`/oss:scaffold`, `/oss:doctor`, `/oss:release`.
+
+The dependabot config is worth more than a footnote, because it is the shape of the whole problem
+in miniature. It is a **default**: written once when absent, theirs forever after, deletable and
+never handed back. It starts a weekly clock the repository's owner consented to by keeping the
+file. And what that clock produces is pull requests that this plugin will never look at, because
+nothing on the far side of the install reviews or merges anything. An unattended loop is not the
+clock. The clock is the easy part, and one is already installed. What is missing is everything
+that would have to be true for something to act on what the clock produced.
 
 The measured reach of the install itself — how many repositories carry a config, how many carry the
 furniture, and whether a drifted owned file has ever been repaired — is in `CLAUDE.md`'s
