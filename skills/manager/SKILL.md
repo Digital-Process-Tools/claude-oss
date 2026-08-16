@@ -406,9 +406,23 @@ Every brief carries these:
 
    > Use `supertool` for every file operation — it is on PATH, from any directory. Batch 6-7 ops per
    > call — `read`, `grep`, `glob`, `map`, `around`, `between`, `tree` — never one Read per file.
-   > Pipe edits in as a TOML payload on stdin, using triple-single-quoted literal strings so escapes
-   > survive; validators run post-edit and roll back on a syntax failure. A literal block processes
-   > no escapes, so write what you want on disk. `supertool 'ops'` lists everything.
+   > Pipe writes in as a TOML payload on stdin, using triple-single-quoted literal strings so escapes
+   > survive; validators run post-write and roll back on a syntax failure. A literal block processes
+   > no escapes, so write what you want on disk. **To change an existing file, `supertool 'edit:@-'`
+   > carrying `path`, `old` and `new`; to create one, `supertool 'paste:@-'` carrying `path` and
+   > `content`** — `edit` needs an `old` and a new file has none, so `paste` is the only route to a
+   > file that does not exist yet, and your changelog fragment is always one. A raw heredoc runs no
+   > validator and rolls nothing back. `supertool 'ops'` lists everything.
+
+   The op names are in there deliberately, and the creating one is the reason. A named op that
+   supertool later renames fails *at the call*; an **omitted** one does not fail at all — it routes
+   the agent to a `cat > file <<EOF` that succeeds, so the brief that left `paste` out for six
+   deliveries read as correct every time (#250). The rule layer that does name `paste` is gated on
+   `Read|Edit|Write|Glob|Grep`, so a heredoc never fires it and the pointer is unreachable for
+   exactly this failure. This blockquote and the same paragraph in `agents/developer.md` are two
+   copies on purpose — a brief has to be self-contained for an agent that never loads the other —
+   and `tests/test_content_invariants.py` is where the fact lives once: it fails when either copy
+   stops naming an op that can create a file.
 
 2. **Name the hidden judgment call.** If you cannot state what the agent will have to decide, you
    have not read the issue closely enough to delegate it.
