@@ -107,8 +107,8 @@ the releases cut with `/oss:release`.
 
 What that does *not* establish is the part most users care about. Almost everything this plugin
 claims about a repository it has **scaffolded** still rests on tests and scratch runs rather than on
-a repo somebody maintains through it, and two owned files are known to have gone stale in the field
-with no observed repair.
+a repo somebody maintains through it; owned files are known to have gone stale in the field, in
+every repository carrying them, with no observed repair in any of them.
 
 The measured version of that, with each claim graded observed or reasoned and dated to the commit
 it was taken at, is **[What is not proven yet](CLAUDE.md)** — re-derived at each release rather than
