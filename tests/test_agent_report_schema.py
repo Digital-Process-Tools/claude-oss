@@ -542,31 +542,51 @@ def test_a_report_that_wrote_no_body_has_nothing_to_open():
 
 
 def _disk_mutations(tmp_path):
-    """One case per name in x-enforced-on-disk. Each must be rejected."""
+    """One case per name in x-enforced-on-disk, with the directory it is anchored
+    to. Each must be rejected, and each has to be rejected for its own reason."""
+    escaping, _, reports = _escaping_report(tmp_path, decoy=_payload())
     return {
-        "pr-body-file-exists": _report_with_payload(tmp_path, write=False),
-        "pr-body-file-parses": _report_with_payload(
-            tmp_path, payload="# A markdown body, which is what the forge refuses"
-        ),
-        "pr-body-payload-shape": _report_with_payload(
+        "pr-body-file-exists": (_report_with_payload(tmp_path, write=False), tmp_path),
+        "pr-body-file-parses": (
+            _report_with_payload(
+                tmp_path, payload="# A markdown body, which is what the forge refuses"
+            ),
             tmp_path,
-            payload={"title": "t", "body": "b", "head": "fix/123", "base": "main", "titel": "typo"},
         ),
-        "pr-body-title-and-body-are-non-empty": _report_with_payload(
-            tmp_path, payload={"title": "  ", "body": "b", "head": "fix/123", "base": "main"}
+        "pr-body-payload-shape": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t", "body": "b", "head": "fix/123", "base": "main", "titel": "typo"
+                },
+            ),
+            tmp_path,
         ),
-        "pr-body-head-matches-the-report-branch": _report_with_payload(
-            tmp_path, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
+        "pr-body-title-and-body-are-non-empty": (
+            _report_with_payload(
+                tmp_path, payload={"title": "  ", "body": "b", "head": "fix/123", "base": "main"}
+            ),
+            tmp_path,
         ),
-        "pr-body-payload-stays-in-the-report-directory": _escaping_report(tmp_path)[0],
+        "pr-body-head-matches-the-report-branch": (
+            _report_with_payload(
+                tmp_path, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
+            ),
+            tmp_path,
+        ),
+        # The decoy this one reaches for is a payload the forge would accept, and
+        # it exists. So containment is the only thing that can refuse it: drop the
+        # resolution and this case validates clean rather than failing for a second
+        # reason, which is the difference between a mutation and a coincidence.
+        "pr-body-payload-stays-in-the-report-directory": (escaping, reports),
     }
 
 
 @pytest.mark.parametrize("name", sorted(_schema()["x-enforced-on-disk"]))
 def test_each_on_disk_property_rejects_a_payload_that_breaks_it(name, tmp_path):
-    report = _disk_mutations(tmp_path)[name]
+    report, base_dir = _disk_mutations(tmp_path)[name]
     assert report_schema.validate_pr_body(
-        report, base_dir=tmp_path
+        report, base_dir=base_dir
     ), "{} accepted a payload that breaks it".format(name)
 
 
@@ -643,20 +663,26 @@ def _outside(opened, base):
 _DECOY_KEYS = ("decoyKeyOne", "decoyKeyTwo")
 
 
-def _escaping_report(tmp_path, absolute=False):
+def _escaping_report(tmp_path, absolute=False, decoy=None):
     """A report naming a payload that is not beside it, and a decoy to reach for.
 
     Synthetic in every part -- invented directory, invented file name, invented
     key names, all created here. Nothing in this fixture is a path that exists on
     a machine running the suite, which is the point: a fixture that reached for a
     real one would be the defect it is testing for.
+
+    `decoy` is what the file out there contains. Left alone it carries key names
+    nothing else in the suite uses, so a test can ask whether they were quoted
+    back. Handed a valid payload it becomes the stronger fixture: nothing but
+    containment has anything to say about it.
     """
     reports = tmp_path / "reports"
     reports.mkdir(exist_ok=True)
     elsewhere = tmp_path / "not-the-reports-directory"
     elsewhere.mkdir(exist_ok=True)
+    body = {key: "synthetic" for key in _DECOY_KEYS} if decoy is None else decoy
     decoy = elsewhere / "synthetic-decoy.json"
-    decoy.write_text(json.dumps({key: "synthetic" for key in _DECOY_KEYS}), encoding="utf-8")
+    decoy.write_text(json.dumps(body), encoding="utf-8")
     report = _example()
     named = str(decoy) if absolute else str(Path("..") / elsewhere.name / decoy.name)
     report["pr_body"] = {"state": "written", "path": named}
@@ -748,6 +774,25 @@ def test_a_path_that_will_not_resolve_is_refused_rather_than_opened(tmp_path, mo
     errors = report_schema.validate_pr_body(report, schema, base_dir=tmp_path)
     assert errors, "a containment question that could not be answered is not a pass"
     assert opened == [], "it opened the payload without deciding whether it was contained"
+
+
+def test_a_nul_byte_in_the_path_is_the_report_being_wrong_not_the_schema(tmp_path, capsys):
+    """A NUL is legal in a JSON string and `resolve()` raises ValueError for one.
+
+    Uncaught it reached main()'s `except ValueError`, whose own comment says that
+    clause is for a broken schema -- so a report crashing the containment check
+    was announced as the maintainer's own configuration being unusable, and the
+    next move that invites is going to look at a file with nothing wrong with it.
+    """
+    report = _report_with_payload(tmp_path)
+    report["pr_body"]["path"] = "beside-the-report\x00.pr.json"
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+
+    assert report_schema.main([str(path)]) == 1
+    captured = capsys.readouterr()
+    assert "schema" not in captured.err, captured.err
+    assert "pr_body.path" in captured.out, captured.out
 
 
 def test_a_drive_letter_cannot_smuggle_a_path_past_the_join(tmp_path):

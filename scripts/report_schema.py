@@ -298,8 +298,9 @@ def _contained_path(base_dir, raw_path):
     the point. A path that cannot be *decided* about is refused with a sentence
     rather than opened on the grounds that nothing objected.
 
-    The join is `base / raw_path` and that single expression is the whole fix,
-    because pathlib drops the base when the right-hand side is absolute. So an
+    The join is `base / raw_path`, and pathlib drops the base when the right-hand
+    side is absolute -- which is what lets one join and one containment test cover
+    both spellings of the escape rather than needing a branch each. So an
     absolute path is neither specially accepted nor specially refused: it is
     resolved like any other and then has to land inside the base, which it does
     whenever the report names its payload the way a report is supposed to -- by
@@ -325,7 +326,13 @@ def _contained_path(base_dir, raw_path):
     try:
         base = Path(base_dir).resolve()
         candidate = (base / raw_path).resolve()
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError, not only OSError: a NUL byte is legal in a JSON string and
+        # `resolve()` raises `ValueError: embedded null character in path` for one,
+        # on every supported interpreter. Caught here it is this sentence; escaping
+        # here it reached main()'s `except ValueError`, which says "the schema itself
+        # is unusable" -- a report crashing the check, reported as the maintainer's
+        # own configuration being broken.
         return None, (
             "pr_body.path: could not resolve {} well enough to tell whether it stays "
             "inside the report's own directory ({}), so it was not opened.".format(
