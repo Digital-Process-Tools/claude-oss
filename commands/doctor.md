@@ -181,20 +181,42 @@ the matcher find these rows*; this one answers the question nobody asked until #
 was not one of them, so every rule in it was written, indexed, reported clean — and read by nothing.
 
 It is measured against the hook scripts of the installed version, not inferred from a version
-number. Four things it can say:
+number — and **against the hooks the runtime actually executes**, which is narrower than the files
+under its install root and is the distinction the check turns on. A layer list living in the
+dependency's own test fixtures satisfies nothing: it would read the same whether the hooks
+enumerated `01-oss` or not, which is how this line came to be right by accident (#241). Four things
+it can say:
 
-- **`… names 01-oss in its layer list …`**, at `OK` — the rules are reachable.
+- **`… names 01-oss in its layer list …`**, at `OK` — the rules are reachable. The list was found in
+  a hook the dependency declares in its `hooks/hooks.json`, or in a file one of those `source`s.
+  Anywhere else under the install root is not this state.
 - **`… enumerates layers from a fixed list that does not include 01-oss …`**, at `WARN` — a real
   gap with a real consequence. Treat every rule in that layer as inert until an installed version
   fixes it. The fix belongs to `claude-jit-context`, not here, so there is nothing to run: this is
   a line to believe, not a line to act on. It clears itself on the next dependency update that
   carries the fix, which is why it is a `WARN` and not the permanent `OK`-with-a-caveat that
   `agent dispatch` carries.
-- **`… could not be determined …`**, at `WARN` — nothing was measured. The dependency is not in the
-  install record, its unpacked tree was not found, a hook file would not decode, or the hooks carry
-  no fixed layer list at all. That last one is the expected shape of the upstream fix, so it is
-  reported as *unknown* rather than as a pass **or** as a gap. Do not relay any of these as
-  either — an incomplete scan never settles this question.
+- **`… could not be determined …`**, at `WARN` — nothing was measured, and **the line always names the
+  reason** — read it rather than the verdict. Some are about reaching the dependency at all: it is
+  not in the install record, its unpacked tree was not found, a hook file would not decode, or the
+  hooks carry no fixed layer list. Others are about reaching its *hooks*, and they are distinct
+  answers rather than one: it declares no hook manifest at all, so nothing separates a hook from a
+  fixture; the `hooks` path its `.claude-plugin/plugin.json` declares is one this refuses to
+  resolve — and it does **not** quietly fall back to the conventional location, because reading a
+  file the plugin did not name is this check's own defect one directory over; the manifest would
+  not parse; the manifest parsed and named nothing resolvable; or **a layer list was found, and
+  only outside the hook set** — reported as the reason rather than dropped, because a string in a
+  test fixture is evidence about the fixture and about nothing else. **That last reason is what this
+  repository's own `doctor` prints today.** The no-fixed-list one is the expected shape of the
+  upstream fix, so it too is *unknown* rather than a pass **or** a gap.
+
+  Either terminal message may also end with `N path(s) under it could not be walked or read (…), so
+  this did not see the whole tree`. That is a modifier, not a reason: it says the scan behind the
+  sentence was incomplete, which is the difference between *looked everywhere and found nothing* and
+  *could not look everywhere*.
+
+  Do not relay any of these as a pass or as a gap — an incomplete scan never settles this question,
+  and a scan that found the right string in the wrong file has not looked where it matters.
 - **`this repo has no .claude/jit-context/*/01-oss/ …`**, at `OK` — nothing to read, so nothing to
   warn about. `/oss:scaffold` writes the layer if you want it.
 

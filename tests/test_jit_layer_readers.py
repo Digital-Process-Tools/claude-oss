@@ -14,13 +14,29 @@ deliberately not cited here any more: the three this docstring used to name move
 fix, which is the failure mode `agents/developer.md` warns about in general terms and this
 file demonstrated in particular.
 
+**What counts as a hook is itself a measurement, and getting that wrong is #241.** The
+scan used to read every `*.sh` under the install root, and in 0.4.0 the only match in the
+whole tree is line 494 of the dependency's own `tests/test-layer-enumeration.sh` -- a
+fixture asserting that its enumerator works, which contains the layer list whether or not
+anything enumerates anything. The check therefore printed `reads` for a reason that would
+have held equally with the broken fixed list still in the hooks, which is what the first
+test below fabricates. Since #241 a hook is what the runtime executes: a script named by a
+`command` in the dependency's `hooks/hooks.json`, plus the closure of what those scripts
+`source`. Neither half alone is enough and neither is a path convention -- 0.4.0 declares
+four entry points under `scripts/` and puts its enumerator in `scripts/common.sh`, which it
+declares nowhere and every hook sources, beside four more scripts nothing wires to an event.
+
 Four states, and the third and fourth are the point:
 
   reads                 a hook's layer enumeration names our layer
-  unread                every enumeration found omits it -- a real gap, WARN
+  unread                every enumeration found in the hook set omits it -- a real gap, WARN
   could-not-determine   nothing was measured: the dependency is not installed, its
-                        tree was not found, a hook would not read, or no hook carries
-                        a fixed enumeration at all
+                        tree was not found, it carries no hook manifest so nothing
+                        separates a hook from a fixture, its manifest resolved to no
+                        file, a hook would not read, or no hook carries a fixed
+                        enumeration at all -- including the case where the only layer
+                        list in the tree sits outside the hook set, which is reported
+                        as the reason rather than dropped
   no-layer              this repo has no such layer, so there is nothing to read
 
 `could-not-determine` covers the case that matters most for durability. The upstream
@@ -34,8 +50,11 @@ honestly, and it would measure the machine rather than the code.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -54,24 +73,77 @@ OMITS = 'split("00-manual 10-auto 20-grouped 30-crosscutting", layers, " ")\n'
 NAMES = 'split("00-manual 01-oss 10-auto 20-grouped 30-crosscutting", layers, " ")\n'
 #: What the upstream fix is expected to look like: no fixed list anywhere.
 ENUMERATED = 'for d in "$JIT_BASE/$dim"/*/; do echo "$d"; done\n'
+#: The shape of the *fixture* that answered this check for a whole release (#241): a
+#: quoted layer list naming our layer, inside a file that enumerates nothing at run time.
+#: Deliberately identical in shape to a real enumeration -- the scan must separate the two
+#: by what the dependency runs, not by how the line is written.
+FIXTURE = 'assert_layers "00-manual 01-oss" "$out"\n'
+#: A hook entry point whose own text carries no layer list, reaching one by sourcing.
+SOURCES_COMMON = 'SCRIPT_DIR="$(dirname "$0")"\nsource "$SCRIPT_DIR/common.sh"\n'
 
 
-def _cache(tmp_path, hooks, version=VERSION, name=PLUGIN, install_path=True, stray=False):
+def _write(target, body):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(body, bytes):
+        target.write_bytes(body)
+    else:
+        target.write_text(body, encoding="utf-8")
+
+
+def _cache(
+    tmp_path,
+    hooks,
+    version=VERSION,
+    name=PLUGIN,
+    install_path=True,
+    stray=False,
+    extra=None,
+    manifest=True,
+    declare=None,
+):
     """A fabricated plugin cache plus the install record that points at it.
 
     ``stray`` unpacks the plugin somewhere the cache layout would never find it, so the
     test below distinguishes "installPath was used" from "the glob happened to work".
+
+    ``hooks`` are written under ``scripts/`` and declared in a fabricated
+    ``hooks/hooks.json`` -- which is what makes them hooks (#241). ``extra`` writes
+    arbitrary relative paths that are never declared: test fixtures, helpers nothing
+    sources, anything the runtime would not execute. ``declare`` narrows the manifest to
+    a subset of ``hooks``; ``manifest=False`` omits the manifest entirely.
     """
     root = tmp_path / "cache"
     root.mkdir(parents=True, exist_ok=True)
     plugin = (tmp_path / "elsewhere" / version) if stray else (root / "dpt-plugins" / name / version)
     (plugin / "scripts").mkdir(parents=True)
     for filename, body in hooks.items():
-        target = plugin / "scripts" / filename
-        if isinstance(body, bytes):
-            target.write_bytes(body)
-        else:
-            target.write_text(body, encoding="utf-8")
+        _write(plugin / "scripts" / filename, body)
+    for relative, body in (extra or {}).items():
+        _write(plugin.joinpath(*str(relative).split("/")), body)
+    if manifest:
+        declared = list(hooks) if declare is None else list(declare)
+        _write(
+            plugin / "hooks" / "hooks.json",
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "bash ${{CLAUDE_PLUGIN_ROOT}}/scripts/{}".format(
+                                            filename
+                                        ),
+                                    }
+                                    for filename in declared
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
     entry = {"scope": "user", "version": version}
     if install_path:
         entry["installPath"] = str(plugin)
@@ -148,6 +220,325 @@ def test_hooks_that_enumerate_at_runtime_are_unknown_not_unread(tmp_path):
     # Discriminating, not decorative: the `unread` arm says "a fixed list that does not
     # include", so this phrase cannot be reached from the state this test must not see.
     assert "none carries a fixed layer list" in finding["detail"]
+
+
+def test_a_test_fixture_naming_the_layer_is_not_a_hook_reading_it(tmp_path):
+    """#241, and it is the measurement this whole file exists to make honestly.
+
+    The installed 0.4.0 tree answered `reads` off `tests/test-layer-enumeration.sh:494` --
+    the dependency's own positive control for its enumerator, a file that could never
+    enumerate anything at run time. The string in it is invariant under the upstream fix,
+    so the same `reads` would have printed with the broken fixed list still in the hooks.
+    That is exactly the tree fabricated here.
+
+    Paired in one fixture: the same layer list inside the *declared* hook must still say
+    `reads`, so this cannot pass against a scanner that stopped matching anything.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": OMITS},
+        extra={"tests/test-layer-enumeration.sh": FIXTURE},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "unread", finding
+    assert "pre-tool-hook.sh" in finding["detail"]
+    assert "test-layer-enumeration.sh" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": NAMES},
+        extra={"tests/test-layer-enumeration.sh": FIXTURE},
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_layer_list_only_outside_the_hook_set_is_the_reason_it_is_unknown(tmp_path):
+    """The judgement call in #241: ignore the fixture, or report it as the non-answer.
+
+    Reported. A run whose only evidence is a fixture is not a run that found nothing --
+    it is a run that found the wrong kind of evidence, and the file that supplied it is
+    the single most useful thing to print.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": ENUMERATED},
+        extra={"tests/test-layer-enumeration.sh": FIXTURE},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "test-layer-enumeration.sh" in finding["detail"], finding["detail"]
+    assert "outside the hook set" in finding["detail"], finding["detail"]
+
+    # Must-fire half: the identical string, in a file the manifest declares.
+    cache, record = _cache(
+        tmp_path / "control", {"pre-tool-hook.sh": ENUMERATED, "pre-path-hook.sh": FIXTURE}
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_helper_the_hooks_source_is_part_of_the_hook_set(tmp_path):
+    """A hook's enumeration may live in a file it sources rather than in the entry point.
+
+    Both halves live in `scripts/`, so nothing about the *directory* separates them: what
+    does is whether the declared hook reaches the file. A scope keyed on a path prefix
+    would pass the first half and fail the second.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": SOURCES_COMMON, "common.sh": OMITS},
+        declare=["pre-tool-hook.sh"],
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "unread", finding
+    assert "common.sh" in finding["detail"]
+
+    # Same two files, same directory, same manifest -- the hook no longer sources it.
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": ENUMERATED, "common.sh": OMITS},
+        declare=["pre-tool-hook.sh"],
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "common.sh" in finding["detail"], finding["detail"]
+
+
+def test_without_a_hook_manifest_nothing_is_a_hook(tmp_path):
+    """No manifest means no way to tell a hook from a fixture, which is a non-answer.
+
+    Must-not-fire and must-fire on one tree: the only difference between the two halves
+    is `hooks/hooks.json`.
+    """
+    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": NAMES}, manifest=False)
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "hook manifest" in finding["detail"], finding["detail"]
+
+    cache, record = _cache(tmp_path / "control", {"pre-tool-hook.sh": NAMES})
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_manifest_naming_a_script_that_is_not_there_is_could_not_determine(tmp_path):
+    """Declared and absent is not the same as declared and clean."""
+    cache, record = _cache(
+        tmp_path, {"pre-tool-hook.sh": NAMES}, declare=["gone-hook.sh"]
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "gone-hook.sh" in finding["detail"], finding["detail"]
+
+
+def test_a_manifest_the_plugin_json_names_is_the_one_looked_for(tmp_path):
+    """`.claude-plugin/plugin.json` may name the manifest, and the message must say which.
+
+    Must-not-fire half first: the named manifest is absent, and the detail has to name
+    *that* path rather than the convention -- a diagnostic reporting `hooks/hooks.json`
+    missing while the plugin declared `custom/hooks.json` answers a question nobody asked.
+    Must-fire half: the same declaration with the file present resolves the hook, which is
+    also the only assertion that the named path is honoured at all.
+    """
+    declaration = json.dumps({"name": PLUGIN, "hooks": "custom/hooks.json"})
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={".claude-plugin/plugin.json": declaration},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "custom/hooks.json" in finding["detail"], finding["detail"]
+    assert "(hooks/hooks.json)" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={
+            ".claude-plugin/plugin.json": declaration,
+            "custom/hooks.json": json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-hook.sh",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+        },
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_manifest_path_the_plugin_declared_and_this_cannot_resolve_is_not_a_fallback(tmp_path):
+    """A declaration this cannot resolve is a non-answer, not a licence to guess.
+
+    Falling back to the convention measures a file the plugin did not name, which is the
+    #241 substitution one field over -- and in the second half below it is worse than a
+    wrong path in a message: a conventional manifest happening to sit there would have
+    produced a confident `reads` with nothing anywhere saying the declared key was
+    ignored. Both halves must name what was declared.
+
+    The positive control is `test_a_manifest_the_plugin_json_names_is_the_one_looked_for`,
+    which asserts `reads` on a declaration that *does* resolve -- so this cannot pass
+    against a reader that refuses every declaration.
+    """
+    declaration = json.dumps({"name": PLUGIN, "hooks": "../../etc/hooks.json"})
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={".claude-plugin/plugin.json": declaration},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "../../etc/hooks.json" in finding["detail"], finding["detail"]
+    assert "hooks/hooks.json" not in finding["detail"], finding["detail"]
+
+    # The half that would otherwise answer `reads` off a file nobody named: a perfectly
+    # good manifest at the conventional location, and a declaration pointing elsewhere.
+    cache, record = _cache(
+        tmp_path / "second",
+        {"pre-tool-hook.sh": NAMES},
+        extra={".claude-plugin/plugin.json": declaration},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "../../etc/hooks.json" in finding["detail"], finding["detail"]
+
+
+def test_a_hook_manifest_that_will_not_parse_says_so_rather_than_that_it_named_nothing(tmp_path):
+    """Unreadable and empty are two states and used to share one sentence.
+
+    Both halves are must-fire, on the same fixture shape: a manifest that will not parse,
+    and one that parses to `{}`. Each has to say its own thing and must not say the
+    other's, which is what makes this a discrimination rather than two spellings of
+    `could-not-determine`.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={"hooks/hooks.json": "{ not json"},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "hooks.json" in finding["detail"], finding["detail"]
+    assert "would not be read" in finding["detail"], finding["detail"]
+    assert "named nothing" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "empty",
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={"hooks/hooks.json": "{}"},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "named nothing" in finding["detail"], finding["detail"]
+    assert "would not be read" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(tmp_path / "control", {"pre-tool-hook.sh": NAMES})
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_a_subtree_that_cannot_be_walked_is_reported_not_swallowed(tmp_path, request):
+    """`Path.rglob` swallows `PermissionError` while walking and yields nothing.
+
+    So the `except OSError` this scan used to carry could never fire for the case it was
+    written for, and "the whole tree holds no layer list" came back identical to "this
+    could not read the tree" -- with the second one then quoted as the reason the check
+    could not determine. `CLAUDE.md` records that trap against `scaffold.py`; this is the
+    same walk, in code added by #241.
+
+    The deny is *measured*, never assumed: root ignores the mode bit, some filesystems
+    ignore it, and Windows' `os.chmod` on a directory toggles a read-only attribute that
+    does not stop a listing. The exact operation `os.walk` performs is attempted, and the
+    test skips with what went untested when it did not take.
+    """
+    hooks = {"pre-tool-hook.sh": ENUMERATED}
+    fixture = {"vendor/test-layer-enumeration.sh": FIXTURE}
+
+    # Must-fire half, readable: the site is found and named.
+    cache, record = _cache(tmp_path / "readable", hooks, extra=fixture)
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "test-layer-enumeration.sh" in finding["detail"], finding["detail"]
+
+    cache, record = _cache(tmp_path / "denied", hooks, extra=fixture)
+    closed = cache / "dpt-plugins" / PLUGIN / VERSION / "vendor"
+    original = closed.stat().st_mode
+    closed.chmod(0o000)
+    request.addfinalizer(lambda: closed.chmod(original))
+    try:
+        os.listdir(str(closed))
+    except OSError:
+        pass
+    else:
+        pytest.skip(
+            "chmod 000 did not deny os.listdir on this platform/user, so the "
+            "unwalkable-subtree arm went untested here: {}".format(closed)
+        )
+
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "did not see the whole tree" in finding["detail"], finding["detail"]
+    assert "vendor" in finding["detail"], finding["detail"]
+    # The failure this replaces: the subtree vanished and the sentence read as complete.
+    assert "test-layer-enumeration.sh" not in finding["detail"], finding["detail"]
+
+
+def test_a_declared_hook_that_is_missing_cannot_leave_the_rest_saying_unread(tmp_path):
+    """An incomplete hook set cannot report a gap, for the same reason an unreadable one
+    cannot: the hook that did not resolve is exactly where the enumeration might have
+    been.
+
+    Must-fire half on the identical tree: with both declared hooks present and both
+    omitting the layer, the gap is real and `unread` is the answer.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": OMITS},
+        declare=["pre-tool-hook.sh", "gone-hook.sh"],
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "gone-hook.sh" in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": OMITS, "gone-hook.sh": OMITS},
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "unread"
+
+
+def test_a_manifest_component_that_would_leave_the_install_root_resolves_to_nothing():
+    """`_jit_path_parts` is the chokepoint, and it is asserted on every platform.
+
+    The drive-letter case is Windows-only in effect -- `PureWindowsPath("C:/a").joinpath(
+    "D:", "x.sh")` is `D:x.sh`, outside the root the join was anchored on -- but the guard
+    is unconditional, so the assertion is not vacuous on the legs that cannot exhibit it.
+    Paired with the ordinary paths it must keep accepting, so a `_jit_path_parts` that
+    refused everything would fail here rather than pass.
+    """
+    assert doctor._jit_path_parts("scripts/pre-tool-hook.sh") == [
+        "scripts",
+        "pre-tool-hook.sh",
+    ]
+    assert doctor._jit_path_parts("/scripts/pre-tool-hook.sh") == [
+        "scripts",
+        "pre-tool-hook.sh",
+    ]
+    assert doctor._jit_path_parts("../../etc/evil.sh") is None
+    assert doctor._jit_path_parts("D:/evil/x.sh") is None
+    assert doctor._jit_path_parts("C:evil.sh") is None
+    assert doctor._jit_path_parts("") is None
 
 
 def test_an_enumeration_inside_a_comment_is_not_a_measurement(tmp_path):

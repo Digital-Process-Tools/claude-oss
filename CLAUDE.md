@@ -362,10 +362,25 @@ and invisible from outside.
 Re-run in this branch's worktree rather than carried forward, with the positive control that makes
 it a measurement:
 
-- `python3 scripts/doctor.py --root .` prints `OK jit rule layer: claude-jit-context 0.4.0 names
-  01-oss in its layer list (test-layer-enumeration.sh:494), so the 3 rule(s) under
-  .claude/jit-context/*/01-oss/ are reachable`. That check is keyed on the *shape* of a layer list
-  rather than on a spelling, which is why it survived the dependency's fix instead of needing one.
+- **The `jit rule layer` bullet that used to open this list was wrong, and #241 is the filing.** It
+  pasted `OK jit rule layer: claude-jit-context 0.4.0 names 01-oss in its layer list
+  (test-layer-enumeration.sh:494) …` — correctly, that is what printed — and then graded it: *keyed
+  on the shape of a layer list rather than on a spelling, which is why it survived the dependency's
+  fix instead of needing one*. The paste was measured; the grade was not.
+  `test-layer-enumeration.sh` is the dependency's **test harness**, and line 494 is a fixture
+  asserting its enumerator works — a file that enumerates nothing at run time. That string is
+  invariant under the upstream fix, so the check survived the fix in the world where the fix
+  happened *and* in the world where it did not. Fabricating the second tree settles it rather than
+  arguing it: hooks carrying the old broken fixed list, fixture carrying the good string, and the
+  check printed `reads`. Surviving was an accident of what the scan would accept, not a design
+  property, and pasting the true line beside a grade nobody measured is how it got here.
+  Since #241 the scan is the hook set — the scripts the dependency's own `hooks/hooks.json`
+  declares, plus the closure of what those scripts `source` — and the same command now prints
+  `WARN jit rule layer: 5 hook script(s) of claude-jit-context 0.4.0 were read and none carries a
+  fixed layer list. The only layer list(s) found are outside the hook set
+  (test-layer-enumeration.sh:494) …`. **So this bullet no longer supports the heading.** Whether
+  anything reads `01-oss` is honestly unknown on 0.4.0, which enumerates off disk; the enforcement
+  claim rests entirely on the bullets below, which fire the hook rather than read it.
 - Firing the hook settles it. `pre-tool-hook.sh` given a `Read` of a file in
   `/…/claude-oss-wt/235` returns `{"decision":"block","reason":"# JIT Context:
   supertool-required.md (matched: ~.*)…` — the rule whose frontmatter reads `tool:
@@ -377,8 +392,9 @@ it a measurement:
   file, and later a harness `Write` of the replacement text, were both refused by that rule with the
   same receipt, before any fixture was built. That is the only observation here that nobody arranged.
 
-What is *not* proven is anything about the rules' **content**: reachable says the layer is read, not
-that what it says is right. Nothing here measures a rule's effect on a decision, and nothing proposed
+What is *not* proven is anything about the rules' **content**: even a `reads` verdict would say only
+that the layer is enumerated, not that what it says is right — and after #241 there is no `reads`
+verdict to lean on either. Nothing here measures a rule's effect on a decision, and nothing proposed
 so far would. The accidental firing above is the closest this section has come — and it measures that
 the rule fires, not that being stopped there produced a better outcome.
 
