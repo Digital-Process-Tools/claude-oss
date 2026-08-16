@@ -721,6 +721,107 @@ else
     fi
 fi
 
+# --- the setup diagnostic, before the session starts working ------------------
+#
+# A broken setup surfaces at second zero rather than after a tick has been spent
+# against it. Two things decide how this is written:
+#
+#   * `scripts/doctor.py` EXITS 0 ALWAYS, by contract, and says everything in one
+#     `VERDICT:` line. So `doctor.sh || warn` is a check that can never fire -- it
+#     reads a pass on `VERDICT: not usable -- 4 failure(s)` exactly as loudly as on
+#     `VERDICT: ok`. The line is parsed; the status is never branched on for the
+#     repo's health.
+#   * `--root` is passed because this script has ALREADY resolved the root. Invoked
+#     with neither `--root` nor CLAUDE_PROJECT_DIR the diagnostic prints
+#     `WARN project dir guessed from cwd` and downgrades an otherwise-`ok` tree to
+#     `usable with gaps -- 1 warning(s)` -- a warning manufactured by the
+#     invocation rather than a fact about the repository.
+#
+# The status IS read for one thing the VERDICT line cannot report: whether the
+# diagnostic ran at all. Exit 0 with no VERDICT line means it started and never
+# reached its own report; a non-zero status means it could not be started or died
+# on the way, and 126/127 name which. Collapsing those into each other, or into
+# `ok`, is the absence-produced-by-the-tool this whole plugin is about.
+#
+# Every arm opens the session. A maintainer whose config is broken is exactly the
+# person who needs a session in which to fix it, and a launcher that refuses leaves
+# them with no tool. This is the same three-arms shape the watch-name gate above
+# uses -- report, do not refuse -- rather than a new pattern.
+doctor_sh="$plugin_root/scripts/doctor.sh"
+if [ -n "${OSS_WORKSPACE_SKIP_DOCTOR:-}" ]; then
+    # An off switch, because the diagnostic costs a couple of seconds and reaches
+    # the network for dependency versions. A skip that says nothing is a skip that
+    # reads as a pass, so it is announced with what is now unknown.
+    echo "oss-workspace: OSS_WORKSPACE_SKIP_DOCTOR is set, so the setup diagnostic did NOT run and the state of $repo_root is UNKNOWN. That is not the same as knowing it is fine. Unset it, or run /oss:doctor inside the session." >&2
+elif [ ! -f "$doctor_sh" ]; then
+    echo "oss-workspace: the setup diagnostic was not found at $doctor_sh, so whether $repo_root is configured is UNKNOWN. The plugin checkout looks incomplete. Opening the session anyway." >&2
+else
+    # `bash <path>` rather than executing it, and that is measured rather than
+    # stylistic: scripts/doctor.sh is tracked mode 644, so its own `#!` line is
+    # never used and running it directly dies with `Permission denied` -- which
+    # this launcher would then have reported, correctly and uselessly, as
+    # COULD NOT BE STARTED on every single launch. `commands/doctor.md` invokes it
+    # the same way. If bash is absent the substitution exits non-zero and lands in
+    # the could-not-be-started arm below, which is the honest answer.
+    #
+    # `</dev/null` so the diagnostic cannot consume the stdin this session is about
+    # to hand to `claude`. The `&& ... || ...` form is what keeps `set -e` from
+    # killing the launcher on a non-zero status that is itself the finding.
+    doctor_out=$(bash "$doctor_sh" --root "$repo_root" 2>&1 </dev/null) && doctor_status=0 || doctor_status=$?
+    # The LAST `VERDICT:` line wins: doctor's contract is one such line, last, and
+    # reading the first match would hand the verdict to whatever printed earliest.
+    # Anchored at column 0 for the same reason -- an indented mention inside a
+    # finding is prose, not a verdict.
+    doctor_verdict=$(printf '%s\n' "$doctor_out" | awk '/^VERDICT:/ { sub(/^VERDICT:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); line = $0 } END { if (line != "") print line }')
+    if [ "$doctor_status" -ne 0 ]; then
+        case $doctor_status in
+            126) doctor_why="bash, or the diagnostic, is present and could not be executed" ;;
+            127) doctor_why="bash was not found, so there is nothing here that can run the diagnostic" ;;
+            *)   doctor_why="it exited $doctor_status, and its contract is to exit 0 always, so it died before finishing" ;;
+        esac
+        echo "oss-workspace: the setup diagnostic COULD NOT BE STARTED: $doctor_why ($doctor_sh). Whether $repo_root is configured is UNKNOWN -- this is not a pass, and it is not the same as the diagnostic running and finding nothing. Opening the session anyway." >&2
+        if [ -n "$doctor_out" ]; then
+            printf '%s\n' "$doctor_out" >&2
+        fi
+    elif [ -z "$doctor_verdict" ]; then
+        echo "oss-workspace: the setup diagnostic ran, exited 0 and printed no VERDICT line, so it started and never reached its own report. Its whole output follows. Whether $repo_root is configured is UNKNOWN -- an empty search for a verdict looks identical on a clean run, which is why this is said rather than assumed. Opening the session anyway." >&2
+        if [ -n "$doctor_out" ]; then
+            printf '%s\n' "$doctor_out" >&2
+        fi
+    else
+        case $doctor_verdict in
+            ok)
+                # One line, not none and not the whole report. Silence would make
+                # "ran and was clean" indistinguishable from "never ran"; furniture
+                # on every healthy launch is how the line that matters stops being
+                # read.
+                echo "oss-workspace: setup diagnostic (VERDICT: ok). Run /oss:doctor inside the session for the full report." >&2
+                ;;
+            "usable with gaps"*|"not usable"*)
+                # Relayed WHOLE rather than summarised to its verdict. /oss:doctor's
+                # own instructions say not to summarise away any line, because
+                # `not checked` is a third state that reads as clean -- and once the
+                # answer is not `ok`, this script has no standing to decide which
+                # line the maintainer needed. It costs nothing on a healthy launch,
+                # because a healthy launch does not reach here.
+                echo "oss-workspace: setup diagnostic: VERDICT: $doctor_verdict. Its whole output follows; the session opens regardless, because a repo that needs fixing needs a session to fix it in." >&2
+                printf '%s\n' "$doctor_out" >&2
+                ;;
+            "could not run"*)
+                echo "oss-workspace: the setup diagnostic reported VERDICT: could not run, which says nothing at all about $repo_root -- its state is UNKNOWN rather than fine. Its whole output follows. Opening the session anyway." >&2
+                printf '%s\n' "$doctor_out" >&2
+                ;;
+            *)
+                # A verdict word this launcher has never heard of. Falling through
+                # to silence would render a future state as a pass, which is the one
+                # outcome none of the arms above is allowed to produce.
+                echo "oss-workspace: the setup diagnostic reported VERDICT: $doctor_verdict, which this launcher does not recognise, so what it means for $repo_root is UNKNOWN. Its whole output follows. Opening the session anyway." >&2
+                printf '%s\n' "$doctor_out" >&2
+                ;;
+        esac
+    fi
+fi
+
 if [ "$#" -eq 0 ]; then
     # The prompt goes FIRST and the variadic flag LAST. A positional after the
     # flag is read as one of its values, and claude refuses the launch rather than
