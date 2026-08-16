@@ -21,6 +21,7 @@ Python 3.9 compatible.
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -3091,6 +3092,443 @@ def check_freshness(project_dir, config):
         report(state, message)
 
 
+# --- which copy of this plugin answered this invocation (#262, #248) ---------------
+#
+# The obvious detector -- do the two manifests declare the same version -- provably
+# cannot answer this. The version does not move between releases, so an installed
+# copy sitting at the tag and a clone a whole cycle past it declare the same number,
+# and `yes` comes back for the healthy case and the skewed one alike. Measured
+# 2026-08-16: the same agent report validated `ok` against the clone's schema and
+# `expected 1, got 2` against a cache declaring the identical version.
+#
+# So the comparison is over content, and the report is over *provenance*: which root
+# this invocation answered from, and whether the checkout being diagnosed carries the
+# same bytes. Reporting rather than refusing is deliberate -- disagreement is the
+# normal state for the whole window between a merge and a release, and a check that
+# refused there would be switched off within a week.
+
+#: What decides behaviour: the text a command or a skill injects, the agents it
+#: dispatches, and the scripts it runs. Deliberately not a version number.
+COMPARED_DIRECTORIES = ("agents", "commands", "scripts", "skills")
+
+#: Compared as bytes as well, so a manifest edit is visible. Read for its ``name``
+#: -- never for its ``version``, which is the field this whole check exists because
+#: nobody can rely on.
+COMPARED_FILES = (".claude-plugin/plugin.json",)
+
+SKIPPED_DIRECTORIES = frozenset({".git", "__pycache__"})
+
+#: On every scope line, in all three of its states. #248 is a session resolving one
+#: command's text once and holding it for the whole turn; a line that reported the
+#: copy behind THIS command as though it spoke for the session would be the same
+#: defect one layer up, wearing a receipt.
+SESSION_CAVEAT = (
+    "This is one command's copy -- nothing here says which copy answered any other "
+    "command or skill in this session."
+)
+
+
+def _relative_key(root, path):
+    """A relative POSIX key, or the flattened absolute path when it is not under root."""
+    try:
+        return Path(path).relative_to(root).as_posix()
+    except ValueError:
+        return _one_line(str(path), limit=120)
+
+
+def plugin_tree_digest(root):
+    """``({relative posix path: sha256}, {relative posix path: why it could not be read})``.
+
+    Two returns rather than one, for the reason ``_workflow_scan`` has two: a walk
+    that could not enter a subtree and a subtree with nothing in it produce the same
+    empty mapping, and the caller has to be able to tell them apart. ``Path.rglob``
+    cannot -- it swallows ``PermissionError`` while walking and simply yields less --
+    so this is ``os.walk(onerror=...)``, which is the only walk that can report.
+
+    A directory that is absent is not a failure to look: a plugin need not ship every
+    one of these. That is classified off the exception already in hand rather than by
+    asking the filesystem a second question, because ``Path.exists()`` swallows a
+    short list of errnos and re-raises the rest.
+
+    CRLF is folded to LF before hashing. A checkout with ``autocrlf`` on and an
+    installer's unpacked copy would otherwise differ in every file, which is a verdict
+    about line endings dressed as a verdict about contracts. The cost is stated rather
+    than hidden: a difference that is ONLY line endings is invisible here.
+
+    Keys are relative POSIX paths, so the two sides compare equal on Windows, where
+    the walk yields backslashes. The unreadable half is keyed the same way on purpose:
+    the caller has to be able to subtract those keys from the comparison, because a
+    path present on one side and unreadable on the other is *unknown*, not different,
+    and reporting it as a difference is the loud-but-wrong answer this whole check
+    exists to avoid.
+
+    A compared directory that is a symlink is declined rather than followed.
+    ``os.walk`` refuses symlinked *sub*directories and always traverses the top it was
+    given, so ``scripts -> /`` in a tracked repo would be an unbounded read inside a
+    diagnostic contracted to always finish. Declining is recorded as unreadable, which
+    is what it is: nothing under it was seen.
+    """
+    root = Path(root)
+    files = {}
+    unreadable = {}
+
+    def onerror(exc):
+        if isinstance(exc, FileNotFoundError):
+            return
+        unreadable[_relative_key(root, getattr(exc, "filename", "?"))] = exc.__class__.__name__
+
+    targets = []
+    for name in COMPARED_DIRECTORIES:
+        top = root / name
+        if os.path.islink(str(top)):
+            unreadable[name] = "declined: it is a symlink, so nothing under it was read"
+            continue
+        for dirpath, dirnames, filenames in os.walk(str(top), onerror=onerror):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIPPED_DIRECTORIES)
+            for filename in sorted(filenames):
+                targets.append(Path(dirpath) / filename)
+    for relative in COMPARED_FILES:
+        targets.append(root.joinpath(*relative.split("/")))
+
+    for path in targets:
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            unreadable[_relative_key(root, path)] = exc.__class__.__name__
+            continue
+        files[_relative_key(root, path)] = hashlib.sha256(
+            data.replace(b"\r\n", b"\n")
+        ).hexdigest()
+    return files, unreadable
+
+
+def _git_head(root):
+    """A label, not the verdict. The content digest is what decides agreement; this
+    is here so a human can say *which commit* in one glance, and it says so plainly
+    when it cannot -- an installed copy is usually not a git tree at all.
+    """
+    if shutil.which("git") is None:
+        return "git not on PATH"
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001 - a diagnostic never dies on a probe
+        return "git HEAD could not be read"
+    if done.returncode != 0:
+        return "no git HEAD here"
+    return "git HEAD {}".format(_one_line(done.stdout, limit=40))
+
+
+def _tree_identity(root, files, unreadable=()):
+    """A content digest over what was read, and how much of it was not.
+
+    ``unreadable`` is part of the identity rather than a separate line, because a
+    digest over 20 of 26 files and a digest over all 26 print the same shape, and the
+    branches that never reach a comparison -- a repo that is not a checkout of this
+    plugin, a manifest that would not parse -- print this string and nothing else. A
+    partial scan rendered as a whole one there is exactly the absence this file is
+    named after.
+    """
+    digest = hashlib.sha256()
+    for key in sorted(files):
+        digest.update(key.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(files[key].encode("ascii"))
+        digest.update(b"\n")
+    incomplete = ""
+    if unreadable:
+        incomplete = ", and {} path(s) could not be read ({}), so this digest is over " \
+            "less than the whole tree".format(len(unreadable), _named_few(_detail_list(unreadable)))
+    return "{}, content {} over {} file(s){}".format(
+        _git_head(root), digest.hexdigest()[:12], len(files), incomplete
+    )
+
+
+def plugin_manifest(root):
+    """``(doc, reason)``. Exactly one is None.
+
+    ``reason`` distinguishes *absent* from *unreadable* from *unparseable*, because
+    they are three different answers: the first says this tree is not a plugin
+    checkout, and the other two say nothing was established either way.
+    """
+    manifest = Path(root) / ".claude-plugin" / "plugin.json"
+    try:
+        raw = manifest.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "it has no .claude-plugin/plugin.json"
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, "its .claude-plugin/plugin.json could not be read ({})".format(
+            exc.__class__.__name__
+        )
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return None, "its .claude-plugin/plugin.json would not parse"
+    if not isinstance(doc, dict) or not doc.get("name"):
+        return None, "its .claude-plugin/plugin.json names no plugin"
+    return doc, None
+
+
+def plugin_attestation(flag, env_value):
+    """``(root, source)``: what this invocation said about which copy it resolved.
+
+    A command's text carries ``${CLAUDE_PLUGIN_ROOT}``, so the root a command
+    resolved from is a fact the invocation itself holds. A script run any other way
+    holds no such fact, and ``(None, None)`` is that third state rather than a
+    default.
+    """
+    if flag:
+        return Path(os.path.expanduser(str(flag))), "--plugin-root"
+    if env_value:
+        return Path(os.path.expanduser(str(env_value))), "CLAUDE_PLUGIN_ROOT"
+    return None, None
+
+
+def _under_blocked(key, blocked):
+    """Is `key` inside something nobody could read?
+
+    Prefix matching, not equality: ``os.walk``'s error handler names the DIRECTORY it
+    could not enter, and the files under it exist on the other side under their own
+    keys. Comparing by equality alone would subtract the directory and then score every
+    file beneath it as present-on-one-side-only, which is the same wrong answer one
+    level up.
+    """
+    if key in blocked:
+        return True
+    return any(key.startswith(entry + "/") for entry in blocked)
+
+
+def _detail_list(unreadable):
+    """``{key: why}`` flattened to sorted ``key (why)`` strings, for printing."""
+    return ["{} ({})".format(key, unreadable[key]) for key in sorted(unreadable)]
+
+
+def _merge_unreadable(left, right):
+    """Both sides' unknowns, keyed the same way, with the side named when they differ.
+
+    A key unreadable on both sides is one unknown, not two -- counting it twice would
+    make the printed count disagree with the set that was actually subtracted from the
+    comparison, and the count is the only thing telling a reader how much of the answer
+    is missing.
+    """
+    merged = dict(left)
+    for key, why in right.items():
+        if key in merged and merged[key] != why:
+            merged[key] = "{} on one side, {} on the other".format(merged[key], why)
+        else:
+            merged[key] = why
+    return merged
+
+
+def _named_few(names, limit=3):
+    shown = ", ".join(names[:limit])
+    if len(names) > limit:
+        shown += ", and {} more".format(len(names) - limit)
+    return shown
+
+
+def _version_sentence(ours, theirs):
+    if ours == theirs:
+        return "Both manifests declare version {}, which is why comparing versions " \
+            "cannot see this.".format(_one_line(ours, limit=40))
+    return "The manifests declare {} and {}.".format(
+        _one_line(ours, limit=40), _one_line(theirs, limit=40)
+    )
+
+
+def plugin_provenance(script_root, project_dir, attested=None, attested_source=None):
+    """``[(level, message)]`` -- two lines, and neither may be silent.
+
+    Returns rather than prints, so every state is testable.
+    """
+    script_root = Path(script_root)
+    lines = []
+
+    if attested is None:
+        lines.append(
+            (
+                "WARN",
+                "plugin copy scope: not established -- neither --plugin-root nor "
+                "CLAUDE_PLUGIN_ROOT named a root, so the copy reported below is "
+                "inferred from this script's own location ({}) and nothing "
+                "establishes which copy the harness resolves a command from. "
+                "{}".format(script_root, SESSION_CAVEAT),
+            )
+        )
+    elif same_directory(attested, script_root):
+        lines.append(
+            (
+                "OK",
+                "plugin copy scope: {} named {}, and that is the tree doctor.py ran "
+                "from. {}".format(attested_source, script_root, SESSION_CAVEAT),
+            )
+        )
+    else:
+        lines.append(
+            (
+                "WARN",
+                "plugin copy scope: {} names {}, but doctor.py ran from {}. The tree "
+                "reported below is the one that ran; nothing establishes that the "
+                "harness resolves a command from it. {}".format(
+                    attested_source, Path(attested), script_root, SESSION_CAVEAT
+                ),
+            )
+        )
+
+    ours, our_reason = plugin_manifest(script_root)
+    theirs, their_reason = plugin_manifest(project_dir)
+
+    files, unreadable = plugin_tree_digest(script_root)
+    identity = _tree_identity(script_root, files, unreadable)
+
+    if theirs is None and their_reason == "it has no .claude-plugin/plugin.json":
+        lines.append(
+            (
+                "OK",
+                "plugin copy: doctor.py answered from {} ({}); the repo being "
+                "diagnosed is not a checkout of this plugin -- {} -- so there was "
+                "nothing to compare it against.".format(script_root, identity, their_reason),
+            )
+        )
+        return lines
+    if theirs is None:
+        lines.append(
+            (
+                "WARN",
+                "plugin copy: whether the repo being diagnosed is a checkout of this "
+                "plugin could not be determined -- {} -- so nothing was compared. "
+                "doctor.py answered from {} ({}).".format(their_reason, script_root, identity),
+            )
+        )
+        return lines
+    if ours is None:
+        lines.append(
+            (
+                "WARN",
+                "plugin copy: whether the repo being diagnosed is a checkout of this "
+                "plugin could not be determined -- the copy that answered ({}) is "
+                "itself unreadable as a plugin: {} -- so nothing was compared.".format(
+                    script_root, our_reason
+                ),
+            )
+        )
+        return lines
+
+    our_name = _one_line(ours.get("name"), limit=60)
+    their_name = _one_line(theirs.get("name"), limit=60)
+    if our_name != their_name:
+        lines.append(
+            (
+                "OK",
+                "plugin copy: doctor.py answered from {} ({}); the repo being "
+                "diagnosed is not a checkout of this plugin -- it declares plugin "
+                "'{}' and this one is '{}' -- so there was nothing to compare it "
+                "against.".format(script_root, identity, their_name, our_name),
+            )
+        )
+        return lines
+
+    if same_directory(script_root, project_dir):
+        lines.append(
+            (
+                "OK",
+                "plugin copy: doctor.py answered from the checkout being diagnosed "
+                "({}, {}), so there is no installed-copy/clone split to report "
+                "here.".format(script_root, identity),
+            )
+        )
+        return lines
+
+    their_files, their_unreadable = plugin_tree_digest(project_dir)
+    their_identity = _tree_identity(project_dir, their_files, their_unreadable)
+
+    # A path unreadable on either side is UNKNOWN, not different. It is absent from
+    # that side's map, so a plain symmetric difference scores it as a file present on
+    # one side only and reports two byte-identical trees as a SKEW -- the loud-but-wrong
+    # answer, in the check written to avoid exactly that. Subtracted here, and reported
+    # separately below, because "we could not look at this one" is its own state.
+    blocked = _merge_unreadable(unreadable, their_unreadable)
+    every = {
+        key for key in (set(files) | set(their_files)) if not _under_blocked(key, blocked)
+    }
+    differing = sorted(key for key in every if files.get(key) != their_files.get(key))
+    version = _version_sentence(ours.get("version"), theirs.get("version"))
+    incomplete = ""
+    if blocked:
+        incomplete = " {} path(s) could not be read ({}), so this did not compare the " \
+            "whole tree.".format(len(blocked), _named_few(_detail_list(blocked)))
+
+    if differing:
+        lines.append(
+            (
+                "WARN",
+                "plugin copy: SKEW -- the copy that answered ({}, {}) and the "
+                "checkout being diagnosed ({}, {}) differ in {} of {} compared "
+                "file(s): {}. {}{}".format(
+                    script_root,
+                    identity,
+                    project_dir,
+                    their_identity,
+                    len(differing),
+                    len(every),
+                    _named_few(differing),
+                    version,
+                    incomplete,
+                ),
+            )
+        )
+        return lines
+
+    if blocked:
+        lines.append(
+            (
+                "WARN",
+                "plugin copy: could not be answered -- {} path(s) could not be read "
+                "({}), so the comparison did not cover the whole tree; the {} file(s) "
+                "it did compare match. The copy that answered is {} ({}); the "
+                "checkout being diagnosed is {} ({}).".format(
+                    len(blocked),
+                    _named_few(_detail_list(blocked)),
+                    len(every),
+                    script_root,
+                    identity,
+                    project_dir,
+                    their_identity,
+                ),
+            )
+        )
+        return lines
+
+    lines.append(
+        (
+            "OK",
+            "plugin copy: the copy that answered ({}, {}) and the checkout being "
+            "diagnosed ({}, {}) are identical over {} compared file(s), line endings "
+            "normalised.".format(
+                script_root, identity, project_dir, their_identity, len(every)
+            ),
+        )
+    )
+    return lines
+
+
+def check_plugin_copy(project_dir, script_root=None, attested=None, attested_source=None):
+    for level, message in plugin_provenance(
+        script_root or PLUGIN_ROOT,
+        project_dir,
+        attested=attested,
+        attested_source=attested_source,
+    ):
+        report(level, message)
+
+
 class _Parser(argparse.ArgumentParser):
     """argparse exits 2 on a bad flag. This one refuses to, because a mistyped argument
     must still produce a report -- exit 0 and one VERDICT line is the contract, and a
@@ -3102,7 +3540,7 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parse_args(argv):
-    """``(root, problems)``. Never exits and never raises."""
+    """``(root, plugin_root, problems)``. Never exits and never raises."""
     parser = _Parser(
         prog="doctor.py",
         description="Diagnose an oss-managed repo. Always exits 0.",
@@ -3113,10 +3551,20 @@ def parse_args(argv):
         help="the repo to diagnose. Wins over CLAUDE_PROJECT_DIR and over the current "
         "directory; a path that is not a directory is reported, not raised.",
     )
+    parser.add_argument(
+        "--plugin-root",
+        default=None,
+        help="the plugin root this invocation resolved from, which only the "
+        "invocation knows -- a command's text carries ${CLAUDE_PLUGIN_ROOT}. Absent, "
+        "the `plugin copy scope` line reports that nothing established which copy "
+        "answered, rather than assuming this script's own location speaks for the "
+        "harness.",
+    )
     try:
-        return parser.parse_args(list(argv)).root, []
+        parsed = parser.parse_args(list(argv))
+        return parsed.root, parsed.plugin_root, []
     except ValueError as exc:
-        return None, [
+        return None, None, [
             "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
             "directory, so the tree below may not be the one you meant.".format(exc)
         ]
@@ -3195,7 +3643,7 @@ def main(argv=None):
     path as an unrecognised argument. A library entry point does not get to read the
     process's arguments; the script entry point at the bottom passes them in.
     """
-    root, arg_problems = parse_args([] if argv is None else argv)
+    root, plugin_root, arg_problems = parse_args([] if argv is None else argv)
     project_dir, resolution = resolve_project_dir(
         root, os.environ.get("CLAUDE_PROJECT_DIR"), os.getcwd()
     )
@@ -3205,6 +3653,17 @@ def main(argv=None):
         report("FAIL", problem)
     for state, message in resolution:
         report(state, message)
+
+    # Immediately under the version line, because the version line is the thing it
+    # exists to stop anybody trusting on its own: two copies a whole release cycle
+    # apart declare the same number (#262), and the one that answered a command is
+    # not necessarily the one that is installed (#248).
+    attested, attested_source = plugin_attestation(
+        plugin_root, os.environ.get("CLAUDE_PLUGIN_ROOT")
+    )
+    check_plugin_copy(
+        project_dir, attested=attested, attested_source=attested_source
+    )
 
     config = check_config(project_dir)
 

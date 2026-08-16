@@ -6,8 +6,14 @@ allowed-tools: Bash
 Run the diagnostic and relay its output verbatim:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --plugin-root "${CLAUDE_PLUGIN_ROOT}"
 ```
+
+**`--plugin-root` is not redundant with the path in front of it**, and dropping it silently
+downgrades one line to its third state. The launcher resolves the script from that path either
+way; the flag is the *invocation* saying which copy it resolved, which is a fact no script can
+observe about itself. Without it the run cannot tell "this is the copy the harness answers
+commands from" from "this is wherever somebody happened to run a script", and it says so.
 
 Add `--root <path>` to point it at a repo other than the one you are standing in. The flag wins over
 `CLAUDE_PROJECT_DIR`, and when the two disagree the run says so and names the tree it did **not**
@@ -40,6 +46,70 @@ sitting there untouched. Re-run from inside the tree before offering to write an
 If instead the report says `.oss.json read from the enclosing clone`, nothing is wrong: you are
 standing in a worktree and the config lives in the clone, which is where it belongs. Do not write a
 second one.
+
+## The `plugin copy` and `plugin copy scope` lines — which copy answered, not which is installed
+
+Two lines, directly under `oss plugin version`, and they exist because that version line **cannot**
+answer the question people read it as answering. The manifest version does not move between
+releases, so an installed copy sitting at the tag and a clone a whole cycle past it declare the same
+number — measured 2026-08-16, where the same agent report validated `ok` against one and
+`schema_version: expected 1, got 2` against the other, both at `0.5.0`. Any check written as *do the
+versions agree* answers `yes` in the healthy case and the skewed one alike (#262).
+
+So the comparison is over **content**: every file under `agents/`, `commands/`, `scripts/` and
+`skills/`, plus `.claude-plugin/plugin.json`, hashed with CRLF folded to LF. A difference that is
+only line endings is deliberately invisible; a difference in what a command says or what a script
+does is not.
+
+**`plugin copy scope`** — what this invocation established:
+
+- `OK … named <root>, and that is the tree doctor.py ran from` — the invocation carried
+  `${CLAUDE_PLUGIN_ROOT}`, so the copy below is the one the harness resolved this command from.
+- `WARN … names <a>, but doctor.py ran from <b>` — a flag or an environment variable disagreeing
+  with the file that actually executed. The tree that ran is the one reported; the attestation is
+  not evidence about it. **`/oss:doctor` cannot produce this state**: the launcher resolves the
+  script from `${CLAUDE_PLUGIN_ROOT}` and the command passes the same variable, so the two agree by
+  construction. It fires for a hand invocation naming a root, and for a script run out of one
+  checkout inside a session that exported `CLAUDE_PLUGIN_ROOT` pointing at another — which is the
+  ordinary shape of running a worktree's `doctor.py` from a maintainer session.
+- `WARN … not established` — nobody named a root, so the copy below is inferred from the script's
+  own location. That is the ordinary state of `python3 scripts/doctor.py` run by hand, and it is a
+  gap in the measurement rather than a fault in the repo. Do not relay it as a finding about the
+  code.
+
+Every one of the three ends with the same sentence, and it is the half that closes #248: **this is
+one command's copy, and nothing here says which copy answered any other command or skill in this
+session.** A command's text is resolved once, at invocation, and stays in the turn for its whole
+length — `/reload-plugins` moves the registry and does not move text already injected. A session can
+therefore hold a registry at one version and instructions from another, and this line reports one
+command, not the session. Reading it as a session-wide clearance is the same defect one layer up.
+
+**`plugin copy`** — what the comparison found. Six states:
+
+- `OK … are identical over N compared file(s)` — the copy that answered and the checkout being
+  diagnosed carry the same bytes.
+- `WARN … SKEW — … differ in K of N compared file(s): …` — they do not, and the line names the
+  files and the version that hid it. **This is a report, not a refusal, and that is deliberate**:
+  disagreement is the normal state for the whole window between a merge and a release, so a check
+  that refused to run here would be switched off within a week. What it buys is that a stale filing,
+  a report refused by an older schema, or a procedure step that silently is not there stops being
+  five unrelated puzzles.
+- `OK … answered from the checkout being diagnosed` — you are diagnosing the plugin's own clone and
+  the script ran out of it. There is no installed-copy/clone split to report.
+- `OK … not a checkout of this plugin` — the ordinary case in a managed repo. The repo has no
+  `.claude-plugin/plugin.json`, or declares a different plugin, so there is nothing to compare
+  against. Reported rather than left silent, because a comparison that was never made and one that
+  found nothing print the same thing otherwise.
+- `WARN … could not be determined … so nothing was compared` — a manifest that would not read or
+  would not parse on either side. The third state: not clean, not a skew.
+- `WARN … could not be answered — N path(s) could not be read` — the walk could not enter part of a
+  tree, so the files it did compare match and the ones it could not see are unknown. Never relay
+  this as identical.
+
+**What to do with a `SKEW`.** Nothing in the repo is broken by it. What it changes is what you may
+trust: any plugin prose quoted from the running session may be text this clone no longer contains,
+which is exactly how #240 was filed against a sentence removed a release earlier. Quote from the
+clone at a named sha before filing anything about this plugin's own documents.
 
 ## The `watch channel` line
 
