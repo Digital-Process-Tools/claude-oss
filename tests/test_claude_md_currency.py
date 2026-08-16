@@ -13,10 +13,24 @@ maintainer's full clone and fail every leg.
 What this file cannot do is the reason it is small. It cannot tell a section re-derived this morning
 from one whose marker was hand-edited, and it cannot read the tree the marker names. It converts
 "stale and silent" into "stale and dated", and nothing further.
+
+One thing it can do, added for #206: fail while a release is *pending*. Until then every check here
+was satisfied by `v0.3.0` -- a release this repo really did cut -- for the whole of the 0.4.0 cycle
+and into the 0.5.0 one, so the guard could not fail at the boundary it exists to make visible. The
+signal it was missing is on disk and needs no git: unfolded fragments in the changelog directory
+mean a release is being prepared, and at that moment the newest release the section names must be
+the newest release `CHANGELOG.md` records. Between releases there are no fragments and the check
+says so rather than passing quietly -- the third state is reported, not inferred.
+
+This deliberately does not check any measurement inside the section. Asserting that the prose agrees
+with, say, a `doctor` check states the same claim twice and passes whenever both are wrong together.
 """
 
+import json
 import re
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
@@ -126,3 +140,157 @@ def test_the_detectors_see_a_marker_and_see_its_absence():
 def test_an_absent_heading_is_reported_as_empty_rather_than_as_a_match():
     """The other way this file could pass while checking nothing: a renamed heading."""
     assert _section("## Something else\n\nMeasured at `c6b7bd4` after `v0.3.0`.\n") == ""
+
+
+# --- Is a release pending, and is the section current for it? (#206) ------------------------
+#
+# Everything above is satisfied by any release this repo ever cut, so it stayed green through a
+# whole cycle in which the section was never re-derived. What follows keys on the one signal that
+# is on disk at the moment it matters and needs neither git nor the network.
+
+#: `## [0.4.0] - 2026-08-15`, and not `## [Unreleased]`.
+CHANGELOG_RELEASE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
+
+#: `164.added.md`. The fragment directory also carries a `README.md`, which is not a fragment.
+FRAGMENT = re.compile(r"\A\d+\.[a-z]+\.md\Z")
+
+
+def _version_key(version):
+    return tuple(int(part) for part in version.split("."))
+
+
+def _changelog_releases(text):
+    return CHANGELOG_RELEASE.findall(text)
+
+
+def _fragment_dir():
+    """The fragment directory, read from `.oss.json` rather than spelled here.
+
+    A repo fact belongs in the config or is re-derived; a second copy in a test is one more
+    place a rename has to reach.  Returns None when the config cannot be read or names no
+    directory -- which this file reports as "could not look", never as "nothing pending".
+    """
+    try:
+        config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    name = config.get("changelog_dir")
+    if not isinstance(name, str) or not name:
+        return None
+    return REPO_ROOT / name
+
+
+def _pending_fragments(directory):
+    """(fragments, reason-it-could-not-look). Exactly one of the two is meaningful.
+
+    An unreadable directory must not render as an empty one: "no release is pending" and "I could
+    not tell" are the two states this repository is named after confusing.
+    """
+    if directory is None:
+        return None, ".oss.json is unreadable or names no changelog_dir"
+    try:
+        entries = sorted(p.name for p in directory.iterdir())
+    except FileNotFoundError:
+        return [], None
+    except OSError as exc:
+        return None, "{} could not be listed: {}".format(directory, exc)
+    return [name for name in entries if FRAGMENT.match(name)], None
+
+
+def test_the_section_is_current_for_the_release_being_prepared():
+    """While fragments are waiting to be folded, the marker must name the newest cut release.
+
+    The failure this catches is #206 exactly: the section was derived against `v0.3.0`, `v0.4.0`
+    shipped, a 0.5.0 delta accumulated, and every check above stayed green because `v0.3.0` has a
+    heading in `CHANGELOG.md`.
+
+    Between releases there is nothing to key on -- the version being prepared is not on disk, and
+    neither is the release commit -- so the check reports that it did not run instead of passing.
+    """
+    fragments, blocked = _pending_fragments(_fragment_dir())
+    if blocked is not None:
+        raise AssertionError(
+            "could not tell whether a release is pending: {}. Not the same as no release being "
+            "pending, and not something to pass over.".format(blocked)
+        )
+    if not fragments:
+        pytest.skip(
+            "no unfolded changelog fragments, so no release is being prepared and there is no "
+            "version to key the marker to. UNTESTED here: whether the section is current -- it "
+            "becomes testable again as soon as the next fragment lands."
+        )
+
+    cut = _changelog_releases(CHANGELOG.read_text(encoding="utf-8"))
+    assert cut, "CHANGELOG.md records no released version, so the marker cannot be keyed to one"
+    newest_cut = max(cut, key=_version_key)
+
+    named = _releases(_section(CLAUDE_MD.read_text(encoding="utf-8")))
+    assert named, "the section names no release; see the check above"
+    newest_named = max(named, key=_version_key)
+
+    assert newest_named == newest_cut, (
+        "{} fragment(s) are waiting to be folded, so a release is being prepared -- but the "
+        "newest release the '{}' section names is `v{}`, while `v{}` has already shipped. The "
+        "section is a release behind, and its own instruction is to re-derive it at each release "
+        "rather than to edit its numbers. Re-run the commands against this tree and write what "
+        "they return.".format(len(fragments), SECTION_HEADING, newest_named, newest_cut)
+    )
+
+
+#: Controls for the check above. A stale section and a current one, both fabricated, so a detector
+#: that stopped matching anything fails here rather than passing quietly over the real file.
+STALE = SECTION_HEADING + "\n\nMeasured at `9aed28e`, after `v0.3.0`.\n"
+CURRENT = SECTION_HEADING + "\n\nMeasured at `35abbcf`, after `v0.4.0`, succeeding `v0.3.0`.\n"
+CHANGELOG_FIXTURE = "## [Unreleased]\n\n## [0.4.0] - 2026-08-15\n\n## [0.3.0] - 2026-08-15\n"
+
+
+def test_the_staleness_detector_fires_and_stays_silent_on_a_current_section():
+    cut = _changelog_releases(CHANGELOG_FIXTURE)
+    assert cut == ["0.4.0", "0.3.0"], "the changelog release detector stopped matching headings"
+    newest_cut = max(cut, key=_version_key)
+
+    stale = max(_releases(_section(STALE)), key=_version_key)
+    current = max(_releases(_section(CURRENT)), key=_version_key)
+
+    assert stale != newest_cut, "the detector would not have fired on the #206 section"
+    assert current == newest_cut, "the detector fires on a section that is current"
+
+
+def test_a_fragment_is_told_from_the_readme_beside_it():
+    """The skip arm is reached by finding no fragments, so what counts as one is load-bearing."""
+    assert FRAGMENT.match("206.fixed.md")
+    assert not FRAGMENT.match("README.md")
+    assert not FRAGMENT.match("206.fixed.md.bak")
+
+
+def test_an_unreadable_fragment_directory_is_not_read_as_an_empty_one(tmp_path):
+    """The third state, established rather than assumed: attempt the listing, skip if it took."""
+    blocked_dir = tmp_path / "changelog.d"
+    blocked_dir.mkdir()
+    (blocked_dir / "1.fixed.md").write_text("x", encoding="utf-8")
+    blocked_dir.chmod(0o000)
+    try:
+        try:
+            list(blocked_dir.iterdir())
+        except OSError:
+            denied = True
+        else:
+            denied = False
+        if not denied:
+            pytest.skip(
+                "this filesystem/user still lists a 0o000 directory, so the deny could not be "
+                "established. UNTESTED here: that an unreadable fragment directory reports "
+                "'could not look' rather than 'no release pending'."
+            )
+        fragments, reason = _pending_fragments(blocked_dir)
+        assert fragments is None, "an unreadable directory came back as a list of fragments"
+        assert reason and "could not be listed" in reason
+    finally:
+        blocked_dir.chmod(0o700)
+
+
+def test_an_absent_fragment_directory_is_no_release_pending_rather_than_an_error(tmp_path):
+    """The positive control for the case above: absence is a real answer, and a different one."""
+    fragments, reason = _pending_fragments(tmp_path / "nothing-here")
+    assert fragments == [], "an absent directory should mean no release is pending"
+    assert reason is None
