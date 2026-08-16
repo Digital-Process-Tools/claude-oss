@@ -236,17 +236,37 @@ def test_returned_nothing_is_refused_for_the_missing_reason_not_for_the_enum():
     )
 
 
-def test_returned_nothing_did_not_leak_into_every_survey():
-    """Scope control, paired with a must-fire half.
+def test_returned_nothing_is_a_review_state_and_only_a_review_state():
+    """The scope of the new state, asserted in both directions at once.
 
-    A spawn can go quiet; a docs sweep cannot -- there is no second party to lose.
-    Widening the shared survey enum would make `returned-nothing` spellable on
-    `docs`, `claims`, `adjacent` and `blocked`, where it means nothing and would
-    read as a state somebody chose.
+    A spawn can go quiet; a docs sweep cannot -- there is no second party to
+    lose. So `returned-nothing` belongs on the surveys whose items come back
+    from somebody else and nowhere else, and widening the shared survey enum
+    instead would have made it spellable on `docs`, `claims`, `adjacent` and
+    `blocked`, where it means nothing and would read as a state somebody chose.
+
+    Both halves are in one test on purpose. The refusal half alone passes
+    byte-identically against the code before this change -- `docs` never used
+    the review survey in either version -- so on its own it says nothing about
+    whether the scoping was implemented, only that the shared enum was left
+    alone. Joined to the accept half it fails there, on the accept half, which
+    is what makes the pair a measurement of this change rather than a
+    restatement of the status quo.
     """
-    clean = _example()
-    clean["docs"]["state"] = "checked"
-    assert report_schema.validate(clean) == [], "the control itself does not validate"
+    accepted = _example()
+    accepted["review"]["findings"] = {
+        "state": "returned-nothing",
+        "reason": "the reviewer came back empty; one finding lost",
+        "items": [],
+    }
+    assert report_schema.validate(accepted) == [], (
+        "a review survey cannot spell returned-nothing, so the scoping claim below "
+        "is about a state that does not exist"
+    )
+
+    control = _example()
+    control["docs"]["state"] = "checked"
+    assert report_schema.validate(control) == [], "the docs control itself does not validate"
 
     leaked = _example()
     leaked["docs"] = {"state": "returned-nothing", "reason": "x", "items": []}
