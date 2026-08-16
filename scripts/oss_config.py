@@ -191,6 +191,51 @@ def repo_problem(value):
     return None
 
 
+# The one consumer of `repo` that did not route through the guard above (#207).
+#
+# `bin/oss-workspace` derives SUPERTOOL_WATCH_NAME from `repo` at SESSION START --
+# before /oss:tick, before doctor, before anything else reads the config -- and did
+# it with a bare `re.sub` whose character class permits `.`, `..` and a leading `-`.
+# `scaffold.repo_slug` refuses those and `doctor` refuses those; the launcher folded
+# them into a name and exported it, and supertool turns that name into a socket path
+# and a poller state directory.
+#
+# Whether such a name TRAVERSES is a fact about the dependency's path construction
+# rather than about this module, and the issue recorded it unestablished. Routing
+# through `repo_problem` is what makes the question moot: a validated slug carries
+# exactly one slash, the fold below always turns it into a dash, so the result holds
+# no separator and can never be `.` or `..` exactly.
+WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def watch_channel_name(value):
+    """`(name, problem)` -- the watch channel name derived from `repo`, or why not.
+
+    A pair rather than a raise, because the caller is a shell launcher whose job is
+    to OPEN A SESSION. A refusal here costs the private channel and nothing else, and
+    `bin/oss-workspace` already has three arms that derive nothing, say so on stderr
+    and launch anyway: no `.oss.json`, an unreadable one, and one declaring no repo.
+    Exiting non-zero would trade the product for an enhancement, and substituting
+    some other name would invent a private socket nobody publishes to -- a quiet
+    wrong state where the shared default socket is at least a loud one.
+
+    Null is refused here and deferred by `repo_problem`, the one value the two
+    disagree on. That deferral exists so `validate()` keeps sole ownership of the
+    sentence about a required key being null; nothing in the launcher's path calls
+    `validate()`, so an unrefused null would derive the string `None` and export it.
+
+    The fold survives the validation rather than being replaced by it: `REPO_RE`
+    accepts any pair of non-slash, non-whitespace runs, so characters a socket path
+    should not carry still reach it.
+    """
+    if not isinstance(value, str):
+        return None, "repo: expected 'owner/name', got {!r}".format(value)
+    problem = repo_problem(value)
+    if problem:
+        return None, problem
+    return WATCH_NAME_UNSAFE_RE.sub("-", value), None
+
+
 # The other two values that reach a file this plugin writes into somebody else's
 # repository, and the two #173 did not reach (#180).
 #

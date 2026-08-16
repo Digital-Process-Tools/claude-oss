@@ -182,7 +182,7 @@ def _with_channel_consumer(home, bindir):
 
 
 def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
-        watch_name_env=None):
+        watch_name_env=None, launcher=None):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
@@ -223,7 +223,7 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
         [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
     )
     done = subprocess.run(
-        [BASH, str(LAUNCHER), *args],
+        [BASH, str(launcher or LAUNCHER), *args],
         cwd=str(cwd),
         env=env,
         stdout=subprocess.PIPE,
@@ -592,15 +592,22 @@ def test_nothing_to_derive_from_is_named_rather_than_silently_shared(tmp_path):
 def test_the_derived_name_is_sanitised_into_something_a_socket_path_can_hold(tmp_path):
     """The name derives a filesystem path, so a slug reaches one. Every character
     outside [A-Za-z0-9._-] becomes `-`; the slash separating owner from name is the
-    common case and a space is the one that would otherwise split an argv.
+    common case.
+
+    Sanitising still has work to do AFTER the validator, which is why #207 kept it
+    rather than replacing it: `repo_problem` accepts any pair of non-slash,
+    non-whitespace runs, so `+` reaches here and a socket path should not carry it.
+    The value this test used to carry -- `Org.Name/repo with spaces` -- moved to
+    the refusal test below, because the validator refuses whitespace outright and
+    a launcher sanitising what the rest of the plugin rejects is #207 itself.
     """
     repo = _repo(tmp_path)
     (repo / ".oss.json").write_text(
-        '{"repo": "Org.Name/repo with spaces"}', encoding="utf-8"
+        '{"repo": "Org.Name/re+po"}', encoding="utf-8"
     )
     done, argv = run(repo, with_channel=True)
     assert argv, done.stderr
-    assert _exported_watch_name(repo) == "Org.Name-repo-with-spaces", done.stderr
+    assert _exported_watch_name(repo) == "Org.Name-re-po", done.stderr
 
 
 # --- and the three states the derivation collapsed into two -------------------
@@ -680,6 +687,139 @@ def test_an_unreadable_supertool_config_does_not_fall_through_to_the_derivation(
     repo = _repo(tmp_path)
     (repo / ".supertool.json").write_text("{not valid json", encoding="utf-8")
     done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    assert "owner-name" not in done.stderr, done.stderr
+
+
+# --- a repo value the validator refuses (#207) --------------------------------
+#
+# `DERIVE_NAME` folded every character outside [A-Za-z0-9._-] to a dash and
+# exported whatever fell out, while `scaffold.repo_slug` and `doctor` both route
+# the same value through `oss_config.repo_problem`. So `repo: ".."` -- refused by
+# the validator in as many words -- derived the name `..`, and `../../etc`
+# derived `..-..-etc`, and the launcher runs at SESSION START, before any of the
+# consumers that would have refused it.
+#
+# Whether such a name TRAVERSES is a fact about the dependency's path
+# construction rather than about this launcher, and #207 recorded it unestablished
+# on purpose. Measured here against supertool 0.46.0 on 2026-08-16: it does not.
+# That version applies a name pattern of its own to SUPERTOOL_WATCH_NAME, refuses
+# `..` by name, and falls back to the default paths. So the harm that is OBSERVED
+# is not traversal -- it is that the launcher hands its consumer a name the
+# consumer then discards, putting the session on the shared default socket by a
+# route nothing in this repository reports. Which of those two it is depends on a
+# version of somebody else's package; that the value was never validated does not.
+#
+# The refusal is the FOURTH arm of a shape this file already has: no `.oss.json`,
+# an unreadable one, and one declaring no repo each derive nothing, say so on
+# stderr, and open the session anyway. A launcher that exited non-zero over a bad
+# config would be a worse trade -- the channel is an enhancement and the session
+# is the product -- and one that fell back to some other name would invent a
+# private socket nobody publishes to, which is the quiet wrong state the block
+# above already refuses. So every assertion below also checks the session opened.
+
+REFUSED_REPO_VALUES = ["..", ".", "../../etc"]
+
+
+@pytest.mark.parametrize("value", REFUSED_REPO_VALUES)
+def test_a_repo_the_validator_refuses_derives_no_watch_name(tmp_path, value):
+    """The three values #207 tabulates, asserted on the exported name.
+
+    Read out of the process the launcher exec'd, never out of the script's text:
+    before the fix these exported `..`, `.` and `..-..-etc` respectively, so the
+    empty string here cannot be produced by a launcher that does nothing.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text(json.dumps({"repo": value}), encoding="utf-8")
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "SHARED DEFAULT" in done.stderr, done.stderr
+    # The validator's own sentence, not a second one invented at this call site:
+    # two wordings for one fact is how a guard and its receipt drift apart.
+    assert "expected 'owner/name'" in done.stderr, done.stderr
+    assert repr(value) in done.stderr, done.stderr
+
+
+def test_the_refusal_did_not_delete_the_derivation(tmp_path):
+    """The must-fire half of the pair above.
+
+    Without it, a launcher that simply stopped deriving anything at all would
+    satisfy every assertion in `test_a_repo_the_validator_refuses_...`, and #191
+    -- the whole reason the derivation exists -- would be silently deleted by the
+    fix to #207.
+    """
+    repo = _repo(tmp_path)
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "owner-name", done.stderr
+    assert "expected 'owner/name'" not in done.stderr, done.stderr
+
+
+def test_a_repo_with_a_space_is_refused_rather_than_sanitised_into_a_name(tmp_path):
+    """The one behaviour #207 deliberately drops, pinned so it is not an accident.
+
+    `Org.Name/repo with spaces` used to derive `Org.Name-repo-with-spaces`. It is
+    not a repository slug, `scaffold.repo_slug` has refused it since #173, and a
+    launcher quietly accepting what the rest of the plugin rejects is the
+    asymmetry the issue is about.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".oss.json").write_text(
+        '{"repo": "Org.Name/repo with spaces"}', encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True)
+    assert argv, done.stderr
+    assert _exported_watch_name(repo) == "", done.stderr
+    assert "Org.Name-repo-with-spaces" not in done.stderr, done.stderr
+
+
+# There is deliberately no test here asserting that these stderr receipts are
+# ASCII, and the reason is worth writing down because a first pass at #207 added
+# one and it was wrong in both directions.
+#
+# `sys.stderr` defaults to the `backslashreplace` error handler on every CPython
+# 3, measured against PYTHONIOENCODING of ascii, cp1252 and cp437: a value the
+# codepage cannot represent is escaped, never raised. So there is nothing to guard
+# on this stream, and the `ascii_only()` helper written to guard it was deleted
+# rather than kept as harmless -- code justified by a comment that is false is the
+# defect this repository is named after, wearing a fix's clothes.
+#
+# The assertion itself was also platform-vacuous. `assert "中文" not in stderr`
+# passes on a Windows leg, where the codepage forces the escape, and fails on
+# macOS and Linux, where UTF-8 writes the character through. A test whose verdict
+# is decided by the runner's locale reports coverage it does not have.
+#
+# `sys.stdout` is the stream that IS strict, and the one place foreign text
+# reaches it -- `print("name=" + names[0])` in READ_NAME above -- is reported for
+# filing rather than fixed here: it is a different defect (a declared name that
+# kills the reader, so the launcher silently derives over a declaration that
+# exists) and it wants its own change.
+
+
+def _launcher_without_its_scripts(tmp_path):
+    """A copy of the launcher under a plugin root carrying no `scripts/`.
+
+    The validator is imported from the plugin's own tree, so "the validator could
+    not be loaded" is a real third state rather than a hypothetical one, and it
+    has to read as `could not check`: nothing derived, said out loud. Falling back
+    to the unvalidated slug there would be the absence-produced-by-the-tool this
+    repository is named after, one layer down.
+    """
+    fake = tmp_path / "_fakeplugin"
+    (fake / "bin").mkdir(parents=True)
+    dst = fake / "bin" / "oss-workspace"
+    shutil.copy2(str(LAUNCHER), str(dst))
+    return dst
+
+
+def test_a_validator_that_cannot_be_imported_derives_nothing_and_says_so(tmp_path):
+    repo = _repo(tmp_path / "repo")
+    done, argv = run(
+        repo, with_channel=True, launcher=_launcher_without_its_scripts(tmp_path)
+    )
     assert argv, done.stderr
     assert _exported_watch_name(repo) == "", done.stderr
     assert "SHARED DEFAULT" in done.stderr, done.stderr
