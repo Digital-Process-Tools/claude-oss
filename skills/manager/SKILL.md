@@ -312,6 +312,33 @@ this file is not allowed to carry. `scripts/doctor.py` already derives both halv
 `declared_dependencies()` reads the manifest and `dependency_repositories(names)` resolves each name
 to a repository URL off that dependency's own installed manifest.
 
+**Run that derivation rather than deciding from memory whether a tracker exists.** It is two calls,
+it answers with URLs rather than with a judgement, and it works from **any** repository this loop is
+pointed at, because the manifest it reads is the plugin's own rather than the host project's.
+
+### When the loop is running over a project that is not its own
+
+This is the ordinary case, not the exception: the loop is a tool somebody installed to maintain
+*their* repository. Working there, you will find defects in the tooling itself — the rule layers it
+writes into their tree, the owned files, the briefs, an op the brief mandates, the launcher, the
+diagnostic. **Those are reported to the tooling's own trackers, and reporting them is encouraged
+rather than exceptional.** Finding one is a good outcome and the report is the return on it.
+
+**Never onto the host project's tracker.** Their maintainer did not write that code, cannot patch it,
+and in most cases cannot even see it declared anywhere — so the report is noise to the only person
+reading their board, and silence to the board that could ship the fix. That is the dependency section
+above failing in the direction nobody notices, because an issue was filed and it looks like the work
+was done.
+
+The derivation names most of those boards for you. The one it cannot name is the loop's own
+repository — nothing declares itself as its own dependency — and that is precisely the one that owns
+the furniture in their tree. Read an absent name as *not derivable*, never as *no tracker*: route it
+deliberately, and say in the report which board you sent it to.
+
+Two things do not change when the loop is a guest. The embargo column still decides whether a finding
+goes to a public tracker at all. And the host project's own defects still belong to the host project —
+the split is who owns the code, never who is standing closest.
+
 Within that set, two cases and they are not the same duty:
 
 - **A dependency the same maintainer owns.** File it. There are filing rights, the roadmap is the

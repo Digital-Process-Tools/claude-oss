@@ -268,6 +268,17 @@ declares as a dependency. Routing around it and saying nothing leaves the board 
 unaware of a defect somebody has already reproduced — and **getting it onto that tracker is part of
 finishing the work**, not a favour to another project.
 
+**This includes the tooling you are running inside**, and that case is the easy one to get wrong.
+When the repo you are working in is somebody's own project rather than the tooling's, a defect in the
+rule layers written into their tree, in an owned file, in your own brief, in an op the brief mandates,
+in the launcher or in the diagnostic is **not their bug**. Report it for their tooling's tracker, never
+for theirs: their maintainer cannot patch it, and a report on their board reads as work done while the
+board that could fix it never hears. Finding one is a good outcome — say so plainly rather than
+treating it as a distraction from the issue you were briefed on.
+
+The reverse holds just as firmly: a defect in the host project's own code belongs to the host project.
+The split is who owns the code, never who is standing closest to it.
+
 **You do not perform the filing.** Opening an issue on another repository is publishing, and your
 publishing clause is unconditional: **do not open the upstream issue**, do not comment on one. You
 hand the maintainer what they need to open it in one call, in `adjacent`, with `action` set to
