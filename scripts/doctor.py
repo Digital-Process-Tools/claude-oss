@@ -2389,8 +2389,11 @@ def _jit_manifest_paths(root):
     diagnostic answering a question nobody asked.
 
     ``.claude-plugin/plugin.json`` may name the file. When it names one this cannot
-    resolve -- ``..``, a drive, empty -- ``rejected`` carries the string **as the plugin
-    wrote it** and there are no entries at all. It deliberately does not fall back to the
+    resolve -- ``..``, a drive, a backslash, empty -- ``rejected`` carries the string **as
+    the plugin wrote it**, followed by the refusal's own reason in parentheses, and there
+    are no entries at all. Both halves are needed: the string alone left #258's
+    backslash case looking like a typo in a filename, and the reason alone would name a
+    rule without the value it was applied to. It deliberately does not fall back to the
     convention, and that is the stronger of the two available answers: falling back reads
     a file the plugin did not name, which is #241's own substitution one field over. The
     cheap half of that bug is a message quoting the wrong path; the expensive half is a
@@ -2407,41 +2410,61 @@ def _jit_manifest_paths(root):
     except (OSError, ValueError):
         named = None
     if named:
-        parts = _jit_path_parts(named)
+        parts, reason = _jit_path_parts(named)
         if not parts:
-            return [], _one_line(named)
+            return [], "{} ({})".format(_one_line(named), reason)
         return [(root.joinpath(*parts), "/".join(parts))], None
     parts = list(JIT_HOOK_MANIFEST)
     return [(root.joinpath(*parts), "/".join(parts))], None
 
 
 def _jit_path_parts(token):
-    """A manifest path as components, or ``None`` if it is not one this can resolve.
+    """``(parts, reason)`` -- a manifest path as components, or why it was not resolved.
 
-    ``os.sep`` rather than a hardcoded separator: a Windows-style path in a manifest
-    splits on the platform that wrote it, and a backslash stays an ordinary filename
-    character on POSIX, where it legally is one. A component that would climb out of the
-    install root resolves to nothing rather than to a file outside the tree.
+    ``/`` is the separator on every platform and a backslash is refused rather than
+    guessed at. Splitting on ``os.sep`` made the answer a property of the runner (#258):
+    ``custom\\hooks.json`` was two components on Windows and one literal filename on the
+    eight POSIX legs, so one declaration produced ``reads`` on a fifth of the matrix and
+    ``could-not-determine`` -- blaming a file that was in fact present -- on the rest.
 
-    Two components are refused, and the second is Windows-only in effect but guarded
-    unconditionally because a guard that only fires on the platform that broke is a guard
-    nobody re-reads. ``..`` climbs out. A component carrying a colon is a drive or a
-    stream specifier: ``PureWindowsPath("C:/plugin").joinpath("D:", "x.sh")`` is
+    Refusing is the conservative half of a real choice and the permissive half was
+    available: treating ``\\`` as a separator everywhere would resolve a Windows-authored
+    declaration on all thirteen legs, uniformly. It is declined because a backslash is a
+    legal filename character on POSIX, so accepting it reads a file the manifest did not
+    name whenever the guess is wrong -- #241's substitution one field over, and here it
+    would convert an honest non-answer into a confident one. Nothing here can tell the two
+    intentions apart, and there is no authority this could transcribe and measure saying
+    which the runtime accepts, so the value goes to the third state carrying its reason
+    rather than to a guess. A plugin that wants to be read writes ``/``, which resolves
+    everywhere.
+
+    Two further components are refused, and the second is Windows-only in effect but
+    guarded unconditionally because a guard that only fires on the platform that broke is
+    a guard nobody re-reads. ``..`` climbs out. A component carrying a colon is a drive or
+    a stream specifier: ``PureWindowsPath("C:/plugin").joinpath("D:", "x.sh")`` is
     ``D:x.sh`` -- the anchor resets and the join lands outside the install root
     entirely, which would then be stat'ed and read. A colon is not a legal filename
     character on Windows and is vanishingly rare on POSIX, so refusing it costs nothing
     and is one refusal rather than a table of platform behaviours.
+
+    The reason is returned rather than logged because the caller writes it into the
+    message: an unresolvable declaration and an absent file are two situations, and #258
+    was the second one's sentence being printed about the first.
     """
-    parts = [
-        part
-        for part in token.replace(os.sep, "/").split("/")
-        if part not in ("", ".")
-    ]
-    if not parts or ".." in parts:
-        return None
+    if "\\" in token:
+        return None, (
+            "a backslash, which is a separator on Windows and an ordinary filename "
+            "character on POSIX -- nothing here can tell which was meant, and guessing "
+            "would read a file the plugin did not name"
+        )
+    parts = [part for part in token.split("/") if part not in ("", ".")]
+    if not parts:
+        return None, "no component left to resolve"
+    if ".." in parts:
+        return None, "a component that climbs out of the install root"
     if any(":" in part for part in parts):
-        return None
-    return parts
+        return None, "a component carrying a colon, which resets the anchor of a join"
+    return parts, None
 
 
 def _jit_commands(node, out):
@@ -2509,7 +2532,7 @@ def _jit_hook_files(roots):
                     cleaned = token.replace("${CLAUDE_PLUGIN_ROOT}", "").replace(
                         "$CLAUDE_PLUGIN_ROOT", ""
                     )
-                    parts = None if "$" in cleaned else _jit_path_parts(cleaned)
+                    parts = None if "$" in cleaned else _jit_path_parts(cleaned)[0]
                     candidate = root.joinpath(*parts) if parts else None
                     if candidate is not None and _jit_is_file(candidate):
                         hooks.append(candidate)
@@ -3167,6 +3190,32 @@ def plugin_tree_digest(root):
     given, so ``scripts -> /`` in a tracked repo would be an unbounded read inside a
     diagnostic contracted to always finish. Declining is recorded as unreadable, which
     is what it is: nothing under it was seen.
+
+    **A symlinked file is declined on the same rule (#279), and the top-level decline
+    used to be the whole of it.** ``os.walk`` yields a symlinked file as an ordinary
+    entry in ``filenames`` and ``read_bytes()`` follows it, so ``agents/leaked.md ->``
+    anywhere had that file's bytes folded into the digest while ``unreadable`` stayed
+    empty -- a receipt that could not be told from a tree with no symlink in it.
+
+    Declining is chosen over resolving-and-containment-checking, and the two produce
+    different digests for the same repository, so it is a decision rather than a detail.
+    Resolving keeps a legitimately symlinked file inside the tree measurable; it also
+    requires deciding what "inside" means against ``realpath``, which is where the
+    platforms stop agreeing -- ``/var`` against ``/private/var``, case folding, short
+    names -- and a containment test that is wrong on one leg reads a file outside the
+    tree with a receipt saying it did not. Declining needs no such test, matches the
+    decline already applied to a symlinked directory so one sentence covers both, and
+    fails toward *unknown*. The cost is real and is not hidden: a symlinked file inside
+    the tree is not compared, and says so in ``unreadable``.
+
+    Non-regular files are a **separate** refusal, and the one that stopped a release:
+    a FIFO inside the tree with no symlink involved blocks in ``open()`` until somebody
+    writes to it, so this never returned at all and ``doctor``'s *exit 0 always, one
+    VERDICT line* contract was unreachable from a launcher that runs it before every
+    session. Both refusals ride on one ``os.lstat``, which neither follows a link nor
+    opens anything. That is a guard against a hang and a misread, not a security
+    boundary: nothing here defends against a path swapped between the ``lstat`` and the
+    read, and a diagnostic is the wrong place to claim it does.
     """
     root = Path(root)
     files = {}
@@ -3188,19 +3237,50 @@ def plugin_tree_digest(root):
             for filename in sorted(filenames):
                 targets.append(Path(dirpath) / filename)
     for relative in COMPARED_FILES:
-        targets.append(root.joinpath(*relative.split("/")))
+        parts = relative.split("/")
+        # The `lstat` below refuses a symlinked leaf, and refuses nothing above it: an
+        # ancestor is followed before the leaf is ever stat'ed, so `.claude-plugin ->`
+        # elsewhere reads a manifest outside the tree exactly the way the leaf used to
+        # (#279). The compared *directories* need no equivalent -- their tops are checked
+        # above and `os.walk` declines symlinked subdirectories on its own.
+        walked, linked = root, None
+        for part in parts[:-1]:
+            walked = walked / part
+            if os.path.islink(str(walked)):
+                linked = _relative_key(root, walked)
+                break
+        if linked:
+            unreadable[relative] = (
+                "declined: {} is a symlink, so nothing under it was read".format(linked)
+            )
+            continue
+        targets.append(root.joinpath(*parts))
 
     for path in targets:
+        key = _relative_key(root, path)
+        try:
+            status = os.lstat(str(path))
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            unreadable[key] = exc.__class__.__name__
+            continue
+        if stat.S_ISLNK(status.st_mode):
+            unreadable[key] = "declined: it is a symlink, so what it points at was not read"
+            continue
+        if not stat.S_ISREG(status.st_mode):
+            unreadable[key] = (
+                "declined: it is not a regular file, so opening it could never return"
+            )
+            continue
         try:
             data = path.read_bytes()
         except FileNotFoundError:
             continue
         except OSError as exc:
-            unreadable[_relative_key(root, path)] = exc.__class__.__name__
+            unreadable[key] = exc.__class__.__name__
             continue
-        files[_relative_key(root, path)] = hashlib.sha256(
-            data.replace(b"\r\n", b"\n")
-        ).hexdigest()
+        files[key] = hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
     return files, unreadable
 
 

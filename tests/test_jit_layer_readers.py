@@ -527,18 +527,121 @@ def test_a_manifest_component_that_would_leave_the_install_root_resolves_to_noth
     Paired with the ordinary paths it must keep accepting, so a `_jit_path_parts` that
     refused everything would fail here rather than pass.
     """
-    assert doctor._jit_path_parts("scripts/pre-tool-hook.sh") == [
+    assert doctor._jit_path_parts("scripts/pre-tool-hook.sh")[0] == [
         "scripts",
         "pre-tool-hook.sh",
     ]
-    assert doctor._jit_path_parts("/scripts/pre-tool-hook.sh") == [
+    assert doctor._jit_path_parts("/scripts/pre-tool-hook.sh")[0] == [
         "scripts",
         "pre-tool-hook.sh",
     ]
-    assert doctor._jit_path_parts("../../etc/evil.sh") is None
-    assert doctor._jit_path_parts("D:/evil/x.sh") is None
-    assert doctor._jit_path_parts("C:evil.sh") is None
-    assert doctor._jit_path_parts("") is None
+    for refused in ("../../etc/evil.sh", "D:/evil/x.sh", "C:evil.sh", ""):
+        parts, reason = doctor._jit_path_parts(refused)
+        assert parts is None, (refused, parts)
+        # A refusal with no reason is the state without the sentence that makes it
+        # actionable, and the caller prints this verbatim (#258).
+        assert reason, refused
+
+
+@pytest.mark.parametrize("running_sep", ["/", "\\"])
+def test_a_declared_manifest_path_resolves_the_same_way_on_every_platform(monkeypatch, running_sep):
+    """The components a declaration resolves to must not depend on who is running the check.
+
+    #258. `_jit_path_parts` used to split on `os.sep`, so `custom\\hooks.json` was two
+    components on Windows and one literal filename on the eight POSIX legs -- the same
+    declaration answering two different questions depending on the runner. The injection is
+    measured rather than assumed: `os.sep` is the only separator constant this function
+    reads (nothing else in `doctor.py` reads one), and rebinding the `os` attribute does not
+    touch `posixpath.sep`, so `pathlib` and the fixtures underneath are unaffected. That is
+    what makes this a simulation of the Windows leg for this one function, and not a claim
+    about Windows generally.
+
+    The accepting half runs under the same injection, so a `_jit_path_parts` that refused
+    everything would fail here rather than pass.
+    """
+    monkeypatch.setattr(os, "sep", running_sep)
+    assert os.sep == running_sep, "the separator injection did not take"
+
+    assert doctor._jit_path_parts("scripts/pre-tool-hook.sh")[0] == [
+        "scripts",
+        "pre-tool-hook.sh",
+    ]
+    parts, reason = doctor._jit_path_parts("custom\\hooks.json")
+    assert parts is None, parts
+    assert "backslash" in reason, reason
+
+
+@pytest.mark.parametrize("running_sep", ["/", "\\"])
+def test_a_backslash_in_a_declared_manifest_path_is_refused_rather_than_guessed(
+    tmp_path, monkeypatch, running_sep
+):
+    """A declaration this cannot read is a non-answer with its own reason, on every leg.
+
+    #258, end to end and in both directions. The fixture puts a real, readable manifest at
+    `custom/hooks.json` and declares it as `custom\\hooks.json`. Before the fix that tree
+    answered `reads` when `os.sep` was a backslash and `could-not-determine` when it was a
+    slash -- and the `could-not-determine` blamed a missing file, which is a wrong reason
+    inside an honest state.
+
+    The choice being asserted is the conservative one: a backslash is never treated as a
+    separator, because on POSIX it legally is a filename character and nothing here can tell
+    which the author meant. Guessing would resolve to a file the manifest did not name,
+    which is #241's substitution one field over. So the value is refused with a named reason
+    and nothing is measured -- never a confident answer this has not earned.
+
+    Must-fire control in the same injected environment: the same tree with a
+    forward-slashed declaration resolves and answers `reads`.
+    """
+    monkeypatch.setattr(os, "sep", running_sep)
+    assert os.sep == running_sep, "the separator injection did not take"
+
+    manifest = json.dumps(
+        {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-hook.sh",
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    )
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={
+            ".claude-plugin/plugin.json": json.dumps(
+                {"name": PLUGIN, "hooks": "custom/hooks.json"}
+            ),
+            "custom/hooks.json": manifest,
+        },
+    )
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+    cache, record = _cache(
+        tmp_path / "subject",
+        {"pre-tool-hook.sh": NAMES},
+        manifest=False,
+        extra={
+            ".claude-plugin/plugin.json": json.dumps(
+                {"name": PLUGIN, "hooks": "custom\\hooks.json"}
+            ),
+            "custom/hooks.json": manifest,
+        },
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "custom\\hooks.json" in finding["detail"], finding["detail"]
+    assert "backslash" in finding["detail"], finding["detail"]
+    # Not "the file is missing": it is there, under the name the plugin did not write.
+    assert "carries no hook manifest" not in finding["detail"], finding["detail"]
 
 
 def test_an_enumeration_inside_a_comment_is_not_a_measurement(tmp_path):

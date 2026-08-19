@@ -13,10 +13,12 @@ a detector that cannot see anything prints, so each silence here sits in the sam
 fixture as a firing.
 """
 
+import hashlib
 import json
 import os
 import stat
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -301,6 +303,134 @@ def test_a_symlinked_compared_directory_is_declined_rather_than_followed(tmp_pat
     assert level == "WARN", message
     assert "symlink" in message, message
     assert "secret.txt" not in message, message
+
+
+def test_a_symlinked_file_inside_a_compared_directory_is_declined_too(tmp_path):
+    """#279. The decline covered the top of the tree and nothing under it.
+
+    `os.walk` refuses symlinked *sub*directories and never sees a symlinked *file* as
+    anything but an ordinary entry in `filenames`, and `read_bytes()` follows it. So a
+    tracked `agents/leaked.md -> /etc/passwd` had its bytes folded into the digest, and
+    `unreadable` stayed empty -- a receipt byte-identical to a tree that had no symlink
+    in it at all, which is this repository's own defect class.
+
+    Declining rather than resolving-and-containment-checking is the choice here, argued
+    in `plugin_tree_digest`'s docstring. The cost is asserted rather than hidden: a
+    symlinked file inside the tree is *unknown*, and this test requires it to say so.
+
+    Two must-fire halves in the same fixture, because "not in files" is what a digest
+    that read nothing also prints: the ordinary file beside it is hashed, and the
+    identity line reports that the scan was partial.
+    """
+    tree = _plugin_tree(tmp_path / "tree")
+    outside = tmp_path / "outside" / "secret.txt"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"not ours\n")
+    (tree / "agents" / "real.md").write_bytes(b"ours\n")
+    victim = tree / "agents" / "leaked.md"
+    try:
+        victim.symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(
+            "symlink to a file refused ({}); whether a symlinked FILE is declined, and "
+            "whether it lands in `unreadable`, both went untested here".format(exc)
+        )
+    assert os.path.islink(str(victim)), "the symlink fixture did not take"
+
+    files, unreadable = doctor.plugin_tree_digest(tree)
+
+    assert "agents/real.md" in files, files
+    assert "agents/leaked.md" not in files, files
+    assert "agents/leaked.md" in unreadable, unreadable
+    assert "symlink" in unreadable["agents/leaked.md"], unreadable
+    outside_digest = hashlib.sha256(outside.read_bytes()).hexdigest()
+    assert outside_digest not in files.values(), files
+    assert "could not be read" in doctor._tree_identity(tree, files, unreadable)
+
+
+def test_a_non_regular_file_is_declined_rather_than_opened(tmp_path):
+    """#279's worse half, and a separate decision: a FIFO with no symlink involved.
+
+    Opening a FIFO with no writer blocks forever, so `read_bytes()` never returned and
+    the diagnostic's *exit 0 always, one VERDICT line* contract was unreachable -- from
+    inside a launcher that runs it before every session with no timeout.
+
+    The guard is `os.lstat` before the open, which neither follows nor blocks. The hang
+    is asserted against rather than reasoned about: the call runs in a daemon thread and
+    the thread must finish. A test that only checked the return value would pass by
+    hanging the suite instead.
+    """
+    tree = _plugin_tree(tmp_path / "tree")
+    victim = tree / "commands" / "pipe.md"
+    if not hasattr(os, "mkfifo"):
+        pytest.skip(
+            "os.mkfifo does not exist on this platform, so whether a non-regular file "
+            "is declined rather than opened went untested here"
+        )
+    try:
+        os.mkfifo(str(victim))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(
+            "mkfifo refused ({}); whether a non-regular file is declined rather than "
+            "opened went untested here".format(exc)
+        )
+    assert stat.S_ISFIFO(os.lstat(str(victim)).st_mode), "the FIFO fixture did not take"
+
+    outcome = {}
+
+    def run():
+        outcome["result"] = doctor.plugin_tree_digest(tree)
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(20)
+    assert not worker.is_alive(), (
+        "plugin_tree_digest did not return within 20s -- it opened the FIFO (#279)"
+    )
+
+    files, unreadable = outcome["result"]
+    # Must-fire beside it: the ordinary files in the same tree were still read.
+    assert "commands/doctor.md" in files, files
+    assert "commands/pipe.md" not in files, files
+    assert "commands/pipe.md" in unreadable, unreadable
+    assert "regular file" in unreadable["commands/pipe.md"], unreadable
+
+
+def test_a_symlinked_ancestor_of_a_compared_file_is_declined_too(tmp_path):
+    """The same containment hole one level up, found while fixing #279.
+
+    `os.lstat` refuses a symlinked leaf and refuses nothing above it, so
+    `.claude-plugin -> /elsewhere` still had its manifest read from outside the tree.
+    The compared *directories* need no equivalent: their tops are checked before the
+    walk and `os.walk` declines symlinked subdirectories itself.
+
+    Must-fire in the same fixture: everything else in the tree is still hashed, so this
+    cannot pass against a digest that read nothing.
+    """
+    tree = _plugin_tree(tmp_path / "tree")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_bytes(b'{"name": "not-ours", "version": "9.9.9"}\n')
+    victim = tree / ".claude-plugin"
+    (victim / "plugin.json").unlink()
+    victim.rmdir()
+    try:
+        victim.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(
+            "symlink refused ({}); whether a symlinked ANCESTOR of a compared file is "
+            "declined went untested here".format(exc)
+        )
+    assert os.path.islink(str(victim)), "the symlink fixture did not take"
+
+    files, unreadable = doctor.plugin_tree_digest(tree)
+
+    assert "agents/developer.md" in files, files
+    assert ".claude-plugin/plugin.json" not in files, files
+    assert ".claude-plugin/plugin.json" in unreadable, unreadable
+    assert "symlink" in unreadable[".claude-plugin/plugin.json"], unreadable
+    outside_digest = hashlib.sha256((outside / "plugin.json").read_bytes()).hexdigest()
+    assert outside_digest not in files.values(), files
 
 
 def _deny_read(path):
