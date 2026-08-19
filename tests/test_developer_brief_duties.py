@@ -22,9 +22,12 @@ instead of satisfying every "must not match" assertion for the wrong reason.
 
 **PRIOR is abridged, and that is the one thing to know before adding an anchor
 to it.** *Four passages* below means the four passages bundled inside the `PRIOR`
-string, not the number of `PRIOR_*` constants in the file -- there are four of
-those too now, and the coincidence is the kind that gets read the wrong way once
-and then quoted. The three constants beside `PRIOR` are un-elided and each says
+string, not the number of `PRIOR_*` constants in the file -- there are five of
+those, and the two counts used to coincide, which is the kind of coincidence that
+gets read the wrong way once and then quoted. They stopped coinciding when #275
+added `PRIOR_EMPTY_RETURN_SORT`, and the sentence is kept rather than deleted
+because the reading it warns against is the one a reader arrives with. The four
+constants beside `PRIOR` are un-elided and each says
 so in its own comment. Three of the four passages inside `PRIOR` are elided in the middle: the cross-platform
 one drops the cp1252/`UnicodeEncodeError` sentence, the review one drops the
 `did not run` clause, and the report-format one drops the schema path and the
@@ -191,6 +194,70 @@ already filed -- and never something that happens because nobody decided. A defe
 worth reporting, and then silently not reported reads exactly like a dependency with no defects.
 """
 
+# The empty-return subsection exactly as it stood on disk before #275, un-elided.
+# Every anchor in REFERRED_BUT_UNSTATED that lands in this subsection is asserted
+# absent from it, so an elision here would assert an anchor absent from text that
+# never carried it. Transcribed from `git show origin/main:agents/developer.md`
+# with em dashes written as `--`, the same convention the constants above use; no
+# anchor below spans one.
+#
+# **It is deliberately not part of `_prior()`.** `_prior()` is the control for
+# every duty in DUTIES, and this constant is the document *after* #200 -- so
+# folding it in would make #200's own anchors (`returned-nothing`, `consume its
+# budget, ...`) match the control and report as toothless, which they are not.
+# A shared control only works while every duty it controls predates all of it.
+# The #275 anchors get this constant through a check of their own below.
+PRIOR_EMPTY_RETURN_SORT = """
+### When a spawn runs and comes back empty
+
+That rule has a loud half and a quiet half, and only the loud half was ever written down. A spawn
+that errors is handled below. This is the other one: a spawn can **execute, consume its budget, and
+return an empty final message** -- the review happened, the conclusions are gone. Reported honestly
+and structurally that is `findings: []` under `state: checked`, which is byte-identical to a clean
+review, and it has already cost this repository real findings that nobody can now recover.
+
+So it gets its own state. `review.classes` and `review.findings` carry a fourth one,
+**`returned-nothing`**, that no other survey in the report can spell -- `checked` would render a real
+review as a clean one, and `not-checked` claims nobody looked, which understates what is missing.
+The validator refuses it without a reason.
+
+**How you decide you are in it.** Both briefs already require a sentinel -- `NO FINDINGS`, and what
+was checked -- precisely so silence is distinguishable from cleanliness. So read **the final message
+you actually received** and sort it in three: it names findings; or it says `NO FINDINGS` and names
+what it checked; or it is empty, whitespace-only, or says neither of those. The third is
+`returned-nothing`. Do not infer a verdict from what you believe the spawn did while it ran -- you
+did not see that, and a transcript you happen to hold is evidence about your own session, not a
+return value.
+
+**What the report must say, and it is a required field rather than good manners.** Set the state to
+`returned-nothing` and put in `reason` which spawn came back empty and **what is lost, counted**.
+Anything you can re-derive from your own context goes in `items` with disposition `open`, never
+`fixed`: you are reconstructing somebody else's reading and cannot check the reconstruction. Say in
+the same breath how many you could not recover at all. `returned-nothing` carrying items is the
+normal shape, not a contradiction -- and `checked` is unavailable to you from the moment one spawn
+comes back empty, however completely the other one answered.
+
+**One fresh re-spawn, and it does not erase the first outcome.** Spawn a new agent of the same type
+with the same brief, once, and stop there; a second empty return is a finding, not a third attempt.
+Whatever the retry hands back, the state stays `returned-nothing` and the reason names both
+attempts. Converting *the reviewer said nothing* into *no findings* is the bug; converting it into
+*I retried and it worked, nothing to see* is the same bug one layer up.
+
+**Decided against, so that it is a decision rather than an omission: granting `SendMessage` to ask
+the reviewer to repeat itself.** That was the missing capability the agents who hit this named, and
+it is still the wrong answer. It widens a delegated agent from *spawns its own reviewers* to *can
+address any live agent*, including the sibling lanes working other issues in the same round; and it
+does not recover the lost message anyway, because an agent asked to repeat regenerates -- what comes
+back is a fresh review wearing the first one's authority. A fresh spawn buys the same thing and
+says what it is.
+
+**None of this is a finding about a particular agent type.** It was the same reviewer type both
+times it was observed and the auditor half returned normally both times, but that is two
+observations across two agent types, two briefs and two task shapes, and nothing separates those
+three explanations. **Two samples is not a measurement**, so nothing in this subsection names an
+agent type: the rule is mechanism-agnostic and applies to whatever you spawned.
+"""
+
 # Wording that was on disk before this change and is still on disk after it.
 # If PRIOR cannot be read, these fail -- which is what stops the "must not
 # match" assertions above from passing vacuously.
@@ -201,6 +268,14 @@ LIVE_BEFORE = [
     "an empty return is indistinguishable from a clean one",
     "a report that does not validate is not a report",
     "getting it onto that tracker is part of",
+]
+
+# The same pairing, for PRIOR_EMPTY_RETURN_SORT alone. It is not folded into
+# LIVE_BEFORE because LIVE_BEFORE is checked against `_prior()`, which does not
+# include that constant -- see the comment on it.
+LIVE_BEFORE_EMPTY_RETURN = [
+    "do not infer a verdict from what you believe the spawn did while it ran",
+    "what is lost, counted",
 ]
 
 
@@ -275,7 +350,11 @@ EMPTY_RETURN_POLICY = [
     "consume its budget, and return an empty final message",
     "one fresh re-spawn, and it does not erase the first outcome",
     "granting `sendmessage` to ask the reviewer to repeat itself",
-    "two samples is not a measurement",
+    # Reworded by #275: the count moved from two to three, so the sentence that
+    # refused to name an agent type had to survive a change to its own numeral.
+    # The durable half is that a handful of correlated observations is not a
+    # measurement, which is what the anchor now pins.
+    "a handful of samples is not a measurement",
 ]
 
 # #212: `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin cache, which is a
@@ -342,6 +421,45 @@ GUEST_REPO_ROUTING = [
     "do not mean there is no tracker",
 ]
 
+# #275 and #296: the third failure of the return contract, and the one the sentinel
+# did not cover. A spawn executes, reads the diff, forms conclusions, and hands back
+# a sentence *referring* to findings it never states -- "two confirmed findings
+# reported above", "findings reported above (3 total)". Not empty, so it does not
+# trip the empty-return rule #200 built; not `NO FINDINGS`, so it is not clean; and
+# it sounds like a delivery, which is why it is worse than a crash.
+#
+# Two independent populations, which is why one anchor set covers both filings:
+#   - #275: three of roughly seven review spawns in one session (2026-08-16), in
+#     this repository. One lost finding's only surviving trace was the name of a
+#     file nobody then opened.
+#   - #296: three of three developer runs in one fleet day (2026-08-18), in
+#     claude-supertool, nine findings claimed and eight never recoverable.
+# Same mechanism, different repositories, different diffs, different agents that
+# did not know about each other -- so the shape is the mechanism, not one habit.
+#
+# The anchors are the decisions the fix has to state, not its wording:
+#   - the sentence itself, which goes into both spawn briefs;
+#   - the shape that makes the omission arithmetic rather than a judgement, so that
+#     the parent compares two numbers instead of reading tone;
+#   - that the caller's sort gains a fourth arm, since a message that gestures at
+#     findings is `returned-nothing` however confident it sounds;
+#   - that the residue -- a count, a subject, a filename -- is recorded and is not
+#     the finding;
+#   - that the fix is named as a request rather than sold as a boundary, which is
+#     the one claim this repository has been burned by making before;
+#   - and that the intervention is recorded as an experiment, because whether a
+#     sentence in a brief changes a model's behaviour is not knowable from here.
+REFERRED_BUT_UNSTATED = [
+    "a finding you refer to but do not state is a finding that does not exist",
+    "opens with `findings: <n>`",
+    "and then states exactly that many findings",
+    "refers to findings it does not state",
+    "sort it in four",
+    "record the residue, and do not mistake it for the finding",
+    "this fix is a request to the spawn, not a boundary on it",
+    "the brief sentence is an experiment, not a fix",
+]
+
 DUTIES = [
     pytest.param(ADJACENT_POLICY, id="adjacent-fix-or-file"),
     pytest.param(GUEST_REPO_ROUTING, id="guest-repo-tooling-routing"),
@@ -351,6 +469,7 @@ DUTIES = [
     pytest.param(PAYLOAD_NOT_EVALUATED, id="payload-parsed-never-evaluated"),
     pytest.param(EMPTY_RETURN_POLICY, id="a-spawn-that-returned-nothing"),
     pytest.param(VALIDATOR_SKEW_POLICY, id="cache-vs-clone-validator-skew"),
+    pytest.param(REFERRED_BUT_UNSTATED, id="a-spawn-that-referred-without-stating"),
 ]
 
 
@@ -498,6 +617,236 @@ def test_the_brief_names_the_accessor_without_copying_it(tmp_path):
         "a document quotes the accessor's own state names back at the reader: {}. "
         "Name the call; let it answer.".format(copied)
     )
+
+
+# --- #275/#296: placement, and the refusal to credit the intervention --------
+
+# The rules a spawn brief is written from have to sit in the section that writes
+# the spawn briefs. Stated anywhere else they are present in the document and
+# absent from the moment they are used -- the same producer/consumer join the
+# section-four test above guards, one section over.
+#
+# It is the whole of REFERRED_BUT_UNSTATED rather than a hand-picked subset, and
+# that is a correction rather than a preference: the first version listed three of
+# the eight, so the other five were checked only by
+# `test_the_duty_is_stated_in_the_brief`, which greps the whole document. A later
+# edit relocating one of those five into `## Untrusted input` would have left the
+# suite green on exactly the regression the paragraph above says this check exists
+# to catch -- a guard nominally on and effectively off for most of what it claims,
+# which is the shape this repository is named after. Deriving it from the one list
+# means an anchor cannot be added to the duty and forgotten here.
+REFERRED_BUT_UNSTATED_IN_REVIEW_SECTION = list(REFERRED_BUT_UNSTATED)
+
+
+def _review_section(text):
+    """The whole of `## Review your own diff ...`, subsections included.
+
+    Bounded by the next h2. Returns None rather than an empty string when either
+    bound is missing, so a caller cannot mistake "the section is not there" for
+    "the section is there and says nothing" -- which is the reading this file
+    exists to keep separable.
+    """
+    start = text.find("## Review your own diff before you hand it back")
+    if start == -1:
+        return None
+    end = text.find("\n## ", start + 1)
+    if end == -1:
+        return None
+    return text[start:end]
+
+
+def _misplaced_referred_rules(text):
+    """Which of the spawn-brief rules are stated outside the review section."""
+    section = _review_section(text)
+    if section is None:
+        return {"no-review-section"}
+    return set(_unmet(section, REFERRED_BUT_UNSTATED_IN_REVIEW_SECTION))
+
+
+def test_the_referred_anchors_were_red_against_the_empty_return_subsection():
+    """The tight control for #275, and the one that matters.
+
+    `_prior()` predates #200, so a #275 anchor is trivially absent from it. The
+    text this change actually amends is the post-#200 empty-return subsection,
+    which already talks about spawns, final messages and `returned-nothing` --
+    so that is where a toothless anchor would hide. Paired with its own must-fire
+    half, because an empty or mistyped constant satisfies every "absent" claim.
+    """
+    assert _unmet(PRIOR_EMPTY_RETURN_SORT, LIVE_BEFORE_EMPTY_RETURN) == [], (
+        "PRIOR_EMPTY_RETURN_SORT is not the pre-#275 subsection"
+    )
+    assert _unmet(DEVELOPER.read_text(encoding="utf-8"), LIVE_BEFORE_EMPTY_RETURN) == [], (
+        "the live document lost wording this control depends on"
+    )
+    matched = [a for a in REFERRED_BUT_UNSTATED if a in _flatten(PRIOR_EMPTY_RETURN_SORT)]
+    assert matched == [], f"toothless anchors, already on disk: {matched}"
+
+
+def test_the_referred_but_unstated_rules_land_inside_the_review_section():
+    misplaced = _misplaced_referred_rules(DEVELOPER.read_text(encoding="utf-8"))
+    assert misplaced == set(), (
+        "a rule the spawn briefs are written from sits outside the review section, "
+        "so it is never read at the moment it is used: " + repr(sorted(misplaced))
+    )
+
+
+def test_the_placement_check_fires_when_the_rules_sit_outside_that_section():
+    """The must-fire half. The same sentences, present in the document and after
+    the section that uses them, must be reported as misplaced -- otherwise the
+    check above passes on any document that merely contains the words, which is
+    what a flat `in` against the whole file would have done.
+    """
+    elsewhere = (
+        "## Review your own diff before you hand it back\n\n"
+        "Spawn two agents against your own committed diff.\n\n"
+        "## Untrusted input\n\n" + "\n".join(REFERRED_BUT_UNSTATED) + "\n"
+    )
+    assert _misplaced_referred_rules(elsewhere) == set(
+        REFERRED_BUT_UNSTATED_IN_REVIEW_SECTION
+    )
+
+    # And the other direction, so the check is not merely reporting back whatever
+    # it is handed. The same sentences inside the section must report nothing
+    # missing -- without this, a `_misplaced_referred_rules` that always returned
+    # its whole anchor list would satisfy the assertion above.
+    inside = (
+        "## Review your own diff before you hand it back\n\n"
+        + "\n".join(REFERRED_BUT_UNSTATED)
+        + "\n\n## Untrusted input\n"
+    )
+    assert _misplaced_referred_rules(inside) == set()
+
+    assert _misplaced_referred_rules("nothing here") == {"no-review-section"}
+
+
+def test_the_intervention_is_recorded_as_an_experiment_and_not_credited():
+    """The deliverable most likely to be dropped, per the filing itself.
+
+    A sentence added to a brief to change a model's behaviour cannot be shown to
+    work from inside the session that adds it. So the document has to carry the
+    baseline it is measured against, has to say that the observed difference
+    between spawn types is confounded rather than explanatory, and has to say
+    that nothing downstream is relaxed on the strength of it. Without the last
+    one the re-spawn rule quietly becomes optional, which is the same defect one
+    layer up: an unmeasured mitigation read as a measured one.
+    """
+    text = DEVELOPER.read_text(encoding="utf-8")
+    section = _review_section(text)
+    assert section is not None, "no review section to hold the experiment record"
+    unmet = _unmet(
+        section,
+        [
+            "the brief sentence is an experiment, not a fix",
+            "three of roughly seven review spawns",
+            "confound",
+            "nothing below is relaxed on the strength of it",
+        ],
+    )
+    assert unmet == [], "the experiment is not recorded: " + repr(unmet)
+
+    # And the mitigation it must not have relaxed is still stated in full.
+    assert _unmet(text, EMPTY_RETURN_POLICY) == [], (
+        "the re-spawn policy the experiment must leave alone has been weakened"
+    )
+
+
+def _fourth_state_token():
+    """The one state a review survey has and an ordinary survey does not.
+
+    Derived from the schema rather than spelled here, so a rename upstream lands
+    on this test instead of leaving the brief teaching a token the validator
+    refuses. `survey` is the control: subtracting it is what makes this "the
+    state that exists because a spawn can go quiet" rather than "the fourth
+    string in a list", which would move if the enum were merely reordered.
+    """
+    import json
+
+    schema = json.loads(
+        (REPO_ROOT / "schemas" / "agent-report.schema.json").read_text(encoding="utf-8")
+    )
+    review = set(schema["$defs"]["review_survey"]["properties"]["state"]["enum"])
+    plain = set(schema["$defs"]["survey"]["properties"]["state"]["enum"])
+    return review - plain
+
+
+def _gesture_arm_missing_the_state(text, token):
+    """Is the gesturing-return arm stated without naming the state it maps to?
+
+    Returns a set of what is missing, so "the arm is absent" and "the arm is
+    there and names no state" come back as different values rather than as one
+    falsy answer.
+    """
+    section = _review_section(text)
+    if section is None:
+        return {"no-review-section"}
+    folded = _flatten(section)
+    missing = set()
+    if "refers to findings it does not state" not in folded:
+        missing.add("no-gesture-arm")
+    if _flatten(token) not in folded:
+        missing.add("no-state-token")
+    return missing
+
+
+def test_the_gesturing_arm_maps_to_the_state_the_schema_actually_has():
+    """The producer/consumer join for #275/#296, and the reason it is not prose.
+
+    The brief's new arm tells the agent that a message *referring* to findings it
+    never states is not a clean review. That instruction is only worth anything
+    if it names a state the validator will accept: a brief routing the agent to a
+    token `scripts/report_schema.py` refuses is a rule that cannot be complied
+    with, and the failure surfaces at validation time in somebody else's session.
+
+    So the token is derived from the schema and asserted present in the section
+    that states the arm. Both halves are needed: without the derivation this is a
+    second transcription of a fact that lives in the schema, and without the
+    section bound it passes on any document that happens to contain the word.
+    """
+    tokens = _fourth_state_token()
+    assert len(tokens) == 1, (
+        "a review survey no longer has exactly one state an ordinary survey lacks; "
+        "the brief's routing for a spawn that went quiet has no single destination: "
+        "{}".format(sorted(tokens))
+    )
+    token = tokens.pop()
+
+    assert _gesture_arm_missing_the_state(DEVELOPER.read_text(encoding="utf-8"), token) == set(), (
+        "the brief states the gesturing-return arm without routing it to the state "
+        "the schema has for it, or does not state the arm at all"
+    )
+
+
+def test_the_gesturing_arm_check_fires_on_a_document_that_is_missing_either_half():
+    """The must-fire half, and it is two halves because the check has two.
+
+    A single "did it pass" assertion above would stay green on a document that
+    dropped the arm, on one that dropped the state, and on one with no review
+    section at all -- three different failures rendering as one absence, which is
+    the defect this repository is named after aimed at its own guard.
+    """
+    token = "returned-nothing-sentinel-not-a-real-state"
+    both = (
+        "## Review your own diff before you hand it back\n\n"
+        "Spawn two agents.\n\n"
+        "## Untrusted input\n"
+    )
+    assert _gesture_arm_missing_the_state(both, token) == {"no-gesture-arm", "no-state-token"}
+
+    arm_only = (
+        "## Review your own diff before you hand it back\n\n"
+        "A message that refers to findings it does not state is not a clean review.\n\n"
+        "## Untrusted input\n"
+    )
+    assert _gesture_arm_missing_the_state(arm_only, token) == {"no-state-token"}
+
+    state_only = (
+        "## Review your own diff before you hand it back\n\n"
+        "Set the state to " + token + ".\n\n"
+        "## Untrusted input\n"
+    )
+    assert _gesture_arm_missing_the_state(state_only, token) == {"no-gesture-arm"}
+
+    assert _gesture_arm_missing_the_state("nothing here", token) == {"no-review-section"}
 
 
 def test_the_adjacent_policy_matches_the_vocabulary_the_schema_enforces():
