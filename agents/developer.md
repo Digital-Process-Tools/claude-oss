@@ -277,6 +277,25 @@ declares as a dependency. Routing around it and saying nothing leaves the board 
 unaware of a defect somebody has already reproduced — and **getting it onto that tracker is part of
 finishing the work**, not a favour to another project.
 
+**The tooling running you is one of those dependencies in every way except the manifest**, and that
+is the case this section used to be silent about. When the repo you are working in belongs to
+somebody else, a defect in the rule layers written into their tree, in an owned file, in this brief,
+in an op the brief mandates, in the launcher or in the diagnostic is **not their bug**: their
+maintainer cannot patch it, cannot see it declared anywhere, and a report on their board reads as
+work done while the board that could ship the fix never hears. The reverse holds exactly as firmly —
+a defect in the host project's own code belongs to the host project. **The split is who owns the
+code, never who is standing closest to it.**
+
+Nothing declares itself as its own dependency, so the loop's own board is the one name the
+derivation above cannot produce. **Do not infer a slug for it. Ask.** `loop_repository()` in
+`${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` reads it off the loop's own installed manifest, and
+`/oss:doctor` prints the answer on its `loop repository:` line. It answers in three states, and
+**the two that are not a URL do not mean there is no tracker** — they mean the destination is
+unknown, which is a thing to report rather than a licence to guess. Put the state it hands you into
+`adjacent` in its own words: this document deliberately does not list them, because they are a fact
+about that function, and a copy of them here would arrive with the same authority and be proofread
+by nobody.
+
 **You do not perform the filing.** Opening an issue on another repository is publishing, and your
 publishing clause is unconditional: **do not open the upstream issue**, do not comment on one. You
 hand the maintainer what they need to open it in one call, in `adjacent`, with `action` set to

@@ -33,12 +33,20 @@ aimed at the control that exists to prevent it. Check a new anchor against the
 blob, not against PRIOR.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEVELOPER = REPO_ROOT / "agents" / "developer.md"
+PROSE = sorted((REPO_ROOT / "skills").rglob("SKILL.md")) + sorted(
+    (REPO_ROOT / "agents").glob("*.md")
+)
+
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import doctor  # noqa: E402
 
 
 def _flatten(text):
@@ -133,6 +141,52 @@ The fields, their enumerations and a worked example are in
 this section would otherwise duplicate and drift from.
 """
 
+# The dependency-reporting section exactly as it stood on disk before #290,
+# un-elided, because every anchor in GUEST_REPO_ROUTING falls inside this span and
+# an elision would assert an anchor absent from text that never carried it. Em
+# dashes are transcribed as `--`, the same convention the constants above use, so
+# this is not a byte-exact copy; no anchor below spans one, and `_flatten` does not
+# fold dashes, so an anchor that did span one would report red-before while being
+# green-before on disk.
+PRIOR_DEPENDENCY_REPORTING = """
+## A defect in a declared dependency is reported, never worked around silently
+
+You will sometimes trip over a bug that is not in this repo at all but in something the project
+declares as a dependency. Routing around it and saying nothing leaves the board that owns the fix
+unaware of a defect somebody has already reproduced -- and **getting it onto that tracker is part of
+finishing the work**, not a favour to another project.
+
+**You do not perform the filing.** Opening an issue on another repository is publishing, and your
+publishing clause is unconditional: **do not open the upstream issue**, do not comment on one. You
+hand the maintainer what they need to open it in one call, in `adjacent`, with `action` set to
+`report-for-filing`:
+
+- **which declared dependency** it is, by the name the manifest uses -- never a repo slug you
+  inferred, and never a tracker you guessed at;
+- **the reproduction**, the same standard as a local finding;
+- **which row, and what its embargo column says.** Look the finding up in the ranking table the
+  manager skill owns, and report both verdicts the row carries. **A finding whose row answers yes
+  in the embargo column must not become a public issue on somebody else's tracker** -- it goes down
+  the **embargo** path, meaning whatever private reporting channel that project's own security
+  policy names: a security tab, a disclosure address or a form. The word *embargo* is unlikely to
+  appear in the policy; read the policy. Say so in the item; the maintainer is the one who routes
+  it, and this is the sentence that stops the routing being a reflex.
+
+  **Read the embargo column, not the blocking one.** They are two questions -- what we may ship
+  against whether their users are exposed while a fix is written -- and they disagree on one row.
+  Do not copy the set into your report: name the row you read and the column's answer, so a change
+  to the table reaches this routing instead of being outvoted by a stale list.
+- **For an arbitrary third-party dependency, say that too.** Filing there is a judgement rather than
+  a duty: there may be no filing rights, no relationship, and a public tracker is a disclosure
+  channel. A dependency the same maintainer owns is the unambiguous case.
+
+Three outcomes and the third is the one that gets lost: **reported** to the maintainer for filing;
+**could not identify the dependency or its tracker**, said as that rather than dropped; and
+**deliberately not reported**, which **is a decision with a reason** -- already fixed upstream, or
+already filed -- and never something that happens because nobody decided. A defect found, judged
+worth reporting, and then silently not reported reads exactly like a dependency with no defects.
+"""
+
 # Wording that was on disk before this change and is still on disk after it.
 # If PRIOR cannot be read, these fail -- which is what stops the "must not
 # match" assertions above from passing vacuously.
@@ -142,12 +196,18 @@ LIVE_BEFORE = [
     "an absence you produced is not an absence in the world",
     "an empty return is indistinguishable from a clean one",
     "a report that does not validate is not a report",
+    "getting it onto that tracker is part of",
 ]
 
 
 def _prior():
     """Every pre-change passage this file controls against, as one blob."""
-    return PRIOR + PRIOR_REVIEW_RETURN + PRIOR_REPORT_VALIDATION
+    return (
+        PRIOR
+        + PRIOR_REVIEW_RETURN
+        + PRIOR_REPORT_VALIDATION
+        + PRIOR_DEPENDENCY_REPORTING
+    )
 
 
 def test_the_developer_document_exists_and_is_prose():
@@ -249,8 +309,38 @@ FILING_IS_A_REQUEST = [
     "you never file it yourself",
 ]
 
+# #290: the loop runs as a guest inside somebody else's repository, and the
+# documents covered a defect in a *declared* dependency and a defect in the host
+# project's own code. The tooling running the agent is neither -- nothing declares
+# itself as its own dependency -- so a defect in it had no stated destination and
+# the nearest tracker wins by default.
+#
+# The anchors are the decisions, not the wording:
+#   - that the tooling is a dependency in every way except the manifest;
+#   - the ownership split, which is the sentence that stops the rule pushing only
+#     one way and sending the host project's own bugs upstream;
+#   - that the loop's own board is asked for rather than inferred, and the name of
+#     the call that answers;
+#   - and that the answers which are not a URL are not "there is no tracker" --
+#     the third state, which is what #290 is actually about.
+#
+# Deliberately absent: the accessor's state tokens. This document names the call
+# and lets the reader run it; enumerating its answers here would be a second copy
+# of a fact that lives in `scripts/doctor.py`, arriving with the same authority and
+# proofread by nobody. `test_the_brief_names_the_accessor_without_copying_it`
+# below holds that, and derives the tokens from the accessor rather than spelling
+# them, so the two cannot drift apart.
+GUEST_REPO_ROUTING = [
+    "in every way except the manifest",
+    "the split is who owns the code, never who is standing closest",
+    "do not infer a slug for it. ask",
+    "`loop_repository()`",
+    "do not mean there is no tracker",
+]
+
 DUTIES = [
     pytest.param(ADJACENT_POLICY, id="adjacent-fix-or-file"),
+    pytest.param(GUEST_REPO_ROUTING, id="guest-repo-tooling-routing"),
     pytest.param(FILING_IS_A_REQUEST, id="a-filing-disposition-is-a-request"),
     pytest.param(PLATFORM_FIX_RULES, id="platform-rules-about-the-fix"),
     pytest.param(THIRD_STATE_AS_DESIGN, id="third-state-as-a-design-rule"),
@@ -330,6 +420,79 @@ def test_the_validation_step_still_names_the_plugin_rooted_command():
     )
     assert "./scripts/report_schema.py" in text, (
         "the brief names no local validator, so the skew it describes cannot be observed"
+    )
+
+
+def _accessor_states(tmp_path):
+    """Drive `loop_repository` through every outcome it has and return them.
+
+    Nothing here spells a state token. The three fixtures are the three *situations*
+    -- a manifest that says, a manifest that does not, and no manifest -- and the
+    tokens come back from the accessor. That is what makes the assertions below a
+    join with `scripts/doctor.py` rather than a second transcription of it.
+    """
+    said = tmp_path / "said"
+    (said / ".claude-plugin").mkdir(parents=True)
+    (said / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "x", "repository": "https://example.invalid/x"}', encoding="utf-8"
+    )
+    silent = tmp_path / "silent"
+    (silent / ".claude-plugin").mkdir(parents=True)
+    (silent / ".claude-plugin" / "plugin.json").write_text('{"name": "x"}', encoding="utf-8")
+    return [
+        doctor.loop_repository(plugin_root=said),
+        doctor.loop_repository(plugin_root=silent),
+        doctor.loop_repository(plugin_root=tmp_path / "absent"),
+    ]
+
+
+def test_the_brief_names_the_accessor_without_copying_it(tmp_path):
+    """The join #290 turns on, and the decision it forced.
+
+    The brief has to send a guest-repo tooling defect somewhere, and the somewhere
+    is derived rather than inferred. Two ways to write that were available: name the
+    call and let the reader run it, or enumerate what it can answer. The second puts
+    a fact that lives in `scripts/doctor.py` into a document nobody diffs against it
+    -- this repository's governing rule, and the failure mode is a brief confidently
+    describing states the accessor stopped having.
+
+    So this holds both halves at once, and neither half is sufficient alone. The
+    must-fire half: the brief names a call that exists and is importable, so a rename
+    or a deletion lands here rather than in a guest repo at filing time. The must-not
+    half: no prose document spells the accessor's answers back, sweeping every skill
+    and agent rather than only the one being edited, because the second copy is as
+    harmful in whichever document acquires it.
+
+    And the count. The brief says three states, which is a checkable claim rather
+    than a copy of their names, so it is checked -- if the accessor ever collapses
+    two or grows a fourth, the sentence in the brief goes stale silently and nothing
+    else would notice.
+    """
+    states = _accessor_states(tmp_path)
+    assert len({problem for _url, problem in states}) == 3, (
+        "the brief says `loop_repository()` answers in three states; the accessor "
+        "no longer has three: {}".format(states)
+    )
+    resolved = [url for url, problem in states if problem is None]
+    assert len(resolved) == 1 and resolved[0], "no state of the accessor returns a url"
+
+    brief = _developer()
+    assert "`loop_repository()`" in brief, (
+        "the brief no longer names the call, so a guest-repo tooling defect has no "
+        "derivation and an agent is back to inferring a slug"
+    )
+
+    tokens = sorted({problem for _url, problem in states if problem is not None})
+    assert tokens, "the accessor reports no failing state, so there is nothing to guard"
+    copied = [
+        (path.relative_to(REPO_ROOT).as_posix(), token)
+        for path in PROSE
+        for token in tokens
+        if "`{}`".format(token) in path.read_text(encoding="utf-8")
+    ]
+    assert copied == [], (
+        "a document quotes the accessor's own state names back at the reader: {}. "
+        "Name the call; let it answer.".format(copied)
     )
 
 
