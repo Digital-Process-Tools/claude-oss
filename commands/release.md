@@ -153,15 +153,45 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.
 
-   Then, and only for the two computable states of the range:
+   Then, and only for the two computable states of the range — and **mint a dispatch token first**,
+   because it goes into the payload the spawn is handed and cannot be added afterwards. Any short
+   unpredictable string; it is an identifier, not a secret. Record it in the release report.
 
    ```
    Agent(subagent_type: "oss:release-auditor", run_in_background: false)
    ```
 
-   Hand it the payload verbatim and the round number. It writes nothing and it does not tag. **A
-   spawn that did not run is `could not run`**, never a clean audit — if the agent fails to start or
-   comes back empty, that is the third outcome and the same stop applies.
+   Hand it the payload verbatim, the dispatch token and the round number. It writes nothing and it
+   does not tag. **A spawn that did not run is `could not run`**, never a clean audit — if the agent
+   fails to start or comes back empty, that is the third outcome and the same stop applies.
+
+   Then read what comes back in three states, because one dispatch of this gate once produced two
+   completions over one range and only one of them was right:
+
+   - **attributed** — the report echoes the token you minted. Proceed on it.
+   - **unattributed** — no token line, a token that does not match, or `dispatch token: none
+     reached me`. It **does not clear** the gate, and it is **not discarded**: read its findings
+     and reconcile them, because in the instance this arm comes from the unattributed completion
+     was the one that was right and the attributed one graded the same class clean. Re-dispatch
+     with the token and record both.
+   - **more than one completion for one dispatch** — read every one of them. The gate clears only
+     when they agree; a disagreement between two completions of one dispatch is itself a finding
+     about this gate, reported as one, and never settled by which identifier happened to match.
+
+   **A `clean` verdict counts the classes graded `clean (read)` rather than `clean (exercised)`**,
+   and carries that count on its own verdict line as `<k> of <m> classes read but not exercised`.
+   Both grades are defined in `${CLAUDE_PLUGIN_ROOT}/agents/release-auditor.md`; no class is graded
+   with the tail phrase itself, which counts rather than names. A nonzero count **does not stop**
+   the tag — requiring a fired control for every class on every delta buys more words rather than a
+   better audit, and would block releases over honest answers. It is named by class letter in the
+   release report, and it is **not the same receipt** as a count of zero. Recording those two the
+   same way is precisely what let a class nobody exercised clear this gate.
+
+   And the arm with force: **a `read` grade never outweighs a reproduction.** Where a finding in
+   that class arrives from any source with a command that reproduces it — a second completion, a
+   contributor, you — the reproduction settles it and the clean grade is not evidence against it.
+   Where the class came back `clean (exercised)`, the two are a genuine disagreement and both are
+   re-run before either is believed.
 
    **A spawn that errors because the name does not resolve is that same `could not run`**, and it is
    not hypothetical: this gate dispatched to a name the harness never registered for two releases,
