@@ -219,6 +219,39 @@ def test_a_supertool_checkout_is_not_told_to_create_a_wrapper(tmp_path):
     assert "supertool.py" in message, message
 
 
+def test_a_wrapper_inside_a_supertool_checkout_is_its_own_state(tmp_path):
+    """The stranger case of the arm above, and not a hypothetical: running this check
+    against the maintainer's claude-supertool clone printed it. The hook leaves anything
+    already at that name untouched, so a wrapper made before the tree became its own
+    supertool checkout stays there -- and through it every custom op answers "comes from
+    a different supertool tree" and exits 1. Present, looks right, works for nothing.
+
+    Flagged by the review of this diff as an untested state. It is testable, so it is
+    tested rather than argued down.
+    """
+    project = tmp_path / "claude-supertool"
+    project.mkdir()
+    (project / ".supertool.json").write_text("{}\n", encoding="utf-8")
+    (project / "supertool.py").write_text("# core\n", encoding="utf-8")
+    home, record, entry = _cache(tmp_path)
+    refused = _link(project / "supertool", entry)
+    if refused:
+        pytest.skip(refused + "; what went untested is the own-tree-stranger arm")
+
+    state, detail = doctor.supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
+    assert state == "own-tree-stranger", (state, detail)
+
+    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", message
+    assert "supertool.py" in message, message
+    # Distinct from the plain own-tree arm, which is an OK. Without this the two could
+    # share a message and the test above would still pass.
+    assert len(doctor.FINDINGS) == 1
+
+
 def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
     """doctor's contract is one line per check. A state that printed none would be the
     silence this whole file is about, and a state that printed two would scroll."""
