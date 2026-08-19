@@ -69,6 +69,71 @@ def test_a_differently_named_workflow_is_not_mistaken_for_the_scaffolded_one(tmp
     assert state == "absent"
 
 
+# ------------------------------- a gate policing a directory other than the default (#325)
+
+
+def test_a_gate_naming_the_default_directory_is_still_present(tmp_path):
+    """Positive control for the pair below: `--dir 'changelog.d'` spelled out explicitly
+    is still the default, so this must read exactly like the no-`--dir`-at-all fixture
+    above rather than tripping the new state."""
+    workflow = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: oss changelog\n"
+        "        run: python3 .oss/assemble_changelog.py --check --dir 'changelog.d' "
+        "--changelog CHANGELOG.md\n",
+        encoding="utf-8",
+    )
+
+    state, detail = oss_config.scaffolded_changelog_gate(tmp_path)
+
+    assert state == "present"
+    assert detail == ""
+
+
+def test_a_gate_naming_another_directory_is_a_fourth_state(tmp_path):
+    """The bug in #325: a repo scaffolded with `changelog_dir: 'docs/frags'`, later
+    nulled, still carries a gate on disk that polices `docs/frags` -- two `--dir` lines,
+    exactly as `scaffold.CHANGELOG_WORKFLOW` renders them. `present` alone cannot say
+    that, so this must be a state of its own, carrying the directory it read."""
+    workflow = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: oss changelog\n"
+        "        run: python3 .oss/assemble_changelog.py --check --dir 'docs/frags' "
+        "--changelog CHANGELOG.md\n"
+        "          python3 .oss/assemble_changelog.py --check-links --dir 'docs/frags' "
+        "--changelog CHANGELOG.md || status=$?\n",
+        encoding="utf-8",
+    )
+
+    state, detail = oss_config.scaffolded_changelog_gate(tmp_path)
+
+    assert state == "present-other-dir"
+    assert detail == "docs/frags"
+
+
+def test_a_gate_naming_disagreeing_directories_is_unknown_not_a_guess(tmp_path):
+    """Never render as `present`. A hand-edited workflow whose two `--dir` lines
+    disagree gives no single directory to trust, so this refuses exactly like an
+    unreadable path does -- never picks one of the two nobody confirmed."""
+    workflow = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: oss changelog\n"
+        "        run: python3 .oss/assemble_changelog.py --check --dir 'docs/frags' "
+        "--changelog CHANGELOG.md\n"
+        "          python3 .oss/assemble_changelog.py --check-links --dir 'changelog.d' "
+        "--changelog CHANGELOG.md || status=$?\n",
+        encoding="utf-8",
+    )
+
+    state, detail = oss_config.scaffolded_changelog_gate(tmp_path)
+
+    assert state == "unknown"
+    assert detail
+
+
 # --------------------------------------- a tree this process cannot fully read (#124)
 
 

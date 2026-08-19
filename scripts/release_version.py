@@ -348,6 +348,15 @@ def _fragment_dir(repo, given, config):
        picked when it created the fragment machinery, recognised rather than re-guessed.
        `oss_config.scaffolded_changelog_gate` is what tells (3) apart from a repo that
        genuinely never adopted fragments, which still refuses exactly as it did before.
+
+    (3) is not always `DEFAULT_FRAGMENTS_DIR` (#325): the workflow on disk polices
+    whatever directory scaffold gave it, which is the directory that was named at
+    apply time, not necessarily the default. `scaffolded_changelog_gate` reads that
+    value back out of the workflow's own `--dir` argument and reports it as
+    "present-other-dir", so this returns THAT directory rather than the default one --
+    the whole point of reading it back is to stop guessing, not to guess correctly by
+    coincidence. `changelog_dir` being null said nothing recoverable here; the gate on
+    disk did.
     """
     if given:
         return Path(given), None
@@ -359,6 +368,8 @@ def _fragment_dir(repo, given, config):
     state, detail = oss_config.scaffolded_changelog_gate(repo)
     if state == "present":
         return Path(repo) / oss_config.DEFAULT_FRAGMENTS_DIR, None
+    if state == "present-other-dir":
+        return Path(repo) / detail, None
     if state == "unknown":
         return None, NO_DIRECTORY_UNKNOWN.format(detail)
     return None, NO_DIRECTORY
