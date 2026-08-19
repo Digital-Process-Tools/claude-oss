@@ -153,18 +153,18 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.
 
-   Then, and only for the two computable states of the range:
+   Then, and only for the two computable states of the range — and **mint a dispatch token first**,
+   because it goes into the payload the spawn is handed and cannot be added afterwards. Any short
+   unpredictable string; it is an identifier, not a secret. Record it in the release report.
 
    ```
    Agent(subagent_type: "oss:release-auditor", run_in_background: false)
    ```
 
-   Hand it the payload verbatim and the round number. It writes nothing and it does not tag. **A
-   spawn that did not run is `could not run`**, never a clean audit — if the agent fails to start or
-   comes back empty, that is the third outcome and the same stop applies.
+   Hand it the payload verbatim, the dispatch token and the round number. It writes nothing and it
+   does not tag. **A spawn that did not run is `could not run`**, never a clean audit — if the agent
+   fails to start or comes back empty, that is the third outcome and the same stop applies.
 
-   **Mint a dispatch token before you spawn and hand it over with the payload.** Any short
-   unpredictable string — it is an identifier, not a secret — and record it in the release report.
    Then read what comes back in three states, because one dispatch of this gate once produced two
    completions over one range and only one of them was right:
 
@@ -178,10 +178,12 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      when they agree; a disagreement between two completions of one dispatch is itself a finding
      about this gate, reported as one, and never settled by which identifier happened to match.
 
-   **A `clean` verdict carries a count of classes graded `read but not exercised`**, defined in
-   `${CLAUDE_PLUGIN_ROOT}/agents/release-auditor.md`. A nonzero count **does not stop** the tag —
-   requiring a fired control for every class on every delta buys more words rather than a better
-   audit, and would block releases over honest answers. It is named by class letter in the
+   **A `clean` verdict counts the classes graded `clean (read)` rather than `clean (exercised)`**,
+   and carries that count on its own verdict line as `<k> of <m> classes read but not exercised`.
+   Both grades are defined in `${CLAUDE_PLUGIN_ROOT}/agents/release-auditor.md`; no class is graded
+   with the tail phrase itself, which counts rather than names. A nonzero count **does not stop**
+   the tag — requiring a fired control for every class on every delta buys more words rather than a
+   better audit, and would block releases over honest answers. It is named by class letter in the
    release report, and it is **not the same receipt** as a count of zero. Recording those two the
    same way is precisely what let a class nobody exercised clear this gate.
 
