@@ -7,6 +7,997 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-19
+
+### Added
+
+- The `01-oss` tools layer now ships a `00-README.md` recording why nothing in it is keyed on
+  the `Agent` tool. A rule firing on agent dispatch was asked for so that a brief's standing
+  clauses arrive at the moment they change behaviour rather than being re-typed from memory
+  (#144). It could not be built at the time: the PreToolUse hook built the subject its tool
+  rules match against from `command`, `skill`, `file_path` and `pattern` only, and an `Agent`
+  payload carries `subagent_type`, `description` and `prompt` — so the subject was empty and the
+  hook returned before the layer loop. A `tool: Agent` row would index cleanly, diagnose healthy
+  and never fire, which is the defect this plugin is named after. **That blocker is gone as of
+  `claude-jit-context` 0.5.0 and the record now says so** — see #307 below; it is written in the
+  past tense here because both changes land in the same release. The layer enumeration that #119
+  reported is genuinely fixed; this is a second blocker underneath it that neither issue knew
+  about. The record ships into every managed repo rather than living in the tracker, and a
+  test drives the installed hook with a `Bash` control beside the `Agent` payload so the day
+  the dependency starts reading one, the suite fails and says the record has gone stale. That
+  tripwire fired, and #307 below is what it caught — so it no longer exists as described here:
+  the test was inverted to assert the capability rather than the gap.
+
+- `docs/autonomy.md` records the gap between the loop as it is and "autonomous in somebody else's
+  repository", and is deliberately a record rather than a design: it answers none of the four
+  questions #237 raises, because each is a decision about a repository this project does not own
+  (#237).
+- The document's one factual claim is derived rather than asserted.
+  `tests/test_unattended_triggers_237.py` reads the `on:` block of every workflow this repository
+  runs and of every workflow in `scaffold.OWNED` -- the files written into a repository that
+  installs the plugin -- and confirms each fires on `push` or `pull_request` and nothing fires on a
+  clock or a remote dispatch. Prose asserting the tree plus a test asserting the prose would state
+  one claim twice and pass whenever both were wrong together, so the test measures the tree and the
+  document says what the measurement found (#237).
+- The first version of that sentence read "nothing an install puts in your repository runs on its
+  own", and was wrong: `/oss:scaffold` seeds a `.github/dependabot.yml` carrying a weekly
+  `schedule:`. It was invisible to the sweep because the sweep read workflows and that file is not
+  one -- a scope that excluded the only case able to contradict the claim, which is the sweep
+  reporting the answer it was scoped to give. Both the document and the README now name it, and it
+  has two checks of its own: that it is still seeded with a schedule, and that it is still a
+  *default* rather than an owned file, because "yours to delete and never handed back" is the whole
+  of what the document claims about consent (#237).
+- The sweep fails three ways, and the third is the reason it exists: an unattended trigger appears,
+  a workflow declares no human trigger either, or a workflow's trigger block cannot be read at all.
+  `on: [push]` in the one-line list form is reported as unreadable rather than as empty, which is a
+  known limit pinned by its own test so it stays a decision. The detector is proved capable of
+  failing against a planted `on: schedule:` workflow rather than assumed to be (#237).
+- `README.md` now tells an installer, in the Status section, that nothing this plugin puts in their
+  repository runs on its own: the only executable file installed is a changelog gate that fires on a
+  pull request, and nothing schedules a tick, a re-scaffold or an update of an owned file. A
+  repository that installed the plugin and was never ticked again looks from outside exactly like a
+  healthy one (#237).
+- The measured reach numbers are deliberately not restated in the new document. `CLAUDE.md`'s
+  `## What is not proven yet` holds them and is re-derived at each release; a second copy is the one
+  that drifts (#237).
+
+- Every `plugin copy scope` line, in all three of its states, ends by saying what it does **not**
+  cover: *this is one command's copy -- nothing here says which copy answered any other command or
+  skill in this session.* A command's text is resolved once, at invocation, and stays in the turn
+  for its whole length; `/reload-plugins` moves the registry and does not move text already
+  injected, so a session can hold a registry at one version and instructions from another. A line
+  that reported the copy behind one command as though it spoke for the session would be the same
+  defect one layer up, wearing a receipt (#248).
+- `commands/doctor.md` says what to do with a `SKEW`, which is the half that reaches the tracker:
+  nothing in the repo is broken by one, but any plugin prose quoted from the running session may be
+  text the clone no longer contains -- which is how #240 came to be filed against a sentence removed
+  a release earlier, correctly shaped and publicly wrong. Quote from the clone at a named sha before
+  filing anything about this plugin's own documents (#248).
+- No second mechanism was built for this issue, and that is a decision rather than an omission. The
+  narrow fail-closed option the issue offers -- refuse to file against prose the clone does not
+  contain -- is unreachable from a script: the filing happens inside an agent turn, from text
+  already in context, and nothing on disk sees the quotation. The remaining half is prose in the
+  filing step of `skills/manager/SKILL.md`, which this change does not touch (#248).
+
+- `doctor` reports **which copy of this plugin answered the invocation**, and compares it to the
+  checkout being diagnosed by content rather than by version. The detector everybody reaches for
+  first cannot work: the manifest version does not move between releases, so an installed copy at
+  the tag and a clone a whole cycle past it declare the same number and *do the versions agree*
+  answers `yes` in the healthy case and the skewed one alike. Measured 2026-08-16 -- the same agent
+  report validated `ok` against one copy and `schema_version: expected 1, got 2` against the other,
+  both declaring `0.5.0` (#262).
+- Two lines, not one, because they answer two questions and merging them would let the second vouch
+  for the first. `plugin copy scope` says what this invocation *established* -- the flag or
+  environment variable that named the root, a named root that is not the file that actually ran, or
+  nothing at all, which is the ordinary state of a hand-run script and is reported as a gap in the
+  measurement rather than as a fault in the repo. `plugin copy` says what the comparison *found*:
+  identical, `SKEW` with the differing files named, the diagnosed repo not being a checkout of this
+  plugin at all, a manifest that would not read or parse, or a walk that could not enter part of a
+  tree. Six states, and four of them are ways of not knowing (#262).
+- It reports and does not refuse, deliberately. A skew is the **normal** state for the whole window
+  between a merge and a release, so a check that declined to run there would be switched off inside
+  a week; what it buys instead is that a stale filing, a report an older schema refuses and a
+  procedure step that silently is not there stop being unrelated puzzles (#262).
+- `/oss:doctor` now passes `--plugin-root "${CLAUDE_PLUGIN_ROOT}"`, which is not redundant with the
+  path already in front of it: the launcher resolves the script either way, and the flag is the
+  *invocation* stating which copy it resolved -- a fact no script can observe about itself. Without
+  it the scope line reports that nothing established which copy answered, rather than letting the
+  script's own location speak for the harness (#262).
+- A path unreadable on one side is **unknown, not different**. It is absent from that side's map,
+  so a plain symmetric difference scored it as a file present on one side only and reported two
+  byte-identical trees as a `SKEW` -- the loud-but-wrong answer, inside the check written to avoid
+  exactly that, and found by this branch's own review rather than by the suite, because the test
+  named for the case asserted only things the wrong branch also satisfies. Blocked keys are
+  subtracted from the comparison by prefix, since the walk's error handler names the *directory* it
+  could not enter and the files beneath it exist on the other side under their own keys (#262).
+- A compared directory that is a symlink is declined rather than followed. `os.walk` refuses
+  symlinked *sub*directories and always traverses the top it was given, so a tracked `scripts -> /`
+  would have been an unbounded read inside a diagnostic contracted to always finish and print one
+  VERDICT line (#262).
+- `python3 scripts/doctor.py` run by hand now warns once more than it did: nothing names a plugin
+  root there, so `plugin copy scope` reports that it could not establish which copy answered. That
+  is the third state doing its job and not a fault in the repo, but it does move the bare-run
+  warning floor by one, and `/oss:doctor` -- which passes the flag -- is unaffected (#262).
+- The comparison folds CRLF to LF before hashing and keys files by relative POSIX path, so a
+  checkout with `autocrlf` on and an installer's unpacked copy do not read as differing in every
+  file, and the two sides compare equal on Windows. The cost is stated rather than hidden: a
+  difference that is *only* line endings is invisible here. The walk is `os.walk(onerror=...)`,
+  because `Path.rglob` swallows `PermissionError` and yields less, which would have returned "the
+  trees match" for "could not read the tree" (#262).
+
+- `bin/oss-workspace` now runs the setup diagnostic over the repo it just resolved, before the
+  session starts working, so a broken setup surfaces at second zero rather than after a tick has been
+  spent against it. The **verdict line is parsed and the exit status is never branched on for the
+  repo's health**: `scripts/doctor.py` exits `0` always, by contract, so `doctor.sh || warn` is a
+  check that can never fire — it reads a pass on `VERDICT: not usable -- 4 failure(s)` exactly as
+  loudly as on `VERDICT: ok`. Six answers are told apart and none may collapse into another: `ok`
+  costs one line, `usable with gaps` and `not usable` relay the diagnostic's whole output, `could not
+  run` says the repo's state is unknown rather than fine, a verdict word this launcher does not
+  recognise says so instead of falling through the `case` in silence, and **no verdict line at all**
+  splits by the exit status into *it ran and never reached its own report* and *it could not be
+  started* — the pair a naive implementation gets wrong, because a script that printed nothing and a
+  script that printed `ok` are the same empty grep. `--root` is passed at the path already resolved:
+  invoked without it the diagnostic prints `WARN project dir guessed from cwd` and downgrades an
+  otherwise-`ok` tree, which is a warning manufactured by the invocation rather than a fact about the
+  repository. It **never refuses to open** — a maintainer whose config is broken is exactly the person
+  who needs a session in which to fix it — which makes this the fourth arm of the shape the watch-name
+  gate already had rather than a new pattern. Measured on macOS with `supertool`, `gh` and node on
+  PATH, the launcher opens in 0.45 s without the check and 2.5 s with it, so
+  `OSS_WORKSPACE_SKIP_DOCTOR=1` skips it and the skip is announced with the repo's state reported as
+  unknown. The diagnostic is invoked as `bash <path>` and that is measured, not stylistic:
+  `scripts/doctor.sh` is tracked mode `644`, so executing it directly dies with `Permission denied` —
+  the first cut of this did exactly that, was green against a fixture whose stub carried the execute
+  bit, and reported `COULD NOT BE STARTED` on every real launch. The run is announced *before* it
+  starts and carries the skip variable's name, because the diagnostic's network probe is bounded at
+  25 s per declared dependency and 20 s per probed binary — offline, the wait is longer than the
+  measured 2.5 s, and an escape hatch first mentioned in the line that prints after the wait is one
+  nobody waiting has (#269).
+
+### Changed
+
+- Re-derived `CLAUDE.md`'s "What is not proven yet" section against `e8e75b2`, the commit `v0.5.0`
+  tags, after the fold rather than before it — the first re-derivation to name the release it ships
+  with. Records the currency guard's first real failure, the diagnostic's tree-dependent verdict, and
+  the plugin-version skew narrowing from a whole release to a single command's resolution (#235).
+- The marker's own derivation now uses `git rev-list --count`, not `git log --oneline | wc -l`: the
+  latter is rewritten through a proxy that emits a bare newline for an empty result, so a range of
+  zero commits counted as one (#236).
+
+- The manager skill's op table now carries the rule the `gh-pr-edit` fix (#195) did not land: a
+  sentence saying no op exists is a claim about a dependency's inventory that was true only when it
+  was written, and `supertool 'ops'` settles it in one call. The two directions are argued rather
+  than assumed — a named op that has since been removed fails at the call and writes nothing, while
+  a stale "no op exists" routes the reader to a raw call that runs, with no closing-reference check
+  and no read-back. So ops stay named, and the negative is what needs a probe (#240).
+- `tests/test_manager_op_inventory_claims.py` fails the manager skill on either shape of the #195
+  defect — an op asserted absent, or a fenced block making a raw call an op in the same document
+  supersedes. Both are "must not fire" checks over a corpus that is legitimately empty, so both are
+  paired with a positive control built from the literal pre-#195 text; the negative matcher runs on
+  whitespace-collapsed text because the sentence that rotted straddled a line break (#240).
+- The negative matcher's surface forms are enumerated rather than guessed, in both directions. Its
+  first draft caught two of seven ways to write "supertool has no such op" and fired on `dry-run`,
+  a hyphenated term that is not an op at all — so seven must-fire forms and four must-not-fire ones
+  are pinned as controls, and the op token is scoped to the `gh-` shape the same file's extractor
+  accepts. The fence matcher no longer anchors at column 0, which read an indented fence as absent
+  rather than as unindented (#240).
+
+- A review finding can no longer be dispositioned `filed`. The word was past tense and read as a
+  completed action, while it meant *left for the maintainer to file* — twice in one day it meant
+  nobody filed it. `report-for-filing` replaces it, which is the word `adjacent.action` already used
+  for the same act, and it now requires a `reason`: the argument for not fixing it in this diff is
+  what the maintainer needs before they can open anything. No value for a completed filing is added,
+  because an agent cannot file — opening an issue is publishing and the publishing clause is
+  unconditional. Compatibility: breaking — a report carrying `filed` is refused, and the report
+  contract number moved to 3 so an older validator reads such a report as unvalidatable rather than
+  as malformed (#254).
+
+- The developer brief now says where a defect in the tooling goes when the loop is running as a guest
+  in a project the tooling does not own: to the tooling's own board, never to the host project's,
+  whose maintainer cannot patch it and cannot see it declared anywhere. The reverse is stated with
+  equal weight -- the host project's own code stays theirs, and the split is who owns the code rather
+  than who is standing closest to it (#290).
+- That board is derived rather than inferred. Nothing declares itself as its own dependency, so the
+  loop's own repository is the one name the dependency derivation cannot produce; the brief names
+  `loop_repository()` and the diagnostic line that prints it, and deliberately does not restate what
+  it can answer -- a second copy of an accessor's states in a document nobody diffs against it is a
+  fact with two homes and one proofreader (#290, #292).
+- The maintainer skill's filing section gains the arm that receives such an item. Its bound was
+  declared dependencies and its `could not file` outcome covers a destination the derivation did not
+  produce -- so an already-resolved tooling board would have been recorded as no tracker, which is
+  the collapse that table exists to prevent, one function over (#290).
+
+### Removed
+
+- `scripts/coverage_gate.py` is deleted. It was a verbatim copy of another project's coverage
+  gate, wired into no workflow here, and every verdict in it was about that project: its
+  enforced floors named paths this repository does not have, and its "measured, not enforced"
+  reason for `scripts/` described that project's git-push helpers while this repository's whole
+  product lives in ours. Asked to classify `scripts/doctor.py` it answered `measured` — no floor,
+  and here is the good reason — with a sentence about somebody else's repository (#253).
+- The sentence the issue filed turned out not to be the defect. `bash -n` on "all twelve pytest
+  legs", cited to `tests/test_ci_non_python_coverage_557.py`, is **true upstream**: that test
+  exists there and that project's matrix really is 3 OS x 4 Python versions. Nothing was wrong
+  with the claim, so nothing was filed upstream; what was wrong was a file with no job sitting in
+  a directory readers trust (#253).
+- Compatibility: compatible - nothing executed the file. The only things that named it were the
+  `[tool.coverage.run]` comment and `omit` entry that excluded it from measurement, both of which
+  go with it, and a historical `CHANGELOG.md` entry recording that it was vendored, which stays
+  where it is because that history is true (#253).
+- `tests/test_unwired_scripts_253.py` now fails on any tracked file under `scripts/` or `bin/` that
+  no other tracked file references. It deliberately does not use the predicate the issue proposed --
+  "a cited test path missing from this tree" fires on all six of the deleted file's citations, every
+  one of them correct in its home repository, so it flags faithful vendoring rather than false
+  claims (#253).
+- Three kinds of mention deliberately do not count as a reference, because each would let a file
+  justify its own existence: the `[tool.coverage.run]` table, which is a statement that a file is
+  *not* measured; narrative sources -- `CHANGELOG.md`, `CLAUDE.md`, `changelog.d/` fragments and the
+  checking module itself -- which name a file in order to record something about it, so that a
+  deletion would otherwise immunise the very file it removed; and another directory's file that
+  merely shares a basename. The `changelog.d/` case is the one with teeth: fragments are deleted at
+  the fold, so counting them would make a script wired today and unwired the moment a release is
+  cut, reddening a release branch over nothing in its own diff (#253).
+- The survey covers every tracked file under those directories with **no extension test**. Selecting
+  by suffix is the shape of #193 one directory over -- `bin/oss-workspace` is tracked, POSIX `sh`
+  and extensionless, and a suffix filter skips it silently rather than reporting it as unknown
+  (#253).
+
+### Fixed
+
+- `/oss:doctor` counted a layer's `00-README.md` as a rule, so the first layer to document
+  itself reported one more rule than it has — in all three arms of the check, including a
+  FAIL that would have named a rule the layer does not contain, and beside a drift
+  comparison in the same function that had already filtered the same file out. Nothing
+  showed it while no layer carried a record (#144).
+- `/oss:doctor`'s jit-layer verdict rendered its dimension count as a rule count, reporting
+  "3 rule(s)" about a layer holding four. Every other fixture had one entry per dimension,
+  so the two numbers were equal everywhere the suite looked (#144).
+- `CLAUDE.md` stated in bold that the `01-oss` rule layer was inert and that nothing in this
+  repository could change that. The dependency fixed the layer enumeration in 0.4.0 and the
+  layer has been live since; the note now says so and names the command that re-derives it
+  rather than asking anyone to trust either version of the sentence (#144).
+
+- The shell CI leg scoped `bash -n` and `shellcheck` with `git ls-files '*.sh'`, which returns one
+  path in this repository. `bin/oss-workspace` — the plugin's user-facing entry point, tracked and
+  POSIX `sh` — has no extension, so neither guard had ever read it on any leg, on any platform, in
+  any release, and the leg was green throughout: a lint that ran and found nothing and a lint that
+  never received the file both exit 0 (#193).
+- The file list is now derived by `scripts/shell_sources.py`, by extension **or** by shebang, so a
+  script added without an extension is covered by the commit that adds it rather than by somebody
+  remembering to name it in the workflow. Naming the file beside the glob would have been the
+  one-line fix and a fact about this repository living outside `.oss.json` (#193).
+- That enumerator answers in three exit codes rather than two: `0` with the list, `2` when it
+  matched nothing, `3` when a tracked file could not be read. Both refusals matter — `shellcheck`
+  with no arguments exits 0, so a selection that silently matched nothing would reintroduce the same
+  bug one narrowing later, and a file whose first line could not be read is not a file without a
+  shebang (#193).
+- First lint of `bin/oss-workspace`: clean at every shellcheck severity, so the fix ships no
+  behaviour change to the launcher. That is the measurement the leg could not previously make (#193).
+
+- `doctor` no longer reports a `.supertool.json` it read perfectly as one it could not read. `[]` is
+  valid JSON: the read succeeded, the parse succeeded, and only the document's shape is wrong -- but
+  both the `watch channel` and the `radar board` lines answered *".supertool.json is there and could
+  not be read"*, which sends a maintainer to file permissions, a lock or an encoding when the remedy
+  is to fix the document. `scaffold.check_radar` already answered that shape `malformed`; the fix went
+  to `doctor`, which was the one that was wrong. This is the plugin's own defect class in the
+  direction that gets forgotten -- not an absence rendered as a pass, but one failure state rendered
+  as a different one, where the two send the reader somewhere different (#216).
+- The same fix, one caller over from the row the issue tabulated. `{"ops": "nope"}` also read and
+  parsed perfectly, and the `watch channel` line called it unreadable too -- under a comment three
+  lines above it that had said absent and malformed were two answers since it was written. Both
+  states now carry the sentence their shape earned, and `watch channel` gains a `malformed` arm of its
+  own rather than falling through to the `default` line, which would have told a repo with a broken
+  file that it declares nothing (#216).
+- A third instance, found by this branch's own audit and fixed in the same lane: `.oss.json` was read
+  the same way. `_derivable_watch_name` folded a parsed-but-wrong-shape config into `unreadable` too,
+  and its sentence reaches the reader through the same `watch channel` line -- so before this, a
+  `doctor` run could report the `.supertool.json` shape correctly and the `.oss.json` shape wrongly on
+  one screen. It gains a seventh state and both reason dictionaries that render it gain the key.
+  `bin/oss-workspace` needed no change: the cross-check that holds doctor's copy of the derivation
+  rule against the launcher's own program only ever required the launcher to print no name here, and
+  it still prints none (#216).
+- Three states in the shared reader, not four. "It parsed and the key we wanted is absent" was
+  considered and declined: the two callers want different keys, and each already names that absence in
+  its own vocabulary -- `no-tiers` for the board, `default` and `declared-only` for the channel -- so a
+  fourth state in the helper would have to know which key its caller wanted and would answer for
+  whoever did not ask (#216).
+
+- `schema_version` in the agent report schema was `const: 1` in every copy ever shipped, across at
+  least three contracts that refuse each other's reports — so the field that exists to distinguish
+  versions could not record one, and #212's remedy of having a validator announce its schema would
+  have printed `1` from both copies and confirmed the skew rather than revealed it. The schema now
+  declares `x-schema-version` and the report's `schema_version` is typed but unconstrained; `1` is
+  left meaning "written before anyone counted" and `2` is the first value that carries information
+  (#221).
+- `scripts/report_schema.py` decides the version in three states rather than two. A report naming a
+  contract this copy does not hold — newer or older, or a schema that declares no version at all —
+  is `UNVALIDATABLE`, exit `2`, not `INVALID`. A copy holds exactly one contract and cannot compute
+  its relationship to another version's, so both directions are the same epistemic state. The shape
+  pass still runs and its findings are printed under a sentence saying which contract they answer,
+  because declining to look would be the same defect one layer along. Every verdict row now names
+  the contract it was decided against, on the pass as well as on the failure (#221).
+- A recorded fingerprint of the schema's *enforcing* content — prose stripped, so rewording a
+  description demands nothing — fails the suite when the contract moves without the number, and
+  fails louder when the number moves to a value nothing recorded. A hash guard whose natural failure
+  mode is "no record, nothing to compare" passes hardest at the one moment it is worth anything
+  (#221).
+- `agents/developer.md` teaches the third verdict. Its single-copy branch said "findings mean the
+  report is wrong, fix the report", under which `UNVALIDATABLE` reads as an instruction to edit a
+  correct report until an obsolete contract accepts it — the exact failure that section exists to
+  prevent. Worth knowing while it lasts: the installed `0.5.0` cache still carries `const: 1`, so it
+  answers `INVALID … schema_version: expected 1, got 2` on every report written against the new
+  contract until a newer plugin is installed. That is the same fact in an older spelling, and the
+  brief now says so (#221).
+
+- `oss_state.py` computed and printed the intake summary before it validated the entry, so a refused
+  write reached the caller as a well-formed metric line with the `FAIL` underneath it. One tick
+  filtered the output for that line, read it as a record that had landed, and lost its entry — the
+  loss surfaced a tick later, from an entry count. The line is a receipt now and it is only printed
+  once the entry is on disk; a refusal prints the `FAIL` first and a `NOT RECORDED` line under it
+  carrying the pair that went nowhere, which is deliberately a different string from the `RECORDED`
+  receipt so a filter that catches one cannot catch the other. The `--trend` line is labelled
+  `TREND`, because it is a computation over an existing history and stores nothing (#222).
+- A write that fails is now a `FAIL` line rather than a traceback. Validation passing and the write
+  then failing was a third case with no arm at all: `append` let the `OSError` past the CLI's one
+  handler, so the run printed the success-shaped intake line and then a stack trace, with no `FAIL`
+  for a caller to watch for (#222).
+- The ordering is enforced by a flush, not by the order of the two `print` calls. stdout is
+  block-buffered the moment it is a pipe and stderr is not, so a `FAIL` printed first still surfaced
+  second under `2>&1` — which is how a transcript is read. `capsys` keeps the streams apart and
+  cannot see it, so the test drives a real subprocess with the two merged (#222).
+- A malformed `--detail` in the same run as the counts refused while the pair had not been built
+  yet, so the pair was dropped with nothing said about it — the same defect one branch over. The
+  record is built before `--detail` is parsed (#222).
+- A `FAIL` line can carry a path, and a path can carry a character the console's codepage cannot
+  hold — stdout's error handler is `strict` where stderr's is `backslashreplace` — so the one line
+  this issue exists to guarantee raised at its own `print` and never arrived. It did not even crash
+  loudly: `UnicodeEncodeError` is a `ValueError`, so it landed in the `--detail` handler and came
+  out as `FAIL --detail is not valid JSON` on a run passing no `--detail`. Every human-readable line
+  goes through a writer that cannot die on the codepage, and the JSON handler is narrowed to
+  `json.JSONDecodeError` so no unrelated `ValueError` can be confidently misattributed again.
+  Reproduced with `PYTHONIOENCODING=ascii`, so it is observed rather than reasoned (#222).
+- `append` writes atomically — a sibling temp file renamed over the history, as `migrate` already
+  did. A plain rewrite truncates at `open`, so a failure after that point left a half-file where a
+  history was, and the new failure arm's claim that the history is unchanged would have been hopeful
+  rather than true. Compatibility: the rename needs the state file's *directory* to be writable
+  where the in-place rewrite needed only the file, so a state file inside a directory the caller
+  cannot write is now a loud refusal instead of a write that risks the history (#222).
+
+- The release command no longer claims the compatibility bullet is documented in a fragments README
+  it cannot see. It was true of this repository's copy and false of the file `/oss:scaffold` writes,
+  and that README is a *default* under the ownership contract — created once, then the repository's
+  own file forever — so shared prose can neither know what it says nor fix it. The path was a
+  per-repo fact besides: the directory is `changelog_dir`, not a name a shared document is entitled
+  to spell. `commands/release.md` now writes the bullet out at the point of use and says an older
+  scaffolded repository may not document it at all, and the scaffold template gains a Compatibility
+  section of its own, so newly scaffolded repositories get it.
+  Nobody was stranded meanwhile: `release_version.py`'s own refusal quotes the bullet in full (#225).
+
+- Gate 1 is stated in three states, matching the op that answers it. `gh-branch` separates a
+  workflow that **could not have run on this commit** — its triggers do not include the event that
+  produced it — from one that **should have run and did not**; the gate had room only for the
+  second, so a `pull_request`-only workflow either blocked every release the repository would ever
+  cut or was waved through, taking the blocking state with it. The middle state is now named: not a
+  pass, not a blocker, and contributing no coverage, so a commit where every declared workflow lands
+  there is uncovered rather than green. The release report has to name it and say where its coverage
+  did come from, and the verdict is re-read from the op each release rather than remembered — an
+  `on:` block can change, and a remembered verdict then waves through the one case the gate exists
+  for. `skills/manager/SKILL.md` carries the same three states, at the release gate and at the
+  post-merge branch check, where the middle state is routinely misread as a red default branch
+  (#229).
+
+- `bin/oss-workspace` validated the **derived** watch channel name and exported the **declared** one
+  verbatim — a guard and its bypass in one file. `.supertool.json` is tracked, so a declared
+  `watch_name` arrives by ordinary contribution exactly the way `repo` does; measured before the fix,
+  `../../../tmp/pwned` was exported as `../../../tmp/pwned` and a name carrying a newline was exported
+  carrying it, while the sibling route three lines below refused the same value in as many words. The
+  fix is not to run the declared name through the derived route's function — that one takes an
+  `owner/name` slug and folds it, and a declared name is not a slug. Both roads produce a value of the
+  same kind, so `oss_config.watch_name_problem` is now the single statement of what a watch channel
+  name may be and the launcher calls it **once, after the two roads converge**. A bypass is a road
+  that does not reach the gate, and there is no longer another road. What it refuses is deliberately
+  narrow: only what this plugin can argue without knowing anything about supertool — a value that is
+  not usable as a path component, because the consumer renders the name into a socket path and a
+  poller state directory. It does **not** apply the consumer's own `NAME_RE`, which caps the length
+  and constrains the first character: a copy of somebody else's rule drifts, and refusing on a cap
+  would take a working private channel away from a repository whose consumer accepts the name. That
+  question is asked and reported instead. Refusing, being unable to check, and having no python are
+  three arms of the shape this script already had — export nothing, say so on stderr, open the session
+  anyway. The receipt names the socket the session actually lands on rather than assuming: an already
+  exported `SUPERTOOL_WATCH_NAME` wins over both roads, so a refusal there costs nothing and the
+  session stays on that channel, where the first draft of this said *SHARED DEFAULT socket* and was
+  read, believed and wrong. The comment in `scripts/oss_config.py` claiming the derivation was *the one consumer of
+  `repo` that did not route through the guard* is corrected: it was read as a claim that the launcher
+  had no other unguarded route, and that was false when it was written (#230).
+
+- `bin/oss-workspace` now **asks the installed supertool** whether it will accept the watch channel
+  name, and reports the answer in three states. The derivation folds `owner/name` into `owner-name`
+  with no length constraint, and nothing in this plugin knew the consumer's own rule — measured
+  against this organisation's real slugs on 2026-08-16 against supertool 0.46.0, and re-measured in
+  this branch: `Digital-Process-Tools/claude-oss` derives a 32-character name accepted **exactly at
+  the cap**, while `claude-supertool` (38) and `claude-jit-context` (40) derive names the consumer
+  discards, falling back to the shared default socket — the state #191 exists to eliminate — while the
+  launcher's own output implied a private channel. Two of the three repositories this plugin runs on
+  were in that state, and this one works by one character, which is why nobody saw it. The rule is
+  **read out of the installed `presets/watch/naming.py` at run time** rather than transcribed:
+  a copy would drift, and refusing on a cap this repository carried would take a working channel away
+  from a repo whose installed consumer accepts the name. Accepted is silent, because a line printed on
+  every healthy launch is furniture and furniture is how the line that matters stops being read;
+  rejected prints the name, its length and the rule, because *too long* without a number is
+  unactionable; and **could not ask** — no `naming.py` under any install, a module that will not load,
+  a `NAME_RE` that is gone — prints just as loudly, because silence there is indistinguishable from
+  acceptance. With no supertool installed at all there is nothing new to say: the consumer block
+  already reports that with its own remedy. The name is still exported in every case; the harm this
+  fixes is the silence, not the export (#231).
+
+- `doctor`'s `jit rule layer` check scanned every `*.sh` under the dependency's install root, so it
+  was answered by that plugin's own test harness: `tests/test-layer-enumeration.sh` carries a quoted
+  layer list naming `01-oss` inside a fixture, and the string is invariant under the upstream fix. A
+  fabricated tree with the old broken fixed list still in the hooks printed `reads` all the same. The
+  scan is now the hook set — the scripts `hooks/hooks.json` declares, plus the closure of what they
+  `source` — and a layer list found only outside that set is reported as the reason the check
+  `could not be determined`, rather than dropped or accepted. A missing hook manifest is a non-answer
+  too, since without one nothing separates a hook from a fixture (#241).
+- Three narrower states in the same check, each of which used to be reported as something it was
+  not. A `hooks` path a plugin declares and this cannot resolve no longer falls back to the
+  conventional location, because reading a file the plugin did not name is the same substitution one
+  field over -- and where a conventional manifest happened to sit there, the fallback produced a
+  confident `reads`. A manifest that will not parse now says so instead of sharing "named nothing
+  this could resolve to a file" with one that parses to `{}`. And the scan of the rest of the
+  install tree walks with `os.walk(onerror=...)`: `Path.rglob` swallows `PermissionError` and yields
+  nothing for that subtree, so a tree that could not be read reported as a tree with nothing in it
+  (#241).
+
+- The tick healed the radar board once, at the top, so every pull request the tick itself opened was
+  unwatched for its whole CI run — radar has no discovery feed (`discovery: radar ticks only`), so a
+  heal only ever arms pollers for what was open at the moment it ran. `commands/tick.md` now heals
+  after the pull request is opened, and states the governing condition as *board membership changed*
+  rather than as a list of places to heal: a list is one entry long until somebody adds a step, and
+  the red-default-branch case has no poller to heal at all, so no list could have covered it (#242).
+- A tick no longer ends while the board reports a gap. `What ends a tick` reads radar's own rendered
+  tokens in three states — covered, a row marked `[unwatched]`, and `watch coverage UNKNOWN` — so the
+  membership rule is anchored by a measurement at the end rather than by a reminder at the top, and a
+  step added later cannot escape it (#242).
+
+- A tick that idled on a momentarily quiet board closed on the same line as one that had genuinely
+  finished, so the loop handed back to the maintainer and called it done (#244). Both the manager
+  skill and `/oss:tick` now require the tick to name which of three states it ended in: work
+  started, blocked with every remaining item named individually, or nothing left. Only the last is
+  an end, *somebody else's work* is stated never to mean the loop's own backlog, and a release is
+  named as a step in that list rather than an exit from it.
+- The third state is sourced rather than asserted: "nothing left" requires `gh-issues` and `gh-prs`
+  to have answered and come back empty. A board that could not be read is `unknown` and is not an
+  ending -- otherwise a loop that stopped because it did not look renders exactly like one that
+  stopped because there was nothing to do.
+
+- The manager skill's op table was introduced by a heading reading "Reads go through supertool.
+  Writes go through `gh`", while four rows of the table directly beneath it routed writes through
+  supertool -- filing, opening a pull request, correcting a published body and merging (#247). The
+  heading no longer names a taxonomy at all: it defers to the rows, because a class-level claim in
+  a heading is a second and coarser copy of what the table already answers one row at a time, and
+  the copy that drifts is the one that gets skimmed and quoted. `tests/test_content_invariants.py`
+  now fails on a heading that routes a class, with the pre-#247 heading and table as its control.
+
+- The developer brief and the manager skill's brief template named `supertool 'edit:@-'` as the way
+  to write a file and named no op that can create one. `edit` takes an `old` and a file that does not
+  exist has none, so the one write every task in this repository is required to perform — the
+  changelog fragment, always a new file — had no documented route, and agents fell back to a raw
+  heredoc that runs no post-write validator, cannot roll back and reports nothing about what it
+  wrote. Both documents now name `supertool 'paste:@-'` with `path` and `content` beside `edit`, and
+  say which is for which (#250).
+- Naming the op was chosen over pointing at the shipped rule layer that already documents `paste`,
+  and the reason is measured rather than inherited from #240: that rule is gated on
+  `Read|Edit|Write|Glob|Grep`, so a Bash heredoc never fires it. The pointer is unreachable for
+  exactly the failure it would have to catch, and unlike a renamed op — which fails at the call — an
+  omitted one fails nowhere, because the heredoc succeeds (#250).
+- The paragraph stays in two documents on purpose: a brief pasted into a message has to be
+  self-contained for an agent that never loads `agents/developer.md`. `tests/test_content_invariants.py`
+  is where the fact now lives once and fails when either copy stops naming a creating op. The check
+  reads op invocations off a copy with blockquote markers stripped and whitespace collapsed, so
+  neither a wrap between `supertool` and its quoted argument nor a wrap inside a blockquote can turn
+  the assertion into a silent pass — both are pinned by must-fire/must-not-fire pairs in the same
+  fixture, and the blockquote one was found by the check firing on correct prose rather than
+  reasoned about afterwards (#250).
+
+- Every agent definition granted `Bash` now says that the grant is **total**, and says it as advice
+  rather than as a boundary. `agents/auditor.md` summarised itself as *annotates, never blocks* — a
+  claim about its output — and it was read as a claim about its effects: an audit spawn ran an acting
+  supertool op against the live watch channel of the session that had dispatched it, mid-audit, on a
+  change about that fleet's own state. Nothing in the frontmatter, the harness or the prose
+  distinguished a read from a write, because every write in this system goes through `Bash`. The same
+  hole made `agents/triager.md`'s withheld `Edit`/`Write` real for the harness tools and empty for the
+  route actually used, and `CLAUDE.md` said so as a virtue — *prose is a request, frontmatter is the
+  boundary* — which is true of tools and false of effects (#251).
+- The advisories point at supertool's own published op classification (`ops:roster` — unmarked,
+  `*`, `!`) instead of listing acting ops. A per-agent allow-list would have been a second copy of a
+  classification the dependency already publishes, and the copy is the one that goes stale; the
+  enforceable half is upstream, in the tool that owns the classification, not here (#251).
+- `tests/test_agent_grant_is_total.py` holds the shape in three layers, and holds only the shape: the
+  advisory is present, it carries the words `advice, not a boundary`, and it cites the authority —
+  measured in CI, which has no supertool — plus a roster layer that fails if the `*`/`!` marks the
+  advice names stop being the ones the tool declares, or if an advisory grows into an enumeration.
+  Where `supertool` is absent that layer skips naming what went unmeasured, rather than passing
+  quietly. What no test in here can hold is the behaviour: there is no read-only `Bash` to grant
+  (#251).
+
+- `doctor`'s `jit rule layer` check split a dependency's declared hook-manifest path on
+  `os.sep` — the separator of the platform *running* the check — while its docstring said it
+  split on the platform that wrote it. A `hooks` value authored with backslashes therefore
+  resolved only when the check happened to run on Windows; on the eight POSIX legs the same
+  declaration failed to find a file that was really there and reported `could-not-determine`
+  blaming a missing manifest. The state was honest and the reason was wrong (#258).
+- The separator is now `/` on every platform, so the answer is a property of the declaration
+  rather than of the runner. A backslash-bearing value is **refused with a named reason**
+  rather than split: on POSIX a backslash is a legal filename character, so treating it as a
+  separator reads a file the manifest did not name whenever the guess is wrong — which would
+  turn an honest non-answer into a confident one. Nothing here can tell the two intentions
+  apart and there is no authority to transcribe saying which the runtime accepts, so the value
+  goes to the third state carrying its reason. A plugin that wants to be read writes `/` (#258).
+- Every refusal `_jit_path_parts` makes now returns why, and the caller prints it beside the
+  value as the plugin wrote it. The value alone left the backslash case looking like a typo in
+  a filename; the rule alone would name a policy without the value it was applied to (#258).
+- Nothing in the 13-leg matrix exercised a backslash-bearing manifest value at all. Both new
+  tests run under an injected `os.sep`, in both directions, with the accepting half in the same
+  fixture — so a resolver that refused everything fails rather than passes, and the injection is
+  asserted to have taken before anything is measured (#258).
+
+- The developer brief required its report, note and pull request payload to be written outside every
+  worktree and required every write to go through supertool, which refuses a path outside the current
+  working directory — so an agent doing exactly what both halves said was refused on the one write
+  the brief guaranteed, at the cost of a re-sent payload. Both the brief and the passage the manager
+  skill pastes into briefs now name the refusal and the remedy: run the write from the worktree root.
+  Neither points at the env var or the `allow_outside_cwd` key the refusal offers, because both widen
+  every op for the rest of the session to buy one write (#266).
+
+- Nine refusal receipts in `bin/oss-workspace` told the reader the session was on the **shared default
+  socket** while it was demonstrably on a private one. An already-exported `SUPERTOOL_WATCH_NAME` wins
+  over both the declared and the derived road, so a refusal costs nothing and the session stays on that
+  channel — and the wrong half took the true half with it, because refusing blanks the name and the
+  pre-existing *an export wins* line only fires while that name is non-empty. `7b2841c` fixed one arm by
+  computing the sentence from the winning export; the rest stated it independently, which is exactly why
+  one got fixed and the others did not. The sentence is now computed **once**, in the shell, and handed
+  to every arm as an argument. Nine, not the three the issue names: `DERIVE_NAME` carries five refusal
+  sites and one of them splits `SHARED DEFAULT` across two source lines by string concatenation, so a
+  grep for the phrase does not find it — a count taken from that grep would have left it behind the same
+  way. Each arm's pair is asserted **both ways**: with an export the receipt names that channel and must
+  not claim the shared socket, with none it must still claim it, because a one-directional assertion
+  passes against a fix that deletes the sentence everywhere. The sentence renders the exported value with
+  `ascii()` rather than `repr`, so it is ASCII by construction and no console codepage can kill the
+  receipt. And the argument has a third state of its own: a caller passing none — `tests/test_doctor_inprocess.py`
+  extracts these blocks and runs them against its own fixtures — is told the landing was *not
+  established* rather than handed a confident claim about a session it does not have (#270).
+
+- A declared `watch_name` the console could not encode was swallowed, and `bin/oss-workspace` then
+  **derived a name over a declaration that exists**. `READ_NAME` prints the declared name to stdout and
+  the shell reads it back, so stdout is the transport rather than a display; stdout is strict, a name the
+  stream cannot represent raises `UnicodeEncodeError`, and the block's trailing `|| true` swallowed it
+  into the empty string — which reads as *declares none*, which derives. The platform axis is the point:
+  cp1252 on Windows against a `.supertool.json` written on a UTF-8 machine, and that file is tracked, so
+  the value arrives by ordinary contribution. Of the three candidate behaviours the honest one is the
+  third state, and neither of the others states it: printing the name mangled is a receipt nobody can act
+  on plus an export nobody asked for, and refusing to launch trades the product for an enhancement. So
+  *a name is declared and this stream cannot carry it* is now its own tagged answer, in the same shape as
+  `conflict` and `unreadable` — export nothing, derive nothing, say so on stderr with the value rendered
+  through `ascii()`, open the session anyway. The check is an explicit strict encode rather than a
+  `try`/`except` around the write, because `PYTHONIOENCODING` can put a `replace` handler on that stream
+  and a silently mangled name would then be exported with no exception for any handler to see — the
+  quiet half of the same bug. `|| true` is kept, because `set -e` would otherwise turn a bad
+  `.supertool.json` into no session at all, but it no longer means *this file declares none*: a non-zero
+  exit with no answer is now reported as its own state in both `READ_NAME` and `DERIVE_NAME`, which
+  closes the same swallow for any other uncaught exception — a `RecursionError` out of `json.load` on a
+  deeply nested file is neither `OSError` nor `ValueError`, and previously left `DERIVE_NAME` silent on
+  both streams. Tested by forcing a strict encoding onto the stream and measuring that an unencodable
+  print actually raises there, never by asserting a codepage from a table; a run that cannot establish
+  the condition skips carrying what went untested. The previous decision to leave this was recorded in a
+  test comment rather than on the tracker, which is why it survived a release (#271).
+
+- `doctor`'s `plugin_tree_digest` declined a symlinked *directory* at the top of each compared
+  tree and nothing under it. `os.walk` yields a symlinked file as an ordinary entry in
+  `filenames` and `read_bytes()` follows it, so a tracked `agents/leaked.md ->` anywhere had
+  that file's bytes folded into the digest while `unreadable` stayed empty — a receipt that
+  could not be told from a tree with no symlink in it at all. A symlinked file is now declined
+  on the same rule as a symlinked directory, and the decline is recorded in `unreadable` rather
+  than dropped (#279).
+- Declining was chosen over resolving the link and containment-checking the result, and the two
+  produce different digests for the same repository, so it is a decision rather than a detail.
+  Resolving keeps a legitimately symlinked file inside the tree measurable, and needs a
+  definition of "inside" against `realpath` — `/var` against `/private/var`, case folding, short
+  names — that a diagnostic cannot get right on every leg; a containment test wrong on one leg
+  reads a file outside the tree with a receipt saying it did not. The cost is stated rather than
+  hidden: a symlinked file inside the tree is no longer compared, and says so (#279).
+- A non-regular file is refused separately, and that is the half that stopped the 0.6.0 tag: a
+  FIFO inside the tree with no symlink involved blocks in `open()` until somebody writes to it,
+  so `plugin_tree_digest` never returned and `doctor`'s *exit 0 always, one VERDICT line*
+  contract was unreachable — from a launcher that runs the diagnostic before every session with
+  no timeout. Both refusals ride on one `os.lstat`, which neither follows a link nor opens
+  anything (#279).
+- The same containment hole one level up, found while fixing the first: `os.lstat` refuses a
+  symlinked leaf and refuses nothing above it, so `.claude-plugin ->` elsewhere still had its
+  manifest read from outside the tree. Every ancestor of a compared file is now checked, and the
+  compared directories need no equivalent — their tops were already checked and `os.walk`
+  declines symlinked subdirectories itself (#279).
+- The only symlink test this check had passed `target_is_directory=True`, so the file case had
+  no positive control and the suite was green over both halves. All three new fixtures pair a
+  must-not-fire with a must-fire in the same tree, confirm the symlink or the FIFO actually took
+  before asserting, and skip loudly with what went untested where the platform refuses to build
+  one (#279).
+
+- A release audit could grade a class `clean` on a reading and on a fired control with the same
+  word, so a class nobody exercised cleared the gate over a defect that reproduces in one command.
+  A class with no findings now carries `clean (exercised)` — a control that would have failed had
+  the class been present, named with its output — or `clean (read)`, which never renders as the
+  measured grade, and the verdict line carries the count of classes read but not exercised. The
+  count annotates rather than stopping the tag; a `read` grade never outweighs a reproduction
+  (#280).
+- Every release-audit completion is now joined to the dispatch it answers by a token the gate mints
+  and the auditor echoes, with `dispatch token: none reached me` as its third state. An
+  unattributed completion does not clear the gate **and is not discarded** — when this last
+  happened two completions arrived for one dispatch and the unattributed one was the one carrying
+  the real finding (#280).
+
+- `doctor`'s memory check returned early on `not store.is_dir()`, so the branch that detects an
+  `identity.md` sitting unread at `.claude/remember/identity.md` was unreachable in the one state a
+  fresh install is actually in. A marketplace install on day one has no `.remember/` directory --
+  nothing has saved a session yet -- and an installer who has put identity where it looks like it
+  goes got `no memory store in this project ... it will create one on first save`: true, reassuring,
+  and silent about the file that is the reason they ran the diagnostic. Both locations are now
+  listed before anything is reported (#284).
+- The two decisions #284 asked a fix to make were already made, and the issue said it was filed from
+  the passing branch plus a docstring rather than from a reproduction. Observed before fixing: the
+  absent message already named both consulted paths and the target, and the present-but-never-read
+  message already existed and was already distinct. What was missing was the ordering that made the
+  second one reachable (#284).
+- `Path.is_dir` and `Path.glob` are both gone from that check, for the reason they keep coming back:
+  `is_dir()` swallows `OSError` and returns True for a directory that exists and cannot be entered,
+  and pathlib's glob swallows `PermissionError` while walking and yields nothing -- so a `.remember`
+  nobody could read produced `no identity.md in .remember or .claude/remember`, a confident absence
+  about a directory that was never listed. `os.listdir` raises, and the exception already in hand
+  settles which state it is: `FileNotFoundError` is absence, anything else is unreadable. No second
+  question is asked of the filesystem to explain why the first failed (#284).
+- The reasoning about *which* location is read in *which* install layout stays in `memory_layout`'s
+  docstring, in one copy. The messages reach the same conclusion and a test binds them, rather than
+  a second user-facing copy that drifts from the first (#284).
+
+- `doctor` now reports `./supertool`, the entry point every developer brief this plugin issues tells
+  an agent to call. It had no line at all: `OK supertool: available` answers *is the binary on PATH*,
+  which a reader takes for *does this repo have the path the brief named*. Two questions with
+  different remedies, rendered as one OK (#285).
+- Ten states, because the failure modes are not one. **absent** is every fresh clone, by design --
+  `scripts/scaffold.py` gitignores `/supertool` so one developer's absolute path is not baked into
+  every other clone -- and it is also every worktree an agent cuts mid-session, since the link is
+  made against the directory a *session* opens in. **other-target** is a link reaching something
+  that is not a `supertool.py` in the plugin cache; it was observed on this repo, and a deliberate
+  local checkout looks exactly like a stale link from another machine, so the finding names the
+  target rather than judging it. `not-a-symlink`, `dangling` and `unreadable` are each
+  present-and-unusable with their own remedy, none of which is "create one" (#285).
+- Three of the ten say "could not tell", which is the reason this is a function rather than an `==`.
+  **unknown-plugin-path** is a link with no readable plugin cache to compare it against;
+  **unknown-comparison** is a cache that has candidates and a filesystem that would not say whether
+  any of them is that file. Reporting `other-target` in either case accuses a link that may be
+  correct; reporting `ok` clears one that may not be. Neither was measured, so neither is said
+  (#285).
+- **The comparison is identity, not string equality, and that was settled by CI rather than by
+  taste.** The first version normalised both sides with `os.path.realpath` and failed two Windows
+  legs: a link pointing at exactly the right file was reported `other-target`, so every Windows
+  install with a correct `./supertool` would have been told it points somewhere it should not --
+  worse than the silence #285 was filed about. "Normalise both sides" is not the fix and both sides
+  were already normalised by the same function: on Windows `realpath` is **prefix-preserving rather
+  than canonicalising** (`ntpath.py:683` records whether the input already carried the
+  extended-length prefix, `:713` strips it from the result only when it did not), and `os.readlink`
+  returns a reparse point's substitute name that carries it. One function, both sides, two
+  spellings. Symmetry of function is not symmetry of result when the output depends on the form of
+  the input (#285).
+- `os.path.samefile` replaces it, which is a transcription rather than an invention: supertool's own
+  session-start hook decides the same question with `-ef`, and its comment says why -- device+inode
+  through symlinks. Every string alternative is a list of spellings (the extended-length prefix, its
+  UNC form, 8.3 short names, a substituted drive, a junction, case folding) and is wrong the first
+  time Windows adds one, which is the same shape as a table of error codes. The residual risk is
+  stated rather than hidden: `st_ino` is not meaningful on every remote filesystem, and that
+  direction clears a wrong link rather than accusing a right one (#285).
+- The regression test is a **hard link**, and the first draft of it was a symlinked directory that
+  passed against the broken code. On POSIX `realpath` genuinely canonicalises, so no symlink-shaped
+  second spelling survives it and both implementations agree -- a control that distinguishes them
+  only on the platform this suite cannot run is a control that controls nothing. Two directory
+  entries for one inode survive `realpath` everywhere, so the test fails on macOS and Linux before
+  the fix as well as on Windows, and it asserts identity rather than branching on `sys.platform`
+  (#285).
+- The same defect had a second instance a few lines away, found by sweeping for the class rather
+  than by CI: `_own_supertool_tree` walks from `realpath(project_dir)` while its caller held the raw
+  path, so `_display` fell back to an absolute path -- `/tmp` against `/private/tmp`, an
+  extended-length prefix on Windows. Only the printed string, never a verdict, which is why nothing
+  caught it. The walk now returns its root beside the core and the display uses it (#285).
+- Which component creates the link was open in #285 and is now settled by reading it rather than
+  reasoning about it: supertool's own `hooks/session-start.sh`, which already handles every case
+  correctly -- it links when nothing is there, leaves a stranger untouched, and refuses to link at
+  all inside a supertool checkout. Nothing upstream is broken and nothing was filed there. The gap
+  was entirely local: no diagnostic said which of those had happened (#285).
+- That last refusal is transcribed into the check rather than invented, so a supertool checkout is
+  told it is *right* to have no wrapper instead of being warned at. claude-supertool is itself
+  managed by this loop, so without that arm the diagnostic would have fired a confident wrong
+  warning in the one repository the tool comes from (#285).
+
+- `doctor.loop_repository()` derives where a defect in *this plugin* gets filed, off the
+  `repository` key in the manifest at `PLUGIN_ROOT` -- the same key, read the same way, that
+  `dependency_repositories()` already reads out of every other plugin's installed manifest. The one
+  board the loop could not name was the one owning everything it writes into somebody else's repo,
+  and `agents/developer.md` correctly forbids improvising a slug, so a destination that could not be
+  derived and a destination that did not exist rendered identically at the call site (#292).
+- #292 proposed adding that key to `.claude-plugin/plugin.json`. It has been there since 0.1.0, in
+  the tree and in every cached install -- checked before editing. Nothing was missing from the
+  manifest; what was missing was a reader, so no manifest changed (#292).
+- It is a sibling accessor rather than a row in `dependency_repositories()`, and that was settled by
+  measurement instead of by taste. "Every existing caller works unchanged" was the argument for
+  folding, and the one existing caller does not: `check_freshness` feeds the mapping through
+  `published_versions` into `dependency_findings`, which unions `declared | installed | latest`.
+  This plugin is in neither of the first two, because nothing declares itself as its own dependency
+  -- so folding makes the diagnostic print `oss: declared but not installed. Run claude plugin
+  install oss@dpt-plugins`. False, actionable, wrong, and printed by the plugin it is wrong about.
+  A test holds the separation rather than a comment (#292).
+- Three states, because two is the collapse the issue is about: read; **read and does not say**,
+  which is a real state for a manifest with no `repository` key and is not *there is no tracker*;
+  and **could not be read**, which is not either. A non-string value lands in the second rather than
+  being formatted into a diagnostic line -- `plugin.json` is tracked and a contributor writes it
+  (#292).
+- `/oss:doctor` reports it, so the accessor reaches something the day it lands instead of waiting
+  for a caller to adopt it. An honest accessor nobody calls is a capability that exists and cannot
+  be used, which is the shape of the gap it was written to close (#292).
+
+- The generated changelog gate no longer renders every dependabot pull request permanently
+  red. Dependabot applies its own labels the moment it opens one, each label is a `labeled`
+  event, and `labeled` is in the workflow's `types:` for the reason its comment gives — so
+  five runs were created inside two seconds on a scaffolded repository and all five failed.
+  Applying `no-changelog` afterwards makes a passing run exist and retracts nothing, so a
+  merge gate that aggregates runs on the head sha refuses a pull request the forge calls
+  mergeable, with no action left that would change it. The gate now exempts a pull request
+  whose **author** is `dependabot[bot]` — announcing the skip rather than passing silently,
+  and only in the branch that previously failed, so a bot pull request that deleted a pending
+  fragment is still refused. The workflow also groups its runs per pull request with
+  `cancel-in-progress`, which collapses the burst; that is a mitigation, not a fix, since
+  `cancelled` is not `success` either. The remaining half is the aggregating gate itself,
+  filed as `Digital-Process-Tools/claude-supertool#1792`. Reaches a managed repository only
+  when `/oss:scaffold` is next run there, and nothing schedules that (#293).
+
+- `supertool-required.md` — the `01-oss` tools rule that refuses `Read`, `Edit`, `Write`, `Glob`
+  and `Grep` — told a reader without `supertool` nothing at all. It is committed into every repo
+  this plugin scaffolds, so it reaches contributors who installed nothing, and it closed the gap
+  by asserting it away: *"a tree that carries this layer already carries supertool"*. That
+  sentence is false in exactly the situation the reporter was in, and no rule can check it — a
+  rule is a text file the hook matches a subject against, and it runs no command, so it fires
+  identically whether the binary is there or not. The refusal now hands the reader the probes
+  that tell the situations apart, names each outcome, says plainly that the file's presence is
+  evidence about a repository and none at all about their machine, and names the route to the
+  dependency (#294).
+- **Three outcomes, not two, and the third is the one a first draft of this fix got wrong.**
+  `./supertool` is gitignored and created per clone by supertool's own session-start hook, so
+  *binary installed, entry point absent* is a real and ordinary state — `doctor.py`'s
+  `check_supertool_entry_point` reports it separately for that reason (#285). A rule probing only
+  the binary on `PATH` would answer that reader "supertool is not installed" and send them to
+  reinstall something already present, which is #294's own defect one question to the left. Both
+  spellings are named, the entry-point outcome says in as many words that nothing is missing from
+  their installation, and a test pins each (#294).
+- The refusal is injected verbatim on every refused call, so the ops list stays **first** and the
+  diagnosis sits under a heading below it. The reader who has `supertool` is the majority and pays
+  the whole body every time; the reader who does not needs the diagnosis once (#294).
+- Conditional scaffolding was considered and rejected for the same fix: `/oss:scaffold` runs once
+  on the maintainer's machine and the rule is read on every contributor's, so a presence check
+  there answers about the wrong machine at the wrong time — it would leave the reported
+  contributor blocked anyway, and add a committed file whose presence flapped with whoever last
+  scaffolded (#294).
+- The upstream finding that came with #294 — a sibling rule using `match: ~.`, which matches every
+  string, so a plain `make test` is denied — was measured against this plugin's rule rather than
+  acted on. `match: ~.*` here is scoped by its `tool:` column: driven against the installed hook,
+  a `Read` and a `Grep` are refused and a `Bash` `make test` and a `TodoWrite` are not. Nothing
+  was widened or narrowed, and a test now pins both directions in one fixture so a change to
+  either column cannot silently turn this into a rule that denies everything (#294).
+- The committed copy of the `tools/01-oss` layer — the one this repository's own hook reads — now
+  has a staleness guard of its own. The existing one covers `paths/changelog-fragments.md`,
+  because that rule has per-repo substitution in it; the tools rules render from constants, which
+  is what made them easy to leave stale, since every generator test stays green while the
+  committed text is a release behind (#294, #307).
+
+- `scripts/release_version.py` reads a fragment named `<issue>.<section>.<slug>.md`. It parsed
+  two segments and nothing else, so a name `scripts/assemble_changelog.py` has always accepted
+  landed in `unreadable` and the release stopped with no number named. The grammar is now
+  transcribed from the assembler's own, and the two are measured against each other in a test
+  rather than asserted to agree in a comment (#297).
+
+- The `could not decide` receipt names the cause that actually fired. It used to print one fixed
+  sentence offering two causes — a section outside the six, or an unrecognised compatibility line
+  — whatever had happened, so the filer of #297 went looking for a malformed body in a file whose
+  body was fine, renamed a correctly-named file and reported the contributor who wrote it. Four
+  distinguishable causes are now kept apart, one of which (`a fragment whose bytes could not be
+  read`) had never been named at all, and the `unreadable` row carries the cause beside each file
+  name — with two bad fragments a single sentence cannot say which file had which (#297).
+
+- `/oss:scaffold --apply` creates `changelog.d/` and its own gating workflow without writing
+  `changelog_dir` into `.oss.json` -- deliberate (`commands/scaffold.md`), because the two
+  readers that name the fallback directly, the command and the generated workflow, cannot
+  drift apart. Two OTHER readers of the same key could not tell that state from a repo that
+  genuinely never adopted fragments: `commands/changelog.md` refused to run at all, and
+  `scripts/release_version.py` refused with `could not decide` -- both because `changelog_dir`
+  was still `null`. Cost a real release gate on a repo scaffolded one commit earlier, with two
+  correctly-named fragments sitting in `changelog.d/` and `assemble_changelog.py --check`
+  passing on them in the same minute. Both readers now ask
+  `oss_config.scaffolded_changelog_gate` -- whether THIS repo's own
+  `.github/workflows/oss-changelog.yml` exists, the one signal a forge gives this plugin to
+  claim a workflow by -- and recognise the fallback rather than re-guess a directory nobody
+  named. `.oss.json` itself is left untouched: it is a tracked file somebody owns, and a
+  default must never win against a decision a person made (#299).
+
+- The loop filed at a bar of *noticed* rather than *cost somebody something*, and the meter that
+  would have shown it carried a sentence reading as do not act on the number. Three rules now: a
+  friction line names what it cost and a preference is reported nowhere (`tooling-unclear:` is the
+  third state); a class is only filable if you can name an input that reaches it; and raising the bar
+  on what counts as a finding is stated as a definition rather than as throttling. Issue bodies gain
+  a form -- symptom, location, mechanism, what would settle it -- so a filing is readable by whoever
+  picks it up rather than by whoever wrote it (#300).
+
+- The shell CI leg exceeded its own `timeout-minutes: 10` and GitHub renders a timeout kill as
+  **cancelled**, not failure, so `main` and every open pull request read as "0 failed, 1 cancelled —
+  not green" with nothing broken — six times on 2026-08-19, including a deliberate re-run. The step
+  fetched `shellcheck` with `sudo apt-get update && sudo apt-get install` on every run, inside the
+  timed window: 5.2s on 2026-08-16, 68.4s of a 70s step earlier the same day, then a hang that
+  consumed the whole cap. The fetch is gone rather than pinned or given a bigger cap — every
+  successful run had logged `shellcheck is already the newest version (0.9.0-1)`, so the install had
+  never installed anything; the binary ships in the `ubuntu-latest` image, and the lint itself takes
+  under a second. `timeout-minutes` is unchanged at 10, now a bound on a hang rather than a budget
+  the job spends (#303).
+- An absent `shellcheck` used to exit 127 once per file into the same `fail` flag a real finding
+  uses, so `could not lint` and `linted and found a problem` reached the leg's status identically —
+  and because `set -e` does not exit on the left of an `&&`, a failed install fell through to
+  exactly that. The step now checks for the binary first and exits `4` naming what is missing and
+  what to do about it, distinct from `shellcheck`'s own `1` and from `shell_sources.py`'s `2`
+  (matched nothing) and `3` (could not read) (#303).
+
+- The `01-oss` tools layer's `00-README.md` recorded, as current, that a rule keyed on the `Agent`
+  tool cannot fire — and this plugin writes that file into every repo it scaffolds.
+  `claude-jit-context` 0.5.0 reads `subagent_type` as a fifth subject key, so the record had
+  become a false statement shipped under full authority into other people's repositories: the same
+  defect class as a vendored file that keeps describing the repository it came from. It now
+  records what was measured instead — that the subject for an `Agent` dispatch is `subagent_type`
+  and only that, `description` and `prompt` being a deliberate exclusion upstream — names the
+  version the capability arrived in, so a reader on an older dependency can tell whether it
+  describes their machine, and keeps the re-measurement recipe with a second `Agent` rule added to
+  it so a single answer cannot say a rule fired without saying what it fired on (#307).
+- **No `tool: Agent` rule is shipped, and that is now a decision rather than a blocker.** What such
+  a rule would say is undecided: the standing clauses live in the agent definition being
+  dispatched, a rule restating them is the copy that drifts, and one pointing at them has to name
+  a path inside an installed plugin rather than anything in the repository receiving the rule. It
+  would fire on every matching dispatch for a benefit that is asserted rather than observed. The
+  record states both questions so the next proposal does not start from nothing (#307).
+- The guard that caught this is replaced rather than deleted. `tests/test_jit_agent_dispatch.py`
+  (was `..._gap.py`) now asserts the capability instead of the gap: a matching `Agent` rule fires
+  and a non-matching one does not, against a single dispatch, which is the only shape that shows
+  the subject really is `subagent_type`; and a dispatch carrying no `subagent_type` must be
+  reported as unreached rather than answering the `{}` a genuine no-match answers. It inherits the
+  same asymmetry it always had — a CI runner installs no plugin, so it skips there naming what
+  went untested, and measures only where the dependency is actually present (#307).
+- The harness both test files now share pins `encoding="utf-8"` on the subprocess that drives the
+  hook. Text mode with no encoding decodes with the console codepage under `errors="strict"`, and
+  the resulting `UnicodeDecodeError` is neither an `OSError` nor a `SubprocessError` — so it would
+  have sailed past the `except` written to turn a hook that could not run into a reported problem,
+  and crashed instead, on the platform whose legs never execute this path anyway (#307).
+- `CLAUDE.md`'s *What is not proven yet* carries a superseded marker on the bullet that stated the
+  four-key subject as an observation. The section is re-derived at each release rather than edited
+  and this does not pre-empt that — but the alternative was tagging a release whose `CLAUDE.md`
+  asserts the exact sentence this release describes as a false statement it stopped shipping
+  (#307).
+
+- `doctor.same_directory` answered a three-answer question with two. `os.path.samefile` raises when
+  either path is absent, and the version this replaces caught that and fell back to comparing
+  `os.path.abspath` strings -- so two spellings of one directory (a symlink and its target, a Windows
+  extended-length prefix and its plain form) answered `False` while the directory did not exist and
+  `True` once it did. The verdict moved with the filesystem's state rather than with the question
+  asked, and `False` is what every caller renders as *these are two different trees* (#309).
+- `compare_directories` replaces it and returns `(True | False | None, reason)`. The string
+  comparison is kept for the **positive** answer only, and that asymmetry is the fix: two equal
+  normalised paths denote one directory by construction, while two different ones establish nothing,
+  because `abspath` does not resolve symlinks and `realpath` would not have rescued it either --
+  on Windows it is prefix-preserving rather than canonicalising, so running both sides through the
+  same normaliser gives two spellings back. Symmetry of function is not symmetry of result when the
+  output depends on the form of the input (#309).
+- The reason comes from the `OSError` already in hand, never from a second question to the
+  filesystem. That is the `release_delta.py` trap: the `Path.exists()` added to tell absence from
+  unreadability is the call that kills a diagnostic contracted to exit 0 (#309).
+- Four call sites, and what each says in the third state was decided per caller rather than once:
+  `--plugin-root` naming a path that is not there now says it could not be examined instead of
+  accusing it of being a different tree; `--root` beside a `CLAUDE_PROJECT_DIR` that cannot be
+  stat'd says the two could not be compared instead of reporting a disagreement it cannot see;
+  the installed-copy/clone check says so and then compares both trees anyway, warning that an
+  identical result there may be one tree read twice; and `config_search_path` takes the
+  conservative arm with no message at all, which is a decision recorded in its docstring rather
+  than an omission (#309).
+- Two of the four are reachable with ordinary input -- `--root` and `--plugin-root` are paths
+  somebody types, and a typo is the common case. The other two are races: the enumeration is in the
+  code, because "which callers can reach this" was the half the issue left open (#309).
+
+### Security
+
+- The containment check on `pr_body.path` claims that *both* sides are resolved, so a symlink sitting
+  inside the report's own directory and pointing out of it is refused unopened. Nothing asserted it.
+  Every containment case in the suite named a path that escapes *lexically*, so swapping `resolve()`
+  for a normalisation — plausible, for Windows short names or to avoid a `stat` — would have kept all
+  of them green while making the claim false in the function docstring, in the schema and in the
+  changelog at once. Two cases now pin it, a symlinked file and a symlinked directory inside the
+  reports directory, both asserting on the *open* via the read spy rather than on the wording: a
+  change that merely stopped echoing would leave the read in place and pass a message assertion.
+  Demonstrated against a weakening narrowed to the one property: `(base / raw_path).resolve()` is
+  still called, so every other behaviour of the line survives — the `ValueError` on a NUL byte, the
+  `OSError` a `Path.resolve` injection raises — and only its *value* is discarded, for
+  `Path(os.path.normpath(str(base / raw_path)))`. `2 failed, 85 passed` on
+  `tests/test_agent_report_schema.py`, both failures on the open. A broader weakening that drops the
+  `resolve()` call outright reddens two further cases for reasons that have nothing to do with
+  symlinks, which is why the substitution is stated rather than left to be guessed at (#234).
+- The fixture is a measurement rather than a given, because symlink creation needs a privilege or
+  developer mode on Windows. The link is attempted and then confirmed to *resolve* to its target, and
+  when either step does not take the case skips carrying the platform, the exception type, the errno,
+  the winerror and a sentence naming what went untested — a link that resolved to itself would leave
+  the refusal passing for a reason nobody chose. The refusal is paired with a positive control in the
+  same fixture and the same directory: an ordinary sibling payload is still opened and accepted, so a
+  harness that created nothing, resolved nothing or never ran the validator fails rather than passing
+  quietly. The cost is stated rather than hidden: an unelevated Windows runner without developer mode
+  raises `WinError 1314` here, so on those four legs this guard skips rather than asserts and the
+  coverage it reports is the coverage it has. That is the deliberate trade — a case branched to pass
+  trivially on Windows would claim a green leg nobody re-reads. `tests/test_oss_config.py`'s existing
+  symlink skip, which said only "this platform will not create a directory symlink without
+  privileges", now carries the same detail (#234).
+- Re-derivation found the claim in two documents rather than the three it was reported in. The
+  `pr_body.path` description in `schemas/agent-report.schema.json` described containment without ever
+  mentioning symlinks, so one of the three statements of one rule had already drifted into a weaker
+  one — which is the shape the rule was worth re-reading for. It now states the property and says
+  what pinned it (#234).
+
+- A managed repository's tracked `.supertool.json` reached `bin/oss-workspace`'s session-start receipt
+  **raw**. When two op blocks declare different `watch_name` values the launcher lists them, and those
+  strings come straight out of `json.loads` with nothing between the parse and the write: the
+  `conflict` arm returns before any name is validated, so `oss_config.watch_name_problem` — which
+  refuses a newline with a stated reason, and works — is simply not on that route. Measured rather
+  than argued: a second declared name of `beta\noss-workspace: VERDICT: ok\r\x1b[2K` produced a
+  **three-line** receipt whose second line was a column-0 `oss-workspace:` sentence the launcher never
+  wrote and whose third began with a live erase-line sequence. The forged line is in a vocabulary this
+  same file reads — it parses `^VERDICT:` at column 0 further down — though that parser reads the
+  diagnostic's own captured output and not this stream, so the harm established is impersonation and
+  terminal rewriting rather than injection into the verdict. `.supertool.json` is tracked, so the
+  value arrives by ordinary contribution (#323).
+- The neutralisation was already six lines up, in the sibling arm of the same `if`/`elif`: `ba766ba`
+  (#283) added `ascii()` to the `unencodable` arm with a written rationale and rewrote the `conflict`
+  arm's message in the same hunk without applying it. `ascii()` is now applied **per name** rather
+  than around the join, which is not cosmetic — quoting the joined string once still lets a value
+  containing `", "` forge a list separator and read as two declared channels, so the count of channels
+  is now a property of the code instead of the input. `ascii()` and not `%r`, for the reason the
+  neighbouring arm gives: repr leaves non-ASCII alone and this line goes to a console whose codepage
+  may not carry it (#271, #323).
+- Pinned by a pair in the same fixture, because the negative half is the one with teeth: an assertion
+  that no forged `oss-workspace:` or `^VERDICT:` line appears also passes when the block printed
+  nothing at all. The control is an ordinary `alpha`/`beta` conflict that must still emit its one
+  honest line naming both channels. Both drive the `READ_NAME` heredoc extracted from the launcher
+  rather than reconstructing shell quoting inside a `bash -c` string, which would measure the test's
+  own escaping; output is compared as bytes, because `universal_newlines` translates a lone CR into a
+  newline and would have hidden half of what is asserted. The forgery is counted as **lines beginning**
+  with `oss-workspace:` rather than as occurrences of the substring — a substring count graded the
+  fixed code a forgery, since the escaped text survives inside the quoted name (#323).
+- The fixture's first version carried an assertion no red state could reach. It spelled the forged
+  line `oss-workspace: VERDICT: ok`, which begins with the launcher prefix, so the `startswith
+  ("VERDICT:")` check passed against the unfixed launcher -- a tick over a question never asked, in a
+  test whose whole subject is that defect class. Found by evaluating the six assertions one at a time
+  against the parent commit rather than by running the test, which stops at the first failure and
+  cannot say whether the rest are reachable: four fail pre-fix and pass post-fix, and the two
+  must-fire guards pass in both worlds, which is what they are for. The impersonated line and the bare
+  verdict line are now separate forgeries in the same value (#323).
+- The control-character assertion strips the message terminator first, and that is a construction
+  rather than an argument. Whether a child's `sys.stderr` translates its own LF to `os.linesep` is a
+  question about CPython's std-stream setup that a suite running on one platform has no standing to
+  settle, so it is not asked: stripping CR and LF from the right removes a terminator of either shape
+  and leaves an embedded CR -- the one under test -- alone. Raised by the audit as a probable red on
+  the four Windows legs; unobserved either way, and answered by removing the dependency instead of by
+  taking a side (#323).
+- Not closed, and named rather than implied: this is a per-site call, the sixth in a file that already
+  had five and one miss. A single chokepoint of the kind `scripts/doctor.py` uses is not available
+  here without changing the launcher's process shape — the file renders through five independent
+  Python heredocs, each its own interpreter with no shared module, and `READ_NAME` deliberately takes
+  no scripts directory, so a shared helper would add a *validator could not be loaded* failure mode to
+  the one block whose whole job is reading a JSON file. Until that is decided, a seventh rendering site
+  added to this file is protected by nothing but review (#323).
+
 ## [0.5.0] - 2026-08-16
 
 ### Added
@@ -2234,7 +3225,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.3.0
