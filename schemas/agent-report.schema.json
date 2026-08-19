@@ -3,9 +3,9 @@
   "$id": "agent-report.schema.json",
   "title": "Agent report",
   "description": "What an agent hands back when it finishes one issue: a JSON file the orchestrator queries field by field, plus a path and at most two lines in chat. The orchestrator reads what it needs when it needs it instead of paying for a document on every later turn of the session. Validate with scripts/report_schema.py.",
-  "x-schema-version": 3,
+  "x-schema-version": 4,
   "x-honesty-versioning": "The contract number this document implements, and the only place it is written down. A report carries the number it was written against in schema_version, and a copy of this validator compares the two. It is NOT in x-enforced, on purpose: everything in that list is something a report is refused over, and a version this copy does not hold is not a refusal. It is the third state -- unvalidatable by this copy -- and folding it into either of the other two recreates #212 one layer down, where an old copy announced a correct report as broken and nothing distinguished that from a malformed one. WHEN THE NUMBER MOVES: on any change to what a validator accepts or refuses, never on prose. That is deliberately not semver's answer. Because additionalProperties is false and no-unknown-keys is enforced, even adding an OPTIONAL key is breaking in one direction -- an older copy refuses a report the new contract permits, which is exactly the 0.3.0-refuses-docs case that filed #221 -- so the useful line is not major-versus-minor but enforcing-versus-annotation. scripts/report_schema.py takes a fingerprint of this document with the free prose stripped -- description, title, examples, the x-honesty narratives and x-convention -- and tests/test_agent_report_schema.py fails when the enforcing content moves without the number, and fails louder when the number moves to a value nothing recorded. x-enforced and x-enforced-on-disk are deliberately INSIDE the fingerprint although nothing reads them: they are this document's own statement of what a validator refuses, paired one-to-one with a mutation table, so a change there is nearly always a contract change and an unnecessary bump is cheaper than a missed one. What the fingerprint cannot see: the cross-field rules are Python in report_schema.py's _RULES, so a rule that starts refusing something new without any keyword moving here changes the contract and leaves the hash untouched. VERSION 1 IS NOT A CONTRACT: it is the value every report written before anyone counted carries. Measured 2026-08-16, 57 of the 71 reports on disk say 1 and 14 name no version at all, written against at least three mutually incompatible schemas. None of them can be dated retroactively and back-stamping them would manufacture a claim, so 1 is left meaning before-anyone-counted and 2 is the first value that carries information.",
-  "x-honesty-on-disk": "x-enforced-on-disk is the one place this validator leaves the report and touches the filesystem: it opens the pr_body payload, parses it, and checks the shape the forge needs. That is a deliberate exception to shape-only, because pr_body.state of 'written' is the report's one claim about a file the NEXT step consumes, and a body the forge rejects is discovered after the agent's session has ended. It is a separate list, run by a separate function, so nothing here can be mistaken for the shape pass: validate() never reads a file, and the command line says when it skipped the payload rather than staying quiet about it. Which file it opens is not the report's to choose: pr_body.path is resolved against the report's own directory and anything landing outside it is refused without being opened, and so is a path the containment question cannot be answered for at all -- there is no arrangement of this field that makes this validator read a file elsewhere on the machine.",
+  "x-honesty-on-disk": "x-enforced-on-disk is the one place this validator leaves the report and touches the filesystem: it opens the pr_body payload, parses it, and checks the shape the forge needs -- and, since #274, one thing about the payload's CONTENT rather than its shape: whether the body binds a closing keyword to each issue pr_body.closes says merging it closes. That is the one content check and it is deliberately an absence detector, not a reader of what a forge would close; the reasoning is under pr_body.closes and the limit it leaves behind is the last entry in x-convention. That is a deliberate exception to shape-only, because pr_body.state of 'written' is the report's one claim about a file the NEXT step consumes, and a body the forge rejects is discovered after the agent's session has ended. It is a separate list, run by a separate function, so nothing here can be mistaken for the shape pass: validate() never reads a file, and the command line says when it skipped the payload rather than staying quiet about it. Which file it opens is not the report's to choose: pr_body.path is resolved against the report's own directory and anything landing outside it is refused without being opened, and so is a path the containment question cannot be answered for at all -- there is no arrangement of this field that makes this validator read a file elsewhere on the machine.",
   "x-honesty": "This schema checks SHAPE, never TRUTH. A structured summary is easier to accept without reading than a paragraph is, and that is the trade being made here: a refused disposition renders identically whether the refusal was argued or lazy. Two lists below say which is which. x-enforced is what scripts/report_schema.py actually refuses a report over, and every name in it is paired with a mutation in tests/test_agent_report_schema.py that proves the refusal happens. x-convention is the rest -- real parts of the contract, checked by nobody, and listed here so the next person meets the limit at the same moment they meet the schema.",
   "x-enforced": [
     "required-keys",
@@ -23,7 +23,10 @@
     "unobserved-test-phase-carries-a-reason",
     "written-pr-body-carries-a-path",
     "unwritten-pr-body-carries-a-reason",
-    "review-survey-returned-nothing-carries-a-reason"
+    "review-survey-returned-nothing-carries-a-reason",
+    "written-pr-body-says-what-it-closes",
+    "pr-body-closing-something-names-the-issues",
+    "pr-body-closing-nothing-carries-a-reason"
   ],
   "x-enforced-on-disk": [
     "pr-body-file-exists",
@@ -31,7 +34,9 @@
     "pr-body-payload-shape",
     "pr-body-title-and-body-are-non-empty",
     "pr-body-head-matches-the-report-branch",
-    "pr-body-payload-stays-in-the-report-directory"
+    "pr-body-payload-stays-in-the-report-directory",
+    "pr-body-body-binds-a-closing-keyword-to-every-issue-it-says-it-closes",
+    "pr-body-closing-nothing-has-a-body-that-closes-nothing"
   ],
   "x-convention": [
     "that a survey marked checked was in fact checked -- nothing here can see whether a reviewer ever spawned",
@@ -41,7 +46,8 @@
     "that summary is two lines rather than a document moved one field to the left",
     "that summary and split_cost are non-empty at all -- both are required keys of type string, and an empty string satisfies that",
     "that pushed is false, which the contract requires and this validator does not",
-    "that the agent writes a report at all -- an agent that ignores this document produces nothing for any assertion to see"
+    "that the agent writes a report at all -- an agent that ignores this document produces nothing for any assertion to see",
+    "that a closing reference this validator did find is one the forge will honour -- pr_body.closes is checked by an absence detector, so a finding is strong and a pass is weak, and gh-pr-create remains the only thing here that reads a body the way a forge does"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -293,7 +299,22 @@
           "type": ["string", "null"],
           "description": "A .pr.json file holding the forge payload described by $defs/forge_payload -- NOT a markdown body. A markdown file is the shape a forge refuses, and the refusal lands on the orchestrator after the agent's session has ended, at which point somebody re-narrates the body and invents a title. The title is the sentence most people read and the only part that survives a squash into the log, so it belongs to whoever did the work. The payload must sit beside the report: the validator resolves this against the report's own directory and refuses -- without opening anything -- what lands outside it, because this value is written by an agent and the file it names is opened, parsed and quoted back by the maintainer's own process. An absolute path is fine and is what an agent in a worktree normally writes; what is checked is where it resolves to, not how it is spelled. Both sides are resolved, so a symlink sitting inside the report's directory and pointing out of it is refused too -- resolving reads link targets and opens nothing. That sentence was claimed in the function docstring and the changelog and asserted by nothing until #234, so a lexical normalisation would have kept every containment test green and made all three false at once. Deliberately no `pattern` here: containment depends on where the report itself is, which a regex cannot see, so a pattern could only be a second checker answering a narrower question -- and two checkers disagreeing about one input is its own defect. The whole check lives in one function and is named in x-enforced-on-disk."
         },
-        "reason": {"type": "string"}
+        "reason": {"type": "string"},
+        "closes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "description": "What merging this pull request will close, in three states, of which only the third is a defect: it closes something, it deliberately closes nothing, or nobody said. Required whenever state is `written`. Measured across two sessions, four of seven agent-written payloads bound no closing keyword to the issue they were written for; every one of them validated clean here because nothing looked at the body, and every one was caught at the maintainer's gh-pr-create call -- which REPORTS and does not refuse, exit 0 -- after the agent's session had ended. On the fourth the counterfactual was measured rather than argued: the manual repair was separable from the merge, and without it the merge would have closed nothing while the board read clean. Deliberately closing nothing is sayable the way gh-pr-edit's `unlink` token is sayable: a `Part of #N` pull request is a real decision and refusing it would be a gate inventing a rule. WHAT THE ON-DISK CHECK IS, said here so the weaker thing cannot be read as the stronger one: an ABSENCE detector, not a closing-reference reader. It reports that it could find no closing keyword bound to a declared number outside code spans and HTML comments; it never decides what a forge will close. Every transformation it makes can only make it report more often, so a finding is strong and a pass is weak. supertool publishes the one reader that does decide, and gh-pr, gh-pr-create and gh-pr-edit all use it; every route to it from here makes a forge call and two of them publish, so it is unreachable from a stdlib-only validator, and a second copy of a resolver is the drifting duplicate this repository forbids. On the two traps that make a substring grep wrong the detector is not merely conservative but correct: `Closes #A #B` closes only #A and #B is refused, and a backticked `Closes #A` closes nothing and is refused. Both shapes were observed in one night.",
+          "properties": {
+            "state": {"enum": ["closes", "closes-nothing"]},
+            "issues": {
+              "type": "array",
+              "items": {"type": "integer"},
+              "description": "Every issue number merging this closes. At least one is required when the state is `closes`, and each one is looked for in the payload's body with a closing keyword bound to it -- which is why a shared keyword over two numbers is refused for the second: that is what a forge does with it."
+            },
+            "reason": {"type": "string", "description": "Required when the state is `closes-nothing`. A deliberate re-scope and a forgotten keyword are one missing line apart, and without this they render identically."}
+          }
+        }
       }
     },
     "forge_payload": {
@@ -313,7 +334,7 @@
   },
   "examples": [
     {
-      "schema_version": 3,
+      "schema_version": 4,
       "issue": 123,
       "branch": "fix/123",
       "head": "1dc856d",
@@ -399,7 +420,11 @@
         ]
       },
       "blocked": {"state": "checked", "items": []},
-      "pr_body": {"state": "written", "path": "{worktree_root}/reports/fix-123-20260814T101500Z.pr.json"},
+      "pr_body": {
+        "state": "written",
+        "path": "{worktree_root}/reports/fix-123-20260814T101500Z.pr.json",
+        "closes": {"state": "closes", "issues": [123]}
+      },
       "note_path": "{worktree_root}/notes/fix-123-20260814T101500Z.md",
       "split_cost": "Roughly two thirds to the note (the full reviewer exchange and the caller sweep); nothing was left out of both."
     }

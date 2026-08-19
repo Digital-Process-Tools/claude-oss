@@ -151,7 +151,21 @@ def _mutations():
         return report
 
     def pr_body_written_without_path(report):
-        report["pr_body"] = {"state": "written", "path": ""}
+        report["pr_body"] = {
+            "state": "written", "path": "", "closes": {"state": "closes", "issues": [123]}
+        }
+        return report
+
+    def pr_body_written_without_saying_what_it_closes(report):
+        report["pr_body"].pop("closes", None)
+        return report
+
+    def pr_body_closing_something_without_naming_it(report):
+        report["pr_body"]["closes"] = {"state": "closes", "issues": []}
+        return report
+
+    def pr_body_closing_nothing_without_a_reason(report):
+        report["pr_body"]["closes"] = {"state": "closes-nothing"}
         return report
 
     def pr_body_absent_without_reason(report):
@@ -180,6 +194,15 @@ def _mutations():
         "unwritten-pr-body-carries-a-reason": pr_body_absent_without_reason,
         "review-survey-returned-nothing-carries-a-reason": (
             review_returned_nothing_without_reason
+        ),
+        "written-pr-body-says-what-it-closes": (
+            pr_body_written_without_saying_what_it_closes
+        ),
+        "pr-body-closing-something-names-the-issues": (
+            pr_body_closing_something_without_naming_it
+        ),
+        "pr-body-closing-nothing-carries-a-reason": (
+            pr_body_closing_nothing_without_a_reason
         ),
     }
 
@@ -520,7 +543,20 @@ def _payload():
     }
 
 
-def _report_with_payload(tmp_path, payload=None, name="body.pr.json", write=True):
+# `closes-nothing` by default, because the default payload body carries no closing
+# keyword and every fixture below is about something other than #274. Saying so
+# explicitly rather than leaving it out is the point of the field: an absent `closes`
+# is now itself a finding, so a fixture that omitted it would be refused for a reason
+# it was not written to test.
+_FIXTURE_CLOSES = {
+    "state": "closes-nothing",
+    "reason": "a fixture body, testing something other than what it closes",
+}
+
+
+def _report_with_payload(
+    tmp_path, payload=None, name="body.pr.json", write=True, closes=None
+):
     report = _example()
     target = tmp_path / name
     if write:
@@ -530,7 +566,11 @@ def _report_with_payload(tmp_path, payload=None, name="body.pr.json", write=True
             target.write_text(
                 json.dumps(_payload() if payload is None else payload), encoding="utf-8"
             )
-    report["pr_body"] = {"state": "written", "path": str(target)}
+    report["pr_body"] = {
+        "state": "written",
+        "path": str(target),
+        "closes": json.loads(json.dumps(_FIXTURE_CLOSES)) if closes is None else closes,
+    }
     return report
 
 
@@ -593,6 +633,43 @@ def _disk_mutations(tmp_path):
         # resolution and this case validates clean rather than failing for a second
         # reason, which is the difference between a mutation and a coincidence.
         "pr-body-payload-stays-in-the-report-directory": (escaping, reports),
+        # A payload the forge would accept, sitting beside its report, whose only
+        # defect is that the report says merging it closes #274 and the body binds no
+        # closing keyword to #274 -- it only mentions the number, which is the shape
+        # all four measured instances had. Nothing else in this table can refuse it.
+        "pr-body-body-binds-a-closing-keyword-to-every-issue-it-says-it-closes": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t",
+                    "body": "Reworks the thing discussed in (#274).",
+                    "head": "fix/123",
+                    "base": "main",
+                },
+                name="unbound.pr.json",
+                closes={"state": "closes", "issues": [274]},
+            ),
+            tmp_path,
+        ),
+        # The inverse, and it is a different harm: the report says the merge leaves
+        # everything open and the body closes #250.
+        "pr-body-closing-nothing-has-a-body-that-closes-nothing": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t",
+                    "body": "Part of #250. Closes #250.",
+                    "head": "fix/123",
+                    "base": "main",
+                },
+                name="contradiction.pr.json",
+                closes={
+                    "state": "closes-nothing",
+                    "reason": "Part of #250; the issue stays open for the second half.",
+                },
+            ),
+            tmp_path,
+        ),
     }
 
 
