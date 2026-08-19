@@ -3540,3 +3540,375 @@ def test_a_wrapped_blockquoted_remedy_is_not_read_as_an_omission():
         "the-refusal-is-not-quoted",
         "the-cwd-remedy-is-not-named",
     }
+
+
+# --------------------------- stopping the tag is not stopping the loop (#209)
+#
+# Two defects, one issue, and they are one layer apart.
+#
+# The smaller one: gate 3's sentence ends a clause early. "findings -> stop and
+# file" names an action, names an artefact, and hands the work to nobody. Gates
+# 1 and 2 clear themselves and gate 4 names its own remedy, so gate 3 is the
+# only gate whose failure *produces* work items and the only one with no
+# statement of who picks them up. A blocking row makes it sharper: the tag
+# cannot move until the fix lands, so the fix is on the release's critical path
+# by construction, and the gate that knows this says nothing about scheduling it.
+#
+# The larger one is the doctrine the maintainer stated on the issue: *there is
+# no good reason to stop the loop, except if asked directly*. That replaces --
+# not tightens -- "nothing outstanding but somebody else's work -> stop the loop
+# (`stop: true`)", which is a judgement the loop makes about its own board at
+# the moment it is least able to make it. The asymmetry is the whole argument: a
+# loop ticking with nothing to do is visibly idle and self-correcting, while a
+# loop that stopped is indistinguishable from one that was never armed, and
+# nothing inside it will ever notice.
+#
+# The invariant this block holds, stated rather than left to the anchors: the
+# doctrine has *two* homes and the gate paragraphs have none.
+#
+#  - `skills/manager/SKILL.md` and `commands/tick.md` both carry it in full.
+#    That duplication is deliberate and predates this issue -- a command must be
+#    readable with the skill not loaded, which is why `TICK_ENDING_DOCUMENTS`
+#    above already checks the same sentence in both. Requiring one home would
+#    delete the standalone reading of `/oss:tick`.
+#  - The two gate-3 paragraphs -- `commands/release.md`'s and the skill's
+#    restatement of it -- must *point* at the doctrine and must not restate it.
+#    #331 landed because a gate-3 restatement drifted from its source; two more
+#    copies of the loop's stop rule, in the two documents that stop tags, is
+#    that bug pre-armed. So the pointer is an anchor and a restatement is a
+#    finding.
+
+_ANY_NUMBERED_STEP_RE = re.compile(r"(?m)^\d+\. \*\*")
+_ANY_ATX_HEADING_RE = re.compile(r"(?m)^#{1,6} ")
+
+
+def _numbered_step_from(text, start_pattern):
+    """The body of the top-level numbered step opening with `start_pattern`.
+
+    Ends at the next top-level numbered step or the next heading, whichever
+    comes first. Returns None when the opener is not there: a step reworded out
+    of reach has not been checked, and must not render as a step with nothing
+    wrong with it.
+    """
+    start = re.search(start_pattern, text)
+    if start is None:
+        return None
+    rest = text[start.end():]
+    ends = [
+        match.start()
+        for match in (_ANY_NUMBERED_STEP_RE.search(rest), _ANY_ATX_HEADING_RE.search(rest))
+        if match is not None
+    ]
+    return rest[:min(ends)] if ends else rest
+
+
+def _named_section(text, heading_pattern):
+    """The body of the first section whose heading matches, or None."""
+    for heading, body in _sections(text):
+        if re.search(heading_pattern, heading, re.IGNORECASE):
+            return body
+    return None
+
+
+#: Anchors on the doctrine itself. Read off a collapsed, blockquote-stripped,
+#: lowercased copy: these are running paragraphs in documents that wrap at 100
+#: columns, so every one of these phrases straddles a line break sooner or later.
+STOP_DOCTRINE_ANCHORS = (
+    ("the-doctrine-is-not-stated", r"no good reason to stop the loop"),
+    # The wrap control below caught this one: the first spelling was
+    # `asked (?:to )?directly`, and "asked to stop it directly" -- the phrasing
+    # the skill actually lands -- did not match it. Widened to a bounded run of
+    # words rather than to `.*`, so "asked" in one sentence and "directly" three
+    # sentences later still reports.
+    (
+        "the-one-thing-that-does-stop-it-is-not-named",
+        r"asked\b(?:\s+\w+){0,4}\s+directly|direct instruction",
+    ),
+    ("the-alternative-to-stopping-is-not-named", r"arms? a wakeup instead"),
+    ("the-asymmetry-that-argues-the-doctrine-is-lost", r"never armed"),
+    ("a-tick-ending-is-not-distinguished-from-a-loop-stop", r"none of them stops the loop"),
+    (
+        "a-recorded-wait-is-not-required-to-be-re-checkable",
+        r"a later turn can re-read|a form that can be re-read",
+    ),
+)
+
+#: The instruction the doctrine replaces, in the two spellings the documents
+#: carried before #209. Deliberately the *instruction* and not the condition:
+#: naming "somebody else's work" in prose is how a replacement is recorded as a
+#: decision rather than a drift, and a check that forbade those words would
+#: forbid saying what changed.
+_STOP_TRUE_INSTRUCTION_RE = re.compile(r"stop the loop (?:with |\()`stop: true`")
+
+#: (path, how to find the region). Two, on purpose -- see the header above.
+STOP_DOCTRINE_REGIONS = (
+    (
+        "skills/manager/SKILL.md",
+        lambda text: _named_section(text, r"loop mechanics"),
+    ),
+    (
+        "commands/tick.md",
+        lambda text: _numbered_step_from(text, r"(?m)^7\. \*\*Arm the next tick"),
+    ),
+)
+
+
+def _stop_doctrine_unmet(body):
+    """Findings about a region that decides when the loop stops."""
+    if body is None:
+        return {"the-region-that-decides-when-to-stop-is-absent"}
+    collapsed = _collapse(body).lower()
+    unmet = {
+        key for key, pattern in STOP_DOCTRINE_ANCHORS
+        if not re.search(pattern, collapsed)
+    }
+    if _STOP_TRUE_INSTRUCTION_RE.search(collapsed):
+        unmet.add("the-replaced-stop-instruction-is-still-given")
+    return unmet
+
+
+def test_every_region_that_can_stop_the_loop_states_the_doctrine():
+    findings = {}
+    for label, locate in STOP_DOCTRINE_REGIONS:
+        unmet = sorted(_stop_doctrine_unmet(locate(
+            (REPO_ROOT / label).read_text(encoding="utf-8")
+        )))
+        if unmet:
+            findings[label] = unmet
+    assert not findings, (
+        "a document that can terminate the loop does not carry the doctrine "
+        "that replaced the old stop condition (#209): {}".format(findings)
+    )
+
+
+def test_both_stop_doctrine_regions_still_resolve():
+    """Vacuity guard. Every check above is computed from a located region, so a
+    heading renamed or a step renumbered would report both documents clean.
+    """
+    unresolved = [
+        label for label, locate in STOP_DOCTRINE_REGIONS
+        if locate((REPO_ROOT / label).read_text(encoding="utf-8")) is None
+    ]
+    assert not unresolved, (
+        "the region the stop-doctrine check reads no longer resolves, so that "
+        "check is now vacuous for it: {}".format(unresolved)
+    )
+
+
+#: *Loop mechanics* as skills/manager/SKILL.md carried it before #209, verbatim.
+PRE_209_LOOP_MECHANICS = """
+Agent completions notify for free — never poll for them. **CI is the only thing that needs a timer**,
+sized to the observed matrix. Nothing outstanding but somebody else's work — a review, a CI run, an
+upstream fix, and **never your own backlog** — means stop the loop (`stop: true`) and say so out loud,
+because a loop that stops silently is indistinguishable from one that was never armed. Which of the
+three states below you are in decides whether this sentence applies at all.
+"""
+
+#: commands/tick.md step 7 as it stood before #209, verbatim.
+PRE_209_TICK_STEP_SEVEN = """
+   Agent completions notify for free — never poll for them. CI is the only thing that needs a timer.
+   If nothing is outstanding but somebody else's work — a review, a CI run, an upstream fix, and
+   **never your own backlog** — stop the loop with `stop: true` **and say so out loud**: a loop that
+   stops silently is indistinguishable from one that was never armed. Which of the three states
+   below you are in decides whether that sentence applies at all.
+"""
+
+#: Everything the anchors can find in the prose being replaced. Both prior
+#: wordings end on "never armed", which is the half of the sentence the
+#: maintainer kept -- so it is deliberately *not* in this set. Listing the keys
+#: rather than asserting "every anchor fires" is what makes this a control:
+#: a set that fired on all of them would show the anchors are unrelated to the
+#: wording, not that they replaced it.
+PRE_209_FINDINGS = {
+    "the-doctrine-is-not-stated",
+    "the-one-thing-that-does-stop-it-is-not-named",
+    "the-alternative-to-stopping-is-not-named",
+    "a-tick-ending-is-not-distinguished-from-a-loop-stop",
+    "a-recorded-wait-is-not-required-to-be-re-checkable",
+    "the-replaced-stop-instruction-is-still-given",
+}
+
+
+def test_the_stop_doctrine_check_fires_on_the_pre_209_skill_wording():
+    assert _stop_doctrine_unmet(PRE_209_LOOP_MECHANICS) == PRE_209_FINDINGS
+
+
+def test_the_stop_doctrine_check_fires_on_the_pre_209_tick_wording():
+    assert _stop_doctrine_unmet(PRE_209_TICK_STEP_SEVEN) == PRE_209_FINDINGS
+
+
+def test_the_half_of_the_sentence_that_stayed_is_not_reported_as_missing():
+    """Both prior wordings already end on the asymmetry, and the maintainer kept
+    that half. A control set firing on it would mean the anchors were written
+    against something other than the sentence they replace.
+    """
+    assert "the-asymmetry-that-argues-the-doctrine-is-lost" not in PRE_209_FINDINGS
+    assert "never armed" in _collapse(PRE_209_LOOP_MECHANICS).lower()
+    assert "never armed" in _collapse(PRE_209_TICK_STEP_SEVEN).lower()
+
+
+def test_the_headline_without_its_argument_is_reported():
+    """The way this goes quiet: the doctrine quoted and then not carried."""
+    headline_only = "There is no good reason to stop the loop, except if asked directly."
+    assert _stop_doctrine_unmet(headline_only) == {
+        "the-alternative-to-stopping-is-not-named",
+        "the-asymmetry-that-argues-the-doctrine-is-lost",
+        "a-tick-ending-is-not-distinguished-from-a-loop-stop",
+        "a-recorded-wait-is-not-required-to-be-re-checkable",
+    }
+
+
+def test_a_region_that_is_not_there_is_reported_rather_than_passing():
+    """The third state, with its must-fire in the same fixture: the locator has
+    to be able to miss, or "absent" is a branch nothing can reach.
+    """
+    assert _stop_doctrine_unmet(None) == {
+        "the-region-that-decides-when-to-stop-is-absent"
+    }
+    tick = (REPO_ROOT / "commands" / "tick.md").read_text(encoding="utf-8")
+    assert _numbered_step_from(tick, r"(?m)^7\. \*\*Arm the next tick") is not None
+    assert _numbered_step_from(tick, r"(?m)^7\. \*\*Disarm the next tick") is None
+
+
+#: The doctrine said in full, wrapped inside a blockquote so several anchors
+#: straddle a line break -- the shape a quoted rule in these documents has.
+WRAPPED_STOP_DOCTRINE = """   > There is no good reason to stop the loop, except being asked to
+   > stop it directly. Every other condition arms a
+   > wakeup instead, because a loop that stopped is indistinguishable from one
+   > that was never
+   > armed. A tick ends in one of three states; none of them stops the
+   > loop. A recorded wait names what it waits on in a form a later turn can
+   > re-read.
+"""
+
+
+def test_a_wrapped_blockquoted_doctrine_is_not_read_as_an_omission():
+    assert _stop_doctrine_unmet(WRAPPED_STOP_DOCTRINE) == set()
+
+    line_at_a_time = WRAPPED_STOP_DOCTRINE.lower()
+    assert "arms a wakeup instead" not in line_at_a_time, (
+        "the wrap control no longer wraps across an anchor, so it proves "
+        "nothing about the collapse"
+    )
+    marker_left_in = " ".join(WRAPPED_STOP_DOCTRINE.split()).lower()
+    assert "never armed" not in marker_left_in, (
+        "the blockquote control no longer wraps across an anchor, so it proves "
+        "nothing about the marker strip: {!r}".format(marker_left_in)
+    )
+
+
+# --------------------------- gate 3 stops the tag and says what happens next (#209)
+
+#: Both gate-3 paragraphs. `commands/release.md` is the single source and the
+#: skill's is a restatement of it (#331); both stop tags, so both need the
+#: continuation, and neither may grow its own copy of the stop rule.
+GATE_THREE_REGIONS = ("commands/release.md", "skills/manager/SKILL.md")
+
+_GATE_THREE_OPENER = r"(?m)^3\. \*\*A security audit of the delta"
+
+GATE_THREE_ANCHORS = (
+    ("stopping-the-tag-is-not-distinguished-from-stopping-the-loop", r"stop the tag, not the loop"),
+    ("the-round-one-findings-arm-hands-the-work-to-nobody", r"in the same tick"),
+    ("the-blocking-fix-is-not-put-on-the-release-s-critical-path", r"critical path"),
+    ("the-could-not-run-arm-has-no-continuation", r"diagnos\w+ why"),
+    ("the-stop-rule-is-not-pointed-at", r"loop mechanics"),
+)
+
+#: The doctrine's body, which belongs in the two regions above and nowhere else.
+_RESTATED_DOCTRINE_RE = re.compile(
+    r"no good reason to stop the loop|arms? a wakeup instead"
+)
+
+
+def _gate_three_unmet(body):
+    """Findings about a gate paragraph that stops a tag."""
+    if body is None:
+        return {"the-gate-three-paragraph-is-absent"}
+    collapsed = _collapse(body).lower()
+    unmet = {
+        key for key, pattern in GATE_THREE_ANCHORS
+        if not re.search(pattern, collapsed)
+    }
+    if _RESTATED_DOCTRINE_RE.search(collapsed):
+        unmet.add("the-stop-doctrine-is-restated-here-instead-of-pointed-at")
+    return unmet
+
+
+def test_every_gate_that_stops_a_tag_says_what_happens_next():
+    findings = {}
+    for label in GATE_THREE_REGIONS:
+        body = _numbered_step_from(
+            (REPO_ROOT / label).read_text(encoding="utf-8"), _GATE_THREE_OPENER
+        )
+        unmet = sorted(_gate_three_unmet(body))
+        if unmet:
+            findings[label] = unmet
+    assert not findings, (
+        "a gate stops a tag without saying who picks the work up, where a "
+        "blocking fix is scheduled, or where the loop's stop rule lives "
+        "(#209): {}".format(findings)
+    )
+
+
+def test_both_gate_three_paragraphs_still_resolve():
+    """Vacuity guard for the check above, and the must-fire for its absent arm."""
+    unresolved = [
+        label for label in GATE_THREE_REGIONS
+        if _numbered_step_from(
+            (REPO_ROOT / label).read_text(encoding="utf-8"), _GATE_THREE_OPENER
+        ) is None
+    ]
+    assert not unresolved, (
+        "the gate-3 paragraph no longer resolves, so the check above is "
+        "vacuous for it: {}".format(unresolved)
+    )
+    assert _gate_three_unmet(None) == {"the-gate-three-paragraph-is-absent"}
+
+
+#: commands/release.md's gate-3 blocking-row paragraph before #209, verbatim.
+PRE_209_RELEASE_GATE_THREE = """
+   **Except a finding in a row the ranking table marks blocking, which is not carry-forward
+   material.** It stops the tag in either round. Each finding comes back carrying its row, so this is
+   a read rather than a judgement — and without it the cap outranks the table by being later in the
+   document, which makes the gate's worst outcome a filed issue.
+"""
+
+#: skills/manager/SKILL.md's restatement of the same, before #209, verbatim.
+PRE_209_SKILL_GATE_THREE = """
+   **One exception, and it is why the ranking is not decoration: a finding in a row the table marks
+   blocking is not carry-forward material.** It stops the tag in either round. Without that, the cap
+   outranks the table by being later in the document, and a gate whose worst outcome is a filed issue
+   is not a gate.
+"""
+
+ALL_GATE_THREE_FINDINGS = {key for key, _ in GATE_THREE_ANCHORS}
+
+
+def test_the_gate_three_check_fires_on_the_pre_209_release_paragraph():
+    assert _gate_three_unmet(PRE_209_RELEASE_GATE_THREE) == ALL_GATE_THREE_FINDINGS
+
+
+def test_the_gate_three_check_fires_on_the_pre_209_skill_paragraph():
+    assert _gate_three_unmet(PRE_209_SKILL_GATE_THREE) == ALL_GATE_THREE_FINDINGS
+
+
+def test_a_gate_that_restates_the_doctrine_is_reported():
+    """The must-fire half of the negative anchor. Without it, "the doctrine is
+    not restated here" also passes on a paragraph that says nothing at all,
+    which is the one reading that would make the pointer pointless.
+    """
+    continuation = (
+        "It stops the tag in either round. Stop the tag, not the loop: the fix is on the "
+        "release's critical path and is delegated in the same tick, and if the audit could "
+        "not run the continuation is diagnosing why it could not."
+    )
+    pointing = continuation + " *Loop mechanics* is the only place that rule lives."
+    assert _gate_three_unmet(pointing) == set()
+
+    restating = continuation + (
+        " There is no good reason to stop the loop, except if asked directly; every other "
+        "condition arms a wakeup instead. *Loop mechanics* says the same."
+    )
+    assert _gate_three_unmet(restating) == {
+        "the-stop-doctrine-is-restated-here-instead-of-pointed-at"
+    }

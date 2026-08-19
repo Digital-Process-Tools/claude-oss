@@ -107,6 +107,13 @@ The ranking is load-bearing for you in a way it is not for the per-PR pass, beca
 **a finding in a row the table marks blocking is not carry-forward material.** It stops the tag in
 round one and in round two alike. Everything else obeys the cap below.
 
+**Say, in the item, that a blocking finding is on the release's critical path.** It stops the tag, so
+the tag cannot move until it is fixed, so the fix is scheduled ahead of the general backlog rather
+than filed alongside it. You do not schedule it — you are not the caller and you delegate nothing —
+but the caller reads your report and not the table, and a blocking row that arrives looking like an
+ordinary filing gets treated as one. That is #209: the gate refused correctly and the work it
+produced sat unstarted for three hours.
+
 What is yours and not theirs is the **composition** lens over the range:
 
 - A field, a path, an environment variable or a config key **introduced** in one commit and

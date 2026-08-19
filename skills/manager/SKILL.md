@@ -997,7 +997,8 @@ Gates, each a call and not a feeling:
    counting nothing and reporting a pass.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean → proceed;
-   findings → stop and file, **in round one**; **could not run → stop and say so.** Round two is
+   findings → **stop the tag** and file, **in round one**; **could not run → stop the tag and say
+   so.** Neither one stops the loop; the continuation for each is below. Round two is
    different and deliberately so: what it finds is filed and the release ships over it.
    **Two audit rounds, hard cap** — a
    competent audit of any non-trivial delta always finds something, so an unbounded "findings → stop"
@@ -1034,6 +1035,14 @@ Gates, each a call and not a feeling:
      the instance this arm comes from the unattributed completion was the one that was right and the
      attributed one graded the same class clean. **More than one completion** for one dispatch clears
      only when every one of them agrees.
+
+   **Stop the tag, not the loop.** This is the only gate whose failure *produces* work — the others
+   clear themselves or name their own remedy — so every blocking arm has a continuation: round-one
+   `findings` are filed **and the blocking rows delegated in the same tick**; a blocking row puts its
+   fix on the release's **critical path**, ahead of the general backlog, because the tag cannot move
+   until it lands; `could not run` is followed by diagnosing why it could not, not by waiting. None
+   of that stops the loop, and the rule for what does is *Loop mechanics* above — read there, not
+   restated here.
 
    Full mechanics — the exact template lines, the report wording, the re-dispatch procedure — live in
    `commands/release.md`'s own numbered gate 3, which is this gate's single source; this paragraph is
@@ -1165,19 +1174,45 @@ ScheduleWakeup(delaySeconds=…, prompt="/manager", reason="<what specifically i
 ```
 
 Agent completions notify for free — never poll for them. **CI is the only thing that needs a timer**,
-sized to the observed matrix. Nothing outstanding but somebody else's work — a review, a CI run, an
-upstream fix, and **never your own backlog** — means stop the loop (`stop: true`) and say so out loud,
-because a loop that stops silently is indistinguishable from one that was never armed. Which of the
-three states below you are in decides whether this sentence applies at all.
+sized to the observed matrix.
+
+**There is no good reason to stop the loop, except being asked to stop it directly.** A direct
+instruction is the one input the loop cannot be wrong about, because acting on it re-derives nothing.
+**Every other condition arms a wakeup instead** — waiting on CI, waiting on an agent, waiting on a
+third party, a release a gate refused, an empty board. When a direct instruction does stop it, say so
+out loud, because a loop that stops silently is indistinguishable from one that was never armed.
+
+**The asymmetry is the whole argument, and it is why this is not a preference.** A loop that keeps
+ticking with nothing to do is visibly idle and self-correcting, and the cost is one cheap tick that
+says so. A loop that stopped is indistinguishable from one that was never armed, the cost is
+unbounded, and nothing inside it will ever notice.
+
+**What this replaces, written down so it is a decision and not a drift.** The condition used to be
+*nothing outstanding but somebody else's work → stop the loop, `stop: true`*. It is replaced rather
+than tightened, because it asks the loop for a judgement about its own board at the moment it is
+least able to make one: a loop about to stop is definitionally a loop that has stopped looking. On
+2026-08-16 it reached that judgement while holding a belief that had been false for an hour and fifty
+minutes, with four blockers it had filed itself sitting unstarted on its own tracker (#209). And
+*somebody else's work* was carrying the load — an upstream issue, a review someone else owes, a
+release the maintainer must approve — where the right move was already a long wakeup rather than a
+termination. The rule described an exception that never had a good instance.
+
+**A recorded wait names what it is waiting on in a form a later turn can re-read.** *Blocked on audit
+completion* is unfalsifiable prose, and it survived ninety minutes after the audit had answered.
+*Blocked on the gate 3 audit dispatched at 23:12Z* is a claim, and the next turn fails it in one
+call. This binds the wakeup's `reason` and the state entry alike — and a wait is re-read at the top
+of the next tick, never carried forward from the belief that recorded it.
 
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.
 
-**What ends a tick, and only one of these three does.** *Somebody else's work* above means a review,
-a CI run, an upstream fix. **It has never meant your own backlog**, and reading it that way is what
-turns a momentarily quiet board into a finish line — observed at the close of the 0.5.0 tick, which
-reported nothing pending with nineteen issues open, every one of them filed by this loop (#244). So
-close every tick by saying, in as many words, which of these it is in:
+**What ends a tick, and only one of these three does. None of them stops the loop.** That distinction
+was being conflated, and the conflation is half of #209: these three states say how *this tick*
+closes, while the doctrine above says when the *loop* stops, and the sentence that used to sit here
+made the second follow from the first. Reading a momentarily quiet board as a finish line is what
+that produced — observed at the close of the 0.5.0 tick, which reported nothing pending with nineteen
+issues open, every one of them filed by this loop (#244). So close every tick by saying, in as many
+words, which of these it is in:
 
 - **Work started** — something was delegated in this tick. Name what, and where it is running. Not
   an ending: the tick continues, and arming a wakeup to wait on it is the tell above in its other
@@ -1185,7 +1220,9 @@ close every tick by saying, in as many words, which of these it is in:
 - **Blocked** — every remaining open item named individually, each with what it waits on and who
   owns that. **A count is not a naming**, and neither is *the rest are blocked*: if you cannot write
   the list, you are not in this state. Also not an ending.
-- **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty.
+- **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty. **Your own
+  backlog was never somebody else's work**, so an open issue this loop filed is not this state. It
+  ends the tick and arms a long wakeup; it does not stop the loop.
 
 **An unread board is not an empty one.** If either call did not answer, that is `unknown`, and
 unknown is not an ending: say which call failed and what therefore went unread. Without that, a loop
