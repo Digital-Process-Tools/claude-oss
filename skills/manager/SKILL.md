@@ -1018,6 +1018,27 @@ Gates, each a call and not a feeling:
      did not complete. That is `could not run`, and it **stops** the tag. Re-dispatching with the
      table in the payload is how the answer gets computed; it is not an extra round.
 
+   **Since #320, a `clean` verdict is itself graded, and a completion is joined to its own
+   dispatch.** Two additions to this gate, not a separate one:
+
+   - **The grade.** A class with no findings is `clean (exercised)` — a control ran that would have
+     failed had the class been present, and it did not — or `clean (read)`, a look with no control
+     behind it, which must never be weighed as the measured grade above. The verdict line carries
+     `<k> of <m> classes read but not exercised`, and a nonzero count does not stop the tag by
+     itself: it annotates rather than blocks — demanding a fired control for every class on every
+     delta buys more words rather than a better audit. A `read` grade never outweighs a reproduction,
+     from any source — a second completion, a contributor, you.
+   - **The attribution.** The gate mints a dispatch token before the spawn and the auditor echoes it
+     back. **unattributed** — no token, a mismatched one, or `dispatch token: none reached me` —
+     does not clear the gate and is not discarded: read its findings and reconcile them, because in
+     the instance this arm comes from the unattributed completion was the one that was right and the
+     attributed one graded the same class clean. **More than one completion** for one dispatch clears
+     only when every one of them agrees.
+
+   Full mechanics — the exact template lines, the report wording, the re-dispatch procedure — live in
+   `commands/release.md`'s own numbered gate 3, which is this gate's single source; this paragraph is
+   a restatement of it, not a second definition (#321).
+
    The gate is performed, not judged: `scripts/release_delta.py` computes the range in three states
    and `oss:release-auditor` reads it. **`could-not-run` is the script's answer, not yours**, and it
    stops the release — a shallow clone or a tag HEAD cannot reach is the third outcome, and so is a
