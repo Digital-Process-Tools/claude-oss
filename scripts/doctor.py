@@ -266,6 +266,216 @@ def check_tool(name, probe):
         report("WARN", "{}: present but returned {}".format(name, done.returncode))
 
 
+# --- the entry point every brief names, which is not the binary on PATH (#285) ------
+#
+# `check_tool("supertool", ...)` above answers *is it on PATH*. Every developer brief
+# this plugin issues says to call `./supertool`, and this repo's rule layer BLOCKS
+# Read/Edit/Write/Glob/Grep with a message naming the op that replaces each -- so the
+# entry point is mandatory. `scripts/scaffold.py` also writes `/supertool` into a
+# managed repo's `.gitignore`, correctly, because committing it would bake one
+# developer's absolute path into every other clone. Mandatory, and absent from every
+# fresh clone by design: two different questions rendering as one OK line.
+#
+# **What creates it is supertool's own `hooks/session-start.sh`**, read rather than
+# assumed, and it already handles every case right -- it links when nothing is there,
+# leaves a stranger untouched, and refuses to link at all inside a supertool checkout.
+# Nothing here is a defect in that hook. The gap is that the hook fires on a SESSION's
+# cwd, so a clone nobody has opened a session in, and every worktree an agent cuts
+# mid-session, has none -- and no diagnostic said so.
+SUPERTOOL_ENTRY = "supertool"
+
+#: The file the hook links to, and the file a supertool checkout carries at its own
+#: root. Both spellings are the same name on purpose; which one is meant is decided by
+#: what else is beside it.
+SUPERTOOL_CORE = "supertool.py"
+
+
+def _own_supertool_tree(project_dir):
+    """The `supertool.py` of the checkout this directory is inside, or None.
+
+    Transcribed from supertool's `hooks/session-start.sh`, which walks up for the
+    `.supertool.json` that would be loaded and looks for a `supertool.py` beside it.
+    Inside such a tree the hook deliberately creates **no** wrapper: one pointing at
+    the plugin install would run the plugin's core against this tree's presets, the
+    mix every custom op declines. So `./supertool` being absent there is correct, and
+    a check without this arm would fire a confident wrong warning in claude-supertool
+    -- which is itself managed by this loop.
+
+    `is_file()` swallows `OSError`, so an unreadable directory on the way up reads as
+    "no config here" and the walk continues. That is the safe direction: the failure
+    is to *not* claim an own-tree, which costs a warning rather than a wrong silence.
+    """
+    directory = Path(os.path.realpath(str(project_dir)))
+    while True:
+        if (directory / WATCH_CONFIG).is_file():
+            core = directory / SUPERTOOL_CORE
+            return core if core.is_file() else None
+        if directory.parent == directory:
+            return None
+        directory = directory.parent
+
+
+def plugin_supertool_entries(cache_root=None, record=None):
+    """Every unpacked supertool `supertool.py` in the plugin cache, newest-named last.
+
+    Returns a list of ``(version, path)``. Empty means the question "is this link the
+    plugin's" has no answer available -- not that the link is wrong.
+
+    `os.listdir` rather than `Path.glob`, for the reason in `_listdir`: glob swallows
+    `PermissionError` while walking and yields nothing, so an unreadable cache would
+    arrive here indistinguishable from an empty one. Here both do route to the same
+    verdict, deliberately -- but by a return value that says so rather than by an
+    absence nobody produced on purpose.
+    """
+    root = Path(os.path.expanduser(cache_root or PLUGIN_CACHE_ROOT))
+    try:
+        markets = sorted(os.listdir(str(root)))
+    except OSError:
+        return []
+    found = []
+    for market in markets:
+        base = root / market / SUPERTOOL_ENTRY
+        try:
+            versions = sorted(os.listdir(str(base)))
+        except OSError:
+            continue
+        for version in versions:
+            entry = base / version / SUPERTOOL_CORE
+            if entry.is_file():
+                found.append((version, entry))
+    return found
+
+
+def supertool_entry_point(project_dir, cache_root=None, record=None):
+    """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
+
+    Seven states, and the two that would otherwise collapse are the reason this is a
+    function rather than an ``==``:
+
+    * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
+    * ``own-tree-stranger`` -- a supertool checkout that has one anyway.
+    * ``absent`` -- nothing there. A fresh clone, or a worktree cut mid-session.
+    * ``ok`` -- a link reaching a `supertool.py` in the plugin cache.
+    * ``other-target`` -- a link reaching something else. Observed on this repo, where
+      supertool's hook reported `./supertool already exists here and is not the plugin
+      symlink -- leaving it untouched`. A deliberate local checkout looks exactly like
+      this, so it is reported and not condemned.
+    * ``unknown-plugin-path`` -- **the third state.** There is a link, and no readable
+      cache to compare it against. Calling that ``other-target`` accuses a link that
+      may be perfectly correct; calling it ``ok`` clears one that may not be. Neither
+      was measured, so neither is said.
+    * ``not-a-symlink`` / ``dangling`` / ``unreadable`` -- present and not usable, each
+      with its own remedy, none of them "create one".
+    """
+    link = Path(project_dir) / SUPERTOOL_ENTRY
+    core = _own_supertool_tree(project_dir)
+    present = os.path.lexists(str(link))
+
+    if core is not None:
+        if present:
+            return "own-tree-stranger", _display(project_dir, core)
+        return "own-tree", _display(project_dir, core)
+    if not present:
+        return "absent", ""
+    if not os.path.islink(str(link)):
+        return "not-a-symlink", _display(project_dir, link)
+
+    try:
+        target = os.readlink(str(link))
+    except OSError as exc:
+        return "unreadable", str(exc.strerror or exc.__class__.__name__)
+    resolved = os.path.realpath(os.path.join(str(link.parent), target))
+    try:
+        os.stat(resolved)
+    except FileNotFoundError:
+        # The exception in hand settles it; no second question is asked of the
+        # filesystem to explain why the first failed.
+        return "dangling", resolved
+    except OSError as exc:
+        return "unreadable", "{} ({})".format(resolved, exc.strerror or exc.__class__.__name__)
+
+    entries = plugin_supertool_entries(cache_root=cache_root, record=record)
+    if not entries:
+        return "unknown-plugin-path", resolved
+    key = os.path.normcase(resolved)
+    for version, entry in entries:
+        if os.path.normcase(os.path.realpath(str(entry))) == key:
+            active = active_versions([SUPERTOOL_ENTRY], record=record).get(SUPERTOOL_ENTRY)
+            if active and active != version:
+                return "ok", "{} (cached {}, active {})".format(resolved, version, active)
+            return "ok", resolved
+    return "other-target", resolved
+
+
+def check_supertool_entry_point(project_dir, cache_root=None, record=None):
+    """One line, in every state. Never raises: `supertool_entry_point` returns."""
+    state, detail = supertool_entry_point(project_dir, cache_root=cache_root, record=record)
+    if state == "own-tree":
+        report(
+            "OK",
+            "./supertool: not expected here -- this is a supertool checkout, so its "
+            "session-start hook deliberately creates no wrapper (one would run the "
+            "plugin core against this tree's presets). Call {} directly.".format(detail),
+        )
+    elif state == "own-tree-stranger":
+        report(
+            "WARN",
+            "./supertool exists inside a supertool checkout, where the session-start "
+            "hook creates none on purpose. If it points at the plugin install it runs "
+            "the plugin core against this tree's presets and every custom op through it "
+            "declines. Call {} directly and remove the wrapper.".format(detail),
+        )
+    elif state == "ok":
+        report("OK", "./supertool: the plugin's entry point ({})".format(detail))
+    elif state == "absent":
+        report(
+            "WARN",
+            "./supertool: absent. Every developer brief this plugin issues calls it, and "
+            "it is gitignored on purpose -- committing it would bake one machine's "
+            "absolute path into every clone -- so a fresh clone never has one. "
+            "supertool's session-start hook creates it for the directory a session opens "
+            "in, which is why a worktree cut mid-session has none either. Open a session "
+            "here, or link it by hand to the supertool plugin's supertool.py.",
+        )
+    elif state == "other-target":
+        report(
+            "WARN",
+            "./supertool points at {}, which is not a supertool.py in the plugin cache. "
+            "A deliberate local checkout looks exactly like this and may be what you "
+            "want; a stale link from another machine looks the same and is not. Nothing "
+            "here can tell them apart, so this names the target rather than judging "
+            "it.".format(detail),
+        )
+    elif state == "unknown-plugin-path":
+        report(
+            "WARN",
+            "./supertool points at {}, and no supertool.py could be found in the plugin "
+            "cache to compare it against -- so whether this is the plugin's entry point "
+            "is unknown, not wrong. Check that supertool is installed.".format(detail),
+        )
+    elif state == "not-a-symlink":
+        report(
+            "WARN",
+            "{} exists and is not a symlink. supertool's session-start hook leaves "
+            "anything already at that name untouched, so every op call in this repo "
+            "reaches whatever this is rather than the tool the briefs mean.".format(detail),
+        )
+    elif state == "dangling":
+        report(
+            "WARN",
+            "./supertool is a symlink to {}, which does not exist. The remedy is "
+            "re-linking, not creating: the checkout it named has moved or gone.".format(
+                detail
+            ),
+        )
+    else:
+        report(
+            "WARN",
+            "./supertool: could not be read ({}) -- so which of "
+            "present/absent/wrong-target this repo is in is unknown.".format(detail),
+        )
+
+
 def check_directory(label, value, config_found=True):
     if not config_found:
         unmeasured(label)
@@ -372,6 +582,49 @@ def _display(project_dir, path):
         return str(path)
 
 
+def _listdir(directory):
+    """One directory's entries, in three states rather than two.
+
+    Returns ``(entries, problem)``. ``problem`` is ``None`` when the listing
+    succeeded, ``"absent"`` when the directory is not there, and a sentence when it
+    is there and could not be read.
+
+    ``Path.is_dir`` and ``Path.glob`` are both unusable here, and for the same
+    reason: each destroys the answer. ``is_dir()`` swallows ``OSError`` and returns
+    True for a directory that exists and cannot be entered, and pathlib's glob
+    swallows ``PermissionError`` while walking and yields nothing -- so "read it,
+    found no identity file" and "could not read it" arrived at the caller
+    identically, and the caller then said the first out loud (#284, and the same
+    mechanism as #124 one directory over).
+
+    No second question is asked of the filesystem to explain why the first failed:
+    the exception already in hand settles it. ``FileNotFoundError`` is absence,
+    ``NotADirectoryError`` is a file standing where a directory was expected, and
+    anything else is unreadable. ``Path.exists()`` would answer with its own
+    swallowed errno list and gets no vote.
+    """
+    try:
+        return sorted(os.listdir(str(directory))), None
+    except FileNotFoundError:
+        return [], "absent"
+    except NotADirectoryError:
+        return [], "is a file, not a directory"
+    except OSError as exc:
+        return [], "could not be read ({})".format(exc.strerror or exc.__class__.__name__)
+
+
+def _identity_names(entries):
+    """identity.md, specifically.
+
+    An earlier version of this accepted core-memories.md too, because two of our own
+    repos have no identity.md and the warning was inconvenient -- which is widening a
+    check until a real gap disappears. Core memories are what the agent LEARNED;
+    identity is who it is, and it is the file injected at session start. They are not
+    substitutes.
+    """
+    return [n for n in entries if n.startswith("identity") and n.endswith(".md")]
+
+
 def check_memory(project_dir):
     """Is the memory plugin configured, or merely installed?
 
@@ -382,79 +635,121 @@ def check_memory(project_dir):
 
     Not scaffolded silently. An identity asserts values and a voice, and writing one
     into somebody else's repository picks a persona they did not choose.
+
+    **Both locations are listed before anything is reported, and that ordering is the
+    whole of #284.** This used to return early on ``not store.is_dir()`` with "no memory
+    store in this project ... it will create one on first save" -- true, reassuring, and
+    unreachable-past. A marketplace install on day one has exactly that shape: nothing
+    has saved a session, so there is no data dir, and the installer has put identity.md
+    at ``.claude/remember/identity.md`` because that is where it looks like it goes. The
+    stray branch below is the one that would have said so, and the early return meant it
+    never ran. A check that cannot look must not print what a check that looked and found
+    nothing prints.
+
+    Where the file is READ is settled in ``memory_layout``'s docstring, measured against
+    the memory plugin's session-start hook. That reasoning stays there, in one copy; what
+    the messages below owe is the same conclusion, and the tests are what bind them
+    together rather than a second prose copy that drifts.
     """
     config_dir, store = memory_layout(project_dir)
-    if not store.is_dir():
-        report(
-            "WARN",
-            "{}: no memory store in this project. The remember plugin is installed as a "
-            "dependency but has nothing here yet; it will create one on first save.".format(
-                MEMORY_DIR
-            ),
-        )
-        return
-    # identity.md, specifically. An earlier version of this accepted core-memories.md
-    # too, because two of our own repos have no identity.md and the warning was
-    # inconvenient -- which is widening a check until a real gap disappears. Core
-    # memories are what the agent LEARNED; identity is who it is, and it is the file
-    # injected at session start. They are not substitutes.
-    #
     # Data dir first, because that is the hook's first choice and the only location
     # read in every layout (see memory_layout).
-    #
-    # Not the same move as accepting core-memories.md, which widened WHAT counts until
-    # an inconvenient gap vanished. This matches WHERE we look to where the reader
-    # looks, and the config-dir branch below is a WARN precisely so that widening does
-    # not turn a file nobody reads into a pass.
-    identity = sorted(store.glob("identity*.md"))
+    store_entries, store_problem = _listdir(store)
+    config_entries, config_problem = _listdir(config_dir)
+    identity = _identity_names(store_entries)
     if identity:
         report(
             "OK",
             "memory store configured ({} in {})".format(
-                identity[0].name, _display(project_dir, store)
+                identity[0], _display(project_dir, store)
             ),
         )
         return
 
-    stray = sorted(config_dir.glob("identity*.md"))
+    if store_problem not in (None, "absent"):
+        # The third state. Everything below this line asserts an absence, and an
+        # absence asserted about a directory nobody could read is a finding invented
+        # by the tool.
+        report(
+            "WARN",
+            "{} {} -- so whether an identity.md is configured here is unknown, not "
+            "absent. Nothing else in this check can answer while that listing "
+            "fails.".format(_display(project_dir, store), store_problem),
+        )
+        return
+
+    # How the data dir stands, carried into whichever message follows. The old early
+    # return was the only thing saying this, and the fix must not buy the branch below
+    # by dropping the fact.
+    store_state = (
+        "{} does not exist yet -- the remember plugin creates it on first save".format(
+            _display(project_dir, store)
+        )
+        if store_problem == "absent"
+        else "{} exists and holds no identity.md".format(_display(project_dir, store))
+    )
+
+    stray = _identity_names(config_entries)
     if stray:
         # Read only when the plugin is installed INTO the repo, which is what a
         # scripts/ directory beside config.json means. Otherwise the file exists, looks
         # deliberate, and is never injected -- the worst of the three, because every
         # signal says configured. Two of our own repos are in exactly this state.
-        if (config_dir / "scripts").is_dir():
+        #
+        # Tested against the listing already in hand rather than with a fresh
+        # `is_dir()`, which would ask the filesystem a second question and swallow the
+        # error from it.
+        if "scripts" in config_entries:
             report(
                 "OK",
                 "memory store configured ({} in {}, local install)".format(
-                    stray[0].name, _display(project_dir, config_dir)
+                    stray[0], _display(project_dir, config_dir)
                 ),
             )
             return
         report(
             "WARN",
-            "{} exists but is never read. The plugin is not installed into this repo, so "
-            "the session-start hook resolves identity against {} and the plugin's own "
+            "{}/{} exists but is never read. The plugin is not installed into this repo, "
+            "so the session-start hook resolves identity against {} and the plugin's own "
             "directory -- never this one. It looks configured from every angle except the "
-            "one that matters. Move it to {}/identity.md.".format(
-                _display(project_dir, stray[0]),
+            "one that matters. Move it to {}/identity.md ({}).".format(
+                _display(project_dir, config_dir),
+                stray[0],
                 _display(project_dir, store),
                 _display(project_dir, store),
+                store_state,
             ),
         )
         return
+
+    if config_problem not in (None, "absent"):
+        report(
+            "WARN",
+            "no identity.md in {}, and {} {} -- so whether one is sitting there unread "
+            "is unknown rather than answered. {}.".format(
+                _display(project_dir, store),
+                _display(project_dir, config_dir),
+                config_problem,
+                store_state[0].upper() + store_state[1:],
+            ),
+        )
+        return
+
     # Name the paths consulted. The previous message named MEMORY_DIR while the lookup
     # read the config dir, so following it to the letter left the warning byte-for-byte
     # unchanged and gave the reader nothing to tell "wrong place" from "wrong content".
     report(
         "WARN",
-        "no identity.md in {} or {}. It records who the AGENT is here -- name, voice, "
-        "working style -- and is injected at session start, so without it every session "
-        "begins as nobody in particular. Saving still works, which is exactly what makes "
-        "the gap invisible. Seed {}/identity.md from the memory plugin's "
+        "no identity.md in {} or {} ({}). It records who the AGENT is here -- name, "
+        "voice, working style -- and is injected at session start, so without it every "
+        "session begins as nobody in particular. Saving still works, which is exactly "
+        "what makes the gap invisible. Seed {}/identity.md from the memory plugin's "
         "identity.example.md and edit it -- that directory self-ignores, so the file "
-        "cannot be committed by accident.".format(
+        "cannot be committed by accident, and it is the only location read in every "
+        "install layout.".format(
             _display(project_dir, store),
             _display(project_dir, config_dir),
+            store_state,
             _display(project_dir, store),
         ),
     )
@@ -2242,6 +2537,76 @@ def dependency_repositories(names):
     return repos
 
 
+def loop_repository(plugin_root=None):
+    """Where a defect in *this plugin* gets filed. Returns ``(url, problem)``.
+
+    A sibling of ``dependency_repositories``, not a row in it, and the reason is
+    measured rather than aesthetic. That mapping's one caller is ``check_freshness``,
+    which feeds it through ``published_versions`` into ``dependency_findings`` -- and
+    that function unions ``declared | installed | latest``. This plugin is in neither of
+    the first two, because nothing declares itself as its own dependency, so folding it
+    into the mapping makes doctor print `oss: declared but not installed. Run
+    `claude plugin install oss@dpt-plugins``. False, actionable, wrong, and printed by
+    the plugin it is wrong about. "Every existing caller works unchanged" was the
+    argument for folding; the one existing caller does not.
+
+    So the loop's own board is derived the same way every other board is -- off the
+    ``repository`` key in the manifest at ``PLUGIN_ROOT``, read from disk. No hardcoded
+    slug, no name-to-repo table, nothing about one repository living in shared code.
+
+    **Three states, because two is the collapse #292 is about.** A manifest with no
+    ``repository`` key is a real state and it is not "there is no tracker":
+
+    * ``(url, None)`` -- read.
+    * ``(None, "no-repository-key")`` -- the manifest was read and does not say. Also
+      where a non-string value lands: ``plugin.json`` is tracked and a contributor
+      writes it, so an object here would otherwise be formatted into a diagnostic line
+      and into whatever a brief does with it.
+    * ``(None, "unreadable")`` -- absent, or not JSON.
+    """
+    root = Path(plugin_root) if plugin_root is not None else PLUGIN_ROOT
+    try:
+        doc = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, "unreadable"
+    value = doc.get("repository") if isinstance(doc, dict) else None
+    if not isinstance(value, str) or not value.strip():
+        return None, "no-repository-key"
+    return value.strip(), None
+
+
+def check_loop_repository(plugin_root=None):
+    """The caller that makes the accessor above reach something.
+
+    An honest accessor nobody calls is a capability that exists and cannot be used,
+    which is the same shape as the gap it was written to close. A guest install that
+    cannot resolve where to send a tooling defect should learn that from the diagnostic
+    rather than from an agent improvising a slug at filing time.
+    """
+    url, problem = loop_repository(plugin_root=plugin_root)
+    if problem is None:
+        report(
+            "OK",
+            "loop repository: {} -- where a defect in this plugin itself is filed. "
+            "Read from this plugin's own manifest, not inferred.".format(url),
+        )
+    elif problem == "no-repository-key":
+        report(
+            "WARN",
+            "loop repository: this plugin's manifest carries no usable string "
+            "`repository` key, so where a defect in the loop's own tooling should be "
+            "filed is unknown -- not absent. Nothing may guess a slug from it. Add "
+            "`repository` to .claude-plugin/plugin.json.",
+        )
+    else:
+        report(
+            "WARN",
+            "loop repository: this plugin's manifest at {} could not be read, so where a "
+            "defect in the loop's own tooling should be filed is unknown -- not "
+            "absent.".format(Path(plugin_root) if plugin_root is not None else PLUGIN_ROOT),
+        )
+
+
 def published_versions(repos):
     """Latest published version per dependency, read off each repo's default branch."""
     latest = {}
@@ -3750,6 +4115,9 @@ def main(argv=None):
     check_tool("gh", ["gh", "auth", "status"])
     check_tool("supertool", ["supertool", "version"])
     check_tool("git", ["git", "--version"])
+    # PATH is not the question the briefs ask. Immediately under the PATH line, because
+    # that line is the one a reader takes for this one (#285).
+    check_supertool_entry_point(project_dir)
 
     # Passed through even when the config is None: each of these prints its own
     # "not checked" line, and skipping the call would restore the silence #62 is about.
@@ -3763,6 +4131,10 @@ def main(argv=None):
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
     check_agent_dispatch()
+    # Same shape and the same reason: a fact about the plugin, needing no config. Where
+    # a defect in the loop's own tooling gets filed is the one board no derivation over
+    # the dependencies can produce (#292).
+    check_loop_repository()
 
     # Declared dependencies install automatically; they do not configure themselves,
     # and the unconfigured state is the one that still appears to work.

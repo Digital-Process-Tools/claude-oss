@@ -647,6 +647,26 @@ def _dependencies_current(monkeypatch):
     monkeypatch.setattr(doctor, "published_versions", lambda repos: {n: "1.0.0" for n in names})
 
 
+def _entry_point_linked(monkeypatch):
+    """`./supertool` present and pointing at the plugin's own supertool.py (#285).
+
+    Stubbed at the state boundary, not by replacing `check_supertool_entry_point`, for
+    the same reason `_dependencies_current` stubs the fetch: the message selection stays
+    real, so this test still covers how that check's OK line reaches the verdict.
+
+    It is stubbed at all for the reason `check_tool` three lines below it is. The link
+    is created by supertool's session-start hook against the directory a *session* opens
+    in, so no repository fixture can establish it -- a tmp_path a test just made has
+    never had a session opened in it, by construction. Asserting it here would be
+    asserting that the harness ran another plugin's hook.
+    """
+    monkeypatch.setattr(
+        doctor,
+        "supertool_entry_point",
+        lambda project_dir, cache_root=None, record=None: ("ok", "<the plugin's copy>"),
+    )
+
+
 def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys):
     # A workflow actually runs the test command, and the config carries no leftover
     # `ci` block. Both are states the doctor warns about -- tests configured with
@@ -659,6 +679,7 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "jobs:\n  tests:\n    steps:\n      - run: pytest\n", encoding="utf-8"
     )
     _dependencies_current(monkeypatch)
+    _entry_point_linked(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
     # `plugin copy scope` is a WARN whenever nothing named the root this invocation
