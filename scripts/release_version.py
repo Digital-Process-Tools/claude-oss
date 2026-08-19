@@ -105,6 +105,7 @@ _HERE = str(Path(__file__).resolve().parent)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import oss_config  # noqa: E402  -- the scaffolded-fallback signal is read from here, once (#299)
 import release_delta  # noqa: E402  -- the tag glob is derived in exactly one place
 
 STATE_PROPOSED = "proposed"
@@ -324,16 +325,43 @@ NO_DIRECTORY = (
     "`no fragments`."
 )
 
+# The third state, distinct from NO_DIRECTORY: `changelog_dir` is still unset, but this
+# repo's tree could not be read well enough to say whether scaffold's own fallback gate
+# is running -- so a directory is not picked here either, for the same reason NO_DIRECTORY
+# is not picked when nothing was found at all (#299).
+NO_DIRECTORY_UNKNOWN = (
+    "changelog_dir is not set, and whether this repo has scaffold's own fallback gate "
+    "could not be determined ({}). A directory picked here would still be a directory "
+    "the project did not confirm naming, so this refuses the same way NO_DIRECTORY does "
+    "rather than guess."
+)
+
 
 def _fragment_dir(repo, given, config):
+    """(path_or_None, problem_or_None). Three ways `changelog_dir` reaches a directory,
+    and only the first two are named in the config itself (#299):
+
+    1. `--dir` on the command line, taken as given.
+    2. `changelog_dir` in `.oss.json`, a directory the project explicitly named.
+    3. Null or absent, but `/oss:scaffold --apply` has already written its own gating
+       workflow at the one path a forge will run it from -- the fallback directory it
+       picked when it created the fragment machinery, recognised rather than re-guessed.
+       `oss_config.scaffolded_changelog_gate` is what tells (3) apart from a repo that
+       genuinely never adopted fragments, which still refuses exactly as it did before.
+    """
     if given:
         return Path(given), None
     if config is None:
         return None, NO_DIRECTORY
     named = config.get("changelog_dir")
-    if not isinstance(named, str) or not named.strip():
-        return None, NO_DIRECTORY
-    return Path(repo) / named, None
+    if isinstance(named, str) and named.strip():
+        return Path(repo) / named, None
+    state, detail = oss_config.scaffolded_changelog_gate(repo)
+    if state == "present":
+        return Path(repo) / oss_config.DEFAULT_FRAGMENTS_DIR, None
+    if state == "unknown":
+        return None, NO_DIRECTORY_UNKNOWN.format(detail)
+    return None, NO_DIRECTORY
 
 
 def _scan(directory):

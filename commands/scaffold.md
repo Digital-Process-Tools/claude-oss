@@ -213,6 +213,21 @@ request that installed it. The directory is `changelog_dir` from `.oss.json`, fa
 to `changelog.d/` when that is null — which is also the directory the generated workflow
 names in that case, so the two cannot drift apart.
 
+**That fallback is deliberately not written back into `.oss.json` (#299).** `changelog_dir`
+stays null on a repo scaffolded this way, and that leaves it reading, to a config file, as
+"fragments were never adopted" — the same value a repo that hand-edits `CHANGELOG.md` and
+has never run this command carries. Writing the key here would settle it, but `.oss.json` is
+a **tracked file somebody owns**, and this plugin's ownership contract says a default must
+never win against a decision a person made; nothing else this command runs ever writes into
+it, and making an exception for one key is a design decision, not a bug fix. So the two
+readers that treat null as "not adopted" — `/oss:changelog` and `scripts/release_version.py`
+— instead recognise the fallback on disk: `oss_config.scaffolded_changelog_gate` answers
+whether *this* repo's own `.github/workflows/oss-changelog.yml` exists, which is the one
+signal a forge gives this plugin to claim a workflow by (subdirectories under
+`.github/workflows/` are unsupported, and a symlink there fails outright — see the `ours`
+row in the ownership table above). Present, and null falls back to `changelog.d/` exactly as
+this command does; absent, and null still means what it always meant.
+
 That README is a default like any other: created once when absent, never overwritten, and
 previewable before it is written with
 `--show changelog.d/README.md` (or your own fragment directory in place of `changelog.d`).

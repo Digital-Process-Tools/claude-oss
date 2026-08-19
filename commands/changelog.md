@@ -6,14 +6,44 @@ allowed-tools: Bash
 Fragments are the policy: one file per PR at `<changelog_dir>/<issue>.<section>.md`, so two open PRs
 share no file and stop conflicting on every merge.
 
-Read `changelog_dir` from `.oss.json`. If it is `null`, this repo hand-edits `CHANGELOG.md` and has
-not adopted fragments — say so and stop. Rolling fragments out to a repo is a change to that repo,
-which is a separate decision, not something this command does on the way past.
+Read `changelog_dir` from `.oss.json`. If it names a string, that is the directory. If it is
+`null` or absent, do not conclude "not adopted" yet (#299) — `/oss:scaffold --apply` creates the
+fragment directory and its own gating workflow **without** writing `changelog_dir`, on purpose
+(`commands/scaffold.md`), because `.oss.json` is a tracked file somebody owns and a default must
+never win against a decision a person made. So `null` alone is ambiguous between "this repo
+hand-edits `CHANGELOG.md` and never adopted fragments" and "scaffold adopted them and nobody has
+recorded which directory it picked". Tell the two apart with the same signal `release_version.py`
+uses — whether THIS repo's own `.github/workflows/oss-changelog.yml` exists, the one path a forge
+will read a workflow from:
+
+```bash
+FRAGMENTS_DIR="$(python3 -c "import sys, json; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/scripts')
+import oss_config
+config = json.load(open('.oss.json'))
+named = config.get('changelog_dir')
+if isinstance(named, str) and named.strip():
+    print(named)
+else:
+    state, detail = oss_config.scaffolded_changelog_gate('.')
+    if state == 'present':
+        print(oss_config.DEFAULT_FRAGMENTS_DIR)
+    elif state == 'unknown':
+        print('UNKNOWN: ' + detail, file=sys.stderr); sys.exit(1)
+    else:
+        print('NOT-ADOPTED', file=sys.stderr); sys.exit(1)
+")"
+```
+
+`NOT-ADOPTED` on stderr — say so and stop, exactly as before #299: rolling fragments out to a repo
+is a change to that repo, which is a separate decision, not something this command does on the way
+past. `UNKNOWN` on stderr — this repo's tree could not be fully read; say what stopped the read and
+stop, the same as a genuine "not adopted" would, rather than guess a directory nobody confirmed.
+Anything printed on stdout is the directory to use for every command below.
 
 ## Check (default)
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check --dir "$FRAGMENTS_DIR" --changelog CHANGELOG.md
 ```
 
 **Always pass `--dir` and `--changelog` — on every mode, including the fold below.** With
@@ -52,8 +82,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check-links --un
 ```
 
 Three commands rather than one clever line, because the clever line is where the bug goes.
-Substitute `changelog_dir` for `changelog.d` as the check above does; the versions are
-validated as `x.y.z` before they are ever written into a workflow, so they carry nothing a
+Substitute `$FRAGMENTS_DIR` (from the derivation above, #299) for `changelog.d`; the versions
+are validated as `x.y.z` before they are ever written into a workflow, so they carry nothing a
 shell reads as an instruction.
 
 `--check-links` refuses when a `## [x.y.z]` section has no link reference definition. If
@@ -87,7 +117,7 @@ that was never consulted is indistinguishable from one that was honoured.
 ## Fold (release only)
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z --dir "$(python3 -c 'import json;print(json.load(open(".oss.json"))["changelog_dir"])')" --changelog CHANGELOG.md
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z --dir "$FRAGMENTS_DIR" --changelog CHANGELOG.md
 ```
 
 Both flags are **required** here — the fold refuses rather than derive a target, in this copy
