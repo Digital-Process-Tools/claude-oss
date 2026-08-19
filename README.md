@@ -56,6 +56,15 @@ oss-workspace
 Without that symlink the launcher is only on the path it ships at, so run it as
 `bin/oss-workspace` from this checkout.
 
+That link is resolved once, against a directory a later release will not write to --
+`$PWD` there is this plugin's own installed checkout, and a plugin manager's cache
+layout is version-scoped. Nothing re-points the symlink on an update and nothing
+checked it until now: a stale target that still exists behaves exactly like a current
+one, silently. `/oss:doctor` now reports it, in `oss-workspace launcher: ...`, three
+ways -- matched, a skew naming both versions, or not on PATH at all -- and its remedy
+line names the *running* install's own path rather than `$PWD`, so pasting it works
+regardless of where you are standing when you paste it.
+
 That opens a session over the repo you are standing in, with the maintainer loop already running — or
 with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
 into the wrong place confidently.
@@ -121,7 +130,8 @@ state of the repo reported as unknown rather than fine. The run is also announce
 starts, carrying that variable's name, because an escape hatch you can only read about after the
 wait is one nobody waiting has.
 
-Install the launcher once:
+Install the launcher once, from this plugin's own checkout -- see "After cloning a repo you
+maintain" above for what a stale symlink costs and how `/oss:doctor` now catches it:
 
 ```
 ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace

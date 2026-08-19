@@ -624,6 +624,225 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
         )
 
 
+# --- reaches the running install (#288/#289) -----------------------------------
+#
+# `oss-workspace` is meant to be linked once, by hand, into `~/.local/bin` -- see
+# README.md. That link is resolved once, at install time, against a directory that
+# is version-scoped (`.../dpt-plugins/oss/<version>/bin/`), so nothing re-points it
+# on a later release and nothing checks it. A stale target that still exists behaves
+# exactly like a current one. Measured twice on the maintainer's own machine, and the
+# second time carried a security consequence: the release that shipped a fix to
+# `bin/oss-workspace` itself (#324) was the one release whose fix a stale link would
+# silently have kept out.
+_OSS_WORKSPACE_CACHE_SHAPE = re.compile(r"^oss-workspace$")
+
+
+def _oss_workspace_version_segment(path):
+    """The `<version>` component of a `.../oss/<version>/bin/oss-workspace` path, or
+    `None` when the path does not have that shape.
+
+    That shape is an observation about one plugin manager's cache layout, not a
+    contract -- a parse that assumed it and used it to DECIDE match/mismatch would
+    silently clear a target laid out any other way. It is not used that way here:
+    `oss_workspace_launcher_state` decides by content, and this only supplies a
+    human-readable label when the label is available. `None` is that "not
+    available" answer, distinct from a version string that happens to be wrong.
+    """
+    parts = Path(path).parts
+    if len(parts) < 4:
+        return None
+    if not _OSS_WORKSPACE_CACHE_SHAPE.match(parts[-1]):
+        return None
+    if parts[-2] != "bin" or parts[-4] != "oss":
+        return None
+    return parts[-3]
+
+
+def _locate_on_path(name, path=None):
+    """The first PATH entry naming exactly `name`, or `None`.
+
+    Deliberately not `shutil.which`, which answers a different question --
+    "can this be launched" -- and filters candidates on properties that are
+    irrelevant here and actively wrong for the one shape this check is always
+    looking for:
+
+    * **On Windows**, `shutil.which`'s own source (`files = [cmd + ext for ext
+      in pathext]`, with the bare `cmd` inserted only when `cmd` already ends
+      in one of those extensions) never makes an extensionless name a
+      candidate at all. `oss-workspace` is extensionless by design -- it is a
+      POSIX shell script, run through Git Bash on Windows the same way
+      `scripts/doctor.sh` and every other launcher this plugin ships is (see
+      the trap in this repo's own CLAUDE.md) -- so `shutil.which("oss-
+      workspace")` on native Windows Python returns `None` unconditionally,
+      regardless of whether the symlink this launcher's own install line
+      creates is present and correct. #329: every one of five tests collapsed
+      to `not-resolvable` on all four Windows CI legs, and this is why --
+      not a labeling gap in `_oss_workspace_version_segment`, which was the
+      wrong mechanism named in the self-review that first looked at this.
+    * **On POSIX**, `shutil.which`'s default `mode` additionally requires
+      `os.X_OK`, so a copy that exists with the right bytes but lacks the
+      execute bit -- irrelevant to a content comparison -- is invisible to it
+      too (observed on this machine;
+      `test_a_non_executable_target_is_still_resolved`).
+
+    This check only ever needs one answer -- does a file or symlink named
+    exactly `name` exist here, so its bytes can be read -- and asks that
+    directly, which is also platform-independent by construction: no
+    extension list, no execute bit, just `os.path.lexists` per PATH entry.
+
+    **A dangling symlink does not stop the search.** `os.path.lexists` is true
+    for one -- it stats the link itself, not the target -- and a first version
+    of this function returned on the first `lexists` match unconditionally, so
+    a stale, dead `oss-workspace` symlink anywhere earlier on `PATH` (left over
+    from a prior install layout, say) shadowed a correct, matching one further
+    down `PATH` and reported `unresolved-target` for a launcher that was, one
+    directory later, genuinely present. `shutil.which` never had this failure
+    mode: its own `_access_check` runs `os.path.exists`, which follows the
+    symlink and is `False` for a dangling one, so it silently kept searching.
+    This restores that one piece of `shutil.which`'s behaviour -- continue past
+    a candidate that resolves to nothing -- without reintroducing the
+    extension or executable-bit filtering that made `shutil.which` wrong for
+    this check in the first place. Anything else that `lexists` -- a regular
+    file, a directory, a valid symlink -- stops the search immediately and is
+    returned as-is: those are all "found something," and it is the caller's
+    job (via `os.path.realpath` and `read_bytes`) to decide whether what was
+    found can be compared.
+    """
+    search = path if path is not None else os.environ.get("PATH", "")
+    for entry in search.split(os.pathsep):
+        if not entry:
+            continue
+        candidate = os.path.join(entry, name)
+        if os.path.islink(candidate) and not os.path.exists(candidate):
+            # Dangling: nothing is actually reachable through this PATH entry,
+            # so it contributes nothing -- keep looking, same as shutil.which.
+            continue
+        if os.path.lexists(candidate):
+            return candidate
+    return None
+
+
+def oss_workspace_launcher_state(plugin_root=None, path=None):
+    """Which state PATH's `oss-workspace` is in, relative to THIS running install.
+
+    Returns ``(state, detail)``. Five states, and the choice of which four are
+    "matched" is deliberate:
+
+    * ``not-resolvable`` -- PATH carries no `oss-workspace` at all. Nothing was
+      found to compare, so this must never render as a mismatch, which would name a
+      target that does not exist.
+    * ``matched`` -- the resolved target is either the same file as this running
+      install's own `bin/oss-workspace` (`os.path.samefile`, so a symlink straight
+      at it counts) or its bytes are identical (CRLF folded, matching every other
+      content comparison in this file).
+    * ``mismatched`` -- the resolved target's bytes differ. `detail` is
+      ``(resolved, their_version, our_version)``; `their_version` is
+      `_oss_workspace_version_segment(resolved)` and may be `None`.
+    * ``own-copy-unreadable`` / ``unresolved-target`` -- one side could not be read,
+      so nothing was compared. Neither is "matched" and neither is "mismatched":
+      both of those would be an answer to a question that was not actually asked.
+
+    **Content decides match/mismatch; the version segment is a label, not a
+    filter.** #289's own second occurrence is why: the stale target was a git clone
+    pulled mid-release, so its *directory* read "0.5.0" while its *content* matched
+    no release at all. A check that compared only the version segment would have
+    called that "matched" and missed the exact failure it was written to catch. The
+    version segment is still read and reported when it parses, because it is the
+    cheap, human-readable half of the answer -- just not the half anything is
+    decided from.
+
+    `entry` comes from `_locate_on_path("oss-workspace", path=path)`, never
+    `shutil.which` -- see that function's docstring for why (#329). Every
+    branch below is reachable through `path` alone with an ordinary PATH-entry
+    fixture: `_locate_on_path` uses `os.path.lexists`, which is also true for
+    a directory, so `unresolved-target` needs no separate testing seam either.
+    """
+    plugin_root = Path(plugin_root or PLUGIN_ROOT)
+    own = plugin_root / "bin" / "oss-workspace"
+
+    entry = _locate_on_path("oss-workspace", path=path)
+    if entry is None:
+        return "not-resolvable", ""
+    resolved = os.path.realpath(entry)
+
+    if _same_file(resolved, str(own)):
+        return "matched", resolved
+
+    try:
+        own_bytes = own.read_bytes()
+    except OSError as exc:
+        return "own-copy-unreadable", "{} ({})".format(own, exc.__class__.__name__)
+
+    try:
+        resolved_bytes = Path(resolved).read_bytes()
+    except OSError as exc:
+        return "unresolved-target", "{} ({})".format(resolved, exc.__class__.__name__)
+
+    if own_bytes.replace(b"\r\n", b"\n") == resolved_bytes.replace(b"\r\n", b"\n"):
+        return "matched", resolved
+
+    their_version = _oss_workspace_version_segment(resolved)
+    our_version = plugin_version()
+    return "mismatched", (resolved, their_version, our_version)
+
+
+def check_oss_workspace_launcher(plugin_root=None, path=None):
+    """One line, in every state. The remedy line names THIS install's own path
+    (`plugin_root`, which defaults to `PLUGIN_ROOT` -- this script's own resolved
+    location) rather than `$PWD`, so it is correct regardless of where the reader is
+    standing (#288)."""
+    plugin_root = Path(plugin_root or PLUGIN_ROOT)
+    remedy = 'ln -sf "{}" ~/.local/bin/oss-workspace'.format(plugin_root / "bin" / "oss-workspace")
+    state, detail = oss_workspace_launcher_state(plugin_root=plugin_root, path=path)
+    if state == "matched":
+        report(
+            "OK",
+            "oss-workspace launcher: PATH resolves to {}, which matches this "
+            "running install's own bin/oss-workspace.".format(detail),
+        )
+    elif state == "not-resolvable":
+        report(
+            "WARN",
+            "oss-workspace launcher: not on PATH, so every developer brief this "
+            "plugin issues that calls `oss-workspace` has no route to run it. "
+            "{}".format(remedy),
+        )
+    elif state == "own-copy-unreadable":
+        report(
+            "WARN",
+            "oss-workspace launcher: could not read this running install's own "
+            "bin/oss-workspace ({}) -- so whether PATH's copy matches is unknown, "
+            "not wrong.".format(detail),
+        )
+    elif state == "unresolved-target":
+        report(
+            "WARN",
+            "oss-workspace launcher: PATH resolves oss-workspace to {} -- so "
+            "whether it matches this running install is unknown, not wrong. "
+            "{}".format(detail, remedy),
+        )
+    else:
+        resolved, their_version, our_version = detail
+        if their_version:
+            version_clause = "cache version {}".format(their_version)
+        else:
+            version_clause = (
+                "a path with no recognised .../oss/<version>/bin/ shape, so no "
+                "version could be read from it"
+            )
+        report(
+            "WARN",
+            "oss-workspace launcher: SKEW -- PATH resolves oss-workspace to {} "
+            "({}), whose content differs from this running install's own "
+            "bin/oss-workspace (version {}). A stale target that still exists "
+            "behaves exactly like a current one -- one release shipped a security "
+            "fix to this exact file (#324), and a symlink pinned at an older "
+            "release would silently keep running without it. {}".format(
+                resolved, version_clause, our_version, remedy
+            ),
+        )
+
+
 def check_directory(label, value, config_found=True):
     if not config_found:
         unmeasured(label)
@@ -4325,6 +4544,12 @@ def main(argv=None):
     # PATH is not the question the briefs ask. Immediately under the PATH line, because
     # that line is the one a reader takes for this one (#285).
     check_supertool_entry_point(project_dir)
+    # A fact about this launcher's own reach, not about the project being
+    # diagnosed -- needs no config and runs even when everything else could not be
+    # measured. Immediately under the two PATH checks above for the same reason
+    # #285 put its own check there: a reader who has just read one PATH-resolution
+    # line takes the next one for the same question.
+    check_oss_workspace_launcher()
 
     # Passed through even when the config is None: each of these prints its own
     # "not checked" line, and skipping the call would restore the silence #62 is about.
