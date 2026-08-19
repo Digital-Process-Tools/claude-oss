@@ -195,12 +195,32 @@ def _stub(directory, name, body):
     return path
 
 
+def _resolves(env, name):
+    """What `command -v NAME` answers under this exact env, asked of the step's own shell.
+
+    The fixture is measured rather than assumed. `PATH` below is built to hold one
+    directory and nothing else; asking the shell whether that worked is the difference
+    between a test that establishes its condition and one that hopes it did.
+    """
+    done = subprocess.run(
+        [_bash(), "-c", "command -v " + name],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    return done.stdout.decode("utf-8", "replace").strip()
+
+
 def _run_step(tmp_path, body, files, stub_shellcheck=None):
     """Run the workflow step's own `run:` body under `bash -e`, as the runner does.
 
-    PATH is replaced rather than prepended to, so a shellcheck installed on the machine
-    running this suite cannot answer for the stub -- the same reason this repository
-    pins PATH around its launcher tests.
+    PATH is replaced with the stub directory **alone**. Naming `/usr/bin` and `/bin`
+    beside it is what the first version of this file did, and it is wrong on exactly the
+    platform that matters: `shellcheck` ships in the ubuntu-latest image at
+    `/usr/bin/shellcheck`, which is the image the `shell` job runs on and one of the
+    pytest matrix legs -- so the `stub_shellcheck=None` case would have found the real
+    linter, linted a trivially clean fixture, exited 0, and never constructed the absence
+    it asserts about. Nothing in the step body needs a system PATH: `command -v`, `echo`,
+    `read` and `exit` are bash builtins, and each stub names its interpreter by absolute
+    path in its own shebang.
     """
     work = tmp_path / "work"
     work.mkdir()
@@ -211,10 +231,33 @@ def _run_step(tmp_path, body, files, stub_shellcheck=None):
     (work / "shell-sources.txt").write_text(
         "".join(name + "\n" for name in sorted(files)), encoding="utf-8"
     )
-    if stub_shellcheck is not None:
-        _stub(binaries, "shellcheck", stub_shellcheck)
     env = dict(os.environ)
-    env["PATH"] = os.pathsep.join([str(binaries), "/usr/bin", "/bin"])
+    env["PATH"] = str(binaries)
+
+    if stub_shellcheck is None:
+        # Measured, not assumed. If some route still reaches a real shellcheck then this
+        # test did not test what it says, and saying so is the only honest outcome.
+        leaked = _resolves(env, "shellcheck")
+        if leaked:
+            pytest.skip(
+                "shellcheck still resolves to {!r} with PATH={!r}, so the `absent` case "
+                "could not be constructed here and the step's refusal went "
+                "untested".format(leaked, env["PATH"])
+            )
+    else:
+        _stub(binaries, "shellcheck", stub_shellcheck)
+        # The same measurement the other way round: a stub this platform's shell does not
+        # consider executable -- a live question for an extensionless file under the Git
+        # Bash on the Windows legs -- would make every assertion below a statement about
+        # the harness rather than about the step.
+        placed = _resolves(env, "shellcheck")
+        if not placed:
+            pytest.skip(
+                "the shellcheck stub written to {} is not seen as executable by this "
+                "platform's shell, so the step body went unexecuted here. The job this "
+                "body comes from is `runs-on: ubuntu-latest` only.".format(binaries)
+            )
+
     return subprocess.run(
         [_bash(), "-e", "-c", body],
         cwd=str(work), env=env,
