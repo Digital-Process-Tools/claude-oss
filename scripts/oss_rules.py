@@ -314,17 +314,50 @@ Two refusals worth knowing before editing the file by hand:
   leaves something that still reads as a record.
 """
 
+#: Why this ships unconditionally rather than being written only into a tree where the
+#: binary was found (#294).
+#:
+#: Both halves of the alternative fail. A presence check is not expressible in frontmatter
+#: and a rule runs no command -- it is a text file a subject is matched against -- so the
+#: rule cannot answer the question for itself. And a check made by the installer answers
+#: about the **wrong machine at the wrong time**: `/oss:scaffold` runs once, on the
+#: maintainer's machine, and writes a file that is committed and then read on every
+#: contributor's. Skipping the rule there leaves the reported contributor blocked anyway,
+#: and adds a committed file whose presence flaps with whoever last scaffolded.
+#:
+#: So the third state is handed to the reader as one command to run, rather than computed.
 TOOLS_SUPERTOOL = """---
 title: "Read, Edit, Write, Glob and Grep go through supertool"
-description: "supertool has an op for every one of these; the call is refused and the reader is told which op replaces it."
+description: "supertool has an op for every one of these; the call is refused and the reader is told which op replaces it -- and what to do if supertool is not installed on this machine."
 tool: Read|Edit|Write|Glob|Grep
 match: ~.*
 mode: block
 ---
 
-`supertool` is a declared dependency of this plugin and installs alongside it, so this rule ships
-unconditionally rather than behind a presence check frontmatter has no way to express -- a tree
-that carries this layer already carries `supertool`.
+**This refusal has two causes and cannot tell them apart. One command can.** Run:
+
+```bash
+supertool 'ops'
+```
+
+- **It prints a list of ops.** `supertool` is here, and this refusal is about the call: use the
+  op that replaces it, below.
+- **It says `command not found`, or nothing runs.** `supertool` is **not installed** on this
+  machine, and no op below will work until it is. That is a missing dependency, not a mistake in
+  what you were doing.
+
+This rule cannot make that check itself. A rule is a text file the hook matches a subject
+against; it runs no command, so it fires identically in both situations. Nor can whatever wrote
+this file check on your behalf: it ran once, elsewhere, on somebody else's machine.
+
+**The presence of this file says nothing about your machine.** It is committed to this
+repository and travels to every clone, including yours. It is enforced only where
+`claude-jit-context` is also installed -- that plugin is what reads this layer and issues the
+refusal -- so a clone with neither plugin is unaffected by it.
+
+**Getting `supertool`:** it is a Claude Code plugin, and a declared dependency of the plugin that
+wrote this layer. Installing that plugin resolves it from the same marketplace; there is nothing
+in this repository to install and nothing here to configure.
 
 There is no read, edit, write, glob or grep that cannot go through it. Use the op that replaces
 the call just refused:
@@ -347,29 +380,38 @@ appears, that is when it gets one -- not before.
 #: form. `_DERIVE` is the separate statement "read it off `repo_root` for me".
 _DERIVE = object()
 
-#: The deliberate absence, recorded where the absence is (#144).
+#: The decision not to ship one yet, recorded where the decision applies (#144, #307).
 #:
 #: `00-README.md` is the one filename the dependency's index builder skips, in every one of
 #: its builders, and `doctor.JIT_ENTRY_SKIP` skips the same name -- so this ships beside the
 #: rules, is read by a person opening the layer, and is indexed by nobody. It declares no
 #: `tool:` and no `match:`, so `index_rows()` writes no row for it either.
 #:
-#: It exists because a rule keyed on `Agent` was asked for and cannot work. Recording that
-#: is not documentation for its own sake: an absence nobody wrote down reads as an oversight
-#: and gets proposed again, and the next proposal arrives with no memory of the measurement.
-TOOLS_NO_AGENT_RULE = """---
-title: "There is deliberately no rule keyed on the Agent tool"
-description: "A tools rule on Agent cannot fire -- the PreToolUse hook builds its match subject from four keys and an Agent payload carries none of them."
+#: Under #144 this recorded a gap: a rule keyed on `Agent` could not fire at all, because the
+#: hook built its subject from four keys and an `Agent` payload carried none of them.
+#: `claude-jit-context` 0.5.0 closed that -- it reads `subagent_type` as a fifth -- so the gap
+#: record became a false statement this plugin was writing into other people's repositories,
+#: which is the vendored-document defect class exactly. #307 is that filing.
+#:
+#: What survives is the reason for recording anything here at all: a decision nobody wrote
+#: down reads as an oversight and gets proposed again, with no memory of the measurement.
+#: So this is now a record of what was measured and what is still undecided, not of a gap.
+TOOLS_AGENT_RULE_DECISION = """---
+title: "There is deliberately no rule keyed on the Agent tool -- yet"
+description: "A tools rule on Agent can fire as of claude-jit-context 0.5.0, matched against subagent_type. What one should say is undecided, so this layer ships none."
 ---
 
-**Nothing in this layer is keyed on `Agent`, and that is a decision rather than an oversight.**
+**Nothing in this layer is keyed on `Agent`. That is a decision, and the reason for it has
+changed** -- so if you have read an older copy of this file, read this one instead.
 
 A rule that fired on agent dispatch would be worth having: it would put the standing clauses
 of a brief in front of the dispatcher at the one moment they change behaviour, instead of
-being re-typed from memory. It cannot be built against the hook as it stands.
+being re-typed from memory.
 
-The PreToolUse hook builds the subject its tool rules match against from four keys, taken in
-this fallback order:
+## What the hook does, measured
+
+The PreToolUse hook builds the subject its tool rules match against from five `tool_input`
+keys, taken in this fallback order:
 
 | key | carried by |
 | --- | --- |
@@ -377,15 +419,27 @@ this fallback order:
 | `skill` | `Skill` |
 | `file_path` | `Read`, `Edit`, `Write` |
 | `pattern` | `Glob`, `Grep` |
+| `subagent_type` | `Agent` |
 
-An `Agent` payload carries `subagent_type`, `description` and `prompt`. **None of those is
-read.** The subject is empty, and the hook returns `{}` and exits *before* the loop that
-walks the layers. So a `tool: Agent` row cannot match -- at any layer, under any `match:`,
-in any mode, `mode: block` included. It would index cleanly, list healthy in a diagnostic,
-and never once fire.
+`subagent_type` is the fifth and it is **the only one of an `Agent` payload's three fields
+that is read**. `description` and `prompt` are a deliberate no upstream: they are
+author-written prose, so a `forbid`/`require` rule written about commands would trip on a
+prompt that merely mentions one, and a prompt is large enough to cost real time in the
+matcher. So a `tool: Agent` rule matches against the dispatched agent's name and nothing
+else -- it *can* key on one kind of dispatch, and it can see nothing about what was asked.
 
-**Re-measure rather than trusting this file.** Point `CLAUDE_PROJECT_DIR` at a tree holding
-a layer with an `Agent` rule and a `Bash` rule, both `match: ~.*`, and drive the hook twice:
+**This was not always true.** Before `claude-jit-context` 0.5.0 the subject was built from
+the first four keys only, an `Agent` payload produced an empty one, and the hook exited
+before the layer loop: a `tool: Agent` row indexed cleanly, listed healthy in every
+diagnostic, and never once fired. If the version installed where you are reading this
+predates that, everything below is still blocked. A subjectless dispatch is no longer
+silent either -- the hook now names the rules it could not reach, rather than answering the
+`{}` that a genuine no-match also answers.
+
+## Re-measure rather than trusting this file
+
+Point `CLAUDE_PROJECT_DIR` at a tree holding a layer with an `Agent` rule and a `Bash` rule,
+and drive the hook twice:
 
 ```
 printf '%s' '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | bash .../pre-tool-hook.sh
@@ -393,19 +447,27 @@ printf '%s' '{"tool_name":"Agent","tool_input":{"subagent_type":"x","prompt":"y"
 ```
 
 The `Bash` call is the control. If it says nothing either, the harness is blind and the
-second answer means nothing -- that is not evidence the gap is still there.
+second answer means nothing. Give the `Agent` rule a `match:` that covers `x` and a second
+`Agent` rule whose `match:` does not, or a single answer tells you a rule fired without
+telling you what it fired *on*.
 
-**If the `Agent` call now injects, this file is stale**, and a record of a gap that has
-closed is worse than no record, because it is read as current. It is not edited here: this
-whole layer is generated and replaced wholesale on every install, so a correction made in
-this directory is gone the next time the owning plugin writes it. Report it instead, and
-whoever maintains that plugin has a test that fails on the same day this sentence stops
-being true.
+## Why no rule is shipped here anyway
 
-Two things wait on that day, neither of which the hook can answer now: the rule would fire
-on *every* dispatch rather than one kind, so it can only carry what is true of any subagent;
-and it should point at where the clauses live rather than restate them, because the second
-copy is the one that drifts and the one people quote.
+Two questions, neither answered by the measurement above, and both wanting their own review
+rather than a rider on the change that took this record off its false claim:
+
+- **What it would say.** The standing clauses live in the agent definition being dispatched.
+  A rule that restated them would be the second copy -- the one that drifts and the one
+  people quote -- and one that only points at them has to name a location, which for an
+  agent definition is a path inside an installed plugin rather than anything in this
+  repository.
+- **What it would cost.** It fires on every matching dispatch, and the benefit is asserted
+  rather than observed. That is the wrong way round for something injected into every
+  delegation.
+
+**If either question gets answered, this file is what a rule replaces.** It is not edited
+here: this whole layer is generated and replaced wholesale on every install, so a correction
+made in this directory is gone the next time the owning plugin writes it. Report it instead.
 """
 
 
@@ -452,9 +514,9 @@ def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None, assemble
             "supertool-required.md": TOOLS_SUPERTOOL,
             # Not a rule: no `tool:` and no `match:`, so `index_rows()` writes no row and
             # the dependency's builder skips the name outright. It ships so that the
-            # recorded gap reaches every managed repo, not just this one -- the layer is
-            # replaced wholesale on install, so anything not listed here reaches nobody.
-            "00-README.md": TOOLS_NO_AGENT_RULE,
+            # recorded decision reaches every managed repo, not just this one -- the layer
+            # is replaced wholesale on install, so anything not listed here reaches nobody.
+            "00-README.md": TOOLS_AGENT_RULE_DECISION,
         },
     }
 
