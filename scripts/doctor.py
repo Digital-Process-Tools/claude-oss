@@ -689,12 +689,34 @@ def _locate_on_path(name, path=None):
     exactly `name` exist here, so its bytes can be read -- and asks that
     directly, which is also platform-independent by construction: no
     extension list, no execute bit, just `os.path.lexists` per PATH entry.
+
+    **A dangling symlink does not stop the search.** `os.path.lexists` is true
+    for one -- it stats the link itself, not the target -- and a first version
+    of this function returned on the first `lexists` match unconditionally, so
+    a stale, dead `oss-workspace` symlink anywhere earlier on `PATH` (left over
+    from a prior install layout, say) shadowed a correct, matching one further
+    down `PATH` and reported `unresolved-target` for a launcher that was, one
+    directory later, genuinely present. `shutil.which` never had this failure
+    mode: its own `_access_check` runs `os.path.exists`, which follows the
+    symlink and is `False` for a dangling one, so it silently kept searching.
+    This restores that one piece of `shutil.which`'s behaviour -- continue past
+    a candidate that resolves to nothing -- without reintroducing the
+    extension or executable-bit filtering that made `shutil.which` wrong for
+    this check in the first place. Anything else that `lexists` -- a regular
+    file, a directory, a valid symlink -- stops the search immediately and is
+    returned as-is: those are all "found something," and it is the caller's
+    job (via `os.path.realpath` and `read_bytes`) to decide whether what was
+    found can be compared.
     """
     search = path if path is not None else os.environ.get("PATH", "")
     for entry in search.split(os.pathsep):
         if not entry:
             continue
         candidate = os.path.join(entry, name)
+        if os.path.islink(candidate) and not os.path.exists(candidate):
+            # Dangling: nothing is actually reachable through this PATH entry,
+            # so it contributes nothing -- keep looking, same as shutil.which.
+            continue
         if os.path.lexists(candidate):
             return candidate
     return None

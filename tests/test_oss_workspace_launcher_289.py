@@ -208,6 +208,37 @@ def test_unresolved_target_is_unknown_not_matched_and_not_mismatched(tmp_path):
     assert "unknown" in message.lower(), message
 
 
+def test_a_dangling_symlink_earlier_on_path_does_not_shadow_a_working_one(tmp_path):
+    """A stale, dead `oss-workspace` symlink left on an earlier PATH entry (an old
+    `~/.local/bin` from a prior install layout, say) must not shadow a correct,
+    reachable one further down PATH. `_locate_on_path` has to keep looking past a
+    candidate that resolves to nothing, the same way `shutil.which` always did --
+    `shutil.which`'s own `_access_check` runs `os.path.exists`, which follows a
+    symlink and is False for a dangling one, so it silently continued to the next
+    PATH directory. A naive `os.path.lexists`-only walk does not: `lexists` is
+    True for a dangling symlink too, so the first (broken) match would stop the
+    search there and report `unresolved-target` for a launcher that is, one PATH
+    entry later, actually present and matching."""
+    plugin_root = _plugin_root(tmp_path, content=b"same bytes\n")
+    earlier = tmp_path / "earlier-on-path"
+    earlier.mkdir()
+    try:
+        os.symlink(str(tmp_path / "does-not-exist"), str(earlier / "oss-workspace"))
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        pytest.skip(
+            "this platform would not create a symlink ({}); what went untested is "
+            "whether a dangling symlink earlier on PATH is skipped rather than "
+            "shadowing a working entry further down PATH".format(exc)
+        )
+    later_dir, _ = _path_entry(tmp_path, "later-on-path", b"same bytes\n")
+
+    search_path = os.pathsep.join([str(earlier), later_dir])
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=search_path
+    )
+    assert state == "matched", (state, detail)
+
+
 def test_a_non_executable_target_is_still_resolved(tmp_path):
     """PATH resolution must not filter on properties irrelevant to a content
     comparison. `shutil.which`'s default `mode` requires `os.X_OK`, so a target
