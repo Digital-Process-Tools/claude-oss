@@ -37,11 +37,17 @@ set of findings -- `_doc` fails rather than returning "".
 """
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from test_release_gate_unmeasured_clean_280 import (  # noqa: E402
+    _consumer_unmet as _unmeasured_clean_consumer_unmet,
+)
 
 RELEASE_COMMAND = REPO_ROOT / "commands" / "release.md"
 RELEASE_AUDITOR = REPO_ROOT / "agents" / "release-auditor.md"
@@ -454,4 +460,29 @@ def test_every_registered_state_carries_its_sentence():
         "these states are registered with no argument for why they are "
         "separate, which is the one thing this registry exists to carry: "
         + repr(sorted(thin))
+    )
+
+
+# --------------------------------------- #321, the same join one PR later
+
+def test_the_manager_skill_has_an_arm_for_the_unmeasured_clean_vocabulary():
+    """#321. PR #320 gave gate 3 a grade split (`clean (read)` vs.
+    `clean (exercised)`) and an attribution arm (`dispatch token` /
+    `unattributed` / more than one completion for one dispatch), landed in
+    `agents/release-auditor.md` and `commands/release.md`. `skills/manager/
+    SKILL.md` restates gate 3 independently -- the same reason it is in
+    ROWLESS_CONSUMERS above -- and did not gain either, so the loop's own
+    process document described a gate that no longer existed the moment
+    #320 merged.
+
+    The guard reuses `commands/release.md`'s own consumer check
+    (`test_release_gate_unmeasured_clean_280.py`'s `_consumer_unmet`) rather
+    than defining a second copy of the #320 vocabulary here -- a second copy
+    of the vocabulary is exactly the kind of restatement this issue is
+    about, one layer down.
+    """
+    unmet = _unmeasured_clean_consumer_unmet(_doc(MANAGER_SKILL))
+    assert not unmet, (
+        "skills/manager/SKILL.md has no arm for these #320 states, so gate "
+        "3 as stated there is out of date:\n  " + "\n  ".join(sorted(unmet))
     )
