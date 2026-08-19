@@ -279,13 +279,32 @@ elif names:
     # the tag stops the derivation below from firing, and this sentence is the
     # only thing that tells the caller it did not.
     print("conflict")
+    # `ascii()` per name, for the same reason the arm above uses it and this one
+    # did not (#323). These strings come out of `json.loads` of the MANAGED repo's
+    # tracked `.supertool.json`, so they arrive by ordinary contribution — and this
+    # arm returns before anything validates them: `watch_name_problem` is never
+    # called on this route. Raw, a newline forged a second line reading as this
+    # launcher's own output, and a CSI sequence erased and rewrote what the terminal
+    # had already printed. Measured, not argued: the receipt came out as THREE lines,
+    # the second of them a column-0 `VERDICT: ok`, which is the shape this same file
+    # parses a verdict out of further down.
+    #
+    # Per NAME rather than around the join, which is not cosmetic: `ascii()` on the
+    # joined string would delimit the whole list once, so a value containing `", "`
+    # still forges a list separator and reads as two declared channels. Quoting each
+    # element makes the count of channels a property of the code rather than of the
+    # input.
+    #
+    # `ascii()` and not `%r`: repr leaves non-ASCII alone, and this line is written
+    # to a console whose codepage may not carry it. ASCII by construction needs no
+    # error handler and no platform to be measured (#271).
     sys.stderr.write(
         "oss-workspace: op blocks disagree about watch_name (%s) — none exported, "
         "and none derived from .oss.json either: the ops are already on different "
         "channels, so a name derived from the repo would be one nothing here "
         "publishes to — an uncontested socket carrying no events, which reads as "
         "healthy. %s Fix that file, then run supertool 'channel:health'\n"
-        % (", ".join(names), landed))
+        % (", ".join(ascii(n) for n in names), landed))
 READ_NAME
 ) || read_name_status=$?
 # The trailing `|| true` that used to sit on the heredoc opener above swallowed two

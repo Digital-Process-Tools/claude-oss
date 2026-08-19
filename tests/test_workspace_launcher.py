@@ -1558,6 +1558,108 @@ def test_a_block_given_no_landing_sentence_says_so_rather_than_naming_a_socket(t
     assert "SHARED DEFAULT" not in combined, combined
 
 
+# --- the conflict receipt renders values nobody here wrote (#323) -------------
+#
+# `names` is `block["watch_name"]` straight out of `json.loads` of the MANAGED
+# repo's `.supertool.json` -- tracked, so it arrives by ordinary contribution.
+# The `conflict` arm returns before anything validates a name: `watch_name_problem`
+# is never called on this route, so the only thing standing between that value and
+# a column-0 line of the launcher's own receipt is how it is rendered.
+#
+# The sibling arm six lines up already answers this with `ascii()` (#271/#283); the
+# `conflict` arm was rewritten in the same hunk without it. So the harm is not
+# hypothetical text-mangling: a newline forges a second line that reads as the
+# launcher speaking, and a CSI sequence erases and rewrites what the terminal has
+# already printed -- the harm `release_version._one_line`'s docstring names.
+#
+# Driven against the EXTRACTED block rather than through a `bash -c` string: a test
+# that rebuilds shell quoting measures its own escaping, and this repo deleted one
+# for exactly that reason. Bytes rather than text, because `universal_newlines`
+# translates a lone CR into a newline and would hide half of what is asserted.
+
+FORGED_TAIL = "\noss-workspace: VERDICT: ok\r\x1b[2K"
+
+
+def _run_heredoc_raw(marker, tmp_path, argv):
+    script = tmp_path / (marker.lower() + "_raw.py")
+    script.write_text(_extract_heredoc(marker), encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, str(script)] + argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _launcher_lines(stderr):
+    """Lines that CLAIM to be this launcher speaking -- column 0, not anywhere.
+
+    Counting the substring instead was the first version of this and it was wrong
+    in the direction that matters: once the value is neutralised, the escaped text
+    `oss-workspace:` is still present INSIDE the quoted name, and a substring count
+    would have called the fixed code a forgery. What is forged is a LINE, so a line
+    is what is counted.
+    """
+    return len([
+        line for line in stderr.splitlines() if line.startswith("oss-workspace:")
+    ])
+
+
+def _read_name_conflict(tmp_path, first, second):
+    cfg = tmp_path / "supertool.json"
+    cfg.write_text(
+        json.dumps({"ops": {
+            "radar": {"watch_name": first},
+            "radar-slow": {"watch_name": second},
+        }}),
+        encoding="utf-8",
+    )
+    done = _run_heredoc_raw("READ_NAME", tmp_path, [str(cfg), LANDING_SENTENCE])
+    return (
+        done.stdout.decode("utf-8", "replace"),
+        done.stderr.decode("utf-8", "replace"),
+    )
+
+
+def test_an_ordinary_conflict_still_produces_its_one_honest_line(tmp_path):
+    """The positive control, and it is the load-bearing half of the pair below.
+
+    Every assertion in `test_a_conflicting_watch_name_cannot_forge_a_receipt_line`
+    is satisfied by a block that printed NOTHING AT ALL -- no forged line appears in
+    an empty string. This one fails in that world: it requires the `conflict` tag on
+    stdout, exactly one `oss-workspace:` line on stderr, and both declared names in
+    it.
+    """
+    stdout, stderr = _read_name_conflict(tmp_path, "alpha", "beta")
+    assert stdout.strip() == "conflict", (stdout, stderr)
+    assert _launcher_lines(stderr) == 1, stderr
+    assert len(stderr.strip().splitlines()) == 1, stderr
+    assert "alpha" in stderr and "beta" in stderr, stderr
+
+
+def test_a_conflicting_watch_name_cannot_forge_a_receipt_line(tmp_path):
+    """One line out, whatever that file declared.
+
+    The four assertions are four distinct harms, not one restated: a second line
+    prefixed `oss-workspace:` is the launcher impersonated; a column-0 `VERDICT:`
+    line is the shape this very file parses for a verdict at line 898, so the
+    forgery is in a vocabulary this loop already reads; a bare ESC or CR rewrites
+    output the terminal has already committed. And the names still have to REACH
+    stderr -- that is what stops the fix from being "print less".
+    """
+    stdout, stderr = _read_name_conflict(tmp_path, "alpha", "beta" + FORGED_TAIL)
+    assert stdout.strip() == "conflict", (stdout, stderr)
+    assert "Traceback" not in stderr, stderr
+    # Must fire: the receipt still names both channels the file declared.
+    assert "alpha" in stderr and "beta" in stderr, stderr
+    # Must not fire: one line, nothing impersonating the launcher, no verdict.
+    assert len(stderr.strip().splitlines()) == 1, stderr
+    assert _launcher_lines(stderr) == 1, stderr
+    assert not [
+        line for line in stderr.splitlines() if line.startswith("VERDICT:")
+    ], stderr
+    assert "\x1b" not in stderr and "\r" not in stderr, repr(stderr)
+
+
 @pytest.mark.parametrize("marker", HEREDOC_MARKERS)
 def test_a_block_given_a_landing_sentence_prints_that_one(tmp_path, marker):
     """The must-fire half. Without it, a block that had lost the argument entirely --
