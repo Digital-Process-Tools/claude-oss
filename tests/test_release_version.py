@@ -307,6 +307,70 @@ def test_the_same_repo_proposes_once_the_directory_is_named(tmp_path):
     assert payload["version"] == "0.4.1"
 
 
+# ------------------------- scaffold's own fallback, recognised rather than refused (#299)
+
+
+def _scaffold_workflow(root):
+    workflow = root / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text("name: oss changelog\n", encoding="utf-8")
+
+
+def test_a_scaffolded_repo_with_no_changelog_dir_key_proposes(tmp_path):
+    """The state #299 is about: `/oss:scaffold --apply` created `changelog.d/` and the
+    gating workflow that names it, but `changelog_dir` itself is still null. A directory
+    this script picked out of thin air would be exactly the failure `NO_DIRECTORY`
+    exists to refuse -- but scaffold DID name one, in the workflow it wrote, and this is
+    that same fallback recognised rather than re-guessed."""
+    root = tmp_path / "scaffolded"
+    (root / "changelog.d").mkdir(parents=True)
+    (root / ".oss.json").write_text(
+        json.dumps({"changelog_dir": None, "release": {}}), encoding="utf-8"
+    )
+    _scaffold_workflow(root)
+    _frag(root, "1.fixed.md", "- a fix (#1).\n")
+
+    code, payload = _payload(["--repo", str(root), "--current", "0.4.0"])
+
+    assert code == PROPOSED
+    assert payload["version"] == "0.4.1"
+
+
+def test_a_scaffolded_repo_with_no_changelog_dir_key_at_all_also_proposes(tmp_path):
+    """The absent-key shape, not just explicit null -- `/oss:setup` never writes the
+    key at all when nothing was probed, so this is the config a freshly scaffolded
+    repo actually carries."""
+    root = tmp_path / "scaffolded-absent-key"
+    (root / "changelog.d").mkdir(parents=True)
+    (root / ".oss.json").write_text(json.dumps({"release": {}}), encoding="utf-8")
+    _scaffold_workflow(root)
+    _frag(root, "1.fixed.md", "- a fix (#1).\n")
+
+    code, payload = _payload(["--repo", str(root), "--current", "0.4.0"])
+
+    assert code == PROPOSED
+    assert payload["version"] == "0.4.1"
+
+
+def test_a_null_changelog_dir_with_no_scaffolded_workflow_still_cannot_decide(tmp_path):
+    """The positive control's negative twin, in the same shape of fixture: null and NO
+    `oss-changelog.yml` is the repo that genuinely has not adopted fragments, and the
+    loud refusal from before #299 must be unchanged for it -- a directory picked here
+    is still a directory nobody named."""
+    root = tmp_path / "not-adopted"
+    (root / "changelog.d").mkdir(parents=True)
+    (root / ".oss.json").write_text(
+        json.dumps({"changelog_dir": None, "release": {}}), encoding="utf-8"
+    )
+    _frag(root, "1.fixed.md", "- a fix (#1).\n")
+
+    code, payload = _payload(["--repo", str(root), "--current", "0.4.0"])
+
+    assert code == COULD_NOT_DECIDE
+    assert "changelog_dir" in payload["reason"]
+    assert payload["version"] is None
+
+
 # ------------------------------------------- a wrong-but-present flag never grades
 
 

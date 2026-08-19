@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -523,6 +524,58 @@ def changelog_dir_problem(value):
             "hoped about.".format(value)
         )
     return None
+
+
+# The directory `scripts/scaffold.py` falls back to when `changelog_dir` is null and it
+# creates the fragment machinery anyway -- see `scaffold.fragments_dir`. Kept here, not
+# there, because a reader on this side of the boundary (`release_version.py`) needs the
+# same number without importing scaffold's much heavier module (#299).
+DEFAULT_FRAGMENTS_DIR = "changelog.d"
+
+# The one path a generated changelog gate can live at: a forge reads workflows only
+# from `.github/workflows/` itself, subdirectories are unsupported and a symlink there
+# fails outright, so the fixed `oss-` filename prefix IS the ownership signal --
+# `scaffold.py`'s own `_detect_changelog_gate` excludes this exact name for the same
+# reason. Declared once here so a second reader does not retype it and drift (#299).
+OWNED_CHANGELOG_WORKFLOW = ".github/workflows/oss-changelog.yml"
+
+
+def scaffolded_changelog_gate(repo_root):
+    """(state, detail) for whether THIS repo's own scaffolded gate is on disk (#299).
+
+    `changelog_dir: null` is ambiguous on its own: it means "never adopted fragments"
+    for a hand-maintained repo, and it also means "adopted through scaffold.py's
+    fallback, and nobody has recorded the directory it picked" for a repo scaffold
+    just ran on -- `/oss:scaffold --apply` writes the fragment directory and the
+    gating workflow without writing `changelog_dir` itself (`commands/scaffold.md`).
+    A reader that cannot tell the two apart either refuses fragments that are sitting
+    on disk with a CI leg already gating on them, or -- worse -- has to guess a
+    directory nobody named, which is exactly the silent-wrong-answer failure the
+    `could-not-decide` state exists to avoid.
+
+    "present" answers only the ownership question: our workflow, at the one path a
+    forge will read it from. It says nothing about whether `changelog.d/` itself
+    exists or holds anything -- callers that need fragments still have to look.
+
+    Three states, and "unknown" must never render as either of the others: a wrong
+    "absent" here costs a caller its existing loud refusal, unchanged from before this
+    function existed; a wrong "present" would pick a directory nobody named, which is
+    the one failure this exists to prevent. So an unreadable path is reported as
+    "unknown" rather than folded into "absent" -- `os.stat` and its exact exception,
+    never `Path.is_file()`, which swallows every `OSError` and answers `False` for a
+    directory that exists and cannot be entered (the `doctor.py` trap this repo's own
+    `CLAUDE.md` names).
+    """
+    path = Path(repo_root) / OWNED_CHANGELOG_WORKFLOW
+    try:
+        mode = os.stat(str(path)).st_mode
+    except FileNotFoundError:
+        return "absent", ""
+    except OSError as exc:
+        return "unknown", "{} could not be read: {}".format(path, type(exc).__name__)
+    if stat.S_ISREG(mode):
+        return "present", ""
+    return "absent", "{} exists but is not a regular file".format(path)
 
 
 # The second value in this file that becomes shell source, and it arrives by the same

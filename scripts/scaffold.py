@@ -388,7 +388,11 @@ def _render_claude_md(config):
     )
 
 
-DEFAULT_FRAGMENTS_DIR = "changelog.d"
+# One source of truth with `oss_config.DEFAULT_FRAGMENTS_DIR` (#299): that module is
+# the one `release_version.py` and `commands/changelog.md` read to recognise the same
+# fallback this file takes when it creates the fragment machinery without a configured
+# `changelog_dir`, and a second literal here is a second place for the two to drift.
+DEFAULT_FRAGMENTS_DIR = oss_config.DEFAULT_FRAGMENTS_DIR
 
 FRAGMENTS_README = """# __DIR__/ — changelog fragments
 
