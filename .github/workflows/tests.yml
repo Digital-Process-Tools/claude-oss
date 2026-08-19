@@ -34,10 +34,16 @@ jobs:
       # changelog workflow learned this the same way and the lesson was applied to that
       # one file only. tests/test_workflow_dependencies.py now holds both against
       # scaffold.ASSEMBLER_DEPENDENCIES, which is where the package name is declared.
+      # pyyaml is here for tests/test_shell_leg_budget_303.py, which asserts against the
+      # parsed `shell` job rather than against substrings of this file -- a regex over a
+      # workflow is the shape that keeps passing while the workflow is broken. It is the
+      # only test that needs it; the rest of the suite reads workflows as text on
+      # purpose. That file fails rather than skips when `CI` is set and pyyaml is
+      # missing, so dropping this package cannot make it go quiet.
       - name: Install test deps
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov markdown-it-py
+          pip install pytest pytest-cov markdown-it-py pyyaml
       - name: Run tests
         run: pytest
 
@@ -82,9 +88,52 @@ jobs:
       - name: Syntax-check every shell source
         run: |
           while IFS= read -r f; do bash -n "$f" || exit 1; done < shell-sources.txt
+      # No package fetch here, and that is the whole of #303 rather than a tidy-up.
+      #
+      # This step used to open with `sudo apt-get update -qq && sudo apt-get install -y
+      # shellcheck`. Measured on job 96152482222 (run 32276977038, main at 7ea64c9) the
+      # job ran 10.32 minutes against `timeout-minutes: 10` and was killed. GitHub
+      # renders a timeout kill as `cancelled`, not `failure`, so main and every open
+      # pull request read as "0 failed, 1 cancelled -- not green" with nothing broken,
+      # six times in one day.
+      #
+      # Two readings decided this rather than a bigger cap:
+      #
+      #   * the killed step logged nothing at all between its own `##[endgroup]` and
+      #     `##[error]The operation was canceled.` 10m12s later. `apt-get install` is
+      #     not quiet, so it was never reached: the entire window was `apt-get update`;
+      #   * every successful run logged `shellcheck is already the newest version
+      #     (0.9.0-1)`. The install has never installed anything -- shellcheck ships in
+      #     the ubuntu-latest image -- while `apt-get update` cost 68.4s of a 70s step
+      #     on 2026-08-19 and 5.2s on 2026-08-16. The linting itself is under a second.
+      #
+      # So the fetch is removed rather than pinned. A pinned release tarball or a cached
+      # apt layer would each be a network round trip bought for a binary already on the
+      # runner, and pinning one means carrying a version and a checksum for it.
+      #
+      # `timeout-minutes` is deliberately left at 10 and is now a bound on a hang rather
+      # than a budget this job routinely spends: the measured job is a few seconds. It
+      # is not raised, because the number it was failing against was almost entirely
+      # `apt-get`; it is not lowered, because nothing measured argues for a particular
+      # smaller number and a tight cap reintroduces reds caused by nothing in a diff.
+      #
+      # The version now floats with the runner image. That is the cost, and it is made
+      # visible rather than assumed: the version is printed, and the binary being absent
+      # is its own exit code. Before this, an absent shellcheck exited 127 per file into
+      # the same `fail` flag a real finding uses, so `could not lint` and `linted and
+      # found a problem` reached the leg's status identically -- and `A && B` under
+      # `bash -e` does not exit on A, so a failed install fell through to exactly that.
       - name: shellcheck
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          if ! command -v shellcheck > /dev/null 2>&1; then
+            echo "shellcheck is not on PATH." >&2
+            echo "It ships in the ubuntu-latest image and this job deliberately fetches" >&2
+            echo "nothing (#303). If the image has stopped carrying it, install it here" >&2
+            echo "again -- but pin a version and a checksum, and put the fetch in a step" >&2
+            echo "of its own so a slow mirror is not charged to this lint's budget." >&2
+            exit 4
+          fi
+          shellcheck --version
           fail=0
           while IFS= read -r f; do shellcheck -S warning "$f" || fail=1; done < shell-sources.txt
           exit "$fail"

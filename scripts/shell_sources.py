@@ -43,8 +43,9 @@ the work the write was reporting already happened.
 Usage:
     python3 scripts/shell_sources.py [--root DIR]
 
-Python 3.9 compatible. No third-party imports: the shell leg installs nothing but
-shellcheck.
+Python 3.9 compatible. No third-party imports: since #303 the shell leg installs nothing
+at all -- `shellcheck` ships in the runner image, and fetching it put a package mirror
+inside the job's `timeout-minutes`.
 """
 
 import argparse
