@@ -1853,6 +1853,166 @@ def test_the_friction_check_fires_on_a_brief_that_only_reports_the_code():
     )
 
 
+# ------------------- the bar on what a friction line has to have cost (#300)
+#
+# The duty above says report every friction; this says what qualifies. The two are
+# checked separately on purpose: an edit that kept the duty and deleted the bar is
+# exactly the regression, and a single anchor set covering both would still pass it.
+
+FRICTION_BAR_ANCHORS = [
+    ("the-bar-is-what-it-cost", ("cost this run something you can name",)),
+    ("a-usable-op-is-not-friction", ("is not friction",)),
+    ("a-preference-goes-nowhere", ("a preference is not reported anywhere",)),
+    ("the-third-state-is-cannot-tell", ("tooling-unclear:",)),
+]
+
+REACHABILITY_ANCHORS = [
+    ("the-class-must-be-reachable", ("the class is reachable",)),
+    ("an-unreachable-class-is-not-a-filing", ("a class you cannot reach is not a filing",)),
+    ("it-goes-in-the-pull-request", ("say it in the pull request",)),
+]
+
+# The meter check is the pair, and it has to be: asserting only that the disarming
+# sentence is gone also passes against a document that lost the whole paragraph, and
+# asserting only that the replacement arrived also passes against one carrying both.
+METER_MUST_CARRY = [
+    ("raising-the-bar-is-not-throttling", "raising the bar on what counts as a finding is not throttling"),
+    ("the-number-is-not-inert", "the number is not a target and it is not inert"),
+    ("the-two-render-identically", "render identically in the count"),
+]
+METER_MUST_NOT_CARRY = [
+    ("the-licence-to-ignore-it-is-gone", "exists to be known, not optimised"),
+]
+# The anti-throttle rule is not what changed and must survive the edit.
+METER_KEEPS = [
+    ("discovery-is-still-not-throttled", "must not be throttled to make this number look better"),
+]
+
+
+def _unmet(text, anchors):
+    folded = _flatten(text)
+    return {
+        name
+        for name, anchor_group in anchors
+        if not all(anchor in folded for anchor in anchor_group)
+    }
+
+
+def _meter_unmet(text):
+    folded = _flatten(text)
+    unmet = {name for name, phrase in METER_MUST_CARRY + METER_KEEPS if phrase not in folded}
+    unmet |= {name for name, phrase in METER_MUST_NOT_CARRY if phrase in folded}
+    return unmet
+
+
+def test_a_friction_line_has_to_name_what_it_cost():
+    """Without this, the duty above is a standing instruction to report anything
+    noticed -- and an agent that finished every call cleanly still owes a list.
+    """
+    unmet = _unmet(
+        (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"),
+        FRICTION_BAR_ANCHORS,
+    )
+    assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
+
+
+def test_the_friction_bar_check_fires_on_the_duty_without_the_bar():
+    """Positive control. The text this replaced states the duty in full and states
+    no bar at all, so every anchor must come back unmet -- an assertion that the bar
+    is present also passes against a fixture where nothing was checked.
+    """
+    before = (
+        "Every UX problem you hit while using the ops goes in the report, one line each: "
+        "a field missing from an op, a second call needed to get what the first should have "
+        "returned, an error naming what is wrong but not what to do. If you hit no friction, "
+        "that is checked with no tooling: items, which is a claim."
+    )
+    assert _unmet(before, FRICTION_BAR_ANCHORS) == {name for name, _ in FRICTION_BAR_ANCHORS}
+
+
+def test_the_class_clause_requires_a_reachable_class():
+    unmet = _unmet(
+        (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"),
+        REACHABILITY_ANCHORS,
+    )
+    assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
+
+
+def test_the_reachability_check_fires_on_the_bare_class_clause():
+    """Positive control, and the fixture is the exact clause that shipped: a class
+    with no reachability requirement is the door every claim-about-a-claim finding
+    walked through.
+    """
+    before = (
+        "File it when any one holds: it needs a design decision you were not briefed to "
+        "make; it would double the diff; or what you are holding is the class rather than "
+        "the instance."
+    )
+    assert _unmet(before, REACHABILITY_ANCHORS) == {name for name, _ in REACHABILITY_ANCHORS}
+
+
+ISSUE_BODY_ANCHORS = [
+    ("it-is-written-for-an-engineer", ("an issue body is tech to tech",)),
+    ("the-four-parts-are-named", ("symptom", "mechanism", "what would settle it")),
+    ("code-is-quoted-not-described", ("quote code, do not describe it",)),
+    ("the-narrative-is-cut", ("how you found it",)),
+    ("an-unfillable-part-is-said", ("a part you cannot fill is a sentence naming",)),
+]
+
+
+def test_an_issue_body_has_a_stated_form():
+    """The loop's filings are read by whoever picks the item up months later, and a
+    body that needs the story to be usable is paid on every read.
+    """
+    unmet = _unmet(
+        (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8"),
+        ISSUE_BODY_ANCHORS,
+    )
+    assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
+
+
+def test_the_issue_body_check_fires_on_a_skill_that_only_says_where_to_file():
+    """Positive control. Naming the op that files is not stating what goes in the
+    body -- the shape the skill carried before this rule.
+    """
+    before = "Filing goes through gh-issue-create:@FILE, which reads the repo from its payload."
+    assert _unmet(before, ISSUE_BODY_ANCHORS) == {name for name, _ in ISSUE_BODY_ANCHORS}
+
+
+def test_the_intake_meter_is_not_disarmed():
+    """The ratio is measured with four states and was closed by a sentence that reads
+    as do not act on it. Both halves are checked: the licence is gone, and the rule it
+    was attached to -- do not throttle discovery -- survived.
+    """
+    unmet = _meter_unmet(
+        (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+    )
+    assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
+
+
+def test_the_meter_check_fires_in_both_directions():
+    """Two fixtures, because one cannot cover both failure modes. The first carries
+    the licence and none of the replacement; the second carries the replacement and
+    dropped the anti-throttle rule with it -- an over-correction that reads as a fix.
+    """
+    shipped = (
+        "The review layer is a discovery machine and must not be throttled to make this "
+        "number look better. This number exists to be known, not optimised."
+    )
+    assert _meter_unmet(shipped) == {
+        "raising-the-bar-is-not-throttling",
+        "the-number-is-not-inert",
+        "the-two-render-identically",
+        "the-licence-to-ignore-it-is-gone",
+    }
+    overcorrected = (
+        "Raising the bar on what counts as a finding is not throttling. The number is not "
+        "a target and it is not inert: filings that cost somebody something and filings that "
+        "cost nobody anything render identically in the count."
+    )
+    assert _meter_unmet(overcorrected) == {"discovery-is-still-not-throttled"}
+
+
 # ------------- a convention change is not finished until the diagnostic reports it
 #
 # The failure this guards lives in the composition of two individually correct

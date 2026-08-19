@@ -51,7 +51,10 @@ TOP_LEVEL_KEY = re.compile(r"\A[A-Za-z_][A-Za-z0-9_-]*:(?: |\Z)")
 #: because the column-0 rule alone would accept an injected key: a `changelog_dir`
 #: of "changelog.d\nname: evil" breaks the same block scalar and lands on a line
 #: YAML reads as perfectly legal.
-EXPECTED_TOP_LEVEL = {"name", "on", "permissions", "jobs"}
+#: `concurrency` joined the set in #293. It is pinned here rather than allowed by shape
+#: on purpose: the whole point of the set is that a key YAML accepts is not the same as a
+#: key this template meant to write.
+EXPECTED_TOP_LEVEL = {"name", "on", "permissions", "concurrency", "jobs"}
 
 #: The patterns as they stood before #173, used to reproduce the defect rather
 #: than describe it. Kept verbatim: a control built by mutating the fixed pattern

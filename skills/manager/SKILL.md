@@ -716,6 +716,32 @@ report a day later. Read every `report-for-filing` item as an open request with 
 close it in the same pass that merges the pull request: the issue you open is the receipt, and the
 `reason` beside the item is the agent's argument for why it is yours rather than theirs.
 
+### An issue body is tech to tech
+
+Written for an engineer who will open the file, not for a reader who needs the story. Four parts, in
+this order, and nothing else:
+
+| Part | What it is |
+| --- | --- |
+| symptom | what a caller sees — one or two sentences |
+| location | `path:line`, and the lines quoted |
+| mechanism | why it is wrong |
+| what would settle it | the check, test or command that decides |
+
+**Quote code, do not describe it.** A quoted line is shorter than a paragraph about the line and
+cannot drift from it.
+
+**Cut**: how you found it, what you first thought, what it resembles elsewhere, a restatement of the
+title, and a closing paragraph summarising the body above it. None of them changes what anybody does
+next, and all of them are paid on every read.
+
+**A part you cannot fill is a sentence naming what you could not establish** — not a heading with
+nothing under it, and not a paragraph reaching for length. The four parts are a floor on content, not
+a shape to fill.
+
+This is the same bar as the filing rules the developer works under, one step later: an item nobody
+can act on from the body alone is not shorter to write, it is longer to drain.
+
 ### Verify the red, not the green
 
 The instinct is backwards. **Green is the claim that reproduces trivially. Red is the claim that
@@ -1053,7 +1079,16 @@ window and an authorship rule left unstated make the ratio unreadable a week lat
 **The review layer is a discovery machine and must not be throttled to make this number look
 better.** The findings are the return on the review, not a side effect of it. Rationing filings
 while discovery runs ahead of delivery moves the queue into somebody's head, which is the one place
-it cannot be counted at all. This number exists to be known, not optimised.
+it cannot be counted at all.
+
+**Raising the bar on what counts as a finding is not throttling.** Looking less is throttling. A bar
+is a definition: same reading, same defects seen, and the ones with no caller land in the pull
+request instead of on the tracker.
+
+**The number is not a target and it is not inert.** No threshold may be claimed from one sample — the
+paragraph below, unchanged. But a ratio climbing across a run of ticks is a finding about the loop:
+ask whether the numerator is filings that cost somebody something or filings that cost nobody
+anything. **Those two render identically in the count** and only one is work.
 
 **No target ratio is claimed here, and none may be added from a single sample.** One project
 measured roughly three filings per merged pull request; one day of another measured roughly 0.6.
