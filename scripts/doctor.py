@@ -290,8 +290,50 @@ SUPERTOOL_ENTRY = "supertool"
 SUPERTOOL_CORE = "supertool.py"
 
 
+def _same_file(left, right):
+    """Do these two names denote the same file? ``True`` / ``False`` / ``None``.
+
+    ``None`` is "could not tell", and it is a separate answer rather than a ``False``,
+    because ``False`` here is an accusation: the caller turns it into "your ./supertool
+    points somewhere it should not".
+
+    **Identity, not string equality, and this is a transcription rather than a
+    preference.** supertool's own `hooks/session-start.sh` decides the same question
+    with `[ "$d/supertool.py" -ef "$BIN" ]`, and its comment says why -- ``-ef``
+    compares device+inode through symlinks. `os.path.samefile` is that test.
+
+    The string comparison this replaces failed two Windows legs of #285's first
+    version, and the mechanism is worth writing down because "normalise both sides"
+    does not fix it. Both sides already went through the *same* function,
+    `os.path.realpath`. On Windows that function is **prefix-preserving rather than
+    canonicalising**: `ntpath.py:683` records `had_prefix` as whether the path already
+    began with the extended-length prefix, and `:713` strips that prefix from the
+    result only when `had_prefix` was false. `os.readlink` returns a reparse point's
+    substitute name, which carries the prefix, so the side that came through the link
+    kept it and the side that did not had it stripped -- one function, both sides, two
+    spellings. Symmetry of function is not symmetry of result when the function's
+    output depends on the form of its input.
+
+    Every string fix for that is a list of spellings: the extended-length prefix, the
+    UNC form of it, 8.3 short names, a substituted drive, a junction, case folding.
+    A list is wrong the first time a spelling is added to Windows, which is the same
+    shape as a table of error codes and is refused here for the same reason. Asking the
+    filesystem which file each name opens has no list in it.
+
+    The residual risk, stated rather than hidden: `st_ino` is not meaningful on every
+    remote filesystem, and two files could in principle compare equal there. That
+    direction clears a wrong link rather than accusing a right one, and the plugin
+    cache is local disk; the string comparison had a failure in the accusing direction
+    and it was observed, not hypothesised.
+    """
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return None
+
+
 def _own_supertool_tree(project_dir):
-    """The `supertool.py` of the checkout this directory is inside, or None.
+    """The checkout this directory is inside, as ``(root, core)``, or ``(None, None)``.
 
     Transcribed from supertool's `hooks/session-start.sh`, which walks up for the
     `.supertool.json` that would be loaded and looks for a `supertool.py` beside it.
@@ -301,6 +343,16 @@ def _own_supertool_tree(project_dir):
     a check without this arm would fire a confident wrong warning in claude-supertool
     -- which is itself managed by this loop.
 
+    **The root is returned with the core**, and that is the second instance of the same
+    defect CI caught in the comparison above. The walk starts at `realpath(project_dir)`
+    -- it has to, or a symlinked project directory walks up the wrong tree -- so the core
+    it finds is spelled in resolved form while the caller holds the raw `project_dir`.
+    Handing that core to `_display(project_dir, ...)` made `relative_to` raise
+    `ValueError` and fall back to an absolute path: `/tmp` against `/private/tmp` on
+    macOS, an extended-length prefix on Windows. Only the printed string was affected
+    and never a verdict, which is exactly why nothing caught it -- so the resolved root
+    is returned alongside and the caller displays against the root the core came from.
+
     `is_file()` swallows `OSError`, so an unreadable directory on the way up reads as
     "no config here" and the walk continues. That is the safe direction: the failure
     is to *not* claim an own-tree, which costs a warning rather than a wrong silence.
@@ -309,9 +361,9 @@ def _own_supertool_tree(project_dir):
     while True:
         if (directory / WATCH_CONFIG).is_file():
             core = directory / SUPERTOOL_CORE
-            return core if core.is_file() else None
+            return (directory, core) if core.is_file() else (None, None)
         if directory.parent == directory:
-            return None
+            return None, None
         directory = directory.parent
 
 
@@ -349,8 +401,8 @@ def plugin_supertool_entries(cache_root=None, record=None):
 def supertool_entry_point(project_dir, cache_root=None, record=None):
     """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
 
-    Seven states, and the two that would otherwise collapse are the reason this is a
-    function rather than an ``==``:
+    Ten states. Three of them are ways of saying "could not tell", and those are the
+    reason this is a function rather than an ``==``:
 
     * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
     * ``own-tree-stranger`` -- a supertool checkout that has one anyway.
@@ -360,21 +412,28 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
       supertool's hook reported `./supertool already exists here and is not the plugin
       symlink -- leaving it untouched`. A deliberate local checkout looks exactly like
       this, so it is reported and not condemned.
-    * ``unknown-plugin-path`` -- **the third state.** There is a link, and no readable
-      cache to compare it against. Calling that ``other-target`` accuses a link that
-      may be perfectly correct; calling it ``ok`` clears one that may not be. Neither
-      was measured, so neither is said.
+    * ``unknown-plugin-path`` -- **a could-not-look state.** There is a link, and no
+      readable cache to compare it against. Calling that ``other-target`` accuses a
+      link that may be perfectly correct; calling it ``ok`` clears one that may not be.
+      Neither was measured, so neither is said.
+    * ``unknown-comparison`` -- the same shape one layer down: candidates were found and
+      the filesystem would not say whether any of them is this file. Kept apart from
+      ``unknown-plugin-path`` so the message can name which of the two happened, and
+      apart from ``other-target`` because falling through to that is precisely the
+      accusation this pair exists to avoid.
     * ``not-a-symlink`` / ``dangling`` / ``unreadable`` -- present and not usable, each
       with its own remedy, none of them "create one".
     """
     link = Path(project_dir) / SUPERTOOL_ENTRY
-    core = _own_supertool_tree(project_dir)
+    root, core = _own_supertool_tree(project_dir)
     present = os.path.lexists(str(link))
 
     if core is not None:
+        # Displayed against the root the core was found under, not against the raw
+        # project_dir -- see _own_supertool_tree.
         if present:
-            return "own-tree-stranger", _display(project_dir, core)
-        return "own-tree", _display(project_dir, core)
+            return "own-tree-stranger", _display(root, core)
+        return "own-tree", _display(root, core)
     if not present:
         return "absent", ""
     if not os.path.islink(str(link)):
@@ -397,13 +456,22 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     entries = plugin_supertool_entries(cache_root=cache_root, record=record)
     if not entries:
         return "unknown-plugin-path", resolved
-    key = os.path.normcase(resolved)
+    # Identity, never string equality -- see `_same_file`. A candidate the filesystem
+    # would not answer for is remembered rather than counted as a mismatch: "these are
+    # different files" and "I could not tell" must not both come out as other-target.
+    undecidable = False
     for version, entry in entries:
-        if os.path.normcase(os.path.realpath(str(entry))) == key:
+        same = _same_file(resolved, str(entry))
+        if same is None:
+            undecidable = True
+            continue
+        if same:
             active = active_versions([SUPERTOOL_ENTRY], record=record).get(SUPERTOOL_ENTRY)
             if active and active != version:
                 return "ok", "{} (cached {}, active {})".format(resolved, version, active)
             return "ok", resolved
+    if undecidable:
+        return "unknown-comparison", resolved
     return "other-target", resolved
 
 
@@ -452,6 +520,14 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "./supertool points at {}, and no supertool.py could be found in the plugin "
             "cache to compare it against -- so whether this is the plugin's entry point "
             "is unknown, not wrong. Check that supertool is installed.".format(detail),
+        )
+    elif state == "unknown-comparison":
+        report(
+            "WARN",
+            "./supertool points at {}, and the plugin cache does hold supertool.py "
+            "copies, but the filesystem would not say whether any of them is that same "
+            "file -- so this is unknown, not wrong. Not reported as a bad target: the "
+            "comparison failed, the link did not.".format(detail),
         )
     elif state == "not-a-symlink":
         report(

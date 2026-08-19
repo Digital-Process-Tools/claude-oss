@@ -119,6 +119,136 @@ def test_the_plugins_own_link_is_the_passing_state(tmp_path):
     assert doctor.FINDINGS[-1][0] == "OK"
 
 
+def test_reading_a_link_back_denotes_the_file_it_was_made_from(tmp_path):
+    """The mechanism the Windows legs failed on, asserted without naming a platform.
+
+    `os.readlink` on Windows returns the reparse point's substitute name, which carries
+    the extended-length prefix -- the four characters backslash, backslash, question
+    mark, backslash. `ntpath.realpath` then PRESERVES that prefix, measured in the
+    stdlib source rather than inferred: `ntpath.py:683` sets `had_prefix =
+    path.startswith(prefix)` and `:713` strips it only `if not had_prefix`. So one
+    function applied to both sides of a comparison returns a prefixed string for the
+    side that came through `readlink` and an unprefixed one for the side that did not,
+    and a link pointing at exactly the right file compared unequal.
+
+    **What is deliberately NOT asserted here is that the two strings differ, or that
+    they match.** Either would be a platform assertion dressed up as a product one --
+    true on Windows, false everywhere else -- and the repo rule is that a condition you
+    cannot establish is skipped with what went untested rather than asserted from a
+    table. What IS asserted is the question the code actually has to answer: do these
+    two names denote the same file. That is a real assertion on every platform, and it
+    is the one Windows was answering wrongly.
+    """
+    project = tmp_path / "repo"
+    project.mkdir()
+    home, record, entry = _cache(tmp_path)
+    link = project / "supertool"
+    refused = _link(link, entry)
+    if refused:
+        pytest.skip(refused + "; what went untested is the readlink round trip")
+
+    target = os.readlink(str(link))
+    resolved = os.path.realpath(os.path.join(str(link.parent), target))
+    assert doctor._same_file(resolved, str(entry)) is True, (
+        "the link was made from {!r} and reading it back reached {!r}, which the check "
+        "does not recognise as the same file".format(str(entry), resolved)
+    )
+
+
+def _hardlink(where, target):
+    """A second directory entry for one file, or the sentence saying why not.
+
+    Measured by attempting it: hard links need the two paths on one volume, and some
+    filesystems refuse them outright.
+    """
+    try:
+        os.link(str(target), str(where))
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        return "this filesystem would not create a hard link ({})".format(exc)
+    return None
+
+
+def test_the_comparison_is_identity_and_not_string_equality(tmp_path):
+    """The positive control for the fix, and it has to be a hard link.
+
+    The first draft of this used a symlinked *directory* and **passed against the broken
+    code on macOS**, which is worth recording because it is the trap this test exists to
+    avoid. On POSIX `os.path.realpath` genuinely canonicalises: every symlink hop is
+    resolved away, so no symlink-shaped second spelling survives it and both
+    implementations agree. The Windows defect is not "there is a second spelling", it is
+    that `ntpath.realpath` is **not** a canonicaliser -- it preserves an extended-length
+    prefix it was handed. A fixture built on symlinks therefore distinguishes the two
+    implementations on exactly the platform this suite cannot run, which is a control
+    that controls nothing.
+
+    A hard link is the spelling that survives `realpath` everywhere: two directory
+    entries, one inode, and `realpath` of each returns itself. So a string comparison
+    calls this `other-target` on macOS, Linux and Windows alike, and only an identity
+    comparison calls it `ok` -- which it is, since it is the same file.
+
+    Correct behaviour as well as a control: a hard link to the plugin's own supertool.py
+    is that file. Warning that it "points somewhere it should not" would be the exact
+    harm CI caught, reached by a different route.
+    """
+    project = tmp_path / "repo"
+    project.mkdir()
+    home, record, entry = _cache(tmp_path)
+
+    alias = tmp_path / "alias-supertool.py"
+    refused = _hardlink(alias, entry)
+    if refused:
+        pytest.skip(refused + "; what went untested is whether the comparison is identity")
+    refused = _link(project / "supertool", alias)
+    if refused:
+        pytest.skip(refused + "; what went untested is whether the comparison is identity")
+
+    assert os.path.realpath(str(alias)) != os.path.realpath(str(entry)), (
+        "the fixture did not produce two spellings -- realpath collapsed them, so this "
+        "test cannot tell an identity comparison from a string one"
+    )
+
+    state, detail = doctor.supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
+    assert state == "ok", (
+        "a link reaching the plugin's own supertool.py by a second directory entry was "
+        "called {!r}; the comparison is still matching strings rather than asking which "
+        "file each name denotes ({})".format(state, detail)
+    )
+
+
+def test_a_target_that_cannot_be_compared_is_not_reported_as_the_wrong_target(tmp_path):
+    """`os.path.samefile` stats both sides, and a stat can fail. Falling through to
+    `other-target` there would accuse a link nobody could check -- the same collapse in
+    the same arm, one layer under the one CI caught."""
+    project = tmp_path / "repo"
+    project.mkdir()
+    home, record, entry = _cache(tmp_path)
+    refused = _link(project / "supertool", entry)
+    if refused:
+        pytest.skip(refused + "; what went untested is the undecidable-comparison arm")
+
+    def _refuse(left, right):
+        raise OSError(5, "Access is denied")
+
+    saved = doctor.os.path.samefile
+    doctor.os.path.samefile = _refuse
+    try:
+        state, detail = doctor.supertool_entry_point(
+            project, cache_root=str(home), record=str(record)
+        )
+        assert state == "unknown-comparison", (state, detail)
+        doctor.check_supertool_entry_point(
+            project, cache_root=str(home), record=str(record)
+        )
+    finally:
+        doctor.os.path.samefile = saved
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN"
+    assert "unknown" in message or "could not" in message, message
+    assert len(doctor.FINDINGS) == 1
+
+
 def test_a_link_to_something_else_is_distinct_from_absent(tmp_path):
     """The second failure mode, and the one observed on this very repo -- supertool's
     session-start hook reported `./supertool already exists here and is not the plugin
@@ -211,6 +341,18 @@ def test_a_supertool_checkout_is_not_told_to_create_a_wrapper(tmp_path):
     (project / "supertool.py").write_text("# core\n", encoding="utf-8")
     (state, detail), _ = _state(project, tmp_path)
     assert state == "own-tree", (state, detail)
+    # The second instance of the comparison defect CI caught, bound here rather than
+    # left incidental: the walk starts at realpath(project_dir), so the core is spelled
+    # in resolved form while the caller holds the raw path. Displaying it against the
+    # raw project_dir made relative_to raise and fall back to an absolute path --
+    # /tmp against /private/tmp here, an extended-length prefix on Windows. Asserting
+    # the result is relative is the assertion that fails if that regresses, and it
+    # names no platform.
+    assert detail == "supertool.py", (
+        "the own-tree core was displayed as {!r} rather than relative to the tree root "
+        "it was found under".format(detail)
+    )
+    assert not os.path.isabs(detail), detail
 
     home, record, _ = _cache(tmp_path)
     doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
