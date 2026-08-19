@@ -379,6 +379,42 @@ if a reviewer found nothing it must say `NO FINDINGS` and name what it checked, 
 ending in "findings reported above" returns empty, and an empty return is indistinguishable from a
 clean one unless the brief forces the reviewer to say which it means.
 
+**The sentinel does not cover the third failure, and the third failure is the one that keeps
+happening: a message that *refers* to findings without stating them.** Not empty, so nothing looking
+for an empty return fires on it; not `NO FINDINGS`, so it is not clean; and it reads like a
+delivery — *"two confirmed findings reported above"*, *"findings reported above (3 total)"* — with
+the findings themselves nowhere in the return value. The spawn did the work. Only the conclusions
+are gone, and nothing in the sentence says so. Put this in both briefs, in these words: **a finding
+you refer to but do not state is a finding that does not exist.** No "reported above", no "as
+noted", no "detailed earlier" — the caller sees the final message and nothing else, so a reference
+points at nothing.
+
+**Ask for the shape that makes the omission arithmetic rather than a judgement.** Require that each
+spawn's final message **opens with `FINDINGS: <n>` and then states exactly that many findings, in
+full** — or opens with `NO FINDINGS` and names what was checked. Then count them yourself.
+`FINDINGS: 2` followed by one stated finding is not a review with one finding, it is a review that
+lost one, and without the header you would be reading tone to decide. A looser detector was weighed
+and refused: a numeral beside the word *findings* also fires on `NO FINDINGS` and on an honest *"0
+findings across 3 classes"*, so it would tax exactly the reviewers who did the right thing. The
+header costs the reviewer a number it already knows, and it compares two things the reviewer already
+wrote.
+
+**Say plainly what this is: this fix is a request to the spawn, not a boundary on it.** Nothing this
+repository ships sits between a sub-agent's final message and your context — the harness hands you a
+string, and a string that gestures is as well-formed as one that delivers. A tool grant is what
+binds and a sentence in a brief is not; that is written above about `Explore`, and it is just as
+true here, so the header is a convention the reviewer may simply not follow. What the
+header does buy is real and worth having: it moves *your* half of the check from reading tone to
+comparing two numbers. **Removing the class rather than the instance would need the return itself to
+be structured** — the sub-agent's contract a schema with `findings[]`, so a claim of four beside an
+empty list is a validation failure at the tool boundary instead of a prose contradiction you have to
+notice. That belongs to whatever spawns the agent, not to this document, and it is the thing to ask
+for upstream rather than to claim here. Routing the findings through a file the reviewer writes and
+you validate was weighed as a way to fake it locally and refused: an ignored instruction to write a
+file and an ignored instruction to state findings fail identically, so it buys a second request and
+a new artifact and no boundary, while handing a write path to the one spawn this section spends a
+paragraph telling not to write.
+
 **Independence lives in the reviewer; judgment stays with you.** Argue down a finding that is wrong
 and say why — that is an outcome no bounce-and-repush loop produces. Report all three under
 `review.findings`, each with its disposition: what it flagged, what you fixed, what you refused.
@@ -420,19 +456,39 @@ The validator refuses it without a reason.
 
 **How you decide you are in it.** Both briefs already require a sentinel — `NO FINDINGS`, and what
 was checked — precisely so silence is distinguishable from cleanliness. So read **the final message
-you actually received** and sort it in three: it names findings; or it says `NO FINDINGS` and names
-what it checked; or it is empty, whitespace-only, or says neither of those. The third is
-`returned-nothing`. Do not infer a verdict from what you believe the spawn did while it ran — you
-did not see that, and a transcript you happen to hold is evidence about your own session, not a
-return value.
+you actually received** and sort it in four: it **states** findings; or it says `NO FINDINGS` and
+names what it checked; or it **refers to findings it does not state**, which includes a
+`FINDINGS: <n>` header with fewer than `n` stated under it; or it is empty, whitespace-only, or says
+none of those. The last two are both `returned-nothing`, and the third arm is the one to be careful
+with, because it is the one that sounds finished. A confident sentence about work you cannot read is
+not a review that found nothing. Do not infer a verdict from what you believe the spawn did while it
+ran — you did not see that, and a transcript you happen to hold is evidence about your own session,
+not a return value.
+
+The state's own definition is what makes that arm legitimate rather than a stretch: `returned-nothing`
+is *the review happened and its conclusions are lost*, and an empty message is the instance it was
+first observed in rather than the boundary of it. Conclusions referred to and not stated are lost in
+exactly the same way and to exactly the same degree.
 
 **What the report must say, and it is a required field rather than good manners.** Set the state to
-`returned-nothing` and put in `reason` which spawn came back empty and **what is lost, counted**.
+`returned-nothing` and put in `reason` which spawn went quiet, **which of the two ways** — nothing at
+all, or a gesture at findings it never stated — and **what is lost, counted**. "Came back empty" about
+a spawn that returned a confident paragraph is a reason that will be read as the wrong failure.
 Anything you can re-derive from your own context goes in `items` with disposition `open`, never
 `fixed`: you are reconstructing somebody else's reading and cannot check the reconstruction. Say in
 the same breath how many you could not recover at all. `returned-nothing` carrying items is the
 normal shape, not a contradiction — and `checked` is unavailable to you from the moment one spawn
-comes back empty, however completely the other one answered.
+comes back empty or gestures at findings it did not state, however completely the other one
+answered.
+
+**Record the residue, and do not mistake it for the finding.** A message that referred to findings it
+did not state usually leaves something behind — a count, a subject, a filename, a severity. That
+residue goes into `items` as an `open` item, **quoted rather than paraphrased**, because it is the
+only handle anybody will have. And it is a handle, not a finding: one lost return preserved the name
+of a single file and nothing else, and because nobody owned the residue, nobody opened that file for
+the rest of the session. Say what the residue is, say what it is not, and say how many findings the
+count implied that you have nothing at all for. A count is the cheapest residue there is and the
+easiest to drop, and it is the one that tells a maintainer the size of what is missing.
 
 **One fresh re-spawn, and it does not erase the first outcome.** Spawn a new agent of the same type
 with the same brief, once, and stop there; a second empty return is a finding, not a third attempt.
@@ -448,11 +504,48 @@ does not recover the lost message anyway, because an agent asked to repeat regen
 back is a fresh review wearing the first one's authority. A fresh spawn buys the same thing and
 says what it is.
 
-**None of this is a finding about a particular agent type.** It was the same reviewer type both
-times it was observed and the auditor half returned normally both times, but that is two
-observations across two agent types, two briefs and two task shapes, and nothing separates those
-three explanations. **Two samples is not a measurement**, so nothing in this subsection names an
-agent type: the rule is mechanism-agnostic and applies to whatever you spawned.
+**None of this is a finding about a particular agent type.** The count is now six across two
+repositories and two days, not the two it was when this paragraph was written, and the shape did not
+change with it: every observed instance was the same reviewer type and the auditor half returned
+normally every time — but agent type, brief and task shape vary together in all six, and nothing
+separates those explanations. **A handful of samples is not a measurement**, so nothing in this
+subsection names an agent type: the rule is mechanism-agnostic and applies to whatever you spawned.
+The confound is worked through once, below.
+
+### The brief sentence is an experiment, not a fix
+
+A sentence added to a brief to change how a model writes its last paragraph cannot be shown to work
+from inside the session that adds it, and the temptation is to treat it as done because it is
+written. So it is recorded here as an intervention with a baseline, and the record is part of the
+change rather than a courtesy.
+
+- **Baseline, two independent populations.** In one session in this repository, **three of roughly
+  seven review spawns** executed, formed conclusions and returned a final message referring to
+  findings it never stated — two of those unrecoverable, one recovered by the permitted re-spawn and
+  correct, one surviving only as the name of a file. Two days later, in a different repository, all
+  **three of three** developer runs in one fleet hit it, claiming ten findings between them of which
+  nine are gone. The agents did not know about each other. Every instance was recorded as
+  `returned-nothing` rather than `checked`, which is why there is a baseline at all.
+- **The intervention.** The sentence, the `FINDINGS: <n>` header and the fourth sort arm, all above.
+  Together they cost three paragraphs of brief and one comparison.
+- **What would count as evidence.** The same rate, over later sessions, counted the same way: spawns
+  that referred without stating, over spawns dispatched. Nothing else. A session with no instances is
+  one observation, not a result, and a run in which nobody counted is not a zero.
+- **The confound, which is why one tempting explanation is not built on.** Every instance came from
+  one spawn type and the other type answered normally every time — but agent, brief and task vary
+  together, so *a fixed enumeration is harder to gesture at than a free-form list* is a hypothesis
+  and not a finding. Nothing here is arranged around it, and nothing here should be read as having
+  tested it.
+- **What is not established at all.** Whether these spawns genuinely produced findings and lost them
+  at the return boundary, or never produced them and misreported, has not been observed — nobody has
+  read a reviewer's own transcript. Those are different bugs with different fixes. The header is
+  chosen partly because it does not need that question answered: a count that exceeds the findings
+  stated under it is the same detection either way.
+- **So nothing below is relaxed on the strength of it**, and nothing above either. The
+  `returned-nothing` state, the counted reason, the one permitted re-spawn and the rule that a retry
+  does not erase the first outcome all stand exactly as they are. An unmeasured mitigation treated as
+  a measured one would be this plugin's own defect class, one layer up: a guard nominally on, and the
+  reason nobody re-reads it.
 
 ### When the spawn itself fails
 
