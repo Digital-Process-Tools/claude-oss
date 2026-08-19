@@ -163,6 +163,34 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    spawn that did not run is `could not run`**, never a clean audit — if the agent fails to start or
    comes back empty, that is the third outcome and the same stop applies.
 
+   **Mint a dispatch token before you spawn and hand it over with the payload.** Any short
+   unpredictable string — it is an identifier, not a secret — and record it in the release report.
+   Then read what comes back in three states, because one dispatch of this gate once produced two
+   completions over one range and only one of them was right:
+
+   - **attributed** — the report echoes the token you minted. Proceed on it.
+   - **unattributed** — no token line, a token that does not match, or `dispatch token: none
+     reached me`. It **does not clear** the gate, and it is **not discarded**: read its findings
+     and reconcile them, because in the instance this arm comes from the unattributed completion
+     was the one that was right and the attributed one graded the same class clean. Re-dispatch
+     with the token and record both.
+   - **more than one completion for one dispatch** — read every one of them. The gate clears only
+     when they agree; a disagreement between two completions of one dispatch is itself a finding
+     about this gate, reported as one, and never settled by which identifier happened to match.
+
+   **A `clean` verdict carries a count of classes graded `read but not exercised`**, defined in
+   `${CLAUDE_PLUGIN_ROOT}/agents/release-auditor.md`. A nonzero count **does not stop** the tag —
+   requiring a fired control for every class on every delta buys more words rather than a better
+   audit, and would block releases over honest answers. It is named by class letter in the
+   release report, and it is **not the same receipt** as a count of zero. Recording those two the
+   same way is precisely what let a class nobody exercised clear this gate.
+
+   And the arm with force: **a `read` grade never outweighs a reproduction.** Where a finding in
+   that class arrives from any source with a command that reproduces it — a second completion, a
+   contributor, you — the reproduction settles it and the clean grade is not evidence against it.
+   Where the class came back `clean (exercised)`, the two are a genuine disagreement and both are
+   re-run before either is believed.
+
    **A spawn that errors because the name does not resolve is that same `could not run`**, and it is
    not hypothetical: this gate dispatched to a name the harness never registered for two releases,
    so its third outcome was its permanent state and nothing reported it (#81). A release read as
