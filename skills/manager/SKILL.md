@@ -312,6 +312,14 @@ this file is not allowed to carry. `scripts/doctor.py` already derives both halv
 `declared_dependencies()` reads the manifest and `dependency_repositories(names)` resolves each name
 to a repository URL off that dependency's own installed manifest.
 
+**One board sits outside that set and is not outside the duty.** Nothing declares itself as its own
+dependency, so neither of those two functions can produce the loop's own repository — the board that
+owns the furniture written into every managed repo. `loop_repository()` is the sibling that does.
+An item arriving with a destination resolved that way is routed like any other; recording it as
+*could not file* because your own derivation did not produce it is the collapse this table exists to
+prevent, one function over. The developer brief carries the rule for recognising a finding of that
+shape; this is the arm that receives one.
+
 Within that set, two cases and they are not the same duty:
 
 - **A dependency the same maintainer owns.** File it. There are filing rights, the roadmap is the

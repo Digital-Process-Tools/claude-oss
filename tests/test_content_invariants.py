@@ -1643,6 +1643,93 @@ def test_the_manager_separates_could_not_file_from_did_not_file():
     )
 
 
+# #290: the loop's own repository is the one board `dependency_repositories()`
+# cannot produce, because nothing declares itself as its own dependency. The
+# developer brief carries the rule that recognises a finding of that shape and
+# resolves its destination with `loop_repository()`. This is the other end of that
+# handoff: the manager's filing section bounds itself to declared dependencies and
+# routes a destination it cannot derive to `could not file` -- so without an arm
+# that receives an already-resolved one, a real tracker is recorded as no tracker
+# and the developer's half lands nowhere. Two individually correct documents
+# composing into an unroutable item is the defect neither diff review can see.
+MANAGER_RECEIVES_A_TOOLING_ITEM = "one board sits outside that set and is not outside the duty"
+
+# The bound paragraph as it stood before #290. Every anchor asserted below is
+# asserted absent from it, so an anchor that already matched shipped prose is a
+# guard with no teeth. Em dashes are transcribed as `--`; no anchor spans one.
+PRIOR_DEPENDENCY_BOUND = """
+**The bound is declared dependencies, and it is the manifest that says which.** Never write the
+trackers down; a list in shared prose is wrong the first time a plugin moves, and is the exact fact
+this file is not allowed to carry. `scripts/doctor.py` already derives both halves --
+`declared_dependencies()` reads the manifest and `dependency_repositories(names)` resolves each name
+to a repository URL off that dependency's own installed manifest.
+"""
+
+
+def test_the_manager_can_receive_a_tooling_item_it_cannot_derive():
+    """The join, held at both ends rather than at the end that was edited.
+
+    The must-fire half is three assertions because three separate things have to be
+    true for the handoff to work: the developer resolves the destination, the manager
+    names the same accessor rather than a second mechanism, and the manager's section
+    says out loud that a board outside the declared set is still inside the duty. Any
+    one of them missing leaves an item that is filed nowhere and reads as filed.
+
+    The must-not half is the pre-change bound paragraph. Both anchors are asserted
+    absent from it, paired with wording that was there and is still there -- otherwise
+    an empty or mistyped control satisfies the absence assertions for the wrong reason
+    and every "this was red before" claim here is unsupported.
+    """
+    manager = _flatten(MANAGER_SKILL.read_text(encoding="utf-8"))
+    developer = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+
+    assert "loop_repository" in developer, (
+        "the developer brief no longer resolves the loop's own board, so nothing "
+        "produces the item this test asserts the manager can receive"
+    )
+    assert "loop_repository" in manager, (
+        "the manager skill names `declared_dependencies` and `dependency_repositories` "
+        "and not the sibling that produces the one board neither can, so an item "
+        "carrying that destination has no derivation the manager recognises"
+    )
+    assert MANAGER_RECEIVES_A_TOOLING_ITEM in manager, (
+        "the manager's filing section still bounds itself to declared dependencies "
+        "with no arm for a destination resolved outside that set, so a tooling defect "
+        "with a real tracker lands on `could not file`"
+    )
+
+    prior = _flatten(PRIOR_DEPENDENCY_BOUND)
+    assert "the bound is declared dependencies" in prior, (
+        "the control is not the pre-change paragraph, so the absence assertions below "
+        "pass for the wrong reason and prove nothing"
+    )
+    assert "the bound is declared dependencies" in manager, (
+        "the live skill lost the wording the control depends on"
+    )
+    for anchor in (MANAGER_RECEIVES_A_TOOLING_ITEM, "loop_repository"):
+        assert anchor not in prior, "toothless anchor, already on disk: {!r}".format(anchor)
+
+
+def test_the_developer_says_the_tooling_has_no_manifest_name():
+    """The seam the new routing prose opens, and the reason it is not cosmetic.
+
+    The routing paragraphs hand a tooling defect straight into the `report-for-filing`
+    mechanics below them, whose first bullet asks for the dependency's name *as the
+    manifest spells it*. For this one case there is no such entry -- that is the whole
+    premise of the paragraph two above it -- so an agent working the list in order is
+    asked for a value that cannot exist. Unstated, that renders as a field left empty,
+    which is indistinguishable from a field nobody filled in.
+    """
+    developer = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    assert "which declared dependency" in developer, (
+        "the mechanics bullet this guard is about is gone; the guard is measuring nothing"
+    )
+    assert "the tooling has no such name" in developer, (
+        "the brief routes a tooling defect into a list that asks for the name the "
+        "manifest uses, and never says that this one case has no such name"
+    )
+
+
 def test_the_developer_reports_upstream_rather_than_filing_itself():
     """The developer's publishing clause is unconditional, and opening an issue on
     another repo is publishing. So the duty lands as a report, not a filing.

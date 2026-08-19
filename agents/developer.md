@@ -302,7 +302,10 @@ hand the maintainer what they need to open it in one call, in `adjacent`, with `
 `report-for-filing`:
 
 - **which declared dependency** it is, by the name the manifest uses — never a repo slug you
-  inferred, and never a tracker you guessed at;
+  inferred, and never a tracker you guessed at. **The tooling has no such name**, by the same
+  argument that made its board underivable, so for that case say it is the loop's own tooling and
+  give what `loop_repository()` answered — the URL, or the state it returned instead of one. A
+  bullet left empty because the question had no answer reads exactly like a bullet nobody filled in;
 - **the reproduction**, the same standard as a local finding;
 - **which row, and what its embargo column says.** Look the finding up in the ranking table the
   manager skill owns, and report both verdicts the row carries. **A finding whose row answers yes

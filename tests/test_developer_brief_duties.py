@@ -21,7 +21,11 @@ still on disk now -- so that an empty, truncated or mis-read PRIOR fails loudly
 instead of satisfying every "must not match" assertion for the wrong reason.
 
 **PRIOR is abridged, and that is the one thing to know before adding an anchor
-to it.** Three of the four passages are elided in the middle: the cross-platform
+to it.** *Four passages* below means the four passages bundled inside the `PRIOR`
+string, not the number of `PRIOR_*` constants in the file -- there are four of
+those too now, and the coincidence is the kind that gets read the wrong way once
+and then quoted. The three constants beside `PRIOR` are un-elided and each says
+so in its own comment. Three of the four passages inside `PRIOR` are elided in the middle: the cross-platform
 one drops the cp1252/`UnicodeEncodeError` sentence, the review one drops the
 `did not run` clause, and the report-format one drops the schema path and the
 arrow mappings. Every anchor this file ships today was checked against the whole
