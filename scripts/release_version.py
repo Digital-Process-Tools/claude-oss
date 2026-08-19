@@ -9,9 +9,11 @@ unread in the same directory as the recommendation, and the one sentence that se
 whether it broke compatibility was prose inside its body, where no tool could see it.
 
 The input was already on disk and already maintained. Fragments are named
-`<issue>.<section>.md` over the Keep a Changelog sections, the changelog gate requires
-one per user-visible change, and the assembler already parses them. That is the input a
-version rule consumes.
+`<issue>.<section>[.<slug>].md` over the Keep a Changelog sections, the changelog gate
+requires one per user-visible change, and the assembler already parses them. That is
+the input a version rule consumes -- and it is parsed with the *assembler's* grammar,
+transcribed rather than invented, because a name the assembler accepts and this rule
+refuses stops a release over a correctly-named file (#297).
 
 ## It proposes. It does not decide.
 
@@ -29,9 +31,17 @@ human decision. Nothing here writes to a file, bumps a site, or tags.
                     spell a triple. The class is still reported, because "I could not
                     read the delta" and "I could not read the number it applies to" are
                     different problems with different fixes.
-  could-not-decide  the fragments do not decide -- none at all, a section outside the
-                    six, a compatibility line that will not read, or a `removed`
-                    fragment that declares nothing.
+  could-not-decide  the fragments do not decide -- none at all, a file name that is
+                    not a fragment name, a section outside the six, a fragment whose
+                    bytes will not read, a compatibility line that will not read, or a
+                    `removed` fragment that declares nothing.
+
+**The reason names the cause that fired, and only that one.** It used to be one fixed
+sentence offering two of the causes above whatever had happened, so a maintainer chased
+a malformed body in a file whose body was fine, renamed a correctly-named file and
+reported the contributor who wrote it (#297). The receipt now carries the cause beside
+each file name, because with two unreadable fragments a single sentence cannot say
+which file had which.
 
 **No state but `proposed` names a number.** A default patch bump over a breaking change
 is indistinguishable in the tag from a considered one, which is this plugin's own defect
@@ -135,6 +145,16 @@ LINE_STABLE = ">=1.0"
 
 TRIPLE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
+# `<issue>.<section>[.<slug>].md`. Transcribed from `_NAME_RE` in
+# scripts/assemble_changelog.py rather than invented here: the assembler is the gate
+# a fragment must already pass to reach `CHANGELOG.md`, so a name it accepts and this
+# rule refuses stops a release over a correctly-named file -- which is #297, observed
+# twice on a repository where the slug is documented convention. A transcription is a
+# claim about something outside this module, so the two are measured against each
+# other in tests/test_release_version_fragment_names_297.py rather than asserted here.
+# `\Z` and not `$`: a POSIX filename may end in a newline and `$` matches before one.
+FRAGMENT_NAME = re.compile(r"\A(\d+)\.([a-z]+)(?:\.([A-Za-z0-9][A-Za-z0-9._-]*))?\.md\Z")
+
 COMPAT_LINE = re.compile(r"^\s*-\s+compatibility\s*:\s*(.*)$", re.IGNORECASE)
 
 
@@ -198,13 +218,54 @@ def compatibility(text):
     return verdicts.pop(), None
 
 
-def _section(name):
-    """The section a fragment file name declares, or None when it declares none."""
-    parts = name.split(".")
-    if len(parts) != 3 or parts[2].lower() != "md":
-        return None
-    section = parts[1].lower()
-    return section if section in SECTIONS else None
+# Why an entry could not be read, one name per distinguishable cause. `unreadable`
+# was one bucket for four of them and the reason line offered two -- so a receipt
+# named a cause the tool had not established, which is what #297 cost: a maintainer
+# renamed a correctly-named file and reported the agent that wrote it. A single
+# third state for the filename would have fixed the instance and left the class;
+# `file-could-not-be-read` was already unnamed before this issue was filed.
+CAUSE_NAME = "filename-does-not-parse"
+CAUSE_SECTION = "section-outside-the-six"
+CAUSE_FILE = "file-could-not-be-read"
+CAUSE_COMPAT = "compatibility-line-unrecognised"
+
+#: The sentence each cause contributes to the reason line. Ordered, so a receipt
+#: listing two causes lists them the same way twice.
+CAUSE_TEXT = (
+    (CAUSE_NAME, "a filename that does not parse as `<issue>.<section>[.<slug>].md`"),
+    (CAUSE_SECTION, "a section outside the six"),
+    (CAUSE_FILE, "a fragment whose bytes could not be read"),
+    (CAUSE_COMPAT, "a compatibility line this rule does not recognise"),
+)
+
+#: Appended only when the cause it explains actually fired.
+CAUSE_NOTE = {CAUSE_COMPAT: " A value it does not know never grades as compatible."}
+
+
+def fragment_name(name):
+    """The section a fragment file name declares, or None when it is not a fragment.
+
+    Public because the grammar is transcribed from the assembler and the two are
+    measured against each other in a test. `_scan` wants the *cause* as well and
+    calls `_fragment_section`.
+    """
+    return _fragment_section(name)[0]
+
+
+def _fragment_section(name):
+    """(section, cause). Exactly one of the two is ever set.
+
+    The two failures are kept apart because they are two different repairs: a name
+    that does not parse is renamed, and a section outside the six is either a typo
+    or a change this rule genuinely cannot classify.
+    """
+    match = FRAGMENT_NAME.match(name)
+    if match is None:
+        return None, CAUSE_NAME
+    section = match.group(2)
+    if section not in SECTIONS:
+        return None, CAUSE_SECTION
+    return section, None
 
 
 def _undecided(reason="", detail=""):
@@ -232,6 +293,7 @@ def _undecided(reason="", detail=""):
         "declared_compatible": [],
         "undeclared": [],
         "unreadable": [],
+        "unreadable_causes": [],
         "assumed_compatible": None,
     }
 
@@ -302,19 +364,19 @@ def _scan(directory):
         if path.name.lower() == README or not path.name.lower().endswith(".md"):
             continue
         scan["count"] += 1
-        section = _section(path.name)
+        section, cause = _fragment_section(path.name)
         if section is None:
-            scan["unreadable"].append(path.name)
+            scan["unreadable"].append((path.name, cause))
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
-            scan["unreadable"].append(path.name)
+            scan["unreadable"].append((path.name, CAUSE_FILE))
             continue
         scan["sections"][section] = scan["sections"].get(section, 0) + 1
         verdict, problem = compatibility(text)
         if problem is not None:
-            scan["unreadable"].append(path.name)
+            scan["unreadable"].append((path.name, CAUSE_COMPAT))
         elif verdict == BREAKING:
             scan["breaking"].append(path.name)
         elif verdict == COMPATIBLE:
@@ -322,6 +384,50 @@ def _scan(directory):
         elif section in MUST_DECLARE:
             scan["undeclared"].append(path.name)
     return scan, None
+
+
+def _unreadable_reason(unreadable):
+    """The reason line, built from the causes that actually fired.
+
+    Not a fixed sentence listing every cause this rule knows about. That was the
+    defect: it offered two, the one that fired was neither, and a maintainer went
+    looking for a malformed body in a file whose body was fine (#297). A cause with
+    no entry behind it does not appear here.
+
+    An unrecognised cause is named as such rather than dropped. A bucket that
+    quietly loses an entry it cannot describe is the same failure one layer down.
+
+    An empty list is answered rather than raised on. `compute` guards the call, so
+    this arm is unreachable from there today -- but the one receipt this rule must
+    never produce is a traceback, which names no number *and* no cause, and a helper
+    that reaches an `IndexError` on an empty list is one refactor away from being it.
+    """
+    if not unreadable:
+        return (
+            "no entries were recorded as unreadable, so there is no cause to name -- "
+            "this reason line was built from an empty list and says so rather than "
+            "claiming a fragment failed"
+        )
+
+    known = dict(CAUSE_TEXT)
+    seen = []
+    for _name, cause in unreadable:
+        if cause not in seen:
+            seen.append(cause)
+    order = [cause for cause, _text in CAUSE_TEXT if cause in seen]
+    order += [cause for cause in seen if cause not in known]
+    phrases = [
+        known.get(cause, "a cause this rule cannot describe ({0})".format(cause))
+        for cause in order
+    ]
+    if len(phrases) == 1:
+        causes = phrases[0]
+    else:
+        causes = "{0} and {1}".format(", ".join(phrases[:-1]), phrases[-1])
+    notes = "".join(CAUSE_NOTE[cause] for cause in order if cause in CAUSE_NOTE)
+    return "{0} fragment(s) would not read -- {1}.{2}".format(
+        len(unreadable), causes, notes
+    )
 
 
 def _classify(scan):
@@ -416,7 +522,12 @@ def compute(repo=".", frag_dir=None, current=None, config_path=None):
             "declared_breaking": _names(scan["breaking"]),
             "declared_compatible": _names(scan["compatible"]),
             "undeclared": _names(scan["undeclared"]),
-            "unreadable": _names(scan["unreadable"]),
+            "unreadable": _names(name for name, _cause in scan["unreadable"]),
+            # Pairs rather than a mapping: two file names can reduce to the same
+            # printable ASCII line, and a dict would silently keep one of them.
+            "unreadable_causes": [
+                [_one_line(name, 120), cause] for name, cause in scan["unreadable"]
+            ],
             "assumed_compatible": (
                 scan["count"]
                 - len(scan["breaking"])
@@ -434,11 +545,7 @@ def compute(repo=".", frag_dir=None, current=None, config_path=None):
         )
         return payload
     if scan["unreadable"]:
-        payload["reason"] = (
-            "{0} fragment(s) would not read -- a section outside the six, or a "
-            "compatibility line this rule does not recognise. A value it does not "
-            "know never grades as compatible."
-        ).format(len(scan["unreadable"]))
+        payload["reason"] = _unreadable_reason(scan["unreadable"])
         return payload
     if scan["undeclared"]:
         payload["reason"] = (
@@ -532,7 +639,20 @@ def receipt(payload):
     row("breaking", ", ".join(payload["declared_breaking"]))
     row("compatible", ", ".join(payload["declared_compatible"]))
     row("undeclared", ", ".join(payload["undeclared"]))
-    row("unreadable", ", ".join(payload["unreadable"]))
+    # Each name carries its own cause. With two unreadable fragments for two
+    # different reasons, a reason line alone cannot say which file had which, and
+    # `unreadable` is the row a maintainer acts on.
+    known = dict(CAUSE_TEXT)
+    row(
+        "unreadable",
+        ", ".join(
+            "{0} ({1})".format(
+                name,
+                known.get(cause, "a cause this rule cannot describe ({0})".format(cause)),
+            )
+            for name, cause in payload["unreadable_causes"]
+        ),
+    )
     if payload["assumed_compatible"] is not None:
         lines.append(
             "{0:<13}: {1} fragment(s) declared nothing and are assumed "
