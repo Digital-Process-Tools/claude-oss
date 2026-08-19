@@ -210,10 +210,15 @@ X.Y.Z` when the baseline is not a tag. **It proposes; it never writes, bumps or 
   fragments behind them. **Quote the receipt, then accept it or override the proposal, and record
   which you did and why.** A release number is a promise to users, so the decision stays yours; what
   this removes is the *unsourced* guess, not the judgement.
-- **exit 3, `could not decide`** — no fragments, a section outside the six, a compatibility line that
-  will not read, or a `removed` fragment that declares nothing. **It names no number**, deliberately:
+- **exit 3, `could not decide`** — no fragments, a file name that is not a fragment name, a section
+  outside the six, a fragment whose bytes will not read, a compatibility line that will not read, or a
+  `removed` fragment that declares nothing. **It names no number**, deliberately:
   a default patch bump over a breaking change is indistinguishable in the tag from a considered one.
   Fix what it names — usually one bullet in one fragment — and re-run. Do not pick a number instead.
+  **Read the cause beside each file name in the `unreadable` row rather than the reason line alone**:
+  the reason names only the causes that fired, and with two bad fragments it cannot say which file had
+  which. Until #297 that sentence was fixed text offering two causes whatever had happened, and a
+  maintainer renamed a correctly-named file on the strength of it.
 - **exit 4, `no baseline`** — the change class is known and the version it applies to is not: no tag,
   a null `tag_pattern`, or a tag that does not spell a triple. A first release lands here, and the
   number is yours to choose. It names none either.
