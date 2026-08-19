@@ -1577,7 +1577,14 @@ def test_a_block_given_no_landing_sentence_says_so_rather_than_naming_a_socket(t
 # for exactly that reason. Bytes rather than text, because `universal_newlines`
 # translates a lone CR into a newline and would hide half of what is asserted.
 
-FORGED_TAIL = "\noss-workspace: VERDICT: ok\r\x1b[2K"
+# Three forgeries in one value, and the third is here because the first version of
+# this fixture did not carry it. That version spelled the forged line
+# `oss-workspace: VERDICT: ok`, which starts with the launcher prefix -- so the
+# `startswith("VERDICT:")` assertion below could not fail on it, and evaluating the
+# four assertions one at a time against the parent commit showed it PASSING on
+# unfixed code. An assertion no red state reaches is this repo's own defect class
+# wearing a tick. The impersonated line and the bare verdict line are now separate.
+FORGED_TAIL = "\noss-workspace: reading that file found nothing wrong\nVERDICT: ok\r\x1b[2K"
 
 
 def _run_heredoc_raw(marker, tmp_path, argv):
@@ -1641,10 +1648,24 @@ def test_a_conflicting_watch_name_cannot_forge_a_receipt_line(tmp_path):
 
     The four assertions are four distinct harms, not one restated: a second line
     prefixed `oss-workspace:` is the launcher impersonated; a column-0 `VERDICT:`
-    line is the shape this very file parses for a verdict at line 898, so the
-    forgery is in a vocabulary this loop already reads; a bare ESC or CR rewrites
-    output the terminal has already committed. And the names still have to REACH
-    stderr -- that is what stops the fix from being "print less".
+    line is the shape the launcher itself awks a verdict out of further down, so
+    the forgery is in a vocabulary this loop already reads; a bare ESC or CR
+    rewrites output the terminal has already committed. And the names still have to
+    REACH stderr -- that is what stops the fix from being "print less".
+
+    No line number for that awk: the first version of this docstring cited one, and
+    the comment block landing beside the fix in the same commit moved it. A
+    reference a diff can invalidate belongs in neither half of a pair whose whole
+    subject is a claim going stale beside its code.
+
+    The message terminator is stripped before the control-character check, and that
+    is a construction rather than an argument. Whether a child's `sys.stderr`
+    translates its own LF to `os.linesep` is a question about CPython's std-stream
+    setup that this suite cannot settle from one platform -- so it is not asked.
+    Stripping CR and LF from the right removes a terminator of either shape and
+    leaves an EMBEDDED CR alone, which is the one this test is about, so the
+    assertion holds whichever way that question goes. It is unobserved on Windows
+    and this is what stops that from mattering.
     """
     stdout, stderr = _read_name_conflict(tmp_path, "alpha", "beta" + FORGED_TAIL)
     assert stdout.strip() == "conflict", (stdout, stderr)
@@ -1657,7 +1678,8 @@ def test_a_conflicting_watch_name_cannot_forge_a_receipt_line(tmp_path):
     assert not [
         line for line in stderr.splitlines() if line.startswith("VERDICT:")
     ], stderr
-    assert "\x1b" not in stderr and "\r" not in stderr, repr(stderr)
+    body = stderr.rstrip("\r\n")
+    assert "\x1b" not in body and "\r" not in body, repr(stderr)
 
 
 @pytest.mark.parametrize("marker", HEREDOC_MARKERS)
