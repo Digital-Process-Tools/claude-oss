@@ -133,17 +133,78 @@ NO_SCAFFOLD = (
 )
 
 
-def same_directory(left, right):
-    """Do two spellings name one directory? Symlinks resolved, never compared as text.
+def _os_error_detail(exc):
+    """One clause naming what stopped a stat, built from the exception in hand.
+
+    **The exception, and nothing else.** Asking the filesystem a second question to
+    explain why the first one failed is the trap `release_delta.py` was bitten by:
+    `Path.exists()` swallows a short list of errnos and re-raises the rest, so the
+    call added to tell absence from unreadability is the call that kills a diagnostic
+    contracted to exit 0. `os.stat` sets `filename` and `strerror` already.
+    """
+    reason = exc.strerror or exc.__class__.__name__
+    if exc.filename:
+        return "{} could not be examined ({})".format(exc.filename, reason)
+    return "one of the two paths could not be examined ({})".format(reason)
+
+
+def compare_directories(left, right):
+    """Do two spellings name one directory? ``(True | False | None, reason)``.
 
     `os.getcwd()` is resolved by the kernel and a path handed in on the command line is
     not, so on macOS `/tmp` and `/private/tmp` are the same directory under two names --
-    and `Path(".") != Path("/abs")` however identical the two are.
+    and `Path(".") != Path("/abs")` however identical the two are. So the question is
+    asked of the filesystem, by device and inode, exactly as `_same_file` asks it of a
+    file and as supertool's own `hooks/session-start.sh` asks it with ``-ef``.
+
+    **``None`` is "could not tell", and it is a third answer rather than a ``False``**
+    -- #309. `os.path.samefile` raises when either path is absent, and absence is an
+    ordinary state at two of this function's four call sites: ``--root`` and
+    ``--plugin-root`` are paths somebody typed, and a typo is the common case. The
+    version this replaces caught that `OSError` and fell back to comparing
+    `os.path.abspath` strings, so two spellings of one directory answered ``False``
+    while it did not exist and ``True`` once it did -- a verdict that moves with the
+    filesystem's state rather than with the question asked. ``False`` is then rendered
+    by every caller as *these are two different trees*, which is an accusation, and the
+    callers that printed it were printing it about a tree nobody had looked at.
+
+    **The string comparison is kept for the positive answer only, and that asymmetry is
+    the point.** Two equal normalised paths denote one directory by construction,
+    existing or not; that answer needs no filesystem behind it and stays ``True``. Two
+    *different* normalised paths establish nothing -- `os.path.abspath` does not resolve
+    symlinks, and `os.path.realpath` would not have rescued it either: on Windows that
+    function is prefix-preserving rather than canonicalising, recording at
+    `ntpath.py:683` whether its input already carried the extended-length prefix and
+    stripping it from the result at `:713` only when it did not, while `os.readlink`
+    returns a reparse point's substitute name, which carries it. Symmetry of function is
+    not symmetry of result when the output depends on the form of the input, so the
+    negative half is refused rather than guessed.
+
+    Every string fix for that is a list of spellings -- the extended-length prefix, its
+    UNC form, 8.3 short names, a substituted drive, a junction, case folding -- and a
+    list is wrong the first time Windows adds one. Asking the filesystem has no list in
+    it, and saying "could not tell" when it will not answer has no list in it either.
+
+    The reason is the second element and is ``None`` for a decided verdict, so a caller
+    cannot print an explanation for an answer that needs none.
     """
     try:
-        return os.path.samefile(str(left), str(right))
-    except OSError:
-        return os.path.abspath(str(left)) == os.path.abspath(str(right))
+        return os.path.samefile(str(left), str(right)), None
+    except OSError as exc:
+        detail = _os_error_detail(exc)
+    if os.path.abspath(str(left)) == os.path.abspath(str(right)):
+        return True, None
+    return None, detail
+
+
+def same_directory(left, right):
+    """The verdict from `compare_directories` alone.
+
+    ``None`` is could-not-tell and is **not** ``False``. Callers that only ever act on
+    proof of sameness use this; callers with something to say about the third state
+    call `compare_directories` and print its reason.
+    """
+    return compare_directories(left, right)[0]
 
 
 def config_search_path(project_dir):
@@ -170,6 +231,17 @@ def config_search_path(project_dir):
     with `samefile` rather than by comparing strings. Otherwise the absolute path, no
     widening -- and the second element of the return says so, because a search that was
     not made must not be reported as a search that found nothing.
+
+    **Of the four call sites of `compare_directories`, this is the one whose third
+    state wants no message of its own** (#309), and that is a decision rather than an
+    omission. ``None`` takes the same arm as ``False`` here because the conservative
+    arm is the right one for it: widening on an unproven identity is what produced the
+    five-level search above, and the caller is already told the clone was not searched.
+    It is also the site where the third state is not reachable through the filesystem
+    -- the `is_dir()` guard directly above has already made the kernel answer for
+    `project_dir`, and `os.getcwd()` raises before this line if the current directory
+    has gone. The arm is written as ``is True`` rather than left truthy so that a later
+    verdict cannot silently widen; nothing about that needs printing.
     """
     absolute = os.path.abspath(str(Path(project_dir) / oss_config.CONFIG_NAME))
     if not Path(project_dir).is_dir():
@@ -179,7 +251,7 @@ def config_search_path(project_dir):
         # either". A sentence about a repository nobody asked about, inside a report
         # about one that does not exist.
         return absolute, False
-    if same_directory(project_dir, os.getcwd()):
+    if same_directory(project_dir, os.getcwd()) is True:
         return oss_config.CONFIG_NAME, True
     return absolute, False
 
@@ -3883,25 +3955,46 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
                 "{}".format(script_root, SESSION_CAVEAT),
             )
         )
-    elif same_directory(attested, script_root):
-        lines.append(
-            (
-                "OK",
-                "plugin copy scope: {} named {}, and that is the tree doctor.py ran "
-                "from. {}".format(attested_source, script_root, SESSION_CAVEAT),
-            )
-        )
     else:
-        lines.append(
-            (
-                "WARN",
-                "plugin copy scope: {} names {}, but doctor.py ran from {}. The tree "
-                "reported below is the one that ran; nothing establishes that the "
-                "harness resolves a command from it. {}".format(
-                    attested_source, Path(attested), script_root, SESSION_CAVEAT
-                ),
+        # Three states, not two (#309). `attested` is a path somebody typed at
+        # `--plugin-root` or exported into `CLAUDE_PLUGIN_ROOT`, so a name that is not
+        # there is the ordinary failure rather than an exotic one -- and the old
+        # comparison rendered it as the mismatch arm below, a sentence about a
+        # disagreement between two trees, one of which was never looked at. This is the
+        # call site whose third state most needs its own message: "I could not examine
+        # what you named" and "you named somewhere else" send a reader to two different
+        # places.
+        scope, why = compare_directories(attested, script_root)
+        if scope is True:
+            lines.append(
+                (
+                    "OK",
+                    "plugin copy scope: {} named {}, and that is the tree doctor.py ran "
+                    "from. {}".format(attested_source, script_root, SESSION_CAVEAT),
+                )
             )
-        )
+        elif scope is False:
+            lines.append(
+                (
+                    "WARN",
+                    "plugin copy scope: {} names {}, but doctor.py ran from {}. The tree "
+                    "reported below is the one that ran; nothing establishes that the "
+                    "harness resolves a command from it. {}".format(
+                        attested_source, Path(attested), script_root, SESSION_CAVEAT
+                    ),
+                )
+            )
+        else:
+            lines.append(
+                (
+                    "WARN",
+                    "plugin copy scope: {} names {}, and whether that is the tree "
+                    "doctor.py ran from ({}) could not be determined -- {}. The tree "
+                    "reported below is the one that ran. {}".format(
+                        attested_source, Path(attested), script_root, why, SESSION_CAVEAT
+                    ),
+                )
+            )
 
     ours, our_reason = plugin_manifest(script_root)
     theirs, their_reason = plugin_manifest(project_dir)
@@ -3956,7 +4049,8 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
         )
         return lines
 
-    if same_directory(script_root, project_dir):
+    here, why = compare_directories(script_root, project_dir)
+    if here is True:
         lines.append(
             (
                 "OK",
@@ -3966,6 +4060,24 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
             )
         )
         return lines
+    if here is None:
+        # #309's third state, at the site where it is a race rather than an ordinary
+        # input: both trees have already had a manifest read out of them by the time
+        # this line runs, so the filesystem has answered for both. It still gets a
+        # branch, because the fall-through below compares the two trees byte for byte
+        # and would report ONE tree read twice as two identical trees -- a confident
+        # "no skew" about a comparison that never had two sides. The comparison still
+        # runs; what changes is that its result is no longer read as an answer to a
+        # question this line could not decide.
+        lines.append(
+            (
+                "WARN",
+                "plugin copy: whether doctor.py answered from the checkout being "
+                "diagnosed could not be determined -- {} -- so the two trees are "
+                "compared below as though they were separate. An identical result "
+                "there may be one tree read twice.".format(why),
+            )
+        )
 
     their_files, their_unreadable = plugin_tree_digest(project_dir)
     their_identity = _tree_identity(project_dir, their_files, their_unreadable)
@@ -4115,16 +4227,35 @@ def resolve_project_dir(root, env_value, cwd):
     if root:
         chosen = Path(os.path.expanduser(str(root)))
         findings.append(("OK", "project dir: {} (--root)".format(chosen)))
-        if env_value and not same_directory(os.path.expanduser(str(env_value)), chosen):
-            findings.append(
-                (
-                    "WARN",
-                    "--root and CLAUDE_PROJECT_DIR disagree. CLAUDE_PROJECT_DIR names "
-                    "{}, --root won, and nothing below is about that other tree.".format(
-                        Path(os.path.expanduser(str(env_value)))
-                    ),
+        if env_value:
+            # Three states, not two (#309). `--root` naming a directory that is not
+            # there is an ordinary user error -- the FAIL immediately below reports
+            # exactly that -- and until #309 this line fired on the same run as well,
+            # claiming the flag and the environment named two different trees. They may
+            # name one; with neither path stat-able nothing here can tell, and a
+            # warning that fires on agreement is the noise a real disagreement gets
+            # scrolled past with.
+            agree, why = compare_directories(os.path.expanduser(str(env_value)), chosen)
+            named = Path(os.path.expanduser(str(env_value)))
+            if agree is False:
+                findings.append(
+                    (
+                        "WARN",
+                        "--root and CLAUDE_PROJECT_DIR disagree. CLAUDE_PROJECT_DIR "
+                        "names {}, --root won, and nothing below is about that other "
+                        "tree.".format(named),
+                    )
                 )
-            )
+            elif agree is None:
+                findings.append(
+                    (
+                        "WARN",
+                        "--root and CLAUDE_PROJECT_DIR could not be compared -- {} -- "
+                        "so whether they name one tree is unknown. CLAUDE_PROJECT_DIR "
+                        "names {}, --root won, and if those are two trees then nothing "
+                        "below is about the other one.".format(why, named),
+                    )
+                )
         if not chosen.is_dir():
             findings.append(
                 (
