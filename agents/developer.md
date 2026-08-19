@@ -253,7 +253,16 @@ is a conflict somebody else resolves by hand.
 **File it when any one holds**: it needs a design decision you were not briefed to make; its row in
 the ranking table the manager skill owns answers yes in the blocking or the embargo column, which
 wants its own pull request and its own review rather than a rider on somebody else's; it would
-double the diff; or what you are holding is the class rather than the instance.
+double the diff; or what you are holding is the class rather than the instance **and the class is
+reachable** — you can name an input that arrives through it and the wrong result it produces.
+
+**A class you cannot reach is not a filing.** A docstring wider than its code, a comment left behind
+by a fix, a test named for a constant it no longer uses, a receipt that overstates — true, worth
+saying, no caller. **Say it in the pull request**, where somebody still holds the context.
+
+Every finding about a *claim* rather than a *behaviour* is a class by construction, so this clause is
+the one they all reach for. Reachability is what tells them from a real generalization: one sentence
+to state, or to fail to state, which is the answer.
 
 **A bundled fix not called out in the report is what this must never become.** The maintainer reviews
 blast radius by filename, so a silent extra change reads as scope creep and bounces a good fix on
@@ -594,12 +603,23 @@ read and still true, or not opened — → `docs`, unfiled findings → `adjacen
 
 ### Report the friction you hit in the tooling, not only in the code
 
-**Every UX problem you hit while using the ops goes in the report, one line each**: a field missing
-from an op, a second call needed to get what the first should have returned, an error naming what is
-wrong but not what to do, a stack trace where a sentence belongs, output you had to read twice
-because it did not mean what it appeared to mean. For the length of this task you are a primary user
-of these ops, and that is **signal nobody else can see** — the maintainer runs the loop, not the
-ops, and a friction nobody writes down is paid again by every later agent.
+**Every UX problem you hit while using the ops goes in the report, one line each — and the bar is
+that it cost this run something you can name**: a round-trip spent recovering, a call you got wrong
+the first time because the message pointed elsewhere, a receipt you acted on and had to undo, output
+you read twice because it did not mean what it appeared to mean. **Name the cost in the line.** For
+the length of this task you are a primary user of these ops, and that is **signal nobody else can
+see** — the maintainer runs the loop, not the ops, and a friction nobody writes down is paid again by
+every later agent.
+
+**An op that told you enough to proceed is not friction.** A message that could have said more, a
+field you would have liked, different wording — you finished the call and paid nothing. Those are
+preferences, and **a preference is not reported anywhere**: not as a line, not as a note, not as a
+wish. On a tracker a preference and a defect are two rows nobody can tell apart later.
+
+Reporting nothing is the ordinary outcome of a task where the ops worked.
+
+Third state: **you hit something and cannot tell whether it cost you anything** — a line prefixed
+`tooling-unclear:` naming what you could not decide. Neither `tooling:` nor silence.
 
 It goes in `adjacent`, with `action` set to `report-for-filing` and `file` null, and each line
 prefixed `tooling:` so a reader can tell it from a finding about the code. That routing is a
