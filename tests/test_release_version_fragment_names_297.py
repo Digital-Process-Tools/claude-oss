@@ -220,6 +220,30 @@ def test_two_causes_at_once_are_both_named_and_attributed(tmp_path):
     assert "compatibility line" in payload["reason"], payload["reason"]
 
 
+def test_the_reason_builder_says_so_rather_than_raising_on_an_empty_list():
+    """Unreachable from `compute`, which guards the call with `if scan["unreadable"]`.
+    A helper whose failure mode on an empty list is `IndexError` is one refactor away
+    from being the release gate's own traceback, and a traceback is the one receipt
+    this rule must never produce -- it names no number *and* no cause. Found by the
+    reviewer on this diff.
+    """
+    reason = release_version._unreadable_reason([])
+
+    assert "no entries" in reason, reason
+    assert "would not read" not in reason, reason
+
+
+def test_the_reason_builder_still_names_a_real_cause():
+    """The must-fire beside it: without this, the assertion above is satisfied by a
+    builder that answers `no entries` to everything."""
+    reason = release_version._unreadable_reason(
+        [("1.improved.md", release_version.CAUSE_SECTION)]
+    )
+
+    assert "section outside the six" in reason, reason
+    assert "no entries" not in reason, reason
+
+
 def test_a_clean_directory_carries_no_causes(tmp_path):
     """The must-fire control for the two above: nothing unreadable, nothing named."""
     root = _repo(tmp_path)

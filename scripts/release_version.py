@@ -396,7 +396,19 @@ def _unreadable_reason(unreadable):
 
     An unrecognised cause is named as such rather than dropped. A bucket that
     quietly loses an entry it cannot describe is the same failure one layer down.
+
+    An empty list is answered rather than raised on. `compute` guards the call, so
+    this arm is unreachable from there today -- but the one receipt this rule must
+    never produce is a traceback, which names no number *and* no cause, and a helper
+    that reaches an `IndexError` on an empty list is one refactor away from being it.
     """
+    if not unreadable:
+        return (
+            "no entries were recorded as unreadable, so there is no cause to name -- "
+            "this reason line was built from an empty list and says so rather than "
+            "claiming a fragment failed"
+        )
+
     known = dict(CAUSE_TEXT)
     seen = []
     for _name, cause in unreadable:
