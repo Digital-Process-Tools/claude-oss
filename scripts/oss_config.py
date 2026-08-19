@@ -540,8 +540,27 @@ DEFAULT_FRAGMENTS_DIR = "changelog.d"
 OWNED_CHANGELOG_WORKFLOW = ".github/workflows/oss-changelog.yml"
 
 
+# The `--dir` argument `scaffold.CHANGELOG_WORKFLOW` writes on every line that invokes
+# the assembler, always single-quoted -- see `render_owned` in scaffold.py. A hand-edited
+# workflow might not quote it the same way, so double quotes and a bare token are also
+# read: what matters is the value the CI leg actually gates on, not policing how it is
+# spelled.
+GATE_DIR_RE = re.compile(r"--dir\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))")
+
+
+def _gate_directories(text):
+    """Every distinct `--dir` value named in a generated changelog workflow's text."""
+    values = set()
+    for match in GATE_DIR_RE.finditer(text):
+        value = match.group(1) or match.group(2) or match.group(3)
+        if value:
+            values.add(value)
+    return values
+
+
 def scaffolded_changelog_gate(repo_root):
-    """(state, detail) for whether THIS repo's own scaffolded gate is on disk (#299).
+    """(state, detail) for whether THIS repo's own scaffolded gate is on disk, and which
+    directory it polices (#299, #325).
 
     `changelog_dir: null` is ambiguous on its own: it means "never adopted fragments"
     for a hand-maintained repo, and it also means "adopted through scaffold.py's
@@ -554,17 +573,31 @@ def scaffolded_changelog_gate(repo_root):
     `could-not-decide` state exists to avoid.
 
     "present" answers only the ownership question: our workflow, at the one path a
-    forge will read it from. It says nothing about whether `changelog.d/` itself
+    forge will read it from, and it polices `DEFAULT_FRAGMENTS_DIR` -- either because no
+    `--dir` line was found (an older or hand-trimmed workflow) or because every `--dir`
+    line names the default explicitly. It says nothing about whether that directory
     exists or holds anything -- callers that need fragments still have to look.
 
-    Three states, and "unknown" must never render as either of the others: a wrong
+    "present-other-dir" is #325: scaffold does not always pick `DEFAULT_FRAGMENTS_DIR`
+    -- it writes a gate policing `fragments_dir(config)`, which is the *named*
+    `changelog_dir` when one was set at the time `/oss:scaffold --apply` ran. A repo
+    scaffolded with `changelog_dir: "docs/frags"` whose key is later nulled -- legal,
+    `changelog_dir` is in `NULLABLE_KEYS`, and `.oss.json` is tracked so it arrives by
+    ordinary contribution -- still carries a gate policing `docs/frags`, and `present`
+    alone cannot say that. `detail` for this state IS the directory read out of the
+    workflow, a relative path string, not a message.
+
+    Four states, and "unknown" must never render as either "present" reading: a wrong
     "absent" here costs a caller its existing loud refusal, unchanged from before this
-    function existed; a wrong "present" would pick a directory nobody named, which is
-    the one failure this exists to prevent. So an unreadable path is reported as
-    "unknown" rather than folded into "absent" -- `os.stat` and its exact exception,
-    never `Path.is_file()`, which swallows every `OSError` and answers `False` for a
-    directory that exists and cannot be entered (the `doctor.py` trap this repo's own
-    `CLAUDE.md` names).
+    function existed; a wrong "present" or "present-other-dir" would pick a directory
+    nobody confirmed, which is the one failure this exists to prevent. So an unreadable
+    path is reported as "unknown" rather than folded into "absent" -- `os.stat` and its
+    exact exception, never `Path.is_file()`, which swallows every `OSError` and answers
+    `False` for a directory that exists and cannot be entered (the `doctor.py` trap this
+    repo's own `CLAUDE.md` names). The same "unknown" covers a workflow this process can
+    stat but not read, and one whose `--dir` lines disagree with each other -- a
+    hand-edit leaves no single directory to trust, so this refuses exactly like an
+    unreadable path rather than guessing between the two nobody confirmed.
     """
     path = Path(repo_root) / OWNED_CHANGELOG_WORKFLOW
     try:
@@ -573,9 +606,24 @@ def scaffolded_changelog_gate(repo_root):
         return "absent", ""
     except OSError as exc:
         return "unknown", "{} could not be read: {}".format(path, type(exc).__name__)
-    if stat.S_ISREG(mode):
+    if not stat.S_ISREG(mode):
+        return "absent", "{} exists but is not a regular file".format(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return "unknown", "{} could not be read: {}".format(path, type(exc).__name__)
+    directories = _gate_directories(text)
+    if not directories:
         return "present", ""
-    return "absent", "{} exists but is not a regular file".format(path)
+    if len(directories) > 1:
+        return "unknown", (
+            "{} names more than one --dir value ({}); which fragments this gate "
+            "polices could not be determined".format(path, ", ".join(sorted(directories)))
+        )
+    named = next(iter(directories))
+    if named == DEFAULT_FRAGMENTS_DIR:
+        return "present", ""
+    return "present-other-dir", named
 
 
 # The second value in this file that becomes shell source, and it arrives by the same
