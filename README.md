@@ -188,6 +188,12 @@ list, selecting by extension or by shebang so an extensionless script is covered
 adds it. It exits non-zero when it matches nothing, so an empty selection fails the leg instead of
 linting no files and passing.
 
+That leg installs nothing. `shellcheck` ships in the `ubuntu-latest` runner image, and fetching it
+anyway put a package-mirror round trip inside the job's `timeout-minutes`, which is what took the leg
+— and with it every pull request — down for a day (#303). If the binary is ever missing the step says
+so and exits `4`, rather than collecting one `command not found` per file into the same status a real
+finding uses.
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial
