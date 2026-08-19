@@ -57,15 +57,17 @@ def _plugin_root(tmp_path, content=b"# the running install\n", version="9.9.9"):
 
 
 def _path_entry(tmp_path, name, content):
-    """One directory on PATH holding a file called ``oss-workspace``, made
-    executable so a POSIX `shutil.which` will actually resolve it -- Windows does
-    not gate on the execute bit, so `os.chmod` there is a no-op rather than a lie.
+    """One directory on PATH holding a file called ``oss-workspace``.
+
+    Not made executable: `doctor._locate_on_path` does not gate on the execute
+    bit, deliberately -- see `test_a_non_executable_target_is_still_resolved`,
+    which is the test that would catch a regression back to a permission-
+    filtering resolver.
     """
     directory = tmp_path / name
     directory.mkdir()
     target = directory / "oss-workspace"
     target.write_bytes(content)
-    os.chmod(str(target), 0o755)
     return str(directory), target
 
 
@@ -183,24 +185,50 @@ def test_own_copy_unreadable_is_unknown_not_matched_and_not_mismatched(tmp_path)
 
 
 def test_unresolved_target_is_unknown_not_matched_and_not_mismatched(tmp_path):
-    """The resolved target could not be read. Exercised through the ``resolve``
-    testing seam rather than a chmod fixture: `shutil.which` itself refuses a
-    directory candidate (`not os.path.isdir(fn)`, CPython's own guard), so a real
-    PATH search can never hand this state a directory to fail on -- the seam is
-    what makes the branch reachable at all."""
+    """The resolved target could not be read. Exercised through a REAL PATH
+    entry rather than the ``resolve`` testing seam: `doctor._locate_on_path`
+    uses `os.path.lexists`, which is true for a directory too (unlike
+    `shutil.which`, which refuses a directory candidate outright), so a
+    directory named `oss-workspace` sitting on PATH is a real, reachable way
+    to land here -- `_locate_on_path` finds it, and `Path(resolved).read_bytes()`
+    then fails on it with `IsADirectoryError`."""
     plugin_root = _plugin_root(tmp_path)
-    a_directory = tmp_path / "not-a-file"
-    a_directory.mkdir()
+    directory = tmp_path / "on-path-a-directory"
+    directory.mkdir()
+    (directory / "oss-workspace").mkdir()
 
     state, detail = doctor.oss_workspace_launcher_state(
-        plugin_root=plugin_root, resolve=lambda: str(a_directory)
+        plugin_root=plugin_root, path=str(directory)
     )
     assert state == "unresolved-target", (state, detail)
 
-    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, resolve=lambda: str(a_directory))
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(directory))
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
     assert "unknown" in message.lower(), message
+
+
+def test_a_non_executable_target_is_still_resolved(tmp_path):
+    """PATH resolution must not filter on properties irrelevant to a content
+    comparison. `shutil.which`'s default `mode` requires `os.X_OK`, so a target
+    that exists with the right bytes but lacks the execute bit was previously
+    invisible to it -- this is the POSIX-observable proxy for the same class of
+    bug the Windows PATHEXT case is (#329): `shutil.which` filters candidates by
+    a property ("is this launchable") that has nothing to do with "does this
+    file exist and what does it contain", which is the only question this check
+    actually has. Without this fix, PATH resolution here silently degrades to
+    `not-resolvable` for a launcher that is genuinely present."""
+    plugin_root = _plugin_root(tmp_path, content=b"same bytes\n")
+    directory = tmp_path / "on-path-no-exec"
+    directory.mkdir()
+    target = directory / "oss-workspace"
+    target.write_bytes(b"same bytes\n")
+    os.chmod(str(target), 0o644)  # deliberately NOT executable
+
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=str(directory)
+    )
+    assert state == "matched", (state, detail)
 
 
 def test_version_segment_parses_the_documented_cache_shape():

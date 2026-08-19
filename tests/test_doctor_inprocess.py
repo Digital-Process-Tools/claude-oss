@@ -678,7 +678,7 @@ def _oss_workspace_launcher_matched(monkeypatch):
     monkeypatch.setattr(
         doctor,
         "oss_workspace_launcher_state",
-        lambda plugin_root=None, path=None, resolve=None: ("matched", "<the plugin's copy>"),
+        lambda plugin_root=None, path=None: ("matched", "<the plugin's copy>"),
     )
 
 

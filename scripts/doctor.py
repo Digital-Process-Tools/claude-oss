@@ -658,7 +658,49 @@ def _oss_workspace_version_segment(path):
     return parts[-3]
 
 
-def oss_workspace_launcher_state(plugin_root=None, path=None, resolve=None):
+def _locate_on_path(name, path=None):
+    """The first PATH entry naming exactly `name`, or `None`.
+
+    Deliberately not `shutil.which`, which answers a different question --
+    "can this be launched" -- and filters candidates on properties that are
+    irrelevant here and actively wrong for the one shape this check is always
+    looking for:
+
+    * **On Windows**, `shutil.which`'s own source (`files = [cmd + ext for ext
+      in pathext]`, with the bare `cmd` inserted only when `cmd` already ends
+      in one of those extensions) never makes an extensionless name a
+      candidate at all. `oss-workspace` is extensionless by design -- it is a
+      POSIX shell script, run through Git Bash on Windows the same way
+      `scripts/doctor.sh` and every other launcher this plugin ships is (see
+      the trap in this repo's own CLAUDE.md) -- so `shutil.which("oss-
+      workspace")` on native Windows Python returns `None` unconditionally,
+      regardless of whether the symlink this launcher's own install line
+      creates is present and correct. #329: every one of five tests collapsed
+      to `not-resolvable` on all four Windows CI legs, and this is why --
+      not a labeling gap in `_oss_workspace_version_segment`, which was the
+      wrong mechanism named in the self-review that first looked at this.
+    * **On POSIX**, `shutil.which`'s default `mode` additionally requires
+      `os.X_OK`, so a copy that exists with the right bytes but lacks the
+      execute bit -- irrelevant to a content comparison -- is invisible to it
+      too (observed on this machine;
+      `test_a_non_executable_target_is_still_resolved`).
+
+    This check only ever needs one answer -- does a file or symlink named
+    exactly `name` exist here, so its bytes can be read -- and asks that
+    directly, which is also platform-independent by construction: no
+    extension list, no execute bit, just `os.path.lexists` per PATH entry.
+    """
+    search = path if path is not None else os.environ.get("PATH", "")
+    for entry in search.split(os.pathsep):
+        if not entry:
+            continue
+        candidate = os.path.join(entry, name)
+        if os.path.lexists(candidate):
+            return candidate
+    return None
+
+
+def oss_workspace_launcher_state(plugin_root=None, path=None):
     """Which state PATH's `oss-workspace` is in, relative to THIS running install.
 
     Returns ``(state, detail)``. Five states, and the choice of which four are
@@ -687,16 +729,16 @@ def oss_workspace_launcher_state(plugin_root=None, path=None, resolve=None):
     cheap, human-readable half of the answer -- just not the half anything is
     decided from.
 
-    ``resolve``, when given, replaces the PATH lookup outright (used by tests to
-    reach the two "could not read" branches: `shutil.which` itself refuses a
-    directory candidate, so a real PATH search can never hand those branches
-    anything to fail on). Production code leaves it `None` and gets
-    `shutil.which("oss-workspace", path=path)`.
+    `entry` comes from `_locate_on_path("oss-workspace", path=path)`, never
+    `shutil.which` -- see that function's docstring for why (#329). Every
+    branch below is reachable through `path` alone with an ordinary PATH-entry
+    fixture: `_locate_on_path` uses `os.path.lexists`, which is also true for
+    a directory, so `unresolved-target` needs no separate testing seam either.
     """
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
     own = plugin_root / "bin" / "oss-workspace"
 
-    entry = resolve() if resolve is not None else shutil.which("oss-workspace", path=path)
+    entry = _locate_on_path("oss-workspace", path=path)
     if entry is None:
         return "not-resolvable", ""
     resolved = os.path.realpath(entry)
@@ -722,16 +764,14 @@ def oss_workspace_launcher_state(plugin_root=None, path=None, resolve=None):
     return "mismatched", (resolved, their_version, our_version)
 
 
-def check_oss_workspace_launcher(plugin_root=None, path=None, resolve=None):
+def check_oss_workspace_launcher(plugin_root=None, path=None):
     """One line, in every state. The remedy line names THIS install's own path
     (`plugin_root`, which defaults to `PLUGIN_ROOT` -- this script's own resolved
     location) rather than `$PWD`, so it is correct regardless of where the reader is
     standing (#288)."""
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
     remedy = 'ln -sf "{}" ~/.local/bin/oss-workspace'.format(plugin_root / "bin" / "oss-workspace")
-    state, detail = oss_workspace_launcher_state(
-        plugin_root=plugin_root, path=path, resolve=resolve
-    )
+    state, detail = oss_workspace_launcher_state(plugin_root=plugin_root, path=path)
     if state == "matched":
         report(
             "OK",
