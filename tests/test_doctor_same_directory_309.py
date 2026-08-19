@@ -16,6 +16,19 @@ each silence below sits in the same fixture as a firing.
 spelling has not tested the thing it names, so it skips carrying the platform, the
 error and what went untested -- rather than asserting against a table of error codes,
 which cannot report a value it does not contain.
+
+**Which of these were red before the fix, said here rather than left to be
+re-derived.** Seven were. Four were already green against the two-state comparison and
+are locks rather than assertions about #309, which is worth writing down because a file
+whose name is an issue number is read as coverage of that issue:
+`test_an_identical_spelling_of_an_absent_directory_is_still_same` and
+`test_two_spellings_of_the_attested_plugin_root_agree_once_it_exists` are the
+must-not-regress halves -- the answers the old code got right, and the ones a fix that
+answered "could not tell" to everything would break;
+`test_the_helper_never_raises_on_a_path_a_user_can_type` locks doctor's exit-0 contract
+against a future edit to the comparison rather than against this one; and
+`test_config_search_path_does_not_widen_on_an_undecided_verdict` passed before only
+because `None` is falsy, which is the accident it exists to stop depending on.
 """
 
 import json
