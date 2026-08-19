@@ -495,9 +495,10 @@ Pushing and opening is yours, and it is one read plus one call:
    body has carried a correction to the brief that a re-narration had flattened out.
 3. **Hand the payload path to `gh-pr-create:@FILE`.** Not `gh pr create`, and not a body of your own
    assembled from the report. The op parses the body's closing references with the same reader
-   `gh-pr` uses, so a missing or malformed `Closes #N` is caught at creation instead of after the
-   squash — when the issue quietly stays open and the board reads clean. That is the failure the
-   merge gates already warn about, moved to the earliest point anything can see it.
+   `gh-pr` uses, so a missing or malformed `Closes #N` is **surfaced** at creation instead of after
+   the squash — when the issue quietly stays open and the board reads clean. **Surfaced, not caught:
+   the pull request is opened and the op exits 0**, printing *No closing keyword in the body, so
+   merging this will close nothing.* Reading that line is yours. See below.
 
 **Four fields arrive filled in, and they are not yours to retype.** The payload requires `title`,
 `body`, `head` and `base`; `schemas/agent-report.schema.json` also defines `draft` and `labels` as
@@ -621,7 +622,16 @@ truncates a long body and an appended section sits at the end, so the cheap read
 that cannot see what it was called to confirm.
 
 **The op also closes the composition that made this worse than a broken command.** `gh-pr-create`
-refuses a body with no `Closes #N` at creation, the earliest point anything can see it. When the
+**reports** a body with no `Closes #N` at creation, the earliest point anything can see it — and
+**reporting is all it does: the pull request is created and the op exits 0.** This document said
+*refuses* until #209, which is the more expensive error of the two, because the sentence that claims
+a guarantee is the sentence that stops anyone checking. Measured on two pull requests in one night,
+both created at `exit=0` with no binding closing reference and repaired by hand before merge; four of
+seven agent payloads across two sessions carried the same defect. **So read the receipt** — it names
+the issues the body links, and *No closing keyword in the body, so merging this will close nothing.*
+is the line that means nobody will. A separate check does refuse: the report validator rejects a
+`pr_body` whose declared `closes` is unmet. That is the payload being validated before it is used,
+not the forge call being blocked, and the two must not be read as one gate. When the
 repair *is* that reference, a silent no-op merges the pull request with the issue still open and the
 board reading clean — the exact failure the merge gates warn about, reached through the tool that was
 supposed to prevent it. `gh-pr-edit` re-parses the published body with the same reader `gh-pr` uses

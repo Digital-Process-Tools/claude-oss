@@ -3912,3 +3912,200 @@ def test_a_gate_that_restates_the_doctrine_is_reported():
     assert _gate_three_unmet(restating) == {
         "the-stop-doctrine-is-restated-here-instead-of-pointed-at"
     }
+
+
+# --------------------------- a claimed guarantee the dependency does not give (#209)
+#
+# Folded into this diff rather than filed, because it is the same failure one
+# subject over: a written contract that does not match the measured one. The
+# skill said `gh-pr-create` **refuses** a body with no `Closes #N`. It reports
+# and exits 0 -- measured on two pull requests in one night, both created with
+# no binding closing reference and repaired by hand before merge, and four of
+# seven agent payloads across two sessions carried the defect the sentence
+# claimed was impossible.
+#
+# The overstatement is the expensive half. A document that promises a gate is
+# the document that stops anyone reading the receipt, so the false sentence
+# suppressed the very check that would have caught it -- and the sentence is in
+# the file that teaches this loop what it may rely on.
+#
+# The anchor is on the *verb* rather than on the whole claim, because the claim
+# will be reworded and the verb is the part that was wrong. `refuse` near
+# `gh-pr-create` is a finding; `report` plus the exit status is what a true
+# sentence has to carry.
+
+GUARANTEE_DOCUMENT = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+
+#: The op, and the subject that makes a mention of it a claim about the check.
+#: Naming the op while talking about something else entirely -- the payload
+#: fields, the four hand-rolled calls it replaces -- is not a claim about
+#: closing references and is not this check's business.
+#: Matched on the opening backtick and the name, with no closing backtick
+#: required. The first version required one, and the softer of the two claims is
+#: written `gh-pr-create:@FILE` -- so the check read one of the two copies and
+#: reported the document clean for the other, which is this repository's own
+#: defect class inside the check written to catch an instance of it.
+_CREATE_OP_RE = re.compile(r"`gh-pr-create\b")
+_CLOSING_SUBJECT_RE = re.compile(r"closes #n|closing reference|closing keyword")
+
+def _prose_units(text):
+    """The blocks a claim can live in: a table row alone, a paragraph otherwise.
+
+    A row is its own unit because rows sit on adjacent lines with no blank line
+    between them, so a paragraph-level split puts the row naming `gh-pr-create`
+    and the row naming `gh-pr-edit` -- which genuinely *does* refuse a dropped
+    `Closes #N` -- into one span, and the check then reads one row's claim off
+    its neighbour's. Measured: a fixed-radius window did exactly that and
+    reported the corrected document as still making the false claim.
+
+    Lines are joined with a space rather than a newline because every consumer
+    collapses whitespace anyway, and the two are indistinguishable downstream.
+    """
+    units = []
+    paragraph = []
+
+    def flush():
+        if paragraph:
+            units.append(" ".join(paragraph))
+            del paragraph[:]
+
+    for line in text.splitlines():
+        if line.lstrip().startswith("|"):
+            flush()
+            units.append(line)
+        elif line.strip():
+            paragraph.append(line)
+        else:
+            flush()
+    flush()
+    return units
+
+
+def _claim_windows(text):
+    """Every unit of `text` that makes a claim about the create op's check.
+
+    Scoping is the whole point, and the first version of this check got it wrong
+    twice. Anchored on the document, `reports` and `exits 0` were already
+    satisfied somewhere in a 1247-line file by prose with nothing to do with
+    this op, so two of the three anchors were green before a word was written.
+    Anchored on a fixed radius, a table row inherited its neighbour's subject.
+    The unit is what makes all three anchors able to fail and able to be right.
+    """
+    claims = []
+    for unit in _prose_units(text):
+        collapsed = _collapse(unit)
+        if _CREATE_OP_RE.search(collapsed) and _CLOSING_SUBJECT_RE.search(collapsed.lower()):
+            claims.append(collapsed)
+    return claims
+
+
+#: The claim that was false. Bounded to one sentence's worth of words in either
+#: direction so `gh-pr-edit`, which genuinely does refuse two lines below the
+#: corrected paragraph, is not swept in.
+_CREATE_REFUSES_RE = re.compile(
+    r"`gh-pr-create`(?:\W+\w+){0,25}\W+refuses?\b"
+    r"|refuses?\b(?:\W+\w+){0,25}\W+`gh-pr-create`"
+)
+
+#: What a true sentence carries instead: the op reports, exits 0, and reading
+#: the receipt is therefore the caller's job.
+_CREATE_REPORTS_ANCHORS = (
+    ("the-op-is-not-said-to-report-rather-than-refuse", r"\breports?\b|\bsurfaced?\b"),
+    ("the-exit-status-that-makes-it-not-a-gate-is-not-named", r"exits 0|exit=0"),
+    ("nothing-tells-the-caller-to-read-the-receipt", r"read(?:ing)? (?:that line|the receipt)"),
+)
+
+
+def _claimed_guarantee_unmet(text):
+    """Findings about how a document describes `gh-pr-create`'s closing check.
+
+    Conditional on a claim being made at all: a document that never names the
+    op, or names it on another subject, claims nothing here and demanding the
+    correction of it would be noise. Every claim window is judged separately and
+    the findings unioned, so a second, uncorrected copy elsewhere in the same
+    file cannot hide behind a corrected first one.
+    """
+    unmet = set()
+    for window in _claim_windows(text):
+        lowered = window.lower()
+        unmet.update(
+            key for key, pattern in _CREATE_REPORTS_ANCHORS
+            if not re.search(pattern, lowered)
+        )
+        if _CREATE_REFUSES_RE.search(lowered):
+            unmet.add("the-op-is-said-to-refuse-a-body-it-only-reports-on")
+    return unmet
+
+
+def test_no_document_claims_the_create_op_refuses_an_unlinked_body():
+    findings = {
+        path.relative_to(REPO_ROOT).as_posix(): sorted(
+            _claimed_guarantee_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in EXECUTABLE_PROSE
+        if _claimed_guarantee_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document claims `gh-pr-create` refuses a body with no closing "
+        "reference. It reports and exits 0, and the claimed guarantee is what "
+        "stops anyone reading the receipt (#209): {}".format(findings)
+    )
+
+
+def test_the_document_that_makes_the_claim_still_makes_it():
+    """Vacuity guard. The predicate is conditional on a claim window being
+    found, so a rename or a reworded subject line would report every document
+    clean while the claim itself went unread. Two windows are expected: the
+    numbered step that hands over the payload, and the paragraph that describes
+    what the op does with it.
+    """
+    windows = _claim_windows(GUARANTEE_DOCUMENT.read_text(encoding="utf-8"))
+    assert len(windows) >= 2, (
+        "the manager skill makes two claims about this check -- the numbered "
+        "step that hands over the payload and the paragraph describing what the "
+        "op does with it -- and fewer than two are in range, so the check is "
+        "vacuous for the ones it missed: {}".format(len(windows))
+    )
+
+
+#: The sentence as skills/manager/SKILL.md carried it before #209, verbatim.
+PRE_209_CLAIMED_GUARANTEE = """
+**The op also closes the composition that made this worse than a broken command.** `gh-pr-create`
+refuses a body with no `Closes #N` at creation, the earliest point anything can see it. When the
+repair *is* that reference, a silent no-op merges the pull request with the issue still open and the
+board reading clean.
+"""
+
+
+def test_the_guarantee_check_fires_on_the_pre_209_sentence():
+    assert _claimed_guarantee_unmet(PRE_209_CLAIMED_GUARANTEE) == {
+        "the-op-is-said-to-refuse-a-body-it-only-reports-on",
+        "the-op-is-not-said-to-report-rather-than-refuse",
+        "the-exit-status-that-makes-it-not-a-gate-is-not-named",
+        "nothing-tells-the-caller-to-read-the-receipt",
+    }
+
+
+def test_a_neighbouring_op_that_does_refuse_is_not_swept_in():
+    """`gh-pr-edit` genuinely refuses, and says so two lines from the corrected
+    sentence. A whole-document `refuses` test would call that a finding, and the
+    fix for a false finding is deleting a true sentence.
+    """
+    both = (
+        "`gh-pr-create` reports a body with no closing reference and exits 0, so read the "
+        "receipt. Paragraphs later, on a different subject entirely, with more than enough "
+        "words in between to clear the window, and then some further filler so the bound is "
+        "genuinely exceeded rather than only nearly so: `gh-pr-edit` re-parses the published "
+        "body and refuses when a reference was dropped."
+    )
+    assert _claimed_guarantee_unmet(both) == set()
+
+    # Must-fire, same fixture: the same refusal claim moved next to the create op.
+    adjacent = both.replace("`gh-pr-edit` re-parses", "`gh-pr-create` re-parses")
+    assert "the-op-is-said-to-refuse-a-body-it-only-reports-on" in _claimed_guarantee_unmet(
+        adjacent
+    )
+
+
+def test_prose_that_never_names_the_op_is_not_reported():
+    assert _claimed_guarantee_unmet("Push the branch, then open the pull request.") == set()
