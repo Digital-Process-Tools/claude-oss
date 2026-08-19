@@ -1025,9 +1025,9 @@ Gates, each a call and not a feeling:
      failed had the class been present, and it did not — or `clean (read)`, a look with no control
      behind it, which must never be weighed as the measured grade above. The verdict line carries
      `<k> of <m> classes read but not exercised`, and a nonzero count does not stop the tag by
-     itself: it annotates, the same way the checklist skew a few paragraphs up annotates rather than
-     blocks. A `read` grade never outweighs a reproduction, from any source — a second completion, a
-     contributor, you.
+     itself: it annotates rather than blocks — demanding a fired control for every class on every
+     delta buys more words rather than a better audit. A `read` grade never outweighs a reproduction,
+     from any source — a second completion, a contributor, you.
    - **The attribution.** The gate mints a dispatch token before the spawn and the auditor echoes it
      back. **unattributed** — no token, a mismatched one, or `dispatch token: none reached me` —
      does not clear the gate and is not discarded: read its findings and reconcile them, because in
