@@ -572,7 +572,7 @@ def test_main_still_exits_zero_with_one_verdict_and_prints_the_new_lines(
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_NAME", raising=False)
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
 
     assert doctor.main(["--root", str(tmp_path)]) == 0
     out = capsys.readouterr().out
@@ -587,7 +587,7 @@ def test_a_plugin_root_that_does_not_exist_still_produces_both_lines(tmp_path, c
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
 
     assert doctor.main(["--root", str(tmp_path), "--plugin-root", str(tmp_path / "nope")]) == 0
     out = capsys.readouterr().out

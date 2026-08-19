@@ -465,7 +465,7 @@ def test_a_root_that_is_a_directory_but_not_a_repo_warns(tmp_path):
 
 
 def test_check_tool_warns_when_absent(monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
     doctor.check_tool("nonexistent-tool", ["nonexistent-tool", "--version"])
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -476,7 +476,7 @@ def test_check_tool_warns_when_present_but_failing(monkeypatch):
     """Present-and-broken is its own state. Reporting it as absent would send someone
     to install a tool they already have.
     """
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/bin/false")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: "/bin/false")
     doctor.check_tool("git", [sys.executable, "-c", "import sys; sys.exit(3)"])
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -487,7 +487,7 @@ def test_check_tool_warns_when_the_probe_cannot_spawn(monkeypatch):
     """An unspawnable binary must reach the tool-failed arm, not raise. This is the
     cross-platform shape: Windows raises where POSIX would have run something.
     """
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/definitely/not/here")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: "/definitely/not/here")
     doctor.check_tool("git", ["/definitely/not/here", "--version"])
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -495,7 +495,7 @@ def test_check_tool_warns_when_the_probe_cannot_spawn(monkeypatch):
 
 
 def test_check_tool_reports_ok_on_a_zero_exit(monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
     doctor.check_tool("python", [sys.executable, "-c", "pass"])
     assert doctor.FINDINGS[-1][0] == "OK"
 
@@ -543,7 +543,7 @@ def test_check_tool_survives_a_banner_this_locale_cannot_decode(monkeypatch, tmp
     # that structural rather than argued. A suite that finds a real tool where its
     # fixture should have been has run something nobody asked for.
     monkeypatch.setenv("PATH", str(tmp_path))
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
 
     emit_bad = [
         sys.executable,
@@ -578,7 +578,7 @@ def test_check_tool_survives_a_banner_this_locale_cannot_decode(monkeypatch, tmp
 def test_main_returns_zero_and_ends_on_a_verdict(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
     assert doctor.main() == 0
     assert capsys.readouterr().out.rstrip().splitlines()[-1].startswith("VERDICT:")
 
@@ -667,6 +667,21 @@ def _entry_point_linked(monkeypatch):
     )
 
 
+def _oss_workspace_launcher_matched(monkeypatch):
+    """PATH's `oss-workspace` matching the running install (#289).
+
+    Stubbed at the state boundary like `_entry_point_linked`, for the same reason:
+    no repository fixture can put a real `~/.local/bin` symlink on this machine's
+    actual PATH, so asserting it here would be asserting that this developer's
+    machine happens to have the launcher linked and current.
+    """
+    monkeypatch.setattr(
+        doctor,
+        "oss_workspace_launcher_state",
+        lambda plugin_root=None, path=None, resolve=None: ("matched", "<the plugin's copy>"),
+    )
+
+
 def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys):
     # A workflow actually runs the test command, and the config carries no leftover
     # `ci` block. Both are states the doctor warns about -- tests configured with
@@ -680,6 +695,7 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     )
     _dependencies_current(monkeypatch)
     _entry_point_linked(monkeypatch)
+    _oss_workspace_launcher_matched(monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
     # `plugin copy scope` is a WARN whenever nothing named the root this invocation
@@ -687,7 +703,7 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # could not establish which copy answered. A clean verdict therefore needs the
     # invocation to name one, which is exactly what `/oss:doctor` now passes (#262).
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(doctor.PLUGIN_ROOT))
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: sys.executable)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
     doctor.main()
     assert "VERDICT: ok" in capsys.readouterr().out
