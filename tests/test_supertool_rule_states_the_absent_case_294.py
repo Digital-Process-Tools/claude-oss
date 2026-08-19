@@ -39,10 +39,20 @@ import oss_rules  # noqa: E402
 
 RULE = "supertool-required.md"
 
-#: The one command the rule hands the reader so they can tell the two situations apart.
-#: The rule cannot run it; that is the point. Written once here rather than spelled into
-#: each assertion, so a change to the command is one edit and not a hunt.
-DISCRIMINATOR = "supertool 'ops'"
+#: The commands the rule hands the reader so they can tell the situations apart. The rule
+#: cannot run them; that is the point. Written once here rather than spelled into each
+#: assertion, so a change to them is one edit and not a hunt.
+#:
+#: **Both spellings, and that is the finding rather than a detail.** The first draft named
+#: only the bare `supertool`, which is a different question from the one this plugin asks
+#: everywhere else -- #285 is filed about exactly that conflation, and `doctor.py`'s
+#: `check_supertool_entry_point` reports the repo-local `./supertool` separately for the
+#: same reason. `./supertool` is gitignored and created per clone by supertool's own
+#: session-start hook, so *binary installed, entry point absent* is a real and common
+#: state, and a rule that answered it with "supertool is not installed" would be the #294
+#: defect re-committed one question over: a confident answer to the question next door.
+ENTRY_POINT_PROBE = "./supertool 'ops'"
+PATH_PROBE = "supertool 'ops'"
 
 #: The claim #294 retracts. Kept as an anchor so re-adding it goes red rather than quiet:
 #: it renders as reassurance and is false for the only reader who needs this rule to speak.
@@ -73,19 +83,46 @@ def test_the_rule_no_longer_asserts_that_the_binary_must_be_present():
     )
 
 
-def test_the_rule_hands_the_reader_a_command_that_tells_the_two_situations_apart():
+def test_the_rule_hands_the_reader_commands_that_tell_the_situations_apart():
     body = _body()
-    assert DISCRIMINATOR in body, (
+    assert PATH_PROBE in body, (
         "the rule names no command a reader can run to find out whether supertool is "
-        "installed. It fires identically whether it is or not and cannot probe, so the "
+        "reachable. It fires identically whether it is or not and cannot probe, so the "
         "discriminator has to be handed to the reader (#294)."
     )
     assert "not installed" in body, (
         "the rule never says in as many words that supertool may simply not be here"
     )
-    assert "install" in body, (
+    assert "marketplace" in body, (
         "the rule names no route to getting supertool, for a reader who has never heard "
-        "of it"
+        "of it. Anchored on `marketplace` rather than on `install`, which is a substring "
+        "of the `not installed` asserted just above -- that assertion could not fail "
+        "while this one passed, so it pinned nothing."
+    )
+
+
+def test_the_rule_keeps_a_missing_entry_point_apart_from_a_missing_binary():
+    """The third outcome, and the one a first draft of this fix collapsed.
+
+    `./supertool` is gitignored and written per clone by supertool's own session-start
+    hook, so a developer with the plugin installed and no session yet started in this
+    clone has the binary and not the entry point. Answering that with "supertool is not
+    installed" sends them to reinstall something that is already there -- #294's own
+    defect, one question to the left. `doctor.check_supertool_entry_point` keeps the two
+    apart for the same reason (#285); this rule now does too.
+    """
+    body = _body()
+    assert ENTRY_POINT_PROBE in body, (
+        "the rule probes only the binary on PATH, so it cannot see a clone whose "
+        "gitignored ./supertool has not been created yet"
+    )
+    assert "gitignored" in body, (
+        "the rule does not say why ./supertool is absent from a fresh clone, so its "
+        "absence reads as a broken installation rather than as the designed state"
+    )
+    assert "Nothing is missing from your installation" in body, (
+        "the rule does not tell the entry-point reader that their installation is fine, "
+        "which is the whole difference between that outcome and the one below it"
     )
 
 
@@ -198,8 +235,11 @@ def test_the_refusal_a_reader_receives_carries_the_discriminator(tmp_path):
     if problem is not None:
         pytest.skip("the hook did not answer, so nothing was measured: {}".format(problem))
     assert RULE in refused, "the rule did not fire at all against {}".format(version)
-    assert DISCRIMINATOR in refused, (
-        "the refusal delivered to the reader does not carry the command that tells them "
-        "whether supertool is installed. Whatever the rule file says, this is the only "
-        "text they see (#294). Got: {!r}".format(refused[:400])
-    )
+    for probe in (ENTRY_POINT_PROBE, PATH_PROBE):
+        assert probe in refused, (
+            "the refusal delivered to the reader does not carry {!r}, one of the two "
+            "commands that tell them whether supertool is reachable. Whatever the rule "
+            "file says, this is the only text they see (#294). Got: {!r}".format(
+                probe, refused[:400]
+            )
+        )

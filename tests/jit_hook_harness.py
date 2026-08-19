@@ -80,6 +80,17 @@ def drive(bash, hook, project, payload):
 
     Neither is the hook saying "no rule matched". Collapsing either into `""` would let a
     `SENTINEL not in output` assertion pass on a run that measured nothing.
+
+    **`encoding` is pinned and it is not decoration.** Text mode with no `encoding` decodes
+    the child's output with `locale.getpreferredencoding(False)` -- cp1252 on a typical
+    Windows runner -- under `errors="strict"`. A byte the console codepage has no character
+    for then raises `UnicodeDecodeError` *inside* `subprocess.run`, and that is neither an
+    `OSError` nor a `SubprocessError`, so it would sail past the `except` below and crash
+    the test rather than arriving as a `problem`. That is this module's own contract broken
+    by the one line the contract does not cover, on the platform nobody re-reads. The hook
+    writes UTF-8; `errors="replace"` means a byte that is somehow not UTF-8 still comes back
+    as an answer that fails an assertion, rather than as an exception that reads like a bug
+    in the harness.
     """
     try:
         done = subprocess.run(
@@ -89,6 +100,8 @@ def drive(bash, hook, project, payload):
             stderr=subprocess.PIPE,
             env=child_env(project),
             universal_newlines=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
     except (OSError, subprocess.SubprocessError) as exc:

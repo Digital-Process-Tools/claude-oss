@@ -152,7 +152,13 @@ def test_the_record_no_longer_says_an_agent_rule_cannot_fire():
     # know the capability is version-gated. An anchor broad enough to catch the history
     # would push the record back towards asserting one version's truth unconditionally,
     # which is the shape #307 was filed about.
-    for retracted in ("cannot fire", "cannot be built", "never once fires"):
+    # The third anchor carries its full stop deliberately. The retracted sentence ended
+    # `and never once fire.`, singular; the replacement's history paragraph says `never
+    # once fired.`. Without the stop the anchor either misses the sentence it is named
+    # after (`never once fires`, which was never in the file) or catches the correct
+    # past tense (`never once fire` is a prefix of `fired`) -- a dead arm in the first
+    # case, a false positive in the second, and neither is visible from the test name.
+    for retracted in ("cannot fire", "cannot be built", "never once fire."):
         assert retracted not in body, (
             "the record still claims an Agent rule {!r}. The dependency reads "
             "subagent_type as of 0.5.0 and such a rule fires -- measured in this file "
