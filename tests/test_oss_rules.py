@@ -544,6 +544,44 @@ def test_the_committed_layer_in_this_repo_names_a_path_that_is_here():
     )
 
 
+def test_the_committed_tools_layer_in_this_repo_is_the_current_rendering():
+    """The same staleness question one dimension over, where nothing was asking it.
+
+    The check above covers `paths/changelog-fragments.md` alone, because that rule is the
+    one with per-repo substitution in it. The tools rules have none -- they render from
+    constants -- which is exactly what made them *easy* to leave stale: every generator
+    test stays green while the committed copy, which is what this repository's own hook
+    actually reads, keeps serving the previous text. #294 and #307 both rewrote a tools
+    rule, and refreshing the committed copy was a manual step that happened to get done.
+
+    Compared as a whole dimension rather than file by file, so a rule added to `rules()`
+    and never written out is caught by the same assertion as one whose text moved.
+    """
+    layer = REPO_ROOT / ".claude" / "jit-context" / "tools" / oss_rules.LAYER
+    current = oss_rules.RULES["tools"]
+    committed = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted(layer.glob("*.md"))
+    }
+    assert committed == current, (
+        "the committed tools layer is not what oss_rules would write today -- rerun "
+        "/oss:scaffold, or scripts/scaffold.py --apply. Names here but not generated: "
+        "{}. Generated but not here: {}. Same name, different text: {}.".format(
+            sorted(set(committed) - set(current)),
+            sorted(set(current) - set(committed)),
+            sorted(n for n in set(committed) & set(current) if committed[n] != current[n]),
+        )
+    )
+
+    # The index beside them, held separately: the bodies can be current while the index
+    # is a rebuild behind, and a row is what decides whether a rule is consulted at all.
+    index = (layer / oss_rules.INDEX).read_text(encoding="utf-8")
+    expected = "\n".join(oss_rules.index_rows("tools", current)) + "\n"
+    assert index == expected, (
+        "the committed tools index is not what index_rows() produces for these rules"
+    )
+
+
 def test_the_fragment_default_matches_the_scaffold_that_creates_the_directory():
     """Two spellings of one default drift, and the rule then matches a directory the
     scaffold never made -- a rule that cannot fire, which is this repo's named defect.

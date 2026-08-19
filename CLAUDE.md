@@ -398,6 +398,15 @@ and invisible from outside.
   and exits before the layer loop. A `tool: Agent` rule would index cleanly, diagnose healthy and
   never fire — which is why #144 ships a recorded gap in `00-README.md` instead of a rule. Ask what
   a dimension can *see*, not only whether it is read.
+  **Superseded by #307 — every sentence above this line is now false, and the general lesson in
+  the last one is not.** `claude-jit-context` 0.5.0 reads `subagent_type` as a fifth subject key,
+  so the hook does not exit, a `tool: Agent` rule does fire, and `00-README.md` records a design
+  decision rather than a gap. Measured on the branch for #307, not reasoned. **This marker is not
+  the re-derivation**: the numbers in this section are re-measured at the release and nothing here
+  pre-empts that. It is here because the alternative was shipping a tag whose `CLAUDE.md` asserts,
+  under the highest authority in this repository, the exact sentence the same release describes as
+  a false statement it stopped writing into other people's repos. Strike the bullet when this
+  section is next re-derived.
 - **CI settles what a local run cannot** — reasoned, not re-observed. Two entries in the traps list
   above were written after a green macOS suite and a red matrix on the same commit. This section
   read them; it did not re-run them.
