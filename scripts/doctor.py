@@ -579,6 +579,44 @@ def _safe_is_file(path):
         return False
 
 
+def _safe_is_dir(path):
+    """``path.is_dir()``, swallowed to ``False`` the same way `_safe_is_file`
+    swallows -- for callers that only ever *filter* a list and have nowhere
+    to put a third answer. One bad candidate must not wipe every candidate
+    already found: `is_dir()` raising mid-comprehension used to propagate to
+    an outer `except OSError` that discarded the whole list, readable
+    entries included (#363).
+    """
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _dir_state(path):
+    """Three answers for "is this a directory", not `_safe_is_dir`'s two --
+    for callers that print a verdict rather than just filter a list.
+
+    ``is_dir()`` on a mode-000 *target* still succeeds: `stat` needs execute
+    permission on the *parent*, not on the target (#363, confirmed against
+    #341's own reproduction, which never reaches this case for exactly that
+    reason). So the case this exists for is an unreadable *parent* of
+    ``path``, where `is_dir()` itself raises `OSError` on at least this
+    repo's own 3.9, 3.11 and 3.13 -- see `_safe_is_file` for the measurement,
+    which is the same shape one call over. Swallowing that raise to `False`,
+    `_safe_is_dir`'s job elsewhere, would report a directory that may well be
+    there as a confident "does not exist" with a remedy attached -- the exact
+    sentence #341 was filed about, one call site over. So callers that print
+    a verdict get a third answer instead: ``"dir"``, ``"absent"``, or
+    ``"unreadable"`` with the exception's own text as detail, never asserted
+    from an errno table.
+    """
+    try:
+        return ("dir", "") if path.is_dir() else ("absent", "")
+    except OSError as exc:
+        return "unreadable", _one_line(str(exc))
+
+
 def _own_supertool_tree(project_dir):
     """The checkout this directory is inside, as ``(root, core)``, or ``(None, None)``.
 
@@ -1248,10 +1286,20 @@ def check_directory(label, value, config_found=True):
         report("WARN", "{}: not set in config; cannot check it".format(label))
         return
     path = Path(os.path.expanduser(str(value)))
-    if path.is_dir():
+    state, detail = _dir_state(path)
+    if state == "dir":
         report("OK", "{}: {}".format(label, path))
-    else:
+    elif state == "absent":
         report("WARN", "{}: {} does not exist".format(label, path))
+    else:
+        # #363: an unreadable *parent* of `path` must not read as a confident
+        # "does not exist" with a remedy telling the reader to create
+        # something that may already be there.
+        report(
+            "WARN",
+            "{}: {} could not be checked -- {} -- so whether it exists is "
+            "unknown, not confirmed absent.".format(label, path, detail),
+        )
 
 
 NO_STATE_MODULE = (
@@ -1589,7 +1637,15 @@ def merge_permission_state(project_dir, home=None):
     allowed = []
     denied = []
     for path in settings_candidates(project_dir, home=home):
-        if not path.exists():
+        try:
+            found_here = path.exists()
+        except OSError:
+            # #363: an unreadable candidate must land in the `unknown` bucket
+            # this function already has, not be silently skipped as though
+            # it were simply not there.
+            unreadable.append(str(path))
+            continue
+        if not found_here:
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -2545,7 +2601,18 @@ def check_jit_rules(project_dir):
     unchecked, not a false imperative about the whole layer.
     """
     rules_dir = Path(project_dir) / JIT_RULES_DIR
-    if not rules_dir.is_dir():
+    state, detail = _dir_state(rules_dir)
+    if state == "unreadable":
+        # #363: same class as `check_directory` -- an unreadable parent must
+        # not read as the confident "no rules for this repo" a genuine
+        # absence gets.
+        report(
+            "WARN",
+            "{}: could not be checked -- {} -- so whether this repo has "
+            "rules is unknown, not confirmed absent.".format(JIT_RULES_DIR, detail),
+        )
+        return
+    if state == "absent":
         report(
             "WARN",
             "{}: no rules for this repo. Project conventions are not being injected; "
@@ -3502,7 +3569,12 @@ def jit_hook_roots(record=None, cache_root=None):
                 for candidate in sorted(
                     cache.glob("*/{}/{}".format(JIT_PLUGIN, version))
                 )
-                if candidate.is_dir()
+                # #363: `_safe_is_dir`, not a bare `.is_dir()` -- one
+                # unreadable candidate raising here used to propagate out of
+                # the whole comprehension and be caught by the `except
+                # OSError` below, discarding every candidate already found,
+                # readable ones included.
+                if _safe_is_dir(candidate)
             ]
         except OSError:
             roots = []
@@ -3773,7 +3845,10 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         dimensions = sorted(
             path.parent.name
             for path in Path(project_dir).joinpath(JIT_RULES_DIR).glob("*/" + layer)
-            if path.is_dir()
+            # #363: `_safe_is_dir`, not a bare `.is_dir()` -- same reason as
+            # `jit_hook_roots`'s glob filter: one unreadable candidate must
+            # not wipe every dimension already found.
+            if _safe_is_dir(path)
         )
     except OSError as exc:
         return (
@@ -4872,7 +4947,25 @@ def resolve_project_dir(root, env_value, cwd):
                         "below is about the other one.".format(why, named),
                     )
                 )
-        if not chosen.is_dir():
+        # #363: this is the entry point where the third state is
+        # ESTABLISHED, not merely consumed -- `_dir_state` here rather than a
+        # bare `.is_dir()`. #341's own reproduction never reaches this line:
+        # `is_dir()` on a mode-000 *target* succeeds, since `stat` needs
+        # execute permission on the parent, not the target. The scenario
+        # here is an unreadable *parent* of `--root`, which is a different,
+        # adjacent case -- and reporting it as `FAIL: not a directory` would
+        # tell a maintainer to create a tree that may already be there.
+        state, detail = _dir_state(chosen)
+        if state == "unreadable":
+            findings.append(
+                (
+                    "WARN",
+                    "--root {}: could not be checked -- {} -- so whether it is a "
+                    "directory is unknown, not confirmed absent. Checks below that "
+                    "depend on it report themselves unmeasured.".format(chosen, detail),
+                )
+            )
+        elif state == "absent":
             findings.append(
                 (
                     "FAIL",
@@ -4880,17 +4973,31 @@ def resolve_project_dir(root, env_value, cwd):
                     "diagnose. Every check below reports itself unmeasured.".format(chosen),
                 )
             )
-        elif not (chosen / ".git").exists():
+        else:
             # `.git` is a file in a worktree and a directory in a clone, so this asks
             # whether it exists rather than what kind of thing it is.
-            findings.append(
-                (
-                    "WARN",
-                    "--root {}: no .git here, so this is not a git repository or its "
-                    "checkout is elsewhere. Findings below may not be about the tree "
-                    "you meant.".format(chosen),
+            try:
+                git_here = (chosen / ".git").exists()
+            except OSError as exc:
+                findings.append(
+                    (
+                        "WARN",
+                        "--root {}: whether .git is here could not be checked -- {} -- "
+                        "so whether this is a git repository is unknown.".format(
+                            chosen, _one_line(str(exc))
+                        ),
+                    )
                 )
-            )
+            else:
+                if not git_here:
+                    findings.append(
+                        (
+                            "WARN",
+                            "--root {}: no .git here, so this is not a git repository or "
+                            "its checkout is elsewhere. Findings below may not be about "
+                            "the tree you meant.".format(chosen),
+                        )
+                    )
         return chosen, findings
 
     if env_value:
