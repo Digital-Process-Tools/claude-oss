@@ -4196,6 +4196,111 @@ def test_a_document_that_states_all_three_is_not_reported():
     assert _anti_background_unmet(partial) == {"the-consequence-is-not-stated"}
 
 
+# --------------------------- three unlabelled measurements read as facts about every
+# --------------------------- repository this plugin manages, rather than this one's
+# --------------------------- own trial (#367)
+#
+# #316's own SKILL.md paragraph on the developer's default model already carries the
+# fix this section needs: "a maintainer decision, not a fact about every repository
+# this plugin manages, so the priced evidence it rests on lives in this project's own
+# history (#316) rather than repeated here as a number a different installation would
+# read as generic guidance." The same commit applied that rule to skills/manager/SKILL.md
+# and left three measurements in agents/developer.md -- the wall clock, the narration-turn
+# count and the single-op share -- exactly as bare as before, one paragraph below the
+# sentence in the same file ("Three lanes **on this repository** ...") that already shows
+# the labelled shape. This check is the composition guard: a document that states a number
+# without saying whose trial it came from.
+
+#: Each anchor is a raw measurement as it appeared pre-#367. A label -- naming this
+#: repository's own trial, or pointing at the issue the evidence lives in -- must appear
+#: within MEASUREMENT_LABEL_WINDOW characters of the match, or the number reads as a fact
+#: about every repository this plugin manages.
+MEASUREMENT_LABEL_WINDOW = 300
+
+UNLABELLED_MEASUREMENT_ANCHORS = (
+    ("wall-clock-not-scoped", r"27m36s"),
+    ("narration-turns-not-scoped", r"no tool call at all"),
+    ("single-op-share-not-scoped", r"single-op reads ran"),
+)
+
+MEASUREMENT_LABEL_PATTERN = re.compile(r"this (repository|project)'s own|#316", re.I)
+
+
+def _unlabelled_measurements(text):
+    collapsed = _collapse(text)
+    unlabelled = set()
+    for key, pattern in UNLABELLED_MEASUREMENT_ANCHORS:
+        match = re.search(pattern, collapsed, re.I)
+        if not match:
+            # The anchor itself is absent. That is a different check's job (the
+            # anti-background anchors cover 27m36s already) -- this function only
+            # grades a measurement that is actually present.
+            continue
+        window = collapsed[
+            max(0, match.start() - MEASUREMENT_LABEL_WINDOW):
+            match.end() + MEASUREMENT_LABEL_WINDOW
+        ]
+        if not MEASUREMENT_LABEL_PATTERN.search(window):
+            unlabelled.add(key)
+    return unlabelled
+
+
+def test_the_developer_definitions_measurements_are_scoped_to_this_repository():
+    text = ANTI_BACKGROUND_DOCUMENT.read_text(encoding="utf-8")
+    unlabelled = _unlabelled_measurements(text)
+    assert not unlabelled, (
+        "agents/developer.md states a measurement as a fact about every repository this "
+        "plugin manages, rather than labelling it as this project's own trial (#367): "
+        "{}".format(sorted(unlabelled))
+    )
+
+
+#: The document as it stood before #367 -- all three measurements present, none labelled.
+#: All three anchors must fire on it, or they were satisfied by the wording they replaced.
+PRE_367_MEASUREMENT_PARAGRAPH = """
+   it returns, in the same turn. **27m36s is the measured wall clock, with four lanes running
+   concurrently** -- a long time is expected, not a signal to background it.
+
+   entire context. Measured across 143 developer lanes: about nine of every twelve turns one model
+   ran beyond the other were turns making no tool call at all, most of them one line of narration.
+
+   again here because it is read once and has to hold for the length of the run: measured across the
+   same 143 lanes, single-op reads ran as high as 82% of supertool calls against a brief that asks for
+   6-7.
+"""
+
+
+def test_the_measurement_scoping_check_fires_on_the_pre_367_wording():
+    assert _unlabelled_measurements(PRE_367_MEASUREMENT_PARAGRAPH) == {
+        "wall-clock-not-scoped",
+        "narration-turns-not-scoped",
+        "single-op-share-not-scoped",
+    }
+
+
+def test_a_scoped_measurement_is_not_reported():
+    """The must-not-fire half, built up one anchor at a time so a false pass in one
+    cannot hide behind the other two happening to be present already. The filler
+    paragraph between the second and third anchor is wider than
+    MEASUREMENT_LABEL_WINDOW on both sides, so dropping the third label cannot be
+    satisfied by a label written for one of the other two."""
+    filler = " ".join(["filler"] * 80)
+    stated = (
+        "On this repository's own trial (#316), 27m36s was the measured wall clock. "
+        "Most turns one model ran beyond the other were turns making no tool call at all, "
+        "again this repository's own trial. "
+        + filler +
+        " Single-op reads ran well above what a brief asks for, again this project's "
+        "own trial (#316)."
+    )
+    assert _unlabelled_measurements(stated) == set()
+
+    # Must-fire, same fixture: drop the label on the single-op-share sentence alone and
+    # the finding comes back for that anchor only, not the other two.
+    partial = stated.replace(", again this project's own trial (#316)", "")
+    assert _unlabelled_measurements(partial) == {"single-op-share-not-scoped"}
+
+
 # --------------------------- naming lane_setup.py where hand-derivation
 # --------------------------- of the worktree list was instructed (#360)
 #
