@@ -111,6 +111,71 @@ trust: any plugin prose quoted from the running session may be text this clone n
 which is exactly how #240 was filed against a sentence removed a release earlier. Quote from the
 clone at a named sha before filing anything about this plugin's own documents.
 
+## The `interpreter architecture`, `cpu topology` and `worker sizing` lines
+
+Three lines about the machine this process is running on rather than the repository, so they
+answer on a repo that has never run `/oss:setup`. They exist because both facts were decisive
+in an incident and neither was printed anywhere (#367).
+
+**`interpreter architecture`** — three states, and the third is the point:
+
+- `OK … running natively (host architecture arm64)` — the process architecture is the host's.
+- `WARN … running under binary translation (host architecture arm64)` — Rosetta 2, or its
+  equivalent. Measured on the machine this was filed from: roughly **3x on interpreter startup
+  and 3.4x on the CPU cost of a subprocess spawn**. This loop is subprocess-shaped, so it is
+  the dominant term, and the remedy is a native `python3` rather than anything in the repo. It
+  is a performance fact, not a fault: nothing is broken and everything is slow, which is why it
+  goes unseen for months.
+- `OK … was NOT probed` — no probe is implemented for this platform, so nothing was attempted
+  and nothing will be until somebody writes one. **Do not read this as native.** `platform.machine()` cannot answer the question and neither
+  can `uname -m` from a subprocess: an emulated process is shown the *emulated* architecture and
+  so is everything it spawns, so the comparison is one number against itself. The probe used on
+  macOS is the `sysctl.proc_translated` flag, read in-process; Linux (qemu-user) and
+  Windows-on-ARM have no equivalent this script reads, so both report the gap rather than
+  clearing the machine.
+- `WARN … was NOT probed -- sysctl.proc_translated could not be read (errno N)` — a probe that
+  **does** exist here, ran, and did not answer. Same sentence, different level, and the
+  difference is the whole point.
+
+**Why those last two are two states.** They were one, reported at `WARN`, for exactly one round
+of CI. That made `VERDICT: ok` unreachable on every Linux and Windows leg forever — which does
+not add a finding, it removes a signal: a verdict that always reads `usable with gaps` can no
+longer carry a real WARN, so every genuine gap on those platforms is masked by a permanent one.
+That is this repo's own defect class pointed at the verdict line rather than at a check, and it
+is a bigger absence than the one the WARN was reporting.
+
+So a gap that is **unobservable in principle here** is named on an `OK` line and does not spend
+the warning count — the shape `agent_dispatch` already uses in this file, where whether a session
+can dispatch to an agent is unreadable by any script and is stated on the line rather than
+converted into a permanent warning. A probe that **exists and failed** keeps its `WARN`, because
+it has a cause worth chasing. Neither line ever contains the word *native*, and a test pins that.
+
+The earlier version of this paragraph said that if the standing WARN proved to be noise, the thing
+to change was the probe and not the state. **That was wrong, and CI is what showed it.** It framed
+the choice as WARN-or-silence when a third shape already existed one screen up in the same file;
+and it cannot be carried out anyway — Windows has a real probe available (`IsWow64Process2`), but
+every Linux qemu-user self-detection worth having is a heuristic that fails toward *clean*, which
+is a confident wrong answer and strictly worse than a named gap.
+
+**`cpu topology`** — the logical core count, split into performance and efficiency cores where
+the platform exposes it (macOS does; the line says so explicitly when it does not, rather than
+omitting half the sentence, which reads the same as a machine whose split nobody looked for).
+Three states of its own, and the third is separate on purpose: `OK … N logical core(s) -- P
+performance + E efficiency`; `OK … reports no performance/efficiency core split`; and `WARN …
+whether they are split … could NOT be determined`, when the `hw.nperflevels` probe ran and did
+not answer. The second and third are one sentence apart and mean opposite things — the second
+says the count below sizes against uniform cores, the third says nobody established that.
+`WARN` too when no core count could be determined at all.
+
+**`worker sizing`** — what `pytest -n auto` would request **here**, and where that number came
+from. It is a transcription of xdist's own order: `PYTEST_XDIST_AUTO_NUM_WORKERS` first, then
+psutil's *physical* core count, then `os.sched_getaffinity(0)`, then `os.cpu_count()`. Two
+things it is there to say. The cap exists and is read before any core is counted, which you
+have to know is there; and on a machine with an efficiency-core split the number exceeds the
+performance cores, while **several agents running suites concurrently each size against the
+whole machine without seeing each other** — the doctor cannot count the other agents, and does
+not pretend to. `WARN` when the count is unknown; the count is never invented as 0 or 1.
+
 ## The `watch channel` line
 
 One line, twelve states, and none of them is a claim about which pollers are running. It compares
