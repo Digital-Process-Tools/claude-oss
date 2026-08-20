@@ -10,20 +10,36 @@ Contract, and every line of it is load-bearing:
   usage and no VERDICT, and still exits 0.
 * **No colour.** Git Bash renders escapes as noise, and this output gets pasted.
 * **Never echo a value that could be a credential** -- name the key, print nothing.
-* **The tree being diagnosed does not get to write the diagnosis.** Every finding goes
-  through ``report()``, which reduces it to one printable ASCII line. The files this
-  script reads -- ``.oss.json``, ``.claude/settings.json`` -- are tracked in a managed
-  repo and a contributor writes them; unflattened, an entry in one forged the VERDICT
-  line above.
+* **The tree being diagnosed does not get to write the diagnosis.** Every finding is
+  emitted by ``report()`` or ``report_with_remedy()``, and both reduce foreign text to
+  one printable ASCII line through ``_one_line()``. The files this script reads --
+  ``.oss.json``, ``.claude/settings.json`` -- are tracked in a managed repo and a
+  contributor writes them; unflattened, an entry in one forged the VERDICT line above.
+
+  **Exactly one fragment is exempt from the ASCII fold, and nothing else is** (#376):
+  the ``remedy`` argument of ``report_with_remedy()``, a paste-ready command built from
+  ``PLUGIN_ROOT`` -- this script's own resolved install location, not text the audited
+  tree chose. Folding it would put a ``?`` (a shell glob) inside a command the reader is
+  meant to paste and run, which is #344. It still gets the newline and control-character
+  collapse of ``_one_line_keep_unicode()``, so it can neither forge a line of this
+  script's output nor rewrite what a terminal already printed, and ``_safe_print()``
+  keeps the "exit 0 always" contract when the stream cannot encode it.
+
+  This paragraph and the set of functions that call ``_emit()`` are held to each other by
+  ``tests/test_doctor_fold_contract_376.py``: a third emitter, or a contract that goes
+  back to stating the fold unconditionally, fails there.
 
 Python 3.9 compatible.
 """
 
 import argparse
+import ctypes
 import difflib
 import hashlib
+import importlib.util
 import json
 import os
+import platform
 import re
 import shutil
 import stat
@@ -444,6 +460,350 @@ def check_config(project_dir):
     else:
         report("OK", ".oss.json parsed and validated ({} keys)".format(len(config)))
     return config
+
+
+# ENOENT. Apple's own documented reading of `sysctl.proc_translated` is that the
+# sysctl being ABSENT means this system has no translation layer at all -- so it is
+# the third valid answer to the probe, not a failed probe.
+_SYSCTL_ABSENT = 2
+
+
+def _sysctl(name):
+    """One integer sysctl by name, as ``(value, errno)``. Darwin only.
+
+    ``value`` is None when the call did not produce one, and ``errno`` says why:
+    the C ``errno`` when the call itself failed, or None when ctypes could not be
+    used at all. The two are returned separately because the whole of the Rosetta
+    probe below turns on telling "this sysctl does not exist" from "the call
+    failed", and a bare None cannot.
+
+    Read in-process through ctypes rather than by spawning ``sysctl``: an emulated
+    process is shown the emulated architecture and **so is anything it spawns**, so
+    a subprocess helper inherits the very question being asked.
+    """
+    if platform.system() != "Darwin":
+        return None, None
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        value = ctypes.c_int64(0)
+        size = ctypes.c_size_t(ctypes.sizeof(value))
+        ctypes.set_errno(0)
+        rc = libc.sysctlbyname(
+            name.encode("ascii"),
+            ctypes.byref(value),
+            ctypes.byref(size),
+            None,
+            ctypes.c_size_t(0),
+        )
+    except Exception:  # pragma: no cover - a libc without this symbol, or no ctypes
+        # Deliberately broad: this is a diagnostic, and "exit 0 always, one VERDICT
+        # line" outranks any single check. An unusable ctypes returns the unknown
+        # state, which the caller renders as a WARN naming what went unprobed.
+        return None, None
+    if rc != 0:
+        return None, ctypes.get_errno()
+    # A 4-byte sysctl fills the low half of a zeroed 8-byte little-endian buffer, so
+    # the widened read is exact on both architectures macOS runs on.
+    return int(value.value), 0
+
+
+def _sysctl_int(name):
+    """The value half of `_sysctl`, for callers that do not need to tell the two
+    failure causes apart."""
+    value, _ = _sysctl(name)
+    return value
+
+
+def translation_state(system=None):
+    """Is THIS process running under binary translation? Three states (#367).
+
+    Returns ``(state, host_machine, reason)``:
+
+    * ``("native", "arm64", "")`` -- the process architecture is the host's.
+    * ``("translated", "arm64", "")`` -- Rosetta 2, or its equivalent.
+    * ``("unknown", None, "<why nobody knows>")`` -- the probe could not answer.
+
+    **`platform.machine()` cannot answer this and neither can `uname -m`**: an
+    emulated process is shown the *emulated* architecture, so a comparison between
+    the two is a comparison of one number with itself. The probe has to be one the
+    translation layer answers truthfully about the caller, which on Darwin is
+    `sysctl.proc_translated`.
+
+    No probe is implemented for Linux (qemu-user binfmt) or Windows-on-ARM, so both
+    return `unknown` **rather than `native`**. Folding them into `native` would be
+    this repository's own defect class: an emulated interpreter on either platform
+    reports the emulated architecture, and a line reading "native" would be a
+    confident wrong answer where a gap belongs.
+    """
+    system = platform.system() if system is None else system
+    if system != "Darwin":
+        return (
+            "unknown",
+            None,
+            "no translation probe is implemented for {} -- the Darwin probe is the "
+            "sysctl.proc_translated flag, and qemu-user (Linux) and Windows-on-ARM "
+            "expose no equivalent this script reads".format(_one_line(system, limit=40)),
+        )
+    translated, errno = _sysctl("sysctl.proc_translated")
+    if translated is None and errno != _SYSCTL_ABSENT:
+        return (
+            "unknown",
+            None,
+            "sysctl.proc_translated could not be read (errno {}), so this Darwin "
+            "install's translation state was not established".format(errno),
+        )
+    if translated is None:
+        translated = 0
+    host = "arm64" if _sysctl_int("hw.optional.arm64") else "x86_64"
+    return ("translated" if translated else "native", host, "")
+
+
+def interpreter_architecture(machine=None, system=None, translation=None):
+    """The architecture line, as ``[(level, message)]`` so the states are testable.
+
+    WARN on translated, because it is the finding: measured on the machine #367 was
+    filed from, roughly 3x on interpreter startup and 3.4x on the CPU cost of a
+    subprocess spawn. WARN again on `unknown`, because a check that could not look
+    must not render as a check that looked and found nothing -- and the line
+    deliberately never contains the word "native" in that state.
+    """
+    machine = platform.machine() if machine is None else machine
+    system = platform.system() if system is None else system
+    if translation is None:
+        translation = translation_state(system)
+    state, host, reason = translation
+    machine = _one_line(machine, limit=40) or "unrecognised"
+    version = "python {}.{}.{}".format(*sys.version_info[:3])
+    if state == "translated":
+        return [
+            (
+                "WARN",
+                "interpreter architecture: {}, {} build running under binary "
+                "translation (host architecture {}) -- measured ~3x on interpreter "
+                "startup and ~3.4x on the CPU cost of a subprocess spawn (#367), and "
+                "this loop is subprocess-shaped. A native {} python3 removes the "
+                "tax.".format(version, machine, host, host),
+            )
+        ]
+    if state == "native":
+        return [
+            (
+                "OK",
+                "interpreter architecture: {}, {} build running natively (host "
+                "architecture {})".format(version, machine, host),
+            )
+        ]
+    return [
+        (
+            "WARN",
+            "interpreter architecture: {}, reporting itself as a {} build; whether it "
+            "is running under binary translation was NOT probed -- {}. An emulated "
+            "interpreter reports "
+            "the emulated architecture, so the name above is not evidence either "
+            "way.".format(version, machine, _one_line(reason, limit=400)),
+        )
+    ]
+
+
+def cpu_topology(system=None):
+    """``(logical, performance, efficiency)``, with None where nothing said.
+
+    macOS exposes the split through `hw.nperflevels` and `hw.perflevelN.logicalcpu`,
+    level 0 being the fastest. Nothing else this script runs on exposes it in a shape
+    worth guessing at, so the two halves come back None and the caller says the split
+    is absent rather than omitting the clause -- an omitted clause reads exactly like
+    a machine whose split nobody looked for.
+
+    Only a two-level machine reports a split. A hypothetical third performance level
+    would make `performance + efficiency` a partial count presented as a whole one.
+    """
+    system = platform.system() if system is None else system
+    logical = os.cpu_count()
+    if system != "Darwin":
+        return (logical, None, None)
+    darwin_logical = _sysctl_int("hw.logicalcpu")
+    if darwin_logical:
+        logical = darwin_logical
+    if _sysctl_int("hw.nperflevels") != 2:
+        return (logical, None, None)
+    perf = _sysctl_int("hw.perflevel0.logicalcpu")
+    eff = _sysctl_int("hw.perflevel1.logicalcpu")
+    if perf is None or eff is None:
+        return (logical, None, None)
+    return (logical, perf, eff)
+
+
+def xdist_auto_workers(env=None, physical=None, affinity=None, logical=None):
+    """What ``pytest -n auto`` would ask this machine for. ``(count, source, note)``.
+
+    A transcription of `xdist.plugin.pytest_xdist_auto_num_workers`, in its order:
+    `PYTEST_XDIST_AUTO_NUM_WORKERS` first -- it is read **before** anything is
+    counted, which is the cap #367 wants stated because you have to know it is
+    there -- then psutil's **physical** core count (`-n auto` passes
+    `logical=False`, so on an SMT machine this is half `os.cpu_count()` and a doctor
+    reporting the logical count would double the number on exactly the machines
+    where the mistake is expensive), then `os.sched_getaffinity(0)`, then
+    `os.cpu_count()`.
+
+    `count` is None with source `"unknown"` when nothing answered -- never 0 or 1. A
+    number invented here would be a confident wrong answer about the one thing the
+    reader came for.
+
+    Being a transcription it is a claim about a dependency and can go stale if xdist
+    changes; `note` carries the case where the two visibly disagree, a variable that
+    is set and is not a number, which xdist warns about and ignores.
+    """
+    env = os.environ if env is None else env
+    note = ""
+    raw = env.get("PYTEST_XDIST_AUTO_NUM_WORKERS")
+    if raw:
+        try:
+            return (
+                int(raw),
+                "PYTEST_XDIST_AUTO_NUM_WORKERS, which xdist reads before it counts "
+                "anything",
+                "",
+            )
+        except (TypeError, ValueError):
+            note = (
+                "PYTEST_XDIST_AUTO_NUM_WORKERS is set to '{}', which is not a number: "
+                "xdist warns and ignores it, so the cap is NOT in effect".format(
+                    _one_line(raw, limit=60)
+                )
+            )
+    for value, source in (
+        (physical, "psutil.cpu_count(logical=False)"),
+        (affinity, "os.sched_getaffinity(0)"),
+        (logical, "os.cpu_count()"),
+    ):
+        if value:
+            return (value, source, note)
+    return (None, "unknown", note)
+
+
+def _worker_inputs():
+    """``(physical, affinity, logical)`` as xdist would find them, None where absent.
+
+    psutil is imported under a bare `except` because it is not declared anywhere in
+    this repository -- it is present or absent in whatever environment an agent runs
+    a suite in, and a diagnostic that raised on its absence would break the one
+    contract above every check here.
+    """
+    try:
+        import psutil
+
+        physical = psutil.cpu_count(logical=False) or psutil.cpu_count()
+    except Exception:  # pragma: no cover - depends on the environment, not the code
+        physical = None
+    affinity = None
+    getaffinity = getattr(os, "sched_getaffinity", None)
+    if getaffinity is not None:
+        try:
+            affinity = len(getaffinity(0))
+        except OSError:  # pragma: no cover - the exception in hand is the answer
+            affinity = None
+    return (physical, affinity, os.cpu_count())
+
+
+def _xdist_installed():
+    """Is pytest-xdist importable in THIS interpreter? Never raises."""
+    try:
+        return importlib.util.find_spec("xdist") is not None
+    except Exception:  # pragma: no cover - a broken meta path finder
+        return False
+
+
+def worker_sizing(topology, workers, xdist_installed):
+    """The two topology/sizing lines, as ``[(level, message)]``.
+
+    Pure: everything it needs is passed in, so all three states of both inputs are
+    assertable on any platform. The probing lives in `check_interpreter_environment`.
+    """
+    logical, perf, eff = topology
+    count, source, note = workers
+    lines = []
+    if logical is None:
+        lines.append(
+            (
+                "WARN",
+                "cpu topology: the logical core count could not be determined here, so "
+                "what a worker pool sized against this machine would ask for is "
+                "unknown",
+            )
+        )
+    elif perf is not None and eff is not None:
+        lines.append(
+            (
+                "OK",
+                "cpu topology: {} logical core(s) -- {} performance + {} "
+                "efficiency".format(logical, perf, eff),
+            )
+        )
+    else:
+        lines.append(
+            (
+                "OK",
+                "cpu topology: {} logical core(s); this platform reports no "
+                "performance/efficiency core split, so the number below sizes against "
+                "all of them".format(logical),
+            )
+        )
+
+    if count is None:
+        lines.append(
+            (
+                "WARN",
+                "worker sizing: what `pytest -n auto` would request here could not be "
+                "determined -- no core count answered, so the cap that matters when "
+                "several agents each size against the whole machine cannot be "
+                "reported either{}".format(". " + note if note else ""),
+            )
+        )
+        return lines
+
+    clause = ""
+    if perf is not None and count > perf:
+        clause = (
+            " -- more than the {} performance core(s), and concurrent agents each "
+            "size against the whole machine without seeing each other".format(perf)
+        )
+    cap = ""
+    if not note and "PYTEST_XDIST_AUTO_NUM_WORKERS" not in source:
+        cap = (
+            "; PYTEST_XDIST_AUTO_NUM_WORKERS caps it and is read before any core is "
+            "counted"
+        )
+    absent = ""
+    if not xdist_installed:
+        absent = (
+            "; pytest-xdist is not installed in THIS interpreter, so nothing here "
+            "consumes that number"
+        )
+    lines.append(
+        (
+            "OK",
+            "worker sizing: `pytest -n auto` would request {} worker(s), from {}{}{}{}"
+            "{}".format(
+                count, source, clause, cap, absent, ". " + note if note else ""
+            ),
+        )
+    )
+    return lines
+
+
+def check_interpreter_environment():
+    """#367. Two facts about the environment this process runs in, both of which
+    took a morning to find once and take one line to state.
+    """
+    for level, message in interpreter_architecture():
+        report(level, message)
+    physical, affinity, logical = _worker_inputs()
+    for level, message in worker_sizing(
+        cpu_topology(),
+        xdist_auto_workers(None, physical, affinity, logical),
+        _xdist_installed(),
+    ):
+        report(level, message)
 
 
 def check_tool(name, probe):
@@ -5069,6 +5429,12 @@ def main(argv=None):
     )
 
     config = check_config(project_dir)
+
+    # #367. Above the three `check_tool` probes deliberately: each of those spawns a
+    # subprocess, and the interpreter line is the one that explains what a subprocess
+    # costs here. Needs no config -- it is a fact about this process, so it answers on
+    # a repo that has never run /oss:setup.
+    check_interpreter_environment()
 
     check_tool("gh", ["gh", "auth", "status"])
     check_tool("supertool", ["supertool", "version"])
