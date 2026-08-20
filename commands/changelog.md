@@ -22,6 +22,9 @@ import oss_config
 config = json.load(open('.oss.json'))
 named = config.get('changelog_dir')
 if isinstance(named, str) and named.strip():
+    problem = oss_config.changelog_dir_problem(named)
+    if problem:
+        print('REFUSED: ' + problem, file=sys.stderr); sys.exit(1)
     print(named)
 else:
     state, detail = oss_config.scaffolded_changelog_gate('.')
@@ -66,6 +69,14 @@ did not understand* rather than inheriting whichever arm happened to be last;
 - `unknown` — this repo's tree could not be fully read, or the workflow's own `--dir` lines disagree
   with each other. Say what stopped the read and stop, the same as a genuine "not adopted" would,
   rather than guess a directory nobody confirmed.
+
+**`changelog_dir` out of `.oss.json` is validated here too, and that is not belt and
+braces (#343).** `changelog_dir_problem` is reached from `oss_config.validate()`, which
+nothing on this path calls — so the value that reads as the *guarded* entrance arrived
+here unchecked, exactly like the one read back out of the workflow. Both were measured
+returning `/etc` with no complaint. Whichever route the directory came by, it is the one
+`--dir` argument every command below is given, and the fold at the end of them unlinks
+every fragment it consumes.
 
 Anything printed on stdout is the directory to use for every command below.
 

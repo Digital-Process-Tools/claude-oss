@@ -348,6 +348,26 @@ NO_DIRECTORY_REFUSED = (
     "cannot be used ({}). Nothing is resolved from it."
 )
 
+# And the entrance #343 was filed calling the CONTROL, which turned out not to be one
+# on this path. `changelog_dir_problem` is reached from `oss_config.validate()`;
+# `_read_config` above is a bespoke `json.loads` that never calls it, deliberately --
+# this reader answers about repositories whose config it does not otherwise police. So
+# `changelog_dir: "/etc"` reached `Path(repo) / named`, where an absolute string
+# discards `repo` entirely, with `problem=None`. Measured, not reasoned:
+#
+#     _fragment_dir('/some/repo', None, {'changelog_dir': '/etc'})
+#     -> (PosixPath('/etc'), None)
+#
+# Same value, same fold, same deletion. The rule is applied here rather than by routing
+# this reader through `validate()`, which would refuse a whole config for reasons that
+# have nothing to do with finding fragments -- a loud wrong answer in place of a quiet
+# one. Only the key that becomes this directory is checked.
+BAD_DIRECTORY = (
+    "changelog_dir names a directory that cannot be used ({}). Nothing is resolved "
+    "from it: this value becomes the fragment directory, and the fold deletes every "
+    "fragment in whatever it names."
+)
+
 # The fifth, and it exists so that a state added to `scaffolded_changelog_gate` later
 # cannot arrive here as "this repo never adopted fragments" -- a loud unknown, named.
 NO_DIRECTORY_UNRECOGNISED = (
@@ -396,6 +416,9 @@ def _fragment_dir(repo, given, config):
         return None, NO_DIRECTORY
     named = config.get("changelog_dir")
     if isinstance(named, str) and named.strip():
+        problem = oss_config.changelog_dir_problem(named)
+        if problem:
+            return None, BAD_DIRECTORY.format(problem)
         return Path(repo) / named, None
     state, detail = oss_config.scaffolded_changelog_gate(repo)
     if state == "present":

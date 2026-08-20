@@ -549,12 +549,26 @@ GATE_DIR_RE = re.compile(r"--dir\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))")
 
 
 def _gate_directories(text):
-    """Every distinct `--dir` value named in a generated changelog workflow's text."""
+    """Every distinct `--dir` value named in a generated changelog workflow's text.
+
+    An EMPTY value counts. `--dir ''` and a workflow carrying no `--dir` line at all
+    are two different facts about a repository, and this used to return them both as
+    the empty set -- so the empty spelling inherited the other one's answer, `present`,
+    and a workflow that named something inadmissible fell silently back to
+    `DEFAULT_FRAGMENTS_DIR`. No escape, but a directory nobody named, which is what
+    #299 and #325 are both about. The refusal that belongs to it is applied by the
+    caller, on the same rule as every other inadmissible value.
+
+    Which group participated is what selects the value, not which one is truthy: with
+    `or` chaining, a matched-but-empty quoted group fell through to the two groups that
+    did not participate and produced `None`, which is the same collapse one level down.
+    """
     values = set()
     for match in GATE_DIR_RE.finditer(text):
-        value = match.group(1) or match.group(2) or match.group(3)
-        if value:
-            values.add(value)
+        for value in match.groups():
+            if value is not None:
+                values.add(value)
+                break
     return values
 
 
@@ -589,12 +603,20 @@ def scaffolded_changelog_gate(repo_root):
 
     "present-refused-dir" is #343, and it is the state that says the gate was read
     perfectly well and named something inadmissible. `changelog_dir` has a validating
-    guard at the `.oss.json` entrance -- `changelog_dir_problem`, written for #173
-    because the value becomes a path and a shell argument -- and #327 opened a second
-    entrance for the same value, this one, which applied none of it. An absolute
-    `--dir` discards the repo root at `Path(repo) / detail` and a `..` chain walks out
-    of it, and the directory this function names is the one `/oss:changelog` folds,
-    which unlinks every fragment it consumes.
+    rule -- `changelog_dir_problem`, written for #173 because the value becomes a path
+    and a shell argument -- and #327 opened a second entrance for the same value, this
+    one, which applied none of it. An absolute `--dir` discards the repo root at
+    `Path(repo) / detail` and a `..` chain walks out of it, and the directory this
+    function names is the one `/oss:changelog` folds, which unlinks every fragment it
+    consumes.
+
+    Reviewing that fix turned up the sharper half: the `.oss.json` entrance, which #343
+    was filed calling the control, was not guarded either on the paths that matter.
+    `changelog_dir_problem` is reached from `validate()`, and neither
+    `release_version._read_config` nor `/oss:changelog`'s own resolver calls it -- both
+    read the key straight out of the file. Two readers now apply this rule directly, so
+    "there is a guard on this value" is a claim about a call site rather than about the
+    existence of a function.
 
     The same rule is applied here rather than a new one, for a reason narrower than
     "it already existed": this is the same key, carrying the same meaning, reaching the

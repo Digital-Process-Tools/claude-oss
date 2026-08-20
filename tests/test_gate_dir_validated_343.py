@@ -180,6 +180,83 @@ def test_the_resolver_still_resolves_every_legitimate_directory(tmp_path, label,
     assert directory == root.joinpath(*named.split("/"))
 
 
+# --- the entrance the issue called the control -------------------------------
+
+
+@pytest.mark.parametrize("label,named", HOSTILE, ids=[label for label, _ in HOSTILE])
+def test_the_config_entrance_is_guarded_on_the_path_that_actually_runs(tmp_path, label, named):
+    """Found reviewing the fix for #343, and it inverts the issue's framing.
+
+    `changelog_dir_problem` is reached from `oss_config.validate()`, and
+    `release_version._read_config` is a bespoke `json.loads` that never calls it --
+    so `changelog_dir` straight out of `.oss.json` reached `Path(repo) / named` with
+    exactly the escape the workflow entrance had. Measured before the fix:
+
+        _fragment_dir('/some/repo', None, {'changelog_dir': '/etc'})
+        -> (PosixPath('/etc'), None)
+
+    `.oss.json` is tracked, so this arrives the same way, and `/oss:changelog` prints
+    it as the directory the fold deletes every fragment in. Not one entrance guarded
+    and one not: neither, on the paths a release walks.
+    """
+    directory, problem = release_version._fragment_dir(
+        tmp_path, None, {"changelog_dir": named}
+    )
+
+    assert directory is None, (
+        "resolved {0!r} straight out of .oss.json".format(str(directory))
+    )
+    assert problem and "changelog_dir" in problem
+
+
+@pytest.mark.parametrize("label,named", BENIGN, ids=[label for label, _ in BENIGN])
+def test_the_config_entrance_still_resolves_every_legitimate_directory(tmp_path, label, named):
+    """The must-not-fire half, in the same fixture."""
+    directory, problem = release_version._fragment_dir(
+        tmp_path, None, {"changelog_dir": named}
+    )
+
+    assert problem is None
+    assert directory == tmp_path.joinpath(*named.split("/"))
+
+
+# --- an empty --dir is a value somebody named, not an absent line ------------
+
+
+@pytest.mark.parametrize("quote", ["'", chr(34)], ids=["single", "double"])
+def test_an_empty_dir_value_is_refused_rather_than_read_as_no_dir_line(tmp_path, quote):
+    """`--dir ''` and a workflow with no `--dir` line at all are two different facts.
+
+    `_gate_directories` dropped falsy values, so the first collapsed into the second
+    and the gate answered `present` -- silently falling back to `changelog.d` for a
+    workflow that named something inadmissible. No escape, but a directory nobody
+    named, which is #299 and #325's class rather than this issue's.
+    """
+    workflow = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "      - run: python3 .oss/assemble_changelog.py --check --dir {0}{0} "
+        "--changelog CHANGELOG.md\n".format(quote),
+        encoding="utf-8",
+    )
+
+    state, detail = oss_config.scaffolded_changelog_gate(tmp_path)
+
+    assert state == REFUSED, "answered {!r} for an empty --dir".format(state)
+    assert detail
+
+
+def test_a_workflow_with_no_dir_line_at_all_is_still_present(tmp_path):
+    """The must-not-fire twin. The two cases share a code path and must not share
+    an answer -- and `present` has to survive, because an older or hand-trimmed
+    workflow genuinely polices the default."""
+    workflow = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: oss changelog\n", encoding="utf-8")
+
+    assert oss_config.scaffolded_changelog_gate(tmp_path) == ("present", "")
+
+
 def test_the_resolved_directory_never_leaves_the_repository(tmp_path):
     """The property the states are a means to, asserted directly so a future state
     that forgets to refuse is still caught: whatever `_fragment_dir` resolves from a
