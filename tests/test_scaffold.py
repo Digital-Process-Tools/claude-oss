@@ -1985,6 +1985,64 @@ def test_a_config_under_a_directory_absent_here_is_still_found_in_the_clone(
     assert Path(resolved).resolve() == (clone / "configs" / oss_config.CONFIG_NAME).resolve()
 
 
+def test_one_line_defuses_an_ansi_escape_that_would_repaint_the_terminal():
+    """#228: `_one_line` folded whitespace but let a control byte through.
+
+    `str.split()` splits on whitespace only, so an ESC-led ANSI sequence -- which
+    contains none -- survived flattening intact and could repaint the surrounding
+    receipt (colour, cursor movement, erase-in-line) during interactive review,
+    without ever breaking the line-structure guarantee #204/#223 established.
+
+    Asserted on the actual rendered bytes, not on line structure: a check for
+    "no line starts with a known label" cannot see this, because the harm here
+    is what the terminal does with the bytes on one line, not a second line.
+    """
+    forged = "evil\x1b[31mRED\x1b[0m.txt"
+    flattened = scaffold._one_line(forged)
+    assert "\x1b" not in flattened, (
+        "the ESC byte must not reach the receipt -- it is what lets a filename "
+        "repaint the terminal around it"
+    )
+
+    # Must-fire pair: the escape is neutralised.
+    assert "\x1b[31m" not in flattened and "\x1b[0m" not in flattened
+
+    # Must-NOT-fire pair, in the same fixture: the evidence a maintainer needs to
+    # judge a deletion is not destroyed along with the escape. A function that
+    # neutralised everything, including the filename, would also pass the
+    # assertions above -- this is what tells the two apart.
+    assert "evil" in flattened and "RED" in flattened and ".txt" in flattened
+
+
+def test_join_names_defuses_an_ansi_escape_too():
+    """`_join_names` calls `_one_line` per name -- the same defence, one caller over."""
+    names = ["plain.txt", "evil\x1b[31mRED\x1b[0m.txt"]
+    joined = scaffold._join_names(names)
+    assert "\x1b" not in joined
+    assert "plain.txt" in joined and "evil" in joined and "RED" in joined
+
+
+def test_print_row_receipt_bytes_carry_no_escape_byte(capsys):
+    """The actual printed bytes of a receipt row, not a claim about the function.
+
+    `_print_row` is what a maintainer's terminal receives. Asserting on its
+    captured stdout, rather than only on `_one_line`'s return value, is the
+    difference between "the function is safe" and "the receipt is safe" --
+    the issue's own distinction between a line-structure guarantee and a
+    rendering one.
+    """
+    scaffold._print_row("radar", {"detail": "evil\x1b[31mRED\x1b[0m.txt"})
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "evil" in out and "RED" in out
+
+    # The pair: ordinary text is printed unchanged, so the assertions above are
+    # about the escape and not about `_print_row` mangling everything it touches.
+    capsys.readouterr()
+    scaffold._print_row("radar", {"detail": "ordinary-file.txt"})
+    assert capsys.readouterr().out.strip() == "radar    ordinary-file.txt"
+
+
 def test_an_absolute_config_path_is_never_widened(tmp_path, monkeypatch):
     """A path somebody typed in full is an answer, not a starting point."""
     clone, worktree = _clone_with_worktree(tmp_path)
