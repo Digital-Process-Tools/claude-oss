@@ -84,6 +84,82 @@ def _one_line(text, limit=200):
     return safe[:limit]
 
 
+def _one_line_keep_unicode(text, limit=200):
+    """Text THIS SCRIPT composed itself, reduced to one line, with the
+    newline/control-character defence `_one_line` exists for but WITHOUT its
+    ASCII-fold (#344).
+
+    `_one_line`'s docstring scopes the fold to "text from outside this
+    script" -- settings entries, config values, subprocess stderr, things
+    the audited tree chooses and could use to forge this script's own
+    output. A remedy command built from `PLUGIN_ROOT` (this script's own
+    resolved install location) is not that: it is not foreign text, so
+    folding it is not a security control, it is a `?` -- a shell glob --
+    sitting inside a command the reader is meant to paste and run. On a
+    non-ASCII install path that either fails to match or matches a
+    directory the caller never named.
+
+    The newline-collapse (`" ".join(text.split())`) is kept unconditionally:
+    a newline forging a new line of this script's own output is a real
+    hazard regardless of whose text it is. Only the character-by-character
+    ASCII restriction is dropped; everything below `chr(32)` and `chr(127)`
+    (DEL) is still folded to `?`, so a control character cannot rewrite what
+    a terminal has already printed either.
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if (ord(ch) >= 32 and ch != "\x7f") else "?" for ch in flat)
+    return safe[:limit]
+
+
+def _safe_print(line):
+    """Print `line`. Never raises, regardless of what the stream can encode.
+
+    `_one_line` keeps only printable ASCII, so its output is always encodable
+    by any stream `print()` reaches. `_one_line_keep_unicode` (#344)
+    deliberately does not make that promise -- it exists precisely to let
+    genuine non-ASCII text through -- so a caller can hand this a codepoint
+    the ACTUAL stdout stream cannot represent: a lone surrogate (what
+    `surrogateescape` produces decoding an undecodable filename byte,
+    ordinary for a non-UTF-8 path on Linux) or an otherwise valid character
+    outside a narrow console codepage (the Windows cp1252 hazard this repo's
+    own CLAUDE.md already names for every OTHER print in this codebase).
+    Either would raise `UnicodeEncodeError` out of a bare `print()`, which
+    breaks the one contract that matters more than any single check:
+    `exit 0 always, one VERDICT line`.
+
+    Three levels, each a net under the one above, because a self-review
+    round on #344 found the first version's net had a hole of its own:
+    `sys.stdout.encoding` naming a codec Python's registry does not
+    recognise (a mocked or wrapped stream) raised `LookupError` out of the
+    `.encode(encoding, ...)` fallback itself, uncaught. The final level
+    encodes as `ascii`, which is always a registered codec, so it cannot
+    raise `LookupError` and its own `print()` cannot raise
+    `UnicodeEncodeError` either -- there is nothing below `ascii` to fall
+    back to further, so this is where the defence stops.
+    """
+    try:
+        print(line)
+        return
+    except UnicodeEncodeError:
+        pass
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        safe = line.encode(encoding, errors="backslashreplace").decode(encoding, errors="replace")
+    except LookupError:
+        safe = line
+    try:
+        print(safe)
+        return
+    except UnicodeEncodeError:
+        pass
+    print(line.encode("ascii", errors="backslashreplace").decode("ascii"))
+
+
+def _emit(state, flat):
+    FINDINGS.append((state, flat))
+    _safe_print("{} {}".format(state, flat))
+
+
 def report(state, message):
     """Every finding goes through here, and so does every sanitisation.
 
@@ -100,8 +176,30 @@ def report(state, message):
     flat = _one_line(message, limit=REPORT_LIMIT + 1)
     if len(flat) > REPORT_LIMIT:
         flat = flat[: REPORT_LIMIT - 4] + " ..."
-    FINDINGS.append((state, flat))
-    print("{} {}".format(state, flat))
+    _emit(state, flat)
+
+
+def report_with_remedy(state, prose, remedy):
+    """Like `report`, for the small set of findings that embed a paste-ready
+    command naming THIS install's own resolved path (#344).
+
+    `prose` is folded exactly like `report`'s `message` -- it still fully
+    ASCII-folds, because a self-review round found the first version of this
+    function folded the WHOLE composed message through
+    `_one_line_keep_unicode`, so text embedded in `prose` at the call sites
+    (`resolved`/`detail`/`version_clause` -- `os.path.realpath()` of
+    whatever PATH resolves `oss-workspace` to, i.e. local filesystem state
+    this script did NOT compose) escaped the fold it should still get. Only
+    `remedy` -- built from `PLUGIN_ROOT`/`plugin_root`, this script's own
+    resolved install location, which is what `_one_line_keep_unicode`'s own
+    docstring scopes the exemption to -- skips the ASCII fold.
+    """
+    folded = _one_line(prose, limit=REPORT_LIMIT + 1)
+    safe_remedy = _one_line_keep_unicode(remedy, limit=REPORT_LIMIT + 1) if remedy else ""
+    flat = "{} {}".format(folded, safe_remedy).strip() if safe_remedy else folded
+    if len(flat) > REPORT_LIMIT:
+        flat = flat[: REPORT_LIMIT - 4] + " ..."
+    _emit(state, flat)
 
 
 def _manifest_version(plugin_root):
@@ -450,6 +548,37 @@ def _same_file(left, right):
         return None
 
 
+def _safe_is_file(path):
+    """``path.is_file()``, classified by the exception in hand rather than
+    trusted to pathlib's own swallow (PR #359 -- CI red on 8 of 14 legs:
+    Python 3.9/3.10/3.11 on BOTH ubuntu-latest and macos-latest, on the
+    exact input #341's fix is about).
+
+    `Path.is_file()` catches `OSError` internally, but `EACCES`/`EPERM` is
+    not in its ignored-errno set on at least 3.9, 3.11 and 3.13 (measured
+    directly, one command each, on this machine's own installs of those
+    three) -- only THIS repository's local 3.14 interpreter swallows it. The
+    unguarded `.is_file()` calls this replaces predate this PR entirely; what
+    is new is a test that actually exercises them against a real unreadable
+    directory (#341's own fixture), which is why they went red on every
+    3.9-3.11 CI leg, on both `ubuntu-latest` and `macos-latest`, and stayed
+    invisible on this machine's local run. The exact version where the
+    swallow widens is deliberately not asserted -- 3.10 and 3.12 were not
+    directly measured, and a version this repo does not itself confirm is
+    not a fact to assert as one. Relying on a stdlib swallow whose
+    ignored-errno set differs by version at all is exactly the trap this
+    repo's own CLAUDE.md already names for `Path.exists()` (#76) and for
+    `is_dir()`/`rglob()` (#124); `is_file()` is the same shape one call over.
+    So the classification is done here, explicitly, on every interpreter
+    this repo supports rather than left to whichever one happens to be
+    running.
+    """
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _own_supertool_tree(project_dir):
     """The checkout this directory is inside, as ``(root, core)``, or ``(None, None)``.
 
@@ -471,15 +600,24 @@ def _own_supertool_tree(project_dir):
     and never a verdict, which is exactly why nothing caught it -- so the resolved root
     is returned alongside and the caller displays against the root the core came from.
 
-    `is_file()` swallows `OSError`, so an unreadable directory on the way up reads as
-    "no config here" and the walk continues. That is the safe direction: the failure
-    is to *not* claim an own-tree, which costs a warning rather than a wrong silence.
+    An unreadable directory on the way up must read as "no config here" and let the
+    walk continue -- that is the safe direction, since the failure is to *not* claim
+    an own-tree, which costs a warning rather than a wrong silence. This docstring
+    used to say `is_file()` already does that by swallowing `OSError`, and that claim
+    was false (PR #359, CI red on 8 of 14 legs -- Python 3.9/3.10/3.11 on BOTH
+    `ubuntu-latest` and `macos-latest`, on the exact input #341's own fix is about).
+    See `_safe_is_file`'s own docstring for the measurement: `EACCES` is re-raised
+    on 3.9/3.11/3.13, and only this repository's local 3.14 interpreter swallows
+    it, which is this repo's own CLAUDE.md warning about the interpreter axis being
+    the easier one to miss. So the swallow is done explicitly here, on every
+    interpreter, rather than trusted to a stdlib behaviour whose ignored-errno set
+    is not pinned down across the versions CI actually runs.
     """
     directory = Path(os.path.realpath(str(project_dir)))
     while True:
-        if (directory / WATCH_CONFIG).is_file():
+        if _safe_is_file(directory / WATCH_CONFIG):
             core = directory / SUPERTOOL_CORE
-            return (directory, core) if core.is_file() else (None, None)
+            return (directory, core) if _safe_is_file(core) else (None, None)
         if directory.parent == directory:
             return None, None
         directory = directory.parent
@@ -544,7 +682,23 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     """
     link = Path(project_dir) / SUPERTOOL_ENTRY
     root, core = _own_supertool_tree(project_dir)
-    present = os.path.lexists(str(link))
+    # #341: `os.path.lexists` swallows every `OSError`, not only `ENOENT` --
+    # the third instance of the class #333/#340 already fixed once in this
+    # file's PATH walk. An unreadable PARENT of `link` (an over-long
+    # component, a mode-000 ancestor) must not read as "absent", which would
+    # print a remedy telling the reader to link a file that may already be
+    # there. It reuses the `unreadable` state already returned below for a
+    # readlink/stat failure -- `check_supertool_entry_point`'s catch-all
+    # message for that state already reads correctly here too: "so which of
+    # present/absent/wrong-target this repo is in is unknown."
+    try:
+        os.lstat(str(link))
+        present = True
+    except (FileNotFoundError, NotADirectoryError):
+        # Absence, stated by the exception itself -- nothing is asked twice.
+        present = False
+    except OSError as exc:
+        return "unreadable", str(exc.strerror or exc.__class__.__name__)
 
     if core is not None:
         # Displayed against the root the core was found under, not against the raw
@@ -990,11 +1144,14 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "running install's own bin/oss-workspace.".format(detail),
         )
     elif state == "not-resolvable":
-        report(
+        # #344: this message embeds `remedy`, a paste-ready command naming
+        # THIS install's own resolved path -- report_with_remedy, not
+        # report, so a non-ASCII install path is not folded to `?`.
+        report_with_remedy(
             "WARN",
             "oss-workspace launcher: not on PATH, so every developer brief this "
-            "plugin issues that calls `oss-workspace` has no route to run it. "
-            "{}".format(remedy),
+            "plugin issues that calls `oss-workspace` has no route to run it.",
+            remedy,
         )
     elif state == "path-unreadable":
         report(
@@ -1015,13 +1172,16 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "not wrong.".format(detail),
         )
     elif state == "unresolved-target":
-        report(
+        # #344: same reason as the not-resolvable arm above.
+        report_with_remedy(
             "WARN",
             "oss-workspace launcher: PATH resolves oss-workspace to {} -- so "
-            "whether it matches this running install is unknown, not wrong. "
-            "{}".format(detail, remedy),
+            "whether it matches this running install is unknown, not wrong.".format(
+                detail
+            ),
+            remedy,
         )
-    else:
+    elif state == "mismatched":
         resolved, their_version, our_version = detail
         if their_version:
             version_clause = "cache version {}".format(their_version)
@@ -1049,16 +1209,34 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
                 "no version could be read from its own manifest -- it is absent, "
                 "unparseable, or carries no version field"
             )
-        report(
+        # #344: same reason as the not-resolvable arm above.
+        report_with_remedy(
             "WARN",
             "oss-workspace launcher: SKEW -- PATH resolves oss-workspace to {} "
             "({}), whose content differs from this running install's own "
             "bin/oss-workspace ({}). A stale target that still exists "
             "behaves exactly like a current one -- one release shipped a security "
             "fix to this exact file (#324), and a symlink pinned at an older "
-            "release would silently keep running without it. {}".format(
-                resolved, version_clause, ours_clause, remedy
+            "release would silently keep running without it.".format(
+                resolved, version_clause, ours_clause
             ),
+            remedy,
+        )
+    else:
+        # #348: a state `oss_workspace_launcher_state` does not emit today.
+        # Every real state above has a named arm; this exists so a seventh
+        # state added later is REPORTED rather than reaching the `mismatched`
+        # arm's `detail` unpack blind -- which would turn `exit 0 always` into
+        # a traceback three frames from wherever the state was added. `detail`
+        # is not assumed to be any particular shape, so it is not touched.
+        report(
+            "WARN",
+            "oss-workspace launcher: unrecognised state {!r} from "
+            "oss_workspace_launcher_state -- not one of matched, "
+            "not-resolvable, path-unreadable, own-copy-unreadable, "
+            "unresolved-target, mismatched. Treat this as unknown, not "
+            "absent; this check's own code has fallen behind its "
+            "producer.".format(state),
         )
 
 

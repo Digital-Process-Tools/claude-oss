@@ -67,6 +67,14 @@ CHANGELOG_COMMAND = REPO_ROOT / "commands" / "changelog.md"
 SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "scaffold.md"
 RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
 
+# #348's producer/consumer pair. Both functions live in the same file, so
+# there is exactly one `_doc` read and one `_function_body` extraction on
+# each side -- see `producer_states`'s docstring for why this does not join
+# `GATE_STATE_CONSUMERS`.
+LAUNCHER_PRODUCER = REPO_ROOT / "scripts" / "doctor.py"
+LAUNCHER_PRODUCER_FUNCTION = "oss_workspace_launcher_state"
+LAUNCHER_CONSUMER_FUNCTION = "check_oss_workspace_launcher"
+
 # Enforced. The first two were inside #328's file set; `release_version.py` joined
 # them in #343, which is the deferral below coming good rather than being relaxed.
 #
@@ -135,14 +143,27 @@ def _function_body(text, name):
     return rest[: end.start()] if end else rest
 
 
-def producer_states(text):
-    """Every state `scaffolded_changelog_gate` can return, read off its source.
+def producer_states(text, function_name=PRODUCER_FUNCTION):
+    """Every state a producer function can return, read off its source.
 
     `return "literal"` and `return "literal", detail` both count; a `return` of
     a variable does not, and could not -- which is why the degenerate result is
     asserted against rather than trusted.
+
+    `function_name` defaults to `scaffolded_changelog_gate`, this file's
+    original subject. #348 reuses this same derivation for a second,
+    unrelated producer/consumer pair inside `scripts/doctor.py` --
+    `oss_workspace_launcher_state` and `check_oss_workspace_launcher` -- so
+    the extraction itself is parameterised rather than duplicated. The
+    census machinery below it (`tracked_paths`, `unlisted_callers`,
+    `GATE_STATE_CONSUMERS`) is deliberately NOT reused for that second pair:
+    it exists to find which files, anywhere under `commands/` or `scripts/`,
+    restate one gate's contract in prose, and #348's producer and consumer
+    are two functions in the same file -- there is no discovery problem to
+    solve, only an exhaustiveness one, which `states_unnamed_by` already
+    answers on its own.
     """
-    body = _function_body(text, PRODUCER_FUNCTION)
+    body = _function_body(text, function_name)
     return set(re.findall(r'return\s+"([a-z][a-z-]*)"', body))
 
 
@@ -613,3 +634,78 @@ def test_the_resolver_block_extraction_finds_the_calling_block_only():
     blocks = resolver_blocks(text)
     assert len(blocks) == 1
     assert "unrelated" not in blocks[0]
+
+
+# --- #348: a second, unrelated producer/consumer pair, same machinery -----
+#
+# `check_oss_workspace_launcher` fell through a bare `else` for the one state
+# (`mismatched`) it had not given a named arm, and that `else` unpacked a
+# 3-tuple unconditionally -- so a future seventh state would raise rather
+# than being reported, which is exactly the failure `test_every_enforced_
+# consumer_names_every_gate_state` above exists to catch for the OTHER
+# contract. This is the same derive-the-states check, pointed at a second
+# pair, so the next state a future change adds to
+# `oss_workspace_launcher_state` reddens this suite instead of reaching a
+# runtime unpack three frames from wherever it was added.
+
+
+def test_the_launcher_producer_declares_a_multi_state_contract():
+    """The derivation's own third state, mirrored for the second pair: if
+    this file cannot read states out of `oss_workspace_launcher_state`, the
+    exhaustiveness check below would pass vacuously.
+    """
+    text = _doc(LAUNCHER_PRODUCER)
+    try:
+        states = producer_states(text, LAUNCHER_PRODUCER_FUNCTION)
+    except LookupError as exc:
+        pytest.fail("{}: {}".format(LAUNCHER_PRODUCER, exc))
+    assert len(states) >= 2, (
+        "read only {!r} out of `def {}` in {} -- a one-state contract needs "
+        "no join, so this is far more likely to be an extraction that "
+        "stopped working than a contract that collapsed".format(
+            sorted(states), LAUNCHER_PRODUCER_FUNCTION, LAUNCHER_PRODUCER
+        )
+    )
+    assert "mismatched" in states, (
+        "the state #348 is about is gone from the producer; if it was "
+        "renamed, rename it in the consumer too"
+    )
+
+
+def test_the_launcher_consumer_names_every_producer_state():
+    """The exhaustiveness check itself. Scoped to the consumer FUNCTION's own
+    body, not the whole file -- `scripts/doctor.py`'s docstrings already
+    quote every state by name (that is how #348 was written up), so a
+    whole-file search would pass even with the bare `else` this test exists
+    to catch.
+    """
+    text = _doc(LAUNCHER_PRODUCER)
+    states = producer_states(text, LAUNCHER_PRODUCER_FUNCTION)
+    try:
+        consumer_body = _function_body(text, LAUNCHER_CONSUMER_FUNCTION)
+    except LookupError as exc:
+        pytest.fail("{}: {}".format(LAUNCHER_CONSUMER_FUNCTION, exc))
+    unnamed = states_unnamed_by(consumer_body, states)
+    assert not unnamed, (
+        "`{}` in {} has no named arm for {} -- the producer `{}` returns {}. "
+        "A state reaching an unnamed catch-all that unpacks another state's "
+        "`detail` shape raises instead of being reported, which breaks "
+        "`exit 0 always, one VERDICT line`.".format(
+            LAUNCHER_CONSUMER_FUNCTION,
+            LAUNCHER_PRODUCER.relative_to(REPO_ROOT),
+            sorted(unnamed),
+            LAUNCHER_PRODUCER_FUNCTION,
+            sorted(states),
+        )
+    )
+
+
+def test_the_launcher_consumer_check_would_fire_on_a_state_missing_its_arm():
+    """The must-fire half the check above needs a control for: without this,
+    a `states_unnamed_by` call that always returned empty would satisfy the
+    assertion above regardless of what the consumer actually names.
+    """
+    states = {"matched", "mismatched", "a-state-with-no-arm"}
+    body = 'if state == "matched":\n    pass\nelif state == "mismatched":\n    pass\n'
+    unnamed = states_unnamed_by(body, states)
+    assert unnamed == {"a-state-with-no-arm"}, unnamed
