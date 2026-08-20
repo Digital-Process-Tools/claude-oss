@@ -167,6 +167,22 @@ Skill(manager)
    such read to three. That is the price of the fix and it is deliberate: the alternative is a
    poller that was never armed, and a missing poller reports as a quiet board.
 
+   **#302 asked whether the *merged* case could skip the heal when nothing is left bare, gated on a
+   cheap read instead of the event category — measured, not reasoned, before the rule below was
+   kept.** `radar:--state` looks like that cheap read. It is not one: it renders the tier, the
+   filter and the pollers, and says outright that live coverage is "not resolved here, that would be
+   a call" — it cannot answer *N watched* against *N open*. The only op that answers that is the bare
+   `radar` heal itself. Timed back to back in this clone with nothing between the two calls (observed,
+   2026-08-20): `radar:--state` returned in 2.31s without touching coverage; `radar` returned in
+   11.46s and only then printed `1 open | 1 green | 1 watched`. A gate reading coverage before
+   deciding to heal would pay the heal's own cost to decide whether to pay it, so there is no cheaper
+   read to gate on — this route is not implementable as a saving, only as extra bookkeeping around a
+   call already made. The issue's other route, gating the merge case on `gh-pr-merge`'s own receipt,
+   needs that op to state whether a stacked follow-up exists; it does not today, so that is a filing
+   against claude-supertool and not a diff here. The rule stays *board membership changed*,
+   unconditionally, for both reasons at once — and it still errs toward running more than less, per
+   the paragraph above.
+
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call
    gated on the verified merge result, and the default branch's own run gets checked after the squash.
