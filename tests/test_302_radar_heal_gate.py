@@ -63,9 +63,58 @@ def test_step_4_rule_is_still_unconditional_on_the_event():
     was taken; the rule text itself must still say the heal covers all three cases
     unconditionally, so a later edit that quietly narrows it is caught here rather than
     only in prose nobody re-reads.
+
+    Phrase presence alone would not catch a narrowing edit that keeps every phrase and
+    inserts a qualifier next to one of them -- "merged or closed, unless radar already
+    reports full coverage" still contains "pull request merged or closed". So this also
+    asserts there is no conditional-sounding word inside the bullet that states the
+    merged-or-closed case, which is the one #302 asked to make conditional.
     """
     text = _text()
     assert "board membership changed" in text
     assert re.search(r"pull request was opened", text)
-    assert re.search(r"pull request merged or closed", text)
     assert re.search(r"default branch went red", text)
+
+    merged_bullet = re.search(
+        r"pull request merged or closed\..*?(?=\n\s*-\s+\*\*|\n\s*\n)",
+        text,
+        flags=re.DOTALL,
+    )
+    assert merged_bullet, "the merged-or-closed bullet is missing entirely"
+    conditional_words = re.findall(
+        r"\bunless\b|\bif\b|\bonly when\b|\bexcept when\b",
+        merged_bullet.group(0),
+        flags=re.IGNORECASE,
+    )
+    assert not conditional_words, (
+        "the merged-or-closed bullet now reads as conditional ({!r}) -- #302 concluded "
+        "there is no cheap gate for this case, so a rewrite that quietly narrows it here "
+        "contradicts the reasoning recorded above and needs that reasoning updated too: "
+        "{!r}".format(conditional_words, merged_bullet.group(0))
+    )
+
+
+def test_a_narrowed_rewrite_of_the_same_bullet_is_caught():
+    """Positive control for the conditional-word check above.
+
+    Without this, the check could pass by construction if the regex never actually
+    matched real prose shaped like a narrowing edit.
+    """
+    narrowed = (
+        "- **A pull request merged or closed.** Its poller is correctly reaped, and a "
+        "stacked follow-up needs its own, unless radar already reports full coverage.\n"
+        "\n"
+        "- **The next bullet.** Unrelated text follows.\n"
+    )
+    merged_bullet = re.search(
+        r"pull request merged or closed\..*?(?=\n\s*-\s+\*\*|\n\s*\n)",
+        narrowed,
+        flags=re.DOTALL,
+    )
+    assert merged_bullet
+    conditional_words = re.findall(
+        r"\bunless\b|\bif\b|\bonly when\b|\bexcept when\b",
+        merged_bullet.group(0),
+        flags=re.IGNORECASE,
+    )
+    assert conditional_words, "the check did not fire on prose shaped like a narrowing edit"
