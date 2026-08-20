@@ -554,7 +554,17 @@ def translation_state(system=None):
         )
     if translated is None:
         translated = 0
-    host = "arm64" if _sysctl_int("hw.optional.arm64") else "x86_64"
+    # The host architecture gets the same three-state care as the flag above, and
+    # for the same reason: `hw.optional.arm64` returns nothing both when the machine
+    # genuinely is not arm64 and when the call failed, so folding the second into the
+    # first prints "host architecture x86_64" about a host nobody read. `host` is
+    # None when it was not established, and the renderer says so rather than naming
+    # an architecture in a remedy the reader is meant to act on.
+    arm64_flag, arm64_errno = _sysctl("hw.optional.arm64")
+    if arm64_flag is None and arm64_errno != _SYSCTL_ABSENT:
+        host = None
+    else:
+        host = "arm64" if arm64_flag else "x86_64"
     return ("translated" if translated else "native", host, "")
 
 
@@ -574,23 +584,30 @@ def interpreter_architecture(machine=None, system=None, translation=None):
     state, host, reason = translation
     machine = _one_line(machine, limit=40) or "unrecognised"
     version = "python {}.{}.{}".format(*sys.version_info[:3])
+    host_clause = (
+        "host architecture {}".format(host)
+        if host
+        else "the host architecture could not be read from hw.optional.arm64"
+    )
     if state == "translated":
         return [
             (
                 "WARN",
                 "interpreter architecture: {}, {} build running under binary "
-                "translation (host architecture {}) -- measured ~3x on interpreter "
-                "startup and ~3.4x on the CPU cost of a subprocess spawn (#367), and "
-                "this loop is subprocess-shaped. A native {} python3 removes the "
-                "tax.".format(version, machine, host, host),
+                "translation ({}) -- measured ~3x on interpreter startup and ~3.4x on "
+                "the CPU cost of a subprocess spawn (#367), and this loop is "
+                "subprocess-shaped. A native {}python3 removes the tax.".format(
+                    version, machine, host_clause, host + " " if host else ""
+                ),
             )
         ]
     if state == "native":
         return [
             (
                 "OK",
-                "interpreter architecture: {}, {} build running natively (host "
-                "architecture {})".format(version, machine, host),
+                "interpreter architecture: {}, {} build running natively ({})".format(
+                    version, machine, host_clause
+                ),
             )
         ]
     return [
@@ -606,7 +623,7 @@ def interpreter_architecture(machine=None, system=None, translation=None):
 
 
 def cpu_topology(system=None):
-    """``(logical, performance, efficiency)``, with None where nothing said.
+    """``(logical, performance, efficiency, split_state)``, None where nothing said.
 
     macOS exposes the split through `hw.nperflevels` and `hw.perflevelN.logicalcpu`,
     level 0 being the fastest. Nothing else this script runs on exposes it in a shape
@@ -616,21 +633,34 @@ def cpu_topology(system=None):
 
     Only a two-level machine reports a split. A hypothetical third performance level
     would make `performance + efficiency` a partial count presented as a whole one.
+
+    `split_state` is `"split"`, `"none"` or `"unknown"`, and the third exists because
+    `hw.nperflevels` returning nothing means *either* "this machine has one
+    performance level" *or* "the probe failed" -- and the first version of this
+    printed "this platform reports no performance/efficiency core split" for both,
+    which tells the reader the count below is sizing against uniform cores when
+    nobody established that.
     """
     system = platform.system() if system is None else system
     logical = os.cpu_count()
     if system != "Darwin":
-        return (logical, None, None)
+        # Not `unknown`: no probe was attempted, because none exists here, and the
+        # renderer's non-Darwin sentence says exactly that. `unknown` is reserved for
+        # a probe that ran on a platform that has one and did not answer.
+        return (logical, None, None, "none")
     darwin_logical = _sysctl_int("hw.logicalcpu")
     if darwin_logical:
         logical = darwin_logical
-    if _sysctl_int("hw.nperflevels") != 2:
-        return (logical, None, None)
+    levels = _sysctl_int("hw.nperflevels")
+    if levels is None:
+        return (logical, None, None, "unknown")
+    if levels != 2:
+        return (logical, None, None, "none")
     perf = _sysctl_int("hw.perflevel0.logicalcpu")
     eff = _sysctl_int("hw.perflevel1.logicalcpu")
     if perf is None or eff is None:
-        return (logical, None, None)
-    return (logical, perf, eff)
+        return (logical, None, None, "unknown")
+    return (logical, perf, eff, "split")
 
 
 def xdist_auto_workers(env=None, physical=None, affinity=None, logical=None):
@@ -719,7 +749,7 @@ def worker_sizing(topology, workers, xdist_installed):
     Pure: everything it needs is passed in, so all three states of both inputs are
     assertable on any platform. The probing lives in `check_interpreter_environment`.
     """
-    logical, perf, eff = topology
+    logical, perf, eff, split = topology
     count, source, note = workers
     lines = []
     if logical is None:
@@ -731,12 +761,23 @@ def worker_sizing(topology, workers, xdist_installed):
                 "unknown",
             )
         )
-    elif perf is not None and eff is not None:
+    elif split == "split":
         lines.append(
             (
                 "OK",
                 "cpu topology: {} logical core(s) -- {} performance + {} "
                 "efficiency".format(logical, perf, eff),
+            )
+        )
+    elif split == "unknown":
+        lines.append(
+            (
+                "WARN",
+                "cpu topology: {} logical core(s); whether they are split into "
+                "performance and efficiency cores could NOT be determined -- the "
+                "hw.nperflevels probe did not answer, so the count below may be "
+                "sizing against cores of two different speeds without saying "
+                "so".format(logical),
             )
         )
     else:

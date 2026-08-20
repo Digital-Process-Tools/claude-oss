@@ -92,6 +92,51 @@ def test_an_unprobed_line_never_claims_native():
     assert "native" not in _text(lines).lower(), lines
 
 
+def test_an_unreadable_host_probe_is_not_rendered_as_a_host_architecture():
+    """A self-review finding. `hw.optional.arm64` returns nothing both when the
+    machine genuinely is not arm64 and when the sysctl call failed, and folding
+    the second into the first prints `host architecture x86_64` about a host
+    nobody read -- this repository's own defect class, inside the check written
+    to avoid it.
+    """
+    lines = doctor.interpreter_architecture(
+        machine="arm64", system="Darwin", translation=("native", None, "")
+    )
+    text = _text(lines)
+    assert "x86_64" not in text, text
+    assert "could not be read" in text, text
+    # Still OK, and still `native`: `sysctl.proc_translated` answered, and that
+    # is a complete answer about THIS process whatever the host turns out to be.
+    assert _levels(lines) == ["OK"], lines
+    assert "natively" in text, text
+
+
+def test_a_translated_line_with_an_unreadable_host_names_no_remedy_architecture():
+    """The must-fire pair for the case above, on the arm that carries a remedy:
+    "a native <host> python3" with no host read would name an architecture
+    nobody measured, inside a sentence telling the reader what to install.
+    """
+    lines = doctor.interpreter_architecture(
+        machine="x86_64", system="Darwin", translation=("translated", None, "")
+    )
+    text = _text(lines)
+    assert _levels(lines) == ["WARN"], lines
+    assert "could not be read" in text, text
+    assert "native None" not in text and "native  python3" not in text, text
+    assert "A native python3" in text, text
+
+
+def test_a_known_host_still_names_the_remedy_architecture():
+    """The must-not-fire control for the two above: the host, when it was read,
+    must still reach the remedy. A fix that dropped it everywhere would pass both
+    assertions above and lose the useful half.
+    """
+    lines = doctor.interpreter_architecture(
+        machine="x86_64", system="Darwin", translation=("translated", "arm64", "")
+    )
+    assert "A native arm64 python3" in _text(lines), lines
+
+
 def test_every_architecture_line_survives_the_printable_ascii_fold():
     """#376's contract, applied to #367's new lines: these go through `report()`,
     so anything they compose must already be one printable ASCII line.
@@ -189,7 +234,9 @@ def test_no_source_at_all_is_unknown_rather_than_zero():
 
 def test_the_split_is_reported_when_the_platform_exposes_it():
     lines = doctor.worker_sizing(
-        topology=(11, 5, 6), workers=(11, "psutil.cpu_count(logical=False)", ""), xdist_installed=True
+        topology=(11, 5, 6, "split"),
+        workers=(11, "psutil.cpu_count(logical=False)", ""),
+        xdist_installed=True,
     )
     text = _text(lines)
     assert _levels(lines) == ["OK", "OK"], lines
@@ -204,7 +251,9 @@ def test_no_split_degrades_to_a_plain_count_with_the_absence_named():
     same as a machine whose split nobody looked for.
     """
     lines = doctor.worker_sizing(
-        topology=(8, None, None), workers=(8, "os.cpu_count()", ""), xdist_installed=True
+        topology=(8, None, None, "none"),
+        workers=(8, "os.cpu_count()", ""),
+        xdist_installed=True,
     )
     text = _text(lines)
     assert _levels(lines) == ["OK", "OK"], lines
@@ -215,9 +264,44 @@ def test_no_split_degrades_to_a_plain_count_with_the_absence_named():
 
 def test_an_unknown_core_count_is_a_warn_on_both_lines():
     lines = doctor.worker_sizing(
-        topology=(None, None, None), workers=(None, "unknown", ""), xdist_installed=True
+        topology=(None, None, None, "unknown"),
+        workers=(None, "unknown", ""),
+        xdist_installed=True,
     )
     assert _levels(lines) == ["WARN", "WARN"], lines
+
+
+def test_an_unreadable_split_is_a_warn_distinct_from_no_split():
+    """A self-review finding. `hw.nperflevels` returning nothing means either "one
+    performance level" or "the probe failed", and the first version printed the
+    same sentence -- "this platform reports no performance/efficiency core split"
+    -- for both. The count is then sizing against cores of two different speeds
+    while claiming it is not.
+    """
+    lines = doctor.worker_sizing(
+        topology=(11, None, None, "unknown"),
+        workers=(11, "os.cpu_count()", ""),
+        xdist_installed=True,
+    )
+    assert _levels(lines) == ["WARN", "OK"], lines
+    text = _text(lines)
+    assert "could NOT be determined" in text, text
+    assert "reports no performance/efficiency core split" not in text, text
+
+
+def test_the_no_split_line_still_says_there_is_no_split():
+    """The must-not-fire control for the test above: a fix that made every
+    splitless machine say "could not be determined" would pass it and lose the
+    distinction in the other direction.
+    """
+    lines = doctor.worker_sizing(
+        topology=(8, None, None, "none"),
+        workers=(8, "os.cpu_count()", ""),
+        xdist_installed=True,
+    )
+    text = _text(lines)
+    assert "reports no performance/efficiency core split" in text, text
+    assert "could NOT be determined" not in text, text
 
 
 def test_xdist_absent_is_said_rather_than_assumed():
@@ -227,7 +311,9 @@ def test_xdist_absent_is_said_rather_than_assumed():
     that is not there.
     """
     lines = doctor.worker_sizing(
-        topology=(11, 5, 6), workers=(11, "os.cpu_count()", ""), xdist_installed=False
+        topology=(11, 5, 6, "split"),
+        workers=(11, "os.cpu_count()", ""),
+        xdist_installed=False,
     )
     text = _text(lines)
     assert "not installed" in text or "not importable" in text, text
@@ -235,7 +321,7 @@ def test_xdist_absent_is_said_rather_than_assumed():
 
 def test_an_ignored_cap_reaches_the_line():
     lines = doctor.worker_sizing(
-        topology=(11, 5, 6),
+        topology=(11, 5, 6, "split"),
         workers=(11, "psutil.cpu_count(logical=False)", "PYTEST_XDIST_AUTO_NUM_WORKERS is set to 'half', which is not a number: xdist warns and ignores it"),
         xdist_installed=True,
     )
@@ -244,9 +330,10 @@ def test_an_ignored_cap_reaches_the_line():
 
 def test_every_worker_line_survives_the_printable_ascii_fold():
     for topology, workers in (
-        ((11, 5, 6), (11, "psutil.cpu_count(logical=False)", "")),
-        ((8, None, None), (8, "os.cpu_count()", "")),
-        ((None, None, None), (None, "unknown", "")),
+        ((11, 5, 6, "split"), (11, "psutil.cpu_count(logical=False)", "")),
+        ((8, None, None, "none"), (8, "os.cpu_count()", "")),
+        ((11, None, None, "unknown"), (11, "os.cpu_count()", "")),
+        ((None, None, None, "unknown"), (None, "unknown", "")),
     ):
         for _, message in doctor.worker_sizing(topology, workers, True):
             assert doctor._one_line(message, limit=4000) == message, message
@@ -291,11 +378,13 @@ def test_translation_state_answers_on_darwin():
     assert host, (state, host, reason)
 
 
-def test_cpu_topology_returns_three_slots_on_this_platform():
+def test_cpu_topology_returns_its_four_slots_on_this_platform():
     """A weak assertion on purpose: the values are the machine's, so only the
     shape and the internal consistency can be checked anywhere.
     """
-    logical, perf, eff = doctor.cpu_topology()
+    logical, perf, eff, split = doctor.cpu_topology()
+    assert split in ("split", "none", "unknown"), split
+    assert (split == "split") == (perf is not None and eff is not None), (split, perf, eff)
     if logical is None:
         pytest.skip(
             "UNTESTED here: this platform reported no logical core count, so the "

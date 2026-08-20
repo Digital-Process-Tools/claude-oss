@@ -132,12 +132,22 @@ in an incident and neither was printed anywhere (#367).
   so is everything it spawns, so the comparison is one number against itself. The probe used on
   macOS is the `sysctl.proc_translated` flag, read in-process; Linux (qemu-user) and
   Windows-on-ARM have no equivalent this script reads, so both report the gap rather than
-  clearing the machine.
+  clearing the machine. **Consequence, weighed rather than overlooked:** on Linux and Windows
+  this is a standing `WARN` that nothing clears, so the verdict there reads `usable with gaps`
+  where it would otherwise read `ok`, and `bin/oss-workspace` relays the whole diagnostic at
+  session start rather than one line. That is the cost of the alternative being an `OK` on the
+  one platform pair nobody probed. If it proves to be noise rather than signal, the thing to
+  change is the probe — a Windows `IsWow64Process2` arm, or a Linux one — not the state.
 
 **`cpu topology`** — the logical core count, split into performance and efficiency cores where
 the platform exposes it (macOS does; the line says so explicitly when it does not, rather than
 omitting half the sentence, which reads the same as a machine whose split nobody looked for).
-`WARN` when no core count could be determined at all.
+Three states of its own, and the third is separate on purpose: `OK … N logical core(s) -- P
+performance + E efficiency`; `OK … reports no performance/efficiency core split`; and `WARN …
+whether they are split … could NOT be determined`, when the `hw.nperflevels` probe ran and did
+not answer. The second and third are one sentence apart and mean opposite things — the second
+says the count below sizes against uniform cores, the third says nobody established that.
+`WARN` too when no core count could be determined at all.
 
 **`worker sizing`** — what `pytest -n auto` would request **here**, and where that number came
 from. It is a transcription of xdist's own order: `PYTEST_XDIST_AUTO_NUM_WORKERS` first, then
