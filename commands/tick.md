@@ -171,6 +171,23 @@ Skill(manager)
    optional. In particular: the check states must sum to the leg count, cleanup is a separate call
    gated on the verified merge result, and the default branch's own run gets checked after the squash.
 
+   **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
+   commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and
+   the moment the dispatched agent does — `main` has moved mid-tick before, and a hand-copied worktree
+   list has already flattened `cannot tell` to `idle` once (#317). The brief names the script and the
+   issue number; the dispatched agent runs it as its own first call and gets the resolved base, the
+   derived branch and worktree, and the condensed board back, freshly re-derived rather than pasted:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue>
+   ```
+
+   Run from the clone, before `git worktree add` — that is where `.oss.local.json` is present and
+   `worktree_root` resolves. Three states apply throughout, same as everywhere else in this file:
+   `resolved-stale` is not `resolved`, `could-not-resolve` blocks (exit 3) rather than guessing a base,
+   and a `worktree_root` absent from this tree (as it always is inside a worktree this loop already
+   cut) reads `unknown`, never a guessed path.
+
    **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
    suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the
    op makes still applies. Settle this before the first tick rather than at the merge step, where
