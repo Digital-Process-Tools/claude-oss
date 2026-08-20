@@ -2115,8 +2115,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         No `--dir`/`--changelog` given, and no `.git` found above this script
         to derive a default from: say so, rather than composing a path out of
         a guess and failing on that instead.
+
+        An empty string is treated the same as absent, not as `Path('')` --
+        which `pathlib` reads as `.`. `--dir ''` is what a caller gets when
+        it captures a directory resolver's refusal without checking its exit
+        status (a shell `FRAGMENTS_DIR="$(...)"` with no exit-status check is
+        exactly that shape) -- present, but not a directory anyone named.
+        Falling back to the derived default here matches the existing choice
+        for a declared directory that names nothing usable: a read-only mode
+        never writes, so falling back costs a read of the wrong tree at
+        worst, and refusing here would break the read-only modes in every
+        managed repo whose caller happens to emit an empty value.
         """
-        if value is not None:
+        if value:
             return Path(value)
         if derived is None:
             _receipt("skipped",
@@ -2136,10 +2147,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         tell whether those are the same. A refusal that only reported
         something missing would turn a wrong-target write into a dead end, so
         this prints the flags and a whole invocation.
+
+        An empty string counts as missing, the same as `None`. `Path('')` is
+        `Path('.')`, so without this an empty `--dir` or `--changelog` would
+        fold the current working directory silently -- the one arm the fold
+        can least afford to guess, since it is the arm that deletes
+        fragments. This is deliberately not a check keyed to `REPO`: that
+        would also refuse this repository's own out-of-tree test fixtures
+        and any legitimate scratch-directory fold, which nothing on disk can
+        tell apart from a hostile one. Closing the empty-value gap instead
+        protects every caller, in-tree or out, without assuming anything
+        about where a legitimately-named directory lives.
         """
         missing = [flag for flag, value in (("--dir", args.directory),
                                             ("--changelog", args.changelog))
-                   if value is None]
+                   if not value]
         if not missing:
             return Path(args.changelog), Path(args.directory)
         _receipt("refused",
