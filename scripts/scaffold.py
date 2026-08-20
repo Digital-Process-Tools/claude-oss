@@ -1281,8 +1281,25 @@ def _one_line(detail):
     the repository and the reader needs it; what it must not have is a line of its own.
     ``oss_rules._inline()`` does the same job one layer over, for a Markdown code span,
     and wraps in backticks that would be noise here.
+
+    Whitespace-collapse alone (#173/#180) stops a filename from becoming a new *line*,
+    but ``str.split()`` splits on whitespace only, and a control byte like ESC (0x1b)
+    is not whitespace -- so an ANSI escape sequence survived unchanged and could
+    repaint the surrounding receipt (colour, cursor movement, erase-in-line) during
+    interactive review, without ever breaking the line-structure guarantee (#228).
+    Every sibling copy of this function -- ``release_delta.py``, ``doctor.py``,
+    ``release_publish.py``, ``release_version.py``, ``report_schema.py`` and
+    ``lane_setup.py`` -- already folds everything outside printable ASCII
+    (``32 <= ord(ch) < 127``) to ``?``, which catches ESC as a side effect of catching
+    non-ASCII; this copy alone lacked that fold. Brought in line with the others rather
+    than given its own narrower control-only filter, for #205's reason: two checkers
+    answering differently about the same input is itself a defect. Folded to ``?``
+    rather than dropped, for the same "evidence, not silence" reason as the
+    whitespace-collapse above -- a filename that had bytes removed from it still shows
+    a maintainer that something was there.
     """
-    return " ".join(str(detail).split())
+    flat = " ".join(str(detail).split())
+    return "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
 
 
 def _join_names(names):
