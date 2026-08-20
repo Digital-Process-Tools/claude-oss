@@ -220,6 +220,19 @@ anyway put a package-mirror round trip inside the job's `timeout-minutes`, which
 so and exits `4`, rather than collecting one `command not found` per file into the same status a real
 finding uses.
 
+`python3 scripts/transcript_refusals.py` counts refused tool calls across this machine's own agent
+transcripts — by class (`path-escapes-cwd`, the raw-command guard, the no-cut block,
+`unavailable-here`, a jit-context block, or a residual `ERROR:`), by model (read only from each
+turn's own `message.model`, never inferred), and the batching lever #313's own last comment
+measured: runs of *consecutive* single-op read calls and the turns one batched call would have
+collapsed. Nothing about which repository or which user is hardcoded — the transcripts root is
+derived from `Path.home()` and the invoking `cwd`, or passed explicitly with `--root`. Its own
+third state is the point: a directory with no transcripts (`no-transcripts-found`) must not read
+like a directory full of transcripts that refused nothing (`measured`, `refusal_totals: {}`).
+It exists to make "does a jit-context rule for the `path-escapes-cwd` class pay for its own
+injected text" a measurement rather than an assumption — see #313 for why a rule was
+deliberately not added alongside it.
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial
