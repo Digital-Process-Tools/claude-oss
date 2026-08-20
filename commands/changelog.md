@@ -27,17 +27,37 @@ else:
     state, detail = oss_config.scaffolded_changelog_gate('.')
     if state == 'present':
         print(oss_config.DEFAULT_FRAGMENTS_DIR)
+    elif state == 'present-other-dir':
+        print(detail)
+    elif state == 'absent':
+        print('NOT-ADOPTED', file=sys.stderr); sys.exit(1)
     elif state == 'unknown':
         print('UNKNOWN: ' + detail, file=sys.stderr); sys.exit(1)
     else:
-        print('NOT-ADOPTED', file=sys.stderr); sys.exit(1)
+        print('UNKNOWN: unrecognised gate state ' + repr(state), file=sys.stderr); sys.exit(1)
 ")"
 ```
 
-`NOT-ADOPTED` on stderr — say so and stop, exactly as before #299: rolling fragments out to a repo
-is a change to that repo, which is a separate decision, not something this command does on the way
-past. `UNKNOWN` on stderr — this repo's tree could not be fully read; say what stopped the read and
-stop, the same as a genuine "not adopted" would, rather than guess a directory nobody confirmed.
+**Four states, one arm each, and a fifth arm for a state this resolver has never heard of (#328).**
+The gate grew `present-other-dir` in #325 and this resolver did not, so it fell through to
+`NOT-ADOPTED` and refused a repository whose fragments the gate had just located — a loud wrong
+answer, which is the only reason it ranks below the silent one it descends from. The trailing `else`
+exists so the next state added to `scaffolded_changelog_gate` produces a refusal that *names what it
+did not understand* rather than inheriting whichever arm happened to be last;
+`tests/test_gate_state_consumers_328.py` is what makes it a refusal somebody has to come and fix.
+
+- `present` — our gate is on disk and polices the default, so use `changelog.d/`.
+- `present-other-dir` — our gate is on disk and its own `--dir` names some other directory, because
+  that is what `changelog_dir` held when `/oss:scaffold --apply` ran and the key was nulled
+  afterwards. `detail` **is** that directory, read back out of the workflow. Use it: the point of
+  reading it back is to stop guessing, not to guess correctly by coincidence.
+- `absent` — `NOT-ADOPTED` on stderr; say so and stop, exactly as before #299. Rolling fragments out
+  to a repo is a change to that repo, a separate decision, not something this command does on the
+  way past.
+- `unknown` — this repo's tree could not be fully read, or the workflow's own `--dir` lines disagree
+  with each other. Say what stopped the read and stop, the same as a genuine "not adopted" would,
+  rather than guess a directory nobody confirmed.
+
 Anything printed on stdout is the directory to use for every command below.
 
 ## Check (default)

@@ -225,8 +225,25 @@ readers that treat null as "not adopted" — `/oss:changelog` and `scripts/relea
 whether *this* repo's own `.github/workflows/oss-changelog.yml` exists, which is the one
 signal a forge gives this plugin to claim a workflow by (subdirectories under
 `.github/workflows/` are unsupported, and a symlink there fails outright — see the `ours`
-row in the ownership table above). Present, and null falls back to `changelog.d/` exactly as
-this command does; absent, and null still means what it always meant.
+row in the ownership table above).
+
+It answers in **four** states, not two (#325, #328), and "present or absent" stopped being the
+contract the moment scaffold could write a gate policing something other than the default:
+
+- `present` — our gate is on disk and its own `--dir` names `changelog.d/`, so null falls back to
+  `changelog.d/` exactly as this command does.
+- `present-other-dir` — our gate is on disk and polices some **other** directory, because that is
+  what `changelog_dir` held at the moment `--apply` ran and the key was nulled afterwards, which is
+  legal and arrives by ordinary contribution. The directory to use is the one read back out of the
+  workflow's own `--dir`, not the default.
+- `absent` — null still means what it always meant.
+- `unknown` — the workflow could not be read, or its `--dir` lines disagree with each other. Every
+  reader refuses and says why, rather than picking a directory nobody confirmed.
+
+Every document that restates this contract is listed in
+`tests/test_gate_state_consumers_328.py`, which derives the state list from the function itself and
+fails when a consumer has no arm for one of them — because #325 added the fourth state to two
+documents of four, and neither of the other two failed while it was wrong.
 
 That README is a default like any other: created once when absent, never overwritten, and
 previewable before it is written with
