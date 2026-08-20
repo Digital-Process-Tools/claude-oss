@@ -93,6 +93,27 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      nothing computed says nothing whatever about the finding, and must never be read as a row that
      happens not to block.
 
+   **Stop the tag, not the loop.** Gate 3 is the only gate whose failure *produces* work: gate 1
+   clears itself when CI goes green, gate 2 when the reviews finish, gate 4 names its own remedy —
+   and until #209 this sentence ended one clause early, naming an action and an artefact and handing
+   the work to nobody. A release blocked at 23:25Z therefore sat for three hours with a green
+   default branch, an empty pull request board and four freshly filed blockers nobody had started.
+   So every blocking arm has a continuation, and none of them is an ending:
+
+   - **`findings`, round one** — stop the tag, file them, **and delegate the blocking rows in the
+     same tick**. They are ordinary work with an unusually good brief attached; the audit already
+     did the pre-flight.
+   - **A blocking row, either round** — the tag cannot move until the fix lands, so the fix is on
+     the release's **critical path** by construction. It is delegated ahead of the general backlog
+     rather than filed alongside it, and the state entry names it as what the release waits on.
+   - **`could not run`** — stop the tag and say so, and the continuation is diagnosing why it could
+     not run. Waiting for it to become able to is not a continuation.
+
+   What the *loop* does next is not restated here. **`/oss:tick` step 7 and *Loop mechanics* in the
+   manager skill are the only places that rule lives**, and a blocked release is one of the
+   conditions they send to a wakeup rather than to a stop. A third copy of it here would be #331 a
+   second time: a restatement drifts, and the drifted copy is the one that gets quoted.
+
    The range is computed before anyone judges it, because "could not run" is a fact about the
    repository and not a reading:
 

@@ -199,10 +199,28 @@ Skill(manager)
    ```
 
    Agent completions notify for free — never poll for them. CI is the only thing that needs a timer.
-   If nothing is outstanding but somebody else's work — a review, a CI run, an upstream fix, and
-   **never your own backlog** — stop the loop with `stop: true` **and say so out loud**: a loop that
-   stops silently is indistinguishable from one that was never armed. Which of the three states
-   below you are in decides whether that sentence applies at all.
+
+   **There is no good reason to stop the loop, except being asked to stop it directly.** A direct
+   instruction is the one input the loop cannot be wrong about, because acting on it re-derives
+   nothing. **Every other condition arms a wakeup instead** — waiting on CI, waiting on an agent,
+   waiting on a third party, a release a gate refused, an empty board. When a direct instruction does
+   stop it, say so out loud, because a loop that stops silently is indistinguishable from one that
+   was never armed.
+
+   **The asymmetry is the argument.** A loop ticking with nothing to do is visibly idle and
+   self-correcting, and costs one cheap tick that says so; a loop that stopped is indistinguishable
+   from one that was never armed, costs an unbounded amount, and nothing inside it will ever notice.
+   This replaces *nothing outstanding but somebody else's work → stop the loop, `stop: true`*, which
+   asked the loop for a judgement about its own board at the moment it was least able to make one
+   (#209). *Loop mechanics* in the manager skill carries the full argument and the instance.
+
+   **The `reason` names what is being waited on in a form a later turn can re-read.** *Blocked on
+   audit completion* is unfalsifiable prose and outlived the audit by ninety minutes; *blocked on the
+   gate 3 audit dispatched at 23:12Z* is a claim the next turn fails in one call. Same for step 6's
+   state entry, and a wait recorded in one tick is re-read in the next rather than believed.
+
+   **The three states below say how this tick closes, not whether the loop stops. None of them stops
+   the loop.**
 
 ## What ends a tick
 
@@ -217,7 +235,9 @@ describing the schedule instead of the next action. Waiting on CI is not a reaso
 - **Blocked** — every remaining open item named individually, each with what it waits on and who
   owns that. **A count is not a naming**, and neither is *the rest are blocked*: if you cannot write
   the list, you are not in this state. Still not an end.
-- **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty.
+- **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty. **Your own
+  backlog was never somebody else's work**, so an open issue this loop filed is not this state. It
+  ends the tick and arms a long wakeup; step 7 is what says it does not stop the loop.
 
 **An unread board is not an empty one.** If either call did not answer, that is `unknown`, it is not
 the third state, and the tick says which call failed and what went unread instead. A tick that
