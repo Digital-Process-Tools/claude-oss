@@ -111,9 +111,53 @@ def _one_line_keep_unicode(text, limit=200):
     return safe[:limit]
 
 
+def _safe_print(line):
+    """Print `line`. Never raises, regardless of what the stream can encode.
+
+    `_one_line` keeps only printable ASCII, so its output is always encodable
+    by any stream `print()` reaches. `_one_line_keep_unicode` (#344)
+    deliberately does not make that promise -- it exists precisely to let
+    genuine non-ASCII text through -- so a caller can hand this a codepoint
+    the ACTUAL stdout stream cannot represent: a lone surrogate (what
+    `surrogateescape` produces decoding an undecodable filename byte,
+    ordinary for a non-UTF-8 path on Linux) or an otherwise valid character
+    outside a narrow console codepage (the Windows cp1252 hazard this repo's
+    own CLAUDE.md already names for every OTHER print in this codebase).
+    Either would raise `UnicodeEncodeError` out of a bare `print()`, which
+    breaks the one contract that matters more than any single check:
+    `exit 0 always, one VERDICT line`.
+
+    Three levels, each a net under the one above, because a self-review
+    round on #344 found the first version's net had a hole of its own:
+    `sys.stdout.encoding` naming a codec Python's registry does not
+    recognise (a mocked or wrapped stream) raised `LookupError` out of the
+    `.encode(encoding, ...)` fallback itself, uncaught. The final level
+    encodes as `ascii`, which is always a registered codec, so it cannot
+    raise `LookupError` and its own `print()` cannot raise
+    `UnicodeEncodeError` either -- there is nothing below `ascii` to fall
+    back to further, so this is where the defence stops.
+    """
+    try:
+        print(line)
+        return
+    except UnicodeEncodeError:
+        pass
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        safe = line.encode(encoding, errors="backslashreplace").decode(encoding, errors="replace")
+    except LookupError:
+        safe = line
+    try:
+        print(safe)
+        return
+    except UnicodeEncodeError:
+        pass
+    print(line.encode("ascii", errors="backslashreplace").decode("ascii"))
+
+
 def _emit(state, flat):
     FINDINGS.append((state, flat))
-    print("{} {}".format(state, flat))
+    _safe_print("{} {}".format(state, flat))
 
 
 def report(state, message):
@@ -135,14 +179,24 @@ def report(state, message):
     _emit(state, flat)
 
 
-def report_with_remedy(state, message):
+def report_with_remedy(state, prose, remedy):
     """Like `report`, for the small set of findings that embed a paste-ready
-    command naming THIS install's own resolved path (#344). See
-    `_one_line_keep_unicode` for why this is a narrow carve-out rather than a
-    change to `report` itself: every other finding in this script -- built
-    from text the audited tree chooses -- still goes through the full fold.
+    command naming THIS install's own resolved path (#344).
+
+    `prose` is folded exactly like `report`'s `message` -- it still fully
+    ASCII-folds, because a self-review round found the first version of this
+    function folded the WHOLE composed message through
+    `_one_line_keep_unicode`, so text embedded in `prose` at the call sites
+    (`resolved`/`detail`/`version_clause` -- `os.path.realpath()` of
+    whatever PATH resolves `oss-workspace` to, i.e. local filesystem state
+    this script did NOT compose) escaped the fold it should still get. Only
+    `remedy` -- built from `PLUGIN_ROOT`/`plugin_root`, this script's own
+    resolved install location, which is what `_one_line_keep_unicode`'s own
+    docstring scopes the exemption to -- skips the ASCII fold.
     """
-    flat = _one_line_keep_unicode(message, limit=REPORT_LIMIT + 1)
+    folded = _one_line(prose, limit=REPORT_LIMIT + 1)
+    safe_remedy = _one_line_keep_unicode(remedy, limit=REPORT_LIMIT + 1) if remedy else ""
+    flat = "{} {}".format(folded, safe_remedy).strip() if safe_remedy else folded
     if len(flat) > REPORT_LIMIT:
         flat = flat[: REPORT_LIMIT - 4] + " ..."
     _emit(state, flat)
@@ -1056,8 +1110,8 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
         report_with_remedy(
             "WARN",
             "oss-workspace launcher: not on PATH, so every developer brief this "
-            "plugin issues that calls `oss-workspace` has no route to run it. "
-            "{}".format(remedy),
+            "plugin issues that calls `oss-workspace` has no route to run it.",
+            remedy,
         )
     elif state == "path-unreadable":
         report(
@@ -1082,8 +1136,10 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
         report_with_remedy(
             "WARN",
             "oss-workspace launcher: PATH resolves oss-workspace to {} -- so "
-            "whether it matches this running install is unknown, not wrong. "
-            "{}".format(detail, remedy),
+            "whether it matches this running install is unknown, not wrong.".format(
+                detail
+            ),
+            remedy,
         )
     elif state == "mismatched":
         resolved, their_version, our_version = detail
@@ -1121,9 +1177,10 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "bin/oss-workspace ({}). A stale target that still exists "
             "behaves exactly like a current one -- one release shipped a security "
             "fix to this exact file (#324), and a symlink pinned at an older "
-            "release would silently keep running without it. {}".format(
-                resolved, version_clause, ours_clause, remedy
+            "release would silently keep running without it.".format(
+                resolved, version_clause, ours_clause
             ),
+            remedy,
         )
     else:
         # #348: a state `oss_workspace_launcher_state` does not emit today.
