@@ -191,7 +191,7 @@ def test_matched_by_content_a_separate_copy_with_identical_bytes(tmp_path):
 def test_mismatched_content_names_both_versions_when_the_shape_is_recognised(tmp_path):
     """The common case: PATH resolves into a `.../oss/<version>/bin/oss-workspace`
     cache layout whose content differs from the running install."""
-    plugin_root = _plugin_root(tmp_path, content=b"new content\n", version="0.6.0")
+    plugin_root = _plugin_root(tmp_path, content=b"new content\n", version="9.9.9")
     cache_dir = tmp_path / "cache" / "dpt-plugins" / "oss" / "0.1.0" / "bin"
     cache_dir.mkdir(parents=True)
     target = cache_dir / "oss-workspace"
@@ -204,12 +204,19 @@ def test_mismatched_content_names_both_versions_when_the_shape_is_recognised(tmp
     assert state == "mismatched", (state, detail)
     resolved, theirs_version, ours_version = detail
     assert theirs_version == "0.1.0", detail
-    assert ours_version == "0.6.0", detail
+    # #350: this is the version of the plugin root that was HANDED IN, not of the
+    # tree the test happens to be running inside. It came from `plugin_version()`
+    # -- a global -- so the fixture's own `version=` was ignored and the assertion
+    # was really `<this repo's current version> == <a literal>`, which passed until
+    # the release bumped the manifest and then reddened the release itself.
+    # `9.9.9` is a version this repository will not reach, so the assertion can no
+    # longer be satisfied by coincidence.
+    assert ours_version == "9.9.9", detail
 
     doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(cache_dir))
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
-    assert "0.1.0" in message and "0.6.0" in message, message
+    assert "0.1.0" in message and "9.9.9" in message, message
     # #288: the remedy must name the running install's own location, not $PWD.
     # Compared separator-insensitively (#340) -- see `_names_the_path` for why the
     # separator was never this assertion's subject, and why folding it does not
@@ -410,12 +417,117 @@ def test_a_non_executable_target_is_still_resolved(tmp_path):
 
 
 def test_version_segment_parses_the_documented_cache_shape():
+    # The version here is arbitrary -- this parses a path shape, not a release --
+    # so it is deliberately one this repository will not reach. It read `0.6.0`
+    # until #350, which was a coincidence rather than a choice, and a coincidence
+    # is what the guard in `tests/test_no_test_pins_the_current_version_350.py`
+    # cannot tell apart from the assertion that reddened the release.
     resolved = str(
-        Path("home", "x", ".claude", "plugins", "cache", "dpt-plugins", "oss", "0.6.0", "bin", "oss-workspace")
+        Path("home", "x", ".claude", "plugins", "cache", "dpt-plugins", "oss", "9.9.9", "bin", "oss-workspace")
     )
-    assert doctor._oss_workspace_version_segment(resolved) == "0.6.0"
+    assert doctor._oss_workspace_version_segment(resolved) == "9.9.9"
 
 
 def test_version_segment_is_none_for_an_unrecognised_shape():
     assert doctor._oss_workspace_version_segment(str(Path("home", "x", "oss-workspace"))) is None
     assert doctor._oss_workspace_version_segment(str(Path("home", "x", "bin", "oss-workspace"))) is None
+
+
+# --- #350: the version label must describe the plugin_root that was handed in ---
+
+
+def test_our_version_that_could_not_be_read_is_none_and_never_renders_as_one(tmp_path):
+    """The third state, and its positive control, in one fixture.
+
+    `their_version` has had a "not available" answer since #289 -- `None`, with a
+    clause of its own rather than a version-shaped string. `our_version` had no
+    such answer: it came from `plugin_version()`, which folds an absent or
+    unparseable manifest into the strings `"unknown"` and `"unreadable"` and hands
+    them back where a version goes. That is fine for the one line at the top of
+    `doctor`'s output, which says "oss plugin version unreadable" and is honest.
+    It is not fine here, where the same value is formatted as `(version {})`
+    beside a byte comparison: "version unreadable" reads as a version.
+
+    Must-fire half first, so a harness that produced no message at all cannot
+    pass the silent half below.
+    """
+    plugin_root = _plugin_root(tmp_path, content=b"new content\n", version="9.9.9")
+    other = tmp_path / "somewhere-else"
+    other.mkdir()
+    target = other / "oss-workspace"
+    target.write_bytes(b"old content\n")
+    os.chmod(str(target), 0o755)
+
+    # Must fire: a readable manifest is named, as a version, in the receipt.
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=str(other)
+    )
+    assert state == "mismatched", (state, detail)
+    assert detail[2] == "9.9.9", detail
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(other))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN"
+    assert "version 9.9.9" in message, message
+
+    # Must not fire: the same install with no readable manifest. A directory where
+    # the file goes is portable and needs no chmod privilege -- `read_text()` on it
+    # raises OSError on every platform.
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    manifest.unlink()
+    manifest.mkdir()
+
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=str(other)
+    )
+    assert state == "mismatched", (state, detail)
+    assert detail[2] is None, detail
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(other))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN"
+    assert "9.9.9" not in message, message
+    assert "None" not in message, message
+    assert "no version could be read" in message, message
+
+
+def test_manifest_version_answers_in_three_states(tmp_path):
+    """`read`, `no-version-field`, `unreadable` -- and the last two return no
+    version rather than a string that looks like one."""
+    root = tmp_path / "root"
+    (root / ".claude-plugin").mkdir(parents=True)
+    manifest = root / ".claude-plugin" / "plugin.json"
+
+    manifest.write_text('{"name": "oss", "version": "9.9.9"}', encoding="utf-8")
+    assert doctor._manifest_version(root) == ("read", "9.9.9")
+
+    manifest.write_text('{"name": "oss"}', encoding="utf-8")
+    assert doctor._manifest_version(root) == ("no-version-field", None)
+
+    manifest.write_text('{"name": "oss", "version": 7}', encoding="utf-8")
+    assert doctor._manifest_version(root) == ("no-version-field", None)
+
+    manifest.write_text("not json at all", encoding="utf-8")
+    assert doctor._manifest_version(root) == ("unreadable", None)
+
+    # Valid JSON that is not an object. Before #350 this reached `.get` on a list
+    # and raised AttributeError out of `plugin_version()` -- the one function whose
+    # docstring says its line must print even when everything else has failed.
+    manifest.write_text("[]", encoding="utf-8")
+    assert doctor._manifest_version(root) == ("unreadable", None)
+
+    manifest.unlink()
+    assert doctor._manifest_version(root) == ("unreadable", None)
+
+
+def test_plugin_version_still_describes_the_running_install():
+    """The survey behind #350's product fix, pinned rather than left in prose.
+
+    `plugin_version()` has two callers in `scripts/`: this check's label, which was
+    wrong to use it, and `main()`'s `oss plugin version {}` header, which is right
+    -- that line is about the install the reader is running. So the global was not
+    given a `plugin_root` argument; a second, parameterised helper was added beside
+    it and `plugin_version()` now delegates to it for the running root. This asserts
+    the delegation rather than assuming it, so the two cannot drift apart.
+    """
+    state, version = doctor._manifest_version(doctor.PLUGIN_ROOT)
+    assert state == "read", (state, version)
+    assert doctor.plugin_version() == version

@@ -104,15 +104,61 @@ def report(state, message):
     print("{} {}".format(state, flat))
 
 
-def plugin_version():
-    """Read the manifest directly, with no path resolution in the way -- this line
-    must print even when everything else has failed.
+def _manifest_version(plugin_root):
+    """The version a plugin manifest under `plugin_root` declares, in three states.
+
+    Returns ``(state, version)``:
+
+    * ``("read", "0.6.0")`` -- the manifest parsed and carries a version string.
+    * ``("no-version-field", None)`` -- it parsed and does not.
+    * ``("unreadable", None)`` -- absent, unparseable, or not a JSON object.
+
+    **The two failure states return no version, rather than a word standing where a
+    version goes.** `plugin_version()` below folds them into `"unknown"` and
+    `"unreadable"`, which is right for the one line at the top of this script's
+    output -- "oss plugin version unreadable" is a true sentence about the install
+    the reader is running. It is wrong anywhere the value is formatted as
+    `version {}` beside a measurement, which is #350: a receipt naming a version
+    nobody read is the same defect as a receipt naming a version read from the
+    wrong tree.
+
+    `plugin_root` is a parameter because `oss_workspace_launcher_state` is handed
+    one and its content comparison already honours it (#329). Its version label did
+    not, so the WARN described one install beside a comparison performed against
+    another -- and the assertion that should have caught it was itself pinned to
+    whatever version this repository happened to be at, so it only fired on the
+    release commit that bumped the manifest.
+
+    A non-object JSON body is `unreadable` rather than a crash: `[]` reached
+    `.get` and raised `AttributeError` out of `plugin_version()`, whose whole
+    contract is that its line prints when everything else has failed.
     """
-    manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
+    manifest = Path(plugin_root) / ".claude-plugin" / "plugin.json"
     try:
-        return json.loads(manifest.read_text(encoding="utf-8")).get("version", "unknown")
+        data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return "unreadable"
+        return "unreadable", None
+    if not isinstance(data, dict):
+        return "unreadable", None
+    version = data.get("version")
+    if not isinstance(version, str) or not version:
+        return "no-version-field", None
+    return "read", version
+
+
+def plugin_version():
+    """The RUNNING install's version, as a string that always prints.
+
+    Deliberately still global and still argument-free. Surveyed for #350: its only
+    other caller is `main()`'s `oss plugin version {}` header, which is a claim
+    about the install the reader invoked and would be wrong if it took a root from
+    anywhere else. The parameterised question got its own function above instead of
+    a new keyword here, so no existing caller's meaning moved.
+    """
+    state, version = _manifest_version(PLUGIN_ROOT)
+    if state == "read":
+        return version
+    return "unknown" if state == "no-version-field" else "unreadable"
 
 
 NO_CONFIG = "not checked -- .oss.json was not found, so there was nothing to check it against"
@@ -814,6 +860,15 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     * ``mismatched`` -- the resolved target's bytes differ. `detail` is
       ``(resolved, their_version, our_version)``; `their_version` is
       `_oss_workspace_version_segment(resolved)` and may be `None`.
+      `our_version` is read from **`plugin_root`'s own manifest**, not from the
+      running install (#350), and is `None` on exactly the same terms as
+      `their_version`: it names a version or it says there is none, and it never
+      renders a word where a version goes. Before #350 it came from
+      `plugin_version()`, a global, so a caller that passed a `plugin_root` got a
+      version describing one tree beside a byte comparison performed against
+      another -- and the only assertion over it was pinned to whatever version
+      this repository happened to be at, which made it fire on the release that
+      bumped the manifest and nowhere else.
     * ``own-copy-unreadable`` / ``unresolved-target`` -- one side could not be read,
       so nothing was compared. Neither is "matched" and neither is "mismatched":
       both of those would be an answer to a question that was not actually asked.
@@ -865,7 +920,7 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
         return "matched", resolved
 
     their_version = _oss_workspace_version_segment(resolved)
-    our_version = plugin_version()
+    _our_state, our_version = _manifest_version(plugin_root)
     return "mismatched", (resolved, their_version, our_version)
 
 
@@ -975,15 +1030,25 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
                 "a path with no recognised .../oss/<version>/bin/ shape, so no "
                 "version could be read from it"
             )
+        if our_version:
+            ours_clause = "version {}".format(our_version)
+        else:
+            # #350's third state. Symmetric with `version_clause` above: say the
+            # label is missing rather than print "version unreadable", which reads
+            # as a version and is the defect this whole check exists to not commit.
+            ours_clause = (
+                "no version could be read from its own manifest, so this line names "
+                "none"
+            )
         report(
             "WARN",
             "oss-workspace launcher: SKEW -- PATH resolves oss-workspace to {} "
             "({}), whose content differs from this running install's own "
-            "bin/oss-workspace (version {}). A stale target that still exists "
+            "bin/oss-workspace ({}). A stale target that still exists "
             "behaves exactly like a current one -- one release shipped a security "
             "fix to this exact file (#324), and a symlink pinned at an older "
             "release would silently keep running without it. {}".format(
-                resolved, version_clause, our_version, remedy
+                resolved, version_clause, ours_clause, remedy
             ),
         )
 
