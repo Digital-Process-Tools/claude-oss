@@ -74,7 +74,11 @@ one must never render as "not on PATH"); and one each for this install's own cop
 resolved target being unreadable. Its remedy line names the *running* install's own path
 rather than `$PWD`, so pasting it works regardless of where you are standing when you
 paste it -- and on Windows it is the sentence above rather than a `ln -sf` that would do
-nothing.
+nothing. That remedy is paste-ready even when the install path itself is not ASCII (#344):
+it is composed by the diagnostic from its own resolved location, not text from the repo
+being diagnosed, so it is exempt from the ASCII fold every OTHER finding still goes
+through -- folding it would have turned a non-ASCII path into `?`, a shell glob that
+either fails to match or links a file you never named.
 
 That opens a session over the repo you are standing in, with the maintainer loop already running — or
 with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges

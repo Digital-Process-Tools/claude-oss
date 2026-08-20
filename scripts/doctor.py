@@ -84,6 +84,38 @@ def _one_line(text, limit=200):
     return safe[:limit]
 
 
+def _one_line_keep_unicode(text, limit=200):
+    """Text THIS SCRIPT composed itself, reduced to one line, with the
+    newline/control-character defence `_one_line` exists for but WITHOUT its
+    ASCII-fold (#344).
+
+    `_one_line`'s docstring scopes the fold to "text from outside this
+    script" -- settings entries, config values, subprocess stderr, things
+    the audited tree chooses and could use to forge this script's own
+    output. A remedy command built from `PLUGIN_ROOT` (this script's own
+    resolved install location) is not that: it is not foreign text, so
+    folding it is not a security control, it is a `?` -- a shell glob --
+    sitting inside a command the reader is meant to paste and run. On a
+    non-ASCII install path that either fails to match or matches a
+    directory the caller never named.
+
+    The newline-collapse (`" ".join(text.split())`) is kept unconditionally:
+    a newline forging a new line of this script's own output is a real
+    hazard regardless of whose text it is. Only the character-by-character
+    ASCII restriction is dropped; everything below `chr(32)` and `chr(127)`
+    (DEL) is still folded to `?`, so a control character cannot rewrite what
+    a terminal has already printed either.
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if (ord(ch) >= 32 and ch != "\x7f") else "?" for ch in flat)
+    return safe[:limit]
+
+
+def _emit(state, flat):
+    FINDINGS.append((state, flat))
+    print("{} {}".format(state, flat))
+
+
 def report(state, message):
     """Every finding goes through here, and so does every sanitisation.
 
@@ -100,8 +132,20 @@ def report(state, message):
     flat = _one_line(message, limit=REPORT_LIMIT + 1)
     if len(flat) > REPORT_LIMIT:
         flat = flat[: REPORT_LIMIT - 4] + " ..."
-    FINDINGS.append((state, flat))
-    print("{} {}".format(state, flat))
+    _emit(state, flat)
+
+
+def report_with_remedy(state, message):
+    """Like `report`, for the small set of findings that embed a paste-ready
+    command naming THIS install's own resolved path (#344). See
+    `_one_line_keep_unicode` for why this is a narrow carve-out rather than a
+    change to `report` itself: every other finding in this script -- built
+    from text the audited tree chooses -- still goes through the full fold.
+    """
+    flat = _one_line_keep_unicode(message, limit=REPORT_LIMIT + 1)
+    if len(flat) > REPORT_LIMIT:
+        flat = flat[: REPORT_LIMIT - 4] + " ..."
+    _emit(state, flat)
 
 
 def _manifest_version(plugin_root):
@@ -544,7 +588,23 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     """
     link = Path(project_dir) / SUPERTOOL_ENTRY
     root, core = _own_supertool_tree(project_dir)
-    present = os.path.lexists(str(link))
+    # #341: `os.path.lexists` swallows every `OSError`, not only `ENOENT` --
+    # the third instance of the class #333/#340 already fixed once in this
+    # file's PATH walk. An unreadable PARENT of `link` (an over-long
+    # component, a mode-000 ancestor) must not read as "absent", which would
+    # print a remedy telling the reader to link a file that may already be
+    # there. It reuses the `unreadable` state already returned below for a
+    # readlink/stat failure -- `check_supertool_entry_point`'s catch-all
+    # message for that state already reads correctly here too: "so which of
+    # present/absent/wrong-target this repo is in is unknown."
+    try:
+        os.lstat(str(link))
+        present = True
+    except (FileNotFoundError, NotADirectoryError):
+        # Absence, stated by the exception itself -- nothing is asked twice.
+        present = False
+    except OSError as exc:
+        return "unreadable", str(exc.strerror or exc.__class__.__name__)
 
     if core is not None:
         # Displayed against the root the core was found under, not against the raw
@@ -990,7 +1050,10 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "running install's own bin/oss-workspace.".format(detail),
         )
     elif state == "not-resolvable":
-        report(
+        # #344: this message embeds `remedy`, a paste-ready command naming
+        # THIS install's own resolved path -- report_with_remedy, not
+        # report, so a non-ASCII install path is not folded to `?`.
+        report_with_remedy(
             "WARN",
             "oss-workspace launcher: not on PATH, so every developer brief this "
             "plugin issues that calls `oss-workspace` has no route to run it. "
@@ -1015,13 +1078,14 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "not wrong.".format(detail),
         )
     elif state == "unresolved-target":
-        report(
+        # #344: same reason as the not-resolvable arm above.
+        report_with_remedy(
             "WARN",
             "oss-workspace launcher: PATH resolves oss-workspace to {} -- so "
             "whether it matches this running install is unknown, not wrong. "
             "{}".format(detail, remedy),
         )
-    else:
+    elif state == "mismatched":
         resolved, their_version, our_version = detail
         if their_version:
             version_clause = "cache version {}".format(their_version)
@@ -1049,7 +1113,8 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
                 "no version could be read from its own manifest -- it is absent, "
                 "unparseable, or carries no version field"
             )
-        report(
+        # #344: same reason as the not-resolvable arm above.
+        report_with_remedy(
             "WARN",
             "oss-workspace launcher: SKEW -- PATH resolves oss-workspace to {} "
             "({}), whose content differs from this running install's own "
@@ -1059,6 +1124,22 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "release would silently keep running without it. {}".format(
                 resolved, version_clause, ours_clause, remedy
             ),
+        )
+    else:
+        # #348: a state `oss_workspace_launcher_state` does not emit today.
+        # Every real state above has a named arm; this exists so a seventh
+        # state added later is REPORTED rather than reaching the `mismatched`
+        # arm's `detail` unpack blind -- which would turn `exit 0 always` into
+        # a traceback three frames from wherever the state was added. `detail`
+        # is not assumed to be any particular shape, so it is not touched.
+        report(
+            "WARN",
+            "oss-workspace launcher: unrecognised state {!r} from "
+            "oss_workspace_launcher_state -- not one of matched, "
+            "not-resolvable, path-unreadable, own-copy-unreadable, "
+            "unresolved-target, mismatched. Treat this as unknown, not "
+            "absent; this check's own code has fallen behind its "
+            "producer.".format(state),
         )
 
 
