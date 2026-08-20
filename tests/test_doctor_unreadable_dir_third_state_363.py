@@ -58,7 +58,7 @@ def _raise_for(monkeypatch, method_name, target, exc):
 
 
 # ---------------------------------------------------------------------------
-# check_directory (~line 1251): config's `clone` / `worktree_root`
+# check_directory: config's `clone` / `worktree_root`
 # ---------------------------------------------------------------------------
 
 
@@ -143,7 +143,7 @@ def test_check_directory_real_unreadable_parent_reaches_unknown(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# check_jit_rules (~line 2548): rules_dir.is_dir()
+# check_jit_rules: rules_dir
 # ---------------------------------------------------------------------------
 
 
@@ -171,7 +171,7 @@ def test_check_jit_rules_genuinely_absent_still_reports_no_rules(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# resolve_project_dir's own `chosen.is_dir()` (~line 4875): the entry point
+# resolve_project_dir's own `chosen` check: the entry point
 # where the third state is established rather than consumed.
 # ---------------------------------------------------------------------------
 
@@ -236,7 +236,7 @@ def test_resolve_project_dir_git_absent_still_warns(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# merge_permission_state (~line 1592): path.exists() over settings_candidates
+# merge_permission_state: path.exists() over settings_candidates
 # ---------------------------------------------------------------------------
 
 
@@ -273,7 +273,7 @@ def test_merge_permission_state_genuinely_absent_candidates_stay_absent(tmp_path
 
 
 # ---------------------------------------------------------------------------
-# The two narrow glob filters (~3505, ~3776): one bad candidate must not
+# The two narrow glob filters (jit_hook_roots, _jit_layer_verdict): one bad candidate must not
 # wipe every candidate already found.
 # ---------------------------------------------------------------------------
 
