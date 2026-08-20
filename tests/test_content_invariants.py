@@ -4227,21 +4227,27 @@ MEASUREMENT_LABEL_PATTERN = re.compile(r"this (repository|project)'s own|#316", 
 
 
 def _unlabelled_measurements(text):
+    """Every occurrence of an anchor is graded, not only the first. A document that
+    scopes its first mention of a raw measurement and repeats the same figure bare
+    later on must still be caught -- checking only the first match would let that
+    second, unlabelled mention through untouched (would still pass if the code did
+    nothing to the duplicate)."""
     collapsed = _collapse(text)
     unlabelled = set()
     for key, pattern in UNLABELLED_MEASUREMENT_ANCHORS:
-        match = re.search(pattern, collapsed, re.I)
-        if not match:
+        matches = list(re.finditer(pattern, collapsed, re.I))
+        if not matches:
             # The anchor itself is absent. That is a different check's job (the
             # anti-background anchors cover 27m36s already) -- this function only
             # grades a measurement that is actually present.
             continue
-        window = collapsed[
-            max(0, match.start() - MEASUREMENT_LABEL_WINDOW):
-            match.end() + MEASUREMENT_LABEL_WINDOW
-        ]
-        if not MEASUREMENT_LABEL_PATTERN.search(window):
-            unlabelled.add(key)
+        for match in matches:
+            window = collapsed[
+                max(0, match.start() - MEASUREMENT_LABEL_WINDOW):
+                match.end() + MEASUREMENT_LABEL_WINDOW
+            ]
+            if not MEASUREMENT_LABEL_PATTERN.search(window):
+                unlabelled.add(key)
     return unlabelled
 
 
@@ -4299,6 +4305,23 @@ def test_a_scoped_measurement_is_not_reported():
     # the finding comes back for that anchor only, not the other two.
     partial = stated.replace(", again this project's own trial (#316)", "")
     assert _unlabelled_measurements(partial) == {"single-op-share-not-scoped"}
+
+
+def test_a_second_unlabelled_mention_of_a_scoped_anchor_is_still_caught():
+    """The first version of _unlabelled_measurements graded only the first regex match
+    per anchor via re.search, so a document that scoped its first mention of a raw
+    measurement and repeated the same figure bare later on passed silently -- a check
+    that would still pass if the second mention were never labelled at all. Reproduce
+    the exact shape: label the first "27m36s", then restate it bare far enough away
+    that the label cannot cover it by proximity."""
+    filler = " ".join(["filler"] * 80)
+    doc = (
+        "On this repository's own trial (#316), 27m36s was the measured wall clock. "
+        + filler +
+        " Elsewhere in this same document, 27m36s was the measured wall clock again, "
+        "stated as a bare fact with no scoping label nearby."
+    )
+    assert _unlabelled_measurements(doc) == {"wall-clock-not-scoped"}
 
 
 # --------------------------- naming lane_setup.py where hand-derivation

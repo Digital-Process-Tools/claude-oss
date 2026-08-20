@@ -130,7 +130,7 @@ it a second way — grep the new content back — before saying it.
    explicit redirect (`python3 -m pytest tests/ -q > /path/to/output 2>&1`) and read the file back once
    it returns, in the same turn. On this repository's own trial, **27m36s was the measured wall
    clock, with four lanes running concurrently** — a maintainer's own measurement rather than a fact
-   about every repository this plugin manages, so the priced evidence lives in this project's own
+   about every repository this plugin manages, so the measured evidence lives in this project's own
    history (#316) rather than repeated here as a number a different installation would read as
    generic guidance. A long suite run is expected in your own repository too; it is not a signal to
    background it. Three lanes on this repository ended their turn waiting on a background suite run
