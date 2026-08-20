@@ -108,6 +108,53 @@ def test_a_genuinely_absent_link_is_still_absent(tmp_path):
     assert "link it by hand" in message, message
 
 
+def test_own_tree_walk_survives_is_file_raising_permission_error(monkeypatch, tmp_path):
+    """PR #359: CI went red on 8 of 14 legs -- Python 3.9/3.10/3.11 on BOTH
+    `ubuntu-latest` and `macos-latest`, not a single-OS or single-version
+    story. `_own_supertool_tree`'s walk -- which checks `(directory /
+    WATCH_CONFIG).is_file()` for every ancestor, starting with `project_dir`
+    itself -- RE-RAISED `PermissionError` there instead of treating an
+    unreadable directory as "no config here", the safe direction its own
+    docstring already claimed but never enforced itself. That crashed
+    `supertool_entry_point` before this file's own `os.lstat`-based check
+    (added for #341) ever ran, on exactly the input #341's fix is about.
+
+    Measured directly, one command each, on three local interpreters:
+    `Path(...).is_file()` against a mode-000 parent raises `PermissionError`
+    on 3.9, 3.11 and 3.13, and only swallows it on this repository's local
+    3.14. The exact version boundary is not asserted here for that reason --
+    3.10 and 3.12 were not directly measured.
+
+    Injected rather than measured by a real chmod, so this is exercised on
+    every interpreter regardless of which one happens to be running this
+    file. That gap between what a real permission fixture measures and what
+    the code under test actually calls is the second half of what this
+    regression was: the real-chmod test below confirms `os.lstat` denies on
+    `<project_dir>/supertool`, never on `<project_dir>/.supertool.json`,
+    which is the `Path.is_file()` call `_own_supertool_tree` reaches FIRST.
+    """
+    denied = tmp_path / "unreadable-project"
+    denied.mkdir()
+    target = denied / doctor.WATCH_CONFIG
+
+    real_is_file = Path.is_file
+
+    def fake_is_file(self):
+        if self == target:
+            raise PermissionError(13, "Permission denied")
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", fake_is_file)
+
+    # Would raise here if the code did nothing -- this is the assertion that
+    # makes the test worth having.
+    root, core = doctor._own_supertool_tree(str(denied))
+    assert (root, core) == (None, None), (root, core)
+
+    state, detail = doctor.supertool_entry_point(str(denied))
+    assert state == "absent", (state, detail)
+
+
 def test_a_real_unreadable_project_dir_reaches_unreadable_not_absent(tmp_path):
     """The same claim without an injection, measured against a real
     filesystem. The deny is confirmed by attempting the exact operation the

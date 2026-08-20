@@ -548,6 +548,37 @@ def _same_file(left, right):
         return None
 
 
+def _safe_is_file(path):
+    """``path.is_file()``, classified by the exception in hand rather than
+    trusted to pathlib's own swallow (PR #359 -- CI red on 8 of 14 legs:
+    Python 3.9/3.10/3.11 on BOTH ubuntu-latest and macos-latest, on the
+    exact input #341's fix is about).
+
+    `Path.is_file()` catches `OSError` internally, but `EACCES`/`EPERM` is
+    not in its ignored-errno set on at least 3.9, 3.11 and 3.13 (measured
+    directly, one command each, on this machine's own installs of those
+    three) -- only THIS repository's local 3.14 interpreter swallows it. The
+    unguarded `.is_file()` calls this replaces predate this PR entirely; what
+    is new is a test that actually exercises them against a real unreadable
+    directory (#341's own fixture), which is why they went red on every
+    3.9-3.11 CI leg, on both `ubuntu-latest` and `macos-latest`, and stayed
+    invisible on this machine's local run. The exact version where the
+    swallow widens is deliberately not asserted -- 3.10 and 3.12 were not
+    directly measured, and a version this repo does not itself confirm is
+    not a fact to assert as one. Relying on a stdlib swallow whose
+    ignored-errno set differs by version at all is exactly the trap this
+    repo's own CLAUDE.md already names for `Path.exists()` (#76) and for
+    `is_dir()`/`rglob()` (#124); `is_file()` is the same shape one call over.
+    So the classification is done here, explicitly, on every interpreter
+    this repo supports rather than left to whichever one happens to be
+    running.
+    """
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _own_supertool_tree(project_dir):
     """The checkout this directory is inside, as ``(root, core)``, or ``(None, None)``.
 
@@ -569,15 +600,24 @@ def _own_supertool_tree(project_dir):
     and never a verdict, which is exactly why nothing caught it -- so the resolved root
     is returned alongside and the caller displays against the root the core came from.
 
-    `is_file()` swallows `OSError`, so an unreadable directory on the way up reads as
-    "no config here" and the walk continues. That is the safe direction: the failure
-    is to *not* claim an own-tree, which costs a warning rather than a wrong silence.
+    An unreadable directory on the way up must read as "no config here" and let the
+    walk continue -- that is the safe direction, since the failure is to *not* claim
+    an own-tree, which costs a warning rather than a wrong silence. This docstring
+    used to say `is_file()` already does that by swallowing `OSError`, and that claim
+    was false (PR #359, CI red on 8 of 14 legs -- Python 3.9/3.10/3.11 on BOTH
+    `ubuntu-latest` and `macos-latest`, on the exact input #341's own fix is about).
+    See `_safe_is_file`'s own docstring for the measurement: `EACCES` is re-raised
+    on 3.9/3.11/3.13, and only this repository's local 3.14 interpreter swallows
+    it, which is this repo's own CLAUDE.md warning about the interpreter axis being
+    the easier one to miss. So the swallow is done explicitly here, on every
+    interpreter, rather than trusted to a stdlib behaviour whose ignored-errno set
+    is not pinned down across the versions CI actually runs.
     """
     directory = Path(os.path.realpath(str(project_dir)))
     while True:
-        if (directory / WATCH_CONFIG).is_file():
+        if _safe_is_file(directory / WATCH_CONFIG):
             core = directory / SUPERTOOL_CORE
-            return (directory, core) if core.is_file() else (None, None)
+            return (directory, core) if _safe_is_file(core) else (None, None)
         if directory.parent == directory:
             return None, None
         directory = directory.parent
