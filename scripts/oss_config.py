@@ -556,13 +556,24 @@ OWNED_CHANGELOG_WORKFLOW = ".github/workflows/oss-changelog.yml"
 # well-formed workflow and stops the reach for a malformed one.
 #
 # The trailing alternative matches a `--dir` that carries no argument at all: same-line
-# whitespace (possibly none) followed by the end of the line or the end of the text. It
-# captures nothing -- there is no token to accept or refuse, which is why this is a new
-# EXTRACTION state (`present-bare-dir`, below) rather than a second rule bolted onto
-# `changelog_dir_problem`. #345's argument was one value, one rule; a value that was
-# never captured has no content for that rule to apply to.
+# whitespace (possibly none) followed by the end of the line, the end of the text, or an
+# unquoted token that itself starts with `-`. That last part of the lookahead closes the
+# same defect one clause over: `--dir --changelog CHANGELOG.md` on ONE line, no newline
+# anywhere, is exactly as ambiguous with the following flag as the newline-crossing case
+# -- an unquoted token that starts with `-` cannot be told apart from another CLI flag,
+# whether or not a line break separates it from `--dir`. The unquoted-value alternative's
+# `(?!-)` excludes that same shape from ever being captured as a value in the first
+# place, so it always falls through to "no value" instead. A QUOTED value starting with
+# `-` is unaffected either way -- `--dir '-x'` is unambiguously a value, because quoting
+# is what removes the ambiguity with a flag, not the character itself.
+#
+# None of this touches `changelog_dir_problem`: no captured value is ever refused on
+# content by this pattern, only recognised or not recognised as a value at all. #345's
+# argument was one value, one rule; a value that was never captured has no content for
+# that rule to apply to, which is why the bare/ambiguous case is a new EXTRACTION state
+# (`present-bare-dir`, below) rather than a second rule bolted onto the existing one.
 GATE_DIR_RE = re.compile(
-    r"--dir(?:[ \t]+(?:'([^']*)'|\"([^\"]*)\"|(\S+))|[ \t]*(?=\r?\n|\Z))"
+    r"--dir(?:[ \t]+(?:'([^']*)'|\"([^\"]*)\"|(?!-)(\S+))|[ \t]*(?=-|\r?\n|\Z))"
 )
 
 

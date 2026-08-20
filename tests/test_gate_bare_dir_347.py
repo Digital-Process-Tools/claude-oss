@@ -76,6 +76,53 @@ def test_a_bare_dir_at_the_very_end_of_the_file_is_also_caught(tmp_path):
     assert detail
 
 
+def test_a_bare_dir_immediately_followed_by_another_flag_on_the_same_line_is_also_caught(
+    tmp_path,
+):
+    """The same defect, without a newline in between: `--dir --changelog` on ONE line,
+    space-separated. The reviewer that found this called it the same misdirection the
+    issue is titled after, just not fully closed by restricting the whitespace class to
+    same-line only -- an unquoted token starting with `-` is ambiguous with another CLI
+    flag whether or not a newline separates it from `--dir`. Quoting removes the
+    ambiguity (`--dir '-x'` is unambiguously a value); the absence of quotes does not."""
+    root = _workflow(
+        tmp_path,
+        "name: oss changelog\n"
+        "jobs:\n"
+        "  fragment:\n"
+        "    steps:\n"
+        "      - run: python3 .oss/assemble_changelog.py --check --dir --changelog "
+        "CHANGELOG.md\n",
+    )
+
+    state, detail = oss_config.scaffolded_changelog_gate(root)
+
+    assert state == BARE, (
+        "a --dir immediately followed by another flag on the same line was read as "
+        "{!r} -- the unquoted bare-token alternative captured the following flag as "
+        "a directory name".format((state, detail))
+    )
+    assert detail
+
+
+def test_a_quoted_value_starting_with_a_dash_is_still_a_real_value(tmp_path):
+    """The must-not-fire twin: quoting removes the ambiguity with another flag, so a
+    quoted value that happens to start with `-` is a value somebody named, not a bare
+    `--dir`. `changelog_dir_problem` (unaffected by this issue) admits a leading dash;
+    this fixture is only about extraction, not content validation."""
+    root = _workflow(
+        tmp_path,
+        "name: oss changelog\n"
+        "jobs:\n"
+        "  fragment:\n"
+        "    steps:\n"
+        "      - run: python3 .oss/assemble_changelog.py --check --dir '-x' "
+        "--changelog CHANGELOG.md\n",
+    )
+
+    assert oss_config.scaffolded_changelog_gate(root) == ("present-other-dir", "-x")
+
+
 # --- the must-not-fire half, in the same fixture --------------------------------
 
 
