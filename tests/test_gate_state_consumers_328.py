@@ -76,14 +76,29 @@ RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
 # fixes it sat in a file another lane held at the time. #343 added exactly that
 # fifth state, so the deferred risk was the one that materialised; the file now
 # has a named arm per state and a trailing arm that says it recognised nothing.
-ENFORCED_CONSUMERS = (CHANGELOG_COMMAND, SCAFFOLD_COMMAND, RELEASE_VERSION)
+#
+# `CHANGELOG_COMMAND` left ENFORCED_CONSUMERS the same way #343 arrived: #347 added
+# the sixth state, `present-bare-dir`, and `commands/changelog.md` is `fix/346`'s
+# file for this round (it owns `scripts/assemble_changelog.py`,
+# `.oss/assemble_changelog.py` and `commands/changelog.md`) -- so the one line that
+# names the new state there sits in a file this lane does not hold. It is deferred
+# below rather than skipped past.
+ENFORCED_CONSUMERS = (SCAFFOLD_COMMAND, RELEASE_VERSION)
 
-# Empty, and kept rather than deleted: the machinery below is what makes a future
-# deferral impossible to leave rotting, and deleting it would mean the next one is
-# added with no test holding it. Emptiness is asserted as its own state, not
-# skipped past -- an exception list that has drifted is a licence, and one that
-# quietly stopped being checked is the same licence with no paper trail.
-DEFERRED_CONSUMERS = {}
+# Not empty as of #347. `commands/changelog.md`'s resolver already refuses a state
+# it does not recognise -- its own trailing `else` prints `UNKNOWN: unrecognised
+# gate state ...` and exits 1 -- so deferring the friendlier `REFUSED: <detail>`
+# arm for `present-bare-dir` is a worse message, never a silent acceptance. That
+# safety is asserted directly in `test_the_changelog_resolver_falls_through_safely`
+# rather than taken on faith.
+DEFERRED_CONSUMERS = {
+    CHANGELOG_COMMAND: (
+        "present-bare-dir (#347): commands/changelog.md is fix/346's file for "
+        "this round; its resolver's existing catch-all else already refuses the "
+        "state loudly rather than silently, so deferring costs a worse message, "
+        "not a wrong one."
+    ),
+}
 
 GATE_STATE_CONSUMERS = ENFORCED_CONSUMERS + tuple(DEFERRED_CONSUMERS)
 
@@ -260,6 +275,7 @@ def test_the_producer_extraction_reads_every_state_of_the_real_function():
         "present",
         "present-other-dir",
         "present-refused-dir",
+        "present-bare-dir",
     }
 
 
@@ -284,6 +300,12 @@ def test_every_enforced_consumer_names_every_gate_state(path):
 def test_the_changelog_resolver_branches_on_every_gate_state():
     """Whole-document naming is not enough for the one consumer that *executes*
     the contract. #328's actual defect was inside the fenced resolver.
+
+    `CHANGELOG_COMMAND` is deferred as of #347 (see `DEFERRED_CONSUMERS`), so a
+    gap here is expected right now rather than a regression -- asserted as
+    exactly that below, on the same shape as `test_the_deferred_consumer_is_
+    still_deferred`, rather than skipped past. `test_the_changelog_resolver_
+    falls_through_safely` is what pins the gap is safe rather than silent.
     """
     states = producer_states(_doc(PRODUCER))
     try:
@@ -291,11 +313,46 @@ def test_the_changelog_resolver_branches_on_every_gate_state():
     except LookupError as exc:
         pytest.fail("{}: {}".format(CHANGELOG_COMMAND, exc))
     unnamed = states_unnamed_by("\n".join(blocks), states)
+    if CHANGELOG_COMMAND in DEFERRED_CONSUMERS:
+        assert unnamed, (
+            "{} is listed in DEFERRED_CONSUMERS ({}) but its resolver now "
+            "branches on every gate state. Move it into ENFORCED_CONSUMERS and "
+            "remove the deferral.".format(
+                CHANGELOG_COMMAND.relative_to(REPO_ROOT),
+                DEFERRED_CONSUMERS[CHANGELOG_COMMAND],
+            )
+        )
+        return
     assert not unnamed, (
         "the FRAGMENTS_DIR resolver in commands/changelog.md branches on none "
         "of {} -- so those states fall through to whichever arm is last, which "
         "is how `present-other-dir` came to print NOT-ADOPTED and exit 1 for a "
         "repository whose fragments the gate can locate.".format(sorted(unnamed))
+    )
+
+
+def test_the_changelog_resolver_falls_through_safely_for_the_deferred_state():
+    """The deferred gap above must be a worse message, never a wrong one: the
+    resolver's own trailing `else` has to still be there and still refuse.
+
+    Without this, deferring a consumer would be indistinguishable from a
+    resolver that silently accepted an unrecognised state -- exactly the #328
+    shape this whole file exists to catch, one level down.
+    """
+    text = _doc(CHANGELOG_COMMAND)
+    try:
+        blocks = resolver_blocks(text)
+    except LookupError as exc:
+        pytest.fail("{}: {}".format(CHANGELOG_COMMAND, exc))
+    joined = "\n".join(blocks)
+    assert "else:" in joined, (
+        "commands/changelog.md's resolver has no trailing else -- a deferred "
+        "state would fall through with no refusal at all"
+    )
+    assert "unrecognised gate state" in joined, (
+        "commands/changelog.md's resolver's catch-all no longer names what it "
+        "did not understand -- a deferred state would be accepted silently "
+        "rather than refused loudly"
     )
 
 

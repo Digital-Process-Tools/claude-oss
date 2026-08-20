@@ -227,8 +227,8 @@ signal a forge gives this plugin to claim a workflow by (subdirectories under
 `.github/workflows/` are unsupported, and a symlink there fails outright — see the `ours`
 row in the ownership table above).
 
-It answers in **five** states, not two (#325, #328, #343), and "present or absent" stopped being the
-contract the moment scaffold could write a gate policing something other than the default:
+It answers in **six** states, not two (#325, #328, #343, #347), and "present or absent" stopped
+being the contract the moment scaffold could write a gate policing something other than the default:
 
 - `present` — our gate is on disk and its own `--dir` names `changelog.d/`, so null falls back to
   `changelog.d/` exactly as this command does.
@@ -241,6 +241,12 @@ contract the moment scaffold could write a gate policing something other than th
   as an instruction. The workflow is a **tracked, owned** file, so that value arrives by ordinary
   contribution just as `changelog_dir` does, and it reaches a fold that deletes every fragment in
   whatever it names (#343). Every reader refuses and says what it refused; none repairs the value.
+- `present-bare-dir` — our gate is on disk and readable, and a `--dir` flag on it carries no argument
+  at all (#347). A hand-edited workflow used to let the extractor's whitespace class cross the
+  newline after a bare `--dir` and misread the *following* flag as the directory. Distinct from
+  `present-refused-dir`: there a value was captured and refused on content; here nothing was
+  captured, so there is no value for that rule to have an opinion about -- one value, one rule, per
+  #345, is exactly why this is its own state rather than a second rule on the same value.
 - `absent` — null still means what it always meant.
 - `unknown` — the workflow could not be read, or its `--dir` lines disagree with each other. Every
   reader refuses and says why, rather than picking a directory nobody confirmed. Distinct from

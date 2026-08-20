@@ -545,11 +545,41 @@ OWNED_CHANGELOG_WORKFLOW = ".github/workflows/oss-changelog.yml"
 # workflow might not quote it the same way, so double quotes and a bare token are also
 # read: what matters is the value the CI leg actually gates on, not policing how it is
 # spelled.
-GATE_DIR_RE = re.compile(r"--dir\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))")
+#
+# The whitespace between `--dir` and its value is deliberately `[ \t]+`, not `\s+`
+# (#347). `\s` admits a newline, so a bare `--dir` at the end of a line let the
+# bare-token alternative reach across it and capture the FOLLOWING flag -- `--changelog`
+# -- as though it were the directory. `--changelog` is built from characters
+# `CHANGELOG_DIR_RE` admits, so it then passed directory-name validation too: a flag,
+# accepted as a value. `--dir` and its argument are always written on the same line by
+# `render_owned`, so restricting the gap to same-line whitespace changes nothing for a
+# well-formed workflow and stops the reach for a malformed one.
+#
+# The trailing alternative matches a `--dir` that carries no argument at all: same-line
+# whitespace (possibly none) followed by the end of the line, the end of the text, or an
+# unquoted token that itself starts with `-`. That last part of the lookahead closes the
+# same defect one clause over: `--dir --changelog CHANGELOG.md` on ONE line, no newline
+# anywhere, is exactly as ambiguous with the following flag as the newline-crossing case
+# -- an unquoted token that starts with `-` cannot be told apart from another CLI flag,
+# whether or not a line break separates it from `--dir`. The unquoted-value alternative's
+# `(?!-)` excludes that same shape from ever being captured as a value in the first
+# place, so it always falls through to "no value" instead. A QUOTED value starting with
+# `-` is unaffected either way -- `--dir '-x'` is unambiguously a value, because quoting
+# is what removes the ambiguity with a flag, not the character itself.
+#
+# None of this touches `changelog_dir_problem`: no captured value is ever refused on
+# content by this pattern, only recognised or not recognised as a value at all. #345's
+# argument was one value, one rule; a value that was never captured has no content for
+# that rule to apply to, which is why the bare/ambiguous case is a new EXTRACTION state
+# (`present-bare-dir`, below) rather than a second rule bolted onto the existing one.
+GATE_DIR_RE = re.compile(
+    r"--dir(?:[ \t]+(?:'([^']*)'|\"([^\"]*)\"|(?!-)(\S+))|[ \t]*(?=-|\r?\n|\Z))"
+)
 
 
 def _gate_directories(text):
-    """Every distinct `--dir` value named in a generated changelog workflow's text.
+    """(values, bare) -- every distinct `--dir` value named in a generated changelog
+    workflow's text, and whether any `--dir` occurrence carried no argument at all.
 
     An EMPTY value counts. `--dir ''` and a workflow carrying no `--dir` line at all
     are two different facts about a repository, and this used to return them both as
@@ -562,19 +592,29 @@ def _gate_directories(text):
     Which group participated is what selects the value, not which one is truthy: with
     `or` chaining, a matched-but-empty quoted group fell through to the two groups that
     did not participate and produced `None`, which is the same collapse one level down.
+
+    A match where NONE of the three groups participated is the trailing alternative in
+    `GATE_DIR_RE` above -- a `--dir` with no argument on its line (#347) -- and it is
+    reported back as `bare` rather than folded into `values`, for the same reason: it
+    is not a value nobody confirmed, it is no value at all.
     """
     values = set()
+    bare = False
     for match in GATE_DIR_RE.finditer(text):
+        captured = False
         for value in match.groups():
             if value is not None:
                 values.add(value)
+                captured = True
                 break
-    return values
+        if not captured:
+            bare = True
+    return values, bare
 
 
 def scaffolded_changelog_gate(repo_root):
     """(state, detail) for whether THIS repo's own scaffolded gate is on disk, and which
-    directory it polices (#299, #325, #343).
+    directory it polices (#299, #325, #343, #347).
 
     `changelog_dir: null` is ambiguous on its own: it means "never adopted fragments"
     for a hand-maintained repo, and it also means "adopted through scaffold.py's
@@ -629,7 +669,19 @@ def scaffolded_changelog_gate(repo_root):
     this share the shape "there is no directory to give you", and a caller that reached
     for `detail` as a path would get a sentence rather than a plausible-looking escape.
 
-    Five states, and "unknown" must never render as either "present" reading: a wrong
+    "present-bare-dir" is #347: a `--dir` occurrence on disk carries no argument at all
+    -- the flag, and nothing after it on its own line. This used to be misread as
+    "present-other-dir" naming the FOLLOWING flag as the directory, because the old
+    pattern's whitespace class crossed the newline between them. It is deliberately not
+    folded into "present-refused-dir": that state means a value was captured and does
+    not validate, and #345's argument was one value, one rule -- refusing a captured
+    token that merely starts with `-` would be a second rule on the same value. Here
+    nothing was captured, so there is no value for `changelog_dir_problem` to have an
+    opinion about; the defect is in extraction, not in content, so it gets its own state
+    rather than a second rule riding on an existing one. `detail` for this state is a
+    message, the same shape as "present-refused-dir" and "unknown".
+
+    Six states, and "unknown" must never render as either "present" reading: a wrong
     "absent" here costs a caller its existing loud refusal, unchanged from before this
     function existed; a wrong "present" or "present-other-dir" would pick a directory
     nobody confirmed, which is the one failure this exists to prevent. So an unreadable
@@ -654,7 +706,13 @@ def scaffolded_changelog_gate(repo_root):
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return "unknown", "{} could not be read: {}".format(path, type(exc).__name__)
-    directories = _gate_directories(text)
+    directories, bare = _gate_directories(text)
+    if bare:
+        return "present-bare-dir", (
+            "{} has a --dir flag with no argument on its line, so which fragments "
+            "this gate polices could not be determined. No caller may resolve "
+            "it.".format(path)
+        )
     if not directories:
         return "present", ""
     if len(directories) > 1:
