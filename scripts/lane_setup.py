@@ -231,6 +231,20 @@ def worktree_occupancy(path):
     which matters because CLAUDE.md records Windows folding several Win32 codes onto
     `ENOENT`, so a table would answer for a value it does not contain.
 
+    **Known gap, written down rather than left to be rediscovered (self-review of this
+    fix, raised by the audit spawn).** That same folding is what this classification
+    cannot see through. CLAUDE.md's own measurement is that an over-long path arrives
+    on Windows as `FileNotFoundError, errno 2, winerror None` -- no distinguishing
+    signal at all -- so a `worktree_root` deep enough that the derived path passes
+    `MAX_PATH` on a runner without `LongPathsEnabled` is classified `False` here and
+    printed `[free]`: the confident absence #373 exists to close, reachable through the
+    one exception type treated as safe. It is not closed here and must not be closed by
+    a length check, because `MAX_PATH` is conditional on a machine setting and a
+    constant would be the table this function just refused to write. `doctor._dir_state`
+    carries the identical gap by the identical argument, so closing it is a decision
+    about both and belongs in its own change rather than riding on this one. Filed, not
+    fixed: `misreports`, which the ranking table lets ship behind a filed issue.
+
     Deliberately `os.stat` rather than `Path.exists()` / `Path.is_dir()`, whose
     OSError-swallowing behaviour changed across 3.10-3.14 (CLAUDE.md, "Path.rglob and
     Path.is_dir each destroy the answer a guard beside them was written to read").
