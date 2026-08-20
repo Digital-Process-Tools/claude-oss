@@ -220,33 +220,66 @@ def test_no_input_can_occupy_an_option_position_at_any_argv_site(tmp_path, monke
     from a new input is covered the day it is added, without anyone remembering to come
     back here.
 
-    `repo` is asserted separately and for a different reason: it is `-C`'s argument, and
-    git consumes that literally rather than re-parsing it as an option (measured, git
-    2.46.2). So a dash-prefixed `--repo` is a bad directory, not an injection, and the
-    assertion here is only that it does not leak into the option positions.
+    `repo` is in the sweep for a different reason and is asserted differently. It is
+    `-C`'s argument, and git consumes that literally rather than re-parsing it as an
+    option (measured, git 2.46.2: `git --no-pager -C -x log` answers `fatal: cannot
+    change to '-x'`). So a dash-prefixed `--repo` is a bad directory rather than an
+    injection, and what has to hold is that it stays in that one slot -- the assertion
+    for this site is that the value never appears among the arguments at all.
+
+    Two review spawns caught the first version of this site independently and were both
+    right, which is worth recording where the next reader of the site is: it built the
+    hostile path as `tmp_path / "-repo"`, which is absolute and therefore does not start
+    with a dash at all, and it asserted only over `call["args"]` while the recorder files
+    the repository under `call["repo"]`. Two ways of measuring nothing in one three-line
+    site. The chdir below is what makes the value genuinely dash-prefixed, and
+    `test_the_repo_argument_is_always_preceded_by_dash_C` is the positive control that
+    the slot itself is what keeps it safe.
     """
-    sites = {
-        "remote": lambda: (_repo(tmp_path), 381, HOSTILE_DASH),
-        "default_branch": lambda: (_repo(tmp_path, default_branch=HOSTILE_DASH), 381, WELL_FORMED),
-        "branch_pattern": lambda: (
-            _repo(tmp_path, branch_pattern=HOSTILE_DASH + "/{issue}"),
-            381,
-            WELL_FORMED,
+    hostile_repo_dir = tmp_path / "-repo"
+    hostile_repo_dir.mkdir(exist_ok=True)
+    (hostile_repo_dir / ".oss.json").write_bytes((_repo(tmp_path) / ".oss.json").read_bytes())
+
+    def _hostile_repo_args():
+        # Relative, from `tmp_path`, so `str(repo)` really is `-repo`. An absolute path
+        # under a pytest tmpdir starts with a separator and measures nothing.
+        monkeypatch.chdir(tmp_path)
+        return ("-repo", 381, WELL_FORMED)
+
+    # `repo` is last on purpose: its builder chdirs, and a site running after it would
+    # be resolving relative paths from somewhere it did not choose.
+    sites = [
+        ("remote", HOSTILE_DASH, lambda: (_repo(tmp_path), 381, HOSTILE_DASH)),
+        (
+            "default_branch",
+            HOSTILE_DASH,
+            lambda: (_repo(tmp_path, default_branch=HOSTILE_DASH), 381, WELL_FORMED),
         ),
-        "repo": lambda: (tmp_path / "-repo", 381, WELL_FORMED),
-    }
+        (
+            "branch_pattern",
+            HOSTILE_DASH + "/{issue}",
+            lambda: (
+                _repo(tmp_path, branch_pattern=HOSTILE_DASH + "/{issue}"),
+                381,
+                WELL_FORMED,
+            ),
+        ),
+        ("repo", "-repo", _hostile_repo_args),
+    ]
 
     control = _capture(monkeypatch)
     lane_setup.compute(_repo(tmp_path), 381, WELL_FORMED)
     assert control, "the harness produced no calls at all, so the sweep measured nothing"
 
-    for name, build in sites.items():
-        if name == "repo":
-            hostile_root = _repo(tmp_path)
-            (tmp_path / "-repo").mkdir(exist_ok=True)
-            (tmp_path / "-repo" / ".oss.json").write_bytes(
-                (hostile_root / ".oss.json").read_bytes()
-            )
+    for name, hostile, build in sites:
+        # The premise of the site, asserted rather than assumed. A site whose "hostile"
+        # value is not dash-prefixed sweeps a benign input and reports coverage it does
+        # not have -- which is precisely how the `repo` site was wrong on its first
+        # draft, and neither the loop below nor a green run would have said so.
+        assert hostile.startswith("-"), (
+            "the {0} site's value is not dash-prefixed, so it measures nothing: "
+            "{1!r}".format(name, hostile)
+        )
         calls = _capture(monkeypatch)
         lane_setup.compute(*build())
         # A site that produced no argv at all passes every assertion below without
@@ -258,3 +291,43 @@ def test_no_input_can_occupy_an_option_position_at_any_argv_site(tmp_path, monke
                 assert not arg.startswith("-") or arg in LITERAL_FLAGS, (
                     "{0} reached an option position: {1!r}".format(name, call["args"])
                 )
+            if name == "repo":
+                assert "-repo" not in call["args"], (
+                    "the repository left `-C`'s slot and joined the arguments: {!r}".format(
+                        call["args"]
+                    )
+                )
+                assert call["repo"] == "-repo", call
+
+
+def test_the_repo_argument_is_always_preceded_by_dash_C(tmp_path, monkeypatch):
+    """The positive control for the `repo` site above, one layer down.
+
+    The sweep can only see the arguments `_git` was *called with*; what makes a
+    dash-prefixed repository safe is the argv `_git` *builds* around it, so that is
+    measured here directly. `subprocess.run` is patched on the module the code under
+    test calls, at call time, rather than on a name captured at import.
+    """
+    seen = {}
+
+    class _Done(object):
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(argv, **kwargs):
+        seen["argv"] = list(argv)
+        return _Done()
+
+    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(lane_setup.subprocess, "run", _fake_run)
+
+    lane_setup._git("-repo", "rev-parse", "HEAD")
+
+    argv = seen.get("argv")
+    assert argv, "subprocess.run was never called, so nothing was measured"
+    assert "-repo" in argv, argv
+    assert argv[argv.index("-repo") - 1] == "-C", (
+        "the repository was not in `-C`'s slot, so a dash-prefixed --repo is an "
+        "option injection rather than a bad directory: {!r}".format(argv)
+    )
