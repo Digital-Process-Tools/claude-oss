@@ -53,6 +53,7 @@ read is a failure with its own name, never an empty set of findings.
 """
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -160,6 +161,73 @@ def resolver_blocks(text):
     return hits
 
 
+def tracked_paths(root, directories):
+    """(paths, problem_or_None) -- the files git tracks under `directories`.
+
+    Not a filesystem walk. The first version of this census walked the
+    directories with `Path.rglob` and swallowed every read error, which is the
+    absence-produced-by-the-tool shape; replacing that swallow with a reported
+    `unreadable` list immediately turned up eleven `.pyc` files under
+    `scripts/__pycache__` -- build output the walk had been silently skipping
+    all along. The answer is not a suffix filter, which is #193 wearing a
+    different hat, but a better question: "which files are part of this
+    repository" is something git already knows, and it excludes build output by
+    construction rather than by a pattern somebody has to keep current.
+
+    git failing to answer is its own state and is never folded into "no files
+    tracked" -- an empty list would let the census pass while measuring
+    nothing, which is the failure this file is named after.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "-z", "--"] + list(directories),
+            cwd=str(root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        return [], "git could not be run: {!r}".format(exc)
+    if completed.returncode != 0:
+        return [], "git ls-files exited {}: {}".format(
+            completed.returncode,
+            completed.stderr.decode("utf-8", "replace").strip(),
+        )
+    names = [
+        chunk
+        for chunk in completed.stdout.decode("utf-8", "surrogateescape").split("\0")
+        if chunk
+    ]
+    return [Path(root) / name for name in names], None
+
+
+def readable_texts(paths):
+    """({path: text}, [(path, exception)]) -- two lists, never one.
+
+    A path that will not read is reported rather than skipped. Skipping it
+    removes a possible consumer from the census and leaves the caller saying
+    "nothing is missing" about a file it never opened.
+    """
+    texts = {}
+    unreadable = []
+    for path in paths:
+        if path == PRODUCER:
+            continue
+        try:
+            texts[path] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            unreadable.append((path, exc))
+    return texts, unreadable
+
+
+def unlisted_callers(texts, listed):
+    """Files that name the producer and are on neither consumer list."""
+    return {
+        path
+        for path, text in texts.items()
+        if PRODUCER_FUNCTION in text and path not in listed
+    }
+
+
 # --- the join itself -------------------------------------------------------
 
 
@@ -251,24 +319,39 @@ def test_the_deferred_consumer_is_still_deferred():
 def test_the_consumer_census_lists_every_file_that_calls_the_gate():
     """A tuple that omits a consumer is #321. This does not derive the list --
     it cannot -- but it catches the cheapest way for it to go stale.
+
+    The census claims *completeness*, so a file it could not read sinks the
+    claim rather than being skipped past. `unreadable` is asserted before
+    `missing`: "no consumer was missed" and "a consumer may have been missed
+    and I could not tell" are two answers, and reporting the second as the
+    first is the defect this whole file is about, one layer down.
     """
-    listed = set(GATE_STATE_CONSUMERS)
-    callers = set()
-    for directory in ("commands", "scripts"):
-        for path in sorted((REPO_ROOT / directory).rglob("*")):
-            if path == PRODUCER or not path.is_file():
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            if PRODUCER_FUNCTION in text:
-                callers.add(path)
-    missing = sorted(str(p.relative_to(REPO_ROOT)) for p in callers - listed)
+    paths, problem = tracked_paths(REPO_ROOT, ("commands", "scripts"))
+    assert problem is None, (
+        "the consumer census could not list the repository's own files ({}), "
+        "so it measured nothing -- which is not the same answer as no "
+        "consumer being missing.".format(problem)
+    )
+    assert paths, (
+        "git tracks no files under commands/ or scripts/, which cannot be "
+        "true of this repository -- the census is looking somewhere wrong"
+    )
+    texts, unreadable = readable_texts(paths)
+    assert not unreadable, (
+        "the consumer census could not read {} -- so it cannot claim that no "
+        "consumer is missing from GATE_STATE_CONSUMERS. An unreadable file is "
+        "unknown, not absent.".format(
+            [(str(p), repr(e)) for p, e in unreadable]
+        )
+    )
+    missing = unlisted_callers(texts, set(GATE_STATE_CONSUMERS))
     assert not missing, (
         "{} name `{}` and are in neither ENFORCED_CONSUMERS nor "
         "DEFERRED_CONSUMERS. Add each, enforced if it can be fixed now and "
-        "deferred with a reason if it cannot.".format(missing, PRODUCER_FUNCTION)
+        "deferred with a reason if it cannot.".format(
+            sorted(str(p.relative_to(REPO_ROOT)) for p in missing),
+            PRODUCER_FUNCTION,
+        )
     )
 
 
@@ -325,6 +408,91 @@ def test_naming_the_longer_state_does_not_also_satisfy_the_shorter_one():
     """
     text = "only `present-other-dir` is named here."
     assert states_unnamed_by(text, {"present", "present-other-dir"}) == {"present"}
+
+
+def test_the_census_fires_on_a_caller_that_is_on_neither_list(tmp_path):
+    """The must-fire half the census had none of. Without it, a green run
+    proves the census agrees with today's file set and nothing more.
+    """
+    listed = tmp_path / "listed.md"
+    listed.write_text("calls scaffolded_changelog_gate\n", encoding="utf-8")
+    stranger = tmp_path / "stranger.md"
+    stranger.write_text("also calls scaffolded_changelog_gate\n", encoding="utf-8")
+    texts, unreadable = readable_texts([listed, stranger])
+    assert unreadable == []
+    assert unlisted_callers(texts, {listed}) == {stranger}
+
+
+def test_the_census_stays_silent_when_every_caller_is_listed(tmp_path):
+    """The must-not-fire half. Paired with the above, this separates a census
+    that discriminates from one that reports every file it sees.
+    """
+    listed = tmp_path / "listed.md"
+    listed.write_text("calls scaffolded_changelog_gate\n", encoding="utf-8")
+    quiet = tmp_path / "quiet.md"
+    quiet.write_text("mentions nothing at all\n", encoding="utf-8")
+    texts, _ = readable_texts([listed, quiet])
+    assert unlisted_callers(texts, {listed}) == set()
+
+
+def test_the_census_reports_a_file_it_cannot_decode_rather_than_skipping_it(
+    tmp_path,
+):
+    """The third state of the read, and it needs no privileges and no
+    platform-specific mode bits: bytes that are not UTF-8 are not UTF-8
+    everywhere. A file that would have been a caller must not vanish.
+    """
+    bad = tmp_path / "bad.md"
+    bad.write_bytes(b"\xff\xfe calls scaffolded_changelog_gate\n")
+    texts, unreadable = readable_texts([bad])
+    assert bad not in texts
+    assert [path for path, _exc in unreadable] == [bad]
+    assert isinstance(unreadable[0][1], (UnicodeDecodeError, OSError))
+
+
+def test_the_census_reports_a_listing_it_could_not_get(tmp_path):
+    """The third state of the *enumeration*. `tmp_path` is not a git
+    repository, so `git ls-files` refuses -- and the census must return that
+    refusal rather than an empty file list, which would pass every assertion
+    after it while measuring nothing.
+
+    If this environment has no git at all, the OSError arm answers instead and
+    is equally the point; both are asserted as one, because which of the two
+    fires is a fact about the runner rather than about the code.
+    """
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(tmp_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).returncode == 0
+    except OSError:
+        # No git on this runner. tracked_paths then answers through its OSError
+        # arm, which is the same third state this control is about, so the
+        # assertions below still hold and there is nothing to skip.
+        inside = False
+    if inside:
+        pytest.skip(
+            "this runner's tmp_path ({}) is inside a git work tree, so the "
+            "refusal this control needs cannot be produced here; the "
+            "enumeration's problem arm went untested".format(tmp_path)
+        )
+    paths, problem = tracked_paths(tmp_path, ("commands",))
+    assert paths == []
+    assert problem, (
+        "git answered nothing usable and the census reported no problem -- "
+        "so an empty census would have read as a complete one"
+    )
+
+
+def test_the_census_enumeration_returns_no_problem_on_a_real_repository():
+    """The must-not-fire half of the pair above: without it, a `tracked_paths`
+    that reported a problem unconditionally would satisfy the control.
+    """
+    paths, problem = tracked_paths(REPO_ROOT, ("commands",))
+    assert problem is None
+    assert any(path.name == "changelog.md" for path in paths)
 
 
 def test_the_producer_extraction_fails_loudly_when_the_function_is_gone():
