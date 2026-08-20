@@ -67,7 +67,7 @@ def test_check_directory_unreadable_reports_unknown_not_absent(monkeypatch, tmp_
     exist" with the remedy that sentence carries.
     """
     target = tmp_path / "maybe-there"
-    _raise_for(monkeypatch, "is_dir", target, PermissionError(errno.EACCES, "denied"))
+    _raise_for(monkeypatch, "stat", target, PermissionError(errno.EACCES, "denied"))
 
     doctor.check_directory("clone", str(target))
     level, message = doctor.FINDINGS[-1]
@@ -90,10 +90,19 @@ def test_check_directory_genuinely_absent_still_reports_absent(tmp_path):
 
 def test_check_directory_real_unreadable_parent_reaches_unknown(tmp_path):
     """Same claim, measured against a real filesystem rather than injected.
-    Confirmed by attempting the exact operation doctor.py performs --
-    `Path.is_dir()` on the child -- because root ignores the mode bit, some
-    filesystems ignore it, and Windows' `os.chmod` on a directory toggles a
-    read-only attribute that does not stop a listing.
+
+    Confirmed by attempting the exact operation `_dir_state` performs --
+    `Path.stat()` on the child, not `Path.is_dir()` -- because root ignores
+    the mode bit, some filesystems ignore it, Windows' `os.chmod` on a
+    directory toggles a read-only attribute that does not stop a listing,
+    and -- the reason this probes `stat()` specifically rather than
+    `is_dir()` (self-review, #363) -- on this repo's local Python 3.14,
+    `Path.is_dir()` itself swallows the very `PermissionError` `stat()`
+    raises, so a probe against `is_dir()` would report "the mode bit did not
+    deny traversal on this platform" when the mode bit did, and the true
+    cause was the interpreter's own pathlib, not the platform. Probing the
+    call the code under test actually makes is what a permission fixture
+    being a measurement rather than a given means here.
     """
     import os
 
@@ -113,13 +122,13 @@ def test_check_directory_real_unreadable_parent_reaches_unknown(tmp_path):
 
     try:
         try:
-            child.is_dir()
+            child.stat()
         except OSError:
             pass
         else:
             pytest.skip(
                 "the mode bit did not deny traversal on this platform/"
-                "filesystem: Path.is_dir() on the child succeeded despite "
+                "filesystem: Path.stat() on the child succeeded despite "
                 "the denied parent. What went untested is whether a real "
                 "unreadable parent reaches the unknown state."
             )
@@ -142,7 +151,7 @@ def test_check_jit_rules_unreadable_reports_unknown_not_absent(monkeypatch, tmp_
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     target = project_dir / doctor.JIT_RULES_DIR
-    _raise_for(monkeypatch, "is_dir", target, PermissionError(errno.EACCES, "denied"))
+    _raise_for(monkeypatch, "stat", target, PermissionError(errno.EACCES, "denied"))
 
     doctor.check_jit_rules(project_dir)
     level, message = doctor.FINDINGS[-1]
@@ -174,7 +183,7 @@ def test_resolve_project_dir_unreadable_root_reports_unknown_not_fail(monkeypatc
     scenario is an unreadable *parent* of `--root`.
     """
     target = tmp_path / "maybe-a-repo"
-    _raise_for(monkeypatch, "is_dir", target, PermissionError(errno.EACCES, "denied"))
+    _raise_for(monkeypatch, "stat", target, PermissionError(errno.EACCES, "denied"))
 
     chosen, findings = doctor.resolve_project_dir(str(target), None, str(tmp_path))
     assert chosen == target

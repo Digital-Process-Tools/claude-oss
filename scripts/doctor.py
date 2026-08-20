@@ -601,20 +601,48 @@ def _dir_state(path):
     permission on the *parent*, not on the target (#363, confirmed against
     #341's own reproduction, which never reaches this case for exactly that
     reason). So the case this exists for is an unreadable *parent* of
-    ``path``, where `is_dir()` itself raises `OSError` on at least this
-    repo's own 3.9, 3.11 and 3.13 -- see `_safe_is_file` for the measurement,
-    which is the same shape one call over. Swallowing that raise to `False`,
-    `_safe_is_dir`'s job elsewhere, would report a directory that may well be
-    there as a confident "does not exist" with a remedy attached -- the exact
-    sentence #341 was filed about, one call site over. So callers that print
-    a verdict get a third answer instead: ``"dir"``, ``"absent"``, or
-    ``"unreadable"`` with the exception's own text as detail, never asserted
-    from an errno table.
+    ``path``, where the underlying stat call raises `OSError` on at least
+    this repo's own 3.9, 3.11 and 3.13 -- see `_safe_is_file` for the
+    measurement, which is the same shape one call over. Swallowing that raise
+    to `False`, `_safe_is_dir`'s job elsewhere, would report a directory that
+    may well be there as a confident "does not exist" with a remedy attached
+    -- the exact sentence #341 was filed about, one call site over. So
+    callers that print a verdict get a third answer instead: ``"dir"``,
+    ``"absent"``, or ``"unreadable"`` with the exception's own text as
+    detail, never asserted from an errno table.
+
+    Deliberately `path.stat()`, not `path.is_dir()` (self-review, #363):
+    `is_dir()` wraps its own `stat()` call in a version-dependent swallow --
+    measured directly, on this machine's local 3.14 install, `is_dir()`
+    against the exact fixture above returns `False` with no exception at
+    all, so an `except OSError` around `is_dir()` itself is unreachable there
+    and this function would silently degrade back into the confident-absence
+    bug it exists to fix, on precisely the interpreter this repo's own
+    CLAUDE.md already flags as the one that swallows. `path.stat()` does
+    raise there (also measured directly, same fixture); 3.9/3.11/3.13 are
+    reasoned rather than independently measured for `stat()` specifically --
+    `is_dir()` already re-raises on those three (this file's own
+    `_safe_is_file` measurement, the same shape one call over), and `is_dir()`
+    can only re-raise what its own internal `stat()` call raised first, so
+    `stat()` itself raising there is implied rather than a fresh claim.
+
+    `stat()` raises `FileNotFoundError`/`NotADirectoryError` for a genuinely
+    absent path too (self-review, #363: the first version of this function
+    folded that into "unreadable" and broke every genuinely-absent case,
+    caught by this file's own must-not-fire controls). Both are `OSError`
+    subclasses whose type -- not an errno table, which CLAUDE.md already
+    warns folds several Win32 codes onto `ENOENT` on Windows -- is what
+    Python's own interpreter normalises platform errors into, so they are
+    caught ahead of the general `OSError` arm and read as ordinary absence;
+    everything else reaching `OSError` is the unreadable case.
     """
     try:
-        return ("dir", "") if path.is_dir() else ("absent", "")
+        st = path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent", ""
     except OSError as exc:
         return "unreadable", _one_line(str(exc))
+    return ("dir" if stat.S_ISDIR(st.st_mode) else "absent"), ""
 
 
 def _own_supertool_tree(project_dir):
