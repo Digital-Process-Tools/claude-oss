@@ -303,12 +303,40 @@ def test_worktree_bare_issue_number_never_escapes_the_root(tmp_path):
 # ----------------------------------------------------------------------------- board
 
 
-def _stub_supertool(tmp_path, script_body):
+def _stub_supertool(tmp_path, text, exit_code=0):
+    """A fake `supertool` on PATH that prints `text` and exits `exit_code`.
+
+    Two files, not one: the board text goes in a sidecar `board.txt` and the launcher
+    only ever does `cat`/`type` on it, so the launcher itself never has to embed
+    arbitrary text in shell or batch syntax -- nothing here needs escaping.
+
+    `shutil.which` resolves an extensionless `supertool` on POSIX, but on Windows it
+    only probes names already carrying one of `PATHEXT`'s extensions (`.cmd`, `.exe`,
+    ...) unless the bare name already ends in one -- a bare-name file is never found
+    at all, which is a different and worse failure than "found but unspawnable"
+    (CLAUDE.md's platform-audit checklist names both shapes separately). So the
+    launcher is `supertool.cmd` on Windows and plain `supertool` elsewhere, each
+    exercising the real `shutil.which` PATHEXT/executable-bit resolution rather than
+    being skipped past it.
+    """
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
-    stub = bindir / "supertool"
-    stub.write_text("#!/bin/sh\n" + script_body, encoding="utf-8")
-    stub.chmod(0o755)
+    board = bindir / "board.txt"
+    board.write_text(text, encoding="utf-8")
+
+    if os.name == "nt":
+        stub = bindir / "supertool.cmd"
+        stub.write_text(
+            "@echo off\r\ntype \"{0}\"\r\nexit /b {1}\r\n".format(board, exit_code),
+            encoding="utf-8",
+        )
+    else:
+        stub = bindir / "supertool"
+        stub.write_text(
+            "#!/bin/sh\ncat \"{0}\"\nexit {1}\n".format(board, exit_code), encoding="utf-8"
+        )
+        stub.chmod(0o755)
+
     env = _env()
     env["PATH"] = str(bindir) + os.pathsep + env["PATH"]
     return env
@@ -329,7 +357,7 @@ def test_board_is_condensed_from_a_stubbed_supertool(tmp_path):
         "[exit 0] a long paragraph of static help text that must not survive either\n"
         "[result] 1 occupied, 0 idle, 0 cannot tell, 0 DIRTY\n"
     )
-    env = _stub_supertool(tmp_path, "cat <<'BOARD'\n" + fake_board + "BOARD\n")
+    env = _stub_supertool(tmp_path, fake_board)
 
     code, payload = _payload(repo, 317, env=env)
     assert payload["board"]["state"] == "ok"
@@ -345,13 +373,39 @@ def test_board_is_condensed_from_a_stubbed_supertool(tmp_path):
     assert not any(line.startswith("PASS") for line in lines)
 
 
+def test_board_is_could_not_run_on_a_nonzero_exit_even_when_the_op_name_is_echoed(tmp_path):
+    """A real failure this plugin's own supertool produces: an unavailable-op error
+    still echoes the op's own name in its message ("op 'git-worktrees' is
+    unavailable here..."), so a substring check on stdout alone cannot tell that
+    apart from a real board. The exit code is what actually distinguishes them --
+    `git-worktrees` with no PATH argument always exits 0 on success.
+    """
+    origin = _origin(tmp_path)
+    repo = _clone(origin, tmp_path / "work")
+    fake_error = "--- git-worktrees ---\nERROR: op 'git-worktrees' is unavailable here\n"
+    env = _stub_supertool(tmp_path, fake_error, exit_code=1)
+
+    code, payload = _payload(repo, 317, env=env)
+    assert payload["board"]["state"] == "could-not-run"
+    assert payload["board"]["lines"] == []
+    assert code == OK, "a board failure does not by itself block the whole call"
+
+
 def test_board_is_could_not_run_when_supertool_is_absent(tmp_path):
     origin = _origin(tmp_path)
     repo = _clone(origin, tmp_path / "work")
     env = _env()
-    # A PATH with no supertool on it at all -- not merely "supertool failed".
+    # A PATH with no supertool on it at all -- not merely "supertool failed". Any
+    # extension (`.cmd`, `.exe`, ...) counts, since `shutil.which` on Windows would
+    # find those too.
+    def _has_supertool(directory):
+        try:
+            return any(p.stem == "supertool" for p in Path(directory).iterdir())
+        except OSError:
+            return False
+
     stripped = os.pathsep.join(
-        p for p in env["PATH"].split(os.pathsep) if not (Path(p) / "supertool").exists()
+        p for p in env["PATH"].split(os.pathsep) if p and not _has_supertool(p)
     )
     env["PATH"] = stripped
 
@@ -369,7 +423,7 @@ def test_board_could_not_run_is_distinct_from_an_empty_board(tmp_path):
     origin = _origin(tmp_path)
     repo = _clone(origin, tmp_path / "work")
     fake_board = "# git-worktrees (0)\n[result] 0 occupied, 0 idle, 0 cannot tell, 0 DIRTY\n"
-    env = _stub_supertool(tmp_path, "cat <<'BOARD'\n" + fake_board + "BOARD\n")
+    env = _stub_supertool(tmp_path, fake_board)
 
     code, payload = _payload(repo, 317, env=env)
     assert payload["board"]["state"] == "ok"
@@ -377,6 +431,43 @@ def test_board_could_not_run_is_distinct_from_an_empty_board(tmp_path):
 
 
 # ---------------------------------------------------------------------------- exit
+
+
+def test_receipt_distinguishes_unknown_branch_occupancy_from_confirmed_free(tmp_path):
+    """`branch_occupancy` can legitimately answer `None` (git could not be asked),
+    and the receipt must not render that the same as a confirmed `False` -- the
+    exact collapse this module exists to stop happening to a lane brief.
+    """
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import lane_setup  # noqa: E402
+
+    base_payload = {"remote": "origin", "state": "resolved", "ref": "origin/main", "sha": "a" * 40, "detail": ""}
+
+    confirmed_free = dict(
+        issue=317,
+        repo=".",
+        config={"state": "ok", "problems": []},
+        base=base_payload,
+        branch={
+            "state": "resolved",
+            "pattern": "fix/{issue}",
+            "name": "fix/317",
+            "exists_local": False,
+            "exists_remote": False,
+            "detail": "",
+        },
+        worktree={"state": "unknown", "root": None, "path": None, "detail": "", "exists": None},
+        board={"state": "ok", "lines": [], "detail": ""},
+    )
+    unknown = dict(confirmed_free)
+    unknown["branch"] = dict(confirmed_free["branch"], exists_local=None, exists_remote=None)
+
+    free_text = lane_setup.receipt(confirmed_free)
+    unknown_text = lane_setup.receipt(unknown)
+
+    assert "unknown" not in free_text.split("branch")[1].splitlines()[0]
+    assert "unknown" in [l for l in unknown_text.splitlines() if l.startswith("branch")][0]
+    assert free_text != unknown_text, "a confirmed-free branch and an unknown one must not render alike"
 
 
 def test_receipt_mode_prints_text_not_json(tmp_path):

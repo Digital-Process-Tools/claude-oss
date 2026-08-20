@@ -239,11 +239,21 @@ def read_board(repo):
             "lines": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
-    if "git-worktrees" not in done.stdout:
+    # A nonzero exit is a real op failure -- an unavailable op, a crash -- and it is
+    # not enough to check the header text alone: an error message that names the op
+    # (as this plugin's own error text does, "op 'git-worktrees' is unavailable
+    # here...") still contains the substring "git-worktrees" and would otherwise read
+    # as a successful, well-formed, one-line board. `git-worktrees` with no PATH
+    # argument always exits 0 on success (its own text says so), so a nonzero return
+    # here is never a tree's occupancy code -- it is the call itself failing.
+    if done.returncode != 0 or "git-worktrees" not in done.stdout:
         return {
             "state": "could-not-run",
             "lines": [],
-            "detail": _one_line(done.stderr or done.stdout or "empty output", 300),
+            "detail": _one_line(
+                "exit {0}: {1}".format(done.returncode, done.stderr or done.stdout or "empty output"),
+                300,
+            ),
         }
     return {"state": "ok", "lines": _condense_board(done.stdout), "detail": ""}
 
@@ -334,10 +344,14 @@ def receipt(payload):
         lines.append("branch    : UNKNOWN -- {0}".format(branch["detail"]))
     else:
         occ = []
-        if branch["exists_local"]:
+        if branch["exists_local"] is True:
             occ.append("already exists locally")
-        if branch["exists_remote"]:
+        elif branch["exists_local"] is None:
+            occ.append("local existence unknown")
+        if branch["exists_remote"] is True:
             occ.append("already exists on " + base["remote"])
+        elif branch["exists_remote"] is None:
+            occ.append("{0} existence unknown".format(base["remote"]))
         occ_text = " [{0}]".format(", ".join(occ)) if occ else ""
         lines.append(_row("branch", branch["name"] + occ_text))
 
