@@ -7,6 +7,14 @@ This exercises the whole path `release_version._fragment_dir` walks, not just th
 `oss_config` function underneath it: the reproduction from the issue itself, with a real
 fragment in the named directory and a stale one sitting in `changelog.d/` where the old
 code would have silently looked.
+
+Every directory below is benign, and that is now a deliberate division rather than the
+whole of the coverage. All three tests here answer "does the gate's own directory get
+used", and none of them asks "is that directory one this repo would accept" -- which is
+why a guarded value and an unguarded one were indistinguishable to the suite until #343.
+The hostile half lives in `tests/test_gate_dir_validated_343.py`, which drives the same
+two functions with values the `.oss.json` entrance refuses. Read the two together: this
+file is the must-not-fire half of that one.
 """
 
 import sys

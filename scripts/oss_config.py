@@ -560,7 +560,7 @@ def _gate_directories(text):
 
 def scaffolded_changelog_gate(repo_root):
     """(state, detail) for whether THIS repo's own scaffolded gate is on disk, and which
-    directory it polices (#299, #325).
+    directory it polices (#299, #325, #343).
 
     `changelog_dir: null` is ambiguous on its own: it means "never adopted fragments"
     for a hand-maintained repo, and it also means "adopted through scaffold.py's
@@ -587,7 +587,27 @@ def scaffolded_changelog_gate(repo_root):
     alone cannot say that. `detail` for this state IS the directory read out of the
     workflow, a relative path string, not a message.
 
-    Four states, and "unknown" must never render as either "present" reading: a wrong
+    "present-refused-dir" is #343, and it is the state that says the gate was read
+    perfectly well and named something inadmissible. `changelog_dir` has a validating
+    guard at the `.oss.json` entrance -- `changelog_dir_problem`, written for #173
+    because the value becomes a path and a shell argument -- and #327 opened a second
+    entrance for the same value, this one, which applied none of it. An absolute
+    `--dir` discards the repo root at `Path(repo) / detail` and a `..` chain walks out
+    of it, and the directory this function names is the one `/oss:changelog` folds,
+    which unlinks every fragment it consumes.
+
+    The same rule is applied here rather than a new one, for a reason narrower than
+    "it already existed": this is the same key, carrying the same meaning, reaching the
+    same two consumers -- a `run:` line of a generated workflow and a fold that deletes
+    files under whatever it names. Two rules for one value is how the entrances came to
+    disagree in the first place, so `tests/test_gate_dir_validated_343.py` asserts the
+    two as an *equivalence* over one value set rather than restating the rule.
+
+    `detail` for this state is a message, deliberately not the directory: `unknown` and
+    this share the shape "there is no directory to give you", and a caller that reached
+    for `detail` as a path would get a sentence rather than a plausible-looking escape.
+
+    Five states, and "unknown" must never render as either "present" reading: a wrong
     "absent" here costs a caller its existing loud refusal, unchanged from before this
     function existed; a wrong "present" or "present-other-dir" would pick a directory
     nobody confirmed, which is the one failure this exists to prevent. So an unreadable
@@ -621,6 +641,12 @@ def scaffolded_changelog_gate(repo_root):
             "polices could not be determined".format(path, ", ".join(sorted(directories)))
         )
     named = next(iter(directories))
+    problem = changelog_dir_problem(named)
+    if problem:
+        return "present-refused-dir", (
+            "{} names a --dir of {!r}, which is not a usable fragment directory: "
+            "{} No caller may resolve it.".format(path, named, problem)
+        )
     if named == DEFAULT_FRAGMENTS_DIR:
         return "present", ""
     return "present-other-dir", named
