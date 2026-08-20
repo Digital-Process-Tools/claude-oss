@@ -397,6 +397,29 @@ The definitions carry worktree setup, TDD and the report format, so a brief carr
 about **this** issue. That matters: **boilerplate is where unverified claims hide, because it is the
 part nobody proofreads.**
 
+### The developer's model default is sonnet, and an override is recorded
+
+`agents/developer.md`'s own frontmatter carries `model: sonnet` — the maintainer's decision on #316,
+priced rather than typed here so the two do not drift: Sonnet developer lanes cost `$10.17` mean at
+200 turns against Opus's `$16.86` at 139, and the four Sonnet lanes billed `$40.69` actual against
+`$101.73` repriced at Opus rates. **Both halves of the evidence, because a rule that quotes only the
+price is selling half the case**: the quadratic turn penalty this issue predicted is real — Sonnet
+took roughly 1.4-1.7x the turns on the trial's small sample — and 3 of those 4 lanes needed a
+maintainer round trip against 2 of 8 Opus. The round trips traced to a missing rule in the *brief*,
+not the model (#353); measured over the full population this project has produced (143 lanes, 15
+Sonnet / 128 Opus), Sonnet takes **fewer** guard refusals per turn than Opus on every class, and the
+extra turns are narration — text-only turns with no tool call — not extra work. So the fix for the
+turns lives in the definition's turn-discipline rules, not in reaching for a pricier model.
+
+Revert a **single lane** to `opus` when any reversal condition fires on it, and record the instance
+rather than change the shipped default from one sample: a lane needs a second attempt; a review
+disposition is `refused` with no argument, or a finding is referenced without being stated (#275); a
+red run is claimed rather than shown; or the brief is taken at face value where it was wrong.
+
+Record every dispatched lane so the mix stays recomputable rather than asserted — `scripts/oss_state.py`
+takes it as `--lane ISSUE=MODEL:CHOICE[:WHY]` alongside the tick's `--decision` (`default` needs no
+reason, `override` does), and `--model-trend` re-adds the mix across the whole history.
+
 ### Run a fleet, not a queue
 
 **Several developers in parallel. That is the point of this loop, not an optimisation of it.** One

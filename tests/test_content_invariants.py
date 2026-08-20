@@ -4109,3 +4109,88 @@ def test_a_neighbouring_op_that_does_refuse_is_not_swept_in():
 
 def test_prose_that_never_names_the_op_is_not_reported():
     assert _claimed_guarantee_unmet("Push the branch, then open the pull request.") == set()
+
+
+# ------------------- a lesson learned on resume must not live only there (#353)
+#
+# Three developer lanes in the #316 trial ended their turn waiting on a background suite
+# run they had launched themselves -- no report, no commit, and one lane did it twice,
+# the second time after being told in as many words not to. The fix worked and it was
+# typed into a resume message and nowhere else, so the next lane never saw it: the same
+# defect class this repository is named after, one level up -- a lesson that was learned,
+# applied and verified, and which renders identically to a lesson that was never learned,
+# because nothing durable held it.
+#
+# One document, not two, unlike the #266 out-of-tree-write pair above: the rule this
+# section holds is about a developer lane's own suite run, and `agents/developer.md` is
+# the definition every developer lane loads directly, regardless of which brief spawned
+# it. There is no second entry point that needs its own copy.
+
+ANTI_BACKGROUND_DOCUMENT = REPO_ROOT / "agents" / "developer.md"
+
+#: What supertool's own trigger looks like is not the shape here -- this check is
+#: unconditional, because the document it holds is fixed and always carries the rule.
+ANTI_BACKGROUND_ANCHORS = (
+    ("the-wall-clock-is-not-named", r"27m36s"),
+    (
+        "the-foreground-instruction-is-not-given",
+        r"do not end your turn to wait|run it in the foreground",
+    ),
+    (
+        "the-consequence-is-not-stated",
+        r"notifies as `completed`|notifies as completed",
+    ),
+)
+
+
+def _anti_background_unmet(text):
+    collapsed = _collapse(text).lower()
+    return {
+        key for key, pattern in ANTI_BACKGROUND_ANCHORS
+        if not re.search(pattern, collapsed)
+    }
+
+
+def test_the_developer_definition_states_the_anti_background_rule():
+    text = ANTI_BACKGROUND_DOCUMENT.read_text(encoding="utf-8")
+    unmet = _anti_background_unmet(text)
+    assert not unmet, (
+        "agents/developer.md no longer carries the rule against ending a turn to wait "
+        "on a backgrounded suite run (#353): {}".format(sorted(unmet))
+    )
+
+
+#: The document as it stood before #353 -- the two hits both about the review spawns'
+#: `run_in_background: false`, and nothing about the developer's own suite run. All
+#: three anchors must fire on it, or they were satisfied by the wording they replaced.
+PRE_353_SUITE_PARAGRAPH = """
+   The anti-pattern is the expensive half: **never re-run the full suite to watch a failure you have
+   already seen.** Go back to the one file. Re-running everything to re-read the same assertion is
+   the most wasteful loop available to a delegated agent.
+3. **A negative assertion needs a positive control.**
+"""
+
+
+def test_the_anti_background_check_fires_on_the_pre_353_wording():
+    assert _anti_background_unmet(PRE_353_SUITE_PARAGRAPH) == {
+        "the-wall-clock-is-not-named",
+        "the-foreground-instruction-is-not-given",
+        "the-consequence-is-not-stated",
+    }
+
+
+def test_a_document_that_states_all_three_is_not_reported():
+    """The must-not-fire half, built up one anchor at a time so a false pass in one
+    cannot hide behind the other two happening to be present already."""
+    stated = (
+        "Do not end your turn to wait on a suite run you launched. 27m36s is the "
+        "measured wall clock. An agent that stops with work uncommitted notifies as "
+        "`completed`, so the stop is invisible until somebody reads the worktree."
+    )
+    assert _anti_background_unmet(stated) == set()
+
+    # Must-fire, same fixture: drop the consequence and the finding comes back.
+    partial = stated.replace(
+        ", so the stop is invisible until somebody reads the worktree.", "."
+    ).replace("notifies as `completed`", "notifies")
+    assert _anti_background_unmet(partial) == {"the-consequence-is-not-stated"}
