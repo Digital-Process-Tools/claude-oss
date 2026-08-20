@@ -4194,3 +4194,124 @@ def test_a_document_that_states_all_three_is_not_reported():
         ", so the stop is invisible until somebody reads the worktree.", "."
     ).replace("notifies as `completed`", "notifies")
     assert _anti_background_unmet(partial) == {"the-consequence-is-not-stated"}
+
+
+# --------------------------- naming lane_setup.py where hand-derivation
+# --------------------------- of the worktree list was instructed (#360)
+#
+# PR #357 merged scripts/lane_setup.py and wired it into commands/tick.md.
+# skills/manager/SKILL.md's own instruction to name the live worktrees in
+# every brief predates the script and said nothing about it, so the document
+# a tick loads first still taught the hand-copy procedure the script exists
+# to replace -- and a hand-copied worktree list had already briefed two lanes
+# onto the same file forty minutes apart (#317, #360).
+#
+# The trap: a check that only asserts "SKILL.md mentions lane_setup.py
+# somewhere" passes against a document that mentions it in passing while
+# still instructing hand-derivation three paragraphs later -- this
+# repository's own defect class pointed at its own guard. So the anchor is
+# not the mere presence of the script's name; it is that wherever this
+# document instructs *naming the live worktrees*, it also names the script,
+# in the same shape as the #266 and #250 pairs above.
+
+LANE_SETUP_DOCUMENTS = (REPO_ROOT / "skills" / "manager" / "SKILL.md",)
+
+#: The sentence that puts a document under the obligation to name the script.
+#: Deliberately the phrase both the pre-fix hand-copy instruction and the
+#: post-fix pointer both use, so the trigger survives the rewording the fix
+#: makes -- an anchor keyed to wording the fix deletes would go quiet the
+#: moment the fix landed, the exact failure `_out_of_tree_write_unmet`
+#: above is guarded against by its own must-fire control.
+LIVE_WORKTREE_TRIGGER = "live worktree"
+
+#: The script, named anywhere in the document -- backticked or not.
+LANE_SETUP_NAME = "lane_setup.py"
+
+
+def _requires_naming_the_script(text):
+    return LIVE_WORKTREE_TRIGGER in _collapse(text).lower()
+
+
+def _lane_setup_unmet(text):
+    """Findings about a document that instructs naming live worktrees without
+    naming the script that derives them.
+
+    Conditional on purpose, same reasoning as `_out_of_tree_write_unmet`: a
+    document under no obligation to name live worktrees is not reported, and
+    the must-fire control below is what keeps this from going quiet if the
+    trigger wording moves.
+    """
+    collapsed = _collapse(text).lower()
+    if LIVE_WORKTREE_TRIGGER not in collapsed:
+        return set()
+    unmet = set()
+    if LANE_SETUP_NAME not in collapsed:
+        unmet.add("the-script-is-not-named")
+    return unmet
+
+
+def test_the_worktree_naming_instruction_also_names_the_script():
+    findings = {
+        str(path.relative_to(REPO_ROOT)): sorted(
+            _lane_setup_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in LANE_SETUP_DOCUMENTS
+        if _lane_setup_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document instructs naming the live worktrees in every brief without naming "
+        "scripts/lane_setup.py, the mechanism #357 built to derive that list instead of "
+        "hand-copying it: {}".format(findings)
+    )
+
+
+def test_the_worktree_naming_instruction_still_exists():
+    """The must-fire half of the pair, and the way this check goes quiet: if the
+    trigger phrase disappears from every document, the check above starts
+    reporting a clean board while nothing was asserted at all.
+    """
+    silent = [
+        str(path.relative_to(REPO_ROOT))
+        for path in LANE_SETUP_DOCUMENTS
+        if not _requires_naming_the_script(path.read_text(encoding="utf-8"))
+    ]
+    assert not silent, (
+        "no longer names live worktrees at all, so the check above is now vacuous for "
+        "it: {}".format(silent)
+    )
+
+
+# skills/manager/SKILL.md's own instruction as it stood before this fix. Both
+# occurrences said "name every live worktree" / "Name the live worktrees" and
+# neither named the script -- the check must fail against this, or it was
+# satisfied by the wording it was written against.
+PRIOR_LANE_SETUP_WORDING = """
+Launch them in a single message so they run concurrently, and name every live worktree in every brief
+so each agent knows who else is out there.
+"""
+
+
+def test_the_lane_setup_check_fires_on_the_pre_360_wording():
+    assert _lane_setup_unmet(PRIOR_LANE_SETUP_WORDING) == {"the-script-is-not-named"}
+
+
+def test_the_pre_360_wording_would_have_been_read_as_triggering():
+    """Control on the control, same shape as
+    `test_the_pre_266_wording_would_have_been_read_as_triggering` above: if the
+    fixture did not trigger the predicate, its finding above would be evidence
+    about the trigger and not about the anchor."""
+    assert _requires_naming_the_script(PRIOR_LANE_SETUP_WORDING)
+
+
+def test_a_document_naming_the_script_is_not_reported():
+    """The must-not-fire half: a document that names live worktrees and the
+    script together is clean."""
+    fixed = PRIOR_LANE_SETUP_WORDING + " Run scripts/lane_setup.py <issue> from the clone first."
+    assert _lane_setup_unmet(fixed) == set()
+
+
+def test_a_document_that_never_mentions_live_worktrees_is_not_reported():
+    """The third state: a document under no obligation to name live worktrees
+    is not flagged as missing the script."""
+    unrelated = "Write the fragment, run the suite, and commit."
+    assert _lane_setup_unmet(unrelated) == set()

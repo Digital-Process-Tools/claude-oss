@@ -430,8 +430,17 @@ issues into one brief is better than splitting one file across two agents.** Sta
 lever: branch the second agent off the first's branch rather than off the default branch. It costs a
 rebase per merge. Do not stack more than two deep without a reason.
 
-Launch them in a single message so they run concurrently, and name every live worktree in every brief
-so each agent knows who else is out there.
+Launch them in a single message so they run concurrently.
+
+**Run `scripts/lane_setup.py <issue>` from the clone before writing each brief, rather than typing
+the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
+them and the moment the dispatched agent does: `main` has moved mid-tick before, and a hand-copied
+worktree list has already flattened `cannot tell` to `idle` once, which is how `fix/313` and
+`fix/341` were each briefed onto `README.md` forty minutes apart (#317, #360). The script hands back
+the resolved base, the derived branch and worktree, and the condensed board in one call, freshly
+re-derived rather than pasted — paste its board output straight into the brief so every agent knows
+who else is out there. `commands/tick.md` names the same call and its three states in full; this is
+the pointer, not a second copy of that explanation.
 
 Every brief carries these:
 
@@ -482,7 +491,8 @@ Every brief carries these:
    on the way in, not taken on trust. Every "must not fire" case is paired with a "must fire" case in
    the same fixture, because a silence assertion passes when the harness is broken.
 5. **Require the docs** — the repo's `docs_targets` for anything user-facing, the changelog always.
-6. **Name the live worktrees**, so agents know about each other.
+6. **Name the live worktrees** — from `scripts/lane_setup.py <issue>`'s board, not retyped from
+   memory, so agents know about each other.
 7. **Unconditional publishing clause:** commit, do not push, do not open a PR, do not comment on the
    issue. "Do not push *if* something blocks you" is how one agent correctly pushed.
 
