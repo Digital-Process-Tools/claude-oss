@@ -399,17 +399,12 @@ part nobody proofreads.**
 
 ### The developer's model default is sonnet, and an override is recorded
 
-`agents/developer.md`'s own frontmatter carries `model: sonnet` — the maintainer's decision on #316,
-priced rather than typed here so the two do not drift: Sonnet developer lanes cost `$10.17` mean at
-200 turns against Opus's `$16.86` at 139, and the four Sonnet lanes billed `$40.69` actual against
-`$101.73` repriced at Opus rates. **Both halves of the evidence, because a rule that quotes only the
-price is selling half the case**: the quadratic turn penalty this issue predicted is real — Sonnet
-took roughly 1.4-1.7x the turns on the trial's small sample — and 3 of those 4 lanes needed a
-maintainer round trip against 2 of 8 Opus. The round trips traced to a missing rule in the *brief*,
-not the model (#353); measured over the full population this project has produced (143 lanes, 15
-Sonnet / 128 Opus), Sonnet takes **fewer** guard refusals per turn than Opus on every class, and the
-extra turns are narration — text-only turns with no tool call — not extra work. So the fix for the
-turns lives in the definition's turn-discipline rules, not in reaching for a pricier model.
+`agents/developer.md`'s own frontmatter carries `model: sonnet` — a maintainer decision, not a fact
+about every repository this plugin manages, so the priced evidence it rests on lives in this
+project's own history (#316) rather than repeated here as a number a different installation would
+read as generic guidance. In outline: both a per-lane price comparison and the round-trip rate
+favoured `sonnet` on the trial that decided it, and the round trips that did occur traced to a
+missing rule in the *brief* (#353), not to the model.
 
 Revert a **single lane** to `opus` when any reversal condition fires on it, and record the instance
 rather than change the shipped default from one sample: a lane needs a second attempt; a review

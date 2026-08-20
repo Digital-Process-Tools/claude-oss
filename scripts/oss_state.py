@@ -1224,17 +1224,33 @@ def _main(argv=None):
                 "--lane and --lanes cannot both be given; use --lane for named lanes "
                 "or --lanes none/unknown for the whole tick"
             )
+        if lane_flags and args.lane is None and args.lanes is None:
+            # `--lane-window`/`--lane-why` alone records nothing -- the same shape
+            # `--window` alone (no `--filings`/`--merged-prs`) already gets from the
+            # intake block below. Without this, an entry lands with no `lanes` key at
+            # all and no receipt either way: a flag somebody passed, silently dropped.
+            return refuse(
+                "a lane record needs --lane or --lanes; {} alone records "
+                "nothing".format(", ".join(lane_flags))
+            )
         if (args.lane is not None or args.lanes is not None) and not args.lane_window:
             return refuse(
                 "a lane record needs --lane-window -- what this dispatch was, in "
                 "words. A mix with no window means nothing six ticks later."
             )
-        # Both pairs are built before `--detail` is parsed, and the order is the point:
-        # a malformed `--detail` is a refusal, and a refusal raised while `pending_intake`
-        # or `pending_lanes` was still None dropped something somebody had measured
-        # without a line saying so -- which is this issue's own defect one branch over.
-        # Two `if intake_flags:`/lane blocks rather than one each, because the second
-        # half needs the parsed detail.
+        # Every pending record is built before its own refusal can fire, and before
+        # `--detail` is parsed -- the order is the point: a refusal raised while another
+        # pending record was still unbuilt dropped something somebody had measured
+        # without a line saying so, this issue's own defect one branch over (#222). The
+        # lane record is built ahead of the intake "missing flags" check for exactly that
+        # reason: a valid `--lane` must not go unreported just because an unrelated,
+        # incomplete `--filings`/`--merged-prs`/`--window` set is refused first.
+        if args.lane is not None:
+            pending_lanes = lane_models(args.lane, window=args.lane_window)
+        elif args.lanes == "none":
+            pending_lanes = lane_models([], window=args.lane_window)
+        elif args.lanes == "unknown":
+            pending_lanes = lane_models(None, window=args.lane_window, why=args.lane_why)
         if intake_flags:
             missing = [
                 name
@@ -1256,12 +1272,6 @@ def _main(argv=None):
                 why=args.intake_why,
             )
             pending_intake = record
-        if args.lane is not None:
-            pending_lanes = lane_models(args.lane, window=args.lane_window)
-        elif args.lanes == "none":
-            pending_lanes = lane_models([], window=args.lane_window)
-        elif args.lanes == "unknown":
-            pending_lanes = lane_models(None, window=args.lane_window, why=args.lane_why)
         detail = json.loads(args.detail) if args.detail else None
         if intake_flags:
             if detail is None:

@@ -442,6 +442,38 @@ def test_a_detail_already_carrying_lanes_is_refused(tmp_path, capsys):
     assert "lanes" in capsys.readouterr().out
 
 
+def test_lane_window_alone_is_refused_rather_than_dropped(tmp_path, capsys):
+    """`--lane-window`/`--lane-why` with no `--lane`/`--lanes` records nothing and must
+    say so, the same shape `--window` alone (no `--filings`/`--merged-prs`) already gets
+    from the intake block. Silently accepting it means an entry lands with no `lanes` key
+    at all and no receipt either way -- the exact absence this file exists to prevent."""
+    path = _state_file(tmp_path)
+    code = oss_state._main(
+        [path, "--decision", "d", "--at", "t", "--lane-window", WINDOW]
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert "--lane" in out or "--lanes" in out
+    assert not Path(path).exists(), "a refused run must write no history"
+
+
+def test_a_valid_lane_is_not_dropped_by_an_incomplete_intake_flag_set(tmp_path):
+    """The reverse of the pair above: a fully valid `--lane` must not go unreported when
+    it is refused alongside a broken *intake* request, the same way a valid intake pair
+    is not dropped when `--lane` is broken.
+    """
+    path = _state_file(tmp_path)
+    result = _piped(
+        [path, "--decision", "d", "--at", "t", "--filings", "3", "--lane",
+         "316=opus:default", "--lane-window", WINDOW]
+    )
+    assert result.returncode == 1, result.stdout
+    lines = result.stdout.splitlines()
+    assert any(line.startswith("FAIL") for line in lines), lines
+    assert any(line.startswith("NOT RECORDED lane models") for line in lines), lines
+
+
 def test_intake_and_lanes_travel_in_one_entry_without_colliding(tmp_path, capsys):
     path = _state_file(tmp_path)
     assert oss_state._main(
