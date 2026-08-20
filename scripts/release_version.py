@@ -376,6 +376,15 @@ NO_DIRECTORY_UNRECOGNISED = (
     "Nothing is resolved from it."
 )
 
+# The sixth state (#347): the fallback gate is on disk and readable, and its --dir flag
+# carries no argument at all -- not a value that fails validation, which is
+# NO_DIRECTORY_REFUSED's case, but no value captured in the first place. Refused the
+# same way NO_DIRECTORY_REFUSED is: there is no directory to give back either way.
+NO_DIRECTORY_BARE = (
+    "changelog_dir is not set, and the fallback gate on disk has a --dir flag with no "
+    "argument ({}). Nothing is resolved from it."
+)
+
 
 def _fragment_dir(repo, given, config):
     """(path_or_None, problem_or_None). Three ways `changelog_dir` reaches a directory,
@@ -406,6 +415,12 @@ def _fragment_dir(repo, given, config):
     "present-refused-dir" instead, which refuses here exactly as "unknown" does --
     the gate is on disk and readable, and there is still no directory to give back.
 
+    (3) also has a sixth arm now, "present-bare-dir" (#347): a `--dir` flag on disk
+    with no argument at all. That used to be misread as "present-other-dir" naming
+    the FOLLOWING flag on the next line as the directory, because the extractor's
+    whitespace class crossed the newline between them. Refused the same way
+    "present-refused-dir" is -- there was never a value to resolve, captured or not.
+
     Every state has a named arm. The trailing `return` serves nothing but the states
     listed above, and it says so: a catch-all is how a state added later renders as
     "never adopted", which is the same class one file over that #328 was about.
@@ -427,6 +442,8 @@ def _fragment_dir(repo, given, config):
         return Path(repo) / detail, None
     if state == "present-refused-dir":
         return None, NO_DIRECTORY_REFUSED.format(detail)
+    if state == "present-bare-dir":
+        return None, NO_DIRECTORY_BARE.format(detail)
     if state == "unknown":
         return None, NO_DIRECTORY_UNKNOWN.format(detail)
     if state == "absent":
