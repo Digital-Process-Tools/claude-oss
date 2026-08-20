@@ -35,6 +35,11 @@ collapsing them by accident:
              expected and absent-by-construction inside every worktree this loop
              cuts, present only in the maintainer's main clone), or invalid (the
              derived path escapes the configured root).
+  occupancy  a separate three-state beside the one above, for whether anything
+             already sits at the derived path: already exists, free, or unknown
+             when the path could not be looked at. #373: it used `os.path.exists`,
+             which swallows `OSError`, so an unreadable parent printed `free` and
+             the third state was reachable only for an empty path.
   board      ok (condensed from `supertool git-worktrees`) or could-not-run (supertool
              is not on PATH, or the call itself failed) -- never silently empty.
 
@@ -211,15 +216,43 @@ def derive_worktree(config, issue):
 
 
 def worktree_occupancy(path):
-    """Whether something already sits at `path`. `os.path.exists` never raises --
+    """Whether something already sits at `path`: True, False, or None for "could not look".
 
-    unlike `Path.exists()` / `Path.is_dir()`, whose OSError-swallowing behaviour
-    changed across 3.10-3.14 (CLAUDE.md, "Path.rglob and Path.is_dir each destroy the
-    answer a guard beside them was written to read"). No second question is asked here.
+    #373: this used `os.path.exists`, which never raises and therefore never
+    distinguishes. An unreadable *parent* came back `False` and the receipt printed
+    `[free]` -- a confident absence, in output a maintainer pastes into a developer
+    brief. The third state existed in the rendering and was reachable only when `path`
+    itself was falsy, so the one case it was written for could not produce it.
+
+    `os.stat` is asked once and the exception already in hand answers the question --
+    never a second call, and never an errno table. `FileNotFoundError` and
+    `NotADirectoryError` are ordinary absence; every other `OSError` is "I could not
+    look". Both are the types Python's own interpreter normalises platform errors into,
+    which matters because CLAUDE.md records Windows folding several Win32 codes onto
+    `ENOENT`, so a table would answer for a value it does not contain.
+
+    Deliberately `os.stat` rather than `Path.exists()` / `Path.is_dir()`, whose
+    OSError-swallowing behaviour changed across 3.10-3.14 (CLAUDE.md, "Path.rglob and
+    Path.is_dir each destroy the answer a guard beside them was written to read").
+
+    **`doctor._dir_state` is the sibling of this function and was not imported.** It
+    answers `dir` / `absent` / `unreadable` and this answers "is anything there", so
+    they are two questions sharing one mechanism rather than one classifier written
+    twice; and it lives in `scripts/doctor.py` with four call sites and its own tests,
+    so lifting it into a shared module is a refactor with a blast radius past this fix.
+    What keeps them from drifting is not this paragraph:
+    `tests/test_lane_setup_373.py` runs both on one fixture and fails if either changes
+    its mind.
     """
     if not path:
         return None
-    return os.path.exists(path)
+    try:
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return None
+    return True
 
 
 # Lines the condensed board keeps: a header, the data-provenance disclaimer, one line
@@ -344,6 +377,52 @@ def _row(label, value):
     return "{0:<10}: {1}".format(label, value)
 
 
+#: A receipt line is one line, and nothing interpolated into it may make it two.
+#: Generous rather than tight: the longest legitimate line measured here is an
+#: `oss_config` problem sentence at roughly 290 characters, and truncating a real
+#: sentence to close a forging hole would trade one silent loss for another.
+_RECEIPT_LINE_LIMIT = 2000
+_TRUNCATION_MARK = " ... [truncated]"
+
+
+def _receipt_line(text):
+    """One assembled receipt line, folded so nothing in it can forge another (#372).
+
+    Applied at the single point where the receipt is joined, rather than to a list of
+    fields. Four separate values were measured forging lines: `branch_pattern`, the
+    `--repo` argv and `worktree_root`, which the audit reached, and an `oss_config`
+    problem sentence built from a hostile JSON **key**, which it did not. That fourth
+    one is why this is not a per-field guard: it needs no hostile *value* anywhere, and
+    `oss_config` cannot close it at its end without refusing to name the key that is
+    wrong. A guard on a list of fields closes the fields somebody enumerated and leaves
+    the next field added to this function unguarded.
+
+    Deliberately **not** `_one_line`, which is right for what it does and wrong here.
+    Its `" ".join(text.split())` collapses runs of spaces, and every row in this
+    receipt is aligned by `_row`'s `{0:<10}` padding -- folding the assembled line
+    through it turns `repo      : x` into `repo : x` and destroys the column the whole
+    receipt is read by. Only the half that matters for forging is applied: every
+    character outside printable ASCII becomes `?`, which covers newline, carriage
+    return and the control characters that repaint a line, and leaves spaces alone.
+    `_one_line` still runs where it already ran, on `detail` and the board lines, so
+    this is additive rather than a replacement.
+
+    Truncation is marked. A cut line that renders as a complete one is this
+    repository's own defect class pointed at its own receipt. `_one_line` itself is
+    left alone: its callers pin their own limits and its silent truncation is theirs.
+    """
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in str(text))
+    if len(safe) > _RECEIPT_LINE_LIMIT:
+        keep = max(0, _RECEIPT_LINE_LIMIT - len(_TRUNCATION_MARK))
+        safe = safe[:keep] + _TRUNCATION_MARK
+    return safe
+
+
+def _render(lines):
+    """The one place a receipt becomes text, so the fold cannot be skipped by a caller."""
+    return "\n".join(_receipt_line(line) for line in lines)
+
+
 def receipt(payload):
     lines = ["LANE SETUP #{0}".format(payload["issue"]), _row("repo", payload["repo"])]
 
@@ -351,7 +430,7 @@ def receipt(payload):
         lines.append("config    : COULD NOT RUN")
         for problem in payload["config"]["problems"] or []:
             lines.append("  - " + problem)
-        return "\n".join(lines)
+        return _render(lines)
 
     for problem in payload["config"]["problems"] or []:
         lines.append("config warn: " + problem)
@@ -397,7 +476,7 @@ def receipt(payload):
         for line in board["lines"]:
             lines.append("  " + line)
 
-    return "\n".join(lines)
+    return _render(lines)
 
 
 def main(argv=None):
