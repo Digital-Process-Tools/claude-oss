@@ -154,6 +154,18 @@ def test_parse_supertool_calls_handles_a_double_quoted_multiline_op():
     assert calls == [["git-commit:::Key the fragment\n\nNo issue exists"]]
 
 
+def test_parse_supertool_calls_finds_a_call_on_a_later_line_of_a_multiline_command():
+    """Regression, found by review: a newline is bash's own default statement
+    separator (this repo's own agent briefs model multi-line command blocks as
+    the norm), but the call-boundary class only listed `;`, `&`, `|` -- so a
+    supertool call sitting on any line after the first in a multi-line Bash
+    command was silently dropped, the same undercount shape as the
+    absolute-path/env-var gap this module's own docstring already documents
+    having fixed once."""
+    cmd = "gh api repos/OWNER/REPO/milestones -q '.[].title'\nsupertool 'gh-labels' 'gh-issues:per=100'"
+    assert tr.parse_supertool_calls(cmd) == [["gh-labels", "gh-issues:per=100"]]
+
+
 # ---------------------------------------------------------------------------
 # analyze_transcript
 # ---------------------------------------------------------------------------
@@ -319,6 +331,41 @@ def test_discover_transcripts_reports_an_unreadable_directory_with_a_control(tmp
         os.chmod(blocked_sub, old_mode)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ")
+def test_discover_transcripts_reports_a_root_whose_own_path_is_unreadable(tmp_path):
+    """Regression, found by audit: `Path.exists()` swallows PermissionError on
+    some interpreter versions (CLAUDE.md documents this exact class for
+    `_read_config` in scripts/release_delta.py) and re-raises it on others --
+    either way, checking a root's existence via `exists()`/`is_file()` with no
+    handler around it either crashes discover_transcripts (breaking its "never
+    raises" contract) or silently treats a root it could not even check as one
+    that plainly does not exist, which renders identically to a genuinely
+    empty root. Both are the third-state failure this module exists to avoid."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    root = parent / "sub"
+    root.mkdir()
+    old_mode = parent.stat().st_mode
+    os.chmod(parent, 0o000)
+    try:
+        # Control: root.exists() is False either because exists() raised
+        # (caught below) or because it swallowed the PermissionError -- both
+        # are "the deny took". Only an unambiguous True means it did not, on
+        # a platform/user where the mode bit is ignored (root, some
+        # filesystems), and that case is skipped rather than asserted on.
+        try:
+            still_exists = root.exists()
+        except OSError:
+            still_exists = False
+        if still_exists:
+            pytest.skip("chmod 000 on the parent did not block traversal on this platform/user; untested here")
+        files, unreadable_dirs = tr.discover_transcripts([root])
+        assert files == []
+        assert unreadable_dirs, "an inaccessible root must be named, not silently treated as absent"
+    finally:
+        os.chmod(parent, old_mode)
+
+
 # ---------------------------------------------------------------------------
 # CLI shape: detail is opt-in.
 # ---------------------------------------------------------------------------
@@ -362,6 +409,19 @@ def test_default_transcripts_root_is_derived_not_hardcoded(tmp_path):
     on the machine this was built on; it is not guaranteed by any published contract."""
     root = tr.default_transcripts_root(cwd="/Users/example/Documents/some.repo")
     assert str(root).endswith("-Users-example-Documents-some-repo")
+
+
+def test_default_transcripts_root_encodes_a_windows_backslash_cwd():
+    """Regression, found by audit: os.getcwd() on Windows returns a
+    backslash-separated path, and the first version of the encoding only
+    substituted forward slash and dot, leaving backslashes and the drive
+    colon untouched -- so the default guess silently pointed nowhere on
+    Windows and a real absence there rendered identically to
+    no-transcripts-found."""
+    root = tr.default_transcripts_root(cwd=r"C:\Users\x\Documents\some.repo")
+    tail = str(root).split(str(tr.Path.home()), 1)[-1]
+    assert "\\" not in tail, tail
+    assert tail.endswith("Users-x-Documents-some-repo"), tail
 
 
 def test_main_exits_with_the_no_transcripts_state_code(tmp_path, capsys):

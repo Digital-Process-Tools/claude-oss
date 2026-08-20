@@ -89,6 +89,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import statistics
 import sys
 from pathlib import Path
@@ -117,18 +118,22 @@ _REFUSAL_PATTERNS = (
     ("plain-op-error", "ERROR:"),
 )
 
-# A call boundary (start of string, or after ; & or |), then zero or more
-# leading env-var assignments (SUPERTOOL_ALLOW_OUTSIDE_CWD=1 supertool ...),
-# then the executable -- bare `supertool`, `./supertool`, or a full path
-# ending in `/supertool`, because a developer agent invokes all three shapes
-# and the first version of this pattern only matched the first two, silently
-# dropping 1,429 of 10,295 real supertool-mentioning Bash calls (13.9%) --
-# nearly all single-op writes reached through an absolute path or
-# SUPERTOOL_ALLOW_OUTSIDE_CWD=1, which skewed every ops-per-call and
-# single-op-share figure computed from the narrower pattern. Measured while
-# building this script, against this repository's own transcripts.
+# A call boundary (start of string, or after ; & | or a newline -- a
+# newline is bash's own default statement separator and this repository's
+# own agent briefs model multi-line command blocks as the norm, so a
+# supertool call on any line after the first was silently missed until this
+# was added; found by review), then zero or more leading env-var assignments
+# (SUPERTOOL_ALLOW_OUTSIDE_CWD=1 supertool ...), then the executable -- bare
+# `supertool`, `./supertool`, or a full path ending in `/supertool`, because
+# a developer agent invokes all three shapes and the first version of this
+# pattern only matched the first two, silently dropping 1,429 of 10,295 real
+# supertool-mentioning Bash calls (13.9%) -- nearly all single-op writes
+# reached through an absolute path or SUPERTOOL_ALLOW_OUTSIDE_CWD=1, which
+# skewed every ops-per-call and single-op-share figure computed from the
+# narrower pattern. Measured while building this script, against this
+# repository's own transcripts.
 _SUPERTOOL_CALL_RE = re.compile(
-    r"(?:^|[;&|]\s*)"
+    r"(?:^|[;&|\n]\s*)"
     r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
     r"(?:\S*/)?supertool(?:\.exe)?\s+"
     r"((?:(?:'[^']*'|\"[^\"]*\")\s*)+)"
@@ -374,11 +379,37 @@ def discover_transcripts(roots):
 
     for root in roots:
         root = Path(root)
-        if not root.exists():
+        # `Path.exists()`/`Path.is_file()` are not the "never raises"
+        # promise they look like -- both are built on `os.stat`, wrapped in
+        # a `try/except OSError: return False` that only re-raises a chosen
+        # list of errnos, and the list differs across interpreter versions
+        # (CLAUDE.md documents the same trap for `_read_config` in
+        # scripts/release_delta.py). On some versions a root whose own path
+        # cannot be traversed (a parent directory with no execute bit) raises
+        # PermissionError out of exists() uncaught; on others exists()
+        # swallows it and answers False, which renders identically to a root
+        # that plainly does not exist. `os.stat` itself -- the primitive
+        # neither wrapper is built to second-guess -- raises consistently,
+        # so it is used directly here instead of either pathlib method, and
+        # the failure is reported the same way os.walk's own onerror already
+        # reports an unreadable subtree: named, not silently folded into
+        # "absent". Found by audit.
+        try:
+            root_mode = os.stat(str(root)).st_mode
+        except FileNotFoundError:
+            # The ordinary case -- a guessed or stale root simply is not
+            # there. Not a failure to report: every default-guess run where
+            # the guess misses would otherwise spam `unreadable_dirs`.
             continue
-        if root.is_file():
+        except OSError as exc:
+            unreadable_dirs.append({"path": str(root), "reason": str(exc)})
+            continue
+
+        if stat.S_ISREG(root_mode):
             if root.suffix == ".jsonl":
                 files.append(root)
+            continue
+        if not stat.S_ISDIR(root_mode):
             continue
 
         def _onerror(exc, _root=root):
@@ -520,7 +551,11 @@ def default_transcripts_root(cwd=None):
     gets that path encoded, not an OSError from a path that does not exist.
     """
     cwd = str(cwd) if cwd is not None else os.getcwd()
-    encoded = re.sub(r"[/.]", "-", cwd)
+    # `os.getcwd()` on Windows returns a backslash-separated path, and the
+    # first version of this substitution only listed `/` and `.` -- found by
+    # audit -- so the default guess silently pointed nowhere on Windows and a
+    # real absence there rendered identically to `no-transcripts-found`.
+    encoded = re.sub(r"[/.\\\\]", "-", cwd)
     return Path.home() / ".claude" / "projects" / encoded
 
 
