@@ -107,12 +107,23 @@ def test_partial_lane_state_cannot_forge_through_why():
     assert "3 sonnet" in line
 
 
-def test_unrecognised_lane_state_cannot_forge():
+def test_unrecognised_lane_state_is_safe_by_repr_not_by_the_fold():
+    r"""Named for what it is. The unrecognised-state branch is the one branch the
+    fold does not decide: it renders the state through `{!r}`, which escapes a
+    newline to a literal backslash-n before `_receipt_line` sees anything, so a
+    line-count assertion here passes with the fold stubbed out and measures nothing.
+
+    Asserting the escaped form instead is not vacuous: it fails the moment that
+    branch is changed to `{}`, because then the real newline reaches the fold and
+    comes back as `?`. So this pins the mechanism that actually holds the branch.
+    """
     line = oss_state.lane_models_line(
         {"state": "not-a-state" + FORGE_LANES, "window": "a tick"}
     )
     assert len(line.splitlines()) == 1
     assert "nothing is claimed" in line
+    assert r"\n" in line
+    assert "?" not in line
 
 
 # --------------------------------------------------------------------------
