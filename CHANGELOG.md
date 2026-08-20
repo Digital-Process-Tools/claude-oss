@@ -7,6 +7,285 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-20
+
+### Added
+
+- `python3 scripts/transcript_refusals.py` counts refused tool calls across agent transcripts -- by class, by model, and the consecutive-single-op-read runs a batched call would collapse -- so a claim that a fix reduces refused calls is a measurement rather than an assumption. Step 1 only of #313: the jit-context rule the issue's body proposed is deliberately not built here, because its own first comment corrects the arithmetic -- a rule fires at PreToolUse and occupies the same turn the refusal it replaces already did, so it does not remove a turn (#313).
+
+- Added `scripts/lane_setup.py`, one call for the facts a developer lane brief hand-carries and
+  that rot between the moment they are written and the moment they are read: the resolved base
+  commit (fetched and `rev-parse`d, never abbreviated), the branch and worktree path derived from
+  `branch_pattern` and `worktree_root`, whether that worktree already exists, and the live worktree
+  board condensed to one line per tree with its three occupancy states intact -- `cannot tell` never
+  renders as `idle`. Wired into `commands/tick.md` step 5, run from the clone before `git worktree
+  add`, since `worktree_root` only resolves where `.oss.local.json` is present (#317).
+
+### Changed
+
+- The developer agent's model default is now `sonnet` rather than `opus` (#316), on the
+  maintainer's decision after a trial: Sonnet developer lanes cost `$10.17` mean at 200 turns
+  against Opus's `$16.86` at 139, and the quadratic turn penalty this issue predicted (roughly
+  1.4-1.7x the turns) does not close the 2.5x-5x rate gap on the cache-hit line that dominates
+  the bill. Measured over 143 developer lanes across this project's history (15 Sonnet, 128
+  Opus), the extra turns are narration -- text-only turns with no tool call -- rather than
+  extra work, and Sonnet takes fewer guard refusals per turn than Opus on every class. `skills/
+  manager/SKILL.md` now states the choice and its reversal conditions under *Delegating*,
+  pointing at this issue for the priced numbers rather than repeating them in a file every
+  managed repository loads. Every dispatched developer lane can be recorded so the mix
+  stays recomputable rather than asserted: `scripts/oss_state.py` gains `lane_models`,
+  `lane_model_trend` and `lane_models_line`, plus `--lane`, `--lanes`, `--lane-window`,
+  `--lane-why` and `--model-trend` on its CLI, following the same three-extra-state shape as
+  the existing intake metric -- a tick that dispatched no lane and a tick that recorded
+  nothing about its lanes must not render alike, and an override with no reason is refused.
+
+### Fixed
+
+- `scaffold.py`'s own `_one_line` -- the flattener that keeps a filename from another
+  repository from forging a line of a receipt this loop prints -- only collapsed
+  whitespace, unlike every other copy of the function (`release_delta.py`,
+  `doctor.py`, `release_publish.py`, `release_version.py`, `report_schema.py`,
+  `lane_setup.py`), which also fold every character outside printable ASCII to
+  `?`. Whitespace-collapse alone stops a new *line*; it does nothing to a control
+  byte, since a control byte is not whitespace. So a filename carrying an ANSI
+  escape sequence passed through `scaffold.py`'s copy unchanged and could repaint
+  the surrounding receipt -- colour, cursor movement, erase-in-line -- during
+  interactive review, without ever breaking the line-structure guarantee #204 and
+  #223 established. `scaffold._one_line` (and `_join_names`, which calls it) now
+  applies the same printable-ASCII fold as its six siblings. `doctor.py`'s own
+  `_one_line` and `_one_line_keep_unicode` were checked and were already safe --
+  both fold everything below `chr(32)`, catching ESC (0x1b) as a side effect
+  (#228).
+
+- The tick step 4 rule that heals radar on every board-membership change was examined for
+  a cheaper gate that skips the heal when nothing is left bare (#302). Measured rather than
+  reasoned: the only op that can answer radar's own coverage question -- `N watched` against
+  `N open` -- is the bare `radar` heal itself; `radar:--state` explicitly declines to resolve
+  live coverage. A probe cheap enough to gate the heal does not exist, so the rule in
+  `commands/tick.md` stays unconditional and now records why, instead of being
+  re-investigated cold on a future tick.
+
+- Five documents stated the two-segment changelog fragment name (`<issue>.<section>.md`)
+  with no mention of the optional slug the assembler and the release-version rule have
+  both accepted since #297/#305 -- `changelog.d/README.md`, the `changelog.d/` rule
+  layer scaffolded into managed repos, `commands/changelog.md`, and both fragment-naming
+  sites in `scripts/scaffold.py` (the fragment README template and the generated
+  workflow's own error message). All five now state `<issue>.<section>[.<slug>].md`,
+  and `tests/test_docs_state_slug_grammar_308.py` reads the canonical form out of the
+  assembler's own refusal message and asserts each document -- reading the *rendered*
+  output for the two templated sites, not the template source -- states it, paired
+  with controls proving the check has teeth rather than just matching a substring
+  (#308).
+
+- `scripts/doctor.py`'s `./supertool` check used `os.path.lexists`, which swallows every
+  `OSError`, not only `ENOENT` -- so a `--root` this process could not traverse read as
+  `./supertool: absent`, with a remedy telling the reader to link a file that may already be
+  there. It now reuses the check's existing `unreadable` state instead, and prints the
+  message that state already carries: which of present/absent/wrong-target this repo is in
+  is unknown, not absent (#341).
+
+- `scripts/doctor.py`'s `oss-workspace` launcher remedy -- the first paste-ready shell
+  command it prints -- went through the same ASCII sanitiser as every other finding, which
+  folds non-ASCII characters to `?`. On a non-ASCII install path (ordinary on a localised
+  macOS or Windows account) `?` is a shell glob, so the printed `ln -sf`/`sh` command either
+  failed against a path that does not exist or linked a file nobody named. The remedy now
+  goes through a narrower sanitiser that keeps the newline/control-character defence but not
+  the ASCII fold, because it is composed by the diagnostic from its own resolved install
+  location rather than from text the audited repository chooses; every other finding is
+  unchanged (#344). Printing that non-ASCII text can itself fail on a stream that cannot
+  represent it -- a lone surrogate from an undecodable filename byte, or a character outside a
+  narrow console codepage -- so the print is now defended at the point of failure rather than
+  assumed safe, keeping the diagnostic's `exit 0 always` contract.
+
+- `assemble_changelog.py` treated an empty `--dir` or `--changelog` the same as a real
+  directory (#346), because `Path('')` is `Path('.')` and only `value is None` counted as
+  "nothing was passed". Any caller that handed the fold an explicit empty string got a
+  silent fold and delete against the current working directory instead of the refusal a
+  missing flag already gets. Enumerating legitimate out-of-tree callers -- this
+  repository's own test suite runs the fold from scratch directories outside any repo,
+  and a REPO-derivation-keyed containment check would refuse those along with anything
+  hostile -- argues against a boundary tied to `REPO`, which the module's own docstring
+  already says cannot tell "the repo this file is stored in" from "the repo being
+  released". Closing the empty-value gap instead protects every caller, in-tree or out,
+  without guessing where a legitimately-named directory lives: an empty `--dir` or
+  `--changelog` is now refused on the fold, naming the missing flag, and falls back to
+  the derived default on the read-only modes -- the fold's refusal is the same verdict
+  `changelog_dir_problem` already reaches for an empty `changelog_dir` at the config
+  entrance (#343), which has no read-only mode of its own to fall back from. No
+  containment was added beyond that;
+  the reachable path was already closed by #345, and this closes the one gap that did not
+  depend on trusting a caller (#349). The fallback on the read-only modes says so on stderr
+  when the value it is falling back from was explicitly empty rather than genuinely absent
+  -- an ordinary run passing no `--dir` at all stays silent, but a caller whose `--dir`
+  arrived empty now sees which directory was used instead of a receipt that only ever names
+  fragment filenames.
+
+- `GATE_DIR_RE`'s whitespace class crossed a newline, so a bare `--dir` with no argument let its
+  bare-token alternative capture the *following* flag -- `--changelog` -- as though it were the
+  directory, and that value passed `changelog_dir_problem`'s character-class check because a leading
+  dash is not itself refused. The same misreading also happened with no newline at all, whenever an
+  unquoted `--dir` was immediately followed by another flag on the same line -- an unquoted token
+  starting with `-` cannot be told apart from another CLI flag either way. `scaffolded_changelog_gate`
+  now restricts `--dir`'s argument to the same line and never captures an unquoted token that starts
+  with `-` as a value, answering a new sixth state, `present-bare-dir`, whenever the flag carries no
+  usable argument -- distinct from `present-refused-dir`, which means a value was captured and
+  rejected on content, because here nothing was captured for that rule to have an opinion about
+  (#347). A *quoted* value starting with `-` is unaffected: quoting is what removes the ambiguity
+  with a flag, not the character itself.
+
+- `scripts/doctor.py`'s `oss-workspace` launcher consumer fell through a bare `else` for
+  its one state without a named arm (`mismatched`), and that `else` unconditionally unpacked
+  a 3-tuple. No state reaches it today, but a seventh state added later would have raised
+  there instead of being reported, breaking the diagnostic's `exit 0 always` contract. The
+  `else` is now a named `mismatched` arm plus an explicit unrecognised-state arm that
+  reports rather than unpacks, and the same derive-the-states check this repository already
+  uses for another consumer now covers this contract too (#348).
+
+- `commands/changelog.md`'s directory resolver refuses correctly on stderr when
+  `changelog_dir` names something unusable, but the block that captures it,
+  `FRAGMENTS_DIR="$(...)"`, checked no exit status and had no `set -e` (#349). A reader who
+  continued past a `REFUSED:` line carried an empty `FRAGMENTS_DIR` into the fold below as
+  `--dir ''`, which reached `CHANGELOG.md untouched, nothing consumed` -- a report about
+  the wrong file, since what had actually happened was the resolver's refusal being
+  dropped. Fixed at the callee rather than at this one call site: `assemble_changelog.py`
+  now treats an empty `--dir`/`--changelog` as absent, so the fold refuses loudly by
+  naming the missing flag instead of quietly scanning cwd, whichever caller handed it the
+  empty string (#346). `commands/changelog.md` documents the closed gap rather than adding
+  shell-side error handling that would only cover this one command's own resolver.
+
+- `agents/developer.md` never told a lane not to end its turn waiting on a suite run it had
+  launched itself (#353). Three lanes in the #316 trial did exactly that -- no report, no
+  commit, one lane twice -- and the fix that stopped it was typed into a resume message and
+  nowhere else, so the next tick's fresh lanes hit the same failure with no document to warn
+  them. The definition now says it directly: run the suite in the foreground with an explicit
+  redirect, names the measured wall clock (27m36s with four lanes concurrent) so a long run
+  does not look like a reason to background it, and states the consequence -- an agent that
+  stops with work uncommitted notifies as `completed`, so the stop is invisible to the
+  maintainer until somebody reads the worktree by hand. `tests/test_content_invariants.py`
+  holds the rule in the same shape #266 already established for the `cd <worktree_root>`
+  paragraph, so a future edit that drops it fails a test rather than a tick three weeks later.
+
+- `skills/manager/SKILL.md` still instructed the maintainer to hand-derive the base commit and
+  the live-worktree list before every brief, even though PR #357 merged `scripts/lane_setup.py`
+  and wired it into `commands/tick.md` (#360) -- so the two documents described two procedures
+  for the same step, and `SKILL.md` is the one a tick loads first. With the hand-copy procedure
+  in force, `main` moved four times across two ticks and `fix/313` and `fix/341` were each
+  briefed onto `README.md` forty minutes apart, because the worktree ownership list was retyped
+  rather than derived. The *Run a fleet, not a queue* section and the per-brief checklist now
+  point at `scripts/lane_setup.py <issue>` instead of typing a snapshot that rots between the
+  moment it is read and the moment a dispatched agent reads it. `tests/test_content_invariants.py`
+  gained a guard, in the same two-copy shape as #266 and #250, that fails if a document instructs
+  naming the live worktrees without also naming the script.
+
+- `scripts/doctor.py` carried six more `is_dir()`/`exists()` call sites that swallowed an
+  unreadable *parent* directory the same way #341 swallowed one -- reporting a directory or
+  file that may well be there as a confident "does not exist"/"no rules for this repo", with a
+  remedy telling the reader to create something that already exists. `check_directory` (the
+  config's `clone`/`worktree_root`), `check_jit_rules`'s rules directory, and `resolve_project_dir`'s
+  own `--root` check -- the entry point where doctor's third-state contract is established rather
+  than consumed -- now report a distinct "could not be checked" state instead of a confident
+  absence. `merge_permission_state` now routes an unreadable settings candidate into the `unknown`
+  bucket it already had and never reached. Two narrow glob filters (`jit_hook_roots`,
+  `_jit_layer_verdict`) no longer let one unreadable candidate wipe every candidate already found
+  in the same scan. Classified explicitly rather than relying on pathlib's own swallow, which is
+  version-dependent: `is_dir()`/`is_file()` re-raise `PermissionError` on at least this repo's own
+  3.9, 3.11 and 3.13 and only swallow it on 3.14 (#363).
+
+- `agents/developer.md` stated three measurements from this repository's own trial -- the
+  27m36s wall clock, the narration-turn count and the single-op share -- as if they were
+  facts about every repository this plugin manages, with no label saying whose trial they
+  came from (#369). The sibling document already carried the fix: `skills/manager/SKILL.md`
+  scopes its own developer-model figure to "this project's own history (#316) rather than
+  repeated here as a number a different installation would read as generic guidance," one
+  paragraph below a sentence in `agents/developer.md` itself ("Three lanes **on this
+  repository** ...") that already showed the same labelled shape. All three measurements now
+  read the same way. The single-op figure was also wrong: the shipped 82% combined every
+  model together and was produced by a parser that double-counted multi-invocation Bash
+  calls; re-measured with `scripts/transcript_refusals.py`, the split is per model and the
+  doc no longer states a specific percentage that will drift the moment another lane runs.
+  `tests/test_content_invariants.py` now grades whether a measurement anchor is accompanied
+  by a scoping label within its own paragraph, with a must-fire fixture reproducing the
+  pre-#369 wording and a must-not-fire fixture built up one label at a time.
+
+- `scripts/lane_setup.py`'s `resolve_base` handed `default_branch` straight into
+  `git fetch --quiet <remote> <branch>`, where argv position 4 is read as an option when
+  the name starts with a dash -- without consulting the problem sentence
+  `oss_config.load()` had already produced for that exact value. Three renderings
+  disagreed about the same input: `blocked()` returned `False` and the process exited
+  `0`, `commands/tick.md` documented `could-not-resolve` as blocking with exit `3`, and
+  the `config warn:` line was rendered by `receipt()` *after* `git fetch` had already
+  run. `resolve_base` now calls `oss_config.default_branch_problem()` before building
+  any argv and returns `could-not-resolve` carrying that sentence, so nothing executes
+  and the three renderings agree. No second validation rule was added -- one value keeps
+  one rule (#345), and `oss_config` still deliberately returns the offending value with a
+  sentence rather than stripping it. `branch_occupancy` was and remains unaffected
+  because it prefixes `refs/heads/` and `refs/remotes/`; that is now measured in
+  `tests/test_lane_setup_368.py` rather than asserted in prose. Found by the
+  `v0.7.0..e4d48de` release audit, class B; it needs a hostile or malformed
+  `default_branch` in a tracked `.oss.json`, and nobody has been observed hitting it.
+  (#368)
+
+- `scripts/lane_setup.py`'s `receipt()` printed config values raw, so a newline in one
+  forged receipt lines a reader could not tell from the tool's own -- in output that
+  `skills/manager/SKILL.md` and `commands/tick.md` both instruct maintainers to paste
+  verbatim into a developer brief. The file's own `_one_line` ("A newline in either
+  forges a receipt line") was applied to `detail` and to the board lines and skipped
+  everywhere else. Four fields were measured forging, not the three the audit reached:
+  `branch_pattern` and `worktree_root` and the `--repo` argv, and -- newly found while
+  fixing those -- an `oss_config` **problem sentence** built from a hostile JSON *key*,
+  which needs no hostile value anywhere and which `oss_config` cannot close at its end
+  without refusing to name the key that is wrong. So the guard is at the single point
+  where the receipt is joined rather than on a list of fields, because a per-field guard
+  closes what somebody enumerated and leaves the next field added unguarded. It folds
+  every character outside printable ASCII to `?` and leaves runs of spaces alone --
+  deliberately not `_one_line`, whose whitespace collapsing would destroy the column
+  alignment the receipt is read by -- and marks a line it truncates, since a cut line
+  rendering as a complete one is this repository's own defect class pointed at its own
+  receipt. Whether `oss_config` should also grow a content rule for `branch_pattern` is
+  a separate question and is deliberately not answered here (#345, one value one rule).
+  Found by the `v0.7.0..be36015` release audit, class C, ranked `forges`; it needs a
+  hostile or malformed tracked config, and nobody has been observed hitting it. (#372)
+
+- `scripts/lane_setup.py`'s `worktree_occupancy()` rendered three states -- `already
+  exists` / `free` / `unknown` -- and the third was unreachable for the case it exists
+  for. The check was `os.path.exists`, which swallows `OSError`, so an unreadable parent
+  directory came back `False` and the receipt printed `[free]`: a confident absence, in
+  output a maintainer pastes into a developer brief. It now asks `os.stat` once and lets
+  the exception already in hand answer -- `FileNotFoundError` and `NotADirectoryError`
+  are ordinary absence, every other `OSError` is "could not look" -- with no second
+  question to the filesystem and no errno table, since Windows folds several Win32 codes
+  onto `ENOENT`. `doctor._dir_state` (#363, the same release delta) answers `unreadable`
+  on the identical path and was deliberately **not** moved to a shared module: it asks
+  "is this a directory" where this asks "is anything there", and it has four call sites
+  and its own tests in a 5,000-line diagnostic, so lifting it is a refactor past this
+  fix's blast radius. What holds the two together is a test that runs both classifiers
+  on one fixture and fails if either changes its mind, rather than prose asserting they
+  agree. Every case confirms the deny by attempting the exact operation and skips
+  loudly, naming the platform and what went untested, when the platform does not produce
+  it. Found by the `v0.7.0..be36015` release audit, class A, ranked `misreports`. (#373)
+
+- `scripts/transcript_refusals.py` counted `transcripts_parsed` *after* the `--agent` filter, so a
+  filtered run reported files as unparsed that were never offered to the parser: three clean
+  synthetic transcripts with a filter matching one came back `transcripts_found: 3,
+  transcripts_parsed: 1, unreadable_files: []`, in which the gap reads as two parse failures and
+  the third state a reader would check to disprove that is empty. Against this machine's real
+  transcript tree the same run reported 160 of 489 parsed, with 329 files silently rendered as
+  failures. The count is now taken before the filter, so `found - parsed == len(unreadable_files)`
+  unconditionally. Making the two numbers agree was only half of it and would have been the worse
+  fix alone -- it erases the fact that a filter ran -- so the filtered subset is reported as its
+  own number in three states: `transcripts_matched_agent_filter` is `null` when no filter was
+  applied, an integer when one was, and `0` is a real finding meaning it matched nothing.
+  `agent_filter` echoes the filter itself. Found by the `v0.7.0..be36015` release audit, class A,
+  finding A2 (#374).
+
+- The `CLAUDE.md` currency guard counted pending changelog fragments with its own copy of the
+  fragment name grammar, and that copy predated the optional `<slug>` segment: a release cycle
+  whose pending fragments were all slug-form parsed as an empty directory, so the guard skipped
+  with "no unfolded changelog fragments, so no release is being prepared" — a confident absence
+  produced by the parser rather than by the directory. It now takes the grammar from
+  `scripts/assemble_changelog.py`, the one place that owns it, so there is one spelling fewer to
+  drift rather than one more (#375).
+
 ## [0.7.0] - 2026-08-20
 
 ### Changed
@@ -3457,7 +3736,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.5.0
