@@ -3,8 +3,9 @@ description: Check changelog fragments, or fold them into CHANGELOG.md for a rel
 allowed-tools: Bash
 ---
 
-Fragments are the policy: one file per PR at `<changelog_dir>/<issue>.<section>.md`, so two open PRs
-share no file and stop conflicting on every merge.
+Fragments are the policy: one file per PR at `<changelog_dir>/<issue>.<section>[.<slug>].md`, so
+two open PRs share no file and stop conflicting on every merge. `<slug>` is optional and lets one
+issue file two entries in the same section without the two pull requests colliding on a path.
 
 Read `changelog_dir` from `.oss.json`. If it names a string, that is the directory. If it is
 `null` or absent, do not conclude "not adopted" yet (#299) — `/oss:scaffold --apply` creates the

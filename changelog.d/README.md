@@ -6,11 +6,12 @@ merge. `CHANGELOG.md` is assembled from these at release time and the fragments 
 ## Naming
 
 ```
-<issue>.<section>.md
+<issue>.<section>[.<slug>].md
 ```
 
 `<section>` is a Keep a Changelog heading, lowercased: `added`, `changed`, `deprecated`, `removed`,
-`fixed`, `security`.
+`fixed`, `security`. `<slug>` is optional and exists so one issue can file two entries in one
+section without the two pull requests colliding on a path, e.g. `878.fixed.second-entry.md`.
 
 ## Body
 

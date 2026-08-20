@@ -108,7 +108,7 @@ jobs:
           echo "This PR changes what the plugin does:" >&2
           printf '%s\n' "$product" >&2
           echo >&2
-          echo "Add changelog.d/<issue>.<section>.md, or label the PR 'no-changelog' if" >&2
+          echo "Add changelog.d/<issue>.<section>[.<slug>].md, or label the PR 'no-changelog' if" >&2
           echo "the change is genuinely invisible to users. Sections are the Keep a" >&2
           echo "Changelog headings, lowercased: added, changed, deprecated, removed," >&2
           echo "fixed, security." >&2
