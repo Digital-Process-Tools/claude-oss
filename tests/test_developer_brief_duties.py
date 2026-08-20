@@ -22,11 +22,12 @@ instead of satisfying every "must not match" assertion for the wrong reason.
 
 **PRIOR is abridged, and that is the one thing to know before adding an anchor
 to it.** *Four passages* below means the four passages bundled inside the `PRIOR`
-string, not the number of `PRIOR_*` constants in the file -- there are five of
+string, not the number of `PRIOR_*` constants in the file -- there are six of
 those, and the two counts used to coincide, which is the kind of coincidence that
 gets read the wrong way once and then quoted. They stopped coinciding when #275
-added `PRIOR_EMPTY_RETURN_SORT`, and the sentence is kept rather than deleted
-because the reading it warns against is the one a reader arrives with. The four
+added `PRIOR_EMPTY_RETURN_SORT`, and drifted further apart when the version-4
+`closes` duty added `PRIOR_PR_PAYLOAD`; the sentence is kept rather than deleted
+because the reading it warns against is the one a reader arrives with. The five
 constants beside `PRIOR` are un-elided and each says
 so in its own comment. Three of the four passages inside `PRIOR` are elided in the middle: the cross-platform
 one drops the cp1252/`UnicodeEncodeError` sentence, the review one drops the
@@ -207,6 +208,35 @@ worth reporting, and then silently not reported reads exactly like a dependency 
 # budget, ...`) match the control and report as toothless, which they are not.
 # A shared control only works while every duty it controls predates all of it.
 # The #275 anchors get this constant through a check of their own below.
+# The pull request payload subsection exactly as it stood on disk before this
+# change, un-elided, transcribed from `git show f58aed3:agents/developer.md`.
+# Every anchor in CLOSING_REFERENCE_DUTY falls inside this span, so an elision
+# here would assert an anchor absent from text that never carried it. Em dashes
+# are transcribed as `--`, the same convention the constants above use; no
+# anchor spans one.
+PRIOR_PR_PAYLOAD = """
+### The pull request is yours to write -- the title as much as the body
+
+Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.json` and record it under `pr_body`.
+**A file the forge can consume unchanged, not a markdown body** -- JSON with four fields:
+
+{"title": "...", "body": "...", "head": "<your branch>", "base": "<default branch>"}
+
+Markdown is the shape the next step refuses, and the refusal lands on somebody else after your
+session has ended: they read your body, wrap it, and **invent a title**. The title is the sentence
+most people read, and after a squash it is the only part of the pull request that survives into the
+log -- so it belongs to whoever did the work. That is not a formatting detail, it is the whole point.
+The validator opens this file and checks it, including that `head` is the branch you are on.
+
+The orchestrator hands the path to the forge; it does not re-narrate your evidence into a body of its
+own. **This is the default, not something to be asked for.** You hold the evidence, so this deletes a
+translation step that costs about a thousand tokens and loses detail on the way -- it does not move
+judgment, because the orchestrator still reads the body before it opens anything.
+
+If you did not write one, say so in the field with a reason. `not-written` is a state; an absent file
+the orchestrator discovers later is not.
+"""
+
 PRIOR_EMPTY_RETURN_SORT = """
 ### When a spawn runs and comes back empty
 
@@ -268,6 +298,9 @@ LIVE_BEFORE = [
     "an empty return is indistinguishable from a clean one",
     "a report that does not validate is not a report",
     "getting it onto that tracker is part of",
+    # From PRIOR_PR_PAYLOAD, so a mis-read of that passage fails loudly rather
+    # than satisfying every CLOSING_REFERENCE_DUTY "must not match" for free.
+    "`not-written` is a state; an absent file",
 ]
 
 # The same pairing, for PRIOR_EMPTY_RETURN_SORT alone. It is not folded into
@@ -286,6 +319,7 @@ def _prior():
         + PRIOR_REVIEW_RETURN
         + PRIOR_REPORT_VALIDATION
         + PRIOR_DEPENDENCY_REPORTING
+        + PRIOR_PR_PAYLOAD
     )
 
 
@@ -460,7 +494,39 @@ REFERRED_BUT_UNSTATED = [
     "the brief sentence is an experiment, not a fix",
 ]
 
+# Day-one gap in the version-4 report contract (#274 / PR #334, `f58aed3`).
+# `pr_body.closes` became required whenever `pr_body.state` is `written`, and this
+# brief -- the one every developer lane reads -- never mentioned the field, so the
+# next lane through writes exactly what its brief says and is refused.
+#
+# The anchors are deliberately NOT the field list. The schema is the single copy of
+# that and the brief already points at it; a second copy here is the restatement
+# this repository keeps paying for. What the anchors pin is the half a pointer
+# cannot carry -- the body has to bind the keyword, and the body is composed once,
+# before any validator speaks:
+#   - that the keyword must survive rendering, which is the failure mode field
+#     documentation cannot prevent: four agent-written payloads across two sessions
+#     bound nothing, and one of them backticked the whole line;
+#   - that a shared keyword over two numbers closes only the first, so the count of
+#     `Closes` lines is the count of issues;
+#   - that the line goes in while the body is written, not after a refusal, since
+#     by then the repair spans two files;
+#   - and that the deliberate arm exists at all, because an agent who does not know
+#     `closes-nothing` is available will either force a false close or stall. Its
+#     spelling and its required `reason` stay in the schema.
+CLOSING_REFERENCE_DUTY = [
+    "required whenever `pr_body.state` is `written`",
+    "it deliberately closes nothing",
+    "the schema carries the spellings",
+    "outside code spans and html comments",
+    "backticked is not bound",
+    "one `closes` line per issue",
+    "closes only `#a`",
+    "write the line while you write the body",
+]
+
 DUTIES = [
+    pytest.param(CLOSING_REFERENCE_DUTY, id="pr-body-closes-and-a-bound-keyword"),
     pytest.param(ADJACENT_POLICY, id="adjacent-fix-or-file"),
     pytest.param(GUEST_REPO_ROUTING, id="guest-repo-tooling-routing"),
     pytest.param(FILING_IS_A_REQUEST, id="a-filing-disposition-is-a-request"),

@@ -766,6 +766,32 @@ judgment, because the orchestrator still reads the body before it opens anything
 If you did not write one, say so in the field with a reason. `not-written` is a state; an absent file
 the orchestrator discovers later is not.
 
+**Say what merging it closes, and bind the keyword in the body itself.** `pr_body.closes` is
+**required whenever `pr_body.state` is `written`** — in three states, of which only the third is a
+defect: it closes something, **it deliberately closes nothing** (a `Part of #N` pull request is a
+real decision, not an omission), or nobody said. **The schema carries the spellings** and what each
+state requires; do not learn them from here, because a field list copied into two documents is the
+drift this repository keeps paying for.
+
+What the schema cannot do is reach you before the body is written, and the body is where this has
+actually failed — four agent-written payloads across two sessions declared their issues and bound
+nothing. So, the three things a field list does not tell you:
+
+- **The keyword has to survive rendering.** The validator looks for a closing keyword —
+  `Closes`/`Fixes`/`Resolves` — bound to each number you declared, **outside code spans and HTML
+  comments**, because that is what a forge honours. `` `Closes #275, closes #296` `` renders as
+  though it worked and creates no reference at all: **backticked is not bound**, and neither is
+  fenced.
+- **One `Closes` line per issue.** `Closes #A #B` links both numbers and **closes only `#A`**, so
+  `#B` needs a keyword of its own. The validator refuses the second number for exactly that reason.
+- **Write the line while you write the body.** The refusal names the remedy, but it arrives after
+  the payload exists, and the repair is then an edit to the body *and* the report rather than one
+  line composed once.
+
+The body check is an absence detector: it reports a keyword it could not find and never decides
+what a forge will close, so a finding is strong and a pass is weak. Passing it is not evidence that
+the pull request closes anything.
+
 ### Structure makes a report easier to accept unread. Write against that.
 
 That is the cost of this format and it is worth naming, because it is this plugin's own defect class
