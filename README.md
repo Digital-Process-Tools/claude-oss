@@ -233,6 +233,12 @@ collapsed. Nothing about which repository or which user is hardcoded — the tra
 derived from `Path.home()` and the invoking `cwd`, or passed explicitly with `--root`. Its own
 third state is the point: a directory with no transcripts (`no-transcripts-found`) must not read
 like a directory full of transcripts that refused nothing (`measured`, `refusal_totals: {}`).
+The same rule governs `--agent`: `transcripts_parsed` counts what the parser read, before the
+filter, so `transcripts_found - transcripts_parsed` is always `len(unreadable_files)` and a file
+the filter excluded is never reported as one that failed to parse (#374). What the filter matched
+is its own number, `transcripts_matched_agent_filter` — `null` when no filter was passed, `0`
+when one matched nothing, and present only in the `measured` state, since `no-transcripts-found`
+has nothing to count either way.
 It exists to make "does a jit-context rule for the `path-escapes-cwd` class pay for its own
 injected text" a measurement rather than an assumption — see #313 for why a rule was
 deliberately not added alongside it.

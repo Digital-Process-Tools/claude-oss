@@ -41,6 +41,23 @@ answer "no transcripts here" for a subtree it was never able to enter (see
 this repo's own CLAUDE.md for the instance that bit `doctor.py`). This module
 therefore walks with ``os.walk(onerror=...)`` rather than ``rglob``.
 
+The same split decides what ``--agent`` may subtract, and it may subtract
+nothing: ``transcripts_parsed`` is every file the parser read, counted before
+the filter, so ``transcripts_found - transcripts_parsed`` is always exactly
+``len(unreadable_files)`` and never a count of files that were simply not asked
+about (#374). What the filter matched is its own number,
+``transcripts_matched_agent_filter`` -- ``None`` when no filter was applied,
+an integer when one was, and ``0`` meaning it matched nothing, which is a
+finding rather than a silence. ``agent_filter`` echoes the filter itself, so a
+filtered run is legible as one now that its found and parsed counts agree.
+
+Both count fields exist **only** in the ``measured`` state, alongside
+``transcripts_parsed`` and for the same reason: in ``no-transcripts-found``
+there was nothing to parse and nothing for a filter to match, so a ``0`` there
+would claim a measurement over an empty set and a ``None`` would claim no
+filter was passed when one may have been. That state carries ``agent_filter``
+and no counts, and a caller reads ``state`` before either number.
+
 ## Where transcripts are found -- a mechanism, not a fact about one repository
 
 ``~/.claude/projects/<encoded-cwd>/**/subagents/*.jsonl`` is one machine's
@@ -490,20 +507,41 @@ def run(roots, agent_filter=None, detail=False):
             "roots_searched": [str(r) for r in roots],
             "unreadable_dirs": unreadable_dirs,
             "transcripts_found": 0,
+            "agent_filter": agent_filter,
             "refusal_totals": None,
         }
 
-    analyses = []
+    parsed = []
     unreadable_files = []
     for path in files:
         result = analyze_transcript(path)
         if result["ok"]:
-            analyses.append(result)
+            parsed.append(result)
         else:
             unreadable_files.append({"path": result["path"], "reason": result["reason"]})
 
+    # `transcripts_parsed` counts every file the parser actually read, and is
+    # therefore taken *before* the agent filter (#374). Filtering first made one
+    # number answer two different questions depending on whether `--agent` was
+    # passed: three clean transcripts with a filter matching one reported
+    # `found: 3, parsed: 1, unreadable_files: []`, in which `found - parsed`
+    # reads as two parse failures and the third state a reader would check to
+    # disprove that is empty. The invariant this restores is
+    # `found - parsed == len(unreadable_files)`, unconditionally.
+    #
+    # Making the two agree is only half of it, and on its own it would be the
+    # worse fix: it also erases the fact that a filter ran, so a filtered run
+    # and an unfiltered one over the same directory would render identically
+    # apart from aggregates nobody compares. The filtered subset therefore gets
+    # a count of its own, in three states rather than two --
+    # `transcripts_matched_agent_filter` is `None` when no filter was applied
+    # (there was no question to answer), an integer when one was, and `0` is a
+    # real finding meaning the filter matched nothing.
+    analyses = parsed
+    matched_agent_filter = None
     if agent_filter is not None:
-        analyses = [a for a in analyses if a["agent"] == agent_filter]
+        analyses = [a for a in parsed if a["agent"] == agent_filter]
+        matched_agent_filter = len(analyses)
 
     by_agent = {}
     for a in analyses:
@@ -529,7 +567,9 @@ def run(roots, agent_filter=None, detail=False):
         "state": STATE_MEASURED,
         "roots_searched": [str(r) for r in roots],
         "transcripts_found": len(files),
-        "transcripts_parsed": len(analyses),
+        "transcripts_parsed": len(parsed),
+        "agent_filter": agent_filter,
+        "transcripts_matched_agent_filter": matched_agent_filter,
         "unreadable_files": unreadable_files,
         "unreadable_dirs": unreadable_dirs,
         "refusal_totals": refusal_totals,
