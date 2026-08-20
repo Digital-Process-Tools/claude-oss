@@ -130,3 +130,14 @@ def test_the_scaffolded_workflow_states_the_canonical_form():
         ".github/workflows/oss-changelog.yml", _config(), str(REPO_ROOT)
     )
     assert CANONICAL in text, text
+
+
+def test_this_repos_own_changelog_workflow_states_the_canonical_form():
+    """A sixth site the reviewer found (#308): this repository's own hand-maintained
+    `.github/workflows/changelog.yml` -- distinct from the `oss-changelog.yml`
+    template `scaffold.py` writes into *other* repositories -- carries the same
+    error-message sentence and had drifted from it the same way."""
+    text = (REPO_ROOT / ".github" / "workflows" / "changelog.yml").read_text(
+        encoding="utf-8"
+    )
+    assert CANONICAL in text, text

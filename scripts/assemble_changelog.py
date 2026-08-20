@@ -588,7 +588,7 @@ _SELF_REF = r"(?:#|/(?:issues|pull)/){0}(?![0-9])"
 def self_reference_finding(name: str, text: str) -> Optional[str]:
     """One finding if the body never names the issue in its own filename.
 
-    `changelog.d/<issue>.<section>.md` holds the number in exactly one
+    `changelog.d/<issue>.<section>[.<slug>].md` holds the number in exactly one
     structural place, and assembly writes the *body* and deletes the file. So
     the number survives the release only when the author typed it into the
     prose, which made findability a property of author habit: measured on the
