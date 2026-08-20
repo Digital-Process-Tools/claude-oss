@@ -74,11 +74,22 @@ def _names_the_path(message, path):
     assertion failed all four Windows legs while all ten POSIX legs stayed green.
 
     **Folding separators does not weaken the location check**, which is the thing
-    a separator fix could plausibly trade away. Two different directories are not
-    equal under this normalisation, so a remedy naming the wrong one still fails;
-    `test_the_location_check_survives_a_platform_rendering_its_own_separator`
-    holds exactly that as a must-not-fire control, and every caller below pairs
-    the positive assertion with a negative one against a sibling directory.
+    a separator fix could plausibly trade away. That claim is not left as prose:
+    `test_the_location_check_survives_a_platform_rendering_its_own_separator` and
+    `test_the_location_check_does_not_match_a_wrong_directory_by_suffix` hold it
+    as must-not-fire controls, and every caller below pairs its positive assertion
+    with a negative one against a sibling directory.
+
+    **The match must begin and end at a component boundary, and the first version
+    of this helper did not require that.** This diff's own reviewer produced the
+    counterexample: plain containment matches `plugin/bin/oss-workspace` inside
+    `.../other-plugin/bin/oss-workspace`, so a wrong directory whose name is a
+    SUFFIX of the right one passed -- and the near-miss control at the call site
+    did not catch it, because `plugin-elsewhere` is not a suffix of `plugin` and
+    so failed correctly for the wrong reason. The sentence above was therefore
+    false in general while reading as a guarantee, which is worse than no
+    guarantee. Every candidate position is now checked for a boundary on both
+    sides; a relative path can no longer accidentally satisfy an absolute one.
 
     Two alternatives were considered and are recorded rather than left implied.
     Computing the platform's own rendering here (`as_posix()` on Windows, `str()`
@@ -91,7 +102,33 @@ def _names_the_path(message, path):
     `test_the_default_remedy_matches_the_platform_actually_running`, on the
     Windows leg where it is the only place it can be observed.
     """
-    return str(path).replace("\\", "/") in str(message).replace("\\", "/")
+    needle = str(path).replace("\\", "/")
+    haystack = str(message).replace("\\", "/")
+    if not needle:
+        return False
+    start = 0
+    while True:
+        found = haystack.find(needle, start)
+        if found < 0:
+            return False
+        before = haystack[found - 1] if found else ""
+        after = haystack[found + len(needle):found + len(needle) + 1]
+        if not _is_path_char(before) and not _is_path_char(after):
+            return True
+        start = found + 1
+
+
+def _is_path_char(char):
+    """Would `char` extend a path component rather than end it?
+
+    Deliberately a character class rather than a list of the delimiters this
+    repo's own messages happen to use (a quote, a space, end of string). A list
+    of delimiters answers "did I remember every way a message can end a path",
+    which nobody can check; a class answers "could this character be part of the
+    name", which is decidable. Empty string -- start or end of the haystack -- is
+    a boundary.
+    """
+    return bool(char) and (char.isalnum() or char in "-_.~+/")
 
 
 def _path_entry(tmp_path, name, content):
@@ -218,6 +255,33 @@ def test_the_location_check_survives_a_platform_rendering_its_own_separator():
     # And the POSIX rendering of the same location still matches, so this is not
     # a check that only works for the platform that broke it.
     assert _names_the_path(message, "C:/Users/runneradmin/t/plugin/bin/oss-workspace")
+
+
+def test_the_location_check_does_not_match_a_wrong_directory_by_suffix():
+    """Raised by this diff's own reviewer against the first version of
+    `_names_the_path`, and it was right.
+
+    A plain substring test does not require the differing component to be a whole
+    path component, so a wrong directory whose name is a SUFFIX of the correct
+    one matches: `plugin/bin/oss-workspace` is literally inside
+    `.../other-plugin/bin/oss-workspace`. The near-miss control at the call site
+    did not probe this -- `plugin-elsewhere` is not a suffix of `plugin`, so it
+    failed correctly for the wrong reason and masked the gap.
+
+    That mattered because of what the helper's docstring CLAIMS -- that two
+    different directories cannot both satisfy it -- which is the sentence the
+    whole separator fix rests on. A guarantee stated in prose and false in
+    general is worse than no guarantee, so the match is now required to begin at
+    a component boundary and the claim is pinned here rather than asserted there.
+    """
+    message = 'Run it from this install: sh "/home/dev/checkouts/other-plugin/bin/oss-workspace"'
+    assert _names_the_path(message, "/home/dev/checkouts/other-plugin/bin/oss-workspace")
+    # The must-not-fire that the first version got wrong.
+    assert not _names_the_path(message, "plugin/bin/oss-workspace")
+    # Same shape from the other end: a longer wrong path is not matched either.
+    assert not _names_the_path(
+        message, "/home/dev/checkouts/other-plugin/bin/oss-workspace-2"
+    )
 
 
 def test_mismatched_content_with_an_unrecognised_target_shape_does_not_invent_a_version(
