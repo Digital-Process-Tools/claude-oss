@@ -46,6 +46,13 @@ Install the launcher once, from this plugin's own checkout:
 ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
 ```
 
+**That line is POSIX-only, and there is no Windows equivalent to substitute for it**
+(#330). `bin/oss-workspace` is a `/bin/sh` script, so on Windows it runs under Git Bash
+rather than cmd or PowerShell, and the `~/.local/bin` convention it links into is on no
+Windows `PATH`. On Windows, run it from this checkout instead -- `sh bin/oss-workspace`
+-- and `/oss:doctor` prints that as its remedy there rather than a command that would do
+nothing.
+
 Then, in any repo you maintain:
 
 ```
@@ -60,10 +67,14 @@ That link is resolved once, against a directory a later release will not write t
 `$PWD` there is this plugin's own installed checkout, and a plugin manager's cache
 layout is version-scoped. Nothing re-points the symlink on an update and nothing
 checked it until now: a stale target that still exists behaves exactly like a current
-one, silently. `/oss:doctor` now reports it, in `oss-workspace launcher: ...`, three
-ways -- matched, a skew naming both versions, or not on PATH at all -- and its remedy
-line names the *running* install's own path rather than `$PWD`, so pasting it works
-regardless of where you are standing when you paste it.
+one, silently. `/oss:doctor` now reports it, in `oss-workspace launcher: ...`, in six
+states -- matched; a skew naming both versions; not on PATH at all; **part of PATH could
+not be read, so whether it is reachable is unknown rather than absent** (#333, and that
+one must never render as "not on PATH"); and one each for this install's own copy or the
+resolved target being unreadable. Its remedy line names the *running* install's own path
+rather than `$PWD`, so pasting it works regardless of where you are standing when you
+paste it -- and on Windows it is the sentence above rather than a `ln -sf` that would do
+nothing.
 
 That opens a session over the repo you are standing in, with the maintainer loop already running — or
 with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
@@ -136,6 +147,11 @@ maintain" above for what a stale symlink costs and how `/oss:doctor` now catches
 ```
 ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
 ```
+
+POSIX only, for the reason given above: on Windows `bin/oss-workspace` is a `/bin/sh`
+script that runs under Git Bash, nothing puts `~/.local/bin` on a Windows `PATH`, and
+there is no one-line install to substitute -- run `sh bin/oss-workspace` from this
+checkout (#330).
 
 The working directory is the selection: it opens *that* repo, never this plugin's checkout.
 

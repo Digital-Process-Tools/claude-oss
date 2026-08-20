@@ -21,6 +21,11 @@ So this file tests `doctor.oss_workspace_launcher_state` in five states -- match
 mismatched, not-resolvable, own-copy-unreadable, unresolved-target -- and that
 `check_oss_workspace_launcher` names the *current* install in its remedy line rather
 than a path that would be wrong next release.
+
+A sixth state, `path-unreadable`, was added by #333 and is covered in
+`tests/test_launcher_path_unreadable_and_platform_remedy_333_330.py` alongside #330's
+platform-appropriate remedy. The `not-resolvable` assertions here are the must-not-fire
+control for it: they are what would catch a sixth state that fired for an ordinary miss.
 """
 
 import os
@@ -187,7 +192,7 @@ def test_own_copy_unreadable_is_unknown_not_matched_and_not_mismatched(tmp_path)
 def test_unresolved_target_is_unknown_not_matched_and_not_mismatched(tmp_path):
     """The resolved target could not be read. Exercised through a REAL PATH
     entry rather than the ``resolve`` testing seam: `doctor._locate_on_path`
-    uses `os.path.lexists`, which is true for a directory too (unlike
+    uses `os.lstat`, which succeeds on a directory too (unlike
     `shutil.which`, which refuses a directory candidate outright), so a
     directory named `oss-workspace` sitting on PATH is a real, reachable way
     to land here -- `_locate_on_path` finds it, and `Path(resolved).read_bytes()`
@@ -215,10 +220,12 @@ def test_a_dangling_symlink_earlier_on_path_does_not_shadow_a_working_one(tmp_pa
     candidate that resolves to nothing, the same way `shutil.which` always did --
     `shutil.which`'s own `_access_check` runs `os.path.exists`, which follows a
     symlink and is False for a dangling one, so it silently continued to the next
-    PATH directory. A naive `os.path.lexists`-only walk does not: `lexists` is
-    True for a dangling symlink too, so the first (broken) match would stop the
-    search there and report `unresolved-target` for a launcher that is, one PATH
-    entry later, actually present and matching."""
+    PATH directory. A naive existence-only walk does not: `os.lstat` succeeds on
+    a dangling symlink too, so the first (broken) match would stop the search
+    there and report `unresolved-target` for a launcher that is, one PATH entry
+    later, actually present and matching. Since #333 the reachability question
+    is asked as `os.stat` inside a `try`, so a target that could not be looked at
+    at all is separated from one that is genuinely dangling."""
     plugin_root = _plugin_root(tmp_path, content=b"same bytes\n")
     earlier = tmp_path / "earlier-on-path"
     earlier.mkdir()
