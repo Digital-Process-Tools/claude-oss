@@ -126,18 +126,36 @@ in an incident and neither was printed anywhere (#367).
   the dominant term, and the remedy is a native `python3` rather than anything in the repo. It
   is a performance fact, not a fault: nothing is broken and everything is slow, which is why it
   goes unseen for months.
-- `WARN … was NOT probed` — no probe is implemented for this platform, and the line names it.
-  **Do not read this as native.** `platform.machine()` cannot answer the question and neither
+- `OK … was NOT probed` — no probe is implemented for this platform, so nothing was attempted
+  and nothing will be until somebody writes one. **Do not read this as native.** `platform.machine()` cannot answer the question and neither
   can `uname -m` from a subprocess: an emulated process is shown the *emulated* architecture and
   so is everything it spawns, so the comparison is one number against itself. The probe used on
   macOS is the `sysctl.proc_translated` flag, read in-process; Linux (qemu-user) and
   Windows-on-ARM have no equivalent this script reads, so both report the gap rather than
-  clearing the machine. **Consequence, weighed rather than overlooked:** on Linux and Windows
-  this is a standing `WARN` that nothing clears, so the verdict there reads `usable with gaps`
-  where it would otherwise read `ok`, and `bin/oss-workspace` relays the whole diagnostic at
-  session start rather than one line. That is the cost of the alternative being an `OK` on the
-  one platform pair nobody probed. If it proves to be noise rather than signal, the thing to
-  change is the probe — a Windows `IsWow64Process2` arm, or a Linux one — not the state.
+  clearing the machine.
+- `WARN … was NOT probed -- sysctl.proc_translated could not be read (errno N)` — a probe that
+  **does** exist here, ran, and did not answer. Same sentence, different level, and the
+  difference is the whole point.
+
+**Why those last two are two states.** They were one, reported at `WARN`, for exactly one round
+of CI. That made `VERDICT: ok` unreachable on every Linux and Windows leg forever — which does
+not add a finding, it removes a signal: a verdict that always reads `usable with gaps` can no
+longer carry a real WARN, so every genuine gap on those platforms is masked by a permanent one.
+That is this repo's own defect class pointed at the verdict line rather than at a check, and it
+is a bigger absence than the one the WARN was reporting.
+
+So a gap that is **unobservable in principle here** is named on an `OK` line and does not spend
+the warning count — the shape `agent_dispatch` already uses in this file, where whether a session
+can dispatch to an agent is unreadable by any script and is stated on the line rather than
+converted into a permanent warning. A probe that **exists and failed** keeps its `WARN`, because
+it has a cause worth chasing. Neither line ever contains the word *native*, and a test pins that.
+
+The earlier version of this paragraph said that if the standing WARN proved to be noise, the thing
+to change was the probe and not the state. **That was wrong, and CI is what showed it.** It framed
+the choice as WARN-or-silence when a third shape already existed one screen up in the same file;
+and it cannot be carried out anyway — Windows has a real probe available (`IsWow64Process2`), but
+every Linux qemu-user self-detection worth having is a heuristic that fails toward *clean*, which
+is a confident wrong answer and strictly worse than a named gap.
 
 **`cpu topology`** — the logical core count, split into performance and efficiency cores where
 the platform exposes it (macOS does; the line says so explicitly when it does not, rather than

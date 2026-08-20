@@ -137,6 +137,103 @@ def test_a_known_host_still_names_the_remedy_architecture():
     assert "A native arm64 python3" in _text(lines), lines
 
 
+# --- `no probe exists here` and `the probe did not answer` are two states ---
+#
+# They were one state (`unknown`, WARN) until CI answered. On every Linux and
+# Windows leg that made `VERDICT: ok` unreachable forever, which does not add a
+# finding -- it removes a signal, because a verdict that always reads `usable
+# with gaps` can no longer carry a real WARN. That is this repository's own
+# defect class pointed at the verdict line instead of at a check.
+
+
+def test_a_platform_with_no_probe_at_all_is_ok_with_the_gap_named():
+    """`not-probed`: nothing was attempted, because nothing here can attempt it.
+
+    OK rather than WARN, following `agent_dispatch`'s shape in this same file --
+    a sub-question that is unobservable in principle is named ON the line and
+    does not spend the warning count. The gap is not softened: the line still
+    says NOT probed and still never says `native`, which the pair below pins.
+    """
+    lines = doctor.interpreter_architecture(
+        machine="x86_64",
+        system="Linux",
+        translation=("not-probed", None, "no translation probe is implemented for Linux"),
+    )
+    assert _levels(lines) == ["OK"], lines
+    text = _text(lines)
+    assert "NOT probed" in text, text
+    assert "no translation probe is implemented for Linux" in text, text
+    assert "native" not in text.lower(), text
+
+
+def test_a_probe_that_ran_and_could_not_answer_is_still_a_warn():
+    """The must-fire half, and the one that stops the change above from being a
+    blanket downgrade. A platform that HAS a probe, whose probe ran and did not
+    answer, is a gap with a cause worth chasing -- it stays a WARN and stays
+    spending the warning count.
+    """
+    lines = doctor.interpreter_architecture(
+        machine="arm64",
+        system="Darwin",
+        translation=("unknown", None, "sysctl.proc_translated could not be read (errno 1)"),
+    )
+    assert _levels(lines) == ["WARN"], lines
+    text = _text(lines)
+    assert "errno 1" in text, text
+    assert "native" not in text.lower(), text
+
+
+def test_off_darwin_the_state_is_not_probed_rather_than_unknown():
+    lines_state = doctor.translation_state(system="Linux")
+    assert lines_state[0] == "not-probed", lines_state
+    assert lines_state[1] is None, lines_state
+    assert "Linux" in lines_state[2], lines_state
+
+
+def test_on_darwin_a_failing_sysctl_is_unknown_rather_than_not_probed(monkeypatch):
+    """The must-fire pair for the test above: the WARN arm has to stay reachable
+    on the platform that does have a probe, or the split has quietly deleted it.
+    """
+    monkeypatch.setattr(doctor, "_sysctl", lambda name: (None, 1))
+    state, host, reason = doctor.translation_state(system="Darwin")
+    assert state == "unknown", (state, host, reason)
+    assert "errno 1" in reason, reason
+
+
+def test_a_healthy_run_on_a_platform_with_no_probe_spends_no_warning(monkeypatch):
+    """The CI failure itself, reproduced without a Linux runner.
+
+    `tests/test_doctor_inprocess.py::test_verdict_says_ok_only_when_nothing_warned`
+    asserts a fully healthy repo reaches `VERDICT: ok`. It went red on every
+    ubuntu leg and green here, because this machine has a working
+    sysctl.proc_translated and the WARN never fired locally.
+    """
+    monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
+    doctor.FINDINGS.clear()
+    try:
+        doctor.check_interpreter_environment()
+        levels = [level for level, _ in doctor.FINDINGS]
+    finally:
+        doctor.FINDINGS.clear()
+    assert "WARN" not in levels, levels
+
+
+def test_a_failing_probe_on_darwin_does_spend_a_warning(monkeypatch):
+    """The must-fire control for the test above. If the check could never emit a
+    WARN, the assertion above would pass against a check that had stopped
+    reporting anything at all.
+    """
+    monkeypatch.setattr(doctor.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(doctor, "_sysctl", lambda name: (None, 1))
+    doctor.FINDINGS.clear()
+    try:
+        doctor.check_interpreter_environment()
+        levels = [level for level, _ in doctor.FINDINGS]
+    finally:
+        doctor.FINDINGS.clear()
+    assert "WARN" in levels, levels
+
+
 def test_every_architecture_line_survives_the_printable_ascii_fold():
     """#376's contract, applied to #367's new lines: these go through `report()`,
     so anything they compose must already be one printable ASCII line.

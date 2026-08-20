@@ -521,7 +521,25 @@ def translation_state(system=None):
 
     * ``("native", "arm64", "")`` -- the process architecture is the host's.
     * ``("translated", "arm64", "")`` -- Rosetta 2, or its equivalent.
-    * ``("unknown", None, "<why nobody knows>")`` -- the probe could not answer.
+    * ``("unknown", None, "<why>")`` -- a probe exists here, ran, and did not answer.
+    * ``("not-probed", None, "<why>")`` -- no probe exists for this platform at all,
+      so nothing was attempted and nothing will be until somebody writes one.
+
+    **The last two were one state until CI answered, and separating them is #367's
+    real lesson.** Folded together they were rendered WARN, which made ``VERDICT:
+    ok`` unreachable on every Linux and Windows leg forever. That does not add a
+    finding, it removes a signal: a verdict line that always reads ``usable with
+    gaps`` can no longer carry a real WARN, so every genuine gap on those platforms
+    is masked by a permanent one. This repository's own defect class, pointed at the
+    verdict line instead of at a check.
+
+    So `not-probed` is reported at OK with the gap named ON the line, which is the
+    shape `agent_dispatch` already uses in this file for a sub-question that is
+    unobservable in principle (`NOT_OBSERVABLE_HERE`). `unknown` keeps the WARN,
+    because a probe that exists and did not answer has a cause worth chasing. What
+    neither of them does is say `native`: an emulated interpreter on either platform
+    reports the emulated architecture, so the line names what went unprobed and is
+    pinned by a test never to contain the word.
 
     **`platform.machine()` cannot answer this and neither can `uname -m`**: an
     emulated process is shown the *emulated* architecture, so a comparison between
@@ -538,7 +556,7 @@ def translation_state(system=None):
     system = platform.system() if system is None else system
     if system != "Darwin":
         return (
-            "unknown",
+            "not-probed",
             None,
             "no translation probe is implemented for {} -- the Darwin probe is the "
             "sysctl.proc_translated flag, and qemu-user (Linux) and Windows-on-ARM "
@@ -573,9 +591,15 @@ def interpreter_architecture(machine=None, system=None, translation=None):
 
     WARN on translated, because it is the finding: measured on the machine #367 was
     filed from, roughly 3x on interpreter startup and 3.4x on the CPU cost of a
-    subprocess spawn. WARN again on `unknown`, because a check that could not look
-    must not render as a check that looked and found nothing -- and the line
-    deliberately never contains the word "native" in that state.
+    subprocess spawn. WARN again on `unknown` -- a probe that exists here and did
+    not answer -- because a check that could not look must not render as a check
+    that looked and found nothing.
+
+    `not-probed` is OK, and the argument for the difference is in
+    `translation_state`'s docstring: a permanent unclearable WARN on two of the
+    three platforms costs the verdict line its ability to discriminate, which is a
+    bigger absence than the one it reports. In both states the line deliberately
+    never contains the word "native", and a test pins that.
     """
     machine = platform.machine() if machine is None else machine
     system = platform.system() if system is None else system
@@ -612,7 +636,7 @@ def interpreter_architecture(machine=None, system=None, translation=None):
         ]
     return [
         (
-            "WARN",
+            "WARN" if state == "unknown" else "OK",
             "interpreter architecture: {}, reporting itself as a {} build; whether it "
             "is running under binary translation was NOT probed -- {}. An emulated "
             "interpreter reports "
