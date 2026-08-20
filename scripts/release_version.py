@@ -336,6 +336,46 @@ NO_DIRECTORY_UNKNOWN = (
     "rather than guess."
 )
 
+# The fourth state, and the one that is a refusal rather than a gap (#343): the fallback
+# gate IS on disk and readable, and the directory it names is one the `.oss.json`
+# entrance would refuse outright -- absolute, or a `..` chain, or something a shell reads
+# as an instruction. Resolving it would discard `repo` or walk out of it, and the fold
+# this feeds deletes every fragment in whatever it names, so the value is refused rather
+# than sanitised: what the contributor meant by it is not on disk, and a repaired
+# directory is a directory nobody named.
+NO_DIRECTORY_REFUSED = (
+    "changelog_dir is not set, and the fallback gate on disk names a directory that "
+    "cannot be used ({}). Nothing is resolved from it."
+)
+
+# And the entrance #343 was filed calling the CONTROL, which turned out not to be one
+# on this path. `changelog_dir_problem` is reached from `oss_config.validate()`;
+# `_read_config` above is a bespoke `json.loads` that never calls it, deliberately --
+# this reader answers about repositories whose config it does not otherwise police. So
+# `changelog_dir: "/etc"` reached `Path(repo) / named`, where an absolute string
+# discards `repo` entirely, with `problem=None`. Measured, not reasoned:
+#
+#     _fragment_dir('/some/repo', None, {'changelog_dir': '/etc'})
+#     -> (PosixPath('/etc'), None)
+#
+# Same value, same fold, same deletion. The rule is applied here rather than by routing
+# this reader through `validate()`, which would refuse a whole config for reasons that
+# have nothing to do with finding fragments -- a loud wrong answer in place of a quiet
+# one. Only the key that becomes this directory is checked.
+BAD_DIRECTORY = (
+    "changelog_dir names a directory that cannot be used ({}). Nothing is resolved "
+    "from it: this value becomes the fragment directory, and the fold deletes every "
+    "fragment in whatever it names."
+)
+
+# The fifth, and it exists so that a state added to `scaffolded_changelog_gate` later
+# cannot arrive here as "this repo never adopted fragments" -- a loud unknown, named.
+NO_DIRECTORY_UNRECOGNISED = (
+    "changelog_dir is not set, and the fallback gate on disk answered with a state this "
+    "reader does not recognise ({!r}), so which directory it polices is unknown. "
+    "Nothing is resolved from it."
+)
+
 
 def _fragment_dir(repo, given, config):
     """(path_or_None, problem_or_None). Three ways `changelog_dir` reaches a directory,
@@ -357,6 +397,18 @@ def _fragment_dir(repo, given, config):
     the whole point of reading it back is to stop guessing, not to guess correctly by
     coincidence. `changelog_dir` being null said nothing recoverable here; the gate on
     disk did.
+
+    (3) is also where a directory nobody validated used to arrive (#343). The
+    workflow is tracked and owned, so its `--dir` value comes in by ordinary
+    contribution, and `Path(repo) / detail` discards `repo` entirely for an absolute
+    string and walks out of it for a `..` chain. `scaffolded_changelog_gate` now
+    applies the same rule the `.oss.json` entrance applies and answers
+    "present-refused-dir" instead, which refuses here exactly as "unknown" does --
+    the gate is on disk and readable, and there is still no directory to give back.
+
+    Every state has a named arm. The trailing `return` serves nothing but the states
+    listed above, and it says so: a catch-all is how a state added later renders as
+    "never adopted", which is the same class one file over that #328 was about.
     """
     if given:
         return Path(given), None
@@ -364,15 +416,22 @@ def _fragment_dir(repo, given, config):
         return None, NO_DIRECTORY
     named = config.get("changelog_dir")
     if isinstance(named, str) and named.strip():
+        problem = oss_config.changelog_dir_problem(named)
+        if problem:
+            return None, BAD_DIRECTORY.format(problem)
         return Path(repo) / named, None
     state, detail = oss_config.scaffolded_changelog_gate(repo)
     if state == "present":
         return Path(repo) / oss_config.DEFAULT_FRAGMENTS_DIR, None
     if state == "present-other-dir":
         return Path(repo) / detail, None
+    if state == "present-refused-dir":
+        return None, NO_DIRECTORY_REFUSED.format(detail)
     if state == "unknown":
         return None, NO_DIRECTORY_UNKNOWN.format(detail)
-    return None, NO_DIRECTORY
+    if state == "absent":
+        return None, NO_DIRECTORY
+    return None, NO_DIRECTORY_UNRECOGNISED.format(state)
 
 
 def _scan(directory):

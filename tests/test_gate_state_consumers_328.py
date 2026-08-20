@@ -67,26 +67,23 @@ CHANGELOG_COMMAND = REPO_ROOT / "commands" / "changelog.md"
 SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "scaffold.md"
 RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
 
-# Enforced now: both are inside #328's file set.
-ENFORCED_CONSUMERS = (CHANGELOG_COMMAND, SCAFFOLD_COMMAND)
-
-# Listed, not enforced -- and listed so the census of consumers is complete
-# rather than trimmed to what one lane could reach. `_fragment_dir` has explicit
-# arms for `present`, `present-other-dir` and `unknown` and then a bare trailing
-# `return None, NO_DIRECTORY` that serves `absent`. Its behaviour is right
-# today; its *spelling* is a catch-all, so a fifth state would render as "never
-# adopted" -- the same class one file over. Making that an explicit arm is one
-# line in a file held by another lane while #328 was implemented, so it is
-# deferred with a reason rather than reached into.
+# Enforced. The first two were inside #328's file set; `release_version.py` joined
+# them in #343, which is the deferral below coming good rather than being relaxed.
 #
-# The deferral cannot rot silently: the test below fails the moment the entry
-# stops being an exception, which is this repository's rule for exception lists.
-DEFERRED_CONSUMERS = {
-    RELEASE_VERSION: (
-        "_fragment_dir serves `absent` from a trailing catch-all `return` "
-        "rather than a named arm; adding one is outside #328's file set"
-    ),
-}
+# #328 deferred it with a reason: `_fragment_dir` served `absent` from a bare
+# trailing `return None, NO_DIRECTORY`, so a fifth state would have rendered as
+# "never adopted" -- right behaviour, catch-all spelling -- and the one line that
+# fixes it sat in a file another lane held at the time. #343 added exactly that
+# fifth state, so the deferred risk was the one that materialised; the file now
+# has a named arm per state and a trailing arm that says it recognised nothing.
+ENFORCED_CONSUMERS = (CHANGELOG_COMMAND, SCAFFOLD_COMMAND, RELEASE_VERSION)
+
+# Empty, and kept rather than deleted: the machinery below is what makes a future
+# deferral impossible to leave rotting, and deleting it would mean the next one is
+# added with no test holding it. Emptiness is asserted as its own state, not
+# skipped past -- an exception list that has drifted is a licence, and one that
+# quietly stopped being checked is the same licence with no paper trail.
+DEFERRED_CONSUMERS = {}
 
 GATE_STATE_CONSUMERS = ENFORCED_CONSUMERS + tuple(DEFERRED_CONSUMERS)
 
@@ -262,6 +259,7 @@ def test_the_producer_extraction_reads_every_state_of_the_real_function():
         "unknown",
         "present",
         "present-other-dir",
+        "present-refused-dir",
     }
 
 
@@ -305,7 +303,19 @@ def test_the_deferred_consumer_is_still_deferred():
     """An exception list that has drifted is a licence. When this fails, the
     entry has been fixed -- promote it into ENFORCED_CONSUMERS and delete the
     entry; do not relax the assertion.
+
+    Three outcomes, not two. The list is empty as of #343, and an empty loop is
+    a green tick over nothing -- exactly the shape this file is named after. So
+    emptiness skips with what went untested rather than passing: no deferral
+    exists to have rotted, which is a different fact from every deferral being
+    intact, and the next entry added restores the assertion automatically.
     """
+    if not DEFERRED_CONSUMERS:
+        pytest.skip(
+            "DEFERRED_CONSUMERS is empty (release_version.py was promoted in "
+            "#343), so there is no deferral to check for rot -- this control "
+            "measured nothing rather than confirming anything"
+        )
     states = producer_states(_doc(PRODUCER))
     for path, reason in DEFERRED_CONSUMERS.items():
         unnamed = states_unnamed_by(_doc(path), states)
@@ -314,6 +324,25 @@ def test_the_deferred_consumer_is_still_deferred():
             "state. Move it into ENFORCED_CONSUMERS and remove the deferral."
             .format(path.relative_to(REPO_ROOT), reason)
         )
+
+
+def test_the_deferral_check_would_fire_on_a_deferral_that_came_good():
+    """The must-fire half the skip above would otherwise hide. The real list is
+    empty, so the assertion it guards can no longer run against anything -- and
+    a control that cannot fire is the licence this file exists to refuse. This
+    runs the same predicate against a document that names every state, which is
+    precisely the condition that must promote an entry.
+    """
+    states = producer_states(_doc(PRODUCER))
+    complete = " ".join("`{}`".format(state) for state in sorted(states))
+    assert states_unnamed_by(complete, states) == set(), (
+        "a document naming every state must read as fully covered, or the "
+        "deferral check could never notice an entry that came good"
+    )
+    assert states_unnamed_by("names `present` only", states), (
+        "a document missing states must read as incomplete, or every entry "
+        "would look permanently deferred"
+    )
 
 
 def test_the_consumer_census_lists_every_file_that_calls_the_gate():

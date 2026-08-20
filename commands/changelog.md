@@ -22,6 +22,9 @@ import oss_config
 config = json.load(open('.oss.json'))
 named = config.get('changelog_dir')
 if isinstance(named, str) and named.strip():
+    problem = oss_config.changelog_dir_problem(named)
+    if problem:
+        print('REFUSED: ' + problem, file=sys.stderr); sys.exit(1)
     print(named)
 else:
     state, detail = oss_config.scaffolded_changelog_gate('.')
@@ -29,6 +32,8 @@ else:
         print(oss_config.DEFAULT_FRAGMENTS_DIR)
     elif state == 'present-other-dir':
         print(detail)
+    elif state == 'present-refused-dir':
+        print('REFUSED: ' + detail, file=sys.stderr); sys.exit(1)
     elif state == 'absent':
         print('NOT-ADOPTED', file=sys.stderr); sys.exit(1)
     elif state == 'unknown':
@@ -38,7 +43,7 @@ else:
 ")"
 ```
 
-**Four states, one arm each, and a fifth arm for a state this resolver has never heard of (#328).**
+**Five states, one arm each, and a sixth arm for a state this resolver has never heard of (#328).**
 The gate grew `present-other-dir` in #325 and this resolver did not, so it fell through to
 `NOT-ADOPTED` and refused a repository whose fragments the gate had just located — a loud wrong
 answer, which is the only reason it ranks below the silent one it descends from. The trailing `else`
@@ -51,12 +56,27 @@ did not understand* rather than inheriting whichever arm happened to be last;
   that is what `changelog_dir` held when `/oss:scaffold --apply` ran and the key was nulled
   afterwards. `detail` **is** that directory, read back out of the workflow. Use it: the point of
   reading it back is to stop guessing, not to guess correctly by coincidence.
+- `present-refused-dir` — our gate is on disk, it was read without trouble, and its `--dir` names a
+  directory that cannot be used: absolute, a `..` chain, or something a shell would read as an
+  instruction. `detail` is the refusal, **not** a directory — printing it as one is the whole defect
+  (#343). The same value refused at the `.oss.json` entrance since #173 arrived unchecked through
+  this one, and the directory printed here is the one the fold below deletes every fragment in. Say
+  what was refused and stop. Do not repair the value: what its author meant is not on disk, and a
+  repaired directory is a directory nobody named.
 - `absent` — `NOT-ADOPTED` on stderr; say so and stop, exactly as before #299. Rolling fragments out
   to a repo is a change to that repo, a separate decision, not something this command does on the
   way past.
 - `unknown` — this repo's tree could not be fully read, or the workflow's own `--dir` lines disagree
   with each other. Say what stopped the read and stop, the same as a genuine "not adopted" would,
   rather than guess a directory nobody confirmed.
+
+**`changelog_dir` out of `.oss.json` is validated here too, and that is not belt and
+braces (#343).** `changelog_dir_problem` is reached from `oss_config.validate()`, which
+nothing on this path calls — so the value that reads as the *guarded* entrance arrived
+here unchecked, exactly like the one read back out of the workflow. Both were measured
+returning `/etc` with no complaint. Whichever route the directory came by, it is the one
+`--dir` argument every command below is given, and the fold at the end of them unlinks
+every fragment it consumes.
 
 Anything printed on stdout is the directory to use for every command below.
 

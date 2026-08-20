@@ -227,7 +227,7 @@ signal a forge gives this plugin to claim a workflow by (subdirectories under
 `.github/workflows/` are unsupported, and a symlink there fails outright — see the `ours`
 row in the ownership table above).
 
-It answers in **four** states, not two (#325, #328), and "present or absent" stopped being the
+It answers in **five** states, not two (#325, #328, #343), and "present or absent" stopped being the
 contract the moment scaffold could write a gate policing something other than the default:
 
 - `present` — our gate is on disk and its own `--dir` names `changelog.d/`, so null falls back to
@@ -236,9 +236,15 @@ contract the moment scaffold could write a gate policing something other than th
   what `changelog_dir` held at the moment `--apply` ran and the key was nulled afterwards, which is
   legal and arrives by ordinary contribution. The directory to use is the one read back out of the
   workflow's own `--dir`, not the default.
+- `present-refused-dir` — our gate is on disk and readable, and the directory its `--dir` names is
+  one the `.oss.json` entrance refuses outright: absolute, a `..` chain, or something a shell reads
+  as an instruction. The workflow is a **tracked, owned** file, so that value arrives by ordinary
+  contribution just as `changelog_dir` does, and it reaches a fold that deletes every fragment in
+  whatever it names (#343). Every reader refuses and says what it refused; none repairs the value.
 - `absent` — null still means what it always meant.
 - `unknown` — the workflow could not be read, or its `--dir` lines disagree with each other. Every
-  reader refuses and says why, rather than picking a directory nobody confirmed.
+  reader refuses and says why, rather than picking a directory nobody confirmed. Distinct from
+  `present-refused-dir`: there the gate was read perfectly well and said something inadmissible.
 
 Every document that restates this contract is listed in
 `tests/test_gate_state_consumers_328.py`, which derives the state list from the function itself and
