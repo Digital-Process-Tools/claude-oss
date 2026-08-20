@@ -63,33 +63,43 @@ def test_native_is_an_ok_line_that_says_native():
     assert "native" in _text(lines), lines
 
 
-def test_unprobed_is_a_warn_that_names_what_went_unprobed():
-    """The third state. A check that could not look must not render as a check
-    that looked and found nothing -- so this is WARN, not OK, and it carries the
-    reason it could not look.
+def test_a_probe_that_could_not_look_is_a_warn_that_carries_its_reason():
+    """A check that could not look must not render as a check that looked and
+    found nothing -- so this is WARN, not OK, and it carries the reason.
+
+    The fixture is `Darwin` + `unknown` because that is the only pairing the
+    product can actually produce. It used to be `Linux` + `unknown`, written when
+    the two gap states were one; after the split that composite is unreachable,
+    and a test asserting against an input nothing can generate passes no matter
+    what the code does with the real one.
     """
     lines = doctor.interpreter_architecture(
         machine="x86_64",
-        system="Linux",
-        translation=("unknown", None, "no translation probe is implemented for Linux"),
+        system="Darwin",
+        translation=("unknown", None, "sysctl.proc_translated could not be read (errno 1)"),
     )
     assert _levels(lines) == ["WARN"], lines
     text = _text(lines)
-    assert "no translation probe is implemented for Linux" in text, text
+    assert "sysctl.proc_translated could not be read (errno 1)" in text, text
 
 
-def test_an_unprobed_line_never_claims_native():
-    """The negative half of the pair above: `x86_64` with no probe result must not
-    be readable as a clean native interpreter. Paired with
-    `test_native_is_an_ok_line_that_says_native`, which fails if the word can
-    never appear at all.
+def test_neither_gap_state_ever_claims_native():
+    """The negative half, over BOTH gap states rather than one.
+
+    The split doubled this obligation: an interpreter whose translation state is
+    unread must not be readable as a clean native one, and that has to hold for
+    the WARN gap and the OK gap alike -- the OK one more so, since it spends no
+    warning. Paired with `test_native_is_an_ok_line_that_says_native`, which fails
+    if the word can never appear at all, so this is not vacuous.
     """
-    lines = doctor.interpreter_architecture(
-        machine="x86_64",
-        system="Linux",
-        translation=("unknown", None, "no translation probe is implemented for Linux"),
-    )
-    assert "native" not in _text(lines).lower(), lines
+    for system, translation in (
+        ("Darwin", ("unknown", None, "sysctl.proc_translated could not be read (errno 1)")),
+        ("Linux", ("not-probed", None, "no translation probe is implemented for Linux")),
+    ):
+        lines = doctor.interpreter_architecture(
+            machine="x86_64", system=system, translation=translation
+        )
+        assert "native" not in _text(lines).lower(), (system, lines)
 
 
 def test_an_unreadable_host_probe_is_not_rendered_as_a_host_architecture():
@@ -238,14 +248,18 @@ def test_every_architecture_line_survives_the_printable_ascii_fold():
     """#376's contract, applied to #367's new lines: these go through `report()`,
     so anything they compose must already be one printable ASCII line.
     """
-    for translation in (
-        ("translated", "arm64", ""),
-        ("native", "arm64", ""),
-        ("unknown", None, "no translation probe is implemented for Linux"),
+    for system, translation in (
+        ("Darwin", ("translated", "arm64", "")),
+        ("Darwin", ("native", "arm64", "")),
+        ("Darwin", ("translated", None, "")),
+        ("Darwin", ("native", None, "")),
+        ("Darwin", ("unknown", None, "sysctl.proc_translated could not be read (errno 1)")),
+        ("Linux", ("not-probed", None, "no translation probe is implemented for Linux")),
     ):
         lines = doctor.interpreter_architecture(
-            machine="x86_64", system="Linux", translation=translation
+            machine="x86_64", system=system, translation=translation
         )
+        assert lines, (system, translation)
         for _, message in lines:
             assert doctor._one_line(message, limit=4000) == message, message
 
@@ -455,24 +469,61 @@ def test_the_sysctl_probe_agrees_with_the_stdlib_on_darwin():
     assert doctor._sysctl_int("hw.logicalcpu") == os.cpu_count()
 
 
-def test_translation_state_answers_on_darwin():
-    """On macOS the probe must reach a verdict, not fall through to `unknown` --
+# These two were ONE test until the `unknown`/`not-probed` split, and its
+# non-Darwin arm was doing second duty as a cheap "the function answers at all"
+# check -- so after the split it asserted the retired state name and went red on
+# every ubuntu leg. Two platforms, two genuinely different claims, so two tests.
+# Neither is the other's skip arm, which is what let the stale assertion hide.
+
+
+def test_translation_state_reaches_a_verdict_on_darwin():
+    """On macOS the probe must reach a verdict, not shrug.
+
     `sysctl.proc_translated` returning ENOENT is itself the answer `native`
-    (Apple's own documented reading), so there is no macOS on which this is
-    allowed to shrug.
+    (Apple's own documented reading), so there is no macOS on which `unknown` is
+    the honest result of a working call -- and `not-probed` is flatly wrong here,
+    because a probe does exist on this platform.
     """
-    state, host, reason = doctor.translation_state()
     if platform.system() != "Darwin":
-        assert state == "unknown", (state, host, reason)
-        assert reason, "the unknown state carried no reason"
         pytest.skip(
-            "UNTESTED here: the Darwin sysctl.proc_translated probe. This platform is "
-            "{}, where doctor reports the third state and names it.".format(
-                platform.system()
-            )
+            "UNTESTED here: the Darwin sysctl.proc_translated probe, which is the only "
+            "translation probe that exists. This platform is {}, whose own claim is the "
+            "test below.".format(platform.system())
         )
+    state, host, reason = doctor.translation_state()
     assert state in ("native", "translated"), (state, host, reason)
     assert host, (state, host, reason)
+
+
+def test_translation_state_reports_not_probed_on_a_platform_with_no_probe():
+    """The live counterpart, and a real claim rather than a shape check.
+
+    `test_off_darwin_the_state_is_not_probed_rather_than_unknown` already pins the
+    branch with `system` injected. This one pins the DISPATCH: that the real
+    `platform.system()` on this machine routes to the branch that matches it. The
+    two are different failures -- the branch being wrong, and the branch being
+    right but never reached.
+
+    `not-probed` rather than `unknown` is the load-bearing half. `unknown` means a
+    probe ran here and did not answer; claiming it on a platform where no probe
+    exists reports a fault where there is only a gap, and it costs a WARN that no
+    remedy clears -- which is the whole of the CI round that produced this split.
+    """
+    if platform.system() == "Darwin":
+        pytest.skip(
+            "UNTESTED here: the no-probe dispatch. This platform is Darwin, which has a "
+            "probe, so it exercises the test above instead. What goes unchecked on a mac "
+            "is whether a platform without a probe reports not-probed rather than "
+            "unknown -- only a Linux or Windows run can establish that, and CI does."
+        )
+    state, host, reason = doctor.translation_state()
+    assert state == "not-probed", (state, host, reason)
+    assert host is None, (state, host, reason)
+    assert platform.system() in reason, reason
+    # Never the fault state, and never a clearance either: the two ways this line
+    # could lie, pinned together.
+    assert state != "unknown", (state, host, reason)
+    assert state not in ("native", "translated"), (state, host, reason)
 
 
 def test_cpu_topology_returns_its_four_slots_on_this_platform():
