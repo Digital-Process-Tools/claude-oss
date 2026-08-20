@@ -41,6 +41,7 @@ aimed at the control that exists to prevent it. Check a new anchor against the
 blob, not against PRIOR.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -212,15 +213,21 @@ worth reporting, and then silently not reported reads exactly like a dependency 
 # change, un-elided, transcribed from `git show f58aed3:agents/developer.md`.
 # Every anchor in CLOSING_REFERENCE_DUTY falls inside this span, so an elision
 # here would assert an anchor absent from text that never carried it. Em dashes
-# are transcribed as `--`, the same convention the constants above use; no
-# anchor spans one.
+# are transcribed as `--`, the same convention the constants above use, and
+# nothing else is: the fenced JSON block and its `…` placeholders are carried
+# through verbatim. Two reviewers caught the first draft of this constant
+# dropping the fence markers and rewriting `…` as `...` while its own comment
+# claimed no elision -- no anchor fell in that span, so nothing was red, which is
+# exactly how a control loses its teeth without failing.
 PRIOR_PR_PAYLOAD = """
 ### The pull request is yours to write -- the title as much as the body
 
 Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.json` and record it under `pr_body`.
 **A file the forge can consume unchanged, not a markdown body** -- JSON with four fields:
 
-{"title": "...", "body": "...", "head": "<your branch>", "base": "<default branch>"}
+```json
+{"title": "…", "body": "…", "head": "<your branch>", "base": "<default branch>"}
+```
 
 Markdown is the shape the next step refuses, and the refusal lands on somebody else after your
 session has ended: they read your body, wrap it, and **invent a title**. The title is the sentence
@@ -332,6 +339,84 @@ def test_the_developer_document_exists_and_is_prose():
     """
     assert DEVELOPER.is_file(), "agents/developer.md is missing"
     assert len(_developer()) > 8000, "agents/developer.md is too short to be the brief"
+
+
+# The commit `PRIOR_PR_PAYLOAD` is transcribed from -- the merge of PR #334, the
+# change that created the duty the constant controls.
+PRE_CHANGE_COMMIT = "f58aed3"
+EM_DASH = "—"
+FENCE_OPEN = "```json\n"
+FENCE_CLOSE = "\n```"
+
+
+def _blob(commit):
+    """`agents/developer.md` at a commit, or None when git cannot produce it.
+
+    None is a third state, not a failure: `actions/checkout` runs at depth 1, so a
+    CI leg holds the tip and nothing before it. Absent-from-history and
+    git-is-unusable are told apart by the caller with a control read of HEAD -- if
+    that also fails, nothing here is a statement about the constant.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "show", "{}:agents/developer.md".format(commit)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    return done.stdout if done.returncode == 0 and done.stdout else None
+
+
+def test_the_pr_payload_control_is_the_text_that_was_actually_on_disk():
+    """`PRIOR_PR_PAYLOAD` claims to be un-elided. Measured, not asserted.
+
+    Every other `PRIOR_*` constant makes the same claim and nothing checks any of
+    them; this one is checked because the first draft of it was wrong in exactly
+    the way the claim forbids -- fence markers dropped, the ellipsis placeholders
+    rewritten -- and no anchor happened to fall in the altered span, so the suite
+    stayed green while the control's stated guarantee was false. A guard whose
+    completeness claim nothing measures is this repository's own defect class.
+    """
+    control = _blob("HEAD")
+    if control is None:
+        pytest.skip(
+            "git could not produce agents/developer.md at HEAD, so nothing here is "
+            "a statement about PRIOR_PR_PAYLOAD; its un-elided claim went "
+            "unmeasured on this runner"
+        )
+    blob = _blob(PRE_CHANGE_COMMIT)
+    if blob is None:
+        pytest.skip(
+            "git produced HEAD but not {}, which is what a depth-1 checkout looks "
+            "like; PRIOR_PR_PAYLOAD's un-elided claim went unmeasured on this "
+            "runner".format(PRE_CHANGE_COMMIT)
+        )
+    normalised = blob.replace(EM_DASH, "--")
+    passage = PRIOR_PR_PAYLOAD.strip()
+    assert passage in normalised, (
+        "PRIOR_PR_PAYLOAD is not the pre-change subsection: it says it is un-elided "
+        "apart from em dashes, and it does not appear verbatim in "
+        "{}:agents/developer.md after that one substitution".format(PRE_CHANGE_COMMIT)
+    )
+    # The must-fire half, in the same fixture: reproduce the elision that actually
+    # shipped in this constant's first draft and confirm the assertion above would
+    # have caught it. Without this, a constant that had been emptied or truncated
+    # to whitespace would satisfy the `in` and report as a faithful transcription.
+    elided = (
+        passage.replace(FENCE_OPEN, "")
+        .replace(FENCE_CLOSE, "")
+        .replace("…", "...")
+    )
+    assert elided != passage, (
+        "the elision this control reproduces no longer changes the constant, so the "
+        "must-fire assertion below cannot fire and proves nothing"
+    )
+    assert elided not in normalised, (
+        "an elided copy of PRIOR_PR_PAYLOAD still matches the pre-change document, "
+        "so the assertion above would pass for text that is not the transcription"
+    )
 
 
 def test_the_negative_control_is_readable():
