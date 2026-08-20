@@ -69,6 +69,34 @@ INTAKE_PARTIAL = "partial"
 # to avoid, so they are not the same value even inside the parser.
 UNKNOWN_COUNT = object()
 
+# The lane-model mix (#316): which model each dispatched developer lane ran on, and
+# whether that was the shipped default or a per-lane override with a reason. Same three
+# extra states as intake, for the same reason -- a tick that dispatched nothing and a
+# tick that recorded nothing about its lanes must not render alike, and a mix somebody
+# could not establish must never render as an empty one.
+#
+#   recorded            at least one lane was dispatched and every one of them carries
+#                        a model, and an override carries its reason.
+#   none-dispatched      the tick dispatched no developer lane. Not the same as the next
+#                        state -- this is a fact somebody established, not a silence.
+#   could-not-establish  nobody recorded what ran, or could not (a resumed session whose
+#                        transcripts were reaped, for instance). Never zero lanes.
+#   partial              `lane_model_trend` only: some ticks in the range recorded a mix
+#                        and some did not, so the sum is real but not the range's total.
+LANES_RECORDED = "recorded"
+LANES_NONE_DISPATCHED = "none-dispatched"
+LANES_COULD_NOT_ESTABLISH = "could-not-establish"
+LANES_PARTIAL = "partial"
+
+# A lane's own two-word vocabulary. Not checked against a list of model names -- which
+# models exist is a fact about the harness, not about this repository, and an allow-list
+# here would be a second copy of somebody else's roster (the class this repo is named
+# after, pointed at its own config). What is checked is *why* a lane ran the model it
+# ran: the shipped default needs no reason, and an override does, because an unexplained
+# override is exactly the accretion #316 was filed about.
+CHOICE_DEFAULT = "default"
+CHOICE_OVERRIDE = "override"
+
 
 class StateError(Exception):
     """The state file could not be read, or an entry was refused."""
@@ -673,6 +701,228 @@ def intake_trend(entries):
     return trend
 
 
+def lane_models(lanes, window, why=None):
+    """One tick's lane-model mix (#316): what each dispatched developer lane ran on.
+
+    ``lanes`` is a list of mappings, each carrying ``issue``, ``model`` and ``choice``
+    (``CHOICE_DEFAULT`` or ``CHOICE_OVERRIDE``), plus ``why`` when the choice is an
+    override. ``None`` means the mix could not be established -- a resumed session whose
+    transcripts were reaped, for instance -- and then ``why`` is required for the same
+    reason ``intake``'s is: an unexplained absence is indistinguishable from a measurement
+    of nothing. An empty list means the tick dispatched no developer lane, and that is a
+    fact somebody established, not the same state as not knowing.
+
+    ``window`` is required, exactly as ``intake``'s is: a mix with no window attached is
+    a ratio nobody can read six ticks later.
+
+    The model name is never checked against a list of models. Which models exist is a
+    fact about the harness, not about this repository -- an allow-list here would be a
+    second copy of somebody else's roster. What is refused is an empty name, and a choice
+    that is neither word, and an override with no reason: the accretion #316 was filed
+    about, in one field.
+    """
+    if not window or not str(window).strip():
+        raise StateError(
+            "a lane record needs a window -- what this dispatch was, in words. A model "
+            "mix whose window nobody stated cannot be read against any other tick."
+        )
+    window = str(window).strip()
+
+    if lanes is None:
+        if not why or not str(why).strip():
+            raise StateError(
+                "a lane mix that could not be established needs a why. Without it, "
+                "could-not-establish is an absence with no cause, which reads as a mix "
+                "of nothing."
+            )
+        return {
+            "state": LANES_COULD_NOT_ESTABLISH,
+            "window": window,
+            "lanes": None,
+            "why": str(why).strip(),
+        }
+
+    if not isinstance(lanes, list):
+        raise StateError("lanes must be a list of mappings or None, not {!r}".format(lanes))
+
+    if not lanes:
+        return {"state": LANES_NONE_DISPATCHED, "window": window, "lanes": [], "why": None}
+
+    normalized = []
+    for position, lane in enumerate(lanes, start=1):
+        if not isinstance(lane, dict):
+            raise StateError("lane {} is not a mapping ({!r})".format(position, lane))
+
+        issue = lane.get("issue")
+        issue_blank = issue is None or (isinstance(issue, str) and not issue.strip())
+        if isinstance(issue, bool) or issue_blank:
+            # `True` is an `int` in Python, and would land in the history as lane
+            # number one -- checked ahead of the blank check on purpose.
+            raise StateError(
+                "lane {}: issue is required and must not be a bool ({!r})".format(
+                    position, issue
+                )
+            )
+
+        model = lane.get("model")
+        if not model or not str(model).strip():
+            raise StateError("lane {}: model is required and must not be empty".format(position))
+
+        choice = lane.get("choice")
+        if choice not in (CHOICE_DEFAULT, CHOICE_OVERRIDE):
+            raise StateError(
+                "lane {}: choice must be {!r} or {!r}, not {!r}".format(
+                    position, CHOICE_DEFAULT, CHOICE_OVERRIDE, choice
+                )
+            )
+
+        lane_why = lane.get("why")
+        if choice == CHOICE_OVERRIDE:
+            if not lane_why or not str(lane_why).strip():
+                raise StateError(
+                    "lane {}: an override needs a reason -- an unexplained override is "
+                    "exactly the accretion #316 was filed about".format(position)
+                )
+            lane_why = str(lane_why).strip()
+        else:
+            lane_why = str(lane_why).strip() if lane_why and str(lane_why).strip() else None
+
+        normalized.append(
+            {"issue": issue, "model": str(model).strip(), "choice": choice, "why": lane_why}
+        )
+
+    return {"state": LANES_RECORDED, "window": window, "lanes": normalized, "why": None}
+
+
+def lane_models_line(record):
+    """One line a tick report can print. The state decides the sentence, not the caller.
+
+    Handles both a single tick's record (``lanes`` is a list) and a trend summed across
+    a history (``lanes`` is a count, ``counts`` carries the mix) -- the two shapes
+    ``lane_models`` and ``lane_model_trend`` return, so one renderer serves both call
+    sites the way ``intake_line`` does not need to.
+    """
+    if not isinstance(record, dict):
+        raise StateError("lane_models_line takes a lane record, not {!r}".format(record))
+    state = record.get("state")
+    window = record.get("window") or "an unstated window"
+    head = "lane models {}: ".format(window)
+
+    if state == LANES_NONE_DISPATCHED:
+        return head + "dispatched no developer lane"
+    if state == LANES_COULD_NOT_ESTABLISH:
+        return head + "could not establish ({}) -- this is not zero lanes".format(
+            record.get("why") or "no reason recorded"
+        )
+    if state in (LANES_RECORDED, LANES_PARTIAL):
+        lanes = record.get("lanes")
+        if isinstance(lanes, list):
+            counts = {}
+            overrides = 0
+            for lane in lanes:
+                model = lane.get("model") if isinstance(lane, dict) else None
+                if model:
+                    counts[model] = counts.get(model, 0) + 1
+                if isinstance(lane, dict) and lane.get("choice") == CHOICE_OVERRIDE:
+                    overrides += 1
+        else:
+            counts = record.get("counts") or {}
+            overrides = record.get("overrides") or 0
+        parts = ", ".join(
+            "{} {}".format(count, model) for model, count in sorted(counts.items())
+        )
+        mix = head + "{} ({} override{})".format(
+            parts or "no lanes", overrides, "" if overrides == 1 else "s"
+        )
+        if state == LANES_PARTIAL:
+            # Deliberately not the recorded sentence with a caveat appended -- a reader
+            # skimming for the mix would take the mix and leave the caveat, which is a
+            # partial sum read as a total (the same trap `intake_line` guards against).
+            return "PARTIAL, " + mix[len(head):] + " -- {}".format(
+                record.get("why") or "some ticks contributed no record"
+            )
+        return mix
+    return head + "unrecognised lane models state {!r}, so nothing is claimed".format(state)
+
+
+def lane_model_trend(entries):
+    """Re-add the recorded lane mixes across a run of ticks.
+
+    Three holes counted rather than dropped, same shape as ``intake_trend``: a tick whose
+    mix could not be established, a tick that dispatched no lane at all (this one is not
+    a hole -- it is a real zero, and is counted), and an entry carrying something that is
+    not a lane record. Any hole among the first and third makes the answer ``partial``;
+    the sum is still returned, because a partial sum labelled partial is usable and one
+    labelled total is the trap.
+    """
+    counts = {}
+    lanes_total = 0
+    overrides = 0
+    counted = 0
+    uncounted = 0
+    without_record = 0
+
+    for entry in entries or []:
+        detail = entry.get("detail") if isinstance(entry, dict) else None
+        record = detail.get("lanes") if isinstance(detail, dict) else None
+        if not isinstance(record, dict) or "state" not in record:
+            without_record += 1
+            continue
+        state = record.get("state")
+        if state == LANES_RECORDED:
+            for lane in record.get("lanes") or []:
+                if not isinstance(lane, dict):
+                    continue
+                model = lane.get("model")
+                if model:
+                    counts[model] = counts.get(model, 0) + 1
+                lanes_total += 1
+                if lane.get("choice") == CHOICE_OVERRIDE:
+                    overrides += 1
+            counted += 1
+        elif state == LANES_NONE_DISPATCHED:
+            counted += 1
+        else:
+            uncounted += 1
+
+    trend = {
+        "window": "the ticks in this history",
+        "counts": counts if counted else None,
+        "lanes": lanes_total if counted else None,
+        "overrides": overrides if counted else None,
+        "why": None,
+        "ticks_counted": counted,
+        "ticks_uncounted": uncounted,
+        "ticks_without_record": without_record,
+    }
+
+    if counted == 0:
+        trend["state"] = LANES_COULD_NOT_ESTABLISH
+        trend["why"] = (
+            "no tick in this history recorded a lane model mix ({} could not "
+            "establish, {} said nothing about their lanes)".format(uncounted, without_record)
+        )
+        return trend
+    if uncounted or without_record:
+        trend["state"] = LANES_PARTIAL
+        trend["why"] = (
+            "{} of {} ticks contributed no lane record, so this sum is real and it is "
+            "not the range's total".format(
+                uncounted + without_record, counted + uncounted + without_record
+            )
+        )
+        return trend
+    if lanes_total == 0:
+        # Every tick that contributed to this sum said the same thing: it dispatched no
+        # developer lane. That is a real, established zero -- not the same rendering as
+        # `recorded` with an empty mix, which would read as a lane count nobody took.
+        trend["state"] = LANES_NONE_DISPATCHED
+        return trend
+
+    trend["state"] = LANES_RECORDED
+    return trend
+
+
 def _count_argument(text):
     """A CLI count: a whole number, or the literal ``unknown``.
 
@@ -696,6 +946,52 @@ def _count_argument(text):
     if value < 0:
         raise argparse.ArgumentTypeError("a count cannot be negative ({})".format(value))
     return value
+
+
+def _lane_argument(text):
+    """A CLI lane: ``ISSUE=MODEL:CHOICE[:WHY]``.
+
+    Only the shape is checked here -- an issue and a model present, a choice that is one
+    of the two words. Whether an override actually carries its reason is left to
+    ``lane_models``, which needs ``--lane-window`` too and is the single place that
+    decision is made, at the CLI or from any other caller.
+    """
+    import argparse
+
+    if "=" not in text:
+        raise argparse.ArgumentTypeError(
+            "{!r} is not ISSUE=MODEL:CHOICE[:WHY]".format(text)
+        )
+    issue_text, _, rest = text.partition("=")
+    if not issue_text.strip():
+        raise argparse.ArgumentTypeError(
+            "{!r}: an issue number is required before '='".format(text)
+        )
+    if not rest.strip():
+        raise argparse.ArgumentTypeError(
+            "{!r}: MODEL:CHOICE is required after '='".format(text)
+        )
+    parts = rest.split(":", 2)
+    if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
+        raise argparse.ArgumentTypeError(
+            "{!r} is not ISSUE=MODEL:CHOICE[:WHY]".format(text)
+        )
+    model, choice = parts[0].strip(), parts[1].strip()
+    if choice not in (CHOICE_DEFAULT, CHOICE_OVERRIDE):
+        raise argparse.ArgumentTypeError(
+            "{!r}: choice must be {!r} or {!r}, not {!r}".format(
+                text, CHOICE_DEFAULT, CHOICE_OVERRIDE, choice
+            )
+        )
+    why = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
+    try:
+        issue = int(issue_text.strip())
+    except ValueError:
+        issue = issue_text.strip()
+    lane = {"issue": issue, "model": model, "choice": choice}
+    if why is not None:
+        lane["why"] = why
+    return lane
 
 
 def _say(text, stream=None):
@@ -755,6 +1051,11 @@ def _main(argv=None):
             "list shape, keeping the original at <path>" + BACKUP_SUFFIX
         ),
     )
+    group.add_argument(
+        "--model-trend",
+        action="store_true",
+        help="print the lane-model mix re-added across the whole history",
+    )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
     parser.add_argument(
@@ -774,6 +1075,25 @@ def _main(argv=None):
     parser.add_argument(
         "--intake-why", help="why a count is 'unknown'; required when either one is"
     )
+    parser.add_argument(
+        "--lane",
+        action="append",
+        type=_lane_argument,
+        help="one dispatched lane, ISSUE=MODEL:CHOICE[:WHY]; repeatable",
+    )
+    parser.add_argument(
+        "--lanes",
+        choices=("none", "unknown"),
+        help="'none' if the tick dispatched no developer lane, 'unknown' if it could "
+        "not be established -- use with --lane-why",
+    )
+    parser.add_argument(
+        "--lane-window",
+        help="what this lane dispatch was, in words -- required with --lane/--lanes",
+    )
+    parser.add_argument(
+        "--lane-why", help="why the mix is 'unknown'; required when --lanes unknown is"
+    )
     args = parser.parse_args(argv)
 
     intake_flags = [
@@ -786,12 +1106,24 @@ def _main(argv=None):
         )
         if value is not None
     ]
+    lane_flags = [
+        name
+        for name, value in (
+            ("--lane", args.lane),
+            ("--lanes", args.lanes),
+            ("--lane-window", args.lane_window),
+            ("--lane-why", args.lane_why),
+        )
+        if value is not None
+    ]
 
-    # The intake pair, once it has been built and while the entry carrying it has not
-    # landed. `refuse` reads it, so a refusal after the counts were taken can say the
-    # counts went nowhere -- otherwise a pair somebody measured is dropped in silence,
-    # and `--trend` counts that tick as one that recorded nothing. (#222)
+    # The intake pair and the lane record, each once it has been built and while the
+    # entry carrying it has not landed. `refuse` reads both, so a refusal after either
+    # was built can say what went nowhere -- otherwise something somebody measured is
+    # dropped in silence, and `--trend`/`--model-trend` counts that tick as one that
+    # recorded nothing. (#222, and #316 the same shape one field over)
     pending_intake = None
+    pending_lanes = None
 
     def refuse(message):
         """Print the verdict, then what the run did not record. In that order.
@@ -812,10 +1144,14 @@ def _main(argv=None):
             # streams apart and cannot see this at all.
             sys.stdout.flush()
             _say("NOT RECORDED " + intake_line(pending_intake), sys.stderr)
+        if pending_lanes is not None:
+            sys.stdout.flush()
+            _say("NOT RECORDED " + lane_models_line(pending_lanes), sys.stderr)
         return 1
 
     try:
-        if (args.read or args.last or args.trend or args.migrate) and intake_flags:
+        reading_mode = args.read or args.last or args.trend or args.migrate or args.model_trend
+        if reading_mode and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
             # 0, with the reading mode's own output looking entirely normal.
             _say(
@@ -823,6 +1159,19 @@ def _main(argv=None):
                 "accept them and drop them".format(", ".join(intake_flags))
             )
             return 1
+        if reading_mode and lane_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(lane_flags))
+            )
+            return 1
+        if args.model_trend:
+            trend = lane_model_trend(read(args.path))
+            # Same three-label vocabulary as --trend, one metric over: TREND marks a
+            # sum nobody asked to store, computed from a history that already exists.
+            _say("TREND " + lane_models_line(trend), sys.stderr)
+            print(json.dumps(trend, indent=2))
+            return 0
         if args.migrate:
             result = migrate(args.path)
             if result["state"] == MIGRATED:
@@ -870,11 +1219,38 @@ def _main(argv=None):
             return refuse(
                 "--at is required with --decision; the timestamp is not read from a clock"
             )
-        # The pair is built before `--detail` is parsed, and the order is the point: a
-        # malformed `--detail` is a refusal, and a refusal raised while `pending_intake`
-        # was still None dropped a pair somebody had measured without a line saying so --
-        # which is this issue's own defect one branch over. Two `if intake_flags:` blocks
-        # rather than one, because the second half needs the parsed detail.
+        if args.lane is not None and args.lanes is not None:
+            return refuse(
+                "--lane and --lanes cannot both be given; use --lane for named lanes "
+                "or --lanes none/unknown for the whole tick"
+            )
+        if lane_flags and args.lane is None and args.lanes is None:
+            # `--lane-window`/`--lane-why` alone records nothing -- the same shape
+            # `--window` alone (no `--filings`/`--merged-prs`) already gets from the
+            # intake block below. Without this, an entry lands with no `lanes` key at
+            # all and no receipt either way: a flag somebody passed, silently dropped.
+            return refuse(
+                "a lane record needs --lane or --lanes; {} alone records "
+                "nothing".format(", ".join(lane_flags))
+            )
+        if (args.lane is not None or args.lanes is not None) and not args.lane_window:
+            return refuse(
+                "a lane record needs --lane-window -- what this dispatch was, in "
+                "words. A mix with no window means nothing six ticks later."
+            )
+        # Every pending record is built before its own refusal can fire, and before
+        # `--detail` is parsed -- the order is the point: a refusal raised while another
+        # pending record was still unbuilt dropped something somebody had measured
+        # without a line saying so, this issue's own defect one branch over (#222). The
+        # lane record is built ahead of the intake "missing flags" check for exactly that
+        # reason: a valid `--lane` must not go unreported just because an unrelated,
+        # incomplete `--filings`/`--merged-prs`/`--window` set is refused first.
+        if args.lane is not None:
+            pending_lanes = lane_models(args.lane, window=args.lane_window)
+        elif args.lanes == "none":
+            pending_lanes = lane_models([], window=args.lane_window)
+        elif args.lanes == "unknown":
+            pending_lanes = lane_models(None, window=args.lane_window, why=args.lane_why)
         if intake_flags:
             missing = [
                 name
@@ -909,12 +1285,26 @@ def _main(argv=None):
                     "--detail already carries an 'intake' key; pass one or the other"
                 )
             detail["intake"] = record
+        if pending_lanes is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a lane record is attached"
+                )
+            if "lanes" in detail:
+                return refuse(
+                    "--detail already carries a 'lanes' key; pass one or the other"
+                )
+            detail["lanes"] = pending_lanes
         entry = append(args.path, args.at, args.decision, detail=detail)
         # After the write, never before. The line is a receipt for an entry that is on
         # disk, and a receipt printed ahead of the write it receipts is one that a
         # refusal, a crash or a filtered transcript turns into a false pass. (#222)
         if pending_intake is not None:
             _say("RECORDED " + intake_line(pending_intake), sys.stderr)
+        if pending_lanes is not None:
+            _say("RECORDED " + lane_models_line(pending_lanes), sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:

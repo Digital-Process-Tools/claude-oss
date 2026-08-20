@@ -397,6 +397,24 @@ The definitions carry worktree setup, TDD and the report format, so a brief carr
 about **this** issue. That matters: **boilerplate is where unverified claims hide, because it is the
 part nobody proofreads.**
 
+### The developer's model default is sonnet, and an override is recorded
+
+`agents/developer.md`'s own frontmatter carries `model: sonnet` — a maintainer decision, not a fact
+about every repository this plugin manages, so the priced evidence it rests on lives in this
+project's own history (#316) rather than repeated here as a number a different installation would
+read as generic guidance. In outline: both a per-lane price comparison and the round-trip rate
+favoured `sonnet` on the trial that decided it, and the round trips that did occur traced to a
+missing rule in the *brief* (#353), not to the model.
+
+Revert a **single lane** to `opus` when any reversal condition fires on it, and record the instance
+rather than change the shipped default from one sample: a lane needs a second attempt; a review
+disposition is `refused` with no argument, or a finding is referenced without being stated (#275); a
+red run is claimed rather than shown; or the brief is taken at face value where it was wrong.
+
+Record every dispatched lane so the mix stays recomputable rather than asserted — `scripts/oss_state.py`
+takes it as `--lane ISSUE=MODEL:CHOICE[:WHY]` alongside the tick's `--decision` (`default` needs no
+reason, `override` does), and `--model-trend` re-adds the mix across the whole history.
+
 ### Run a fleet, not a queue
 
 **Several developers in parallel. That is the point of this loop, not an optimisation of it.** One
