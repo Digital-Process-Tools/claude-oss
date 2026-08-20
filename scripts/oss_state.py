@@ -122,6 +122,44 @@ MIGRATE_HINT = (
     "convert it with: python3 <plugin>/scripts/oss_state.py <state_file> --migrate"
 )
 
+# One receipt line, and the mark a cut one carries. Same figures as
+# `lane_setup.py`'s, deliberately not imported: that module is a setup read and this
+# is the state file, and neither should have to change because the other's did.
+_RECEIPT_LINE_LIMIT = 2000
+_TRUNCATION_MARK = " ... [truncated]"
+
+
+def _receipt_line(text):
+    """One assembled receipt line, folded so nothing in it can forge another (#382).
+
+    Applied at the single point where each renderer joins its line, rather than to a
+    list of fields. `window`, a `why` and a model name were measured forging lines
+    here; the shape of the guard is the argument #372 already settled for
+    `lane_setup.receipt()` -- a per-field guard closes the fields somebody enumerated
+    and leaves the next field added to the renderer unguarded.
+
+    The receipts this module prints are read by a maintainer and pasted into briefs,
+    and `lane_models_line`'s own output goes back through `--model-trend` from a state
+    file, so a forged line survives a round trip.
+
+    Not `_one_line` -- there is none in this module to reuse, and importing another
+    script's would couple a state file to a setup read. Its silent truncation would
+    also be wrong here: a cut line rendering as a complete one is this repository's own
+    defect class pointed at its own receipt, so truncation is **marked**. Its
+    `" ".join(text.split())` is the half `lane_setup` refused because every row there is
+    column-aligned; nothing in this module is aligned, so collapsing runs of spaces
+    would have destroyed nothing -- it is simply not what a forging guard needs to do,
+    and leaving spaces alone keeps a clean receipt byte-for-byte what it was.
+
+    Every character outside printable ASCII becomes `?`, which covers newline, carriage
+    return and the control sequences that repaint a line a terminal already printed.
+    """
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in str(text))
+    if len(safe) > _RECEIPT_LINE_LIMIT:
+        keep = max(0, _RECEIPT_LINE_LIMIT - len(_TRUNCATION_MARK))
+        safe = safe[:keep] + _TRUNCATION_MARK
+    return safe
+
 
 def describe(path):
     """Which of the three states this path is in. Never raises.
@@ -593,7 +631,14 @@ def intake_line(record):
 
     Rendering is where a third state gets lost: a caller formatting ``ratio or 0`` turns
     "could not count" into "zero", which is the finding it is not.
+
+    The single join, so `_receipt_line` cannot be skipped by adding a branch below.
     """
+    return _receipt_line(_intake_sentence(record))
+
+
+def _intake_sentence(record):
+    """`intake_line`'s branches. Unfolded on purpose -- it has one caller."""
     if not isinstance(record, dict):
         raise StateError("intake_line takes an intake record, not {!r}".format(record))
     state = record.get("state")
@@ -801,7 +846,14 @@ def lane_models_line(record):
     a history (``lanes`` is a count, ``counts`` carries the mix) -- the two shapes
     ``lane_models`` and ``lane_model_trend`` return, so one renderer serves both call
     sites the way ``intake_line`` does not need to.
+
+    The single join, so `_receipt_line` cannot be skipped by adding a branch below.
     """
+    return _receipt_line(_lane_models_sentence(record))
+
+
+def _lane_models_sentence(record):
+    """`lane_models_line`'s branches. Unfolded on purpose -- it has one caller."""
     if not isinstance(record, dict):
         raise StateError("lane_models_line takes a lane record, not {!r}".format(record))
     state = record.get("state")
