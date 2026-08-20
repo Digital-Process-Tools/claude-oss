@@ -35,11 +35,19 @@ with, say, a `doctor` check states the same claim twice and passes whenever both
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+# Imported rather than `importorskip`ed, the same reasoning as
+# tests/test_docs_state_slug_grammar_308.py: a missing module is a red collection error,
+# which is what a missing module is.
+import assemble_changelog  # noqa: E402
+
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 
@@ -158,8 +166,22 @@ def test_an_absent_heading_is_reported_as_empty_rather_than_as_a_match():
 #: `## [0.4.0] - 2026-08-15`, and not `## [Unreleased]`.
 CHANGELOG_RELEASE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 
-#: `164.added.md`. The fragment directory also carries a `README.md`, which is not a fragment.
-FRAGMENT = re.compile(r"\A\d+\.[a-z]+\.md\Z")
+#: `164.added.md`, `878.fixed.second-entry.md`. The fragment directory also carries a
+#: `README.md`, which is not a fragment and which this must keep refusing -- the skip arm is
+#: reached by finding none, so a name wrongly counted arms the guard in every cycle.
+#:
+#: Taken from the assembler that folds the fragments rather than spelled here. This was a
+#: third spelling of the grammar and it had drifted: it predated the optional `<slug>` added
+#: in #308, so a cycle whose pending fragments were all slug-form parsed as an empty
+#: directory and the guard skipped with "no release is being prepared" (#375). Two CI gates
+#: state the grammar too -- `.github/workflows/changelog.yml` and the workflow
+#: `scripts/scaffold.py` writes -- and both were measured correct; those are shell, so they
+#: cannot import, and this one can. A fourth corrected copy would only reset the same clock.
+#:
+#: The name grammar and not `parse_fragment_name`, which also refuses a section outside the
+#: six: `1.bogus.md` is a file somebody filed as a fragment and the assembler will refuse the
+#: release over it, so counting it as absent here would be this same defect one layer down.
+FRAGMENT = assemble_changelog._NAME_RE
 
 
 def _marker_paragraph(body):
@@ -313,8 +335,80 @@ def test_a_version_mentioned_below_the_marker_does_not_launder_a_stale_marker():
 def test_a_fragment_is_told_from_the_readme_beside_it():
     """The skip arm is reached by finding no fragments, so what counts as one is load-bearing."""
     assert FRAGMENT.match("206.fixed.md")
+    assert FRAGMENT.match("878.fixed.second-entry.md"), (
+        "the optional slug is part of the documented grammar -- `<issue>.<section>[.<slug>].md`"
+    )
     assert not FRAGMENT.match("README.md")
     assert not FRAGMENT.match("206.fixed.md.bak")
+
+
+#: `pytest.skip` raises `Skipped`, which derives from `BaseException` -- so `except Exception`,
+#: and `pytest.raises(Exception)`, both sail straight past it and skip the *enclosing* test
+#: instead: a green tick over an assertion that never ran, reported as `1 skipped` where nobody
+#: reads it. The outcome type is pinned here because the subject of these two tests IS the skip.
+SKIPPED = pytest.skip.Exception
+
+#: The guard reads its fragment directory through the module-level `_fragment_dir`, so pointing
+#: it at a fixture is a monkeypatch of this module rather than a parameter nobody else passes.
+_MODULE = sys.modules[__name__]
+
+
+def _guard_outcome(monkeypatch, directory):
+    """"ran" or "skipped" for the guard, with its fragment directory pointed at *directory*.
+
+    An `AssertionError` counts as "ran": whether the real `CLAUDE.md` marker is current is a
+    different question, and these two tests are only about whether the guard reached it.
+    """
+    monkeypatch.setattr(_MODULE, "_fragment_dir", lambda: directory)
+    try:
+        test_the_section_is_current_for_the_release_being_prepared()
+    except SKIPPED:
+        return "skipped"
+    except AssertionError:
+        return "ran"
+    return "ran"
+
+
+def test_a_cycle_whose_fragments_are_all_slug_form_arms_the_guard_rather_than_skipping(
+    tmp_path, monkeypatch
+):
+    """#375: the pattern predated the slug grammar, so an all-slug cycle read as no cycle.
+
+    Asserting only that the pattern matches a slug name would pass against a version that
+    still skipped -- so this drives the guard itself and reads which arm it took.
+    """
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+    for name in ("308.fixed.slug-form-documented.md", "878.fixed.second-entry.md"):
+        (directory / name).write_text("- an entry (#375)\n", encoding="utf-8")
+    (directory / "README.md").write_text("# Changelog fragments\n", encoding="utf-8")
+
+    assert _guard_outcome(monkeypatch, directory) == "ran", (
+        "every fragment waiting to be folded is slug-form, so a release IS being prepared -- "
+        "and the guard reported 'no unfolded changelog fragments' and skipped. That absence "
+        "was produced by the parser, not by the directory."
+    )
+
+
+def test_a_directory_with_no_fragments_still_skips(tmp_path, monkeypatch):
+    """The positive control. Without it the test above passes against a guard that never skips.
+
+    Two shapes of "no fragments": genuinely empty, and holding only the `README.md` that
+    documents the directory. The README exclusion is correct and must survive the widening.
+    """
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert _guard_outcome(monkeypatch, empty) == "skipped", (
+        "an empty fragment directory must still report that no release is being prepared"
+    )
+
+    readme_only = tmp_path / "readme-only"
+    readme_only.mkdir()
+    (readme_only / "README.md").write_text("# Changelog fragments\n", encoding="utf-8")
+    assert _guard_outcome(monkeypatch, readme_only) == "skipped", (
+        "the fragment directory's own README was counted as a fragment, which would arm the "
+        "guard in every cycle including the ones with nothing pending"
+    )
 
 
 def test_an_unreadable_fragment_directory_is_not_read_as_an_empty_one(tmp_path):
