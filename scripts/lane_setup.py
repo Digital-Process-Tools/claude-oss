@@ -106,7 +106,31 @@ def resolve_base(repo, remote, default_branch):
     prior fetch at all both leave a remote-tracking ref that might answer -- and
     answering from it without saying the fetch failed is exactly the staleness this
     script exists to stop reproducing.
+
+    #368: `default_branch` is the one value here that reaches git's argv unprefixed --
+    `git fetch --quiet <remote> <branch>` reads position 4 as an option when the name
+    starts with a dash -- so the verdict `oss_config` already produced for it is
+    consulted *before* any argv is built. `oss_config.load()` deliberately returns the
+    offending value together with a sentence rather than stripping it, and the defect
+    was this consumer treating a loaded config as a usable one. The rule is not
+    re-stated here: `default_branch_problem` is called, so one value keeps one rule
+    (#345) and a refusal cannot drift from the sentence `doctor` prints for it.
+
+    `branch_occupancy` needs no such guard and that is a property of its argv rather
+    than of its input: it prefixes `refs/heads/` and `refs/remotes/`, so a name can
+    never occupy the flag position. `tests/test_lane_setup_368.py` measures that
+    instead of trusting this sentence.
     """
+    problem = oss_config.default_branch_problem(default_branch)
+    if problem is not None:
+        return {
+            "state": "could-not-resolve",
+            "remote": remote,
+            "ref": None,
+            "sha": None,
+            "detail": _one_line(problem, 300),
+        }
+
     ref = "{0}/{1}".format(remote, default_branch)
     fetch_code, _, fetch_err = _git(repo, "fetch", "--quiet", remote, default_branch)
     fetched = fetch_code == 0
