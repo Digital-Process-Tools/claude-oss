@@ -41,6 +41,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -88,6 +89,11 @@ CONTRACT_FINGERPRINTS = {
     # refuses every version-3 report that uses the new word, and a version-3
     # copy refuses every version-2 report that used the old one.
     3: "940a1c68c40f5bca2c8f8a9a05cf32e241df709d0998a435db57b871caf0fcd5",
+    # 4 (#274): pr_body carries `closes`, and a `written` payload is refused without
+    # one. Breaking in both directions, which is why the number moved: a version-3
+    # copy refuses every version-4 report because `closes` is an unknown key, and a
+    # version-4 copy refuses every version-3 report because the key is absent.
+    4: "eec52e1f12bdac241428aa446abae980fa8180ab4c348d6e076b232e3adbf37f",
 }
 
 _TYPES = {
@@ -490,6 +496,39 @@ def _rule_pr_body(node, path, errors):
     if state == "not-written" and not _text(node, "reason"):
         errors.append("{}: state 'not-written' needs a reason".format(_label(path)))
 
+    closes = node.get("closes")
+    if state == "written" and not isinstance(closes, dict):
+        errors.append(
+            "{}: state 'written' needs a `closes` saying what merging this will close. "
+            "Three states, and only the third is a defect: it closes something, it "
+            "deliberately closes nothing, or nobody said -- and `pr_body: written` with "
+            "nothing beside it is exactly true and exactly not the question.".format(
+                _label(path)
+            )
+        )
+    if not isinstance(closes, dict):
+        return
+    closes_path = (path + ".closes") if path else "closes"
+    closes_state = closes.get("state")
+    if closes_state == "closes" and not _issue_numbers(closes.get("issues")):
+        errors.append(
+            "{}: state 'closes' needs at least one issue number in `issues`. Saying it "
+            "closes something without saying what closes nothing.".format(_label(closes_path))
+        )
+    if closes_state == "closes-nothing" and not _text(closes, "reason"):
+        errors.append(
+            "{}: state 'closes-nothing' needs a reason. A deliberate re-scope and a "
+            "forgotten keyword are one missing line apart, and without one they render "
+            "identically.".format(_label(closes_path))
+        )
+
+
+def _issue_numbers(value):
+    """The integers in `issues`, with bools -- which are ints in Python -- excluded."""
+    if not isinstance(value, list):
+        return []
+    return [n for n in value if isinstance(n, int) and not isinstance(n, bool)]
+
 
 _RULES = {
     "survey": _rule_survey,
@@ -588,6 +627,95 @@ def _contained_path(base_dir, raw_path):
     return candidate, None
 
 
+# --- what the body closes (#274) ------------------------------------------------
+#
+# An ABSENCE detector, deliberately, and the distinction is the whole risk of adding
+# it. It answers "can I find no closing keyword bound to this number?", never "what
+# will the forge close?". Every transformation below can only make it report more
+# often -- stripping code spans, stripping HTML comments, requiring the keyword
+# adjacent to each declared number -- so a finding is strong and a pass is weak. That
+# is the right way round for something running before anything is published.
+#
+# Not a second copy of supertool's `_checks.closing_issue_refs`. That reader decides
+# which issues a forge closes; every route to it from here makes a forge call and two
+# of them publish, so it is unreachable from a stdlib-only validator, and a duplicated
+# resolver is what the top of CLAUDE.md forbids. gh-pr-create stays the authority.
+#
+# On the two traps that make a substring grep wrong this is not merely conservative
+# but correct, and both were observed in one night: `Closes #A #B` closes only #A, so
+# #B needs its own keyword and does not have one; and a backticked `Closes #A` creates
+# no reference while rendering as one that plainly did (PR #332, opening paragraph).
+
+_CLOSING_KEYWORD = r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)"
+
+# `keyword [:] whitespace [owner/repo]#N`, or the full issue URL a forge also honours.
+# The whitespace is required -- a forge does not read `Closes#1` -- and the digit
+# lookahead at each call site is what stops a search for #27 matching #274.
+_BOUND = r"\b" + _CLOSING_KEYWORD + r"\b[ \t]*:?\s+(?:[\w.-]+/[\w.-]+)?"
+
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,}).*?(?:^[ \t]{0,3}\1[^\n]*$|\Z)",
+                    re.DOTALL | re.MULTILINE)
+_INLINE_CODE = re.compile(r"(`+)[\s\S]*?\1")
+_ANY_CLOSING_REFERENCE = re.compile(_BOUND + r"#\d+", re.IGNORECASE)
+
+
+def prose_of(body):
+    """The body with the spans a forge reads no closing reference out of removed.
+
+    Order matters: a fence is three backticks, so an inline-code pass run first would
+    eat one and leave the rest looking like prose. Removal is conservative in the one
+    direction that is safe here -- anything wrongly removed can only turn a pass into
+    a finding, never the other way.
+    """
+    text = _HTML_COMMENT.sub(" ", body)
+    text = _FENCE.sub(" ", text)
+    return _INLINE_CODE.sub(" ", text)
+
+
+def _binds(text, issue):
+    pattern = re.compile(
+        _BOUND + r"(?:#{n}(?!\d)|https?://\S*?/issues/{n}(?!\d))".format(n=issue),
+        re.IGNORECASE,
+    )
+    return pattern.search(text) is not None
+
+
+def closing_body_errors(closes, body):
+    """Compare what the report says it closes against what the body actually binds."""
+    if not isinstance(closes, dict) or not isinstance(body, str):
+        return []
+    text = prose_of(body)
+    state = closes.get("state")
+    errors = []
+    if state == "closes":
+        for issue in _issue_numbers(closes.get("issues")):
+            if _binds(text, issue):
+                continue
+            errors.append(
+                "pr_body.payload.body: the report says merging this closes #{n}, and the "
+                "body binds no closing keyword (Closes/Fixes/Resolves) to #{n} outside a "
+                "code span or an HTML comment. A bare #{n} is not a closing reference, "
+                "`Closes #A #{n}` closes only #A, and a backticked `Closes #{n}` closes "
+                "nothing while rendering as one that plainly did -- so merging this would "
+                "close nothing and the board would read clean. This reports an absence it "
+                "could find; gh-pr-create stays the authority on what a body does "
+                "close.".format(n=issue)
+            )
+    elif state == "closes-nothing":
+        found = _ANY_CLOSING_REFERENCE.search(text)
+        if found is not None:
+            errors.append(
+                "pr_body.payload.body: the report says this closes nothing, and the body "
+                "binds a closing keyword ({}). A maintainer reading `closes-nothing` "
+                "expects the issue to survive the merge; the same absence pointing the "
+                "other way closes one nobody decided to close.".format(
+                    _one_line(found.group(0), 60)
+                )
+            )
+    return errors
+
+
 def validate_pr_body(report, schema=None, base_dir=None):
     """Open the pull request payload the report says it wrote, and check its shape.
 
@@ -653,6 +781,10 @@ def validate_pr_body(report, schema=None, base_dir=None):
             "pr_body.payload.head: {!r} but the report is on branch {!r} -- a pull "
             "request opened from somewhere other than the work".format(payload.get("head"), branch)
         )
+    # Reached only once the payload was opened and parsed. A body that could not be
+    # read has no closing keyword to be missing, and reporting one for it would be
+    # this file's own defect class inside the check written against it.
+    errors.extend(closing_body_errors(node.get("closes"), payload.get("body")))
     return errors
 
 
