@@ -101,7 +101,7 @@ def _workflow_steps():
     """The generated workflow's run/uses lines, in order, as plain text.
 
     Deliberately not a YAML parse: the assertion is about what comes before what in the
-    file a maintainer reads, and pyyaml is not a dependency of this repo.
+    file a maintainer reads.
     """
     body = scaffold.render_owned(".github/workflows/oss-changelog.yml", _config())
     return [line.strip() for line in body.splitlines() if line.strip().startswith("run:")]

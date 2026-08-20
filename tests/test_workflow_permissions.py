@@ -14,8 +14,8 @@ Two things in these files are already right and are pinned here so a later edit 
 quietly undo them: they use `pull_request` and not `pull_request_target`, and the base ref
 reaches the shell through `env:` rather than a `${{ }}` expansion in the script body.
 
-Deliberately not a YAML parse: pyyaml is not a dependency of this repo, and the assertion
-is about what a maintainer reads in the file.
+Deliberately not a YAML parse: the assertion is about what a maintainer reads in the
+file.
 
 Python 3.9 compatible.
 """

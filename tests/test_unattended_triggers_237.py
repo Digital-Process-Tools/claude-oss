@@ -22,8 +22,11 @@ repository can point to -- and it is the trigger an unattended loop would most
 plausibly arrive on. It is named separately in the failure message so the
 distinction survives.
 
-Deliberately not a YAML parse: pyyaml is not a dependency here, and
-`tests/test_workflow_permissions.py` reads the same files the same way.
+Deliberately not a YAML parse: `triggers()` below is itself the thing under test, and
+its whole point is the distinction a real parser would collapse -- an absent `on:` block
+and an `on:` block that declares nothing both come back as "no events" from a library
+call, and this file exists to keep those two apart. `tests/test_workflow_permissions.py`
+reads the same files the same way, for its own reason.
 
 Python 3.9 compatible.
 """

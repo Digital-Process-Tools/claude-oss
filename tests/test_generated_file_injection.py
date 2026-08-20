@@ -22,9 +22,11 @@ restores the old pattern and proves the checker below reports the corruption, so
 a green run on a good value means the check looked -- rather than that it could
 not look at all.
 
-Deliberately not a YAML parse: pyyaml is not a dependency of this repo (the same
-reason `test_workflow_permissions.py` gives), and the mechanism is a block-scalar
-boundary, which is exactly what the column-0 rule below measures.
+Deliberately not a YAML parse: the mechanism under test is a block-scalar boundary,
+which is exactly what the column-0 rule below measures -- a real parser would either
+accept the corruption's *effect* (a shorter, differently-structured document) or reject
+it outright, and neither tells you where the boundary that broke it sits. Same call
+`test_workflow_permissions.py` makes, for its own reason.
 
 Python 3.9 compatible.
 """
