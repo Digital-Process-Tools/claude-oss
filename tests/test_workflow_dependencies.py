@@ -19,8 +19,8 @@ against the workflow we *generate* for other repos. It was never enforced agains
 workflows we run on ourselves. That asymmetry is the whole bug: the plugin made the
 guarantee true for every repo it scaffolds except the one it lives in.
 
-Deliberately not a YAML parse: pyyaml is not a dependency of this repo, and the assertion
-is about what a maintainer reads in the file.
+Deliberately not a YAML parse: the assertion is about what a maintainer reads in the
+file.
 
 Python 3.9 compatible.
 """

@@ -19,9 +19,8 @@ Two properties are held here, and they are not the same property:
 Every coverage assertion below is paired with a positive control, because a scan that
 found nothing would satisfy "every shell source is covered" perfectly.
 
-Deliberately not a YAML parse: pyyaml is not a dependency of this repo, and the
-assertion is about what a maintainer reads in the file -- the same call
-`tests/test_workflow_permissions.py` makes.
+Deliberately not a YAML parse: the assertion is about what a maintainer reads in the
+file -- the same call `tests/test_workflow_permissions.py` makes.
 
 Python 3.9 compatible.
 """

@@ -13,8 +13,9 @@ because a release legitimately deletes every fragment it folds into `CHANGELOG.m
 adds none. So the cases below are a matched set and have to be read together: the
 release cut is the one that fails if somebody reaches for the one-flag fix.
 
-Deliberately not a YAML parse -- pyyaml is not a dependency of this repo, and the block
-this extracts is the block a maintainer reads.
+Deliberately not a YAML parse -- the block this extracts is the block a maintainer
+reads, and the assertion is about that text rather than about the structure a real
+parser would build.
 
 Python 3.9 compatible.
 """
