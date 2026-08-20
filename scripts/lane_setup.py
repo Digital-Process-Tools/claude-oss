@@ -104,6 +104,43 @@ def _git(repo, *args):
     return done.returncode, done.stdout.strip(), done.stderr.strip()
 
 
+def remote_problem(value):
+    """Why this `remote` cannot be handed to git, or None when it is fine.
+
+    #381. The rule is one line because the harm is one line: `git fetch --quiet
+    <remote> <branch>` reads argv position 6 as an option when it starts with a dash,
+    and `--upload-pack=<cmd>` in that position **runs** `<cmd>`. Measured, not reasoned
+    -- git 2.46.2 on darwin executed an injected script and printed its argv before
+    reporting "Could not read from remote repository". A refusal wider than the option
+    position would be inventing a shape for a value whose legitimate forms include a
+    bare name, an ssh URL and a filesystem path, and this file has no authority for
+    that; a refusal narrower than it does not close the hole.
+
+    **This rule lives here rather than in `oss_config` because the value does.**
+    `remote` is `--remote` argv only and is never config-sourced, so a verdict in the
+    config validator would be a rule for a key no config carries and `doctor` would
+    have nothing to print it for. #345's one-value-one-rule constraint points the other
+    way for `default_branch`, which *is* config-sourced -- hence `resolve_base` calling
+    `oss_config.default_branch_problem` for that one and this for this one. If `remote`
+    ever becomes config-sourced, this function moves to `oss_config` and this call site
+    consults it there; that is the whole migration.
+    """
+    if value is None:
+        return "remote: expected a remote name, URL or path; got None."
+    if not isinstance(value, str):
+        return (
+            "remote: expected a remote name, URL or path as a string; "
+            "got {!r}.".format(value)
+        )
+    if value.startswith("-"):
+        return (
+            "remote: it starts with '-', so `git fetch --quiet <remote> <branch>` reads "
+            "it as an option rather than as a remote -- and `--upload-pack=<cmd>` in "
+            "that position runs <cmd>; got {!r}.".format(value)
+        )
+    return None
+
+
 def resolve_base(repo, remote, default_branch):
     """The commit a lane should be cut from -- fetched and rev-parsed, never abbreviated.
 
@@ -112,29 +149,58 @@ def resolve_base(repo, remote, default_branch):
     answering from it without saying the fetch failed is exactly the staleness this
     script exists to stop reproducing.
 
-    #368: `default_branch` is the one value here that reaches git's argv unprefixed --
-    `git fetch --quiet <remote> <branch>` reads position 4 as an option when the name
-    starts with a dash -- so the verdict `oss_config` already produced for it is
-    consulted *before* any argv is built. `oss_config.load()` deliberately returns the
-    offending value together with a sentence rather than stripping it, and the defect
-    was this consumer treating a loaded config as a usable one. The rule is not
-    re-stated here: `default_branch_problem` is called, so one value keeps one rule
-    (#345) and a refusal cannot drift from the sentence `doctor` prints for it.
+    #368 and #381: **two** values here reach git's argv unprefixed, in adjacent
+    positions of one command. `git fetch --quiet <remote> <branch>` reads either as an
+    option when it starts with a dash, and `--upload-pack=<cmd>` in either one runs
+    `<cmd>` -- measured, git 2.46.2 on darwin. Both are refused *before* any argv is
+    built, so nothing runs at all rather than running and then failing.
 
-    `branch_occupancy` needs no such guard and that is a property of its argv rather
-    than of its input: it prefixes `refs/heads/` and `refs/remotes/`, so a name can
-    never occupy the flag position. `tests/test_lane_setup_368.py` measures that
-    instead of trusting this sentence.
+    An earlier version of this paragraph said `default_branch` was the only such value.
+    It was false when it was written and #381 is the cost: a sentence that tells the
+    next guard sweep it has already found everything is worth more than the value it
+    describes, so the two rules are named here rather than counted.
+
+    They are two rules on purpose, because they are two different kinds of value.
+    `default_branch` is config-sourced, so #345 (one value, one rule) requires the
+    verdict `oss_config` already produced for it -- `default_branch_problem` -- rather
+    than a second copy here that could drift from the sentence `doctor` prints.
+    `oss_config.load()` deliberately returns the offending value together with a
+    sentence rather than stripping it, and #368's defect was this consumer treating a
+    loaded config as a usable one. `remote` is argv only and never config-sourced, so
+    `oss_config` has no verdict for it and would have no occasion to print one;
+    `remote_problem` above carries that rule and says what has to move if that changes.
+
+    Not `git fetch --quiet -- <remote> <branch>`, which was measured and does work: git
+    refuses a dash-prefixed repository itself with `fatal: strange pathname ... blocked`
+    while a well-formed remote still fetches. Declined for two reasons. It makes git the
+    thing that reports the refusal, in a sentence this script would then have to
+    interpret to fill `detail`, where the point of the third state is to say why in this
+    script's own words. And beside a value already refused above it could never fire --
+    an unfireable guard is the thing this repository keeps finding instead of a fix.
+
+    Two values here reach git and are safe by the shape of the argv rather than by a
+    rule, which is why neither is guarded. `branch_occupancy` prefixes `refs/heads/` and
+    `refs/remotes/`, so neither the branch name nor the remote can occupy the flag
+    position. `--repo` is `-C`'s argument, and git consumes that literally instead of
+    re-parsing it as an option -- so a dash-prefixed `--repo` is a bad directory, not an
+    injection. Both measured the same way.
+
+    `tests/test_lane_setup_368.py` and `tests/test_lane_setup_381.py` measure all of the
+    above rather than trusting this paragraph, and the latter sweeps every argument this
+    module hands to `_git` rather than the sites somebody enumerated.
     """
-    problem = oss_config.default_branch_problem(default_branch)
-    if problem is not None:
-        return {
-            "state": "could-not-resolve",
-            "remote": remote,
-            "ref": None,
-            "sha": None,
-            "detail": _one_line(problem, 300),
-        }
+    for problem in (
+        remote_problem(remote),
+        oss_config.default_branch_problem(default_branch),
+    ):
+        if problem is not None:
+            return {
+                "state": "could-not-resolve",
+                "remote": remote,
+                "ref": None,
+                "sha": None,
+                "detail": _one_line(problem, 300),
+            }
 
     ref = "{0}/{1}".format(remote, default_branch)
     fetch_code, _, fetch_err = _git(repo, "fetch", "--quiet", remote, default_branch)
