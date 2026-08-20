@@ -2136,6 +2136,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                      "for {1}; pass it explicitly"
                      .format(Path(__file__).resolve(), flag))
             return None
+        if value == "":
+            # Distinct from `value is None` -- the caller said *something*,
+            # and what it said was unusable. A receipt that only ever names
+            # fragment filenames or a bare basename gives no way to tell
+            # "your flag was honoured" from "your flag was empty and
+            # silently replaced", so this is loud exactly where the ordinary
+            # absent-flag case (covered below with no message at all) must
+            # stay quiet: a note on every default-using run would stop
+            # meaning anything.
+            print("note: {0} was empty -- using the derived default {1}"
+                  .format(flag, derived), file=sys.stderr)
         return derived
 
     def _fold_target() -> Optional[Tuple[Path, Path]]:

@@ -123,3 +123,25 @@ def test_empty_dir_on_a_read_only_mode_falls_back_to_the_derived_default(tmp_pat
     root, script_path = _repo(tmp_path)
     result = _run(script_path, root, "--check", "--dir", "")
     assert result.returncode == OK, (result.stdout, result.stderr)
+
+
+def test_empty_dir_fallback_names_itself_on_stderr(tmp_path):
+    """The fallback must not be silent (audited finding on #346/#349's own
+    diff): a receipt naming only fragment filenames gives a caller no way to
+    tell "your --dir was honoured" from "your --dir was empty and silently
+    replaced" -- exactly this repo's own defect class, an absence read as an
+    absence in the world. An explicitly-empty value must say, on stderr, that
+    it fell back and to what -- an absent value (the ordinary default-using
+    case, covered by every other `--check` invocation in this suite) must
+    not, or the note would fire on every ordinary run and stop meaning
+    anything."""
+    root, script_path = _repo(tmp_path)
+    explicit_empty = _run(script_path, root, "--check", "--dir", "")
+    assert explicit_empty.returncode == OK, (explicit_empty.stdout, explicit_empty.stderr)
+    assert "--dir" in explicit_empty.stderr and "changelog.d" in explicit_empty.stderr, (
+        explicit_empty.stderr
+    )
+
+    absent = _run(script_path, root, "--check")
+    assert absent.returncode == OK, (absent.stdout, absent.stderr)
+    assert absent.stderr == "", absent.stderr
