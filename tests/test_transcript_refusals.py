@@ -492,6 +492,151 @@ def test_main_exits_with_the_no_transcripts_state_code(tmp_path, capsys):
     assert out["state"] == "no-transcripts-found"
 
 
+# ---------------------------------------------------------------------------
+# #374: the agent filter must not be subtracted from transcripts_parsed.
+# ---------------------------------------------------------------------------
+
+
+def _three_agent_fixture(root):
+    """Three transcripts, three different attributionAgent values, all valid.
+    One matches the `oss:developer` filter used below."""
+    _write_jsonl(root / "agent-dev.jsonl", [_assistant(attribution="oss:developer")])
+    _write_jsonl(root / "agent-aud.jsonl", [_assistant(attribution="oss:auditor")])
+    _write_jsonl(root / "agent-tri.jsonl", [_assistant(attribution="oss:triager")])
+
+
+def test_filtered_run_does_not_report_the_filtered_out_files_as_unparsed(tmp_path):
+    """#374. A filtered run reported `found: 3, parsed: 1, unreadable_files: []`
+    over three files that all parsed cleanly, because the filter was applied
+    before the count. `found - parsed` then reads as two parse failures, and the
+    third state a reader would check to disprove that -- `unreadable_files` -- is
+    empty, which makes the wrong reading the only available one.
+
+    The invariant asserted here is the one that carries the meaning:
+    `found - parsed == len(unreadable_files)`, always, filtered or not. The
+    filtered subset gets a name of its own so the fact a filter ran is still
+    legible rather than being erased by making the two numbers agree.
+    """
+    root = tmp_path / "root"
+    root.mkdir()
+    _three_agent_fixture(root)
+
+    filtered = tr.run(roots=[root], agent_filter="oss:developer")
+    assert filtered["state"] == "measured"
+    assert filtered["transcripts_found"] == 3
+    assert filtered["unreadable_files"] == []
+    # The load-bearing assertion: nothing failed to parse, so the receipt must
+    # not imply that anything did.
+    assert filtered["transcripts_parsed"] == 3, (
+        "a file the filter excluded was never offered to the parser and must "
+        "not be counted as unparsed"
+    )
+    assert (
+        filtered["transcripts_found"] - filtered["transcripts_parsed"]
+        == len(filtered["unreadable_files"])
+    )
+    # ...and the filter is still visible, in its own named field, so a filtered
+    # run cannot be mistaken for an unfiltered one now that found == parsed.
+    assert filtered["agent_filter"] == "oss:developer"
+    assert filtered["transcripts_matched_agent_filter"] == 1
+    # The aggregates are the filtered subset -- that is what the filter is for.
+    assert filtered["overall"]["count"] == 1
+    assert list(filtered["by_agent"]) == ["oss:developer"]
+
+    # Control 1: the same three files with no filter. found and parsed agree,
+    # and the filter fields say "no filter was applied" rather than "zero
+    # matched" -- an absence of a question, not an answer of nothing.
+    unfiltered = tr.run(roots=[root])
+    assert unfiltered["transcripts_found"] == 3
+    assert unfiltered["transcripts_parsed"] == 3
+    assert unfiltered["unreadable_files"] == []
+    assert unfiltered["agent_filter"] is None
+    assert unfiltered["transcripts_matched_agent_filter"] is None
+    assert unfiltered["overall"]["count"] == 3
+
+
+def test_a_filter_matching_nothing_is_not_the_same_as_no_filter(tmp_path):
+    """The other half of #374's third state: zero matched is a finding, and it
+    must not render like the field a run with no filter produces."""
+    root = tmp_path / "root"
+    root.mkdir()
+    _three_agent_fixture(root)
+
+    empty_match = tr.run(roots=[root], agent_filter="oss:nobody")
+    assert empty_match["transcripts_found"] == 3
+    assert empty_match["transcripts_parsed"] == 3
+    assert empty_match["transcripts_matched_agent_filter"] == 0
+    assert empty_match["agent_filter"] == "oss:nobody"
+    assert empty_match["overall"]["count"] == 0
+
+    no_filter = tr.run(roots=[root])
+    assert no_filter["transcripts_matched_agent_filter"] is None
+
+
+def test_a_filtered_run_still_fills_unreadable_files_for_a_real_failure(tmp_path):
+    """Control 2: the gap between found and parsed must still open -- and be
+    named -- when a file genuinely cannot be parsed, filter or no filter. A fix
+    that made the two numbers agree unconditionally would pass the test above
+    and break this one."""
+    root = tmp_path / "root"
+    root.mkdir()
+    _three_agent_fixture(root)
+    (root / "agent-broken.jsonl").write_text("{not json\n", encoding="utf-8")
+
+    filtered = tr.run(roots=[root], agent_filter="oss:developer")
+    assert filtered["transcripts_found"] == 4
+    assert filtered["transcripts_parsed"] == 3
+    assert [item["path"] for item in filtered["unreadable_files"]] == [
+        str(root / "agent-broken.jsonl")
+    ]
+    assert (
+        filtered["transcripts_found"] - filtered["transcripts_parsed"]
+        == len(filtered["unreadable_files"])
+    )
+    assert filtered["transcripts_matched_agent_filter"] == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ")
+def test_a_filtered_run_names_a_file_it_could_not_open_at_all(tmp_path):
+    """Control 2, the stronger form: a file that cannot be *opened* (not merely
+    one whose bytes do not parse) under a filtered run. Kept in its own test
+    because a `pytest.skip` aborts the whole test function, and the deterministic
+    assertions above must not be able to vanish behind this fixture's skip."""
+    root = tmp_path / "root"
+    root.mkdir()
+    _three_agent_fixture(root)
+    blocked = root / "agent-blocked.jsonl"
+    _write_jsonl(blocked, [_assistant(attribution="oss:developer")])
+
+    old_mode = blocked.stat().st_mode
+    os.chmod(blocked, 0o000)
+    try:
+        # Control: attempt the exact operation analyze_transcript performs --
+        # Path.read_text -- rather than trusting the chmod. Root and some
+        # filesystems ignore the mode bit entirely.
+        try:
+            blocked.read_text(encoding="utf-8")
+            deny_took = False
+        except PermissionError:
+            deny_took = True
+
+        report = tr.run(roots=[root], agent_filter="oss:developer")
+        if not deny_took:
+            pytest.skip(
+                "chmod 000 did not deny reading on this platform/user (root, or "
+                "a filesystem that ignores the mode bit) -- UNTESTED HERE: "
+                "whether a filtered run still names a file it could not open in "
+                "unreadable_files rather than folding it into the parsed count"
+            )
+        assert report["transcripts_found"] == 4
+        assert report["transcripts_parsed"] == 3
+        assert [item["path"] for item in report["unreadable_files"]] == [str(blocked)]
+        # The one that matched the filter is the readable dev transcript.
+        assert report["transcripts_matched_agent_filter"] == 1
+    finally:
+        os.chmod(blocked, old_mode)
+
+
 def test_main_exits_zero_when_measured(tmp_path, capsys):
     root = tmp_path / "root"
     _write_jsonl(root / "agent-10.jsonl", [_assistant(attribution="oss:developer")])
