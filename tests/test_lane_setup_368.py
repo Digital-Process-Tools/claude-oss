@@ -158,9 +158,9 @@ def test_the_detail_is_oss_configs_own_sentence(tmp_path, monkeypatch):
     sentence = oss_config.default_branch_problem(HOSTILE_DASH)
     assert sentence is not None, "the premise of this test: oss_config refuses this value"
     assert payload["base"]["detail"], "could-not-resolve with an empty detail says nothing"
-    # `_one_line` truncates at 200 characters, so the head is compared rather than the
-    # whole sentence -- comparing the whole one would assert the truncation limit by
-    # accident and fail the day it moves.
+    # The call site passes an explicit limit to `_one_line`, so the head is compared
+    # rather than the whole sentence: comparing the whole one would assert that limit
+    # by accident and fail the day it moves.
     assert payload["base"]["detail"][:60] == lane_setup._one_line(sentence)[:60]
 
 
