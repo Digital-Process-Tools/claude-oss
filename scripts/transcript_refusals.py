@@ -51,6 +51,13 @@ an integer when one was, and ``0`` meaning it matched nothing, which is a
 finding rather than a silence. ``agent_filter`` echoes the filter itself, so a
 filtered run is legible as one now that its found and parsed counts agree.
 
+Both count fields exist **only** in the ``measured`` state, alongside
+``transcripts_parsed`` and for the same reason: in ``no-transcripts-found``
+there was nothing to parse and nothing for a filter to match, so a ``0`` there
+would claim a measurement over an empty set and a ``None`` would claim no
+filter was passed when one may have been. That state carries ``agent_filter``
+and no counts, and a caller reads ``state`` before either number.
+
 ## Where transcripts are found -- a mechanism, not a fact about one repository
 
 ``~/.claude/projects/<encoded-cwd>/**/subagents/*.jsonl`` is one machine's

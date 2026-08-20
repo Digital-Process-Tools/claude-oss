@@ -573,6 +573,33 @@ def test_a_filter_matching_nothing_is_not_the_same_as_no_filter(tmp_path):
     assert no_filter["transcripts_matched_agent_filter"] is None
 
 
+def test_no_transcripts_found_carries_the_filter_but_neither_count(tmp_path):
+    """A contract pin, not a regression: this shape already held at the commit
+    that added the field, and the finding it answers was in the prose beside it,
+    which claimed three states for `transcripts_matched_agent_filter` without
+    saying they are the `measured` state's three. Pinned here so the two cannot
+    drift apart again -- in `no-transcripts-found` a `0` would claim a
+    measurement over an empty set and a `None` would say no filter was passed
+    when one was, so neither count is emitted and `state` is what a caller
+    reads first."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    report = tr.run(roots=[empty], agent_filter="oss:developer")
+    assert report["state"] == "no-transcripts-found"
+    # The filter is echoed, so the run is still legible as a filtered one.
+    assert report["agent_filter"] == "oss:developer"
+    assert "transcripts_matched_agent_filter" not in report
+    assert "transcripts_parsed" not in report
+    # Control, same fixture shape: with files present the counts do appear, so
+    # this test cannot pass by the report being empty or run() having failed.
+    populated = tmp_path / "populated"
+    _three_agent_fixture(populated)
+    measured = tr.run(roots=[populated], agent_filter="oss:developer")
+    assert measured["state"] == "measured"
+    assert measured["transcripts_parsed"] == 3
+    assert measured["transcripts_matched_agent_filter"] == 1
+
+
 def test_a_filtered_run_still_fills_unreadable_files_for_a_real_failure(tmp_path):
     """Control 2: the gap between found and parsed must still open -- and be
     named -- when a file genuinely cannot be parsed, filter or no filter. A fix
