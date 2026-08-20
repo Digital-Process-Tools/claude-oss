@@ -128,27 +128,37 @@ it a second way — grep the new content back — before saying it.
 
    **Do not end your turn to wait on a suite run you launched.** Run it in the foreground with an
    explicit redirect (`python3 -m pytest tests/ -q > /path/to/output 2>&1`) and read the file back once
-   it returns, in the same turn. **27m36s is the measured wall clock, with four lanes running
-   concurrently** — a long time is expected, not a signal to background it. Three lanes on this
-   repository ended their turn waiting on a background suite run they had launched themselves: no
-   report, no commit, and in one case no suite output file at all; one of the three did it twice, the
-   second time after being told in as many words not to (#353). **The consequence is what makes this
-   stick: an agent that stops with work uncommitted notifies as `completed`**, so the stop is invisible
-   to the maintainer until somebody reads the worktree by hand.
+   it returns, in the same turn. On this repository's own trial, **27m36s was the measured wall
+   clock, with four lanes running concurrently** — a maintainer's own measurement rather than a fact
+   about every repository this plugin manages, so the measured evidence lives in this project's own
+   history (#316) rather than repeated here as a number a different installation would read as
+   generic guidance. A long suite run is expected in your own repository too; it is not a signal to
+   background it. Three lanes on this repository ended their turn waiting on a background suite run
+   they had launched themselves: no report, no commit, and in one case no suite output file at all;
+   one of the three did it twice, the second time after being told in as many words not to (#353).
+   **The consequence is what makes this stick: an agent that stops with work uncommitted notifies as
+   `completed`**, so the stop is invisible to the maintainer until somebody reads the worktree by
+   hand.
 
    **No narration turn.** After a tool result, fire the next call directly or write the report —
    a sentence announcing what you are about to do costs a whole turn, and every turn re-reads the
-   entire context. Measured across 143 developer lanes: about nine of every twelve turns one model
-   ran beyond the other were turns making no tool call at all, most of them one line of narration
-   ("Now the report JSON.", "Applying the fixes.") that adds nothing a diff or a report doesn't
-   already say. This is the largest lever in this section.
+   entire context. On this repository's own trial, most turns one model ran beyond the other were
+   turns making no tool call at all, most of them one line of narration ("Now the report JSON.",
+   "Applying the fixes.") that adds nothing a diff or a report doesn't already say — again this
+   project's own measurement rather than a fact about every repository this plugin manages, with the
+   counted figure in this project's own history (#316) rather than repeated here as a number a
+   different installation would read as generic guidance. This is the largest lever in this section
+   on the evidence this repository has so far.
 
    **Batching is a discipline, not a note said once.** "Batch 6-7 ops per call" above is stated
-   again here because it is read once and has to hold for the length of the run: measured across the
-   same 143 lanes, single-op reads ran as high as 82% of supertool calls against a brief that asks for
-   6-7, with turns sitting in runs of consecutive single-op reads that one batched call would have
-   collapsed. Before reaching for `read`, `grep` or `glob` again, ask what else you already know you
-   will need and fetch it in the same call.
+   again here because it is read once and has to hold for the length of the run: on this repository's
+   own trial, single-op reads ran well above the 6-7 a brief asks for, with turns sitting in runs of
+   consecutive single-op reads that one batched call would have collapsed — once more this project's
+   own trial rather than a fact about every repository this plugin manages, so the split by model
+   lives in this project's own history (#316) rather than repeated here as a number a different
+   installation would read as generic guidance (and get wrong: #316's first posted figure was itself
+   a mis-parse, corrected in the same issue). Before reaching for `read`, `grep` or `glob` again, ask
+   what else you already know you will need and fetch it in the same call.
 3. **A negative assertion needs a positive control.** An assertion that *X does not happen* passes
    when *nothing at all* happens — a broken harness, an unresolved tree, a process that died before
    it spoke. Pair every "must not fire" case with a "must fire" case in the same fixture, and if the
