@@ -99,6 +99,15 @@ derived default, because a scaffolded repo's CI calls the vendored `.oss/` copy 
 that copy's derivation is correct — so passing the flags there is discipline, not a
 requirement, and a wrong tree costs a read rather than a write.
 
+**An empty `$FRAGMENTS_DIR` is refused the same way a missing one is (#349).** The resolver
+above captures its own refusal into the variable with no exit-status check, so a reader who
+continues past a `REFUSED:` on stderr carries an empty string into the commands below as
+`--dir ''`. `assemble_changelog.py` treats an empty `--dir` or `--changelog` as absent rather
+than as `.` — the fold refuses loudly instead of silently scanning and consuming whatever cwd
+happens to hold. Fixed at the callee rather than by adding `set -e` here, because the same
+gap exists for any future caller of either copy of the script, in this repo or a scaffolded
+one, not only for this command's own resolver.
+
 Fragment names must parse, the section must be a real Keep a Changelog heading, and the body must be
 a single top-level list with no headings, no raw HTML and no unclosed fences.
 
