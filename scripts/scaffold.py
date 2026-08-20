@@ -408,11 +408,13 @@ should not be the pull request that installed the check.
 ## Naming
 
 ```
-<issue>.<section>.md
+<issue>.<section>[.<slug>].md
 ```
 
 `<section>` is a Keep a Changelog heading, lowercased: `added`, `changed`,
-`deprecated`, `removed`, `fixed`, `security`.
+`deprecated`, `removed`, `fixed`, `security`. `<slug>` is optional and lets one
+issue file two entries in one section without two pull requests colliding on a
+path, e.g. `878.fixed.second-entry.md`.
 
 ## Body
 
@@ -873,7 +875,7 @@ jobs:
           fi
 
           echo "No changelog fragment in this pull request." >&2
-          echo "Add __FRAGMENTS__/<issue>.<section>.md, or label the pull request" >&2
+          echo "Add __FRAGMENTS__/<issue>.<section>[.<slug>].md, or label the pull request" >&2
           echo "'no-changelog' when the change is genuinely invisible to users." >&2
           exit 1
 """

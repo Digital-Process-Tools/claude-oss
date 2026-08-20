@@ -7,8 +7,9 @@ match: (changelog.d/|(^|/)CHANGELOG\.md$)
 One file per pull request, so two open PRs never touch the same file. `CHANGELOG.md` is assembled
 from these at release time and the fragments are deleted.
 
-**Name:** `<issue>.<section>.md`, where the section is a Keep a Changelog heading, lowercased:
-`added`, `changed`, `deprecated`, `removed`, `fixed`, `security`.
+**Name:** `<issue>.<section>[.<slug>].md`, where the section is a Keep a Changelog heading,
+lowercased: `added`, `changed`, `deprecated`, `removed`, `fixed`, `security`. `<slug>` is optional
+and lets one issue file two entries in one section without two pull requests colliding on a path.
 
 **Body:** a single top-level `-` list. No headings, no raw HTML, no unclosed fences. Name the issue
 in the text as well as the filename -- the filename is metadata, and metadata does not survive being
