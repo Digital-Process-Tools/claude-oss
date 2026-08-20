@@ -486,7 +486,10 @@ def test_our_version_that_could_not_be_read_is_none_and_never_renders_as_one(tmp
     assert level == "WARN"
     assert "9.9.9" not in message, message
     assert "None" not in message, message
-    assert "no version could be read" in message, message
+    assert "no version could be read from its own manifest" in message, message
+    # It must not assert WHICH of the two failure states this was -- the state is
+    # not in `detail`, and a receipt that guesses is #350 one layer down.
+    assert "absent, unparseable, or carries no version field" in message, message
 
 
 def test_manifest_version_answers_in_three_states(tmp_path):

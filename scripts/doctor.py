@@ -1036,9 +1036,18 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             # #350's third state. Symmetric with `version_clause` above: say the
             # label is missing rather than print "version unreadable", which reads
             # as a version and is the defect this whole check exists to not commit.
+            #
+            # `_manifest_version` distinguishes an unreadable manifest from one that
+            # parsed and carries no version, and this line does not, because the
+            # state is not in `detail` and re-deriving it here would mean asking the
+            # filesystem a second question to explain why the first one failed --
+            # the trap that took the release gate out in #76. So the sentence
+            # enumerates the possibilities instead of asserting one: a reader told
+            # only "could not be read" goes looking for a permissions problem that
+            # may not exist.
             ours_clause = (
-                "no version could be read from its own manifest, so this line names "
-                "none"
+                "no version could be read from its own manifest -- it is absent, "
+                "unparseable, or carries no version field"
             )
         report(
             "WARN",
