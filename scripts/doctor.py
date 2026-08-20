@@ -659,7 +659,7 @@ def _oss_workspace_version_segment(path):
 
 
 def _locate_on_path(name, path=None):
-    """The first PATH entry naming exactly `name`, or `None`.
+    """``(first PATH entry naming exactly `name`, or `None`; unreadable entries)``.
 
     Deliberately not `shutil.which`, which answers a different question --
     "can this be launched" -- and filters candidates on properties that are
@@ -688,10 +688,36 @@ def _locate_on_path(name, path=None):
     This check only ever needs one answer -- does a file or symlink named
     exactly `name` exist here, so its bytes can be read -- and asks that
     directly, which is also platform-independent by construction: no
-    extension list, no execute bit, just `os.path.lexists` per PATH entry.
+    extension list, no execute bit, just one `os.lstat` per PATH entry.
 
-    **A dangling symlink does not stop the search.** `os.path.lexists` is true
-    for one -- it stats the link itself, not the target -- and a first version
+    **`os.lstat`, not `os.path.lexists`, and that is #333.** `lexists` swallows
+    *every* `OSError`, not only `ENOENT`, so a PATH entry the process cannot
+    traverse -- permission-denied, or with an over-long component -- was
+    indistinguishable from one that simply does not hold the file, and the walk
+    continued silently. If every entry answered that way the caller received
+    exactly the `not on PATH` a genuinely absent launcher produces: this
+    repository's named defect class, an absence produced by the tool read as an
+    absence in the world. `shutil.which` had the same property through its own
+    `_access_check`, so the rewrite in #329 neither introduced nor removed it.
+
+    So the entries that could not be looked at are returned alongside the hit,
+    as `[(entry, exc), ...]`, rather than collapsed into it -- the same
+    resolution `_workflow_scan` already took for `(files, unreadable)` after
+    #124, and for the same reason: `None` already means "looked everywhere,
+    found nothing", and one value cannot also mean "could not look".
+
+    **The exception in hand does the classifying; nothing asks the filesystem a
+    second question.** `FileNotFoundError` is absence. `NotADirectoryError` is
+    absence too -- an `ENOTDIR` says no path under this entry can exist, and a
+    PATH entry that is a plain file is an ordinary configuration that must not
+    produce a warning. Everything else is "could not look". A follow-up
+    `os.path.exists()` to tell those apart is exactly what took out the release
+    gate in #76: it swallows a different set of errnos on different interpreter
+    versions, so the explanation would be less reliable than the failure it
+    explains.
+
+    **A dangling symlink does not stop the search.** `os.lstat` succeeds on one
+    -- it stats the link itself, not the target -- and a first version
     of this function returned on the first `lexists` match unconditionally, so
     a stale, dead `oss-workspace` symlink anywhere earlier on `PATH` (left over
     from a prior install layout, say) shadowed a correct, matching one further
@@ -702,35 +728,85 @@ def _locate_on_path(name, path=None):
     This restores that one piece of `shutil.which`'s behaviour -- continue past
     a candidate that resolves to nothing -- without reintroducing the
     extension or executable-bit filtering that made `shutil.which` wrong for
-    this check in the first place. Anything else that `lexists` -- a regular
-    file, a directory, a valid symlink -- stops the search immediately and is
-    returned as-is: those are all "found something," and it is the caller's
-    job (via `os.path.realpath` and `read_bytes`) to decide whether what was
-    found can be compared.
+    this check in the first place. Anything else that `os.lstat`
+    answers for -- a regular file, a directory, a valid symlink -- stops the
+    search immediately and is returned as-is: those are all "found something,"
+    and it is the caller's job (via `os.path.realpath` and `read_bytes`) to
+    decide whether what was found can be compared.
+
+    **An unreadable entry does not withhold a hit found later on PATH.** The
+    unreadable list is returned in every case, but a candidate that was actually
+    resolved is a positive answer and stands on its own; only the *negative*
+    answer is the one the sixth state replaces. The residue is stated rather
+    than hidden: an unreadable entry EARLIER on PATH could in principle hold a
+    launcher that shadows the one found later, and this does not report that.
+    Warning about a launcher that was found, and matches, on the strength of a
+    directory nobody could read is the worse trade -- it would fire on every run
+    of a process that cannot traverse some entry of its own PATH.
     """
     search = path if path is not None else os.environ.get("PATH", "")
+    unreadable = []
     for entry in search.split(os.pathsep):
         if not entry:
             continue
         candidate = os.path.join(entry, name)
-        if os.path.islink(candidate) and not os.path.exists(candidate):
-            # Dangling: nothing is actually reachable through this PATH entry,
-            # so it contributes nothing -- keep looking, same as shutil.which.
+        try:
+            st = os.lstat(candidate)
+        except (FileNotFoundError, NotADirectoryError):
+            # Absence, stated by the exception itself -- nothing is asked twice.
             continue
-        if os.path.lexists(candidate):
-            return candidate
-    return None
+        except OSError as exc:
+            unreadable.append((entry, exc))
+            continue
+        if stat.S_ISLNK(st.st_mode):
+            try:
+                os.stat(candidate)
+            except (FileNotFoundError, NotADirectoryError):
+                # Dangling: nothing is actually reachable through this PATH
+                # entry, so it contributes nothing -- keep looking, same as
+                # shutil.which.
+                continue
+            except OSError as exc:
+                # The link exists and where it points could not be looked at.
+                # That is neither a dangling link nor a resolvable one.
+                unreadable.append((entry, exc))
+                continue
+        return candidate, unreadable
+    return None, unreadable
+
+
+def _describe_unreadable(unreadable):
+    """Which PATH entries could not be read, and the errno each answered with.
+
+    The errno is carried rather than the message: a message is locale-dependent
+    and, on Windows, several distinct Win32 codes fold onto one errno, so the
+    number is the part a reader can look up. Nothing here classifies BY errno --
+    that decision was already taken by exception type in `_locate_on_path`,
+    which is the rule `CLAUDE.md` records after #76 and again after the errno-206
+    round: never read a platform's error codes out of a table.
+    """
+    return "; ".join(
+        "{} ({}, errno {})".format(entry, exc.__class__.__name__, exc.errno)
+        for entry, exc in unreadable
+    )
 
 
 def oss_workspace_launcher_state(plugin_root=None, path=None):
     """Which state PATH's `oss-workspace` is in, relative to THIS running install.
 
-    Returns ``(state, detail)``. Five states, and the choice of which four are
-    "matched" is deliberate:
+    Returns ``(state, detail)``. Six states, and the choice of which five are
+    not "matched" is deliberate:
 
     * ``not-resolvable`` -- PATH carries no `oss-workspace` at all. Nothing was
       found to compare, so this must never render as a mismatch, which would name a
       target that does not exist.
+    * ``path-unreadable`` -- nothing was found AND at least one PATH entry could
+      not be looked at, so "PATH carries no `oss-workspace`" is a claim this walk
+      is in no position to make (#333). `detail` names every such entry and the
+      errno it answered with. This is the state that must never render as
+      `not-resolvable`: those two are "looked everywhere, found nothing" and
+      "could not look", and rendering them the same is this repository's own
+      defect class.
     * ``matched`` -- the resolved target is either the same file as this running
       install's own `bin/oss-workspace` (`os.path.samefile`, so a symlink straight
       at it counts) or its bytes are identical (CRLF folded, matching every other
@@ -754,14 +830,21 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     `entry` comes from `_locate_on_path("oss-workspace", path=path)`, never
     `shutil.which` -- see that function's docstring for why (#329). Every
     branch below is reachable through `path` alone with an ordinary PATH-entry
-    fixture: `_locate_on_path` uses `os.path.lexists`, which is also true for
-    a directory, so `unresolved-target` needs no separate testing seam either.
+    fixture: `_locate_on_path` uses `os.lstat`, which succeeds on a directory
+    too, so `unresolved-target` needs no separate testing seam either.
+    `path-unreadable` is the one exception -- an unreadable directory is a
+    property of the filesystem rather than of the fixture, so it is reached
+    both by a real `chmod` (measured, and skipped with what went untested when
+    the mode bit does not deny) and by injecting `os.lstat`, which needs no
+    privileges and therefore never skips on any leg.
     """
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
     own = plugin_root / "bin" / "oss-workspace"
 
-    entry = _locate_on_path("oss-workspace", path=path)
+    entry, unreadable = _locate_on_path("oss-workspace", path=path)
     if entry is None:
+        if unreadable:
+            return "path-unreadable", _describe_unreadable(unreadable)
         return "not-resolvable", ""
     resolved = os.path.realpath(entry)
 
@@ -786,13 +869,64 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     return "mismatched", (resolved, their_version, our_version)
 
 
-def check_oss_workspace_launcher(plugin_root=None, path=None):
+def _launcher_remedy(plugin_root, windows=None):
+    """How to make `oss-workspace` reachable, on the platform this is running on.
+
+    **#330 asked the prior question first: is `bin/oss-workspace` installable on
+    Windows at all, by the route the POSIX line describes?** It is not, and the
+    two reasons are read off files in this repository rather than off a Windows
+    machine, so both are graded REASONED -- macOS is the only platform this was
+    run on.
+
+    * `bin/oss-workspace` is a `#!/bin/sh` script. It is meant to run under Git
+      Bash on Windows -- that is not an inference, it is written into the script,
+      which strips a backslash separator from `$0` for exactly that case, and into
+      this repo's CLAUDE.md. Native `cmd` and PowerShell have no route to an
+      extensionless `/bin/sh` script: `PATHEXT` never matches one.
+    * `~/.local/bin` on `PATH` is a POSIX convention. Nothing puts it on a Windows
+      `PATH`, so even a link successfully created there is not found.
+
+    So the honest Windows output is a sentence, not a translated command. A
+    translated command would be the same `misdirects` defect the issue filed, one
+    platform over: a receipt naming a next step that does not do what the caller
+    needs. The route that does work is the one README already gives as the
+    fallback -- run it from this install's own checkout.
+
+    Deliberately NOT claimed here, because it was not measured and a wrong claim in
+    a remedy line is worse than a short one: what Git Bash's own `ln -sf` does. MSYS
+    may copy rather than link depending on `MSYS=winsymlinks`, which if true would
+    make the POSIX line actively harmful there -- a copy is a stale target from the
+    moment of the next release, which is the very failure this check exists to
+    catch. Unverified, so unsaid.
+
+    `windows` is a parameter rather than a read of `os.name` at the call site so
+    both arms are assertable on every CI leg. Its default is the running platform,
+    and `test_the_default_remedy_matches_the_platform_actually_running` asserts
+    that default against `os.name` with no skip -- which is the assertion that has
+    to land on a Windows leg for this to be closed rather than restated (#265).
+    """
+    target = Path(plugin_root) / "bin" / "oss-workspace"
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows:
+        return 'ln -sf "{}" ~/.local/bin/oss-workspace'.format(target)
+    return (
+        "There is no one-line install of the launcher on Windows: "
+        "bin/oss-workspace is a /bin/sh script, so it runs under Git Bash rather "
+        "than cmd or PowerShell, and the POSIX home-directory bin convention the "
+        "documented link targets is on no Windows PATH. Run it from this install's "
+        'own checkout, inside Git Bash: sh "{}"'.format(target.as_posix())
+    )
+
+
+def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
     """One line, in every state. The remedy line names THIS install's own path
     (`plugin_root`, which defaults to `PLUGIN_ROOT` -- this script's own resolved
     location) rather than `$PWD`, so it is correct regardless of where the reader is
-    standing (#288)."""
+    standing (#288), and is platform-appropriate rather than POSIX everywhere
+    (#330 -- see `_launcher_remedy`)."""
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
-    remedy = 'ln -sf "{}" ~/.local/bin/oss-workspace'.format(plugin_root / "bin" / "oss-workspace")
+    remedy = _launcher_remedy(plugin_root, windows=windows)
     state, detail = oss_workspace_launcher_state(plugin_root=plugin_root, path=path)
     if state == "matched":
         report(
@@ -806,6 +940,17 @@ def check_oss_workspace_launcher(plugin_root=None, path=None):
             "oss-workspace launcher: not on PATH, so every developer brief this "
             "plugin issues that calls `oss-workspace` has no route to run it. "
             "{}".format(remedy),
+        )
+    elif state == "path-unreadable":
+        report(
+            "WARN",
+            "oss-workspace launcher: part of PATH could not be read ({}), and no "
+            "oss-workspace was found in the entries that could -- so whether the "
+            "launcher is reachable is unknown, not absent. Make those entries "
+            "readable and run this again; installing a second copy on the strength "
+            "of this line would be acting on a question nobody answered.".format(
+                detail
+            ),
         )
     elif state == "own-copy-unreadable":
         report(

@@ -21,6 +21,11 @@ So this file tests `doctor.oss_workspace_launcher_state` in five states -- match
 mismatched, not-resolvable, own-copy-unreadable, unresolved-target -- and that
 `check_oss_workspace_launcher` names the *current* install in its remedy line rather
 than a path that would be wrong next release.
+
+A sixth state, `path-unreadable`, was added by #333 and is covered in
+`tests/test_launcher_path_unreadable_and_platform_remedy_333_330.py` alongside #330's
+platform-appropriate remedy. The `not-resolvable` assertions here are the must-not-fire
+control for it: they are what would catch a sixth state that fired for an ordinary miss.
 """
 
 import os
@@ -54,6 +59,76 @@ def _plugin_root(tmp_path, content=b"# the running install\n", version="9.9.9"):
         '{"name": "oss", "version": "%s"}' % version, encoding="utf-8"
     )
     return root
+
+
+def _names_the_path(message, path):
+    """Is `path` named in `message`, whichever separator each of them rendered?
+
+    The subject of the assertion this backs is #288's, and only that: **the remedy
+    must name THIS install's own resolved location rather than `$PWD`.** The
+    separator was never that assertion's subject and was never chosen there -- it
+    arrived as a side effect of spelling the expectation `str(Path)`, which on
+    POSIX is identical to `Path.as_posix()` and on Windows is not. #340 is the
+    bill: the remedy's Windows arm renders forward slashes deliberately, because
+    that line has to paste into Git Bash, and the accidental half of this
+    assertion failed all four Windows legs while all ten POSIX legs stayed green.
+
+    **Folding separators does not weaken the location check**, which is the thing
+    a separator fix could plausibly trade away. That claim is not left as prose:
+    `test_the_location_check_survives_a_platform_rendering_its_own_separator` and
+    `test_the_location_check_does_not_match_a_wrong_directory_by_suffix` hold it
+    as must-not-fire controls, and every caller below pairs its positive assertion
+    with a negative one against a sibling directory.
+
+    **The match must begin and end at a component boundary, and the first version
+    of this helper did not require that.** This diff's own reviewer produced the
+    counterexample: plain containment matches `plugin/bin/oss-workspace` inside
+    `.../other-plugin/bin/oss-workspace`, so a wrong directory whose name is a
+    SUFFIX of the right one passed -- and the near-miss control at the call site
+    did not catch it, because `plugin-elsewhere` is not a suffix of `plugin` and
+    so failed correctly for the wrong reason. The sentence above was therefore
+    false in general while reading as a guarantee, which is worse than no
+    guarantee. Every candidate position is now checked for a boundary on both
+    sides; a relative path can no longer accidentally satisfy an absolute one.
+
+    Two alternatives were considered and are recorded rather than left implied.
+    Computing the platform's own rendering here (`as_posix()` on Windows, `str()`
+    elsewhere) would reproduce the production branch inside the test, so the test
+    would agree with the code whichever rendering the code picked -- it could no
+    longer catch a wrong choice, only a missing one. Making the remedy carry both
+    forms was the other, and it hands a Windows reader two paths where one is
+    unpasteable, which is the `misdirects` shape #330 exists to remove. The
+    deliberate forward-slash choice is instead pinned where it belongs, in
+    `test_the_default_remedy_matches_the_platform_actually_running`, on the
+    Windows leg where it is the only place it can be observed.
+    """
+    needle = str(path).replace("\\", "/")
+    haystack = str(message).replace("\\", "/")
+    if not needle:
+        return False
+    start = 0
+    while True:
+        found = haystack.find(needle, start)
+        if found < 0:
+            return False
+        before = haystack[found - 1] if found else ""
+        after = haystack[found + len(needle):found + len(needle) + 1]
+        if not _is_path_char(before) and not _is_path_char(after):
+            return True
+        start = found + 1
+
+
+def _is_path_char(char):
+    """Would `char` extend a path component rather than end it?
+
+    Deliberately a character class rather than a list of the delimiters this
+    repo's own messages happen to use (a quote, a space, end of string). A list
+    of delimiters answers "did I remember every way a message can end a path",
+    which nobody can check; a class answers "could this character be part of the
+    name", which is decidable. Empty string -- start or end of the haystack -- is
+    a boundary.
+    """
+    return bool(char) and (char.isalnum() or char in "-_.~+/")
 
 
 def _path_entry(tmp_path, name, content):
@@ -136,7 +211,77 @@ def test_mismatched_content_names_both_versions_when_the_shape_is_recognised(tmp
     assert level == "WARN"
     assert "0.1.0" in message and "0.6.0" in message, message
     # #288: the remedy must name the running install's own location, not $PWD.
-    assert str(plugin_root / "bin" / "oss-workspace") in message, message
+    # Compared separator-insensitively (#340) -- see `_names_the_path` for why the
+    # separator was never this assertion's subject, and why folding it does not
+    # weaken the location check.
+    assert _names_the_path(message, plugin_root / "bin" / "oss-workspace"), message
+    # Must-not-fire, in the same fixture: the location check still discriminates.
+    # A NEAR MISS on purpose -- same tmp_path parent, same trailing
+    # `bin/oss-workspace`, one directory component different, which is the shape a
+    # remedy built from `$PWD` would have. This fails if the assertion above has
+    # been reduced to "some path-shaped thing appears".
+    assert not _names_the_path(
+        message, tmp_path / "plugin-elsewhere" / "bin" / "oss-workspace"
+    ), message
+
+
+def test_the_location_check_survives_a_platform_rendering_its_own_separator():
+    """The CI failure of #340, reproduced as a unit so it is observable off Windows.
+
+    The remedy's Windows arm renders the install path with forward slashes on
+    purpose -- that line has to paste into Git Bash (#330). The assertion in
+    `test_mismatched_content_names_both_versions_when_the_shape_is_recognised`
+    was written as `str(Path) in message`, and `str()` on a `WindowsPath` renders
+    backslashes, so the two disagreed about a separator neither of them chose as
+    its subject. It went red on all four Windows legs and green on all ten POSIX
+    ones, because that is the platform where `str()` and `as_posix()` are the same
+    string -- the assertion was only ever satisfiable where the bug is invisible.
+
+    The strings below are the two renderings from that CI log, in shape. The
+    second half is the must-not-fire control and is the reason folding separators
+    is not a weakening: a remedy naming a DIFFERENT directory still fails, which
+    is the whole of what #288 asks this assertion to protect.
+    """
+    message = (
+        "oss-workspace launcher: SKEW -- ... Run it from this install's own "
+        'checkout, inside Git Bash: sh "C:/Users/runneradmin/t/plugin/bin/oss-workspace"'
+    )
+    assert _names_the_path(
+        message, "C:\\Users\\runneradmin\\t\\plugin\\bin\\oss-workspace"
+    )
+    assert not _names_the_path(
+        message, "C:\\Users\\runneradmin\\t\\somewhere-else\\bin\\oss-workspace"
+    )
+    # And the POSIX rendering of the same location still matches, so this is not
+    # a check that only works for the platform that broke it.
+    assert _names_the_path(message, "C:/Users/runneradmin/t/plugin/bin/oss-workspace")
+
+
+def test_the_location_check_does_not_match_a_wrong_directory_by_suffix():
+    """Raised by this diff's own reviewer against the first version of
+    `_names_the_path`, and it was right.
+
+    A plain substring test does not require the differing component to be a whole
+    path component, so a wrong directory whose name is a SUFFIX of the correct
+    one matches: `plugin/bin/oss-workspace` is literally inside
+    `.../other-plugin/bin/oss-workspace`. The near-miss control at the call site
+    did not probe this -- `plugin-elsewhere` is not a suffix of `plugin`, so it
+    failed correctly for the wrong reason and masked the gap.
+
+    That mattered because of what the helper's docstring CLAIMS -- that two
+    different directories cannot both satisfy it -- which is the sentence the
+    whole separator fix rests on. A guarantee stated in prose and false in
+    general is worse than no guarantee, so the match is now required to begin at
+    a component boundary and the claim is pinned here rather than asserted there.
+    """
+    message = 'Run it from this install: sh "/home/dev/checkouts/other-plugin/bin/oss-workspace"'
+    assert _names_the_path(message, "/home/dev/checkouts/other-plugin/bin/oss-workspace")
+    # The must-not-fire that the first version got wrong.
+    assert not _names_the_path(message, "plugin/bin/oss-workspace")
+    # Same shape from the other end: a longer wrong path is not matched either.
+    assert not _names_the_path(
+        message, "/home/dev/checkouts/other-plugin/bin/oss-workspace-2"
+    )
 
 
 def test_mismatched_content_with_an_unrecognised_target_shape_does_not_invent_a_version(
@@ -187,7 +332,7 @@ def test_own_copy_unreadable_is_unknown_not_matched_and_not_mismatched(tmp_path)
 def test_unresolved_target_is_unknown_not_matched_and_not_mismatched(tmp_path):
     """The resolved target could not be read. Exercised through a REAL PATH
     entry rather than the ``resolve`` testing seam: `doctor._locate_on_path`
-    uses `os.path.lexists`, which is true for a directory too (unlike
+    uses `os.lstat`, which succeeds on a directory too (unlike
     `shutil.which`, which refuses a directory candidate outright), so a
     directory named `oss-workspace` sitting on PATH is a real, reachable way
     to land here -- `_locate_on_path` finds it, and `Path(resolved).read_bytes()`
@@ -215,10 +360,12 @@ def test_a_dangling_symlink_earlier_on_path_does_not_shadow_a_working_one(tmp_pa
     candidate that resolves to nothing, the same way `shutil.which` always did --
     `shutil.which`'s own `_access_check` runs `os.path.exists`, which follows a
     symlink and is False for a dangling one, so it silently continued to the next
-    PATH directory. A naive `os.path.lexists`-only walk does not: `lexists` is
-    True for a dangling symlink too, so the first (broken) match would stop the
-    search there and report `unresolved-target` for a launcher that is, one PATH
-    entry later, actually present and matching."""
+    PATH directory. A naive existence-only walk does not: `os.lstat` succeeds on
+    a dangling symlink too, so the first (broken) match would stop the search
+    there and report `unresolved-target` for a launcher that is, one PATH entry
+    later, actually present and matching. Since #333 the reachability question
+    is asked as `os.stat` inside a `try`, so a target that could not be looked at
+    at all is separated from one that is genuinely dangling."""
     plugin_root = _plugin_root(tmp_path, content=b"same bytes\n")
     earlier = tmp_path / "earlier-on-path"
     earlier.mkdir()
