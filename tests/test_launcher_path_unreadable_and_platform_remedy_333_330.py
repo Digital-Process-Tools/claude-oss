@@ -300,14 +300,33 @@ def test_the_windows_remedy_is_not_a_posix_command(tmp_path):
 def test_the_default_remedy_matches_the_platform_actually_running(tmp_path):
     """The assertion that has to land on a Windows CI leg, and it does not skip
     there. On a Windows leg this fails if the POSIX text is printed; on a POSIX leg
-    it fails if it is not."""
+    it fails if it is not.
+
+    The Windows arm also pins the **forward-slash rendering** (#340). That is a
+    deliberate choice rather than a formatting accident -- the line it appears in
+    is a `sh "..."` command a reader pastes into Git Bash -- and this is the only
+    place it can be observed, because on POSIX `str(Path)` and `Path.as_posix()`
+    are the same string and any such assertion would be vacuous there. So it is
+    asserted on the platform that can see it rather than branched into a shape
+    that renders green everywhere and checks nothing on one side. What went
+    unasserted on POSIX is named rather than left as a gap: nothing on a POSIX leg
+    establishes that the Windows arm calls `as_posix()` at all.
+
+    #340 is the second Windows-only failure on this check in one night, and both
+    were separator-or-resolution behaviour no POSIX leg can see -- which is why the
+    platform claims for this file are graded `reasoned` and CI is what settles them.
+    """
     plugin_root = _plugin_root(tmp_path)
     remedy = doctor._launcher_remedy(plugin_root)
     if os.name == "nt":
         assert "ln -sf" not in remedy, remedy
         assert "Git Bash" in remedy, remedy
+        assert plugin_root.as_posix() in remedy, remedy
+        pasted = remedy.split('sh "')[-1]
+        assert "\\" not in pasted, remedy
     else:
         assert "ln -sf" in remedy, remedy
+        assert str(plugin_root) in remedy, remedy
 
 
 @pytest.mark.parametrize(

@@ -61,6 +61,39 @@ def _plugin_root(tmp_path, content=b"# the running install\n", version="9.9.9"):
     return root
 
 
+def _names_the_path(message, path):
+    """Is `path` named in `message`, whichever separator each of them rendered?
+
+    The subject of the assertion this backs is #288's, and only that: **the remedy
+    must name THIS install's own resolved location rather than `$PWD`.** The
+    separator was never that assertion's subject and was never chosen there -- it
+    arrived as a side effect of spelling the expectation `str(Path)`, which on
+    POSIX is identical to `Path.as_posix()` and on Windows is not. #340 is the
+    bill: the remedy's Windows arm renders forward slashes deliberately, because
+    that line has to paste into Git Bash, and the accidental half of this
+    assertion failed all four Windows legs while all ten POSIX legs stayed green.
+
+    **Folding separators does not weaken the location check**, which is the thing
+    a separator fix could plausibly trade away. Two different directories are not
+    equal under this normalisation, so a remedy naming the wrong one still fails;
+    `test_the_location_check_survives_a_platform_rendering_its_own_separator`
+    holds exactly that as a must-not-fire control, and every caller below pairs
+    the positive assertion with a negative one against a sibling directory.
+
+    Two alternatives were considered and are recorded rather than left implied.
+    Computing the platform's own rendering here (`as_posix()` on Windows, `str()`
+    elsewhere) would reproduce the production branch inside the test, so the test
+    would agree with the code whichever rendering the code picked -- it could no
+    longer catch a wrong choice, only a missing one. Making the remedy carry both
+    forms was the other, and it hands a Windows reader two paths where one is
+    unpasteable, which is the `misdirects` shape #330 exists to remove. The
+    deliberate forward-slash choice is instead pinned where it belongs, in
+    `test_the_default_remedy_matches_the_platform_actually_running`, on the
+    Windows leg where it is the only place it can be observed.
+    """
+    return str(path).replace("\\", "/") in str(message).replace("\\", "/")
+
+
 def _path_entry(tmp_path, name, content):
     """One directory on PATH holding a file called ``oss-workspace``.
 
@@ -141,7 +174,50 @@ def test_mismatched_content_names_both_versions_when_the_shape_is_recognised(tmp
     assert level == "WARN"
     assert "0.1.0" in message and "0.6.0" in message, message
     # #288: the remedy must name the running install's own location, not $PWD.
-    assert str(plugin_root / "bin" / "oss-workspace") in message, message
+    # Compared separator-insensitively (#340) -- see `_names_the_path` for why the
+    # separator was never this assertion's subject, and why folding it does not
+    # weaken the location check.
+    assert _names_the_path(message, plugin_root / "bin" / "oss-workspace"), message
+    # Must-not-fire, in the same fixture: the location check still discriminates.
+    # A NEAR MISS on purpose -- same tmp_path parent, same trailing
+    # `bin/oss-workspace`, one directory component different, which is the shape a
+    # remedy built from `$PWD` would have. This fails if the assertion above has
+    # been reduced to "some path-shaped thing appears".
+    assert not _names_the_path(
+        message, tmp_path / "plugin-elsewhere" / "bin" / "oss-workspace"
+    ), message
+
+
+def test_the_location_check_survives_a_platform_rendering_its_own_separator():
+    """The CI failure of #340, reproduced as a unit so it is observable off Windows.
+
+    The remedy's Windows arm renders the install path with forward slashes on
+    purpose -- that line has to paste into Git Bash (#330). The assertion in
+    `test_mismatched_content_names_both_versions_when_the_shape_is_recognised`
+    was written as `str(Path) in message`, and `str()` on a `WindowsPath` renders
+    backslashes, so the two disagreed about a separator neither of them chose as
+    its subject. It went red on all four Windows legs and green on all ten POSIX
+    ones, because that is the platform where `str()` and `as_posix()` are the same
+    string -- the assertion was only ever satisfiable where the bug is invisible.
+
+    The strings below are the two renderings from that CI log, in shape. The
+    second half is the must-not-fire control and is the reason folding separators
+    is not a weakening: a remedy naming a DIFFERENT directory still fails, which
+    is the whole of what #288 asks this assertion to protect.
+    """
+    message = (
+        "oss-workspace launcher: SKEW -- ... Run it from this install's own "
+        'checkout, inside Git Bash: sh "C:/Users/runneradmin/t/plugin/bin/oss-workspace"'
+    )
+    assert _names_the_path(
+        message, "C:\\Users\\runneradmin\\t\\plugin\\bin\\oss-workspace"
+    )
+    assert not _names_the_path(
+        message, "C:\\Users\\runneradmin\\t\\somewhere-else\\bin\\oss-workspace"
+    )
+    # And the POSIX rendering of the same location still matches, so this is not
+    # a check that only works for the platform that broke it.
+    assert _names_the_path(message, "C:/Users/runneradmin/t/plugin/bin/oss-workspace")
 
 
 def test_mismatched_content_with_an_unrecognised_target_shape_does_not_invent_a_version(
