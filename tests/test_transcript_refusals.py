@@ -11,6 +11,7 @@ supertool or Bash call actually produces.
 
 import json
 import os
+import pathlib
 import stat
 import sys
 from pathlib import Path
@@ -324,7 +325,12 @@ def test_discover_transcripts_reports_an_unreadable_directory_with_a_control(tmp
 
         files, unreadable_dirs = tr.discover_transcripts([root])
         if not deny_took:
-            pytest.skip("chmod 000 did not deny listing on this platform/user; untested here")
+            pytest.skip(
+                "chmod 000 did not deny listing on this platform/user (root, or a "
+                "filesystem that ignores the mode bit) -- UNTESTED HERE: whether "
+                "discover_transcripts reports an unreadable subtree in unreadable_dirs "
+                "rather than silently omitting it"
+            )
         assert any(str(blocked_sub) in d["path"] for d in unreadable_dirs)
         assert any(str(readable_sub / "agent-ok.jsonl") == str(f) for f in files)
     finally:
@@ -358,7 +364,12 @@ def test_discover_transcripts_reports_a_root_whose_own_path_is_unreadable(tmp_pa
         except OSError:
             still_exists = False
         if still_exists:
-            pytest.skip("chmod 000 on the parent did not block traversal on this platform/user; untested here")
+            pytest.skip(
+                "chmod 000 on the parent did not block traversal on this platform/user "
+                "(root, or a filesystem that ignores the mode bit) -- UNTESTED HERE: "
+                "whether discover_transcripts reports a root whose own path could not "
+                "be stat'd rather than silently treating it as absent"
+            )
         files, unreadable_dirs = tr.discover_transcripts([root])
         assert files == []
         assert unreadable_dirs, "an inaccessible root must be named, not silently treated as absent"
@@ -417,11 +428,59 @@ def test_default_transcripts_root_encodes_a_windows_backslash_cwd():
     substituted forward slash and dot, leaving backslashes and the drive
     colon untouched -- so the default guess silently pointed nowhere on
     Windows and a real absence there rendered identically to
-    no-transcripts-found."""
+    no-transcripts-found.
+
+    Fixed once already and wrong again in a second way, caught by CI rather
+    than locally: the first version of *this test* asserted no backslash
+    anywhere in the whole rendered tail, including the OS path separators
+    pathlib itself inserts between Path.home(), ".claude", "projects" and
+    the encoded segment -- on a real Windows runner those separators ARE
+    backslashes, so the assertion was wrong by construction on that
+    platform, not merely wrong on the machine that wrote it. `root.name` is
+    the final path component, derived by pathlib from parsed parts rather
+    than string splitting, so it is separator-agnostic and names only the
+    thing this function actually encodes. It also does not depend on
+    Path.home(), which a Windows CI job can override via HOME.
+
+    Positive control: exact equality, not just "no backslash" -- a
+    regression that silently dropped the backslash substitution from the
+    encoding would leave one in the segment, which the negative assertion
+    alone also catches, but exact equality additionally fails if the
+    substitution fires on the wrong character or the encoding regresses in
+    some other way the negative half would not notice.
+    """
     root = tr.default_transcripts_root(cwd=r"C:\Users\x\Documents\some.repo")
-    tail = str(root).split(str(tr.Path.home()), 1)[-1]
-    assert "\\" not in tail, tail
-    assert tail.endswith("Users-x-Documents-some-repo"), tail
+    segment = root.name
+    assert "\\" not in segment, segment
+    assert segment == "C--Users-x-Documents-some-repo", segment
+
+
+def test_encode_cwd_segment_does_not_leave_a_windows_drive_prefix():
+    """A second, deeper bug found while verifying the coordinator's PR-358
+    correction, not merely the one CI reported: encoding backslash but not
+    the drive colon left the encoded segment starting with "C:" for almost
+    every real Windows cwd, and PureWindowsPath/WindowsPath treats a
+    component shaped like "<letter>:..." as a drive-relative path -- joining
+    it onto an already-built Path SILENTLY DROPS every segment joined before
+    it. Reproduced directly against the actual PR-358 CI failure shape: the
+    reported tail (\\.claude\\projects\\-Users-x-Documents-some-repo) already
+    has no drive letter in it on a real Windows runner, which is this same
+    bug already firing there, not a coincidence of the over-broad
+    assertion. Exercised here with PureWindowsPath so it is testable
+    without a Windows machine.
+    """
+    home = pathlib.PureWindowsPath("C:/Users/runneradmin")
+    segment = tr._encode_cwd_segment(r"C:\Users\x\Documents\some.repo")
+    root = home / ".claude" / "projects" / segment
+    # Must-fire: before the colon fix, this exact join silently dropped
+    # every component before the encoded segment.
+    assert root.parts[:3] == ("C:\\", "Users", "runneradmin"), root.parts
+    assert root.name == "C--Users-x-Documents-some-repo", root.name
+    # Positive control, same fixture: two cwds differing only by drive
+    # letter must not collapse onto the same encoded segment -- they did,
+    # silently, before this fix (both became "-Users-x-...").
+    other_drive = tr._encode_cwd_segment(r"D:\Users\x\Documents\some.repo")
+    assert segment != other_drive, (segment, other_drive)
 
 
 def test_main_exits_with_the_no_transcripts_state_code(tmp_path, capsys):

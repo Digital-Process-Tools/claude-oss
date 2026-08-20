@@ -551,12 +551,40 @@ def default_transcripts_root(cwd=None):
     gets that path encoded, not an OSError from a path that does not exist.
     """
     cwd = str(cwd) if cwd is not None else os.getcwd()
-    # `os.getcwd()` on Windows returns a backslash-separated path, and the
-    # first version of this substitution only listed `/` and `.` -- found by
-    # audit -- so the default guess silently pointed nowhere on Windows and a
-    # real absence there rendered identically to `no-transcripts-found`.
-    encoded = re.sub(r"[/.\\\\]", "-", cwd)
-    return Path.home() / ".claude" / "projects" / encoded
+    return Path.home() / ".claude" / "projects" / _encode_cwd_segment(cwd)
+
+
+# The character class covers `/`, `.`, `\` and `:`, and each one earned its
+# place the hard way:
+#
+# `/` and `.` are the originally observed encoding (see the module
+# docstring). `\` was missing in the first version of this function --
+# os.getcwd() on Windows returns a backslash-separated path, so the default
+# guess silently pointed nowhere on Windows and a real absence there
+# rendered identically to `no-transcripts-found` (found by audit).
+#
+# `:` was missing in the fix for the bug above, and it is not cosmetic: a
+# Windows cwd almost always starts with a drive letter (C:\Users\...), so
+# the segment this produces almost always started with "C:" before this
+# fix -- and PureWindowsPath / WindowsPath treats a component of the shape
+# "<letter>:..." as a drive-relative path, not an ordinary name, so joining
+# it onto an existing path SILENTLY DROPS everything already joined and
+# reparses from that component instead. Confirmed against the actual
+# PR-358 CI failure line, which already shows the drive letter missing
+# from the rendered path on a real Windows runner, not merely a stray
+# backslash -- and reproduced locally with PureWindowsPath before this fix:
+# joining ".../projects" with the unescaped "C:-Users-..." segment silently
+# produced ".../projects/-Users-..." with "C:" gone entirely, which would
+# also silently collide two different drives' transcript directories onto
+# the same encoded name. Colon is also simply illegal in a Windows path
+# component, so leaving it in was never going to name a real directory even
+# without the drive-reparsing.
+#
+# Factored out of default_transcripts_root so a test can exercise the
+# encoding against a PureWindowsPath directly, without needing a real
+# Windows machine or monkeypatching Path.home().
+def _encode_cwd_segment(cwd):
+    return re.sub(r"[/.\\\\:]", "-", cwd)
 
 
 def _build_parser():
