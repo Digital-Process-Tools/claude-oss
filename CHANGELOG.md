@@ -7,6 +7,238 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-20
+
+### Changed
+
+- There is no good reason to stop the loop, except being asked to stop it directly. Every other
+  condition — waiting on CI, waiting on an agent, waiting on a third party, a release a gate refused,
+  an empty board — arms a wakeup instead. This replaces *nothing outstanding but somebody else's work
+  → `stop: true`*, which asked the loop for a judgement about its own board at the moment it was
+  least able to make one: a loop about to stop has definitionally stopped looking, and one did so
+  while holding a belief that had been false for an hour and fifty minutes. The asymmetry is the
+  argument — an idle loop is visibly idle and self-correcting, while a stopped loop is
+  indistinguishable from one that was never armed and nothing inside it will ever notice. A tick
+  still ends in one of three states; none of them stops the loop, and conflating the two was half the
+  defect (#209).
+- A recorded wait must name what it waits on in a form a later turn can re-read, in the wakeup's
+  `reason` and in the state entry alike. *Blocked on audit completion* outlived the audit it named by
+  ninety minutes; *blocked on the gate 3 audit dispatched at 23:12Z* is a claim the next turn fails in
+  one call (#209).
+- Gate 3 now says what happens after it fires: stop the tag, not the loop. Round-one findings are
+  filed and their blocking rows delegated in the same tick; a blocking row puts its fix on the
+  release's critical path, ahead of the general backlog, because the tag cannot move until it lands;
+  `could not run` is followed by diagnosing why. It was the only gate whose failure produced work
+  items and the only one with no statement of who picks them up, and a correctly blocked release sat
+  three hours with a green branch and an empty board. The release auditor now labels a blocking
+  finding as critical-path in the item itself, so it does not reach the caller looking like an
+  ordinary filing (#209).
+
+- `CLAUDE.md`'s "What is not proven yet" section is re-derived at `01212b0` and names `v0.6.0`.
+  Reach moved for the first time in four rounds -- `claude-remember` now carries a committed
+  `.oss.json` and all three owned files, so config-writing has reached four repositories and
+  furniture-writing three, measured with 44 `gh api` probes across the eleven repositories the
+  organisation actually lists. The owned-file drift table gains a third remote column and now reports
+  two identical cells of nine. One recorded fact is retracted rather than superseded: the claim that
+  `claude-jit-context` 0.5.0 introduced `subagent_type` as a subject key is false -- 0.4.0 carries the
+  same parse on the same line, so the capability was never new (#235).
+
+- The developer brief now refuses a reviewer return that *refers* to findings without stating them.
+  A spawn that executes and hands back "two confirmed findings reported above" is not empty, so the
+  sentinel #200 added never fired on it, and it is not `NO FINDINGS`, so it read as a delivery -- six
+  times across two repositories and two days, with fourteen findings claimed and twelve of them
+  unrecoverable. Both spawn briefs must now open with `FINDINGS: <n>` and state exactly that many, the
+  caller's sort of a final message gains a fourth arm mapping a gesturing return to `returned-nothing`
+  rather than `checked`, and the residue a lost return leaves -- a count, a subject, a filename -- is
+  recorded as an `open` item and named as a handle rather than a finding. The brief says plainly that
+  this is a request to the spawn and not a boundary on it: nothing this repository ships sits between
+  a sub-agent's final message and its caller, so removing the class rather than the instance needs a
+  structured sub-agent return from whatever does the spawning (#275, #296).
+
+### Fixed
+
+- A pull request payload that closes nothing is refused before it is published (#274). `pr_body`
+  now carries `closes`, in three states of which only the third is a defect -- it closes
+  something, it deliberately closes nothing (a `Part of #N` pull request is a real
+  decision), or nobody said -- and `scripts/report_schema.py` reads the payload's body for
+  a closing keyword bound to every issue the report says it closes. Measured across two
+  sessions, four of seven agent-written payloads bound none: the report said `pr_body:
+  written`, the validator said `ok`, and the only thing that noticed was the maintainer's
+  `gh-pr-create` call, which reports and does not refuse. On the fourth the counterfactual
+  was measured rather than argued -- the manual repair was separable from the merge, and
+  without it the merge would have closed nothing while the board read clean.
+
+  The body check is an **absence detector**, not a closing-reference reader, and the
+  distinction is written into the schema so the weaker thing cannot be read as the
+  stronger one. It reports that it could find no binding; it never decides what a forge
+  will close, and `gh-pr-create` stays the authority. Every transformation it makes --
+  stripping fenced and inline code spans, stripping HTML comments, requiring the keyword
+  adjacent to each declared number -- can only make it report more often, so a finding is
+  strong and a pass is weak. On the two traps that make a substring grep for `Closes #`
+  wrong it is not merely conservative but correct, and both were observed in one night: a
+  shared keyword over two numbers closes only the first, and a backticked `Closes #N`
+  creates no reference while rendering as one that plainly did.
+
+  The contract number moves to 4. Breaking in both directions: a version-3 copy refuses
+  every version-4 report because `closes` is an unknown key, and a version-4 copy refuses
+  every version-3 report because it is absent.
+
+- `oss-workspace` on `PATH` is a symlink resolved once, at install time, into a
+  version-scoped plugin cache directory. Nothing re-pointed it on a later release and
+  nothing checked it, so a stale target that still exists behaved exactly like a
+  current one -- measured twice on the maintainer's own machine, the second time
+  losing a security fix landed in the file the symlink names. `/oss:doctor` now
+  reports it as `oss-workspace launcher: ...`, in three states -- matched, a skew
+  naming both versions (by content, not by the version segment in the target's path
+  alone, since a stale git clone can carry a directory name that matches no release
+  it actually contains), and not on `PATH` at all -- and its remedy line names the
+  running install's own path rather than `$PWD`, so it is correct wherever you paste
+  it from (#289, #288).
+
+- Seven test files justified reading `.github/workflows/*.yml` as plain text with the
+  same sentence -- pyyaml is not a dependency of this repo -- and #303/#311 made it false
+  by adding pyyaml to the pytest job's own `pip install` line (#312). Each of the seven
+  still asserts on what a maintainer reads in the file, or on a distinction (a block
+  boundary, an absent-versus-empty `on:` block) a real parser would collapse, so the
+  design decision stands; only the stated reason was stale. The false clause is removed
+  from all seven and replaced with the reason that was already true. A new test,
+  `tests/test_pyyaml_claim_312.py`, reads the workflow's own `pip install` line and fails,
+  naming the offending files, if that sentence reappears while pyyaml is installed.
+
+- `skills/manager/SKILL.md`'s restatement of the release gate's security-audit step fell out of
+  date the moment #320 landed a grade split (`clean (read)` vs. `clean (exercised)`) and an
+  attribution arm (dispatch token / unattributed / more than one completion) in
+  `agents/release-auditor.md` and `commands/release.md`. The skill now restates both additions too,
+  and a new test reuses `commands/release.md`'s own consumer check against `SKILL.md` so the two
+  documents cannot drift again silently (#321).
+
+- `scaffolded_changelog_gate` answered `present` from the gate workflow's existence
+  alone, so a repo whose scaffolded gate polices a directory other than `changelog.d`
+  (a named `changelog_dir` later nulled) got its release version proposed from the
+  wrong, stale fragment directory with `problem=None` -- no refusal, no third state.
+  The gate's own `--dir` argument is now read back out of the workflow: a gate naming
+  the default still answers `present`, one naming another directory answers a new
+  `present-other-dir` state carrying that directory, and a workflow whose `--dir`
+  arguments disagree with each other answers `unknown` rather than guessing between
+  them (#325).
+
+- The `present-other-dir` state #325 gave `scaffolded_changelog_gate` reached two of the
+  four documents that restate that contract. `/oss:changelog`'s embedded `FRAGMENTS_DIR`
+  resolver branched on `present` and `unknown` only, so a repo scaffolded with a named
+  `changelog_dir` that was later nulled -- legal, and reachable by ordinary contribution --
+  got `NOT-ADOPTED` on stderr and exit 1 for fragments the gate could now locate exactly.
+  `commands/scaffold.md` still described the gate as answering "present ... absent". Both
+  now carry one arm per state, the resolver refuses an unrecognised state by name instead
+  of inheriting whichever arm was last, and `tests/test_gate_state_consumers_328.py` joins
+  producer to consumer: the state list is derived from the function's own `return`
+  literals, so the next state added cannot go green in the documents it never reached
+  (#328).
+
+- The `oss-workspace` launcher check walked `PATH` with `os.path.lexists`, which
+  swallows every `OSError` and not only `ENOENT`, so a `PATH` entry the process could
+  not traverse was indistinguishable from one that simply did not hold the launcher --
+  and if every entry answered that way the reader got exactly the `not on PATH` a
+  genuinely absent launcher produces. The walk now asks `os.lstat` and lets the
+  exception in hand do the classifying (`FileNotFoundError` and `NotADirectoryError`
+  are absence, everything else is "could not look"), with no second question put to the
+  filesystem. Entries that could not be read are returned alongside the hit rather than
+  collapsed into it, and reach a sixth state, `path-unreadable`, naming each entry and
+  its errno: whether the launcher is reachable is reported as unknown, never as absent
+  (#333).
+- Every remedy that check printed was an unconditional POSIX `ln -sf`, on Windows too,
+  where it is inert -- and the README documented the same line twice, also
+  unconditionally. `bin/oss-workspace` is a `/bin/sh` script that runs under Git Bash
+  rather than cmd or PowerShell, and nothing puts `~/.local/bin` on a Windows `PATH`,
+  so there is no command to translate it into: the Windows output now says that in as
+  many words and names the route that does work (`sh <install>/bin/oss-workspace` from
+  the checkout). Both arms are asserted on every CI leg, and the default arm is
+  asserted against the running platform with no skip, so the claim lands on the Windows
+  legs rather than skipping there while rendering green (#330).
+
+- The developer brief now states the `pr_body.closes` duty that version 4 of the report schema made
+  mandatory. This is a follow-up to PR #334 (#274) and did not ship in it: that pull request landed
+  the contract, with `closes` required whenever `pr_body.state` is
+  `written`, and `agents/developer.md` -- the brief every developer lane reads -- did not mention
+  the field, so the next lane through would have written a report exactly as instructed and had it
+  refused, with no route to the reason short of reading the schema.
+
+  The brief points at `schemas/agent-report.schema.json` for the states and their spellings rather
+  than copying them, because a field list living in two documents is the drift this repository keeps
+  paying for. What it states instead is the half a pointer cannot carry: the closing keyword has to
+  be **bound in the rendered body**, outside code spans and HTML comments. That is the failure no
+  amount of field documentation prevents -- across two sessions four agent-written payloads declared
+  their issues and bound nothing, one of them by backticking the whole line, which renders as though
+  it worked and creates no reference at all. It also records that `Closes #A #B` closes only `#A`,
+  so the count of `Closes` lines is the count of issues, and that the line goes in while the body is
+  composed rather than after the validator refuses it, when the repair spans two files.
+
+  No issue was filed: the gap was reported by the #334 lane as `report-for-filing` and correctly not
+  fixed there, because the brief belonged to another lane at the time. Filing and immediately
+  closing would have been ceremony, so this pull request (#338) is the filing.
+
+  The fragment was written keyed to #334, the real number this change hangs off, because no number
+  of its own existed until somebody opened the pull request; it was renamed on open, which the
+  one-file-per-pull-request convention in `changelog.d/README.md` asks for. The rename was not the
+  metadata-only operation it looked like: the gate requires the entry to name the number its
+  filename carries, so renaming the file alone refused the fold and this sentence is the other
+  half of it.
+
+- `changelog_dir` had a validating guard at the `.oss.json` entrance and none at the
+  second entrance #327 opened. `scaffolded_changelog_gate` read a `--dir` value back out
+  of the tracked, owned `.github/workflows/oss-changelog.yml` and returned it as
+  `present-other-dir` with no problem, and `release_version._fragment_dir` resolved it as
+  `Path(repo) / detail` -- where an absolute string discards the repo root and a `..`
+  chain walks out of it. The same two values the config entrance refuses with a paragraph
+  came back clean through this one, and the directory it names is the one `/oss:changelog`
+  prints as "the directory to use for every command below", the last of which is a fold
+  that unlinks every fragment it consumes. The workflow is tracked, so the value arrives
+  by ordinary contribution. The gate now applies `changelog_dir_problem` to what it reads
+  and answers a fifth state, `present-refused-dir` -- not `present`, not
+  `present-other-dir`, and not `unknown`, because the workflow was read perfectly well and
+  said something inadmissible. Every consumer has a named arm for it, `_fragment_dir`
+  gained named arms for `absent` and for a state it does not recognise instead of a
+  trailing catch-all, and `tests/test_gate_dir_validated_343.py` asserts the two entrances
+  as an equivalence over one value set rather than restating the rule a third time.
+
+  Reviewing that fix inverted the issue's own framing, so two more holes closed with it.
+  The `.oss.json` entrance, filed as the control, was **not** guarded either on the paths
+  a release walks: `changelog_dir_problem` is reached from `oss_config.validate()`, and
+  neither `release_version._read_config` nor `/oss:changelog`'s embedded resolver calls
+  it, so `changelog_dir: "/etc"` reached `Path(repo) / named` with no complaint. Both now
+  apply the rule at the point of use. And `--dir ''` was dropped as falsy before it could
+  be judged, so an empty value inherited the answer belonging to a workflow with no `--dir`
+  line at all and fell back silently to `changelog.d` -- a directory nobody named, which is
+  #299 and #325's class rather than this one's. An empty value is now a value (#343).
+
+- `oss_workspace_launcher_state` is handed a `plugin_root` and its content comparison
+  honours it -- that is #329's whole design, deciding by bytes rather than by path
+  shape -- but its version label read `plugin_version()`, a global that opens the
+  running install's own manifest. Where the two diverge the SKEW warning named a
+  version describing one tree beside a byte comparison performed against another, in
+  the receipt the check exists to produce. The label now comes from a new
+  `_manifest_version(plugin_root)`, which answers in three states -- `read`,
+  `no-version-field`, `unreadable` -- and returns no version for the last two rather
+  than the words `unknown` or `unreadable` standing where a version goes; the warning
+  gained a clause of its own for that, symmetric with the one `their_version` has had
+  since #289. `plugin_version()` keeps its signature: surveyed, its only other caller
+  is the `oss plugin version` header line, which is a claim about the install the
+  reader invoked and would be wrong sourced from anywhere else. It now delegates, and
+  a non-object JSON manifest is `unreadable` instead of an `AttributeError` raised out
+  of the one function whose contract is that its line prints when everything else has
+  failed (#350).
+
+- The assertion over that label was `ours_version == "0.6.0"`, which passed only
+  because the repository was at `0.6.0` -- so it went red on the release commit that
+  bumped the manifest, after the fold had already emptied `changelog.d/`, and it took
+  `v0.7.0` with it. `tests/test_no_test_pins_the_current_version_350.py` now refuses
+  any string literal under `tests/` that exactly equals the version
+  `.claude-plugin/plugin.json` currently declares. Docstrings and comments are
+  excluded, because narrative about a past release is legitimate and permanent;
+  equality is exact, so an old version in a cache-path fixture stays fine; and
+  deliberate exceptions live in a named list with a reason each, checked for staleness.
+  Run against the pre-fix file it names five lines and it is silent on the file whose
+  docstring discusses the 0.6.0 gate (#350).
+
 ## [0.6.0] - 2026-08-19
 
 ### Added
@@ -3225,7 +3457,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.4.0
