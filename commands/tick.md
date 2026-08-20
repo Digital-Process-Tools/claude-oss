@@ -167,9 +167,9 @@ Skill(manager)
    such read to three. That is the price of the fix and it is deliberate: the alternative is a
    poller that was never armed, and a missing poller reports as a quiet board.
 
-   **#302 asked whether the *merged* case could skip the heal when nothing is left bare, gated on a
-   cheap read instead of the event category — measured, not reasoned, before the rule below was
-   kept.** `radar:--state` looks like that cheap read. It is not one: it renders the tier, the
+   **#302 asked whether the *merged* case above could skip the heal when nothing is left bare, gated
+   on a cheap read instead of the event category — measured, not reasoned, before that rule was
+   kept unchanged.** `radar:--state` looks like that cheap read. It is not one: it renders the tier, the
    filter and the pollers, and says outright that live coverage is "not resolved here, that would be
    a call" — it cannot answer *N watched* against *N open*. The only op that answers that is the bare
    `radar` heal itself. Timed back to back in this clone with nothing between the two calls (observed,
