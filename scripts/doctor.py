@@ -1018,6 +1018,77 @@ def _safe_is_dir(path):
         return False
 
 
+# How far up the tree `_absence_confirmed` will walk. See the sibling constant in
+# `scripts/lane_setup.py`: a belt on a walk that already stops at the anchor.
+_ANCESTOR_LIMIT = 512
+
+
+def _absence_confirmed(path):
+    """Confirm positively that nothing is at `path`, after `stat` already raised one
+    of the two absence exceptions. True / False / None -- and the third is the point.
+
+    True  -- confirmed absent: an ancestor this platform *can* look at was listed
+             and the next component down was not in it (or that ancestor is not a
+             directory at all, so nothing can be under it).
+    False -- the name is right there in its parent's listing and `stat` could not
+             reach it. That is the unlookable case wearing absence's clothes.
+    None  -- nothing here could confirm either way, so the caller must not claim.
+
+    **#380, and this is the sibling of `lane_setup._absence_confirmed`, not a second
+    copy of one classifier.** Reading absence off the exception type is right on
+    POSIX, where an over-long name arrives as a plain `OSError` and reaches the
+    unreadable arm already. On Windows without `LongPathsEnabled` a path past
+    `MAX_PATH` arrives as `FileNotFoundError`, errno 2, `winerror` None -- CLAUDE.md's
+    own CI measurement -- which is byte-identical to a name that is merely not there.
+    So this repo's own defect class arrives delivered by the OS: a check that could
+    not look, printed as a check that looked and found nothing.
+
+    The control is not the plainly-missing same-shape path #380 proposed: on the
+    folding platform such a control is *also* past `MAX_PATH` and answers exactly
+    what the subject answered, so it would be a guard that can never fire. The
+    control here is the subject's own deepest lookable ancestor and that ancestor's
+    directory listing -- same shape by construction, since it is the subject's own
+    path prefix -- because enumeration answers regardless of how long the resulting
+    full path would be, which is the property `stat` loses.
+
+    No errno table and no `MAX_PATH` constant: the limit is conditional on a machine
+    setting, and Windows folds several Win32 codes onto `ENOENT`, so neither could
+    report the value it would need. The cost is one `stat` per ancestor walked plus
+    one `listdir`, paid only on the absence arm -- the seam about to print a verdict.
+
+    `lane_setup.worktree_occupancy` carries the identical body under the identical
+    name. They were not lifted into a shared module for the reason #379 argued and
+    this change does not revisit: `_dir_state` has four call sites here and its own
+    tests. What holds them together is
+    `tests/test_unlookable_absence_380.py::test_the_two_classifiers_agree_on_a_folded_name`
+    and `tests/test_lane_setup_373.py`, not this paragraph.
+    """
+    try:
+        current = os.path.abspath(os.fspath(path))
+    except (OSError, ValueError, TypeError):
+        return None
+    for _ in range(_ANCESTOR_LIMIT):
+        parent = os.path.dirname(current)
+        name = os.path.basename(current)
+        if not name or parent == current or not parent:
+            return None
+        try:
+            found = os.stat(parent)
+        except (FileNotFoundError, NotADirectoryError):
+            current = parent
+            continue
+        except (OSError, ValueError):
+            return None
+        if not stat.S_ISDIR(found.st_mode):
+            return True
+        try:
+            entries = os.listdir(parent)
+        except (OSError, ValueError):
+            return None
+        return name not in entries
+    return None
+
+
 def _dir_state(path):
     """Three answers for "is this a directory", not `_safe_is_dir`'s two --
     for callers that print a verdict rather than just filter a list.
@@ -1058,14 +1129,34 @@ def _dir_state(path):
     subclasses whose type -- not an errno table, which CLAUDE.md already
     warns folds several Win32 codes onto `ENOENT` on Windows -- is what
     Python's own interpreter normalises platform errors into, so they are
-    caught ahead of the general `OSError` arm and read as ordinary absence;
-    everything else reaching `OSError` is the unreadable case.
+    caught ahead of the general `OSError` arm and read as ordinary absence --
+    but no longer on the strength of the type alone. #380: Windows folds an
+    unlookable name onto that same type with no distinguishing signal, so the
+    absence arm asks `_absence_confirmed` for a positive confirmation and falls
+    to `unreadable` when none is available.
     """
     try:
         st = path.stat()
-    except (FileNotFoundError, NotADirectoryError):
-        return "absent", ""
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        confirmed = _absence_confirmed(path)
+        if confirmed is True:
+            return "absent", ""
+        if confirmed is False:
+            return "unreadable", _one_line(
+                "the name is present in its parent's listing but stat could not "
+                "reach it: {}".format(exc)
+            )
+        return "unreadable", _one_line(
+            "stat reported absence and nothing could confirm it: {}".format(exc)
+        )
     except OSError as exc:
+        return "unreadable", _one_line(str(exc))
+    except ValueError as exc:
+        # #380, adjacent: `stat` raises `ValueError`, not `OSError`, for a path
+        # carrying an embedded null byte, so neither arm above caught it and it
+        # escaped this function -- a raise path in a script whose contract is
+        # exit 0 always, one VERDICT line. The values that reach here come from
+        # `.oss.json` / `.oss.local.json`, and JSON can spell a null.
         return "unreadable", _one_line(str(exc))
     return ("dir" if stat.S_ISDIR(st.st_mode) else "absent"), ""
 

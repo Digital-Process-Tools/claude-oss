@@ -54,6 +54,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -281,6 +282,82 @@ def derive_worktree(config, issue):
     return {"state": "resolved", "root": root, "path": str(path), "detail": ""}
 
 
+# How far up the tree `_absence_confirmed` will walk looking for an ancestor this
+# platform can look at. A path has a finite number of components and the loop already
+# stops at the anchor, so this is a belt on a walk that terminates -- against a
+# filesystem whose `dirname` never reaches a fixed point (a synthetic path object, a
+# broken mount), not against ordinary input.
+_ANCESTOR_LIMIT = 512
+
+
+def _absence_confirmed(path):
+    """Confirm positively that nothing is at `path`, after `stat` already raised one
+    of the two absence exceptions. True / False / None -- and the third is the point.
+
+    True  -- confirmed absent: an ancestor this platform *can* look at was listed and
+             the next component down was not in it (or that ancestor is not a
+             directory at all, so nothing can be under it).
+    False -- the name is right there in its parent's listing and `stat` could not
+             reach it. That is the unlookable case wearing absence's clothes.
+    None  -- nothing here could confirm either way, so the caller must not claim.
+
+    **Why this control and not the one #380 proposed.** The issue asks for a
+    plainly-missing path *of the same shape* to be stat'ed as a control and compared
+    against the subject. That comparison carries no signal on the platform it was
+    written for: a same-shape plainly-missing path is *also* past `MAX_PATH`, so it
+    answers exactly what the subject answered, and identical-therefore-absent comes
+    back for the genuine miss and the unlookable name alike -- a guard nominally on
+    and effectively never firing, which is this repository's own defect class one
+    layer up. The control used instead is one the subject cannot fake: the subject's
+    own deepest ancestor that this platform can look at, plus that ancestor's
+    directory listing. Same shape by construction rather than by approximation -- it
+    *is* the subject's path prefix -- and enumeration answers regardless of how long
+    the resulting full path would be, which is exactly the property `stat` loses.
+
+    No errno appears here and no length is compared against a constant. `MAX_PATH` is
+    conditional on a machine setting, so a constant would be the table this file
+    already refused to write (#380), and Windows folds several Win32 codes onto
+    `ENOENT`, so a table cannot report the value it needs.
+
+    **The price, and where it is paid.** One `stat` per ancestor actually walked plus
+    one `listdir`, and it is paid only on the absence arm -- the seam where a
+    confident verdict is about to be printed. A successful `stat` pays nothing, and
+    the general `OSError` arm pays nothing because it is already the third state. In
+    the ordinary input (`worktree_root/NNN` with the root present) that is exactly one
+    extra `stat` and one `listdir` per run.
+
+    Two answers it deliberately does not try to be clever about. A parent that stats
+    but will not list (mode 0o111) returns None rather than falling back to the
+    exception, because "I could not confirm" is what actually happened. And a name
+    found in the listing is reported as unlookable even when the real cause was a
+    delete racing the `stat`; a race is honestly a case where nothing looked.
+    """
+    try:
+        current = os.path.abspath(os.fspath(path))
+    except (OSError, ValueError, TypeError):
+        return None
+    for _ in range(_ANCESTOR_LIMIT):
+        parent = os.path.dirname(current)
+        name = os.path.basename(current)
+        if not name or parent == current or not parent:
+            return None
+        try:
+            found = os.stat(parent)
+        except (FileNotFoundError, NotADirectoryError):
+            current = parent
+            continue
+        except (OSError, ValueError):
+            return None
+        if not stat.S_ISDIR(found.st_mode):
+            return True
+        try:
+            entries = os.listdir(parent)
+        except (OSError, ValueError):
+            return None
+        return name not in entries
+    return None
+
+
 def worktree_occupancy(path):
     """Whether something already sits at `path`: True, False, or None for "could not look".
 
@@ -290,26 +367,33 @@ def worktree_occupancy(path):
     brief. The third state existed in the rendering and was reachable only when `path`
     itself was falsy, so the one case it was written for could not produce it.
 
-    `os.stat` is asked once and the exception already in hand answers the question --
-    never a second call, and never an errno table. `FileNotFoundError` and
-    `NotADirectoryError` are ordinary absence; every other `OSError` is "I could not
-    look". Both are the types Python's own interpreter normalises platform errors into,
-    which matters because CLAUDE.md records Windows folding several Win32 codes onto
-    `ENOENT`, so a table would answer for a value it does not contain.
+    `os.stat` is asked once and the exception decides which arm runs -- never an
+    errno table. `FileNotFoundError` and `NotADirectoryError` are the absence arm;
+    every other `OSError` is "I could not look". Both are the types Python's own
+    interpreter normalises platform errors into, which matters because CLAUDE.md
+    records Windows folding several Win32 codes onto `ENOENT`, so a table would
+    answer for a value it does not contain.
 
-    **Known gap, written down rather than left to be rediscovered (self-review of this
-    fix, raised by the audit spawn).** That same folding is what this classification
-    cannot see through. CLAUDE.md's own measurement is that an over-long path arrives
+    **The absence arm is an arm, not a verdict -- #380.** Until #380 this paragraph
+    also said the exception in hand answered the question outright and no second call
+    was ever made, and that stopped being true in the same change that added the
+    paragraph below: reaching the absence arm now costs a confirmation
+    (`_absence_confirmed`), which is one `os.stat` per ancestor walked plus one
+    `os.listdir`. It is paid only there, never on a successful `stat` and never on the
+    general `OSError` arm, which is already the third state.
+
+    **#380 closed the gap that folding left open, and the exception is no longer
+    trusted on its own.** CLAUDE.md's own measurement is that an over-long path arrives
     on Windows as `FileNotFoundError, errno 2, winerror None` -- no distinguishing
     signal at all -- so a `worktree_root` deep enough that the derived path passes
-    `MAX_PATH` on a runner without `LongPathsEnabled` is classified `False` here and
-    printed `[free]`: the confident absence #373 exists to close, reachable through the
-    one exception type treated as safe. It is not closed here and must not be closed by
-    a length check, because `MAX_PATH` is conditional on a machine setting and a
-    constant would be the table this function just refused to write. `doctor._dir_state`
-    carries the identical gap by the identical argument, so closing it is a decision
-    about both and belongs in its own change rather than riding on this one. Filed, not
-    fixed: `misreports`, which the ranking table lets ship behind a filed issue.
+    `MAX_PATH` on a runner without `LongPathsEnabled` used to be classified `False`
+    here and printed `[free]`: the confident absence #373 exists to close, reaching it
+    through the one exception type that fix treats as safe. So the absence arm no
+    longer returns absence on the strength of the exception type; it asks
+    `_absence_confirmed` for a positive confirmation first, and answers `None` when
+    none is available. `doctor._dir_state` took the identical decision in the same
+    change -- one decision about two functions, which is what
+    `tests/test_lane_setup_373.py` and `tests/test_unlookable_absence_380.py` pin.
 
     Deliberately `os.stat` rather than `Path.exists()` / `Path.is_dir()`, whose
     OSError-swallowing behaviour changed across 3.10-3.14 (CLAUDE.md, "Path.rglob and
@@ -329,8 +413,18 @@ def worktree_occupancy(path):
     try:
         os.stat(path)
     except (FileNotFoundError, NotADirectoryError):
-        return False
+        # #380: the exception type alone is not evidence of absence on a platform
+        # that folds an unlookable name onto it. Absence is claimed only when
+        # something positively confirmed it.
+        return False if _absence_confirmed(path) is True else None
     except OSError:
+        return None
+    except ValueError:
+        # #380, adjacent: `os.stat` raises `ValueError`, not `OSError`, for a path
+        # carrying an embedded null byte, so neither arm above caught it and it
+        # escaped this function as a traceback. `worktree_root` is read from
+        # `.oss.local.json` and JSON can spell a null. Nothing looked -- which is
+        # what this function's third state is for.
         return None
     return True
 
