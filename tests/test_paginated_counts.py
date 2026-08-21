@@ -48,6 +48,15 @@ is a hole that reads like a decision.
 
 The vacuity case belongs with the failure, not with the pass. A sweep over nothing is
 trivially clean, and "clean" is exactly what it must not be allowed to say.
+
+A fourth bucket, and deliberately not a fourth outcome: a path that was enumerated and
+is **not on disk**. The listing is the index and the read is the working tree, so an
+uncommitted delete makes the two disagree -- which is what the changelog fold leaves
+behind for every fragment until the release commit. Twenty-one of them landed in
+`unreadable` and this sweep answered `could-not-scan` about a tree it had read
+completely (#384). They are reported in `deleted`, because a file deleted in a diff
+nobody meant to make is worth surfacing, and they do not decide the state, because
+nothing about them says the tree could not be read.
 """
 
 import re
@@ -61,6 +70,25 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CLEAN = "clean"
 FINDINGS = "findings"
 COULD_NOT_SCAN = "could-not-scan"
+
+
+class _Absent(object):
+    """A source that was enumerated and is not on disk.
+
+    A distinct sentinel rather than `None`, because `None` already means "it is there and
+    it would not read" and the two are different answers about the world. The enumeration
+    below reads the **index**; the read happens in the **working tree**, and between the
+    changelog fold and the release commit those two disagree about every fragment the
+    fold deleted -- 21 of them, all landing in `unreadable`, so this sweep reported
+    `could-not-scan` about a tree it had read completely (#384).
+    """
+
+    def __repr__(self):
+        return "ABSENT"
+
+
+#: The sentinel itself. Identity, never equality: `text is ABSENT`.
+ABSENT = _Absent()
 
 # label -> why the shape being there is correct. Nothing else may carry it.
 EXEMPT = {
@@ -147,13 +175,23 @@ def statements(group):
 
 
 def scan(sources):
-    """``sources`` is ``{label: text or None}``. ``None`` means it would not read.
+    """``sources`` is ``{label: text, None or ABSENT}``.
 
-    Returns ``{"state", "findings", "scanned", "unreadable"}``, where ``findings`` is a
-    list of ``(label, line number, the line)``.
+    ``None`` means the source is there and would not read. ``ABSENT`` means it was
+    enumerated and is not on disk -- an uncommitted delete, which the changelog fold
+    leaves behind for every fragment until the release commit. Both are reported and
+    only the first is a reason this sweep could not scan (#384).
+
+    Returns ``{"state", "findings", "scanned", "unreadable", "deleted"}``, where
+    ``findings`` is a list of ``(label, line number, the line)``.
     """
+    deleted = sorted(label for label, text in sources.items() if text is ABSENT)
     unreadable = sorted(label for label, text in sources.items() if text is None)
-    readable = {label: text for label, text in sources.items() if text is not None}
+    readable = {
+        label: text
+        for label, text in sources.items()
+        if text is not None and text is not ABSENT
+    }
 
     findings = []
     for label in sorted(readable):
@@ -182,6 +220,7 @@ def scan(sources):
         "findings": findings,
         "scanned": len(readable),
         "unreadable": unreadable,
+        "deleted": deleted,
     }
 
 
@@ -306,11 +345,60 @@ def test_an_empty_scan_is_could_not_scan_rather_than_clean():
     assert scan({})["state"] == COULD_NOT_SCAN
 
 
+# ------------------------------------------ enumerated and not on disk is its own state
+
+
+def test_a_path_that_is_absent_from_disk_is_not_reported_as_unreadable():
+    """#384. The enumeration is the index; the read is the working tree. Between the
+    changelog fold and the release commit those two disagree about 21 files, and every
+    one of them landed in `unreadable` -- so the sweep answered `could-not-scan` about a
+    tree it had read completely.
+
+    `deleted` is reported rather than dropped: a path in the index and gone from disk is
+    something a maintainer should see, it is just not a tree this sweep could not read.
+    """
+    result = scan({"fine.sh": GOOD_PLAIN, "changelog.d/228.fixed.md": ABSENT})
+    assert result["unreadable"] == []
+    assert result["deleted"] == ["changelog.d/228.fixed.md"]
+    assert result["state"] == CLEAN
+    assert result["scanned"] == 1
+
+
+def test_an_absent_path_does_not_hide_a_finding():
+    """The must-fire half: the new bucket must not become a way to answer clean."""
+    result = scan({"bad.sh": BAD, "gone.md": ABSENT})
+    assert result["state"] == FINDINGS
+    assert result["findings"][0][0] == "bad.sh"
+    assert result["deleted"] == ["gone.md"]
+
+
+def test_absent_and_unreadable_are_two_buckets_and_only_one_stops_the_sweep():
+    """Both arms in one fixture. Without the `None` half, `deleted` could be swallowing
+    genuinely unreadable files and every assertion above would still pass.
+    """
+    result = scan({"fine.sh": GOOD_PLAIN, "gone.md": ABSENT, "broken.sh": None})
+    assert result["deleted"] == ["gone.md"]
+    assert result["unreadable"] == ["broken.sh"]
+    assert result["state"] == COULD_NOT_SCAN
+
+
+def test_a_scan_of_nothing_but_absences_is_still_could_not_scan():
+    """The vacuity case survives the new bucket. A sweep that read no source at all is
+    not clean, however well it can explain why.
+    """
+    assert scan({"gone.md": ABSENT})["state"] == COULD_NOT_SCAN
+
+
 # ---------------------------------------------------------------------- the shipped tree
 
 
-def _tracked_sources():
-    """``{path: text or None}`` over the tracked files this sweep can speak about."""
+def _tracked_sources(root=None):
+    """``{path: text, None or ABSENT}`` over the files this sweep can speak about.
+
+    ``root`` defaults to this repository and is a parameter so the three states can be
+    fixtured against a real repository in a temp directory rather than asserted about.
+    """
+    root = REPO_ROOT if root is None else root
     # `--others --exclude-standard` as well as the cache: a sweep that read only what
     # is committed answers clean about a script somebody just wrote, which is the exact
     # shape of absence this file exists to refuse.
@@ -319,7 +407,7 @@ def _tracked_sources():
             [
                 "git",
                 "-C",
-                str(REPO_ROOT),
+                str(root),
                 "ls-files",
                 "-z",
                 "--cached",
@@ -354,7 +442,15 @@ def _tracked_sources():
     sources = {}
     for name in wanted:
         try:
-            sources[name] = (REPO_ROOT / name).read_text(encoding="utf-8")
+            sources[name] = (Path(root) / name).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            # The listing is the index; the read is the working tree. An uncommitted
+            # delete is the one way those disagree, and it is not a file that would not
+            # read (#384). The exception in hand answers it -- asking the filesystem a
+            # second question to explain the first is a trap this repository has paid
+            # for. On Windows several Win32 codes fold onto ENOENT, so an unlookable
+            # path reads as absent here: degraded, but still named rather than dropped.
+            sources[name] = ABSENT
         except (OSError, UnicodeDecodeError):
             sources[name] = None
     return sources
@@ -393,10 +489,96 @@ def test_an_unspawnable_git_reaches_the_skip_rather_than_a_traceback(monkeypatch
     assert _tracked_sources() is None
 
 
+def _git_repo(path):
+    path.mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(
+        ["git", "init", "-q", str(path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {!r}".format(done.stderr[-200:]))
+    return path
+
+
+def test_a_tracked_path_deleted_from_the_working_tree_is_enumerated_as_absent(tmp_path):
+    """#384, at the enumeration rather than at `scan`. This is the fold window itself:
+    the fragment is in the index and gone from disk, and nothing has been committed.
+    """
+    repo = _git_repo(tmp_path / "folded")
+    (repo / "kept.md").write_text("kept\n", encoding="utf-8")
+    (repo / "folded.md").write_text("folded away\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "kept.md", "folded.md"], check=True
+    )
+    (repo / "folded.md").unlink()
+
+    sources = _tracked_sources(repo)
+    assert sources is not None
+    assert sources["folded.md"] is ABSENT
+    assert sources["kept.md"] == "kept\n"
+
+    result = scan(sources)
+    assert result["unreadable"] == []
+    assert result["deleted"] == ["folded.md"]
+    assert result["state"] == CLEAN
+
+
+def test_a_tracked_path_that_will_not_read_still_enumerates_as_unreadable(tmp_path):
+    """The positive control for the test above. Without it, `absent` could have been
+    applied to every failed read and the `unreadable` bucket would never fill again --
+    which is the same absence one bucket over.
+
+    The deny is measured rather than assumed: root ignores the mode bit, some
+    filesystems ignore it, and on Windows `os.chmod` toggles a read-only attribute that
+    does not stop a read at all. Where the deny did not take, this skips carrying what
+    went untested instead of asserting on a platform that cannot produce the condition.
+    """
+    repo = _git_repo(tmp_path / "denied")
+    (repo / "kept.md").write_text("kept\n", encoding="utf-8")
+    secret = repo / "secret.md"
+    secret.write_text("unreadable\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "kept.md", "secret.md"], check=True
+    )
+    try:
+        secret.chmod(0)
+        try:
+            with open(str(secret), "rb"):
+                pass
+        except OSError:
+            denied = None
+        else:
+            denied = "the file was still readable with mode 0"
+        if denied is not None:
+            pytest.skip(
+                "could not establish an unreadable tracked file here ({}). UNTESTED on "
+                "this platform: whether a file that exists and will not read still "
+                "reaches `unreadable` rather than the `absent` bucket #384 "
+                "added.".format(denied)
+            )
+
+        sources = _tracked_sources(repo)
+        assert sources is not None
+        assert sources["secret.md"] is None
+        assert sources["kept.md"] == "kept\n"
+
+        result = scan(sources)
+        assert result["unreadable"] == ["secret.md"]
+        assert result["deleted"] == []
+        assert result["state"] == COULD_NOT_SCAN
+    finally:
+        secret.chmod(0o600)
+
+
 def test_the_sweep_actually_read_the_tree(swept):
     """Reported before any verdict, so a clean answer over four files is visible as one."""
     assert swept["scanned"] > 20, "only {} sources were read".format(swept["scanned"])
-    assert swept["unreadable"] == []
+    assert swept["unreadable"] == [], (
+        "these tracked paths exist and would not read: {}. Paths that are simply not on "
+        "disk are a different answer and are reported separately as {} (#384).".format(
+            swept["unreadable"], swept["deleted"]
+        )
+    )
 
 
 def test_the_sweep_read_the_file_that_documents_the_trap():
