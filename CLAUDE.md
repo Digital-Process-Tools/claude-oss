@@ -156,8 +156,17 @@ separately rather than one list.
   unreadable one. `Path.exists()` swallows a short list of errnos and re-raises everything else, so
   an over-long component — or a directory the process cannot traverse — killed the release gate with a
   traceback and no receipt, from the line added to make it survive a bad read. The exception already
-  in hand answers it: `FileNotFoundError` is absence, anything else is unreadable, and no version's
-  `exists()` semantics get a vote.
+  in hand answers *which arm runs*: `FileNotFoundError` is the absence arm, anything else is
+  unreadable, and no version's `exists()` semantics get a vote. **What it does not answer is whether
+  the absence is real, and #380 is where that bit.** Windows folds an over-`MAX_PATH` name onto
+  `FileNotFoundError`, errno 2, `winerror` None — indistinguishable from a genuine miss — so
+  `lane_setup.worktree_occupancy` and `doctor._dir_state` printed a confident absence for a path
+  nothing had looked at. The prohibition here is on `Path.exists()`, whose swallow varies by version
+  and takes the classification out of your hands; it is not a prohibition on asking a *different*
+  question that the version cannot swallow. #380's absence arm asks one: `os.stat` on the subject's
+  own deepest lookable ancestor, then `os.listdir` on it, because enumeration answers regardless of
+  how long the full path would be. Same rule underneath — never let a library decide the
+  classification for you — reached by a second call rather than by none.
 - **A guard over "did this platform distinguish these two cases?" must ask a control, not a table of
   error codes.** Windows folds several Win32 codes onto `ENOENT`, so 206 (`ERROR_FILENAME_EXCED_RANGE`)
   reaches Python as an ordinary `FileNotFoundError`. A branch was written for 206, graded *reasoned*,

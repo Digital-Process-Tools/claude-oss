@@ -367,12 +367,20 @@ def worktree_occupancy(path):
     brief. The third state existed in the rendering and was reachable only when `path`
     itself was falsy, so the one case it was written for could not produce it.
 
-    `os.stat` is asked once and the exception already in hand answers the question --
-    never a second call, and never an errno table. `FileNotFoundError` and
-    `NotADirectoryError` are ordinary absence; every other `OSError` is "I could not
-    look". Both are the types Python's own interpreter normalises platform errors into,
-    which matters because CLAUDE.md records Windows folding several Win32 codes onto
-    `ENOENT`, so a table would answer for a value it does not contain.
+    `os.stat` is asked once and the exception decides which arm runs -- never an
+    errno table. `FileNotFoundError` and `NotADirectoryError` are the absence arm;
+    every other `OSError` is "I could not look". Both are the types Python's own
+    interpreter normalises platform errors into, which matters because CLAUDE.md
+    records Windows folding several Win32 codes onto `ENOENT`, so a table would
+    answer for a value it does not contain.
+
+    **The absence arm is an arm, not a verdict -- #380.** Until #380 this paragraph
+    also said the exception in hand answered the question outright and no second call
+    was ever made, and that stopped being true in the same change that added the
+    paragraph below: reaching the absence arm now costs a confirmation
+    (`_absence_confirmed`), which is one `os.stat` per ancestor walked plus one
+    `os.listdir`. It is paid only there, never on a successful `stat` and never on the
+    general `OSError` arm, which is already the third state.
 
     **#380 closed the gap that folding left open, and the exception is no longer
     trusted on its own.** CLAUDE.md's own measurement is that an over-long path arrives
