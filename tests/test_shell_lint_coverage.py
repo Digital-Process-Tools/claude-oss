@@ -189,23 +189,91 @@ def test_matching_nothing_is_a_failure_and_not_an_empty_success(tmp_path):
 def test_a_tracked_file_it_cannot_read_is_reported_rather_than_skipped(tmp_path):
     """The third state. A file whose first line could not be read is not a file that
     has no shebang, and answering `not shell` for it would hide a script from the leg
-    with the leg still green."""
-    repo = _git_repo(tmp_path / "gone")
-    (repo / "runme").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    with the leg still green.
+
+    This fixture used to reach that state by *deleting* the tracked file, which is #384:
+    a path in the index and gone from the working tree is not a path that would not
+    read, and the changelog fold produces twenty of them at once. The condition is now
+    established the only way it honestly can be -- by denying the read on a file that is
+    still there -- and measured, because root ignores the mode bit, some filesystems
+    ignore it, and Windows' `os.chmod` toggles a read-only attribute that does not stop
+    a read. `test_a_tracked_file_deleted_from_the_working_tree_is_not_unreadable` below
+    is the other half.
+
+    The file carries no extension on purpose: an extension classifies without a read, so
+    a `.sh` fixture would answer `shell` and never reach the arm under test.
+    """
+    repo = _git_repo(tmp_path / "denied")
+    secret = repo / "runme"
+    secret.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     (repo / "keep.sh").write_text("#!/bin/sh\necho keep\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "runme", "keep.sh"], check=True)
+
+    try:
+        secret.chmod(0)
+        try:
+            with open(str(secret), "rb"):
+                pass
+        except OSError:
+            pass
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read here, so this platform cannot produce a "
+                "tracked-and-unreadable file. UNTESTED here: whether a file that "
+                "exists and will not read still exits 3 rather than being folded into "
+                "the absent note #384 added."
+            )
+
+        done = _run(["--root", str(repo)])
+        message = done.stderr.decode("utf-8", "replace")
+        assert done.returncode == 3, (
+            "a tracked file that could not be read exited {} -- silently answering `not "
+            "shell` is the absence this plugin is named after, and `could not look` is a "
+            "different exit code from `looked, found nothing` on purpose. stderr: "
+            "{}".format(done.returncode, message)
+        )
+        assert "could not be read" in message, message
+        assert "runme" in message, message
+    finally:
+        secret.chmod(0o600)
+
+
+def test_a_tracked_file_deleted_from_the_working_tree_is_not_unreadable(tmp_path):
+    """#384. Between the changelog fold and the release commit, `git ls-files` hands the
+    enumerator paths that are in the index and not on disk. Reporting those as `could
+    not read the tree` turns the whole leg -- and, before this, four tests -- red on a
+    working tree nothing is wrong with, which teaches re-running until green.
+
+    The absence is reported rather than dropped: a file deleted in a hostile diff is
+    still something the enumerator should say out loud. It is just not a refusal.
+    """
+    repo = _git_repo(tmp_path / "folded")
+    (repo / "runme").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    (repo / "gone.sh").write_text("#!/bin/sh\necho gone\n", encoding="utf-8")
+    (repo / "keep.sh").write_text("#!/bin/sh\necho keep\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "runme", "gone.sh", "keep.sh"], check=True
+    )
     (repo / "runme").unlink()
+    (repo / "gone.sh").unlink()
 
     done = _run(["--root", str(repo)])
     message = done.stderr.decode("utf-8", "replace")
-    assert done.returncode == 3, (
-        "a tracked file that could not be read exited {} -- silently answering `not "
-        "shell` is the absence this plugin is named after, and `could not look` is a "
-        "different exit code from `looked, found nothing` on purpose. stderr: "
+    assert done.returncode == 0, (
+        "a tree whose only oddity is two deleted-but-tracked files exited {} -- that is "
+        "the fold window, and it is not a tree that could not be read. stderr: "
         "{}".format(done.returncode, message)
     )
-    assert "could not be read" in message, message
-    assert "runme" in message, message
+    printed = done.stdout.decode("utf-8").split()
+    assert printed == ["keep.sh"], (
+        "the list handed to shellcheck is {!r}; `gone.sh` qualifies on its extension "
+        "without anything having to read it, so it reaches the linter as a path that "
+        "does not exist".format(printed)
+    )
+    assert "runme" in message and "gone.sh" in message, (
+        "the deleted paths were dropped silently: {!r}".format(message)
+    )
+    assert "not on disk" in message, message
 
 
 # ------------------------------------------------------------------- the workflow

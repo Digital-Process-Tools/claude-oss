@@ -31,8 +31,16 @@ repairs, one narrowing later. There are three outcomes and they are three exit c
 Exit 3 is the one worth keeping separate. A tracked file whose first line cannot be read
 is not a file without a shebang: answering `not shell` for it would drop a script out of
 the leg with the leg still green, which is the absence this plugin is named after. Only
-files whose classification actually depended on the read are reported that way -- a
-missing `.sh` qualified on its name and needs no first line.
+files whose classification actually depended on the read are reported that way -- a `.sh`
+that exists and will not read qualified on its name and needs no first line.
+
+A fourth state is **not** an exit code, and that is the decision #384 turned on. `git
+ls-files` reports the index while the read happens in the working tree, so an
+uncommitted delete -- which is exactly what the changelog fold leaves behind until the
+release commit -- hands this script paths that are not on disk. Those are noted on
+stderr, by name, and the exit code is decided without them: nothing is there to lint,
+and a tree that read completely must not answer `could not read`. Silence would be the
+other half of the same defect, so the note is unconditional when the list is non-empty.
 
 Paths are printed one per line, relative to the repository's top level, forward slashes,
 UTF-8 through the byte stream rather than the console codepage. On Windows anything
@@ -137,20 +145,44 @@ def _shebang_interpreter(head):
 
 
 def classify(toplevel, name):
-    """One tracked path, in three states: 'shell', 'other', or a reason it is unknown.
+    """One tracked path, in four states: 'shell', 'other', 'absent', or unknown.
 
-    Returns (verdict, detail). `verdict` is 'shell', 'other' or 'unknown'.
+    Returns (verdict, detail). `verdict` is 'shell', 'other', 'absent' or 'unknown'.
+
+    `absent` exists because the enumeration and the read ask two different questions.
+    `git ls-files` reports the **index**; the read happens in the **working tree**, and
+    between the changelog fold and the release commit those two disagree about every
+    fragment the fold deleted. Folding that into `unknown` made the leg refuse -- and
+    four tests fail -- on a tree that had been read completely (#384). It is reported
+    rather than dropped: a file deleted in a hostile diff is still worth saying out loud.
+
+    The exception in hand decides which it is: `FileNotFoundError` is absence, anything
+    else is unreadable. Asking the filesystem a second question -- `exists()` -- to
+    explain why the first one failed is a trap this repository has already paid for; it
+    swallows some errnos and raises the rest. One consequence is worth writing down:
+    Windows folds several Win32 codes onto `ENOENT`, so a path that is unlookable rather
+    than missing arrives here as `FileNotFoundError` and reads as `absent`. That is a
+    degraded answer, not a silent one -- the path is still named, with its `strerror`.
     """
-    if name.endswith(SHELL_SUFFIXES):
-        return "shell", "extension"
     path = os.path.join(str(toplevel), *name.split("/"))
+    if name.endswith(SHELL_SUFFIXES):
+        # The extension is authoritative and needs no first line, so a file that merely
+        # will not read still classifies as shell -- the `except OSError: pass` below.
+        # Absence is the one answer the extension cannot give: a path that is not there
+        # would otherwise be handed to `shellcheck`, which fails on a missing file.
+        try:
+            os.stat(path)
+        except FileNotFoundError as error:
+            return "absent", error.strerror or str(error)
+        except OSError:
+            pass
+        return "shell", "extension"
     try:
         with open(path, "rb") as handle:
             head = handle.read(HEAD_BYTES)
+    except FileNotFoundError as error:
+        return "absent", error.strerror or str(error)
     except OSError as error:
-        # The exception in hand answers this. Asking the filesystem a second question --
-        # `exists()` -- to explain why the first one failed is a trap this repository has
-        # already paid for: it swallows some errnos and raises the rest.
         return "unknown", error.strerror or str(error)
     interpreter = _shebang_interpreter(head)
     if interpreter in SHELL_INTERPRETERS:
@@ -159,26 +191,37 @@ def classify(toplevel, name):
 
 
 def survey(root):
-    """(shell sources, unreadable) for the repository containing `root`.
+    """(shell sources, unreadable, absent) for the repository containing `root`.
 
-    Both halves are returned. Collapsing the second into the first would make `could not
-    read the tree` indistinguishable from `read the tree, no shell in it`.
+    Three lists rather than one verdict. Collapsing `unreadable` into `found` would make
+    `could not read the tree` indistinguishable from `read the tree, no shell in it`;
+    collapsing `absent` into `unreadable` makes an ordinary uncommitted delete
+    indistinguishable from a tree this cannot read (#384). Each entry in the second and
+    third lists is a `(path, reason)` pair.
     """
     toplevel = _toplevel(root)
     found = []
     unknown = []
+    absent = []
     for name in _tracked_paths(toplevel):
         verdict, detail = classify(toplevel, name)
         if verdict == "shell":
             found.append(name)
         elif verdict == "unknown":
             unknown.append((name, detail))
-    return sorted(found), sorted(unknown)
+        elif verdict == "absent":
+            absent.append((name, detail))
+    return sorted(found), sorted(unknown), sorted(absent)
 
 
 def shell_sources(root):
-    """The list alone, for callers that have already accepted the refusals."""
-    found, unknown = survey(root)
+    """The list alone, for callers that have already accepted the refusals.
+
+    Only `unknown` refuses. A path in the index and not on disk has nothing to lint and
+    is not evidence that the tree could not be read, so it does not raise -- callers who
+    want to see it call `survey`.
+    """
+    found, unknown, _absent = survey(root)
     if unknown:
         raise CannotEnumerate(
             "{} tracked file(s) could not be read".format(len(unknown))
@@ -198,10 +241,23 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        found, unknown = survey(args.root)
+        found, unknown, absent = survey(args.root)
     except CannotEnumerate as error:
         _emit(sys.stderr, "shell-sources: {}\n".format(error))
         return 3
+
+    if absent:
+        # A note, not a refusal, and not silence either. This is the ordinary shape of a
+        # working tree between the changelog fold and the release commit; saying nothing
+        # would hide a file deleted on purpose in a diff nobody meant to make (#384).
+        _emit(
+            sys.stderr,
+            "shell-sources: {} tracked file(s) are in the index and not on disk, so "
+            "they are not linted and are not a tree that could not be read. This is "
+            "what an uncommitted delete looks like:\n".format(len(absent)),
+        )
+        for name, detail in absent:
+            _emit(sys.stderr, "  {}: {}\n".format(name, detail))
 
     if unknown:
         _emit(

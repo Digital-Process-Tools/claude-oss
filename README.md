@@ -216,7 +216,9 @@ A separate ubuntu leg runs `bash -n` and `shellcheck -S warning` over every trac
 Which files those are is derived rather than listed — `python3 scripts/shell_sources.py` prints the
 list, selecting by extension or by shebang so an extensionless script is covered by the commit that
 adds it. It exits non-zero when it matches nothing, so an empty selection fails the leg instead of
-linting no files and passing.
+linting no files and passing. A tracked file that is in the index and not on disk — what an
+uncommitted delete looks like, and what the changelog fold leaves behind until the release commit —
+is named on stderr and does not fail the leg; only a file that is there and will not read does.
 
 That leg installs nothing. `shellcheck` ships in the `ubuntu-latest` runner image, and fetching it
 anyway put a package-mirror round trip inside the job's `timeout-minutes`, which is what took the leg
