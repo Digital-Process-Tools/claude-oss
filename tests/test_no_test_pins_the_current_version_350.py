@@ -9,10 +9,20 @@ release commit itself -- after the fold had already emptied `changelog.d/`, whic
 the most expensive moment in the cycle to discover anything.
 
 **The guard is worth more than the fix**, because the fix is one call site and the
-class is every test file. So: no string literal *in code* anywhere under `tests/`
-may equal the version `.claude-plugin/plugin.json` currently declares.
+class is every test file. So: no test file under `tests/` may **pin** the version
+`.claude-plugin/plugin.json` currently declares.
 
-Three deliberate narrowings, each of which is the difference between a guard and a
+**Pin, not merely spell** -- and that distinction is #399's, not #350's. Until
+then the rule was the literal one, any code literal equal to the current version,
+and it reported the opposite defect at the worst possible moment: cutting `v0.9.0`
+it named `test_freshness.py:59,60,169`, three version-comparison fixtures that
+read no manifest and cannot redden when one is bumped. A literal that pins and a
+literal that merely collides must be handled in opposite ways, so the guard has to
+tell them apart. It does that with `version_routes`, and the reasoning, the two
+bounds measured and rejected first, and what the chosen one gives up are argued at
+length beside that function rather than repeated here.
+
+Four deliberate narrowings, each of which is the difference between a guard and a
 nuisance that gets disabled within a week:
 
 * **Code only.** Docstrings and comments are excluded, because narrative about a
@@ -26,11 +36,25 @@ nuisance that gets disabled within a week:
   becomes ambiguous and never before.
 * **A named exception list with a reason each**, and a test that fails when an entry
   stops being an exception -- an exception list that has drifted is a licence.
+* **A route to this repository's own version**, added by #399. A file that never
+  reaches the version the manifest declares cannot redden when it is bumped,
+  whatever its literals happen to spell, so only a file that does reach it is
+  weighed. `VERSION_ROUTES` over-approximates that on purpose.
+
+Three outcomes, not two, because a hit this guard declines to fail on is still a
+hit and an absence it produced would be this repository's own defect class: a
+**pin** fails; a **collision** is announced by name as a `UserWarning` saying it is
+not an offender, for the length of the cycle in which the repository happens to
+spell it; and a file that could not be walked, read or parsed is `unscannable`,
+which is neither.
 
 What this cannot catch, said out loud rather than implied: a test that reads the
-current version at runtime and asserts something wrong about it, and a literal
-spelled in pieces or built by concatenation. Both are out of reach of a literal
-scan, and neither is the class that cost a release.
+current version at runtime and asserts something wrong about it; a literal spelled
+in pieces or built by concatenation; and, since #399, a test that reaches this
+repository's own version by a route `VERSION_ROUTES` does not name. The first two
+are out of reach of a literal scan. The third is a list, and a list cannot report
+what it does not contain -- it is the price of the bound, and the argument for
+paying it is beside `version_routes`.
 """
 
 import ast
@@ -304,6 +328,18 @@ def version_routes(source):
         elif isinstance(node, ast.Attribute):
             if any(route in node.attr for route in VERSION_ROUTES):
                 hits.append(node.lineno)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            # A rename hides the route from every use site: after
+            # `from doctor import PLUGIN_ROOT as here`, `here` spells nothing and
+            # the import is the only place left to read it. The import node is
+            # inspected rather than the `ast.alias` under it because `alias`
+            # carries no `lineno` before 3.10 and CI runs 3.9.
+            names = [getattr(node, "module", None) or ""]
+            for alias in node.names:
+                names.append(alias.name or "")
+                names.append(alias.asname or "")
+            if any(route in name for name in names for route in VERSION_ROUTES):
+                hits.append(node.lineno)
     return sorted(hits)
 
 
@@ -439,6 +475,42 @@ def test_a_route_named_only_in_a_docstring_is_not_a_route(tmp_path):
     assert collisions == ["test_prose.py:3"], collisions
 
 
+def test_a_route_renamed_on_import_is_still_a_route(tmp_path):
+    """`from doctor import PLUGIN_ROOT as here` binds the route to a name that no
+    longer spells it, and every use site is then an ordinary local. The import
+    statement is the only place the route is still visible, so it has to be read
+    -- otherwise a genuine pin is waved through as a collision by an ordinary
+    rename, which is #350's original cost arriving through #399's fix.
+
+    The import node is inspected rather than the `ast.alias` under it: `alias`
+    carries no `lineno` before Python 3.10, and CI runs 3.9.
+    """
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_aliased.py").write_text(
+        'from doctor import PLUGIN_ROOT as here\n'
+        'def test_x():\n'
+        '    assert str(here) == "0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+    # Must-not-fire half, same shape: importing something that is not a route,
+    # under the same alias. Without it this passes on a scan that calls every
+    # `from ... import ... as ...` a route.
+    (root / "test_unrelated.py").write_text(
+        'from doctor import compare_versions as here\n'
+        'def test_x():\n'
+        '    assert str(here) == "0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+
+    pins, collisions, unscannable, scanned = sweep(CONTROL, root=root)
+
+    assert unscannable == [], unscannable
+    assert scanned == 2, scanned
+    assert pins == ["test_aliased.py:3"], pins
+    assert collisions == ["test_unrelated.py:3"], collisions
+
+
 def test_the_split_loses_nothing(tmp_path):
     """`pins` and `collisions` must partition `scan_source`, not sample it.
 
@@ -460,13 +532,22 @@ def test_the_split_loses_nothing(tmp_path):
         encoding="utf-8",
     )
     seen = 0
+    pinned = 0
+    collided = 0
     for path in sorted(root.glob("*.py")):
         source = path.read_text(encoding="utf-8")
         pins, collisions = classify_source(source, CONTROL)
         assert sorted(pins + collisions) == scan_source(source, CONTROL), path
         assert not (pins and collisions), path
+        pinned += len(pins)
+        collided += len(collisions)
         seen += 1
     assert seen == 2, seen
+    # The partition holds trivially for a classifier that sends everything one
+    # way, so the invariant alone is not a result: both buckets have to have been
+    # reached in this run for it to be a statement about a split at all.
+    assert pinned == 1, pinned
+    assert collided == 1, collided
 
 
 def _next_minor(version):
@@ -586,7 +667,19 @@ def test_every_exception_is_still_an_exception():
     # repository's own defect class. Say which of the two states this run was in,
     # and prove the staleness test itself can fail, on a synthetic entry.
     if checked == 0:
-        assert scan_source("def test_x():\n    assert True\n", version) == [], (
+        clean = "def test_x():\n    assert True\n"
+        assert scan_source(clean, version) == [], (
             "the staleness check is unexercised (ALLOWED is empty) and its own "
             "control did not behave"
+        )
+        # The loop above is the only caller of `classify_source` in this test, so
+        # while ALLOWED is empty the #399 rewiring is never reached. Exercise it
+        # on a synthetic entry of each shape, or an allow-list entry excused by a
+        # broken classifier the day somebody adds one would go unnoticed.
+        routed = 'M = ".claude-plugin/plugin.json"\ndef test_x():\n    assert v == "{}"\n'
+        assert classify_source(routed.format(version), version) == ([3], []), (
+            "a routed literal is a pin, and the staleness check reads pins"
+        )
+        assert classify_source(clean, version) == ([], []), (
+            "a file with no literal at all must produce neither bucket"
         )
