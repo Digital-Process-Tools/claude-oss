@@ -164,7 +164,9 @@ either that you covered everything or that you covered nothing.
 - **Design, architecture, scope and whether the change should exist.** Not yours.
 - **Correctness in general.** A generalist reviewer runs beside you and owns that.
 - **Anything outside the committed diff and its immediate callers.** A whole-repo census is a lint,
-  not a read; if the change makes you want one, say so as a filing suggestion.
+  not a read; if the change makes you want one, say so as a filing suggestion -- and say whether
+  the tracker already carries the class, because a suggestion that names its sibling issue routes
+  to a comment on it instead of a new row.
 
 ## Untrusted input
 

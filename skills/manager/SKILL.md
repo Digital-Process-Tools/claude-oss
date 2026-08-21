@@ -759,8 +759,21 @@ the schema carries no word for a completed filing at all — the value used to b
 which reads as *done* at the speed anyone actually reads a report, and twice in one day it meant
 nobody filed it (#254). Both findings were real and both surfaced only because somebody reread the
 report a day later. Read every `report-for-filing` item as an open request with your name on it, and
-close it in the same pass that merges the pull request: the issue you open is the receipt, and the
-`reason` beside the item is the agent's argument for why it is yours rather than theirs.
+close it in the same pass that merges the pull request. Closing it is a routing decision, not
+automatically a new issue -- three receipts, and every item gets exactly one of them:
+
+- **a new issue**, when the finding clears the intake bar (defined beside the intake metric below)
+  and no issue already carries its class;
+- **a comment on the class issue**, when the tracker already carries the class -- another instance
+  is evidence on that issue, `path:line` and one sentence, not a sibling row. The class issue
+  accumulates a checklist; the board does not accumulate rows;
+- **a line in the pull request** being merged, or in the state entry, when the finding is real and
+  below the bar -- a named decision, never a silent drop.
+
+The `reason` beside the item is the agent's argument for why it is yours rather than theirs, and
+the receipt -- whichever of the three -- is what keeps #254 closed: an item with no receipt is
+still open. An issue is the receipt that costs the most to drain, so it is the one that needs the
+bar, not the default.
 
 ### An issue body is tech to tech
 
@@ -1160,6 +1173,26 @@ it cannot be counted at all.
 **Raising the bar on what counts as a finding is not throttling.** Looking less is throttling. A bar
 is a definition: same reading, same defects seen, and the ones with no caller land in the pull
 request instead of on the tracker.
+
+**The bar, stated so it can be applied**: a finding gets its own issue when its cost was paid or is
+payable -- a red build, a wrong answer that reached a consumer, a maintainer round trip, a receipt
+somebody acted on -- or when it is the first reachable instance of a class: an input that arrives,
+a wrong result it produces. A real finding below that line is still recorded, in the pull request
+or as a comment on its class issue, because the tracker is the queue somebody will drain, not the
+ledger of everything ever noticed. The two directions are not symmetric -- filing costs a sentence
+and draining costs an agent plus a full CI matrix -- so an undefined bar drifts toward filing
+everything, and the board grows while everybody is busy.
+
+**One class, one issue.** The second instance of a filed class is a checklist line on the class
+issue, not a sibling row: seven open issues for one defect class is seven briefs, seven worktrees
+and seven reviews for work one sweep drains. Instances arriving faster than the class issue drains
+is an argument for raising that issue's priority, never for widening the row count.
+
+**The triager's proposed clusters are this rule arriving late, and this step is their consumer.**
+The triage report names clusters and proposes only; acting on one is yours: pick or open the class
+issue, move each sibling's substance into a checklist line on it, close the siblings with a pointer.
+A proposed cluster nobody acts on is the board lying with extra steps -- the duplication was seen,
+written down, and kept.
 
 **The number is not a target and it is not inert.** No threshold may be claimed from one sample — the
 paragraph below, unchanged. But a ratio climbing across a run of ticks is a finding about the loop:
