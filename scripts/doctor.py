@@ -509,7 +509,15 @@ def _sysctl(name):
 
 def _sysctl_int(name):
     """The value half of `_sysctl`, for callers that do not need to tell the two
-    failure causes apart."""
+    failure causes apart.
+
+    "Do not need to" is a claim about the CALLER, and #400 is what happens when it is
+    wrong: `cpu_topology` read this for `hw.nperflevels`, where an absent sysctl is a
+    real answer, and turned it into a WARN saying the probe had not answered. Before
+    reaching for this, ask what the caller would print for an absent sysctl. If that
+    differs from what it would print for a failed call, it wants `_sysctl` and the
+    `_SYSCTL_ABSENT` comparison.
+    """
     value, _ = _sysctl(name)
     return value
 
@@ -664,6 +672,13 @@ def cpu_topology(system=None):
     printed "this platform reports no performance/efficiency core split" for both,
     which tells the reader the count below is sizing against uniform cores when
     nobody established that.
+
+    Those two are told apart by the **errno**, not by the value (#400): `_SYSCTL_ABSENT`
+    means the sysctl does not exist on this machine, which is the first case and
+    reports `"none"`. Anything else is the second and reports `"unknown"`. The value
+    alone cannot distinguish them, which is why this reads `_sysctl` rather than
+    `_sysctl_int` -- for a whole release it read the latter and every machine without
+    the sysctl got an unclearable WARN whose sentence said the probe had not answered.
     """
     system = platform.system() if system is None else system
     logical = os.cpu_count()
@@ -675,8 +690,22 @@ def cpu_topology(system=None):
     darwin_logical = _sysctl_int("hw.logicalcpu")
     if darwin_logical:
         logical = darwin_logical
-    levels = _sysctl_int("hw.nperflevels")
+    # `_sysctl`, not `_sysctl_int`, and #400 is the whole reason: this caller is
+    # exactly the one that has to tell "the sysctl does not exist" from "the probe
+    # failed", which is the distinction `_sysctl_int` documents itself as discarding.
+    # An ABSENT `hw.nperflevels` is a machine with one performance level -- the
+    # `"none"` arm below, at OK -- and calling it `unknown` prints a WARN saying the
+    # probe did not answer, which is false and which no remedy clears. A verdict line
+    # permanently reading `usable with gaps` cannot carry a real warning any more, the
+    # same argument `translation_state()` makes two screens up.
+    levels, levels_errno = _sysctl("hw.nperflevels")
+    if levels is None and levels_errno == _SYSCTL_ABSENT:
+        return (logical, None, None, "none")
     if levels is None:
+        # Every other errno, and the None that means ctypes was unusable, keep the
+        # WARN: a probe that exists and did not answer has a cause worth chasing.
+        # Folding those into `"none"` is the opposite defect and would claim uniform
+        # cores on a machine nobody measured.
         return (logical, None, None, "unknown")
     if levels != 2:
         return (logical, None, None, "none")
