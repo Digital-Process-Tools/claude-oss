@@ -7,6 +7,189 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-22
+
+### Added
+
+- `/oss:doctor` now reports two facts about the machine it is running on that nothing printed
+  anywhere, both of which were decisive in an incident that took a morning to diagnose and take
+  one line each to state (#367). **`interpreter architecture`**: whether this `python3` is
+  running under binary translation -- an x86_64 build under Rosetta 2 on Apple Silicon measured
+  roughly 3x on interpreter startup and 3.4x on the CPU cost of a subprocess spawn, and this
+  loop is subprocess-shaped, so it is the dominant term. `platform.machine()` cannot answer the
+  question and neither can `uname -m` from a subprocess: an emulated process is shown the
+  *emulated* architecture and so is everything it spawns, so the probe is macOS's own
+  `sysctl.proc_translated` flag read in-process through `ctypes`, with the sysctl's absence read
+  as Apple documents it -- this system has no translation layer, i.e. native. On Linux
+  (qemu-user) and Windows-on-ARM there is no equivalent this script reads, so the line reports
+  **not probed** and says so rather than folding into `native`, which would clear an emulated
+  interpreter on exactly the platforms nobody checked. That gap is reported at `OK` with the
+  reason named on the line, while a probe that *does* exist and fails to answer is a `WARN` --
+  two states, and they were one for exactly one round of CI. Folded together at `WARN` they made
+  `VERDICT: ok` unreachable on every Linux and Windows leg forever, which removes a signal rather
+  than adding a finding: a verdict that always reads `usable with gaps` can no longer carry a
+  real warning, so every genuine gap on those platforms is masked by a permanent one. A gap that
+  is unobservable in principle is named on the line instead, which is the shape `agent_dispatch`
+  already uses in the same file. The host architecture and the
+  performance/efficiency split each carry the same third state for the same reason: the sysctl
+  behind either returns nothing both when the answer is genuinely negative and when the probe
+  failed, and folding the second into the first prints a host nobody read and a claim that the
+  cores are uniform that nobody established. **`cpu topology` and `worker sizing`**:
+  the logical core count, split into performance and efficiency cores where the platform exposes
+  it, and what `pytest -n auto` would actually request here -- a transcription of xdist's own
+  order (`PYTEST_XDIST_AUTO_NUM_WORKERS` first, then psutil's *physical* count, then
+  `os.sched_getaffinity(0)`, then `os.cpu_count()`), so the cap that exists is stated rather than
+  left to be discovered, and the number is `unknown` rather than an invented 0 or 1 when nothing
+  answers. Every rendering state is asserted against injected values, because the machine this
+  was written on is native arm64 and a test that measured the host would have tested the
+  hardware.
+
+- `scripts/review_return.py` classifies what a review spawn actually handed back, so a reviewer that
+  returned nothing and a reviewer that found nothing stop being the same bytes. Six states --
+  `states-findings`, `no-findings`, `referred-not-stated`, `returned-nothing`, `could-not-classify`
+  and `could-not-read` -- one `VERDICT:` line, and an exit code a shell can read. `agents/developer.md`
+  now tells the developer to run it and quote the verdict instead of sorting the message by hand
+  (#392).
+- The two prose mitigations that preceded it did not hold: #275 and #296 were closed by PR #332's
+  brief language, and #392 reports the identical shape recurring twice in one day after it shipped.
+  The classifier is on the caller's side of the boundary, so unlike a header, a schema or a file the
+  reviewer writes, it asks the spawn for nothing and fires whichever of #392's two candidate
+  mechanisms is the real one (#392).
+
+### Changed
+
+- A `report-for-filing` item now has three receipts instead of one -- a new issue, a comment on the
+  class issue, or a named line in the pull request -- with the intake bar defined beside the intake
+  metric, a one-class-one-issue shape, and the manager step that consumes the triager's proposed
+  clusters. Every finding used to mint a tracker row: one defect class became seven sibling issues,
+  and the board grew at ~25 rows a day with nothing in the loop able to say no (#393).
+
+### Fixed
+
+- `scripts/doctor.py`'s module contract stated the printable-ASCII fold unconditionally --
+  "Every finding goes through `report()`, which reduces it to one printable ASCII line" --
+  while `report_with_remedy()`, added in the same release for #344, is a second emitter whose
+  `remedy` argument deliberately skips that fold. A reader auditing the property from the top of
+  the file got the wrong answer about three arms of the launcher check (#376). Settled by
+  amending the contract rather than folding the remedy: the remedy is built from `PLUGIN_ROOT`,
+  this script's own resolved install location and not text the audited tree chose, and folding it
+  would put a `?` -- a shell glob -- inside a command the reader is meant to paste and run, which
+  is #344 reinstated. The contract now names the one exempt fragment, says what it still gets
+  (the newline and control-character collapse, and `_safe_print`'s encoding net), and says that
+  nothing else is exempt. `tests/test_doctor_fold_contract_376.py` holds the paragraph and the
+  set of `_emit` callers to each other, so a third emitter or a contract that reverts to the
+  unconditional wording fails there -- two independent readings of the file (the AST and the
+  prose) rather than the same claim stated twice, each paired with a must-fire control over
+  synthetic source. No output has been unprintable; every remedy string shipped so far is ASCII.
+
+- `lane_setup.worktree_occupancy` and `doctor._dir_state` no longer read *absence* off an
+  exception type. Both caught `FileNotFoundError`/`NotADirectoryError` and answered "nothing
+  is there", which is right on POSIX — an over-long name arrives as a plain `OSError` and
+  already reached the third state — and wrong on Windows without `LongPathsEnabled`, where a
+  path past `MAX_PATH` arrives as `FileNotFoundError`, errno 2, `winerror` None: byte-identical
+  to a name that is merely not there. A `worktree_root` deep enough to derive such a path was
+  printed `[free]` in the receipt a maintainer pastes into a developer brief — the confident
+  absence #373 exists to close, reaching it through the one exception type that fix treated as
+  safe. Absence is now claimed only when something positively confirmed it: the subject's own
+  deepest ancestor this platform *can* look at is stat'ed and listed, and the verdict is
+  `unknown`/`unreadable` when the name is in that listing or when nothing could confirm either
+  way. Not the plainly-missing same-shape control the issue proposed, which on the folding
+  platform is *also* past `MAX_PATH` and answers exactly what the subject answered — a guard
+  that could never fire. No errno table and no `MAX_PATH` constant: the limit is conditional on
+  a machine setting and Windows folds several Win32 codes onto `ENOENT`, so neither could report
+  the value it would need. The price is one `stat` and one `listdir`, paid only on the absence
+  arm. Both functions changed together, which is what the agreement test between them is for
+  (#380).
+- Adjacent, in the same two `except` clauses: `stat` raises `ValueError`, not `OSError`, for a
+  path carrying an embedded null byte, so neither function caught it and it escaped as a
+  traceback — a raise path in a script whose contract is exit 0 always, one VERDICT line. Both
+  values reach these functions from `.oss.json`/`.oss.local.json`, and JSON can spell a null.
+  Both now answer the third state instead (#380).
+
+- `scripts/lane_setup.py` handed `--remote` straight into `git fetch --quiet <remote> <branch>`,
+  where argv position 6 is read as an option when the value starts with a dash. Measured rather
+  than reasoned on git 2.46.2: `--upload-pack=<script>` in that position **runs** `<script>` --
+  the injected script printed its own argv before git reported "Could not read from remote
+  repository". `resolve_base` now consults a new `lane_setup.remote_problem()` before it builds
+  any argv, so a dash-prefixed remote produces the `could-not-resolve` third state with its own
+  sentence and no git process at all. The rule lives beside the value rather than in
+  `oss_config`, because `remote` is `--remote` argv only and never config-sourced -- a verdict
+  in the config validator would be a rule for a key no config carries and `doctor` would have no
+  occasion to print it; `remote_problem`'s docstring names the migration if that ever changes
+  (#345, one value one rule, pointing the other way from #368's `default_branch`). Reachability
+  is not claimed: nothing in this repository passes `--remote`, so the value arrives only on the
+  maintainer's own command line today (#381).
+
+- The load-bearing half is the sentence beside it. `resolve_base`'s docstring claimed
+  `default_branch` was "the one value here that reaches git's argv unprefixed" -- false when it
+  was written, and the kind of sentence that stops the next guard sweep from looking. It now
+  names both guarded values and both *un*guarded ones with the reason each is safe by the shape
+  of its argv rather than by a rule: `branch_occupancy` prefixes `refs/heads/` and
+  `refs/remotes/`, and `--repo` is `-C`'s argument, which git consumes literally instead of
+  re-parsing it as an option. Both re-measured here rather than inherited from the audit that
+  filed the issue. The docstring also records `git fetch --quiet -- <remote> <branch>` as a
+  measured alternative that works, and why it was declined: it makes git the thing that reports
+  the refusal, and beside a value already refused above it could never fire (#381).
+
+- `tests/test_lane_setup_381.py` asserts on captured argv rather than on the exit code -- a
+  version that ran the fetch and then failed would pass the weaker form -- with a well-formed
+  non-default remote as the positive control in the same fixture. Its last test is a sweep
+  rather than a case: every argument the module hands to `_git`, for a hostile value injected at
+  each of the four input sites in turn, must not begin with a dash unless the module wrote it as
+  a literal flag. Each site asserts its own premise -- that its value is dash-prefixed at all,
+  and that it produced argv at all -- because the first draft of the `repo` site did neither and
+  swept a benign input while reporting coverage for a hostile one. `--repo` is the site with no
+  rule guarding it, so `_git`'s own argv is measured directly: the repository must sit in `-C`'s
+  slot, where git consumes it literally. #381 exists because the previous guard was written for
+  the position somebody enumerated (#381).
+
+- `scripts/oss_state.py` folds its receipt lines, so nothing rendered into one can forge
+  another. `lane_models_line` emitted `window`, a lane's model name and a `why` raw, and
+  `intake_line` beside it emitted `window` and `why` the same way: a newline in any of them
+  produced a second line a reader cannot tell from the tool's own, in output a maintainer
+  pastes into a developer brief and which `--model-trend` reads back out of the state file.
+  The module carried no fold at all while five sibling scripts had one. The guard is applied
+  at the single point each renderer joins its line rather than per field — a per-field guard
+  closes what somebody enumerated and leaves the next field unguarded — and a line long
+  enough to be cut now says it was cut, because a truncated receipt rendering as a complete
+  one is the defect class this plugin is named after pointed at its own output (#382).
+
+- The suite no longer goes red between the changelog fold and the release commit. Two
+  enumerations listed the repository with `git ls-files` and then read the working tree,
+  so the twenty-one fragments the fold deletes arrived as paths that are in the index and
+  not on disk — and both filed them as *could not read*: `tests/test_paginated_counts.py`
+  answered `could-not-scan` about a tree it had read completely, and
+  `scripts/shell_sources.py` exited 3, which is the shell CI leg refusing. Four tests
+  failed on a working tree with nothing wrong with it, at exactly the gate the release
+  procedure says to run, which teaches re-running until green. Absence is now its own
+  bucket in both — reported by name, never dropped, because a file deleted in a diff
+  nobody meant to make is worth surfacing — and only a file that is there and will not
+  read still refuses. `FileNotFoundError` decides it, so no second question is put to the
+  filesystem. The `shell_sources.py` change also stops a deleted `.sh` reaching
+  `shellcheck` as a path that does not exist: an extension classified it without anything
+  having to look (#384).
+
+- #350's guard can tell a test that **pins** this repository's version from one that merely
+  **spells** it, so a version-comparison fixture no longer blocks a release. Cutting `v0.9.0`
+  reddened the suite on the release commit — reported by the very guard that exists to prevent
+  that — naming `test_freshness.py:59,60,169`: the lexical-versus-numeric fixture
+  (`0.9.0` against `0.10.0`, the minimal one-digit against two-digit pair) and a fixture
+  record. None of the three reads the manifest and none can redden when it is bumped, so the
+  guard was reporting the opposite defect from the one it was written for. The missing bound
+  is provenance, which is not statically decidable, so it is over-approximated at file
+  granularity: a file with no route to the repository's own declared version cannot redden on
+  a bump, whatever its literals spell. The route is deliberately coarse — a `REPO_ROOT`-anchored
+  one would have missed #350 itself, whose offender built its plugin root under `tmp_path` while
+  the product read a global. Two errors are now possible and both cost the same event, so the
+  direction was chosen on measurement rather than on symmetry: `0.9.0`, `0.10.0` and `0.11.0`
+  were all already spelled in `tests/`, arming the over-report at each of the next three minor
+  releases, while the under-report has never been observed once. A collision is announced as a
+  warning naming the lines and saying they are not offenders, rather than being dropped
+  silently, and the sweep now also runs against the **next** minor on every ordinary run — so
+  the answer arrives before the release commit instead of on it. A route renamed on import is
+  read off the import statement, because `from doctor import PLUGIN_ROOT as here` leaves every
+  use site spelling nothing and would otherwise wave a genuine pin through (#399).
+
 ## [0.8.0] - 2026-08-20
 
 ### Added
@@ -3736,7 +3919,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.6.0

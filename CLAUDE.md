@@ -298,14 +298,23 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `d4c12c1`, zero merged pull requests after `v0.8.0`** — `git rev-list --count
-v0.8.0..main` returns `0`, and `d4c12c1` is the commit the annotated tag object `1969f5f` points at,
+**Measured at `2fb53e4`, nine commits and eight merged pull requests after `v0.8.0`** — `git
+rev-list --count v0.8.0..main` returns `9`, and `d4c12c1` is the commit the annotated tag object `1969f5f` points at,
 which `git ls-remote --tags origin v0.8.0` confirms is the ref the remote carries. So this marker
-names the release commit itself rather than a descendant of it. Every claim below is graded
-**observed** (a named command produced it) or **reasoned** (argued from code that was read, not
-run). **Re-derive this at each release rather than editing it.** The version it replaces was measured
-at `7690fd0`, zero pull requests after `v0.7.0`; before that at `01212b0`, zero after `v0.6.0`, and
-at `e8e75b2`, zero after `v0.5.0`.
+names a descendant of the previous release commit rather than the release commit itself, which is
+what the four before it named. Every claim below is graded **observed** (a named command produced
+it) or **reasoned** (argued from code that was read, not run). **Re-derive this at each release
+rather than editing it.** The version it replaces was measured at `d4c12c1`, zero pull requests
+after `v0.8.0`; before that at `7690fd0`, zero after `v0.7.0`; at `01212b0`, zero after `v0.6.0`;
+and at `e8e75b2`, zero after `v0.5.0`.
+
+**This round the re-derivation ran before the fold rather than after it, and that is the whole of
+what #235 asked for.** The previous round's marker was written by the session that cut `v0.8.0` —
+but only after PR #387 had already gone red on all three ubuntu legs, because two fragments armed
+the guard first. The cost was paid and measured there. Here the section was re-derived while the
+release audit was still running and before any version site moved, so nothing reddened. One
+instance is not a practice, and the guard still cannot tell a re-derivation from a hand-edited
+marker.
 
 The count is `rev-list --count` rather than `git log | wc -l`, and that is not cosmetic: the pipeline
 was rewritten by a hook to `rtk git log`, which emits a bare newline for an empty result, so an empty
@@ -346,7 +355,7 @@ What is still true and still unguarded, repeated rather than assumed: the guard 
 re-derivation from a hand-edited marker, and it cannot read the tree the sha names, because
 `actions/checkout` runs at depth 1.
 
-### How far the loop has reached — observed, and six rounds now with one movement
+### How far the loop has reached — observed, and seven rounds now with one movement
 
 Population selected on the thing being measured: `gh repo list Digital-Process-Tools --limit 100`
 returns **eleven** repositories, and each of four artifacts was probed in every one of them with
@@ -362,18 +371,36 @@ returns **eleven** repositories, and each of four artifacts was probed in every 
   `mcp-*-warm` servers answered `no` to every file. Reported as loudly as the hits: a survey that
   lists only what it found cannot be told from one that stopped early.
 
-**Both numbers are unchanged for the second consecutive round.** The pair has now been measured six
-times and moved once. `v0.8.0` was sixteen merged pull requests of work on the loop itself — counted as
-`git log --oneline v0.7.0..v0.8.0 | grep -cE '\(#[0-9]+\)$'`, not estimated — and reached nobody
-outside this repository, which is the same sentence the previous round had to write.
+**Both numbers are unchanged for the third consecutive round.** The pair has now been measured seven
+times and moved once. `v0.9.0` is nine commits of work on the loop itself, eight of them through
+merged pull requests, and reached nobody outside this repository — the third consecutive release of
+which that is the whole sentence.
 
-What has *not* been observed, across six rounds: any repository being scaffolded **by a maintainer
+**Nine and eight, because the counting rule the previous round used is wrong by one here.** It said
+sixteen for `v0.8.0`, counted as `git log --oneline v0.7.0..v0.8.0 | grep -cE '\(#[0-9]+\)$'`. That
+pattern matches a trailing `(#N)` whatever `N` refers to, and `87fc706` in this range ends `(#235)` —
+an *issue* number on a commit pushed directly to `main`, no pull request involved. So the grep
+returns 9 where the answer is 8. `rev-list --count` answers the commit question exactly and is quoted
+for that; the pull request count is the one that needed a human to read the nine subject lines.
+`v0.8.0`'s sixteen was never re-checked against this and may carry the same error.
+
+The nine are fewer than `v0.8.0`'s sixteen and that is not a slowdown to explain away: two of them
+(#393, #384) changed what the loop *files* rather than what it does, and the effect is visible in the
+tracker rather than here — 24 open issues went to 23 while two were folded into class issues and
+three new ones were filed, all three by a gate rather than by browsing. Whether a lower row count is
+a healthier board or a shallower one is not knowable from one release, and no threshold is claimed
+from it.
+
+What has *not* been observed, across seven rounds: any repository being scaffolded **by a maintainer
 who is not the author of this plugin**.
 
-### Owned files go stale in the field, and this round the local column moved while the remote one did not — observed
+### Owned files go stale in the field, and this round neither column moved at all — observed
 
-Rendering all three at `d4c12c1` with `scaffold.render_owned(name, config, ".")`, encoding to UTF-8
-before counting, and comparing `sha256` against what each repo actually carries:
+Rendering all three at `2fb53e4` with `scaffold.render_owned(name, config, ".")`, encoding to UTF-8
+before counting, and comparing `sha256` against what each repo actually carries. Taken first at
+`4fabf14` and re-taken at `2fb53e4` after three more commits landed, because "nothing since then
+touched `scaffold.py`" is an assumption and the column is cheap to re-render: all three hashes
+identical across both:
 
 | owned file | would write today | `claude-jit-context` | `claude-5h-window-spread` | `claude-remember` |
 | --- | --- | --- | --- | --- |
@@ -381,22 +408,28 @@ before counting, and comparing `sha256` against what each repo actually carries:
 | `.oss/README.md` | 1,753 B (`c380cfe0`) | 1,753 `c380cfe0` — **identical** | 1,325 `68de5d32` — **drifted** | 1,753 `c380cfe0` — **identical** |
 | `.github/workflows/oss-changelog.yml` | 12,639 B (`c820d2dc`) | 9,954 `dae31dc9` — **drifted** | 2,159 `032184b4` — **drifted** | 8,943 `8108fede` — **drifted** |
 
-- **The nine remote cells are byte-identical to the previous round's, for the second round running.**
+- **The nine remote cells are byte-identical to the previous round's, for the third round running.**
   Seven drifted, two identical, no movement in either direction.
-- **Two of the three `would write today` hashes moved**, and that settles an argument the previous two
-  rounds were having with each other. `v0.7.0` moved this column by 3,386 bytes; `v0.8.0`'s
-  predecessor moved it not at all; `v0.8.0` moved the assembler by 2,176 bytes and the workflow by 9.
-  So the column moves on most releases and not all, which is a weaker case for a gate than "it moves
-  every time" and a stronger one than "it sat still through a whole release". The decision at the end
-  of this section is re-taken on that basis rather than inherited.
+- **None of the three `would write today` hashes moved**, and that is the answer to the argument the
+  previous three rounds were having. `v0.7.0` moved this column by 3,386 bytes; its predecessor not at
+  all; `v0.8.0` moved the assembler by 2,176 bytes and the workflow by 9; `v0.9.0` moved nothing —
+  all three hashes are the previous round's to the byte. So the column has now sat still through two
+  of four releases. That is a weaker case for a gate than the previous round could make, and the
+  decision at the end of this section is re-taken on it rather than inherited.
+- **The renderer needs the config and one of the three does not notice.** `oss_config.load()` takes
+  the path to `.oss.json`, not the repo root; handed the root it returns `(None, [problem])`, and
+  `render_owned(".oss/assemble_changelog.py", None, ".")` still produced the correct 118,107 bytes
+  while the other two raised `AttributeError`. Measured here by getting it wrong first. The assembler
+  is a verbatim vendored file and consults nothing, so its cell is the one that cannot detect a
+  config this call failed to load — a green byte count from an argument that was silently None.
 - **Drift is a property of a file, not of a repository.** Two of nine cells are byte-for-byte what
   scaffold would write today, in two different repositories. A repo-level verdict would have called
   both drifted and been wrong twice.
 - **Two repositories carry the same drifted assembler**, `102,079` / `b16cc044` in both — so they
   were scaffolded from the same version of this plugin and neither has been re-scaffolded since.
-- **The repair is still unobserved.** Across six re-derivations, nothing has been observed clearing
+- **The repair is still unobserved.** Across seven re-derivations, nothing has been observed clearing
   a drifted copy anywhere. The ownership contract promises an owned file is always replaceable so
-  fixes reach everyone; the first half is proven and the second half has now had six chances.
+  fixes reach everyone; the first half is proven and the second half has now had seven chances.
 
 Equal byte counts are not taken as equality — every identity here is a `sha256` match, and the unit
 is bytes after an explicit `encode("utf-8")`.
@@ -427,44 +460,68 @@ Re-run in this clone, with the controls that make it a measurement rather than a
 
 ### Dogfooding still finds what the suite cannot, and the verdict depends on which tree you ask
 
-Three invocations, three different answers, all at `d4c12c1` — observed:
+Three invocations, three different answers — observed. The first two re-run at `2fb53e4` with the
+release commit in the working tree, since `#380` changed `doctor.py` between the two commits and a
+warning count carried over from before that would be a reading of a file that no longer exists; both
+answered exactly as they had. The third was taken at `4fabf14` and is **not** re-taken here, so its
+row is one commit stale and says so rather than borrowing the others' freshness:
 
 | invocation | verdict |
 | --- | --- |
 | `python3 scripts/doctor.py --root .` in the clone | `VERDICT: usable with gaps -- 3 warning(s)` |
-| `bash scripts/doctor.sh`, no `--root`, no `CLAUDE_PROJECT_DIR` | `VERDICT: usable with gaps -- 4 warning(s)` |
+| `bash scripts/doctor.sh`, no `--root`, no `CLAUDE_PROJECT_DIR` | `VERDICT: usable with gaps -- 5 warning(s)` |
 | `python3 scripts/doctor.py --root .` in a fresh detached worktree | `VERDICT: not usable -- 4 failure(s), 8 warning(s)` |
 
 - The clone's three warnings are the plugin-copy scope (`not established`), `./supertool` pointing at
   a local checkout rather than the cache, and the jit layer `unknown` above. **The warning count has
-  now read five, six, five, three, three and three across seven measurements**, and the clone verdict
-  has stayed at `usable with gaps` for three rounds running.
-- The fourth warning in the shell invocation is `WARN project dir guessed from cwd`. The guess was
-  right and nothing established that it was.
+  now read five, six, five, three, three, three and three across eight measurements**, and the clone
+  verdict has stayed at `usable with gaps` for four rounds running.
+- **The shell invocation gained a fifth warning, and it is the interesting number in this table.**
+  Four of its five are the clone's three plus `WARN project dir guessed from cwd` — the guess was
+  right and nothing established that it was. The fifth is new: `WARN interpreter architecture: python
+  3.14.6, x86_64 build running under binary translation (host architecture arm64)`. **The two rows
+  are not running the same interpreter.** `scripts/doctor.sh` tries `python3.14` first and walks
+  down; bare `python3` on this machine is arm64 3.13.15 out of `/opt/homebrew`. So the documented
+  shell entry point selects a translated x86_64 build of a version **no CI leg covers** — the matrix
+  is 3.9 to 3.12 — while the direct call gets a native, tested one, and #367's probe fires on exactly
+  one of the two paths. Filed as #398.
+- **That also falsifies a sentence in the section below.** The `gh` bullet says *`python3` and
+  `supertool` are native arm64 out of `/opt/homebrew`*, which is true of the `python3` a shell
+  resolves and not of the interpreter this project's own launcher picks. Left standing below with a
+  pointer here rather than quietly corrected, because the useful artefact is that one measurement
+  contradicted another round's prose.
 - The worktree's four failures are all `.oss.local.json`: git-excluded, therefore absent from every
   worktree by construction. Nothing in `tests/` would notice, and every agent this loop dispatches
   works in exactly that tree. The probe tree was created `--detach` and removed afterwards.
 
-### The launcher went stale a fifth time, and cost nothing for the second time running — observed
+### The launcher went stale a sixth time, and this time it was repairable and still stale — observed
 
-- **`~/.local/bin/oss-workspace` pins `0.7.0` while `.claude-plugin/plugin.json` now reads `0.8.0`.**
-  Fifth consecutive instance of the same class on this machine, and this one is not even repairable
-  yet: the plugin cache holds `0.1.0`, `0.2.0`, `0.3.0`, `0.5.0`, `0.6.0` and `0.7.0`, and no `0.8.0`
-  directory exists to point at until the release is installed.
-- **The consequence is again nil, and again by accident of the diff.** `diff` between the cached
-  `0.7.0` copy of `bin/oss-workspace` and this tree's reports them **identical**, so the stale link
-  resolves to the correct bytes. That is two consecutive releases where the class fired and cost
-  nothing, against one where it pinned `0.5.0` across `v0.6.0`'s fix *in that same file*. The cost is
-  decided by whether a release happened to touch one file, which is exactly why a hand-repair is not
-  a fix. #289 is the filing.
+- **`~/.local/bin/oss-workspace` still pins `0.7.0` while `.claude-plugin/plugin.json` read `0.8.0`
+  going into this release.** Sixth consecutive instance of the same class on this machine, and the
+  previous round's excuse is gone: the cache now holds `0.8.0` as well, so a target existed the whole
+  time and nothing pointed at it. Last round the link was unrepairable; this round it was repairable
+  and nobody repaired it, which is the same outcome by a different route.
+- **The consequence is nil for the third time running, and again by accident of the diff.** `diff`
+  reports the cached `0.7.0` copy of `bin/oss-workspace`, the cached `0.8.0` copy and this tree's as
+  all three **identical**, so the stale link resolves to the correct bytes. Three consecutive
+  releases where the class fired and cost nothing, against one where it pinned `0.5.0` across
+  `v0.6.0`'s fix *in that same file*. The cost is decided by whether a release happened to touch one
+  file, which is exactly why a hand-repair is not a fix. #289 is the filing.
 - **A command resolves its version once, at invocation.** This session's manager skill loaded from
   `…/oss/0.7.0/skills/manager` and every script path in `/oss:tick` read `…/oss/0.7.0/scripts/`, so
-  the whole of `v0.8.0` was cut by the `0.7.0` copy of the loop. Still nothing in the loop reports
-  which version answered.
+  `v0.8.0` **and** `v0.9.0` were both cut by the `0.7.0` copy of the loop — two releases behind the
+  tree being tagged, and the second one after a whole release had shipped in between. Still nothing
+  in the loop reports which version answered.
 
-### `gh` is emulated, and nothing in the loop looks at the tools it spawns — observed
+### `gh` is emulated, and nothing in the loop looks at the tools it spawns — observed last round, unchanged
 
-New this round, found by hand while reading the release-publish receipt:
+Unchanged at `2fb53e4` and kept because #386 is still open. **One sentence in it is now known to be
+too broad** — see the interpreter bullet in the dogfooding section above, which measured a `python3`
+this project's own launcher picks that is neither native nor arm64. It is left as written rather than
+patched, because a round's prose being falsified by a later round's measurement is the mechanism this
+section runs on, and rewriting it would delete the evidence that the mechanism worked.
+
+Found by hand last round while reading the release-publish receipt:
 
 ```
 /usr/local/bin/gh -> ../Cellar/gh/2.50.0/bin/gh
@@ -486,29 +543,35 @@ over, unmeasured, in the tool the loop leans on hardest.
 
 Most of what this plugin claims about a *scaffolded* repository rests on tests and scratch runs
 rather than on a repo somebody maintains through it. That stood at `v0.3.0`, at `c6b7bd4`, at
-`9aed28e`, at `35abbcf`, at `e8e75b2`, at `01212b0`, at `7690fd0`, and it is re-earned rather than
+`9aed28e`, at `35abbcf`, at `e8e75b2`, at `01212b0`, at `7690fd0`, at `d4c12c1`, and it is re-earned rather than
 inherited here. **The surface is thin because it has barely been run, not because it is sound.**
 
 What changed since the previous round: nothing in the reach, nothing in the nine remote cells,
-nothing in the dependency versions. Two of the three local `would write today` hashes moved. A whole
-release landed and every number describing the world outside this repository stayed where it was, for
-the second consecutive release.
+nothing in the dependency versions, and this time nothing in the three local `would write today`
+hashes either. A whole release landed and **every number in this section describing anything outside
+this file stayed where it was**, for the third consecutive release. The two numbers that did move are
+both about this repository's own board — 24 open issues to 23, and the first release whose delta
+includes a change to what the loop is permitted to file.
 
 `tests/test_claude_md_currency.py` still cannot check that a claim above is true, and still does not
 try. The mechanism to add more of is a **second measurement** contradicting the prose beside it — a
 test asserting the prose agrees with a `doctor` check would state the same claim twice and pass
-whenever both were wrong together. This round produced three unprompted: the hook-set grep confirmed
-`doctor`'s `unknown` against the files themselves, the `diff` of the two launcher copies turned a
-repeat finding into a materially different one, and `file` on `gh` contradicted a claim this session
-had already made out loud about this machine being native.
+whenever both were wrong together. This round produced three unprompted, and one of them contradicted
+the *previous* round rather than this one: running `doctor` both documented ways disagreed about the
+interpreter and falsified the `python3 … native arm64` sentence two sections down (#398); rendering
+the owned files with the config loaded wrongly returned a correct byte count for the one file that
+consults no config, so a `None` argument went undetected; and the launcher `diff` now covers three
+copies rather than two, which is what turned "unrepairable" into "repairable and unrepaired".
 
 One claim stays deliberately unguarded, and the decision is re-taken rather than inherited: the
 "would write today" column is computed entirely from this tree, needs no network and no history, and
 a three-line test could hold it. **Declined again.** The reason is unchanged and rests on none of the
 three movement figures: a gate here would redden unrelated pull requests until somebody edited
 `CLAUDE.md` to make CI green, training the reflex of editing the section instead of re-deriving it —
-and #387 is this round's demonstration that a guard on this section reddens exactly the pull requests
-that had nothing to do with it. The nine remote cells cannot be tested at all: the workflow has no
-credentials for another repository.
+and #387 remains the demonstration that a guard on this section reddens exactly the pull requests
+that had nothing to do with it. This round adds a second argument the previous one could not make:
+the column did not move at all across `v0.9.0`, so a gate on it would have been silent through a
+whole release and is weaker evidence than three rounds ago. The nine remote cells cannot be tested
+at all: the workflow has no credentials for another repository.
 
 Treat this as tested, not proven.
