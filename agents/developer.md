@@ -425,9 +425,11 @@ points at nothing.
 
 **Ask for the shape that makes the omission arithmetic rather than a judgement.** Require that each
 spawn's final message **opens with `FINDINGS: <n>` and then states exactly that many findings, in
-full** — or opens with `NO FINDINGS` and names what was checked. Then count them yourself.
-`FINDINGS: 2` followed by one stated finding is not a review with one finding, it is a review that
-lost one, and without the header you would be reading tone to decide. A looser detector was weighed
+full** — or opens with `NO FINDINGS` and names what was checked. **Do not count them by hand.** Since
+#392 the comparison is `scripts/review_return.py`'s, and the section below tells you how to run it;
+counting by eye is the step that fails silently, which is the whole of #392. `FINDINGS: 2` followed
+by one stated finding is not a review with one finding, it is a review that lost one, and without
+the header the classifier would have nothing to compare. A looser detector was weighed
 and refused: a numeral beside the word *findings* also fires on `NO FINDINGS` and on an honest *"0
 findings across 3 classes"*, so it would tax exactly the reviewers who did the right thing. The
 header costs the reviewer a number it already knows, and it compares two things the reviewer already
@@ -531,7 +533,10 @@ yourself is fine, saying nothing about having done so is not.
 Six states, and the shape of the old four-way sort is inside them. It **states** findings
 (`states-findings`); or it says `NO FINDINGS` and names what it checked (`no-findings`); or it
 **refers to findings it does not state** (`referred-not-stated`), which includes a `FINDINGS: <n>`
-header with fewer than `n` stated under it; or it is empty or whitespace-only (`returned-nothing`).
+header with fewer than `n` **enumerated** under it — a header over uncountable prose is
+`could-not-classify` instead, because findings written as plain paragraphs are a delivered review
+and calling those lost is a false alarm you would learn to ignore; or it is empty or whitespace-only
+(`returned-nothing`).
 The last two are both `returned-nothing` in the report, and the `referred-not-stated` arm is the one
 to be careful with, because it is the one that sounds finished. A confident sentence about work you
 cannot read is not a review that found nothing.

@@ -73,12 +73,30 @@ believed it*, which is invisible by construction.
 `could-not-classify` is the load-bearing one and it is deliberately not a
 catch-all: calling an undecidable message clean is the defect this repository
 is named after, and calling it a loss is a false alarm the developer learns to
-ignore, which ends in the same place. The counting is therefore conservative in
-one direction only -- an under-count of enumerable blocks produces
-`referred-not-stated`, which is loud and cheap (one re-spawn), while the
-over-count that would produce a false `states-findings` needs the reviewer to
-have written a header *and* enumerated at least that many blocks, which is the
-behaviour the brief asks for anyway.
+ignore, which ends in the same place.
+
+**What the block count can and cannot see, stated rather than assumed.** It
+counts markdown markers at column zero over everything after the header. A
+marker is a marker: a "Files checked" list, a pasted diff hunk and an
+enumerated finding are the same bytes to it, so the count can be *too high* as
+easily as too low. The first draft of this module claimed the over-count was
+safe because reaching `states-findings` requires a header and enough markers,
+"which is the behaviour the brief asks for anyway" -- and review of that draft
+falsified it in one line: `FINDINGS: 3`, then "Findings reported above (3
+total)", then a three-item list of file names, returned the decisive good
+verdict over a message that is precisely #392. Two consequences:
+
+  * **A back-reference anywhere forecloses `states-findings`**, however many
+    markers trail it. That is not a heuristic bolted on -- it is the rule the
+    brief already states to the reviewer ("No `reported above`, no `as noted`,
+    no `detailed earlier`"), so a compliant message contains no back-reference
+    and pays nothing, and a gesture is the stronger signal than a count that
+    cannot tell a finding from a filename.
+  * **A header with zero enumerable blocks and no gesture is
+    `could-not-classify`, not a loss.** Findings written as plain paragraphs are
+    a delivered review, and there is no way to count those. Calling them lost
+    would be the false alarm above. The brief's definition of
+    `referred-not-stated` carries this qualification for the same reason.
 
 ## The message is untrusted input
 
@@ -127,10 +145,15 @@ _NO_FINDINGS = re.compile(r"^[ \t>*_#]*NO[ \t]+FINDINGS\b", re.MULTILINE | re.IG
 # list of verbs plus a closed list of directions: a looser rule ("findings"
 # near a numeral) also fires on `NO FINDINGS` and on an honest "0 findings
 # across 3 classes", taxing exactly the reviewers who did the right thing.
+# Up to three words may sit between the verb and the direction: "described in
+# the paragraph above" is the same act as "described above", and matching only
+# the adjacent form left an ordinary English sentence undetected. The
+# intervening words may not contain a full stop, so the match cannot cross a
+# sentence boundary and pair a verb with a direction word from the next thought.
 _BACKREF = re.compile(
     r"\b(?:reported|report|found|listed|list|described|detailed|noted|note|"
     r"mentioned|stated|outlined|flagged|identified|documented|given|shown)"
-    r"[ \t]+(?:above|earlier|previously|already)\b"
+    r"[ \t]+(?:[\w,'-]+[ \t]+){0,3}(?:above|earlier|previously|already)\b"
     r"|\bas[ \t]+(?:noted|described|stated|mentioned)\b"
     r"|\b(?:see|per)[ \t]+(?:above|earlier|my[ \t]+\w+[ \t]+above)\b"
     r"|\b(?:above|earlier)[ \t]+(?:findings|analysis|review)\b",
@@ -258,11 +281,11 @@ def classify(message):
         body = text[header.end():]
         blocks = len(_BLOCK.findall(body))
         header_line = fold_to_one_ascii_line(_line_containing(text, header.start()))
-        if blocks >= claimed:
+        if blocks >= claimed and not backref:
             return _verdict(
                 "states-findings",
                 "a FINDINGS: {0} header with {1} enumerable block(s) under "
-                "it".format(claimed, blocks),
+                "it and no back-reference anywhere".format(claimed, blocks),
                 claimed=claimed,
                 stated_blocks=blocks,
                 implied_count=implied,
@@ -270,11 +293,27 @@ def classify(message):
             )
         if blocks >= 1 or backref:
             lost = claimed - blocks
+            if lost > 0:
+                why = (
+                    "the header claims {0} finding(s) and {1} enumerable "
+                    "block(s) are under it: {2} finding(s) are referred to and "
+                    "not stated".format(claimed, blocks, lost)
+                )
+            else:
+                # Enough markers to satisfy the header, and a gesture as well.
+                # The markers cannot be told from a "files checked" list or a
+                # pasted diff hunk, so the gesture is the stronger signal and
+                # the count is not evidence against it.
+                why = (
+                    "the header claims {0} finding(s) and {1} enumerable "
+                    "block(s) trail it, but the message also points at material "
+                    "it does not carry -- a marker count cannot tell a stated "
+                    "finding from a list of file names, so the back-reference "
+                    "decides".format(claimed, blocks)
+                )
             return _verdict(
                 "referred-not-stated",
-                "the header claims {0} finding(s) and {1} enumerable block(s) "
-                "are under it: {2} finding(s) are referred to and not stated"
-                .format(claimed, blocks, lost),
+                why,
                 claimed=claimed,
                 stated_blocks=blocks,
                 implied_count=implied,

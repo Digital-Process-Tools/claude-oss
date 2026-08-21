@@ -282,6 +282,78 @@ def test_cli_reads_a_file_whose_bytes_are_not_utf8(tmp_path):
     assert proc.returncode == 3, (proc.returncode, proc.stdout, proc.stderr)
 
 
+# -- what block counting cannot see, found in review of this diff -----------
+
+def test_a_gesture_beats_a_trailing_bullet_list():
+    """The severe direction, and the one the first draft got wrong.
+
+    `_BLOCK` counts markdown markers over the whole body after the header, and a
+    "Files checked" list, a pasted diff hunk or any other trailing list is
+    indistinguishable from an enumerated finding. So a message that does exactly
+    what #392 describes -- claims three, gestures at them, and happens to carry
+    three unrelated bullets -- counted three blocks and returned the decisive
+    good verdict.
+
+    The rule that closes it is the one the brief already states to the reviewer:
+    no "reported above", no "as noted", no "detailed earlier". A compliant
+    message contains no back-reference at all, so a back-reference anywhere
+    forecloses `states-findings` however many markers trail it.
+    """
+    message = """FINDINGS: 3
+
+Findings reported above (3 total).
+
+## Files checked
+- fileA.py
+- fileB.py
+- fileC.py
+"""
+    verdict = review_return.classify(message)
+    assert verdict["state"] == "referred-not-stated", verdict
+    assert verdict["state"] != "states-findings"
+
+
+def test_a_backref_forecloses_the_good_verdict_but_does_not_swallow_the_rest():
+    """Positive control for the test above. Without the gesture the same shape
+    is still the good verdict, so the new rule keys on the gesture and not on
+    the trailing list."""
+    message = """FINDINGS: 3
+
+1. scripts/a.py:1 -- one.
+2. scripts/b.py:2 -- two.
+3. scripts/c.py:3 -- three.
+"""
+    assert review_return.classify(message)["state"] == "states-findings"
+
+
+def test_a_gesture_that_is_not_two_adjacent_words_is_still_a_gesture():
+    """`described in the paragraph above` is the same act as `described above`,
+    and the first draft matched only the adjacent form -- so an ordinary English
+    sentence carrying a header that claims three and states none fell through to
+    could-not-classify, which is a weaker answer than the evidence supports."""
+    verdict = review_return.classify(
+        "FINDINGS: 3\n\nAll three are described in the paragraph above, so no "
+        "need to repeat them."
+    )
+    assert verdict["state"] == "referred-not-stated", verdict
+    assert verdict["claimed"] == 3 and verdict["stated_blocks"] == 0, verdict
+
+
+def test_a_header_over_uncountable_prose_stays_could_not_classify():
+    """The refusal this file records rather than the reviewer's proposed
+    remedy. A header with zero enumerable blocks is NOT unconditionally a loss:
+    findings written as plain paragraphs are a delivered review, and calling
+    those a loss is a false alarm the developer learns to ignore -- which ends
+    in the same place as calling a loss clean. With no gesture present the
+    honest answer is that this tool cannot decide."""
+    verdict = review_return.classify(
+        "FINDINGS: 2\n\nThe window bound in scripts/foo.py is off by one; pytest "
+        "-k window reproduces it.\n\nThe assertion in tests/test_foo.py would "
+        "hold against an unchanged tree."
+    )
+    assert verdict["state"] == "could-not-classify", verdict
+
+
 def test_crlf_line_endings_do_not_change_any_verdict():
     """Observed rather than reasoned. A final message captured on a Windows leg
     arrives with CRLF, and every anchored pattern here is a `^` under
