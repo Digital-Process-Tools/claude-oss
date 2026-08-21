@@ -425,9 +425,11 @@ points at nothing.
 
 **Ask for the shape that makes the omission arithmetic rather than a judgement.** Require that each
 spawn's final message **opens with `FINDINGS: <n>` and then states exactly that many findings, in
-full** — or opens with `NO FINDINGS` and names what was checked. Then count them yourself.
-`FINDINGS: 2` followed by one stated finding is not a review with one finding, it is a review that
-lost one, and without the header you would be reading tone to decide. A looser detector was weighed
+full** — or opens with `NO FINDINGS` and names what was checked. **Do not count them by hand.** Since
+#392 the comparison is `scripts/review_return.py`'s, and the section below tells you how to run it;
+counting by eye is the step that fails silently, which is the whole of #392. `FINDINGS: 2` followed
+by one stated finding is not a review with one finding, it is a review that lost one, and without
+the header the classifier would have nothing to compare. A looser detector was weighed
 and refused: a numeral beside the word *findings* also fires on `NO FINDINGS` and on an honest *"0
 findings across 3 classes"*, so it would tax exactly the reviewers who did the right thing. The
 header costs the reviewer a number it already knows, and it compares two things the reviewer already
@@ -448,6 +450,23 @@ you validate was weighed as a way to fake it locally and refused: an ignored ins
 file and an ignored instruction to state findings fail identically, so it buys a second request and
 a new artifact and no boundary, while handing a write path to the one spawn this section spends a
 paragraph telling not to write.
+
+**Both of those were weighed on the reviewer's side of the boundary, and #392 is why that was the
+wrong half to search.** Every option above asks the reviewer for something — a header, a schema, a
+file — and every one of them therefore fails the same way when the reviewer does not comply, which
+is the failure actually being observed. The caller's side needs nothing from the reviewer: **you
+already hold the string.** `scripts/review_return.py` classifies it, and the section below tells you
+to run it rather than to read it. That is neither of the two refusals: no capability is granted, no
+artifact is created, and nothing is asked of the spawn. It is also the only option here that is
+**mechanism-independent** — #392 names two candidate causes and says which is true is not
+established, and under the truncation candidate a better brief changes nothing while a classifier
+over the returned bytes still fires.
+
+Be exact about what it buys, because overstating it would be the same defect one layer up: it does
+not recover a lost review and it does not stop one being lost. It removes the step where a *less
+careful* agent reads a confident paragraph and records `checked`. The residual failure is *nobody
+ran the classifier*, which is an absent verdict in a report somebody reads, rather than a wrong
+verdict nothing can see.
 
 **Independence lives in the reviewer; judgment stays with you.** Argue down a finding that is wrong
 and say why — that is an outcome no bounce-and-repush loop produces. Report all three under
@@ -491,16 +510,46 @@ So it gets its own state. `review.classes` and `review.findings` carry a fourth 
 review as a clean one, and `not-checked` claims nobody looked, which understates what is missing.
 The validator refuses it without a reason.
 
-**How you decide you are in it.** Both briefs already require a sentinel — `NO FINDINGS`, and what
-was checked — precisely so silence is distinguishable from cleanliness. So read **the final message
-you actually received** and sort it in four: it **states** findings; or it says `NO FINDINGS` and
-names what it checked; or it **refers to findings it does not state**, which includes a
-`FINDINGS: <n>` header with fewer than `n` stated under it; or it is empty, whitespace-only, or says
-none of those. The last two are both `returned-nothing`, and the third arm is the one to be careful
-with, because it is the one that sounds finished. A confident sentence about work you cannot read is
-not a review that found nothing. Do not infer a verdict from what you believe the spawn did while it
-ran — you did not see that, and a transcript you happen to hold is evidence about your own session,
-not a return value.
+**How you decide you are in it: compute it, do not read tone.** Both briefs already require a
+sentinel — `NO FINDINGS`, and what was checked — precisely so silence is distinguishable from
+cleanliness. Sorting what comes back used to be your judgment, performed once per spawn by an agent
+that has just been told a review happened, and **that judgment is the step that fails silently**.
+Pipe each reviewer's final message, verbatim, through the classifier:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/review_return.py" - <<'MSG'
+<the reviewer's final message, exactly as it reached you>
+MSG
+```
+
+In a clone of this plugin, prefer this tree's own `scripts/review_return.py` for the same reason the
+report validator prefers it — your branch may carry a newer copy than the cache. It prints one
+`VERDICT:` line and exits `0` when the return survived, `3` for `referred-not-stated`, `4` for
+`returned-nothing`, `5` for `could-not-classify` and `6` for `could-not-read`. **Quote that line in
+`review.classes.reason` or `review.findings.reason`.** If neither copy exists or neither runs, that
+is its own outcome and it goes in the report in as many words — falling back to reading the message
+yourself is fine, saying nothing about having done so is not.
+
+Six states, and the shape of the old four-way sort is inside them. It **states** findings
+(`states-findings`); or it says `NO FINDINGS` and names what it checked (`no-findings`); or it
+**refers to findings it does not state** (`referred-not-stated`), which includes a `FINDINGS: <n>`
+header with fewer than `n` **enumerated** under it — a header over uncountable prose is
+`could-not-classify` instead, because findings written as plain paragraphs are a delivered review
+and calling those lost is a false alarm you would learn to ignore; or it is empty or whitespace-only
+(`returned-nothing`).
+The last two are both `returned-nothing` in the report, and the `referred-not-stated` arm is the one
+to be careful with, because it is the one that sounds finished. A confident sentence about work you
+cannot read is not a review that found nothing.
+
+**`could-not-classify` is a verdict addressed to you, not an answer.** It means the message carried
+no sentinel, no header and no back-reference, so the tool cannot tell a review that stated its
+findings in prose from one that gestured — and it refuses to guess rather than calling an
+undecidable message clean. Read that one yourself and say in the report that you did. `could-not-read`
+is narrower still: nothing was looked at.
+
+The classifier decides from the bytes you hand it and nothing else, which is the point. Do not infer
+a verdict from what you believe the spawn did while it ran — you did not see that, and a transcript
+you happen to hold is evidence about your own session, not a return value.
 
 The state's own definition is what makes that arm legitimate rather than a stretch: `returned-nothing`
 is *the review happened and its conclusions are lost*, and an empty message is the instance it was
@@ -563,8 +612,24 @@ change rather than a courtesy.
   **three of three** developer runs in one fleet hit it, claiming ten findings between them of which
   nine are gone. The agents did not know about each other. Every instance was recorded as
   `returned-nothing` rather than `checked`, which is why there is a baseline at all.
-- **The intervention.** The sentence, the `FINDINGS: <n>` header and the fourth sort arm, all above.
-  Together they cost three paragraphs of brief and one comparison.
+- **Intervention 1, and it did not hold.** The sentence, the `FINDINGS: <n>` header and the
+  `referred-not-stated` sort arm, all above. Together they cost three paragraphs of brief and one
+  comparison. #275 and #296 were the first two instances and PR #332 shipped that language; **#392
+  reports the identical shape recurring twice in one day, in two unrelated lanes, after it
+  shipped.** Two prose attempts, two recurrences. That is what makes a third one the wrong move
+  rather than the obvious one.
+- **Whether #392's two lanes are new samples is not established, and the count is not incremented on
+  them.** They were dispatched in the same fleet, in the same repository, on the same day as the
+  "three of three" population above, and nothing distinguishes them from lanes already inside it.
+  Counting them again would inflate the baseline the next intervention is graded against — which is
+  the failure this section exists to avoid, pointed at its own arithmetic.
+- **Intervention 2, and it is deliberately not prose.** `scripts/review_return.py` computes the sort
+  from the returned bytes; the section above tells you to run it and quote its `VERDICT:` line. It
+  asks the reviewer for nothing, so it does not fail the way intervention 1 and its predecessors
+  fail. It also cannot be graded by the metric below, and that is the honest limit of it: it does not
+  change how often a spawn gestures, only whether a gesture is recorded as a clean review. Its own
+  evidence would be different — reports whose `review` survey states `returned-nothing` with a quoted
+  classifier verdict, over reports that state `checked` with no verdict quoted at all.
 - **What would count as evidence.** The same rate, over later sessions, counted the same way: spawns
   that referred without stating, over spawns dispatched. Nothing else. A session with no instances is
   one observation, not a result, and a run in which nobody counted is not a zero.
