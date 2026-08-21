@@ -36,6 +36,7 @@ scan, and neither is the class that cost a release.
 import ast
 import json
 import os
+import warnings
 from pathlib import Path
 
 import pytest
@@ -236,13 +237,102 @@ def test_the_walk_reports_a_subtree_it_could_not_read(tmp_path):
         os.chmod(str(denied), 0o700)
 
 
-def test_no_test_file_pins_the_current_version():
-    version = current_version()
-    offenders = []
-    files, unscannable = _python_files()
+# ------------------------------------------------------------------------ #399
+#
+# A literal equal to the current version and a literal that PINS the current
+# version are opposite defects, and the scan above cannot tell them apart. It
+# reported `test_freshness.py:59,60,169` on the v0.9.0 release commit -- the
+# lexical-versus-numeric fixture (`0.9.0` against `0.10.0`, the minimal
+# one-digit/two-digit pair) and a fixture record. None of the three reads this
+# repository's manifest; none can redden when it is bumped.
+#
+# The bound the scan lacks is provenance: does the value this literal is weighed
+# against come from THIS repository's declared version? That is not decidable
+# statically, so `version_routes` over-approximates it at file granularity -- a
+# file with no route to the repository's own version cannot redden on a bump,
+# whatever its literals happen to spell.
+#
+# Two other bounds were measured first, and the second is recorded because it is
+# the tempting one:
+#
+# * **Syntactic position** -- flag a literal only when it is an operand of a
+#   comparison whose other side is computed, the exact shape of #350's
+#   `assert ours_version == "0.6.0"`. Unreliable:
+#   `assert doctor.active_versions(...) == {"supertool": "0.40.0"}`
+#   (test_freshness.py:173) is that shape precisely and is fixture data, so the
+#   bound would go on reporting collisions as pins.
+# * **A route anchored at REPO_ROOT** -- narrower, and it would have MISSED #350
+#   itself. That test built its plugin root under `tmp_path`; the defect was
+#   that the product read a global instead. So the route is deliberately coarse:
+#   any mention at all, fixture manifests included.
+#
+# What this gives up, said out loud: a test that reaches the repository's own
+# version by a route not named in `VERSION_ROUTES` is now exempt, and would
+# redden on the release commit -- #350's original cost. Both errors cost the
+# same event, and only one of them is armed: when this landed, `0.9.0`, `0.10.0`
+# and `0.11.0` were all already spelled as code literals in `tests/`, so the
+# over-report was due at each of the next three minor releases, while the
+# under-report has never been observed once.
+
+# Spellings by which a test file can reach THIS repository's own declared
+# version. An over-approximation on purpose -- it errs toward flagging, and a
+# file that merely builds a fixture manifest is included because #350's own
+# offender was exactly that shape. It is a list and a list cannot report a route
+# it does not contain, which is the residual named above rather than hidden.
+VERSION_ROUTES = ("plugin.json", ".claude-plugin", "PLUGIN_ROOT", "plugin_version")
+
+
+def version_routes(source):
+    """Line numbers where `source` shows a route to this repo's own version.
+
+    Code only, on the same argument the literal scan uses: prose describing the
+    manifest is not a read of it, and narrative about a past release is
+    permanent and legitimate.
+    """
+    tree = ast.parse(source)
+    skip = _docstring_nodes(tree)
+    hits = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in skip:
+                continue
+            if any(route in node.value for route in VERSION_ROUTES):
+                hits.append(node.lineno)
+        elif isinstance(node, ast.Name):
+            if any(route in node.id for route in VERSION_ROUTES):
+                hits.append(node.lineno)
+        elif isinstance(node, ast.Attribute):
+            if any(route in node.attr for route in VERSION_ROUTES):
+                hits.append(node.lineno)
+    return sorted(hits)
+
+
+def classify_source(source, version):
+    """`(pins, collisions)` -- the literals from `scan_source`, split in two.
+
+    Every hit lands in exactly one bucket and none is dropped, so the split can
+    never quietly lose a literal; `test_the_split_loses_nothing` holds that.
+    """
+    hits = scan_source(source, version)
+    if version_routes(source):
+        return hits, []
+    return [], hits
+
+
+def sweep(version, root=None):
+    """`(pins, collisions, unscannable, scanned)` over every `*.py` under `root`.
+
+    `pins` and `collisions` are `rel:l1,l2` strings, one per file. `unscannable`
+    and `scanned` are the third state: a walk that read nothing, or a tree it
+    could not parse, must never render as a clean sweep.
+    """
+    root = TESTS_DIR if root is None else Path(root)
+    pins = []
+    collisions = []
+    files, unscannable = _python_files(root)
     scanned = 0
     for path in files:
-        rel = path.relative_to(TESTS_DIR).as_posix()
+        rel = path.relative_to(root).as_posix()
         try:
             source = path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -251,13 +341,193 @@ def test_no_test_file_pins_the_current_version():
             )
             continue
         try:
-            hits = scan_source(source, version)
+            file_pins, file_collisions = classify_source(source, version)
         except SyntaxError as exc:
             unscannable.append("{}: does not parse ({})".format(rel, exc))
             continue
         scanned += 1
-        if hits and rel not in ALLOWED:
-            offenders.append("{}:{}".format(rel, ",".join(str(n) for n in hits)))
+        for bucket, lines in ((pins, file_pins), (collisions, file_collisions)):
+            if lines:
+                bucket.append(
+                    "{}:{}".format(rel, ",".join(str(n) for n in lines))
+                )
+    return pins, collisions, unscannable, scanned
+
+
+def test_a_pin_and_a_colliding_literal_are_told_apart_in_one_sweep(tmp_path):
+    """#399's requirement, in one fixture: both shapes present, opposite verdicts.
+
+    A guard that flags both passes a test supplying only the pin, which is how
+    this reached a release commit.
+    """
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_pin.py").write_text(
+        'import doctor\n'
+        'def test_x():\n'
+        '    assert doctor.plugin_version(doctor.PLUGIN_ROOT) == '
+        '"0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+    (root / "test_collision.py").write_text(
+        'import doctor\n'
+        'def test_y():\n'
+        '    assert doctor.compare_versions("0.0.0-scanner-control", '
+        '"0.0.0-later") == "behind"\n',
+        encoding="utf-8",
+    )
+
+    pins, collisions, unscannable, scanned = sweep(CONTROL, root=root)
+
+    assert unscannable == [], unscannable
+    assert scanned == 2, scanned
+    assert pins == ["test_pin.py:3"], pins
+    assert collisions == ["test_collision.py:3"], collisions
+
+
+def test_the_route_decides_and_not_the_syntax(tmp_path):
+    """The sharper control: byte-identical assertions, differing only in whether
+    the file carries a route.
+
+    Without it, the pair above also passes on a scan that discriminates by
+    syntactic position -- which was measured unreliable and is not what this
+    guard does.
+    """
+    body = 'def test_x():\n    assert value == "0.0.0-scanner-control"\n'
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_routed.py").write_text(
+        'MANIFEST = ".claude-plugin/plugin.json"\n' + body, encoding="utf-8"
+    )
+    (root / "test_unrouted.py").write_text(
+        'MANIFEST = "somewhere/else.json"\n' + body, encoding="utf-8"
+    )
+
+    pins, collisions, unscannable, scanned = sweep(CONTROL, root=root)
+
+    assert unscannable == [], unscannable
+    assert scanned == 2, scanned
+    assert pins == ["test_routed.py:3"], pins
+    assert collisions == ["test_unrouted.py:3"], collisions
+
+
+def test_a_route_named_only_in_a_docstring_is_not_a_route(tmp_path):
+    """Narrative about the manifest is not a read of it -- the literal scan
+    already excludes docstrings for that reason, and so must the route."""
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_prose.py").write_text(
+        '"""Describes .claude-plugin/plugin.json and never opens it."""\n'
+        'def test_x():\n'
+        '    assert value == "0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+    # Must-fire half, same fixture: identical prose, plus the path in CODE.
+    (root / "test_code.py").write_text(
+        '"""Describes .claude-plugin/plugin.json and then opens it."""\n'
+        'MANIFEST = ".claude-plugin/plugin.json"\n'
+        'def test_x():\n'
+        '    assert value == "0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+
+    pins, collisions, unscannable, scanned = sweep(CONTROL, root=root)
+
+    assert unscannable == [], unscannable
+    assert scanned == 2, scanned
+    assert pins == ["test_code.py:4"], pins
+    assert collisions == ["test_prose.py:3"], collisions
+
+
+def test_the_split_loses_nothing(tmp_path):
+    """`pins` and `collisions` must partition `scan_source`, not sample it.
+
+    Both buckets are exercised in one run -- a routed file and an unrouted one --
+    so the invariant is not checked against a tree where one bucket is always
+    empty, and `seen` refuses a vacuous pass.
+    """
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_routed.py").write_text(
+        'MANIFEST = ".claude-plugin/plugin.json"\n'
+        'def test_x():\n'
+        '    assert value == "0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+    (root / "test_unrouted.py").write_text(
+        'def test_x():\n'
+        '    assert value == "0.0.0-scanner-control"\n',
+        encoding="utf-8",
+    )
+    seen = 0
+    for path in sorted(root.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        pins, collisions = classify_source(source, CONTROL)
+        assert sorted(pins + collisions) == scan_source(source, CONTROL), path
+        assert not (pins and collisions), path
+        seen += 1
+    assert seen == 2, seen
+
+
+def _next_minor(version):
+    """`0.8.0` -> `0.9.0`, or None when the version is not three integers.
+
+    Spelled by arithmetic rather than as a literal on purpose: a file naming the
+    version this repository is about to reach becomes an offender the day it
+    reaches it, and this file carries a route.
+    """
+    parts = version.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        major, minor, _patch = (int(part) for part in parts)
+    except ValueError:
+        return None
+    return "{}.{}.0".format(major, minor + 1)
+
+
+def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
+    """#399's real cost is that the release commit is the worst moment to learn
+    this. The next minor is knowable now, so it is asked now.
+
+    `scanned` and `unscannable` are this test's own controls: without them a walk
+    that read nothing, or a tree that would not parse, passes as clean.
+
+    It asks about the next MINOR and nothing else, and that gap is deliberate
+    rather than an oversight. Measured when this landed: the next major would
+    report `test_doctor_inprocess.py`, `test_release_publish.py` and
+    `test_release_config.py`, which spell `1.0.0`, `1.1.0` and `1.2.0` in files
+    that carry a route -- so a forward sweep over majors would go red today, on
+    a question nobody has examined and this diff was not briefed to answer.
+    Asserting it here would redden every pull request until somebody edited a
+    fixture to make CI green, which is the reflex this repository refuses to
+    train. What goes untested is therefore a major bump.
+    """
+    version = _next_minor(current_version())
+    if version is None:
+        pytest.skip(
+            "the current version ({!r}) is not three integers, so the next minor "
+            "could not be derived and whether tests/ pins it went "
+            "untested".format(current_version())
+        )
+    pins, collisions, unscannable, scanned = sweep(version)
+    assert unscannable == [], unscannable
+    assert scanned > 1, scanned
+    assert not pins, (
+        "these test files pin {}, the next minor release, so they would redden "
+        "the release commit that bumps to it -- and {} colliding literal(s) were "
+        "seen alongside them, which are not a defect: {}".format(
+            version, len(collisions), ", ".join(pins)
+        )
+    )
+
+
+def test_no_test_file_pins_the_current_version():
+    version = current_version()
+    pins, collisions, unscannable, scanned = sweep(version)
+    offenders = [
+        entry for entry in pins if entry.rsplit(":", 1)[0] not in ALLOWED
+    ]
 
     assert not unscannable, (
         "these test files could not be scanned, so whether they pin the current "
@@ -268,12 +538,29 @@ def test_no_test_file_pins_the_current_version():
     assert scanned > 1, "the sweep read {} test file(s); that is not a result".format(
         scanned
     )
+    # #399's third state, and it has to be audible or it is an absence this tool
+    # produced. A collision is a literal equal to the current version in a file
+    # with no route to it: not a defect, and not something this guard can prove
+    # harmless either. It is announced for the length of the cycle in which the
+    # repository happens to spell it, and stops on its own at the next bump.
+    if collisions:
+        warnings.warn(
+            "{} test file(s) spell the current version ({}) as a code literal "
+            "without any route to this repository's own version, so they cannot "
+            "redden the release commit and are NOT offenders: {}".format(
+                len(collisions), version, ", ".join(collisions)
+            ),
+            UserWarning,
+            stacklevel=1,
+        )
     assert not offenders, (
         "these test files spell this repository's current version ({}) as a code "
-        "literal, so they will redden on the release commit that bumps it -- after "
-        "the fold has emptied changelog.d/. Derive it from "
-        ".claude-plugin/plugin.json, or use a version this repository will not reach "
-        "(9.9.9 is the convention here): {}".format(version, ", ".join(offenders))
+        "literal AND carry a route to that version ({}), so they will redden on "
+        "the release commit that bumps it -- after the fold has emptied "
+        "changelog.d/. Derive it from .claude-plugin/plugin.json, or use a version "
+        "this repository will not reach (9.9.9 is the convention here): {}".format(
+            version, ", ".join(VERSION_ROUTES), ", ".join(offenders)
+        )
     )
 
 
@@ -286,8 +573,11 @@ def test_every_exception_is_still_an_exception():
         assert reason.strip(), "{} is allow-listed with no reason".format(rel)
         path = TESTS_DIR / rel
         assert path.is_file(), "{} is allow-listed and does not exist".format(rel)
-        assert scan_source(path.read_text(encoding="utf-8"), version), (
-            "{} is allow-listed for spelling the current version and no longer does "
+        # A PIN, not merely a hit: after #399 an entry whose literal lost its
+        # route is excused by the classifier and no longer needs excusing here.
+        pins, _collisions = classify_source(path.read_text(encoding="utf-8"), version)
+        assert pins, (
+            "{} is allow-listed for pinning the current version and no longer does "
             "-- remove the entry rather than leaving it standing".format(rel)
         )
         checked += 1
