@@ -249,6 +249,7 @@ scripts/release_delta.py    the release gate's range: delta / first-release / co
 scripts/release_publish.py  the GitHub Release: created / skipped by policy / could-not-create
 scripts/release_version.py  the release number, proposed from the fragments: proposed / no-baseline / could-not-decide
 scripts/oss_state.py        the tick state file, and the intake metric it records
+scripts/review_return.py    what a review spawn handed back: stated / clean / referred-not-stated / returned-nothing / could-not-classify / could-not-read
 scripts/oss_rules.py        the 01-oss rule layer
 scripts/scaffold.py         templates, owned files, repo metadata checks
 scripts/doctor.py           diagnostics; exit 0 always, one VERDICT line

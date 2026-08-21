@@ -243,6 +243,19 @@ It exists to make "does a jit-context rule for the `path-escapes-cwd` class pay 
 injected text" a measurement rather than an assumption — see #313 for why a rule was
 deliberately not added alongside it.
 
+`python3 scripts/review_return.py -` classifies what a review spawn actually handed back. Pipe a
+reviewer's final message in and it prints one `VERDICT:` line: `states-findings`, `no-findings`,
+`referred-not-stated`, `returned-nothing`, `could-not-classify` or `could-not-read`, with exit codes
+`0`, `0`, `3`, `4`, `5` and `6`. The class it exists for is `referred-not-stated` — a message that
+*refers* to findings it does not carry, "findings reported above (4 total)" — which is not empty, so
+nothing looking for an empty return fires on it, and reads like a delivery. The brief-language
+mitigation that preceded it — PR #332, closing #275 and #296 — did not hold, and #392 is that same
+shape recurring twice in one day after it shipped, so this one sits on the caller's side of the
+boundary instead: it asks the reviewer for nothing and works on the bytes that came back, whichever
+of #392's two candidate mechanisms is the real one. `could-not-classify` is the load-bearing state —
+a message with no sentinel, no header and no back-reference is one this tool cannot decide, and
+saying so is the whole point of it.
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial

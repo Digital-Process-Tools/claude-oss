@@ -562,6 +562,15 @@ GUEST_REPO_ROUTING = [
 #     the parent compares two numbers instead of reading tone;
 #   - that the caller's sort gains a fourth arm, since a message that gestures at
 #     findings is `returned-nothing` however confident it sounds;
+#   - and, since #392, that the caller *computes* that sort rather than reading
+#     tone. `"sort it in four"` was the anchor for the hand-read version and is
+#     retired here rather than deleted quietly: #392 is the third instance of this
+#     class and the second after PR #332's brief language shipped, so the duty the
+#     brief now states is to run `scripts/review_return.py` and quote its verdict.
+#     Retiring an anchor because the document changed is legitimate; retiring one
+#     because it went red is how a guard is edited into agreement with a regression,
+#     so the replacement anchors are stricter than the one they replace -- they name
+#     a file that must exist and a decision, not a turn of phrase.
 #   - that the residue -- a count, a subject, a filename -- is recorded and is not
 #     the finding;
 #   - that the fix is named as a request rather than sold as a boundary, which is
@@ -573,7 +582,8 @@ REFERRED_BUT_UNSTATED = [
     "opens with `findings: <n>`",
     "and then states exactly that many findings",
     "refers to findings it does not state",
-    "sort it in four",
+    "compute it, do not read tone",
+    "scripts/review_return.py",
     "record the residue, and do not mistake it for the finding",
     "this fix is a request to the spawn, not a boundary on it",
     "the brief sentence is an experiment, not a fix",
