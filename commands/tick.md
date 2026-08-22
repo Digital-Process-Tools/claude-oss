@@ -29,7 +29,10 @@ Skill(manager)
    tick** — settle it, then start over at this step. `no entries yet` means a first tick and
    nothing else.
 
-   **If the last entry carries a pending wait, test it before anything else in this tick (#337).**
+   **If a wait is still pending, test it before anything else in this tick (#337).** A wait's
+   lifetime is not one entry -- `--pending-wait` finds the most recently recorded wait even behind
+   entries that landed after it (a cohort freeze, a lane record, a plain intake), so this is not
+   only about the tick's very last entry (#436).
    *Blocked on audit completion* is unfalsifiable prose and once outlived the audit it named by
    ninety minutes with nothing re-reading it — three hours ten minutes with a green default branch,
    an empty pull request board and four unstarted issues. Check for one directly:

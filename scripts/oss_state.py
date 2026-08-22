@@ -1284,6 +1284,30 @@ def check_wait(record, state, cleared_by=None, why=None):
     return result
 
 
+def _last_wait(path):
+    """The most recent entry that carries a wait record, scanning back past any
+    entry that recorded something else entirely -- a cohort freeze (#407), a lane
+    record, a plain intake -- rather than only looking at the last entry (#436).
+
+    One-entry lifetime read a wait recorded in one tick as unreachable the moment any
+    other entry landed after it, and printed exactly what it prints when no wait was
+    ever recorded: the two absences were byte-identical. Returns
+    ``(entry, record)`` for the most recent entry whose ``detail`` carries a ``wait``
+    key -- even a malformed one, since the freshest statement about the wait is what a
+    reader must see rather than an older, valid one behind it -- or ``(None, None)``
+    if no entry in the whole history ever recorded one.
+    """
+    for entry in reversed(read(path)):
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        if "wait" in detail:
+            return entry, detail["wait"]
+    return None, None
+
+
 def wait_line(record):
     """One line a tick report can print. The state decides the sentence, not the caller."""
     return _receipt_line(_wait_sentence(record))
@@ -1679,9 +1703,7 @@ def _main(argv=None):
             )
             return 1
         if args.pending_wait:
-            entry = last(args.path)
-            detail = entry.get("detail") if isinstance(entry, dict) else None
-            record = detail.get("wait") if isinstance(detail, dict) else None
+            _, record = _last_wait(args.path)
             if record is None:
                 print("no pending wait")
                 return 0
@@ -1824,18 +1846,27 @@ def _main(argv=None):
                 )
             pending_wait_record = wait(args.wait_dispatch, args.wait_observable, args.at)
         elif args.check_wait is not None:
-            previous = last(args.path)
-            previous_wait = (
-                previous.get("detail", {}).get("wait")
-                if isinstance(previous, dict) and isinstance(previous.get("detail"), dict)
-                else None
-            )
-            if not isinstance(previous_wait, dict) or previous_wait.get("state") != WAIT_HOLDS:
+            _, previous_wait = _last_wait(args.path)
+            if previous_wait is None:
                 return refuse(
-                    "--check-wait was given but the last entry carries no pending "
-                    "wait (state {}); there is nothing to re-derive".format(
-                        WAIT_HOLDS
-                    )
+                    "--check-wait was given but no entry has ever recorded a wait; "
+                    "there is nothing to re-derive"
+                )
+            if not isinstance(previous_wait, dict) or previous_wait.get("state") != WAIT_HOLDS:
+                # The `{}` slot names the state actually found on disk, not the
+                # required `WAIT_HOLDS` constant -- found by audit alongside #436: the
+                # old message filled it with the literal `WAIT_HOLDS`, in a position
+                # every reader takes as the state that was found, so a wait that had
+                # already been checked `cleared` was reported as "state holds".
+                found_state = (
+                    previous_wait.get("state")
+                    if isinstance(previous_wait, dict)
+                    else previous_wait
+                )
+                return refuse(
+                    "--check-wait was given but the most recently recorded wait "
+                    "carries state {!r}, not {}; there is nothing to "
+                    "re-derive".format(found_state, WAIT_HOLDS)
                 )
             pending_wait_record = check_wait(
                 previous_wait,
