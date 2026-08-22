@@ -201,6 +201,24 @@ def _tail_lines(path, max_bytes):
         return handle.read().splitlines(), truncated
 
 
+def _scan_transcript(transcript_path, max_bytes):
+    """The transcript tail, read once, for callers that each need their own answer
+    out of it (#504). ``next_tick`` and ``last_user_message`` both read the same
+    bytes; a render happens on every message, so a second full tail read is a
+    doubled, unmeasured cost paid every time -- one scan is shared instead.
+
+    Returns ``(lines, truncated, error)``; on error the first two are ``None`` and
+    ``error`` is the detail string a caller's ``unknown`` state should carry.
+    """
+    if not transcript_path:
+        return None, None, "no transcript path in the payload"
+    try:
+        lines, truncated = _tail_lines(transcript_path, max_bytes)
+    except OSError as exc:
+        return None, None, "transcript unreadable: {}".format(exc)
+    return lines, truncated, None
+
+
 def next_tick(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
     """When the next tick fires, from the last ScheduleWakeup in the transcript.
 
@@ -209,14 +227,14 @@ def next_tick(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
     ``none`` (the whole file was read and holds no wakeup), and ``unknown`` -- no
     transcript, an unreadable one, or a tail scan that did not reach the top of the file.
     """
-    now = time.time() if now is None else now
-    if not transcript_path:
-        return {"state": "unknown", "detail": "no transcript path in the payload"}
-    try:
-        lines, truncated = _tail_lines(transcript_path, max_bytes)
-    except OSError as exc:
-        return {"state": "unknown", "detail": "transcript unreadable: {}".format(exc)}
+    lines, truncated, error = _scan_transcript(transcript_path, max_bytes)
+    if error is not None:
+        return {"state": "unknown", "detail": error}
+    return _next_tick_from_lines(lines, truncated, now=now)
 
+
+def _next_tick_from_lines(lines, truncated, now=None):
+    now = time.time() if now is None else now
     found = None
     for raw in lines:
         if b"ScheduleWakeup" not in raw:
@@ -233,7 +251,7 @@ def next_tick(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
         if truncated:
             return {
                 "state": "unknown",
-                "detail": "only the last {} bytes were scanned".format(max_bytes),
+                "detail": "the tail scan did not reach the top of the transcript",
             }
         return {"state": "none", "detail": "no wakeup in this transcript"}
 
@@ -247,6 +265,69 @@ def next_tick(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
     seconds = stamp + delay - now
     state = "armed" if seconds > 0 else "due"
     return {"state": state, "seconds": seconds, "reason": payload.get("reason")}
+
+
+def last_user_message(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
+    """When the user last spoke, from the transcript's own record timestamps (#504).
+
+    Same three-state shape as ``next_tick``: ``measured`` (age in seconds --
+    genuinely non-zero at render time, because a render only happens after the
+    assistant has answered the message being timed), ``none`` (the whole file was
+    read and holds no user-role record), and ``unknown`` -- no transcript, an
+    unreadable one, or a tail scan that did not reach the top of the file without
+    finding one. A user message above the scan window must never render as "no
+    user message at all" -- the same failure this repository's own docstring
+    already names for ``next_tick``'s wakeup scan.
+
+    This is deliberately NOT an age of "the last message" in general: that value
+    is computed at render time, which is the instant it is smallest, and would
+    freeze at that reading -- the defect #504 exists to avoid. The user's own
+    last turn is the one quantity that is genuinely non-zero by the time
+    anything renders.
+    """
+    lines, truncated, error = _scan_transcript(transcript_path, max_bytes)
+    if error is not None:
+        return {"state": "unknown", "detail": error}
+    return _last_user_message_from_lines(lines, truncated, now=now)
+
+
+def _last_user_message_from_lines(lines, truncated, now=None):
+    now = time.time() if now is None else now
+    found = None
+    for raw in lines:
+        if b'"user"' not in raw:
+            continue
+        try:
+            record = json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if record.get("type") != "user":
+            continue
+        stamp = parse_timestamp(record.get("timestamp"))
+        if stamp is not None:
+            found = stamp
+
+    if found is None:
+        if truncated:
+            return {
+                "state": "unknown",
+                "detail": "the tail scan did not reach the top of the transcript",
+            }
+        return {"state": "none", "detail": "no user message in this transcript"}
+    return {"state": "measured", "age": max(0.0, now - found)}
+
+
+def _render_stamp(now):
+    """The wall-clock reading for the "stamp of the last render" field (#504).
+
+    UTC, not the machine's local zone: the transcript's own timestamps this
+    module already parses (``parse_timestamp``) carry none either, and a stamp
+    that silently meant two different clocks depending on where it ran would be
+    worse than one that is merely frozen.
+    """
+    import datetime
+
+    return datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%H:%M")
 
 
 # --------------------------------------------------------------------------- render
@@ -285,6 +366,36 @@ def _tick_field(tick):
     if state == "none":
         return "tick -"
     return "tick ?"
+
+
+def _last_field(stamp):
+    """A wall-clock reading of when this line was last rendered, or `?` (#504).
+
+    Freezes between renders like everything else on this line, but a frozen
+    clock time stays readable -- the reader compares it against their own
+    clock and recovers the staleness, which a frozen age cannot do.
+
+    Folded through `_one_line`: `stamp` normally comes from `_render_stamp`, which
+    only ever emits digits and a colon, but `render()`'s own property test (#493)
+    treats every string-valued fact as untrusted by construction, so this field
+    is folded the same way `repo_name` and `model` are rather than trusted for
+    being internally produced.
+    """
+    return "last " + (_one_line(str(stamp)) if stamp else "?")
+
+
+def _user_field(user):
+    """How long since the user's own last message, or the two ways that is
+    unknown (#504). Genuinely non-zero at render time: a render only happens
+    after the assistant has answered the turn being timed, so this is the one
+    age on this line that cannot be caught reading zero.
+    """
+    state = (user or {}).get("state")
+    if state == "measured":
+        return "you " + _duration(user.get("age") or 0)
+    if state == "none":
+        return "you -"
+    return "you ?"
 
 
 def _board_field(board, symbols):
@@ -395,9 +506,17 @@ def render(facts, ascii_only=False, color=False):
         if color:
             shade = RED if percent >= 80 else YELLOW if percent >= 50 else GREEN
             context = shade + context + RESET
-    blocks = ["{}{}{}".format(facts.get("model") or "?", symbols["dot"], context)]
+    model = facts.get("model")
+    model = _one_line(str(model)) if model else "?"
+    blocks = ["{}{}{}".format(model, symbols["dot"], context)]
 
-    where = [facts.get("repo_name") or "?", facts.get("branch") or "?"]
+    repo_name = facts.get("repo_name")
+    repo_name = _one_line(str(repo_name)) if repo_name else "?"
+    # `branch` is not folded here: git itself refuses a ref name carrying a
+    # newline or an ESC (`git check-ref-format --branch` exits non-zero for
+    # both), so the value this function ever receives cannot carry them --
+    # confirmed in tests/test_statusline_479.py rather than assumed (#493).
+    where = [repo_name, facts.get("branch") or "?"]
     if facts.get("version"):
         # This repo's own tracked manifest -- written by a contributor, not fetched
         # over the network, but still text this function did not produce itself.
@@ -406,6 +525,8 @@ def render(facts, ascii_only=False, color=False):
 
     blocks.append(_board_field(facts.get("board") or {}, symbols))
     blocks.append(_tick_field(facts.get("tick")))
+    blocks.append(_last_field(facts.get("last")))
+    blocks.append(_user_field(facts.get("user")))
 
     plugins = [
         _plugin_field(name, status, symbols, color)
@@ -695,6 +816,18 @@ def gather(payload, root, now=None):
         _fork_refresh(root, config.get("repo"))
     latest = (cache or {}).get("latest") or {}
     loop_name = os.environ.get("OSS_STATUSLINE_PLUGIN", "oss")
+
+    # One tail read shared by both transcript-derived facts (#504) -- a render
+    # happens on every message, so a second full scan would be a doubled,
+    # unmeasured cost paid every time rather than an occasional one.
+    lines, truncated, error = _scan_transcript(payload.get("transcript_path"), DEFAULT_TAIL_BYTES)
+    if error is not None:
+        tick = {"state": "unknown", "detail": error}
+        user = {"state": "unknown", "detail": error}
+    else:
+        tick = _next_tick_from_lines(lines, truncated, now=now)
+        user = _last_user_message_from_lines(lines, truncated, now=now)
+
     return {
         "model": ((payload.get("model") or {}).get("display_name") or "").split(" ")[0] or None,
         "percent": (payload.get("context_window") or {}).get("used_percentage"),
@@ -702,7 +835,9 @@ def gather(payload, root, now=None):
         "branch": branch_name(root),
         "version": repo_version(root),
         "board": board,
-        "tick": next_tick(payload.get("transcript_path"), now=now),
+        "tick": tick,
+        "last": _render_stamp(now),
+        "user": user,
         "plugins": plugin_facts(loop_name, installed_plugins(), latest),
     }
 
