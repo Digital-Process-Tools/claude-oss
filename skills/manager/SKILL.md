@@ -527,6 +527,21 @@ Pushing and opening is yours, and it is one read plus one call:
    the squash — when the issue quietly stays open and the board reads clean. **Surfaced, not caught:
    the pull request is opened and the op exits 0**, printing *No closing keyword in the body, so
    merging this will close nothing.* Reading that line is yours. See below.
+4. **If the fragment gets renamed to this pull request's own number, the rename is not
+   metadata-only, and it is not a step to remember either.** A lane commits a fragment keyed to the
+   issue it was briefed on; a maintainer who then keys it to the pull request number instead runs
+   `git mv changelog.d/N.section.md changelog.d/M.section.md` — and the fold consumes the
+   *filename*, so the entry body still has to name the number the filename now carries, or the
+   `fragment` leg refuses a fragment that passed a moment earlier (measured on PR #338: the body
+   named `#338`, the file became `425.…`, and CI read the mismatch as a fragment naming nothing).
+   The rename and the rewrite are one coupled fact, not two — a fragment keyed to the pull request's
+   own number does not exist until the pull request is open, so nothing about it is correct until
+   both halves have moved together. `scripts/rename_changelog_fragment.py <old path> <new number>`
+   performs both in one call: it moves the file with `git mv`, rewrites the fragment's own
+   self-reference to the new number, and **refuses** rather than leaving behind a fragment
+   `assemble_changelog.py --check` would still reject — including when the old body never named
+   itself at all, where there is nothing to move and the fix needs a human's `(#N)`. Renaming to the
+   number a fragment already carries is a no-op, not a rewrite. Amend and re-push after it runs.
 
 **Four fields arrive filled in, and they are not yours to retype.** The payload requires `title`,
 `body`, `head` and `base`; `schemas/agent-report.schema.json` also defines `draft` and `labels` as

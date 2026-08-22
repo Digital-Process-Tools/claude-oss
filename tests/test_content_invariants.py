@@ -262,6 +262,24 @@ def test_the_merge_instruction_carries_its_confirmation_gate():
     assert named, "no document names gh-pr-merge -- this check would vacuously pass"
 
 
+def test_manager_names_the_fragment_rename_tool():
+    """#426: a maintainer renaming a fragment when opening a pull request
+    (`git mv changelog.d/N.section.md changelog.d/M.section.md`) leaves the
+    body naming the old issue -- the same `fragment` leg refusal a lane hits
+    (#335, #338) -- unless the rename and the body rewrite move together. The
+    manager skill has to name the tool that does both, not just describe the
+    failure, or a maintainer reading it still has no runnable step.
+    """
+    text = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+    assert "rename_changelog_fragment.py" in text, (
+        "skills/manager/SKILL.md never names scripts/rename_changelog_fragment.py -- "
+        "the fragment-rename procedure has no locally-runnable command"
+    )
+    assert "git mv" in text, (
+        "skills/manager/SKILL.md must describe the rename it is naming a tool for"
+    )
+
+
 def test_developer_notes_convention_is_pinned():
     """agents/developer.md#15: the long half of a report goes to a note file the maintainer
     queries, not into its context whole. Three things must hold together or the convention
