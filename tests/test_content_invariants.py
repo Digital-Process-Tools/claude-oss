@@ -1560,10 +1560,12 @@ def test_the_dispatch_cross_reference_fires_on_a_name_with_no_file():
 
 # ------------------------------------------- the install step names the reload (#140)
 #
-# An installed-but-unreloaded session resolves all seven skills and none of the four
+# An installed-but-unreloaded session resolves this plugin's commands and none of its
 # agents, which reads as a working plugin with a broken agents/ directory rather than
 # as a missing step. That silence produced two wrong bug reports against this repo.
-# The remedy is one command and it was documented nowhere.
+# The remedy is one command and it was documented nowhere. (#451 dropped the "seven
+# skills / four agents" count this comment used to carry -- the numbers were stale and
+# the sentence they described no longer states any.)
 
 # Each anchor is a phrase the pre-#140 README did not contain. A bare "agent" was the
 # first attempt and it was inert: README.md already said "agent" twice, so that half of

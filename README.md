@@ -30,10 +30,10 @@ command — lives in a config file the plugin writes by probing the repo, not in
 session start, and installing mid-session leaves the agent registry as it was.
 
 That step is not cosmetic, because **its failure does not look like a missing step.** In a session
-that installed the plugin and never reloaded, all seven `oss:` skills resolve and none of the four
-`oss:` agents does — which reads as a plugin that is installed and working with a broken `agents/`
-directory, and has already produced two wrong bug reports against this repo (#140). If a spawn comes
-back `Agent type 'oss:...' not found`, reload before concluding anything about the files.
+that installed the plugin and never reloaded, its commands resolve and its agents do not — which
+reads as a plugin that is installed and working with a broken `agents/` directory, and has already
+produced two wrong bug reports against this repo (#140). If a spawn comes back `Agent type
+'oss:...' not found`, reload before concluding anything about the files.
 
 Installing pulls in `supertool`, `remember` and `claude-jit-context` automatically — they are
 declared dependencies and resolve from the same marketplace.
@@ -46,12 +46,12 @@ Install the launcher once, from this plugin's own checkout:
 ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
 ```
 
-**That line is POSIX-only, and there is no Windows equivalent to substitute for it**
-(#330). `bin/oss-workspace` is a `/bin/sh` script, so on Windows it runs under Git Bash
-rather than cmd or PowerShell, and the `~/.local/bin` convention it links into is on no
-Windows `PATH`. On Windows, run it from this checkout instead -- `sh bin/oss-workspace`
--- and `/oss:doctor` prints that as its remedy there rather than a command that would do
-nothing.
+That line is POSIX-only, and there is no Windows equivalent to substitute for it (#330):
+`bin/oss-workspace` is a `/bin/sh` script that runs under Git Bash rather than cmd or
+PowerShell, and `~/.local/bin` is on no Windows `PATH`. Run `sh bin/oss-workspace` from this
+checkout instead -- `/oss:doctor` prints that as its remedy there. The symlink is resolved once
+against this checkout's own path, so it goes stale across an update; `/oss:doctor` now reports
+that too, under `oss-workspace launcher` (#333).
 
 Then, in any repo you maintain:
 
@@ -60,104 +60,27 @@ cd the-repo
 oss-workspace
 ```
 
-Without that symlink the launcher is only on the path it ships at, so run it as
-`bin/oss-workspace` from this checkout.
+Without the symlink, run it as `bin/oss-workspace` from this checkout. The working directory is
+the selection: it opens *that* repo, never this plugin's own checkout.
 
-That link is resolved once, against a directory a later release will not write to --
-`$PWD` there is this plugin's own installed checkout, and a plugin manager's cache
-layout is version-scoped. Nothing re-points the symlink on an update and nothing
-checked it until now: a stale target that still exists behaves exactly like a current
-one, silently. `/oss:doctor` now reports it, in `oss-workspace launcher: ...`, in six
-states -- matched; a skew naming both versions; not on PATH at all; **part of PATH could
-not be read, so whether it is reachable is unknown rather than absent** (#333, and that
-one must never render as "not on PATH"); and one each for this install's own copy or the
-resolved target being unreadable. Its remedy line names the *running* install's own path
-rather than `$PWD`, so pasting it works regardless of where you are standing when you
-paste it -- and on Windows it is the sentence above rather than a `ln -sf` that would do
-nothing. That remedy is paste-ready even when the install path itself is not ASCII (#344):
-it is composed by the diagnostic from its own resolved location, not text from the repo
-being diagnosed, so it is exempt from the ASCII fold every OTHER finding still goes
-through -- folding it would have turned a non-ASCII path into `?`, a shell glob that
-either fails to match or links a file you never named.
+That opens a session over the repo you are standing in, with the maintainer loop already running —
+or with `/oss:setup` first if the repo has no `.oss.json` yet, since a tick against guessed values
+merges into the wrong place confidently.
 
-That opens a session over the repo you are standing in, with the maintainer loop already running — or
-with `/oss:setup` if the repo has no `.oss.json` yet, because a tick against guessed values merges
-into the wrong place confidently.
+Setup alone is not the whole onboarding: it writes nothing tracked, which leaves the repo
+configured and still without a `CLAUDE.md`, a security policy, issue templates or a changelog
+gate. **`/oss:scaffold` is the second step**, because it writes tracked files that want a branch,
+a diff and a review -- and setup ends by relaying scaffold's own read-only plan, so the gap is a
+measured list rather than something you have to remember to check.
 
-Setup is not the whole onboarding. It deliberately writes nothing tracked, which is what makes it
-safe to run anywhere and also what leaves the repo half-furnished — configured, and still without a
-CLAUDE.md, a security policy, issue templates or a changelog gate. **`/oss:scaffold` is the second
-step**, and it is separate because it writes tracked files: they want a branch, a diff and a review.
-A repo that goes straight from setup to ticking never fails; it just runs the loop against furniture
-nobody added.
-
-So setup does not merely recommend the second step: it ends by running scaffold's own read-only plan
-and relaying it. Nothing is written — the gap arrives as a measured per-file list (`create`,
-`present`, `replace`, `decline`) rather than as a sentence suggesting you go and look, and a plan
-that could not run is reported as unmeasured rather than as nothing to do. Writing still happens only
-under `/oss:scaffold`.
-
-It does **not** set up a board. The session is started able to receive watch-channel events, but
-`radar` reads its tiers from that repo's own `.supertool.json`, and a fresh clone has none. The
-launcher says which of the two is missing rather than reporting the session as armed — a channel
-nobody publishes to looks exactly like a quiet board.
-
-The channel's **name** gets the same treatment, because a name that does not arrive intact puts the
-session on the socket shared with every repo that declares none, which renders as a quiet board too.
-One rule decides what a name may be, and both roads reach it: a `watch_name` declared in the repo's
-`.supertool.json` and a name derived from `repo` in `.oss.json` are checked by the same function, and
-a value that cannot be used as a path component is refused out loud rather than exported. A refusal
-names the channel the session **actually** landed on rather than assuming the shared one: an already
-exported `SUPERTOOL_WATCH_NAME` wins over both roads, so a refusal there costs nothing and the session
-stays on that channel, and the receipt says so. There is a third road out of the declared route too — a
-name a repo declares and this console's encoding cannot carry. The name is read back through the
-launcher's own stdout, so an unencodable one cannot arrive at all; it is reported as declared-and-
-unrenderable rather than printed mangled or silently derived over, because a declaration that exists
-is not a declaration that is absent. What that rule deliberately does not decide is whether supertool
-will *accept* the name — it has its own
-pattern, with a length cap. Rather than carry a copy of it here to go stale, the launcher reads that
-rule out of the installed supertool and reports what it finds, in three states: accepted says
-nothing, a name the consumer will discard is named with its length and the rule that refused it, and
-**not being able to ask** — no rule where the launcher looks, a module that will not load — is said
-just as loudly, because silence there is indistinguishable from acceptance.
-
-Before the session starts working, the launcher runs `/oss:doctor`'s diagnostic over the repo it just
-resolved, so a broken setup surfaces at second zero rather than after a tick has been spent against
-it. The verdict is parsed, never the exit status: the diagnostic **exits 0 always**, by contract, so
-`doctor.sh || warn` reads a pass on `not usable -- 4 failure(s)` exactly as loudly as on `ok`. A
-healthy repo costs one line; anything else relays the diagnostic's whole output, because once the
-answer is not `ok` a launcher has no standing to decide which line you needed. It **never refuses to
-open** — a maintainer whose config is broken is exactly the person who needs a session in which to
-fix it.
-
-Six answers, and the last three are why this is not a one-liner: `ok`, `usable with gaps`, `not
-usable`, `could not run`, a verdict word this launcher does not recognise, and **no verdict line at
-all**. That last one splits again by whether the diagnostic printed nothing or could not be started,
-which the launcher tells apart and says. A check that never fired and a check that found nothing
-print the same thing otherwise.
-
-It costs what the diagnostic costs. Measured on macOS against a repo with `supertool`, `gh` and node
-on PATH: the launcher opens in **0.45 s** without it and **2.5 s** with it, most of that the
-dependency-version check reaching the network — which is bounded at 25 s per declared dependency and
-20 s per probed binary, so an offline or hung network is slower than that, not faster. Set
-`OSS_WORKSPACE_SKIP_DOCTOR=1` (any non-empty value) to skip it — the skip is announced, with the
-state of the repo reported as unknown rather than fine. The run is also announced *before* it
-starts, carrying that variable's name, because an escape hatch you can only read about after the
-wait is one nobody waiting has.
-
-Install the launcher once, from this plugin's own checkout -- see "After cloning a repo you
-maintain" above for what a stale symlink costs and how `/oss:doctor` now catches it:
-
-```
-ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
-```
-
-POSIX only, for the reason given above: on Windows `bin/oss-workspace` is a `/bin/sh`
-script that runs under Git Bash, nothing puts `~/.local/bin` on a Windows `PATH`, and
-there is no one-line install to substitute -- run `sh bin/oss-workspace` from this
-checkout (#330).
-
-The working directory is the selection: it opens *that* repo, never this plugin's checkout.
+Before the session starts working, the launcher runs `/oss:doctor`'s diagnostic over the repo it
+just resolved and relays anything short of a clean pass -- see the `/oss:doctor` row below for
+what it covers. It never refuses to open a session over a broken repo; a maintainer whose config
+is broken is exactly the person who needs a session in which to fix it. Set
+`OSS_WORKSPACE_SKIP_DOCTOR=1` (any non-empty value) to skip it -- announced either way, with the
+repo then reported as unknown rather than fine. Measured on macOS with `supertool`, `gh` and node
+on PATH: opening costs **0.45 s** without the diagnostic and **2.5 s** with it, most of that a
+per-dependency network check bounded at 25 s.
 
 ## Commands
 
@@ -169,7 +92,7 @@ The working directory is the selection: it opens *that* repo, never this plugin'
 | `/oss:triage` | One triage sweep — priority, lane, milestone, the clusters one change would fix, the cohort burn-down with the limit it was counted under, and what the board is lying about. |
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
 | `/oss:release` | Gates, version sites, tag, and — where `.oss.json` says so — the GitHub Release, notes and all. |
-| `/oss:doctor` | Config, dependencies, clone, worktree root, state file — including whether `/oss:tick` can actually read it, which is not the same question as whether it is there — which watch channel this repo resolves to, which decides whether its board is its own fleet or somebody else's, and whether anything publishes to that board at all: a registered radar tier is one half, a route to the op that reads it is the other, and a channel with neither renders exactly like a healthy one. Whether the merge call can skip supertool's own publish-confirm gate is reported too, in three states -- `confirmable`, `needs-force` (the shipped default, read as neutral information rather than a warning), and `could not tell` when `.supertool.json` is unreadable or malformed -- naming every op the same opt-out reaches today and scoped to supertool's own gate, since the harness's own permission layer sits above it and can still refuse the call regardless. Which *process* holds the socket is not established, and the output says so. Also **which copy of this plugin answered the invocation** — compared by content, because two copies a whole release cycle apart declare the same manifest version, and reported for one command rather than for the session. `schemas/` is part of that comparison since #415, and when the two copies' `agent-report` schemas differ the line names the contract version each one **declares** — 4 against 5 says an agent report written against one is `UNVALIDATABLE` by the other, at exit 2, which is the fact a reader acts on; equal numbers beside differing bytes say so instead of implying a refusal that will not happen; and a copy shipping no schema, or one that will not parse, is *not established* rather than agreement. What is **not** compared is written down beside what is, with a reason each, because a list cannot report a directory it does not contain. And **`./supertool`**, which is not the same question as `supertool` on PATH: it is gitignored on purpose, every brief tells an agent to call it, and a link pointing somewhere other than the plugin's copy is a different failure from no link at all. Where a defect in this plugin itself gets filed is reported too — derived from its own manifest, never inferred, and *could not determine* is said rather than rendered as *no tracker*. Three lines describe the machine rather than the repo: **the interpreter's architecture, and whether it is running under binary translation** — an x86_64 Python under Rosetta on Apple Silicon costs roughly 3x on interpreter startup and 3.4x on the CPU cost of a subprocess spawn, and this loop is subprocess-shaped, so it is a WARN; `platform.machine()` cannot answer it, because an emulated process is shown the emulated architecture, and on a platform with no probe the line says it was **not probed** rather than *native*, at `OK` with the gap named on the line, while a probe that exists and fails is a `WARN` — two states, because collapsing them made `VERDICT: ok` unreachable on Linux and Windows forever and a verdict that never discriminates cannot carry a real warning — and **the core count `pytest -n auto` would actually ask this machine for**, split into performance and efficiency cores where the platform exposes it, naming `PYTEST_XDIST_AUTO_NUM_WORKERS` as the cap that is read before any core is counted, as two lines. Exits 0 always. |
+| `/oss:doctor` | Config, dependencies, clone, worktree root, state file, which watch channel and radar board this repo resolves to, and whether the merge call can skip supertool's publish-confirm gate. Also reports which copy of this plugin answered the invocation (compared by content and by declared schema version, not by manifest version alone), where a defect in this plugin itself would get filed, whether `./supertool` points at this plugin's own checkout, and three lines about the machine itself — interpreter architecture, CPU topology, worker sizing. Exits 0 always; see `commands/doctor.md` for what each line means. |
 
 ## Status
 
@@ -236,49 +159,15 @@ so and exits `4`, rather than collecting one `command not found` per file into t
 finding uses.
 
 `python3 scripts/transcript_refusals.py` counts refused tool calls across this machine's own agent
-transcripts — by class (`path-escapes-cwd`, the raw-command guard, the no-cut block,
-`unavailable-here`, a jit-context block, or a residual `ERROR:`), by model (read only from each
-turn's own `message.model`, never inferred), and the batching lever #313's own last comment
-measured: runs of *consecutive* single-op read calls and the turns one batched call would have
-collapsed. Nothing about which repository or which user is hardcoded — the transcripts root is
-derived from `Path.home()` and the invoking `cwd`, or passed explicitly with `--root`. Its own
-third state is the point: a directory with no transcripts (`no-transcripts-found`) must not read
-like a directory full of transcripts that refused nothing (`measured`, `refusal_totals: {}`).
-The same rule governs `--agent`: `transcripts_parsed` counts what the parser read, before the
-filter, so `transcripts_found - transcripts_parsed` is always `len(unreadable_files)` and a file
-the filter excluded is never reported as one that failed to parse (#374). What the filter matched
-is its own number, `transcripts_matched_agent_filter` — `null` when no filter was passed, `0`
-when one matched nothing, and present only in the `measured` state, since `no-transcripts-found`
-has nothing to count either way.
-It exists to make "does a jit-context rule for the `path-escapes-cwd` class pay for its own
-injected text" a measurement rather than an assumption — see #313 for why a rule was
-deliberately not added alongside it.
+transcripts, by refusal class, by model and by the batching lever #313 measured. Its own third state
+is the point: a directory with no transcripts must not read like one full of transcripts that
+refused nothing. The script's own docstring carries the full field list.
 
-`python3 scripts/review_return.py -` classifies what a review spawn actually handed back. Pipe a
-reviewer's final message in and it prints one `VERDICT:` line: `states-findings`, `no-findings`,
-`referred-not-stated`, `returned-nothing`, `could-not-classify` or `could-not-read`, with exit codes
-`0`, `0`, `3`, `4`, `5` and `6`. The class it exists for is `referred-not-stated` — a message that
-*refers* to findings it does not carry, "findings reported above (4 total)" — which is not empty, so
-nothing looking for an empty return fires on it, and reads like a delivery. The brief-language
-mitigation that preceded it — PR #332, closing #275 and #296 — did not hold, and #392 is that same
-shape recurring twice in one day after it shipped, so this one sits on the caller's side of the
-boundary instead: it asks the reviewer for nothing and works on the bytes that came back, whichever
-of #392's two candidate mechanisms is the real one. `could-not-classify` is the load-bearing state —
-a message with no sentinel, no header and no back-reference is one this tool cannot decide, and
-saying so is the whole point of it.
-
-The message reaches it **framed** — `--framed`, every line indented by four spaces and closed by
-`END OF MESSAGE` at column zero. A reviewer's final message is the least trusted string in the
-system, and the transport that carried it used to place it at column zero of a stream bash parses,
-closed by a fixed one-word terminator: a message containing that word ended its own transport, and
-the rest of it ran as commands. That needs no attacker — the first observed instance was a reviewer
-quoting the documented block, terminator included. Indenting makes such a line unconstructible,
-which is why the fix is not a longer terminator; the missing `END OF MESSAGE` is the second half,
-and it turns a truncated message into `could-not-read` rather than a confident verdict over a
-prefix (#404). Both stdin failures now answer in the documented six as well: a closed or unopenable
-standard input is `could-not-read` at exit `6`, where it used to raise and exit `1` with no
-`VERDICT:` line at all (#405). An *open* stdin carrying no bytes stays `returned-nothing` — read
-and found nothing is not the same as could not read.
+`python3 scripts/review_return.py -` classifies what a review spawn actually handed back, in six
+states from `states-findings` to `could-not-classify` -- built for `referred-not-stated`, a message
+that gestures at findings without stating them, which two rounds of brief language (#275, #296,
+#392) failed to prevent. `agents/developer.md` is where it is actually driven from; the script's own
+docstring has the full mechanism, including why input is framed rather than read raw (#404).
 
 ## License
 
