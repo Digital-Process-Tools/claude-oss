@@ -301,10 +301,19 @@ def test_rendering_an_unknown_template_is_an_error_not_an_empty_string():
 
 
 def test_every_template_renders_without_a_leftover_placeholder():
-    """An unsubstituted placeholder reaching a committed file is silent and permanent."""
+    """An unsubstituted placeholder reaching a committed file is silent and permanent.
+
+    `branch_pattern` is a legitimate exception rather than a hole in this check: its
+    own value (`"fix/{issue}"` in `_config()`) is data that CONTRIBUTING.md quotes
+    verbatim (#460), so `{issue}` in the rendered body is that value having arrived
+    correctly, not a `.format()` slot .format() itself never filled. Stripped before
+    the scan so a real leftover next to it is still caught.
+    """
     leftover = re.compile(r"\{[a-z_]+\}")
-    for name in scaffold.templates_for(_config()):
-        body = scaffold.render(name, _config())
+    config = _config()
+    for name in scaffold.templates_for(config):
+        body = scaffold.render(name, config)
+        body = body.replace(config["branch_pattern"], "")
         found = leftover.search(body)
         assert found is None, "{} still contains {}".format(name, found and found.group(0))
 

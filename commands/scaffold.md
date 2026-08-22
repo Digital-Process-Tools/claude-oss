@@ -120,6 +120,7 @@ The full list, so a plan line is never the first time you hear of a file:
 | File | What it is |
 | --- | --- |
 | `CLAUDE.md` | orientation for the next agent; carries the default branch and test command |
+| `CONTRIBUTING.md` | orientation for a contributor rather than the maintainer -- the conventions, addressed to them, linking to `CLAUDE.md` for the reasoning (#460) |
 | `SECURITY.md` | where a reporter goes |
 | `CODE_OF_CONDUCT.md` | the usual one |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | so a report arrives with what it needs |
@@ -133,7 +134,7 @@ The full list, so a plan line is never the first time you hear of a file:
 | `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
 | `.github/workflows/oss-changelog.yml` | the workflow that calls it — **replaced every run** |
 
-The first nine are created once when absent and are yours afterwards. The last three are ours and
+The first ten are created once when absent and are yours afterwards. The last three are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
 already has everything.
 
