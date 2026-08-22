@@ -1253,6 +1253,11 @@ def check_wait(record, state, cleared_by=None, why=None):
                 "Reporting 'cleared' with nothing seen is the same unfalsifiable "
                 "prose this exists to replace."
             )
+        if why is not None and str(why).strip():
+            raise StateError(
+                "why is only for could-not-evaluate; a cleared wait's observation "
+                "goes in cleared_by, not here"
+            )
         result["cleared_by"] = str(cleared_by).strip()
     elif state == WAIT_COULD_NOT_EVALUATE:
         if not why or not str(why).strip():
@@ -1260,7 +1265,22 @@ def check_wait(record, state, cleared_by=None, why=None):
                 "could-not-evaluate needs why -- an unexplained 'could not check' is "
                 "indistinguishable from a check that was simply skipped."
             )
+        if cleared_by is not None and str(cleared_by).strip():
+            raise StateError(
+                "cleared_by is only for a cleared wait; could-not-evaluate means "
+                "nothing was observed"
+            )
         result["why"] = str(why).strip()
+    elif cleared_by is not None or why is not None:
+        # Neither belongs to `holds`. Silently dropping either one here is exactly
+        # the failure this function exists to close one level up: a maintainer who
+        # means --check-wait cleared and typos --check-wait holds would otherwise
+        # get exit 0, a `still holds` receipt, and the observation text nowhere in
+        # the stored entry.
+        raise StateError(
+            "cleared_by/why only apply to a cleared or could-not-evaluate wait; "
+            "holds needs neither, and passing one would be silently discarded"
+        )
     return result
 
 
@@ -1647,7 +1667,12 @@ def _main(argv=None):
                 "accept them and drop them".format(", ".join(cohort_flags))
             )
             return 1
-        if reading_mode and not args.pending_wait and wait_flags:
+        if reading_mode and wait_flags:
+            # No carve-out for --pending-wait, unlike a plain reading mode with nothing
+            # else set: --pending-wait itself sets none of wait_flags, so this only
+            # fires when it is combined with a recording/checking flag -- which used to
+            # succeed silently, printing the pending wait (or "no pending wait") while
+            # dropping --check-wait/--wait-cleared-by/etc with no FAIL and no receipt.
             _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(wait_flags))

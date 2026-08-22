@@ -322,3 +322,77 @@ def test_cli_pending_wait_on_a_first_tick_reports_none(tmp_path):
     result = _piped([str(path), "--pending-wait"])
     assert result.returncode == 0, result.stdout
     assert "no pending wait" in result.stdout.lower()
+
+
+# ------------------------------------------------- CLI: --pending-wait combined with
+# ------------------------------------------------- a recording/checking flag refuses
+
+
+def test_cli_pending_wait_combined_with_check_wait_refuses_rather_than_dropping(tmp_path):
+    """Found by review: --pending-wait used to be exempted from the wait_flags refusal
+    that every other reading mode enforces, so --pending-wait --check-wait cleared
+    --wait-cleared-by "..." silently printed the pending record (or "no pending wait")
+    and dropped the check-wait call and its observation text with no FAIL.
+    """
+    path = tmp_path / "state.json"
+    _piped(
+        [
+            str(path),
+            "--decision", "blocked", "--at", RECORDED_AT,
+            "--wait-dispatch", DISPATCH,
+            "--wait-observable", OBSERVABLE,
+        ]
+    )
+    result = _piped(
+        [
+            str(path),
+            "--pending-wait",
+            "--check-wait", "cleared",
+            "--wait-cleared-by", "four issues filed at 23:30Z",
+        ]
+    )
+    assert result.returncode != 0
+    assert "FAIL" in result.stdout
+    # The would-be check must not have landed on disk either.
+    entry = oss_state.last(str(path))
+    assert entry["detail"]["wait"]["state"] == oss_state.WAIT_HOLDS
+
+
+# ------------------------------------------- library: check_wait() refuses a mismatch
+# ------------------------------------------- between the chosen state and the extras
+
+
+def test_check_wait_holds_refuses_a_stray_cleared_by():
+    """Found by review: --check-wait holds combined with a mistakenly-passed
+    --wait-cleared-by used to silently discard the observation text instead of
+    refusing, so a typo'd state flag looked like a successful clearance record.
+    """
+    with pytest.raises(oss_state.StateError):
+        oss_state.check_wait(
+            _recorded(), oss_state.WAIT_HOLDS, cleared_by="four issues filed at 23:30Z"
+        )
+
+
+def test_check_wait_holds_refuses_a_stray_why():
+    with pytest.raises(oss_state.StateError):
+        oss_state.check_wait(_recorded(), oss_state.WAIT_HOLDS, why="tracker unreachable")
+
+
+def test_check_wait_cleared_refuses_a_stray_why():
+    with pytest.raises(oss_state.StateError):
+        oss_state.check_wait(
+            _recorded(),
+            oss_state.WAIT_CLEARED,
+            cleared_by="issues filed",
+            why="tracker unreachable",
+        )
+
+
+def test_check_wait_could_not_evaluate_refuses_a_stray_cleared_by():
+    with pytest.raises(oss_state.StateError):
+        oss_state.check_wait(
+            _recorded(),
+            oss_state.WAIT_COULD_NOT_EVALUATE,
+            why="tracker unreachable",
+            cleared_by="issues filed",
+        )
