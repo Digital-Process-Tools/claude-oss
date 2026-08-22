@@ -257,6 +257,64 @@ def test_destination_occupied_answers_could_not_look_for_an_embedded_null(tmp_pa
     assert rcf._destination_occupied(bad) is None
 
 
+def test_source_present_confirms_absence_rather_than_trusting_the_exception(
+    tmp_path, monkeypatch
+):
+    """#468: `_source_present`'s absence arm used to return `False` on the
+    exception type alone, unlike `_destination_occupied` which #444 already
+    fixed to consult `_absence_confirmed` first. A folded `FileNotFoundError`
+    on a source that really exists must not render as `False` ("no such
+    file") -- it must come back `None` ("could not tell"), the same fold as
+    the destination-side test above, on the source helper this time."""
+    real = tmp_path / "111.fixed.md"
+    real.write_text("- someone else's work (#111)\n", encoding="utf-8")
+
+    try:
+        os.stat(str(real))
+    except OSError:
+        pytest.skip("could not establish the source as present before folding it")
+
+    _fold_stat(monkeypatch, real)
+
+    result = rcf._source_present(real)
+
+    assert result is None, (
+        "a source stat cannot reach while its parent lists it must render as "
+        "'could not tell' (None), never as absent (False) -- the same fold "
+        "CLAUDE.md records for the destination side",
+        result,
+    )
+
+
+def test_source_present_still_answers_absent_for_a_genuine_miss(tmp_path):
+    """Positive control paired with the fold above: a source that really is
+    absent, with no injection at all, must still answer False -- or the fix
+    would be the opposite bug, folding every genuine absence into 'could not
+    tell'."""
+    missing = tmp_path / "111.fixed.md"
+    assert rcf._source_present(missing) is False
+
+
+def test_source_present_still_answers_present_for_a_genuine_hit(tmp_path):
+    """Second control: an ordinary present source, no injection, must still
+    answer True."""
+    present = tmp_path / "111.fixed.md"
+    present.write_text("- present\n", encoding="utf-8")
+    assert rcf._source_present(present) is True
+
+
+def test_source_present_answers_could_not_look_for_an_embedded_null(tmp_path):
+    """The second instance from #468: `os.stat` raises `ValueError`, not
+    `OSError`, for a path carrying an embedded null byte. Before this fix
+    that escaped `_source_present` as a raw traceback -- neither `except`
+    arm caught it -- unlike `_destination_occupied`, which already has this
+    arm (see the embedded-null test above). Not reachable through this
+    script's own CLI (POSIX argv cannot carry a NUL); this pins the
+    importing-caller hazard directly."""
+    bad = str(tmp_path / "111.fixed.md") + chr(0) + "extra"
+    assert rcf._source_present(bad) is None
+
+
 def test_a_git_add_that_cannot_even_run_returns_refused_not_a_traceback(tmp_path, monkeypatch):
     """Reviewer finding on this same fix: `git mv` is wrapped in
     `except (OSError, ValueError)` to survive git becoming unspawnable mid-run,
