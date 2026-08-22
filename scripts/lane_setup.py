@@ -58,6 +58,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -68,6 +69,18 @@ ISSUE_PLACEHOLDER = "{issue}"
 
 EXIT_OK = 0
 EXIT_COULD_NOT_RUN = 3
+
+#: Sibling of the numbered worktree directories, inside `worktree_root` -- #385.
+LANE_REGISTRY_DIRNAME = ".oss-lanes"
+
+#: How long a lane's own record is trusted before the next reader prunes it. This is
+#: not a guess at how long a *lane* runs -- a worktree can sit unmerged for days
+#: (CLAUDE.md's own board shows one). It is how long a record is trusted to mean "a
+#: lane recently started and is likely mid test-run", which is the one moment #385
+#: asks this to answer. Nothing calls this script when a lane ends, so a record
+#: past this age is the only signal this mechanism has that it was abandoned rather
+#: than refreshed, and it is pruned on the next read rather than left to accumulate.
+LANE_RECORD_TTL_SECONDS = 4 * 60 * 60
 
 
 def _one_line(text, limit=200):
@@ -381,18 +394,118 @@ def lane_overlap(files_a, files_b):
     return sorted(set(files_a) & set(files_b))
 
 
+# #432: a lane's local test command narrows to the files a brief names, and CI then
+# reddens on a guard test whose own filename has no visible relationship to the
+# diff -- measured on PR #431, where a diff that started calling the changelog
+# scaffolding gate's producer function (in `scripts/oss_config.py`) was invisible
+# to a narrowed run naming three doctor-shaped test files, and CI failed on
+# `tests/test_gate_state_consumers_328.py` instead. Five guard tests answer to
+# *what a diff does* rather than to a module it renames -- enumerated here by
+# reading each one's own docstring for its trigger, not by trusting the issue's
+# own list, which is #335's own sentence about how this seam got here in the
+# first place. A guard list is a fact about the repository, so it lives beside
+# `resolve_lane` rather than being re-typed into every brief.
+#
+# Each entry is (path prefix a resolved lane file must start with or equal, the
+# guard test file, one-line why). A file can trip more than one guard for
+# different reasons -- `scripts/oss_config.py` is both an ordinary script under
+# `scripts/` (test_unwired_scripts_253) and the one file that can register a new
+# consumer of that gate's state (test_gate_state_consumers_328).
+#
+# Deliberately not naming the gate producer's function identifier by its exact
+# spelling anywhere in this module: `tests/test_gate_state_consumers_328.py`
+# scans every file under `scripts/` for a bare occurrence of that name and
+# demands it be a *registered* consumer, and this file names it only to describe
+# the guard, never to call it -- the same bug this issue is about, one level up,
+# caught by writing the fix and running the guard it documents.
+CROSS_CUTTING_GUARDS = (
+    ("skills/", "tests/test_content_invariants.py",
+     "hardcoded repo facts in skill/agent/command prose"),
+    ("agents/", "tests/test_content_invariants.py",
+     "hardcoded repo facts in skill/agent/command prose"),
+    ("commands/", "tests/test_content_invariants.py",
+     "hardcoded repo facts in skill/agent/command prose"),
+    ("scripts/", "tests/test_unwired_scripts_253.py",
+     "a script added, removed, or dropped from its last live reference"),
+    ("bin/", "tests/test_unwired_scripts_253.py",
+     "a script added, removed, or dropped from its last live reference"),
+    # test_gate_state_consumers_328.py scans *every* tracked file under commands/ and
+    # scripts/ for a bare occurrence of the gate producer's identifier, not only the
+    # files that already call it -- an auditor caught the first version of this
+    # mapping naming only the four current consumers, which reported nothing for a
+    # brand-new file that started calling it, exactly the PR #431 shape this issue is
+    # about. So the trigger here is the same two directories the real guard scans,
+    # not an enumeration of who currently calls it.
+    ("scripts/", "tests/test_gate_state_consumers_328.py",
+     "may add or lose a consumer of the changelog scaffolding gate's state"),
+    ("commands/", "tests/test_gate_state_consumers_328.py",
+     "may add or lose a consumer of the changelog scaffolding gate's state"),
+    ("CLAUDE.md", "tests/test_claude_md_currency.py",
+     "the 'What is not proven yet' release marker paragraph"),
+    ("changelog.d/", "tests/test_claude_md_currency.py",
+     "fragment presence gates whether the release marker must be current"),
+    ("pyproject.toml", "tests/test_python_floor_410.py",
+     "the declared Python floor and its four derived sites"),
+    ("README.md", "tests/test_python_floor_410.py",
+     "the Python floor's README support badge"),
+    ("scripts/doctor.sh", "tests/test_python_floor_410.py",
+     "the Python floor's oldest python3.N candidate in the interpreter walk"),
+    (".github/workflows/tests.yml", "tests/test_python_floor_410.py",
+     "the Python floor's CI matrix lowest entry"),
+)
+
+
+def known_guards():
+    """The full enumeration, grouped by guard test with every trigger reason that
+    maps to it. Answers #432's own sizing question -- how many of these exist --
+    as a derived count rather than a pasted one, so a sixth guard added later
+    changes this return value instead of needing a second list updated by hand.
+    """
+    grouped = {}
+    for prefix, test_path, why in CROSS_CUTTING_GUARDS:
+        grouped.setdefault(test_path, []).append({"prefix": prefix, "why": why})
+    return [{"test": test_path, "triggers": grouped[test_path]} for test_path in sorted(grouped)]
+
+
+def guards_for_files(files):
+    """Which guard tests a lane's resolved files (`resolve_lane`'s `files` list --
+    repo-relative POSIX paths, never a module-name guess) trip, deduplicated to one
+    entry per guard even when several files or several reasons point at it.
+
+    Matches by prefix on the canonical path form the rest of this module already
+    produces, not by trusting a caller's own idea of which area a change belongs
+    to -- the seam #432 exists to close was exactly a human's idea of "these three
+    files are about doctor" being wrong about a fourth, unrelated-by-name file.
+    """
+    hits = {}
+    for f in files or []:
+        for prefix, test_path, why in CROSS_CUTTING_GUARDS:
+            if f == prefix or f.startswith(prefix):
+                reasons = hits.setdefault(test_path, [])
+                if why not in reasons:
+                    reasons.append(why)
+    return [{"test": test_path, "why": hits[test_path]} for test_path in sorted(hits)]
+
+
 def lane_report(repo, lane_patterns, against_patterns):
     """The `lane` section of a lane-setup payload, or None when neither side
     was asked for. Two lanes given: also the overlap between them, so a
     developer brief's setup call can carry the collision check the maintainer
     would otherwise have to run by eye.
+
+    `guards` (#432) is computed only from the `lane` side's resolved files --
+    the files a developer brief is actually about to touch -- never from
+    `against`, which names a sibling lane's off-limits files. Reporting a
+    guard triggered by the sibling's files would tell a developer to run a
+    test for a change it must not make.
     """
     if not lane_patterns and not against_patterns:
         return None
     a = resolve_lane(repo, lane_patterns) if lane_patterns else None
     b = resolve_lane(repo, against_patterns) if against_patterns else None
     overlap = lane_overlap(a["files"], b["files"]) if a and b else None
-    return {"lane": a, "against": b, "overlap": overlap}
+    guards = guards_for_files(a["files"]) if a else []
+    return {"lane": a, "against": b, "overlap": overlap, "guards": guards}
 
 
 def derive_worktree(config, issue):
@@ -418,6 +531,191 @@ def derive_worktree(config, issue):
     except oss_config.ContainmentError as exc:
         return {"state": "invalid", "root": root, "path": None, "detail": _one_line(str(exc))}
     return {"state": "resolved", "root": root, "path": str(path), "detail": ""}
+
+
+def lane_registry_dir(worktree_root):
+    """Where live-lane records live, or None when `worktree_root` itself is not known.
+
+    A sibling of the numbered worktree directories -- inside `worktree_root`, not
+    inside any one lane's own tree, so a lane cut from a worktree that carries no
+    `.oss.local.json` (every worktree this loop cuts, by construction -- see
+    `derive_worktree` above) can still be counted from the main clone, which is
+    where `worktree_root` is known.
+    """
+    if not worktree_root:
+        return None
+    return os.path.join(str(worktree_root), LANE_REGISTRY_DIRNAME)
+
+
+def record_lane(worktree_root, issue, branch, path):
+    """Write (or refresh) this lane's own record. Three states, not two:
+
+      recorded         the record is on disk, current as of this call.
+      unknown          `worktree_root` is not known -- there is nowhere to write to,
+                        which is the ordinary case inside a worktree this loop cut
+                        (see `lane_registry_dir`), not a failure.
+      could-not-write  `worktree_root` is known but the write itself failed --
+                        an unwritable directory, a full disk. Distinct from
+                        `unknown` because there IS a place this should have gone.
+
+    Keyed by issue number, one file per lane: a second call for the same issue
+    overwrites rather than accumulating, so re-running `lane_setup.py` mid-lane (this
+    module's own docstring expects facts to be re-derived, not hand-carried) refreshes
+    the TTL instead of leaving a duplicate. Written via a temp file and `os.replace`
+    so a reader never observes a partially-written record.
+    """
+    root = lane_registry_dir(worktree_root)
+    if root is None:
+        return {
+            "state": "unknown",
+            "path": None,
+            "detail": "worktree_root is not known, so there is nowhere to record this "
+            "lane -- expected if this is running inside a worktree rather than the "
+            "main clone.",
+        }
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError as exc:
+        return {
+            "state": "could-not-write",
+            "path": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    record_path = os.path.join(root, "{0}.json".format(issue))
+    payload = {
+        "issue": issue,
+        "branch": branch,
+        "path": str(path) if path else None,
+        "recorded_at": time.time(),
+        "pid": os.getpid(),
+    }
+    tmp_path = record_path + ".tmp"
+    try:
+        with open(tmp_path, "w") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp_path, record_path)
+    except OSError as exc:
+        return {
+            "state": "could-not-write",
+            "path": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    return {"state": "recorded", "path": record_path, "detail": ""}
+
+
+def lane_count(worktree_root):
+    """How many lanes are recorded live, right now. Three states, not two -- #385:
+
+      resolved        one or more live records, aged under `LANE_RECORD_TTL_SECONDS`.
+                       `count` carries the number.
+      unknown          the registry could not be located (`worktree_root` unknown),
+                       does not exist yet, or exists and holds zero live records.
+                       **A registry nothing has ever written to and a registry
+                       confirmed empty render identically on disk** -- neither may
+                       report `0`, which is a specific claim of certainty this
+                       function cannot make. `count` is None.
+      could-not-run    the registry exists and holds at least one record that could
+                       not be read at all (corrupt JSON, a missing field). A partial
+                       count built by skipping it would silently undercount, so this
+                       is reported instead of swallowed. `count` is None.
+
+    A record older than the TTL is pruned as a side effect of this read and excluded
+    from the count -- never counted as live, and never folding the whole answer to
+    `unknown` on its own, because its age is a direct filesystem timestamp
+    comparison rather than a guess reached by asking whether the process that wrote
+    it is still around (which is the thing #385 opens by saying cannot be done).
+    Pruning here is deliberate: nothing calls this script when a lane ends, so the
+    next reader is the only cleanup this mechanism has.
+    """
+    root = lane_registry_dir(worktree_root)
+    if root is None:
+        return {"state": "unknown", "count": None, "detail": "worktree_root is not known."}
+    if not os.path.isdir(root):
+        return {
+            "state": "unknown",
+            "count": None,
+            "detail": "no lane registry at {0} -- either nothing has ever recorded "
+            "itself here, or nothing is live. A confirmed zero is not distinguishable "
+            "from that.".format(root),
+        }
+    try:
+        names = os.listdir(root)
+    except OSError as exc:
+        return {
+            "state": "could-not-run",
+            "count": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+
+    now = time.time()
+    live = 0
+    unreadable = 0
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        entry_path = os.path.join(root, name)
+        try:
+            with open(entry_path) as fh:
+                data = json.load(fh)
+            recorded_at = float(data["recorded_at"])
+        except FileNotFoundError:
+            # A sibling `lane_count()` call -- the exact concurrency #385 is about --
+            # can prune this same stale record between our `listdir` and our `open`.
+            # That is not corruption, it is the cleanup this function itself performs
+            # arriving one step ahead of us: the record is gone either way, so it is
+            # simply not counted, not folded into `unreadable` and not reported as an
+            # unreadable-record `could-not-run` for a record nothing was ever wrong
+            # with.
+            continue
+        except (OSError, ValueError, KeyError, TypeError):
+            unreadable += 1
+            continue
+        age = now - recorded_at
+        if age < 0:
+            # `recorded_at` in the future: clock skew between the writer and this
+            # reader, or a read racing a write within the same second. Far more
+            # likely to be "just (re)written" than "abandoned", so it is counted as
+            # live rather than pruned -- deleting it here would silently undercount a
+            # lane that in fact just recorded itself, which is the confident-absence
+            # failure the rest of this function exists to avoid, reached through
+            # deletion instead of through a wrong number.
+            live += 1
+            continue
+        if age > LANE_RECORD_TTL_SECONDS:
+            try:
+                os.remove(entry_path)
+            except OSError:
+                pass  # another reader may have pruned it first; not this call's problem
+            continue
+        live += 1
+
+    if unreadable:
+        return {
+            "state": "could-not-run",
+            "count": None,
+            "detail": "{0} lane record(s) under {1} could not be read -- a partial "
+            "count would undercount.".format(unreadable, root),
+        }
+    if live == 0:
+        return {
+            "state": "unknown",
+            "count": None,
+            "detail": "no live lane records under {0} -- either nothing is running or "
+            "nothing has recorded itself; a confirmed zero is not distinguishable from "
+            "that.".format(root),
+        }
+    return {"state": "resolved", "count": live, "detail": ""}
+
+
+def lanes_snapshot(worktree_root, issue, branch, path):
+    """Record this lane's own presence, then report the live picture -- including
+    itself. Called from `compute` at the one moment #385 says the count is useful:
+    setup time, before a lane sizes itself against the machine and before `doctor`
+    typically runs.
+    """
+    record = record_lane(worktree_root, issue, branch, path)
+    count = lane_count(worktree_root)
+    return {"record": record, "count": count}
 
 
 # How far up the tree `_absence_confirmed` will walk looking for an ancestor this
@@ -650,6 +948,7 @@ def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=N
             "branch": None,
             "worktree": None,
             "board": None,
+            "lanes": None,
             "lane": lane_report(repo, lane_patterns, against_patterns),
         }
 
@@ -676,6 +975,10 @@ def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=N
 
     board = read_board(repo)
 
+    lanes = lanes_snapshot(
+        config.get("worktree_root"), issue, branch.get("name"), worktree.get("path")
+    )
+
     return {
         "issue": issue,
         "repo": str(repo),
@@ -684,6 +987,7 @@ def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=N
         "branch": branch,
         "worktree": worktree,
         "board": board,
+        "lanes": lanes,
         "lane": lane_report(repo, lane_patterns, against_patterns),
     }
 
@@ -798,6 +1102,21 @@ def receipt(payload):
         for line in board["lines"]:
             lines.append("  " + line)
 
+    lanes = payload.get("lanes")
+    if lanes is not None:
+        count = lanes["count"]
+        if count["state"] == "resolved":
+            lines.append(_row("lanes", "{0} live (recorded, TTL {1}m)".format(
+                count["count"], LANE_RECORD_TTL_SECONDS // 60
+            )))
+        else:
+            lines.append(_row("lanes", "{0} -- {1}".format(count["state"].upper(), count["detail"])))
+        record = lanes["record"]
+        if record["state"] != "recorded":
+            lines.append("  this lane not recorded: {0} -- {1}".format(
+                record["state"], record["detail"]
+            ))
+
     lane = payload.get("lane")
     if lane is not None:
         lines.append("lane      :")
@@ -816,6 +1135,15 @@ def receipt(payload):
             lines.append("  overlap : " + ", ".join(lane["overlap"]))
         else:
             lines.append("  overlap : none")
+        # #432: guards the lane side's own files trip -- a narrowed local test
+        # command that omits these will look green and CI will not.
+        if lane["lane"] is None:
+            pass
+        elif lane["guards"]:
+            for entry in lane["guards"]:
+                lines.append("  guard   : {0} ({1})".format(entry["test"], "; ".join(entry["why"])))
+        else:
+            lines.append("  guard   : none of the lane's files match a known cross-cutting guard")
 
     return _render(lines)
 

@@ -122,6 +122,18 @@ it a second way — grep the new content back — before saying it.
    Not worth it when the change is confined to one module whose own tests are green and nothing
    moved underneath it.
 
+   **A narrowed run can be green while a guard it never touched fails on CI (#432).** Some tests are
+   keyed to *what your diff does* rather than to a module it renames — a new call site of
+   `oss_config.scaffolded_changelog_gate`, a line added under `agents/` or `skills/`, a script moved
+   under `scripts/`, a change to `CLAUDE.md` or `pyproject.toml` — and their own filename carries no
+   visible relationship to yours, so a subset you name by hand will not include them. Measured on PR
+   #431: three named test files, 362 passed, and CI failed four legs on
+   `tests/test_gate_state_consumers_328.py`, which was in none of them. Before you settle on a
+   narrowed command, run `python3 scripts/lane_setup.py <issue> --lane <each file you touched>` (repeat
+   `--lane` per file) and add every guard test its receipt names under `guard` to whatever you run —
+   `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS` is the derived list, not a copy of one, so a
+   guard added there later reaches this brief with no further edit here.
+
    The anti-pattern is the expensive half: **never re-run the full suite to watch a failure you have
    already seen.** Go back to the one file. Re-running everything to re-read the same assertion is
    the most wasteful loop available to a delegated agent.
@@ -149,6 +161,22 @@ it a second way — grep the new content back — before saying it.
    counted figure in this project's own history (#316) rather than repeated here as a number a
    different installation would read as generic guidance. This is the largest lever in this section
    on the evidence this repository has so far.
+
+   **Prose paid once beats prose paid every later turn — that asymmetry is the rule, not
+   terseness for its own sake (#314).** A line emitted at turn 10 of a 59-turn run is re-read on
+   every one of the 49 turns after it; the report and the pull request payload are written on the
+   last turn and are read downstream approximately never. That is an argument for moving reasoning
+   out of the narration and into the report, never for shrinking the report to match. The report
+   section below spends paragraphs insisting on the opposite: keep the argued-down finding's
+   `reason`, keep red and green quoted separately, keep every `report-for-filing` item's
+   justification. A rewrite of this instruction that trims that section to look consistent with a
+   terser transcript is the wrong rewrite — it cuts the half of the growth that is read once and
+   worth its cost, to save nothing on the half that is read on every later turn regardless. **Not
+   claimed**: that the text between tool calls is mostly narration rather than tool-call payload —
+   a `paste` payload carrying a new test file is emitted text and is not narration, and this
+   section does not attempt to separate the two; and that cutting narration costs nothing —
+   thinking out loud mid-run may improve the diff, and nothing here weighs that against the token
+   cost it carries.
 
    **Batching is a discipline, not a note said once.** "Batch 6-7 ops per call" above is stated
    again here because it is read once and has to hold for the length of the run: on this repository's

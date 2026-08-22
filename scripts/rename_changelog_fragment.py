@@ -28,15 +28,18 @@ only one half has happened.
   0 (OK)        renamed and rewritten, or the fragment already carried the
                 target number and nothing needed to move.
   3 (REFUSED)   the source does not parse as a fragment, the destination
-                already exists, `git mv` failed, or -- the third state,
-                distinct from the other two -- the rewrite left a fragment
-                `--check` would still reject. That happens when the old body
-                never named its own issue *before* the rename either: there
-                is nothing here to move, and inventing text would be a
-                guess this script refuses to make. The fragment is still
-                renamed in that case (the correct filename is not in
-                question), but the body needs a human's `(#N)` before it
-                will pass.
+                already exists (or could not be examined), `git mv` failed,
+                the rewrite itself could not be written (#444: an `OSError`
+                from the post-rename write, e.g. disk full), `git add` could
+                not stage the rewritten file (#444: it failed to run, or ran
+                and refused), or -- the last state, distinct from all of the
+                above -- the rewrite left a fragment `--check` would still
+                reject. That happens when the old body never named its own
+                issue *before* the rename either: there is nothing here to
+                move, and inventing text would be a guess this script
+                refuses to make. The fragment is still renamed in that case
+                (the correct filename is not in question), but the body
+                needs a human's `(#N)` before it will pass.
   2              argparse usage error.
 
 A refusal never renames a fragment onto a name that isn't there and never
@@ -63,6 +66,7 @@ from assemble_changelog import (  # noqa: E402
     parse_fragment_name,
     self_reference_finding,
 )
+from lane_setup import _absence_confirmed  # noqa: E402
 
 OK, REFUSED = 0, 3
 
@@ -100,12 +104,28 @@ def _destination_occupied(path):
     look", and the caller treats that the same as occupied -- refusing an
     overwrite on an unreadable destination is the safe direction, where
     guessing it is free is not.
+
+    #444: the absence arm used to trust the exception type alone, which is
+    not actually the same shape `worktree_occupancy` uses -- CLAUDE.md
+    records that Windows folds an over-`MAX_PATH` destination onto
+    `FileNotFoundError, errno 2, winerror None`, indistinguishable from a
+    genuine miss, so on that platform this guard answered "free" for a
+    destination nothing had looked at. `_absence_confirmed` (#380) is asked
+    for a positive confirmation before absence is claimed, matching
+    `lane_setup.worktree_occupancy:557` exactly rather than merely resembling
+    it.
     """
     try:
         os.stat(str(path))
     except (FileNotFoundError, NotADirectoryError):
-        return False
+        return False if _absence_confirmed(path) is True else None
     except OSError:
+        return None
+    except ValueError:
+        # `os.stat` raises `ValueError`, not `OSError`, for a path carrying an
+        # embedded null byte -- neither arm above catches that, and it would
+        # otherwise escape as a traceback. `lane_setup.worktree_occupancy` has
+        # the identical arm for the identical reason (#380, adjacent).
         return None
     return True
 
@@ -202,15 +222,69 @@ def rename(fragment_path, new_issue, use_git=True):
     else:
         old_path.rename(new_path)
 
-    new_path.write_text(rewritten, encoding="utf-8")
+    # #444: the rewrite runs after the rename and used to be unguarded, with no
+    # handler in main() either -- an OSError here left the fragment
+    # renamed-but-not-rewritten with a traceback and no receipt, against this
+    # module's own docstring claim that the receipt says which state fired.
+    try:
+        new_path.write_text(rewritten, encoding="utf-8")
+    except OSError as exc:
+        # `Path.write_text` opens in mode "w", which truncates on open before a
+        # single byte of `rewritten` is written -- so a failure at open() really
+        # does leave the OLD body in place, but a failure *during* the write
+        # (disk full mid-flush) can leave the file empty or partially written
+        # instead. The receipt must not assert a specific on-disk state it
+        # cannot verify; "cannot be assumed" covers both without guessing.
+        return (
+            REFUSED,
+            "{0}: renamed to {1} but the rewrite failed: {2}: {3} -- the file's "
+            "on-disk body cannot be assumed to be either the old or the new text; "
+            "verify by hand before committing or amending".format(
+                old_path, new_path, type(exc).__name__, exc
+            ),
+            new_path,
+        )
 
     if use_git and git is not None:
         # `git mv` above staged the pre-rewrite bytes; without this, `git commit
         # --amend` (no `-a`) would commit the old body under the new filename --
         # the exact defect this tool exists to close, one layer later.
-        subprocess.run(
-            [git, "add", "--", str(new_path)], capture_output=True, text=True, errors="replace"
-        )
+        try:
+            add_result = subprocess.run(
+                [git, "add", "--", str(new_path)],
+                capture_output=True,
+                text=True,
+                errors="replace",
+            )
+        except (OSError, ValueError) as exc:
+            # Same shape as the `git mv` spawn guard above: `git` becoming
+            # unspawnable between the two calls (deleted, locked by AV, a
+            # fork/exec failure) must not raise past this function.
+            return (
+                REFUSED,
+                "{0} -> {1}: renamed and rewritten, but `git add` failed to run: "
+                "{2}: {3} -- an amend without an explicit `git add` would commit "
+                "the pre-rewrite body under the new filename".format(
+                    old_path, new_path, type(exc).__name__, exc
+                ),
+                new_path,
+            )
+        # #444: this exit code used to be discarded, so a failed `git add` was
+        # reported identically to a successful one -- reproducing #426's own
+        # defect (an amend committing the pre-rewrite body under the new name)
+        # while the tool claimed OK. Staging IS this tool's job (that is the
+        # reason the `git add` is here at all); the failure needs a state
+        # rather than the call being silently unchecked.
+        if add_result.returncode != 0:
+            return (
+                REFUSED,
+                "{0} -> {1}: renamed and rewritten, but `git add` failed: {2} -- an "
+                "amend without an explicit `git add` would commit the pre-rewrite "
+                "body under the new filename".format(
+                    old_path, new_path, add_result.stderr.strip()
+                ),
+                new_path,
+            )
 
     finding = self_reference_finding(new_path.name, rewritten)
     if finding:
