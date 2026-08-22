@@ -870,7 +870,12 @@ the defect, not the workaround.
   tags              tag names as `git tag --list` prints them
   labels            label names as they are spelled on the repo
   milestones        milestone titles
-  workflow_jobs     job names read out of .github/workflows/*
+  workflow_jobs     job names read out of .github/workflows/* in the WORKING TREE.
+                    A candidate `files` lists that is not on disk -- an uncommitted
+                    delete -- declares no jobs and is named in a NOTE on stderr
+                    rather than refusing the probe. One that is on disk and will
+                    not read still refuses: an unknown counted as zero understates
+                    the checks.
   merge_method      "squash" | "merge" | "rebase" | null when more than one is
                     allowed and the repo has not decided
   version_evidence  {candidate path: "version" | "none" | "absent" |
@@ -1971,20 +1976,53 @@ def _gh_json(root, args):
 
 
 def _workflow_jobs(root, files):
-    """Job names read out of the workflow files, as ``file:job``.
+    """Job names read out of the workflow files, as ``(jobs, problems, absent)``.
 
     A light scan rather than a YAML parse: this module has no third-party imports and
-    the shape being read is two levels deep. A workflow that cannot be read is
-    reported -- counting it as zero jobs would understate the required checks, which
-    is the direction that lets a red leg through.
+    the shape being read is two levels deep.
+
+    ``files`` comes from ``git ls-files``, which answers about the **index**; the read
+    happens in the **working tree**. Between an uncommitted ``rm`` and its commit the
+    two disagree about exactly those paths, so absence gets a bucket of its own and
+    the two are not one word (#396):
+
+    * ``problems`` -- the file is on disk and its bytes did not come back. How many
+      jobs it declares is genuinely unknown, and counting it as zero would understate
+      the required checks, which is the direction that lets a red leg through. Only
+      this bucket decides a verdict.
+    * ``absent`` -- the file is in the index and not in the working tree. It declares
+      no jobs, which is a measurement rather than a gap. Named rather than dropped,
+      because ``files`` still lists it and a silently shorter job list is this
+      repository's own defect class.
+
+    Absence is decided from the exception already in hand -- ``FileNotFoundError`` is
+    a file that is not there, any other ``OSError`` is a file that is there and would
+    not read. No second question is put to the filesystem: ``exists()`` swallows a
+    short list of errnos and re-raises the rest, a trap this repository has already
+    paid for (#396, and ``_read_config`` in ``release_delta.py`` before it).
+
+    Three states rather than the five ``_version_state`` grew in #408, and the
+    difference is argued rather than inherited. This is a line scan, so it has no
+    ``malformed`` to report: it cannot tell a workflow that declares no jobs from one
+    whose ``jobs:`` block the scan did not match, and a state the code cannot support
+    is a claim rather than a fact.
+
+    One consequence worth writing down, the same one #408 recorded: Windows folds
+    several Win32 codes onto ENOENT, so a path that is unlookable rather than missing
+    arrives here as ``FileNotFoundError`` and reads as absent. Degraded, not silent --
+    the path is named in the receipt either way.
     """
     jobs = []
     problems = []
+    absent = []
     for rel in sorted(files):
         if not rel.startswith(".github/workflows/") or not rel.endswith((".yml", ".yaml")):
             continue
         try:
             text = (Path(root) / rel).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            absent.append(rel)
+            continue
         except (OSError, UnicodeDecodeError) as exc:
             problems.append("could not read {} ({})".format(rel, exc))
             continue
@@ -2002,7 +2040,7 @@ def _workflow_jobs(root, files):
             match = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
             if match:
                 jobs.append("{}:{}".format(stem, match.group(1)))
-    return jobs, problems
+    return jobs, problems, absent
 
 
 def _merge_method(view):
@@ -2025,7 +2063,7 @@ def _merge_method(view):
 
 
 def gather(root):
-    """Measure a repo directory into a probe. Returns ``(probe, problems)``.
+    """Measure a repo directory into a probe. Returns ``(probe, problems, notes)``.
 
     This exists so the schema has exactly one implementation. The slash command used
     to assemble the probe by hand, got `files` wrong in a way nothing could detect,
@@ -2035,20 +2073,45 @@ def gather(root):
     probe is the underspecified probe this whole contract exists to refuse, and
     emitting one with the unmeasured half left empty is exactly the failure --
     "gh could not be reached" would reach disk spelled `"labels": []`.
+
+    `notes` is the third thing this function has to say, and the reason the return is
+    a triple (#396). `problems` refuses; `notes` are true statements that are not
+    failures, and folding them into either of the other two would make an ordinary
+    uncommitted delete either abort the whole probe or vanish. A tracked workflow
+    that is not in the working tree declares no jobs -- that is a measurement, so the
+    contract above is satisfied rather than relaxed, and `workflow_jobs` is complete
+    for the tree it was read from. It still needs saying out loud, because `files` is
+    the index and goes on listing the deleted path: without the note, a probe taken
+    mid-delete is a shorter job list with nothing to explain it.
+
+    A workflow that is on disk and would not read is the opposite case and still
+    refuses: its job count is unknown, and an unknown counted as zero understates the
+    required checks.
+
+    The notes do not travel into the probe JSON. Adding a probe key was weighed and
+    declined: `probe_problems` refuses both a missing key and an unknown one, so a new
+    key breaks probe interchange in *both* version directions -- the cost #408
+    deliberately avoided by only widening an existing state set. The documented
+    invocation is a single `--probe . | --build` pipeline, where the NOTE lands on the
+    same terminal as the probe. A probe saved to a file and read back later loses it,
+    and `workflow_jobs` is consumed by no derivation today
+    (`test_the_probe_emits_no_ci_block_even_with_workflow_jobs`), so what is lost in
+    that case is a sentence for a human rather than an input to a decision.
     """
     root = Path(os.path.expanduser(str(root)))
 
     ok, out, detail = _git_lines(root, ["ls-files", "-z"])
     if not ok:
-        return None, ["could not list the files: {}".format(detail)]
+        return None, ["could not list the files: {}".format(detail)], []
     files = [name for name in out.split("\0") if name]
 
     ok, out, detail = _git_lines(root, ["tag", "--list"])
     if not ok:
-        return None, ["could not list the tags: {}".format(detail)]
+        return None, ["could not list the tags: {}".format(detail)], []
     tags = [line.strip() for line in out.splitlines() if line.strip()]
 
     problems = []
+    notes = []
     ok, view, detail = _gh_json(
         root,
         [
@@ -2060,7 +2123,7 @@ def gather(root):
         ],
     )
     if not ok or not isinstance(view, dict):
-        return None, ["could not read the repo from gh: {}".format(detail or view)]
+        return None, ["could not read the repo from gh: {}".format(detail or view)], notes
 
     repo = view.get("nameWithOwner")
     ok, label_rows, detail = _gh_json(root, ["label", "list", "--json", "name", "--limit", "200"])
@@ -2075,8 +2138,16 @@ def gather(root):
         problems.append("could not read the milestones from gh: {}".format(detail))
         milestone_rows = []
 
-    jobs, job_problems = _workflow_jobs(root, files)
+    jobs, job_problems, absent_workflows = _workflow_jobs(root, files)
     problems.extend(job_problems)
+    if absent_workflows:
+        notes.append(
+            "{} workflow file(s) are in the index and not on disk, so there was "
+            "nothing to read and they contributed no jobs: {}. This is what an "
+            "uncommitted delete looks like; `files` still lists them because `files` "
+            "is the index. The probe is complete for the working tree it was "
+            "measured from.".format(len(absent_workflows), ", ".join(absent_workflows))
+        )
 
     probe = {
         "repo": repo,
@@ -2092,8 +2163,8 @@ def gather(root):
     }
     problems.extend(probe_problems(probe))
     if problems:
-        return None, problems
-    return probe, []
+        return None, problems, notes
+    return probe, [], notes
 
 
 def _report_probe_notes(probe, config):
@@ -2236,9 +2307,13 @@ def _main(argv=None):
         return 1 if problems else 0
 
     if args.probe:
-        probe, problems = gather(args.probe)
+        probe, problems, notes = gather(args.probe)
         for problem in problems:
             print("FAIL {}".format(problem), file=sys.stderr)
+        # Printed whether or not a probe came back: a note is true either way, and a
+        # refusal caused by one workflow should not swallow the sentence about another.
+        for note in notes:
+            print("NOTE {}".format(note), file=sys.stderr)
         if probe is None:
             return 1
         print(json.dumps(probe, indent=2))
