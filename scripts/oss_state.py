@@ -1682,7 +1682,25 @@ def _main(argv=None):
             entry = last(args.path)
             detail = entry.get("detail") if isinstance(entry, dict) else None
             record = detail.get("wait") if isinstance(detail, dict) else None
-            if isinstance(record, dict) and record.get("state") == WAIT_HOLDS:
+            if record is None:
+                print("no pending wait")
+                return 0
+            if not isinstance(record, dict) or record.get("state") not in (
+                WAIT_HOLDS,
+                WAIT_CLEARED,
+                WAIT_COULD_NOT_EVALUATE,
+            ):
+                # Found by audit: a malformed or unrecognised-state record used to
+                # print "no pending wait", byte-identical to no wait ever having been
+                # recorded -- the absence this whole file exists to guard against,
+                # one branch away from the sibling `_wait_sentence`'s own explicit
+                # "unrecognised wait state" arm three lines over.
+                return refuse(
+                    "the last entry's detail.wait is not a recognised wait record "
+                    "({!r}) -- this is not the same as no wait ever being recorded, "
+                    "and must not print as one".format(record)
+                )
+            if record["state"] == WAIT_HOLDS:
                 print(json.dumps(record, indent=2))
             else:
                 print("no pending wait")

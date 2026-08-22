@@ -328,6 +328,26 @@ def test_cli_pending_wait_on_a_first_tick_reports_none(tmp_path):
 # ------------------------------------------------- a recording/checking flag refuses
 
 
+def test_cli_pending_wait_refuses_a_malformed_record_rather_than_reporting_none(tmp_path):
+    """Found by audit: a `detail.wait` with an unrecognised or malformed `state` used
+    to print "no pending wait", byte-identical to no wait ever having been recorded --
+    the exact absence this file exists to guard against. Every write path
+    (`wait`/`check_wait`) enforces the three-state vocabulary, so this needs a
+    hand-written entry to reach at all.
+    """
+    path = tmp_path / "state.json"
+    oss_state.append(
+        str(path),
+        RECORDED_AT,
+        "blocked, but the record itself is malformed",
+        detail={"wait": {"dispatch": DISPATCH, "observable": OBSERVABLE, "state": "settled"}},
+    )
+    result = _piped([str(path), "--pending-wait"])
+    assert result.returncode != 0
+    assert "FAIL" in result.stdout
+    assert "no pending wait" not in result.stdout.lower()
+
+
 def test_cli_pending_wait_combined_with_check_wait_refuses_rather_than_dropping(tmp_path):
     """Found by review: --pending-wait used to be exempted from the wait_flags refusal
     that every other reading mode enforces, so --pending-wait --check-wait cleared
