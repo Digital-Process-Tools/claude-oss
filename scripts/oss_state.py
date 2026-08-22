@@ -1729,7 +1729,17 @@ def _main(argv=None):
                         record
                     )
                 )
-            if record["state"] == WAIT_HOLDS:
+            if record["state"] in (WAIT_HOLDS, WAIT_COULD_NOT_EVALUATE):
+                # #443: could-not-evaluate is no measurement at all, exactly as
+                # unresolved as holds -- neither is a negative measurement, so
+                # `--pending-wait` answers *is anything pending* by putting both on
+                # this side. They stay distinguishable because the printed record
+                # itself carries a different `state` (and a `why` `holds` never
+                # has), never collapsing to the same bytes -- this branch used to
+                # fall to the `else` below, which is where `cleared` and no wait
+                # ever having been recorded both correctly land, so a could-not-
+                # evaluate wait rendered byte-identical to nothing being pending at
+                # all, with `why` reaching nobody.
                 print(json.dumps(record, indent=2))
             else:
                 print("no pending wait")
