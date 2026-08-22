@@ -76,6 +76,7 @@ PRODUCER_FUNCTION = "scaffolded_changelog_gate"
 CHANGELOG_COMMAND = REPO_ROOT / "commands" / "changelog.md"
 SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "scaffold.md"
 RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
+DOCTOR = REPO_ROOT / "scripts" / "doctor.py"
 
 # #348's producer/consumer pair. Both functions live in the same file, so
 # there is exactly one `_doc` read and one `_function_body` extraction on
@@ -101,7 +102,16 @@ LAUNCHER_CONSUMER_FUNCTION = "check_oss_workspace_launcher"
 # `.oss/assemble_changelog.py` and `commands/changelog.md`) -- so the one line that
 # names the new state there sits in a file this lane does not hold. It is deferred
 # below rather than skipped past.
-ENFORCED_CONSUMERS = (SCAFFOLD_COMMAND, RELEASE_VERSION)
+# `DOCTOR` joined in #260: `_fragments_directory` calls `scaffolded_changelog_gate`
+# directly to follow a nulled `changelog_dir` to the directory scaffold's own gate
+# workflow polices, mirroring `release_version._fragment_dir`. It handles every
+# state -- `present` and `present-other-dir` resolve a directory; `absent`,
+# `unknown`, `present-refused-dir` and `present-bare-dir` are deliberately
+# collapsed into one "nothing to check" answer, named as a comment beside the
+# `return None` that implements the collapse, because doctor's non-blocking
+# contract needs only one answer for all four rather than release_version's four
+# distinct remedies. Enforced rather than deferred: nothing here is unhandled.
+ENFORCED_CONSUMERS = (SCAFFOLD_COMMAND, RELEASE_VERSION, DOCTOR)
 
 # Not empty as of #347. `commands/changelog.md`'s resolver already refuses a state
 # it does not recognise -- its own trailing `else` prints `UNKNOWN: unrecognised
