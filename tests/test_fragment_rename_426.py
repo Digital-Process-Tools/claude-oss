@@ -25,6 +25,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ASSEMBLER = REPO_ROOT / "scripts" / "assemble_changelog.py"
 RENAMER = REPO_ROOT / "scripts" / "rename_changelog_fragment.py"
+LANE_SETUP = REPO_ROOT / "scripts" / "lane_setup.py"
+OSS_CONFIG = REPO_ROOT / "scripts" / "oss_config.py"
 
 OK, REFUSED = 0, 3
 
@@ -39,6 +41,10 @@ def _vendor(tmp_path):
     script_dir.mkdir(parents=True)
     shutil.copy(ASSEMBLER, script_dir / "assemble_changelog.py")
     shutil.copy(RENAMER, script_dir / "rename_changelog_fragment.py")
+    # #444: the renamer now confirms absence via lane_setup._absence_confirmed,
+    # which imports oss_config -- both stdlib-only, so vendored alongside it.
+    shutil.copy(LANE_SETUP, script_dir / "lane_setup.py")
+    shutil.copy(OSS_CONFIG, script_dir / "oss_config.py")
     (root / "changelog.d").mkdir()
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True)
