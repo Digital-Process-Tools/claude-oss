@@ -297,16 +297,45 @@ def _board_field(board, symbols):
     )
 
 
+def _one_line(text, limit=200):
+    """Text from outside this script, reduced to one printable ASCII line.
+
+    Adopted verbatim from ``doctor.py``'s function of the same name (itself copied
+    from ``release_delta.py``), whose reasoning applies here unchanged: a newline in
+    foreign text forges a line of this script's own output, and a control character
+    -- an ESC in particular -- can rewrite what the terminal has already printed.
+    This status line is one line by construction; nothing that reaches it is
+    legitimately multi-line.
+
+    It is a copy rather than an import for the same reason as the original: this is
+    a security control on a script meant to run standalone, and it must not depend
+    on an import that can fail.
+
+    Applied at the point each value enters -- `version` from this repo's own tracked
+    manifest, `installed` and `latest` from a plugin's manifest, the second of which
+    is fetched over the network from another repository -- rather than folding the
+    whole assembled line, because this script adds its own ANSI colour after this
+    point and a line-wide fold would strip those escapes along with a forged one.
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
+
 def _short_version(text):
     """`v0.11.0` and `0.11.0` are the same version, and a status line has one column.
 
     A release tag carries the prefix and a manifest does not, so the raw pair renders as
     `0.9.0 -> v0.11.0` -- two spellings of one thing, in the field whose whole job is to
     make a difference obvious.
+
+    Folded through `_one_line` before anything else touches it: this is the one funnel
+    both `installed` and `latest` pass through in `_plugin_field`, and `latest` in
+    particular is a remote repository's manifest string, fetched over the network.
     """
     if not text:
         return None
-    text = str(text).strip()
+    text = _one_line(str(text).strip())
     return text[1:] if text[:1] in ("v", "V") else text
 
 
@@ -364,7 +393,9 @@ def render(facts, ascii_only=False, color=False):
 
     where = [facts.get("repo_name") or "?", facts.get("branch") or "?"]
     if facts.get("version"):
-        where.append("v" + str(facts["version"]))
+        # This repo's own tracked manifest -- written by a contributor, not fetched
+        # over the network, but still text this function did not produce itself.
+        where.append("v" + _one_line(str(facts["version"])))
     blocks.append(" ".join(where))
 
     blocks.append(_board_field(facts.get("board") or {}, symbols))

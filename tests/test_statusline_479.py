@@ -261,6 +261,51 @@ def test_ascii_only_render_survives_a_codepage_that_cannot_encode_the_symbols():
 def test_the_unicode_render_is_still_the_default_where_it_encodes():
     line = statusline.render(_facts(), ascii_only=False)
     line.encode("utf-8")
+
+
+# ------------------------------------------------------------- untrusted manifest text
+
+
+def test_a_newline_and_escape_in_the_tracked_version_do_not_reach_the_line():
+    """`version` comes from this repo's own tracked manifest, written by a contributor.
+
+    A newline would put attacker-chosen text at column 0 of the terminal chrome; an
+    ESC would let it rewrite what the terminal has already printed. Neither may reach
+    the rendered line.
+    """
+    hostile = "0.1.0\nFAKE STATUS LINE\x1b[31mX"
+    line = statusline.render(_facts(version=hostile), ascii_only=True)
+    assert "\n" not in line
+    assert "\x1b" not in line
+
+
+def test_the_must_fire_control_an_ordinary_version_still_renders():
+    """Paired with the test above: a renderer that prints nothing also has no newline."""
+    line = statusline.render(_facts(version="0.10.0"), ascii_only=True)
+    assert "0.10.0" in line
+
+
+def test_a_newline_and_escape_in_a_remote_latest_do_not_reach_the_line():
+    """`latest` is fetched from another repository's manifest, over the network."""
+    hostile = "0.1.0\nFAKE STATUS LINE\x1b[31mX"
+    facts = _facts(
+        plugins=[
+            ("oss", {"state": "behind", "installed": "0.10.0", "latest": hostile}),
+        ]
+    )
+    line = statusline.render(facts, ascii_only=True)
+    assert "\n" not in line
+    assert "\x1b" not in line
+
+
+def test_the_must_fire_control_an_ordinary_latest_still_renders():
+    facts = _facts(
+        plugins=[
+            ("oss", {"state": "behind", "installed": "0.10.0", "latest": "9.9.9"}),
+        ]
+    )
+    line = statusline.render(facts, ascii_only=True)
+    assert "9.9.9" in line
     assert line != statusline.render(_facts(), ascii_only=True)
 
 
