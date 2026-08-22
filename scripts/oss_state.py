@@ -1500,8 +1500,9 @@ def _main(argv=None):
     group.add_argument(
         "--pending-wait",
         action="store_true",
-        help="print the most recently recorded wait if it still holds (#337, "
-        "#436), or 'no pending wait' if there is none",
+        help="print the most recently recorded wait if anything is still pending "
+        "-- holds or could-not-evaluate (#337, #436, #443) -- or 'no pending "
+        "wait' if it was cleared or none was ever recorded",
     )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
