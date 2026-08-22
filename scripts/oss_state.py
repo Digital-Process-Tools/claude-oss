@@ -1284,6 +1284,30 @@ def check_wait(record, state, cleared_by=None, why=None):
     return result
 
 
+def _last_wait(path):
+    """The most recent entry that carries a wait record, scanning back past any
+    entry that recorded something else entirely -- a cohort freeze (#407), a lane
+    record, a plain intake -- rather than only looking at the last entry (#436).
+
+    One-entry lifetime read a wait recorded in one tick as unreachable the moment any
+    other entry landed after it, and printed exactly what it prints when no wait was
+    ever recorded: the two absences were byte-identical. Returns
+    ``(entry, record)`` for the most recent entry whose ``detail`` carries a ``wait``
+    key -- even a malformed one, since the freshest statement about the wait is what a
+    reader must see rather than an older, valid one behind it -- or ``(None, None)``
+    if no entry in the whole history ever recorded one.
+    """
+    for entry in reversed(read(path)):
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        if "wait" in detail:
+            return entry, detail["wait"]
+    return None, None
+
+
 def wait_line(record):
     """One line a tick report can print. The state decides the sentence, not the caller."""
     return _receipt_line(_wait_sentence(record))
@@ -1476,8 +1500,8 @@ def _main(argv=None):
     group.add_argument(
         "--pending-wait",
         action="store_true",
-        help="print the last entry's wait record if it still holds (#337), "
-        "or 'no pending wait' if there is none",
+        help="print the most recently recorded wait if it still holds (#337, "
+        "#436), or 'no pending wait' if there is none",
     )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
@@ -1543,8 +1567,8 @@ def _main(argv=None):
     parser.add_argument(
         "--check-wait",
         choices=(WAIT_HOLDS, WAIT_CLEARED, WAIT_COULD_NOT_EVALUATE),
-        help="re-derive the last entry's pending wait: holds, cleared (needs "
-        "--wait-cleared-by) or could-not-evaluate (needs --wait-why)",
+        help="re-derive the most recently recorded pending wait (#436): holds, "
+        "cleared (needs --wait-cleared-by) or could-not-evaluate (needs --wait-why)",
     )
     parser.add_argument(
         "--wait-cleared-by",
@@ -1679,10 +1703,8 @@ def _main(argv=None):
             )
             return 1
         if args.pending_wait:
-            entry = last(args.path)
-            detail = entry.get("detail") if isinstance(entry, dict) else None
-            record = detail.get("wait") if isinstance(detail, dict) else None
-            if record is None:
+            found_entry, record = _last_wait(args.path)
+            if found_entry is None:
                 print("no pending wait")
                 return 0
             if not isinstance(record, dict) or record.get("state") not in (
@@ -1694,11 +1716,18 @@ def _main(argv=None):
                 # print "no pending wait", byte-identical to no wait ever having been
                 # recorded -- the absence this whole file exists to guard against,
                 # one branch away from the sibling `_wait_sentence`'s own explicit
-                # "unrecognised wait state" arm three lines over.
+                # "unrecognised wait state" arm three lines over. Branching on
+                # `found_entry is None` rather than `record is None` (found by
+                # audit, #436) keeps that guarantee even for a hand-authored entry
+                # whose `detail.wait` key is present but literally `null`: `record`
+                # is `None` there too, and checking `record` alone would silently
+                # fold that case back into "nothing was ever recorded".
                 return refuse(
-                    "the last entry's detail.wait is not a recognised wait record "
-                    "({!r}) -- this is not the same as no wait ever being recorded, "
-                    "and must not print as one".format(record)
+                    "the most recently recorded wait's detail.wait is not a "
+                    "recognised wait record ({!r}) -- this is not the same as no "
+                    "wait ever being recorded, and must not print as one".format(
+                        record
+                    )
                 )
             if record["state"] == WAIT_HOLDS:
                 print(json.dumps(record, indent=2))
@@ -1824,18 +1853,32 @@ def _main(argv=None):
                 )
             pending_wait_record = wait(args.wait_dispatch, args.wait_observable, args.at)
         elif args.check_wait is not None:
-            previous = last(args.path)
-            previous_wait = (
-                previous.get("detail", {}).get("wait")
-                if isinstance(previous, dict) and isinstance(previous.get("detail"), dict)
-                else None
-            )
-            if not isinstance(previous_wait, dict) or previous_wait.get("state") != WAIT_HOLDS:
+            # `found_entry` is the sentinel, not `previous_wait` (found by audit,
+            # #436): a hand-authored entry can carry a `detail.wait` key whose value
+            # is literally `null`, which makes `previous_wait` itself `None` too --
+            # checking `previous_wait is None` here would silently read that as "no
+            # entry has ever recorded a wait", the exact absence #436 exists to close.
+            found_entry, previous_wait = _last_wait(args.path)
+            if found_entry is None:
                 return refuse(
-                    "--check-wait was given but the last entry carries no pending "
-                    "wait (state {}); there is nothing to re-derive".format(
-                        WAIT_HOLDS
-                    )
+                    "--check-wait was given but no entry has ever recorded a wait; "
+                    "there is nothing to re-derive"
+                )
+            if not isinstance(previous_wait, dict) or previous_wait.get("state") != WAIT_HOLDS:
+                # The `{}` slot names the state actually found on disk, not the
+                # required `WAIT_HOLDS` constant -- found by audit alongside #436: the
+                # old message filled it with the literal `WAIT_HOLDS`, in a position
+                # every reader takes as the state that was found, so a wait that had
+                # already been checked `cleared` was reported as "state holds".
+                found_state = (
+                    previous_wait.get("state")
+                    if isinstance(previous_wait, dict)
+                    else previous_wait
+                )
+                return refuse(
+                    "--check-wait was given but the most recently recorded wait "
+                    "carries state {!r}, not {}; there is nothing to "
+                    "re-derive".format(found_state, WAIT_HOLDS)
                 )
             pending_wait_record = check_wait(
                 previous_wait,
