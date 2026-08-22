@@ -66,9 +66,12 @@ believed it*, which is invisible by construction.
                        back-reference -- so this tool cannot tell a review that
                        stated its findings in prose from one that gestured, and
                        says so instead of guessing.
-  could-not-read       the CLI was given a path it could not open. Nothing was
-                       looked at, which is not the same as looking and finding
-                       nothing, and is not `could-not-classify` either.
+  could-not-read       nothing was reliably looked at, which is not the same
+                       as looking and finding nothing, and is not
+                       `could-not-classify` either. Four ways in: a path that
+                       could not be opened; a closed or unopenable stdin
+                       (#405); and, under `--framed`, a frame that never
+                       closed or one whose message is not indented (#404).
 
 `could-not-classify` is the load-bearing one and it is deliberately not a
 catch-all: calling an undecidable message clean is the defect this repository
@@ -400,12 +403,21 @@ def unframe(text):
     The indent is stripped rather than tolerated, because column zero is where
     `_BLOCK` counts and an indented message would enumerate nothing.
     """
-    lines = text.splitlines()
+    # `split("\n")`, not `splitlines()`. `splitlines()` also breaks on `\r`,
+    # `\v`, `\f`, `\x1c`-`\x1e`, `\x85`, U+2028 and U+2029 -- none of which
+    # bash treats as a line boundary, and none of which whoever applied the
+    # indent treated as one either. So a message carrying one of those mid-line
+    # arrives as a single indented line from bash and would be split here into
+    # a first part that is indented and a rest that is not, handing a message
+    # the power to produce an unindented line at will. That is #404's own
+    # mechanism one layer down, and it needs no adversary: a stray `\r` from
+    # pasted mixed-ending text is enough. Splitting on exactly what bash split
+    # on keeps the two parsers agreeing about what a line is.
+    lines = text.split("\n")
     end = None
     for index, line in enumerate(lines):
         # The *first* sentinel, not the last: the frame ends where it first
         # says it does, so nothing after it can be appended to the message.
-        # A content line cannot be this one -- it is indented.
         if line.rstrip() == FRAME_END:
             end = index
             break
@@ -414,6 +426,23 @@ def unframe(text):
             "the framing never closed -- no {0!r} line at column zero, so what "
             "arrived is a prefix of the message and the rest of it was parsed "
             "by the shell".format(FRAME_END)
+        )
+    # Nothing may follow the sentinel. A content line carrying the sentinel
+    # unindented is indistinguishable from the real one, so the frame closes
+    # early and the rest of the message is dropped -- silently, with a
+    # confident verdict over a prefix, which is exactly the shape this
+    # function exists to refuse. What that case *does* leave behind is
+    # material after the close, and that is decidable. The one residue is a
+    # message whose final line is an unindented sentinel, which nothing can
+    # tell from the real one; it costs that line and cannot truncate a body.
+    trailing = [line for line in lines[end + 1 :] if line.strip()]
+    if trailing:
+        return None, (
+            "the frame closed at line {0} and {1} line(s) follow it, so where "
+            "the message ends is not decidable -- an unindented {2!r} inside "
+            "the message looks exactly like this. First trailing line: {3}".format(
+                end + 1, len(trailing), FRAME_END, fold_to_one_ascii_line(trailing[0])
+            )
         )
     out = []
     for number, line in enumerate(lines[:end], 1):

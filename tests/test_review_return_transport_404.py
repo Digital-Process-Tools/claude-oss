@@ -193,14 +193,64 @@ def test_unframe_returns_exactly_one_of_message_and_error():
     assert error is not None
 
 
-def test_unframe_discards_whatever_follows_the_sentinel():
-    """A forged sentinel cannot be used to append content, because a message
-    line carrying it is indented and so does not close the frame."""
+def test_a_sentinel_with_anything_after_it_is_refused():
+    """The only decidable trace of an unindented sentinel inside the message.
+
+    A message line carrying `END OF MESSAGE` unindented is byte-identical to
+    the real one, so the frame closes early and the rest of the message is
+    dropped -- a confident verdict over a prefix, which is #404 one layer
+    down. What that case always leaves behind is material after the close, and
+    that is decidable, so it is refused rather than classified.
+    """
     message, error = review_return.unframe(
-        "    NO FINDINGS\nEND OF MESSAGE\nleftover\n"
+        "    NO FINDINGS\nEND OF MESSAGE\n    leftover\nEND OF MESSAGE\n"
     )
+    assert message is None
+    assert "not decidable" in error, error
+
+
+def test_an_unindented_sentinel_inside_the_message_is_refused_end_to_end():
+    """The auditor's fixture, driven through the CLI rather than the function."""
+    code, out = _framed(
+        "    FINDINGS: 1\n"
+        "\n"
+        "    1. The reviewer quotes the transport block, sentinel included:\n"
+        "END OF MESSAGE\n"
+        "    2. This second finding must not be silently dropped.\n"
+        "END OF MESSAGE\n"
+    )
+    assert out.startswith("VERDICT: could-not-read"), out
+    assert code == 6, out
+
+
+def test_an_exotic_separator_inside_a_line_stays_content():
+    """`splitlines()` breaks on separators bash does not, which would let a
+    message manufacture an unindented line -- and a stray CR is enough.
+
+    The control below is the same shape with a real newline, which must still
+    be refused, so this cannot pass by treating every frame as valid.
+    """
+    # U+2028 LINE SEPARATOR, spelled rather than pasted: an invisible
+    # separator in a source file is exactly the thing under test.
+    ls = chr(0x2028)
+    smuggled = (
+        "    NO FINDINGS" + ls + "END OF MESSAGE" + ls + "FINDINGS: 1\n"
+        "END OF MESSAGE\n"
+    )
+    message, error = review_return.unframe(smuggled)
     assert error is None, error
-    assert "leftover" not in message
+    assert "FINDINGS: 1" in message, repr(message)
+    assert message.startswith("NO FINDINGS" + ls), repr(message)
+
+    carriage = "    ok\rEND OF MESSAGE\nEND OF MESSAGE\n"
+    message, error = review_return.unframe(carriage)
+    assert error is None, error
+    assert message.startswith("ok\r"), repr(message)
+
+    control = "    ok\nEND OF MESSAGE\nEND OF MESSAGE\n"
+    message, error = review_return.unframe(control)
+    assert message is None, repr(message)
+    assert "not decidable" in error, error
 
 
 def test_unframe_names_the_offending_line_folded():
