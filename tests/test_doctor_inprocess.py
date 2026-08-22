@@ -2353,3 +2353,208 @@ def test_fragments_readme_invalid_changelog_dir_does_not_fall_back_to_the_defaul
     state, message = doctor.FINDINGS[-1]
     assert state == "OK", doctor.FINDINGS
     assert "no directory this run could resolve" in message
+
+
+# --- can the merge call skip supertool's own confirm gate? (#421) -------------
+
+
+def test_publish_confirm_needs_force_is_the_default_with_no_config_at_all(tmp_path):
+    """No `.supertool.json` at all is the shipped default -- `needs-force`, never
+    `could-not-tell`. The absence of a file is not the same failure as a file that
+    is there and broken."""
+    state, _detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "needs-force"
+
+
+def test_publish_confirm_reports_confirmable_when_the_config_flag_is_set(tmp_path):
+    """The must-fire arm for `confirmable`."""
+    _supertool_config(tmp_path, {"presets": ["git", "github"], "no_publish_confirm": True})
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "confirmable"
+    assert "gh-pr-merge" in detail
+
+
+def test_publish_confirm_reports_confirmable_when_the_env_var_is_set(tmp_path):
+    """The env opt-out is read too, not only the config key."""
+    _supertool_config(tmp_path, {"presets": ["git", "github"]})
+    state, _detail = doctor.publish_confirm_state(
+        tmp_path, env={"SUPERTOOL_NO_PUBLISH_CONFIRM": "1"}
+    )
+    assert state == "confirmable"
+
+
+def test_publish_confirm_needs_force_when_neither_opt_out_is_set(tmp_path):
+    """The must-not-fire control for the test above: same fixture, no env
+    override -- and it must NOT read as `confirmable`."""
+    _supertool_config(tmp_path, {"presets": ["git", "github"]})
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "needs-force"
+    assert "gh-pr-merge" in detail
+
+
+def test_publish_confirm_detail_is_grammatical_with_no_config_at_all(tmp_path):
+    """No `.supertool.json` at all means `presets` cannot be read either, so the
+    `route_known is False` arm composes with the rest of the sentence -- this is
+    the single most common repo state a fresh check like this one will hit, and
+    a composition bug there would go unnoticed by a test that only asserts the
+    state."""
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "needs-force"
+    assert detail == (
+        "no opt-out is set, so which op(s) it gates could not be read "
+        "(`presets` in {} is absent or not a list of strings)".format(
+            doctor.WATCH_CONFIG
+        )
+    )
+
+
+def test_publish_confirm_detail_is_grammatical_when_confirmable_with_no_route(tmp_path):
+    """The must-fire pair for the test above: same unreadable-route shape, this
+    time with the opt-out on, so the `confirmable` branch's own composition of
+    the same `reach` fragment is exercised too."""
+    _supertool_config(tmp_path, {"no_publish_confirm": True})
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "confirmable"
+    assert detail == (
+        "`no_publish_confirm` in {} is truthy, so which op(s) it reaches "
+        "could not be read (`presets` in {} is absent or not a list of "
+        "strings)".format(doctor.WATCH_CONFIG, doctor.WATCH_CONFIG)
+    )
+
+
+def test_publish_confirm_names_every_op_the_switch_reaches_not_only_the_merge(tmp_path):
+    """The opt-out is wider than the merge: `require_confirm` gates three ops, and
+    a project whose `presets` enable more than `github` must see all of them
+    named, not only `gh-pr-merge` (#421's own point about a half-told line)."""
+    _supertool_config(
+        tmp_path,
+        {"presets": ["git", "github", "devto", "bluesky"], "no_publish_confirm": True},
+    )
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "confirmable"
+    assert "gh-pr-merge" in detail
+    assert "devto_publish" in detail
+    assert "bluesky_publish" in detail
+
+
+def test_publish_confirm_names_none_reached_today_when_no_publish_preset_is_loaded(
+    tmp_path,
+):
+    """A project whose `presets` exclude every op the gate covers still gets an
+    honest `confirmable`, but the detail says the switch reaches nothing today --
+    the shape #421 calls out: the flag disables confirmation for whatever is
+    routed NOW, silently, for whatever arrives later."""
+    _supertool_config(tmp_path, {"presets": ["git"], "no_publish_confirm": True})
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "confirmable"
+    assert "none" in detail
+
+
+def test_publish_confirm_could_not_tell_on_an_unreadable_config(tmp_path):
+    """exit 0 always: an OSError that is not absence arrives as `could-not-tell`,
+    never guessed into `confirmable` or `needs-force`. The deny is attempted
+    rather than assumed."""
+    blocked = tmp_path / doctor.WATCH_CONFIG
+    blocked.write_text("{}", encoding="utf-8")
+    try:
+        blocked.chmod(0o000)
+        if os.access(str(blocked), os.R_OK):
+            pytest.skip(
+                "this process can read a 0o000 file (root, or a filesystem without "
+                "POSIX modes), so the unreadable arm cannot be reached here"
+            )
+        state, _detail = doctor.publish_confirm_state(tmp_path, env={})
+    finally:
+        blocked.chmod(0o644)
+    assert state == "could-not-tell"
+
+
+def test_publish_confirm_could_not_tell_on_a_malformed_config(tmp_path):
+    """A file that parses but is not an object is `could-not-tell`, not folded
+    into the shipped default."""
+    (tmp_path / doctor.WATCH_CONFIG).write_text("[]", encoding="utf-8")
+    state, _detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "could-not-tell"
+
+
+def test_publish_confirm_reads_a_truthy_non_boolean_flag_like_the_real_gate(tmp_path):
+    """`_publish_safety.require_confirm` reads the key with plain `bool()`, not a
+    type check -- `"yes"` really does turn confirmation off there, so reporting
+    it as `could-not-tell` would be a wrong answer dressed as caution."""
+    _supertool_config(tmp_path, {"presets": ["github"], "no_publish_confirm": "yes"})
+    state, _detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "confirmable"
+
+
+def test_publish_confirm_needs_force_control_for_a_falsy_non_boolean_flag(tmp_path):
+    """The must-not-fire control for the test above: same shape, a falsy value --
+    `bool("")` is `False`, same as the gate it reports on."""
+    _supertool_config(tmp_path, {"presets": ["github"], "no_publish_confirm": ""})
+    state, _detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "needs-force"
+
+
+def test_check_publish_confirm_never_renders_needs_force_as_a_fault(tmp_path, capsys):
+    """The shipped default is reported as neutral information, not a warning --
+    flagging the default trains a maintainer to skim doctor output."""
+    _supertool_config(tmp_path, {"presets": ["git", "github"]})
+    doctor.check_publish_confirm(tmp_path, env={})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK", doctor.FINDINGS
+    assert "|force" in message
+
+
+def test_check_publish_confirm_warns_on_could_not_tell_and_not_on_the_default(
+    tmp_path, capsys
+):
+    """Must-fire/must-not-fire pair in one fixture family: a malformed file warns,
+    the shipped default (no file at all) does not."""
+    (tmp_path / doctor.WATCH_CONFIG).write_text("[]", encoding="utf-8")
+    doctor.check_publish_confirm(tmp_path, env={})
+    loud = [state for state, _ in doctor.FINDINGS]
+    doctor.FINDINGS.clear()
+
+    doctor.check_publish_confirm(tmp_path.parent / "nonexistent-dir-for-421", env={})
+    quiet = [state for state, _ in doctor.FINDINGS]
+
+    assert loud == ["WARN"]
+    assert quiet == ["OK"]
+
+
+def test_check_publish_confirm_scopes_confirmable_to_supertools_own_gate(tmp_path):
+    """A `confirmable` OK must say it is supertool's own gate only -- the
+    harness's own permission layer sits above it and can still refuse the call
+    (#421's own comment measured exactly that)."""
+    _supertool_config(tmp_path, {"presets": ["github"], "no_publish_confirm": True})
+    doctor.check_publish_confirm(tmp_path, env={})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK"
+    assert "harness" in message
+
+
+def test_check_publish_confirm_prints_ascii_only_in_every_state(tmp_path):
+    """Windows consoles encode with the codepage, not the source file's encoding,
+    so a non-ASCII byte here kills the process at the print."""
+    docs = [
+        None,
+        {"presets": ["git"]},
+        {"presets": ["github"], "no_publish_confirm": True},
+        {"presets": ["git", "github", "devto", "bluesky"], "no_publish_confirm": True},
+        [],
+    ]
+    seen = set()
+    for doc in docs:
+        doctor.FINDINGS.clear()
+        target = tmp_path / doctor.WATCH_CONFIG
+        if doc is None:
+            if target.exists():
+                target.unlink()
+        elif isinstance(doc, list):
+            target.write_text(json.dumps(doc), encoding="utf-8")
+        else:
+            _supertool_config(tmp_path, doc)
+        seen.add(doctor.publish_confirm_state(tmp_path, env={})[0])
+        doctor.check_publish_confirm(tmp_path, env={})
+        for _state, message in doctor.FINDINGS:
+            message.encode("ascii")
+    assert len(seen) == 3, sorted(seen)
