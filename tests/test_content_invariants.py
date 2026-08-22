@@ -3153,7 +3153,19 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     """#461 is explicit: nothing goes in agents/developer.md. It stops at a commit
     and makes no forge writes, and that boundary is worth more than the call it
     would save. The claim/release calls belong to the maintainer half only.
+
+    A "must not fire" check with no "must fire" case in the same fixture passes
+    identically whether the substring is truly absent or the check is broken, so
+    this is paired with a positive control: the manager skill *is* expected to
+    carry both flags (that is the whole point of #461), and if it does not, the
+    substring test below is not measuring what it claims to.
     """
+    manager_text = MANAGER_SKILL.read_text(encoding="utf-8")
+    assert "--add-assignee" in manager_text and "--remove-assignee" in manager_text, (
+        "positive control failed: skills/manager/SKILL.md no longer carries both "
+        "assignee flags -- the negative check below over agents/*.md would then "
+        "pass whether or not it is actually looking at anything (#461)"
+    )
     for path in AGENTS:
         text = path.read_text(encoding="utf-8")
         assert "--add-assignee" not in text and "--remove-assignee" not in text, (

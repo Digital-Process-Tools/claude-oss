@@ -568,7 +568,10 @@ commit, unassign the issue it was claimed under before the spawn:
 lock: an issue assigned to a lane that
 no longer exists is indistinguishable from one still being worked, which is this repository's own
 defect class landing on the mechanism meant to prevent it. A lane that *did* return a commit needs no
-release here — merging the pull request against a body that closes the issue is what ends its claim.
+release here — merging closes the issue and drops it off the open board this selection step reads,
+which is what stops it being picked again, not the assignee field being cleared. A pull request
+that closes **without** merging is not that case and is not covered by this step; it is the same
+permanent-lock failure and is filed separately rather than solved here (#461).
 
 ## Opening the pull request
 
