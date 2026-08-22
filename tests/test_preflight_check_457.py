@@ -91,6 +91,94 @@ def test_an_unreadable_file_is_named_not_silently_dropped(tmp_path):
         os.chmod(blocked, old_mode)
 
 
+def test_an_unreadable_file_with_no_other_match_is_could_not_search(tmp_path):
+    """The finding the decoy above could not catch: when the only file
+    that could have matched is unreadable, a clean miss and a blocked read
+    must not render identically. Positive control: the same fixture with
+    the block lifted does find the match, so this is not a broken pattern."""
+    if os.name == "nt":
+        pytest.skip("POSIX permission bits; Windows chmod semantics differ")
+    blocked = tmp_path / "blocked.txt"
+    blocked.write_text("could not run\\n", encoding="utf-8")
+
+    old_mode = blocked.stat().st_mode
+    os.chmod(blocked, 0o000)
+    try:
+        try:
+            blocked.read_text(encoding="utf-8")
+            deny_took = False
+        except PermissionError:
+            deny_took = True
+
+        result = pc.search("could not run", [tmp_path])
+        if not deny_took:
+            pytest.skip(
+                "chmod 000 did not deny reading on this platform/user -- "
+                "UNTESTED HERE: whether the only candidate file being unreadable "
+                "forces could-not-search rather than not-matched"
+            )
+        assert result["state"] == "could-not-search"
+        assert result["state"] != "not-matched"
+    finally:
+        os.chmod(blocked, old_mode)
+
+    # Control: same fixture, block lifted -- the match is found, so the
+    # could-not-search above is not a broken pattern.
+    control = pc.search("could not run", [tmp_path])
+    assert control["state"] == "matched"
+
+
+def test_an_unreadable_directory_with_no_match_elsewhere_is_could_not_search(tmp_path):
+    if os.name == "nt":
+        pytest.skip("POSIX permission bits; Windows chmod semantics differ")
+    readable = tmp_path / "readable.txt"
+    readable.write_text("nothing relevant\\n", encoding="utf-8")
+    blocked_dir = tmp_path / "blocked"
+    blocked_dir.mkdir()
+    (blocked_dir / "f.txt").write_text("could not run\\n", encoding="utf-8")
+
+    old_mode = blocked_dir.stat().st_mode
+    os.chmod(blocked_dir, 0o000)
+    try:
+        try:
+            list(blocked_dir.iterdir())
+            deny_took = False
+        except PermissionError:
+            deny_took = True
+
+        result = pc.search("could not run", [tmp_path])
+        if not deny_took:
+            pytest.skip(
+                "chmod 000 did not deny listing a directory on this platform/user "
+                "-- UNTESTED HERE: whether an unwalkable subdirectory forces "
+                "could-not-search rather than not-matched"
+            )
+        assert result["state"] == "could-not-search"
+        assert result["state"] != "not-matched"
+    finally:
+        os.chmod(blocked_dir, old_mode)
+
+    # Control: same fixture, block lifted -- the match under the formerly
+    # blocked directory is found, so the could-not-search above is real.
+    control = pc.search("could not run", [tmp_path])
+    assert control["state"] == "matched"
+
+
+def test_one_missing_root_among_several_is_could_not_search_even_with_a_clean_miss_elsewhere(tmp_path):
+    """#457's own multi-part/bundle use passes several --path roots in one
+    call. If one candidate's path was mistyped or moved, that must not be
+    masked by another root searching cleanly and finding nothing."""
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    (existing / "f.txt").write_text("nothing relevant\\n", encoding="utf-8")
+    missing = tmp_path / "does-not-exist"
+
+    result = pc.search("could not run", [existing, missing])
+    assert result["state"] == "could-not-search"
+    assert result["state"] != "not-matched"
+    assert str(missing) in result["missing_roots"]
+
+
 def test_main_cli_matched_and_not_matched_exit_codes(tmp_path, capsys):
     target = tmp_path / "f.txt"
     target.write_text("could not run\n", encoding="utf-8")

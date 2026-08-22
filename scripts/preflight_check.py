@@ -145,7 +145,21 @@ def search(pattern, roots):
             if compiled.search(line):
                 matches.append({"path": str(path), "line": lineno, "text": line.strip()})
 
-    state = STATE_MATCHED if matches else STATE_NOT_MATCHED
+    # A match found is a match found regardless of what else could not be
+    # read -- but an *absence* is only trustworthy when nothing was skipped.
+    # missing_roots, unreadable_dirs and unreadable_files are all collected
+    # above and were previously left unconsulted here, so a permission-denied
+    # file or subdirectory, or one root among several that does not exist,
+    # rendered identically to a clean miss (found by review, #457's own
+    # defect one layer down: an absence produced by the tool, read as an
+    # absence in the world).
+    if matches:
+        state = STATE_MATCHED
+    elif missing_roots or unreadable_dirs or unreadable_files:
+        state = STATE_COULD_NOT_SEARCH
+    else:
+        state = STATE_NOT_MATCHED
+
     result = {
         "state": state,
         "pattern": pattern,
@@ -155,6 +169,20 @@ def search(pattern, roots):
         "unreadable_dirs": unreadable_dirs,
         "missing_roots": missing_roots,
     }
+    if state == STATE_COULD_NOT_SEARCH:
+        problems = []
+        if missing_roots:
+            problems.append("root(s) missing: {0}".format(", ".join(missing_roots)))
+        if unreadable_dirs:
+            problems.append(
+                "director{0} could not be walked: {1}".format(
+                    "y" if len(unreadable_dirs) == 1 else "ies",
+                    ", ".join(d["path"] for d in unreadable_dirs),
+                )
+            )
+        if unreadable_files:
+            problems.append("file(s) could not be read: {0}".format(", ".join(unreadable_files)))
+        result["problem"] = "no match found, but not every path was searched -- " + "; ".join(problems)
     return result
 
 
