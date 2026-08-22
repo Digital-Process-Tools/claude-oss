@@ -4556,3 +4556,99 @@ def test_a_document_that_never_mentions_live_worktrees_is_not_reported():
     is not flagged as missing the script."""
     unrelated = "Write the fragment, run the suite, and commit."
     assert _lane_setup_unmet(unrelated) == set()
+
+
+# ---------------------------------------------------------------------------
+# #499: nothing said to look for companions when choosing what to dispatch,
+# so a lane always carried one issue even when bundling two or three would
+# have cost less overall. The rule belongs at the dispatch step, beside the
+# #461 claim it sits next to in the issue's own "location" field.
+
+
+def test_dispatch_looks_for_bundle_companions():
+    body = _manager_section(_DISPATCH_SECTION_HEADING)
+    lowered = body.lower()
+    assert "companion" in lowered, (
+        "the dispatch section no longer says to look for companion issues before "
+        "naming a single-issue lane (#499)"
+    )
+    assert "cap at three" in lowered or "never four" in lowered, (
+        "the bundle cap is the strongest number in #499's own table -- a lane at "
+        "141 median turns is expensive however it got there, and the rule must "
+        "say so"
+    )
+    assert "#499" in body, "the dispatch section no longer cites #499"
+
+
+def test_the_two_issue_row_is_not_encoded_as_a_rule():
+    """#499 is explicit: the two-issue row is n=58, worse per issue than a
+    single-issue lane, and exactly the shape of a result that reverses on more
+    data. Encoding it as "never bundle two" would pin that noise as a fact --
+    the same mistake #435 records. Paired with a positive control: the phrase
+    the check looks for must actually be absent, not merely unlooked-for.
+    """
+    body = _manager_section(_DISPATCH_SECTION_HEADING)
+    lowered = body.lower()
+    assert "never bundle two" not in lowered and "always bundle three" not in lowered, (
+        "the dispatch section encodes the two-issue row as a rule -- #499 says "
+        "explicitly that this must not happen"
+    )
+    # Positive control: the same check does fire on text that does encode it,
+    # so the assertion above is not passing because the phrase can never appear.
+    assert "never bundle two" in "Never bundle two issues into one lane.".lower()
+
+
+def test_bundling_is_distinguished_from_clustering():
+    """A bundle and a cluster are different questions with different owners
+    (#499's own "A bundle is not a cluster" section) -- the rule must not let
+    a reader collapse them back into one.
+    """
+    body = _manager_section(_DISPATCH_SECTION_HEADING)
+    assert "cluster" in body.lower(), (
+        "the dispatch section's bundling rule no longer distinguishes a bundle "
+        "from a cluster -- without that distinction a reader will apply "
+        "agents/triager.md's shared-failure bar to a decision that does not need it"
+    )
+
+
+# ---------------------------------------------------------------------------
+# #465: a pull request closed without merging leaves its issue assigned
+# forever -- the same permanent lock #461 was filed to prevent, one event
+# later than the one #461's own release rule covers.
+
+
+def test_handback_releases_a_pull_request_closed_without_merging():
+    body = _manager_section(_HANDBACK_SECTION_HEADING)
+    assert "mergedAt" in body and "CLOSED" in body, (
+        "the handback section no longer names the closed-without-merging release "
+        "rule (#465) -- a pull request that closes unmerged leaves its issue "
+        "assigned forever"
+    )
+    assert "--remove-assignee @me" in body, (
+        "the closed-unmerged release no longer names the same release call the "
+        "no-commit case uses (#465)"
+    )
+    assert "#465" in body, "the handback section no longer cites #465"
+
+
+def test_the_closed_unmerged_release_has_its_own_third_state():
+    body = _manager_section(_HANDBACK_SECTION_HEADING)
+    lowered = body.lower()
+    assert "must never render as released" in lowered, (
+        "a pull request whose closed/merged state could not be read must never "
+        "render as released, for the same reason an unreadable claim state must "
+        "never render as free (#465)"
+    )
+
+
+def test_the_closed_unmerged_gap_is_named_not_silently_solved():
+    """#465's own 'what would settle it' names the reachability gap: nothing in
+    the loop re-reads a closed pull request on its own, so a pull request
+    closed by someone else outside a tick this loop ran is not observed. The
+    rule has to say so rather than implying full coverage.
+    """
+    body = _manager_section(_HANDBACK_SECTION_HEADING)
+    assert "closed by someone else" in body.lower() or "outside a tick this loop ran" in body.lower(), (
+        "the closed-unmerged release rule no longer names the gap it does not "
+        "cover -- a pull request closed by an event this loop did not see (#465)"
+    )

@@ -479,6 +479,27 @@ triage permission — so this mechanism claims for the maintainer's own loop onl
 contributor uses to claim an issue is a separate decision (#460); it must land somewhere this same
 selection step reads, not in a channel of its own that renders an actually-claimed issue as free.
 
+**Look for one or two companions before naming a single-issue lane.** Measured across 237 lanes in
+this repository's own transcripts (#499): a lane's cost is dominated by fixed overhead paid once
+regardless of how much work it carries — a turn-1 baseline, an orientation phase, two self-review
+spawns, a full suite run — so three issues in one lane cost 16% less per issue than one issue alone,
+and four or more is a cliff at 141 median turns and 68% worse per issue. When an issue is selected,
+check whether one or two others on the board touch the same file or module and, if so, dispatch them
+as one lane: **cap at three, never four.** This is a bundle, not a cluster — `agents/triager.md`
+correctly refuses to cluster on a shared file, because a cluster claims one change fixes several
+issues and needs a shared failure to back that; a bundle claims only that the fixes share a
+worktree, and the file each one reads is exactly the right evidence for that weaker claim. A bundle
+stays three fixes, not one: **each issue keeps its own test story and its own changelog fragment**,
+and the pull request closes all of them. **Never bundle an issue a running lane already touches** —
+check with the same `scripts/lane_setup.py --lane PATTERN --against PATTERN` call the disjointness
+rule above already runs, read the other way: overlap there means conflict, and overlap here, at
+selection time, against a *candidate's* declared lane rather than a running one, means the two are
+worth bundling. **The two-issue row must not become a rule.** It is n=58 and is worse per issue than
+a single-issue lane, which is exactly the shape of a result that reverses on more data — a blanket
+refusal to pair up two issues would pin that noise as a fact, the same mistake #435 records about a
+test that froze one interpreter's answer into a hardcoded platform one. Carry the caveat with the
+number rather than silently dropping either.
+
 Launch them in a single message so they run concurrently.
 
 **Run `scripts/lane_setup.py <issue>` from the clone before writing each brief, rather than typing
@@ -569,9 +590,22 @@ lock: an issue assigned to a lane that
 no longer exists is indistinguishable from one still being worked, which is this repository's own
 defect class landing on the mechanism meant to prevent it. A lane that *did* return a commit needs no
 release here — merging closes the issue and drops it off the open board this selection step reads,
-which is what stops it being picked again, not the assignee field being cleared. A pull request
-that closes **without** merging is not that case and is not covered by this step; it is the same
-permanent-lock failure and is filed separately rather than solved here (#461).
+which is what stops it being picked again, not the assignee field being cleared.
+
+**A pull request that closes without merging releases its issue too (#465).** It is further along
+than a lane that never committed — a commit exists, a pull request was opened — and ends in the same
+state: an assignee, no lane behind it, and a selection step that now skips it forever because it
+reads as somebody's. `gh-pr:N:status` already reads `state` and `mergedAt`; when `state` is `CLOSED`
+and `mergedAt` is null, unassign the linked issue the same way — `gh issue edit <N> --remove-assignee
+@me`. Three states, unchanged from the claim above: **released** — closed unmerged; **still-assigned**
+— merged, or still open, or the read failed; and the read failing **must never render as released**,
+for the same reason a claim state that could not be read must never render as free. The reachable
+event is the one this loop's own decision produces: when this loop is the one that closes a pull
+request without merging — a superseded approach, a scope change, a duplicate — run this check as
+part of that same step, not a separate sweep. **A pull request closed by someone else, outside a
+tick this loop ran, is not observed by this step**; that gap is named rather than silently solved,
+because nothing in the loop currently re-reads a closed pull request on its own once it drops off
+the board a merge would have closed it from.
 
 ## Opening the pull request
 
