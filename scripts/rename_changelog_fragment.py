@@ -141,12 +141,31 @@ def _source_present(path):
     a source this process could not stat at all, on whichever interpreter
     does not happen to swallow that particular errno. `os.stat` and the
     exception in hand classify instead, matching `_destination_occupied`.
+
+    #468: matching the sibling used to mean matching its shape in prose
+    only. The absence arm below returned a bare `False` on the exception
+    type alone -- exactly the trust #444 removed from `_destination_occupied`
+    -- so a source folded onto `FileNotFoundError` by an over-`MAX_PATH` name
+    (CLAUDE.md's Windows measurement) was reported as "no such file" for a
+    path nothing had actually looked at. `_absence_confirmed` (#380) is
+    consulted here too, the same one call `_destination_occupied` makes:
+    confirmed absent renders as `False` ("not present"), anything else on
+    that arm renders as `None` ("could not tell") rather than as a false
+    absence. `except ValueError` is added for the same reason
+    `_destination_occupied` carries it: `os.stat` raises `ValueError`, not
+    `OSError`, for a path with an embedded null byte, and that type is not
+    reachable through this script's own CLI (POSIX argv cannot carry a NUL),
+    so it is a hazard for an importing caller only -- fixed here for
+    symmetry with the sibling, not because the CLI path was observed to hit
+    it.
     """
     try:
         st = os.stat(str(path))
     except (FileNotFoundError, NotADirectoryError):
-        return False
+        return False if _absence_confirmed(path) is True else None
     except OSError:
+        return None
+    except ValueError:
         return None
     return stat.S_ISREG(st.st_mode)
 
