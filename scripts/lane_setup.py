@@ -658,11 +658,30 @@ def lane_count(worktree_root):
             with open(entry_path) as fh:
                 data = json.load(fh)
             recorded_at = float(data["recorded_at"])
+        except FileNotFoundError:
+            # A sibling `lane_count()` call -- the exact concurrency #385 is about --
+            # can prune this same stale record between our `listdir` and our `open`.
+            # That is not corruption, it is the cleanup this function itself performs
+            # arriving one step ahead of us: the record is gone either way, so it is
+            # simply not counted, not folded into `unreadable` and not reported as an
+            # unreadable-record `could-not-run` for a record nothing was ever wrong
+            # with.
+            continue
         except (OSError, ValueError, KeyError, TypeError):
             unreadable += 1
             continue
         age = now - recorded_at
-        if age > LANE_RECORD_TTL_SECONDS or age < 0:
+        if age < 0:
+            # `recorded_at` in the future: clock skew between the writer and this
+            # reader, or a read racing a write within the same second. Far more
+            # likely to be "just (re)written" than "abandoned", so it is counted as
+            # live rather than pruned -- deleting it here would silently undercount a
+            # lane that in fact just recorded itself, which is the confident-absence
+            # failure the rest of this function exists to avoid, reached through
+            # deletion instead of through a wrong number.
+            live += 1
+            continue
+        if age > LANE_RECORD_TTL_SECONDS:
             try:
                 os.remove(entry_path)
             except OSError:

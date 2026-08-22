@@ -33,6 +33,7 @@ process whether it is still there, which is the thing this file's own docstring 
 cannot be done.
 """
 
+import builtins
 import json
 import os
 import sys
@@ -211,3 +212,44 @@ def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(tmp_pat
 
     rendered = lane_setup.receipt(payload)
     assert "lanes" in rendered
+
+
+def test_a_record_vanishing_between_listdir_and_open_is_not_unreadable(tmp_path, monkeypatch):
+    """The reviewer's TOCTOU finding: a sibling `lane_count()` call can prune a stale
+    record between our `listdir` and our `open` -- that is not corruption, and must
+    not fold the whole call to `could-not-run` for a record nothing was wrong with.
+    """
+    root = str(tmp_path / "worktrees")
+    live_path = _write_record(root, 111, age_seconds=60)
+    vanishing_path = _write_record(root, 222, age_seconds=60)
+
+    real_open = builtins.open
+
+    def racing_open(path, *a, **k):
+        if os.path.abspath(path) == os.path.abspath(vanishing_path):
+            os.remove(vanishing_path)
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr(lane_setup, "open", racing_open, raising=False)
+
+    result = lane_setup.lane_count(root)
+
+    assert result["state"] == "resolved"
+    assert result["count"] == 1
+    assert os.path.exists(live_path)
+
+
+def test_a_future_recorded_at_is_counted_live_not_pruned(tmp_path):
+    """The reviewer's clock-skew finding: a `recorded_at` in the future (writer/reader
+    clock skew, or a read racing a write) reads as "just written", not "abandoned" --
+    it must not be silently deleted, which would undercount a genuinely live lane.
+    """
+    root = str(tmp_path / "worktrees")
+    future_path = _write_record(root, 111, age_seconds=-3600)
+
+    result = lane_setup.lane_count(root)
+
+    assert result["state"] == "resolved"
+    assert result["count"] == 1
+    assert os.path.exists(future_path), "a future timestamp must not be pruned"
+
