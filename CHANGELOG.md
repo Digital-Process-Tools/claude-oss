@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-22
+
+### Added
+
+- A status line for a managed repo (#479). `/oss:scaffold` writes `.oss/statusline.py` as an owned
+  file and adds a `statusLine` key to `.claude/settings.json` **only when that key is absent** -- an
+  existing status line is a decision and is never overwritten. It renders the model and context
+  percentage, the repo, branch and declared version, open pull requests and open issues, the next
+  armed tick read off the session transcript, and the installed plugin versions against their latest
+  releases. Every field has a third state that prints `?`: a count nobody took never renders as `0`,
+  a comparison nobody could make never renders as current, and a transcript tail that did not reach
+  the top of the file reports `?` rather than "no tick armed".
+- The status line asks for a plugin's latest version the way `doctor.published_versions` does -- the
+  manifest on the source repository's default branch, which is what `claude plugin update` would
+  install -- rather than the latest GitHub Release. The two are not the same question: a plugin whose
+  tag is ahead of its last published release read as `ahead` while being exactly current.
+- `/oss:doctor` gains a `statusline` row: wired to ours, wired to somebody else's (left alone), not
+  wired with the block to paste, or unreadable settings -- which reports as unknown, not as absent.
+- The changelog-gate detection no longer governs every owned file (#479). It answers one question --
+  does a changelog gate already run here under another name -- so it now gates `scaffold.CHANGELOG_OWNED`
+  alone. `.oss/statusline.py` reaches a repo that runs its own changelog gate, and `doctor.owned_drift`
+  reads the same split rather than reporting a decline scaffold never made.
+
+- The plugin now keeps itself current (#480). A `SessionStart` hook forks
+  `scripts/plugin_update.py`, which refreshes the marketplace and then updates this plugin at every
+  scope the install record names -- `--scope user` was the obvious default and it fails outright
+  against a project-scoped install, so the scope is derived rather than assumed. The hook forks and
+  returns: nothing waits on a network call at session start.
+- Four states in the receipt it leaves, and none of them collapse: `off` (switched off by
+  `OSS_NO_AUTO_UPDATE` in the environment or `"auto_update": false` in `.oss.json` /
+  `.oss.local.json`), `updated` (naming both versions and that a restart is needed before the new
+  code runs), `current`, and `could-not-check`. A run that could not refresh the marketplace never
+  reports `current`: `latest` would mean whatever it meant last time.
+- `/oss:doctor` gains an `auto-update` row that reads that receipt back, including the state where
+  there is no receipt at all -- which says nothing was recorded, not that the plugin is up to date.
+
+### Fixed
+
+- The auto-updater no longer reports `current` about three situations where nothing was
+  established (#484). An unreadable install record used to leave `before` and `after` both
+  `None` and still fall through to `current`; it now returns `could-not-check` -- and, caught
+  by this fix's own review round, so does the asymmetric case where only ONE of the two
+  reads fails, not just both. A scope that failed to update used to vanish from the receipt
+  the moment one other scope succeeded; the failure now reaches `detail` without changing the
+  state, so `updated`/`current` still stand but say which scope was left behind. And
+  `plugin_update.read_receipt` no longer collapses a corrupt receipt into the same `None` as
+  no receipt at all -- a `ReceiptUnreadable` result tells `doctor.check_auto_update` the two
+  apart, and it reports the broken-receipt case at `WARN` rather than the ordinary
+  pre-first-run `OK`.
+
+- `/oss:scaffold`'s `settings_plan` no longer opens with `Path.exists()`, the one call
+  CLAUDE.md prohibits by name (#485). That call swallows a short list of errnos and
+  re-raises everything else, and which is which moves between interpreter versions -- so
+  the run could die before the `decline` its own docstring promises, or `exists()` could
+  swallow to `False` and let `apply_settings` overwrite a present, unreadable
+  `.claude/settings.json`. The pre-check is gone; `read_text` is attempted directly and the
+  exception actually raised decides the arm, `FileNotFoundError` for `create` and every
+  other `OSError` for `decline`.
+
+- The status line no longer interpolates untrusted manifest text unfolded (#486). `version`
+  (this repo's own tracked manifest), `installed` and `latest` (a plugin's manifest, the
+  latter fetched over the network from another repository), and a dependency's declared
+  `name` now pass through a one-line ASCII fold at the point each enters `render`, before
+  this script's own ANSI colour is added -- so a newline can no longer put attacker-chosen
+  text at column 0 of the terminal chrome, and an ESC can no longer rewrite what the
+  terminal has already printed.
+
+- `/oss:doctor`'s `statusline` check no longer grades a status line `OK ... wired` purely
+  because its command contains the substring `statusline.py` (#487). The command this
+  plugin writes uses POSIX `$VAR` shell expansion, which Windows's default command
+  interpreter does not expand -- reasoned from the syntax rather than observed, since
+  nobody has run a status line on Windows to confirm it -- so `check_statusline` now warns,
+  naming the syntax, when that gap is detected there, for a command it wrote and for
+  anyone else's. Windows CI caught this firing for real on a freshly-scaffolded repo's
+  own default (there is no other statusLine to fall back to), so the WARN now also offers
+  a `%CLAUDE_PROJECT_DIR%` / bare-`python` command to try -- untested and said so in the
+  message, since which shell actually runs a `statusLine` command on Windows was not
+  established. `commands/scaffold.md` also said "the last three" owned files where the
+  table above it already lists four.
+
 ## [0.11.0] - 2026-08-22
 
 ### Added
@@ -4460,7 +4540,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.9.0
