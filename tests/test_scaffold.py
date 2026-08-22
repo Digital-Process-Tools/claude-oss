@@ -97,6 +97,20 @@ def test_apply_refuses_a_config_that_does_not_validate(tmp_path):
         scaffold.apply(tmp_path, {"repo": "owner/name"})
 
 
+def test_apply_is_not_disabled_by_an_underscore_prefixed_note(tmp_path):
+    """#355. `plan()` and `apply()` both refuse on any `oss_config.validate()`
+    problem via `ScaffoldError` -- a separate behaviour from the message the
+    validator prints, and the one that actually disables the command. A config
+    carrying a maintainer's explanatory note beside the value it explains must
+    reach the write path exactly as a config without one does.
+    """
+    config = _config()
+    config["_milestones_note"] = "kept for the release train, not because they're open"
+    scaffold.plan(tmp_path, config)  # must not raise
+    result = scaffold.apply(tmp_path, config)
+    assert result["created"]
+
+
 def test_plan_refuses_to_escape_the_repo_root(tmp_path):
     """Template paths are literals in this file, but a literal is one edit away from
     a variable. The containment check is on the write path, not on the author.
