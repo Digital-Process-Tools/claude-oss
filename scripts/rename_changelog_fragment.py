@@ -92,7 +92,7 @@ def _destination_occupied(path):
     clobbered a destination the guard never actually looked at.
 
     `os.stat` and the exception in hand classify instead, the same shape
-    `oss_config._version_evidence` (#396/#413) and `lane_setup._path_state`
+    `oss_config._version_state` (#396/#413) and `lane_setup.worktree_occupancy`
     already use elsewhere in this repo: `FileNotFoundError` /
     `NotADirectoryError` are the absence arm, matching what Python's own
     interpreter normalises platform errors into. Anything else is "could not

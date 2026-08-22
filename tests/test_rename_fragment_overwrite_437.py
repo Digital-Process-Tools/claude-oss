@@ -7,7 +7,7 @@ path (:104), 35 lines ahead of `old_path.rename(new_path)` (:139). CLAUDE.md
 records why `exists()` cannot classify: it swallows a version-dependent set of
 `OSError`s and answers `False` for a path that could not be stat'd, not only
 one that is absent. The fix matches the `os.stat`-and-classify-from-the-
-exception-in-hand shape `oss_config._version_evidence` (#396/#413) already
+exception-in-hand shape `oss_config._version_state` (#396/#413) already
 uses in this repo: a destination that exists and one that cannot be stat'd
 must not render alike, paired with the control that an absent destination
 still renders as free.
