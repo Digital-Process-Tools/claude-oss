@@ -165,6 +165,59 @@ def test_check_wait_still_refuses_when_none_was_ever_recorded_behind_an_unrelate
     assert "FAIL" in result.stdout
 
 
+# ------------------------------------------- an explicit null does not read as absent
+
+
+def test_pending_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_none(tmp_path):
+    """Found by audit: `_last_wait` distinguishes "no entry ever carried a `wait`
+    key" from "the most recent one carrying it holds a `None`/malformed value" by
+    returning the entry itself as the sentinel, not the record. Checking the record
+    for `None` instead would fold a hand-authored `detail.wait: null` entry back
+    into "never recorded" -- the exact absence this issue exists to close, one layer
+    down from the entry-lifetime bug.
+    """
+    path = tmp_path / "state.json"
+    _record_wait(path)
+    oss_state.append(
+        str(path),
+        "2026-08-16T23:45:00Z",
+        "a hand-authored entry with a null wait value",
+        detail={"wait": None},
+    )
+
+    result = _piped([str(path), "--pending-wait"])
+    assert result.returncode != 0
+    assert "FAIL" in result.stdout
+    assert "no pending wait" not in result.stdout.lower()
+
+
+def test_check_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_absent(tmp_path):
+    path = tmp_path / "state.json"
+    _record_wait(path)
+    oss_state.append(
+        str(path),
+        "2026-08-16T23:45:00Z",
+        "a hand-authored entry with a null wait value",
+        detail={"wait": None},
+    )
+
+    result = _piped(
+        [
+            str(path),
+            "--decision", "re-check anyway",
+            "--at", "2026-08-17T02:00:00Z",
+            "--check-wait", "cleared",
+            "--wait-cleared-by", "nothing to clear",
+        ]
+    )
+    assert result.returncode != 0
+    assert "FAIL" in result.stdout
+    # The old bug: a record of None collapsed to "no entry has ever recorded a
+    # wait", which is a different, misleading claim from "the most recent one is
+    # not usable".
+    assert "no entry has ever recorded a wait" not in result.stdout.lower()
+
+
 def test_check_wait_refusal_names_the_state_it_actually_found_not_always_holds(tmp_path):
     """Second defect in the same issue: the refusal used to fill its `{}` slot with
     `WAIT_HOLDS` -- the *required* constant -- so a last entry carrying no `wait` key
