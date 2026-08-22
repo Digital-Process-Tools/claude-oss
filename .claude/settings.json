@@ -4,5 +4,9 @@
     "supertool@dpt-plugins": true,
     "remember@dpt-plugins": true,
     "claude-jit-context@dpt-plugins": true
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.oss/statusline.py"
   }
 }

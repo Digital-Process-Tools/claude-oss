@@ -14,6 +14,12 @@ __pycache__/
 # A CI-only artifact, but the same command run by hand leaves it in the checkout.
 /shell-sources.txt
 
+# The owned copies this plugin writes INTO a managed repo. In every other repo they are
+# tracked -- CI checks out the repo and nothing else, so the assembler has to be there.
+# Here they would be a second copy of files this repo already carries under scripts/,
+# swept by the same guards and free to drift from the originals (#479).
+/.oss/
+
 # Machine-local jit-context discovery logs: one checkout's session history,
 # never part of the plugin. Swept into the v0.3.0 release commit by a `git
 # commit --all` and removed in the same release.

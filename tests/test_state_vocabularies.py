@@ -125,6 +125,16 @@ STATE_EMITTING_SCRIPTS = (
 # The sentence is the point. A count on its own is a boolean wearing a number, and a
 # registry of booleans is what let #134 sit in the tree unnoticed.
 MULTI_SITE_STATES = {
+    ("doctor.py", "owned_drift", "absent"): (
+        2,
+        "both say the file is not in this repo and /oss:scaffold would write it. They "
+        "differ only in how that was established: one file is outside "
+        "scaffold.CHANGELOG_OWNED, so no gate governs it and the answer needs no gate "
+        "read (#479); the other is inside it and the gate came back `write`. Same "
+        "state, same detail sentence, same remedy -- a caller branching on `state` "
+        "has nothing to tell apart, and owned_drift_summary groups them into one line "
+        "for exactly that reason.",
+    ),
     ("doctor.py", "owned_drift", "unknown"): (
         5,
         "all five say this owned file's drift could not be determined -- the plugin's "

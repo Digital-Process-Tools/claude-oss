@@ -132,7 +132,18 @@ The full list, so a plan line is never the first time you hear of a file:
 | `.supertool.json` | **changes your own tooling mid-session — see below** |
 | `.oss/README.md` | the ownership table, stated inside the repo — **replaced every run** |
 | `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
+| `.oss/statusline.py` | the status line: board, next tick, plugin currency — **replaced every run** |
 | `.github/workflows/oss-changelog.yml` | the workflow that calls it — **replaced every run** |
+
+One key is written **inside** a file that is not ours: `statusLine` in
+`.claude/settings.json` (#479). It is added when the key is absent and never touched when it is
+there, whatever it points at — the default contract applied at the key rather than at the file,
+because the rest of that file is somebody else's configuration. A settings file that does not parse
+is **declined**, not rewritten: "could not read it" is not "it has no statusLine".
+
+`.oss/statusline.py` is the one owned file **not** gated on the changelog-gate detection. That gate
+answers one question — does a changelog gate already run here under another name — and it is not an
+answer about a status line.
 
 The first eleven are created once when absent and are yours afterwards. The last three are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that

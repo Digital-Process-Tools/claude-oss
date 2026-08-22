@@ -1086,12 +1086,40 @@ def _owned_assembler(config, plugin_root):
     return shebang + _note_comment() + body
 
 
+def _owned_statusline(config, plugin_root):
+    """Copied from the plugin's own file at write time, like the assembler.
+
+    Same reason: two copies of a module drift, and only one of them is the copy the
+    suite runs against.
+    """
+    body = (Path(plugin_root) / "scripts" / "statusline.py").read_text(encoding="utf-8")
+    shebang = ""
+    if body.startswith("#!"):
+        shebang, _, body = body.partition("\n")
+        shebang += "\n"
+    return shebang + _note_comment() + body
+
+
 # path -> renderer(config, plugin_root). Replaced on every apply.
 OWNED = {
     OWNED_DIR + "/README.md": _owned_readme,
     OWNED_DIR + "/assemble_changelog.py": _owned_assembler,
+    OWNED_DIR + "/statusline.py": _owned_statusline,
     ".github/workflows/oss-changelog.yml": _owned_workflow,
 }
+
+#: The owned files whose delivery is gated on `_detect_changelog_gate`. That gate asks
+#: one question -- does a changelog gate already run in this repository under another
+#: name -- and it is an answer about these three files only (#479). Applying it to every
+#: member of `OWNED` declines a file for a reason that has nothing to do with it, and a
+#: declined file and a file this plugin does not ship look identical on disk.
+CHANGELOG_OWNED = frozenset(
+    (
+        OWNED_DIR + "/README.md",
+        OWNED_DIR + "/assemble_changelog.py",
+        ".github/workflows/oss-changelog.yml",
+    )
+)
 
 
 def render_owned(name, config, plugin_root=None):
@@ -1159,7 +1187,17 @@ def plan(repo_root, config, force_owned=False):
 
     gate_state, gate_detail = _detect_changelog_gate(repo_root, config)
     for name in sorted(OWNED):
-        if gate_state in ("found", "unknown") and force_owned:
+        if name not in CHANGELOG_OWNED:
+            # Not gated: this file has nothing to do with anybody's changelog practice,
+            # so a gate found under another name is not an answer about it (#479).
+            entries.append(
+                {
+                    "path": name,
+                    "action": "replace",
+                    "reason": "ours; replaced on every run so fixes reach the repo",
+                }
+            )
+        elif gate_state in ("found", "unknown") and force_owned:
             entries.append(
                 {
                     "path": name,
@@ -1204,6 +1242,90 @@ def plan(repo_root, config, force_owned=False):
     return entries
 
 
+SETTINGS_PATH = ".claude/settings.json"
+
+#: What gets written under `statusLine` when nothing is there. `$CLAUDE_PROJECT_DIR` is
+#: what Claude Code exports for the project root, so the command resolves from whatever
+#: directory the status line happens to be invoked in.
+STATUSLINE_COMMAND = 'python3 "$CLAUDE_PROJECT_DIR"/' + OWNED_DIR + "/statusline.py"
+STATUSLINE_SETTING = {"type": "command", "command": STATUSLINE_COMMAND}
+
+
+def settings_plan(repo_root):
+    """What `.claude/settings.json` needs, in four states -- and only one of them writes
+    over anything.
+
+    The file is not ours and it is not a plain default either: a default is a whole file
+    created once when absent, and this is one KEY inside a file full of somebody else's
+    decisions. So the contract is applied at the key: `statusLine` is written when it is
+    absent and never touched when it is there, whatever it points at.
+
+    The fourth state is the one that matters. A settings file that does not parse is not
+    a settings file with no `statusLine` -- rewriting it would destroy configuration this
+    process could not read, which is the difference between `create` and `decline` here.
+    """
+    path = Path(repo_root) / SETTINGS_PATH
+    if not path.exists():
+        return {
+            "path": SETTINGS_PATH,
+            "action": "create",
+            "reason": "absent; would be created with a statusLine pointing at "
+            + OWNED_DIR
+            + "/statusline.py",
+        }
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {
+            "path": SETTINGS_PATH,
+            "action": "decline",
+            "reason": (
+                "present and could not be read ({}), so whether it already sets a "
+                "statusLine is unknown -- which is not the same as it having none; "
+                "not written.".format(exc)
+            ),
+        }
+    if not isinstance(document, dict):
+        return {
+            "path": SETTINGS_PATH,
+            "action": "decline",
+            "reason": "present and is not a JSON object; not written.",
+        }
+    if "statusLine" in document:
+        return {
+            "path": SETTINGS_PATH,
+            "action": "present",
+            "reason": "already sets a statusLine; that is a decision, left untouched",
+        }
+    return {
+        "path": SETTINGS_PATH,
+        "action": "extend",
+        "reason": "present with no statusLine; the key would be added, everything else "
+        "left as it is",
+    }
+
+
+def apply_settings(repo_root):
+    """Perform `settings_plan`. Returns the entry it acted on, with what it did.
+
+    The write is key-level and preserves the rest of the document, so a repo with
+    permissions, hooks and enabled plugins in there keeps all of them.
+    """
+    entry = dict(settings_plan(repo_root))
+    path = Path(repo_root) / SETTINGS_PATH
+    if entry["action"] == "create":
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"statusLine": dict(STATUSLINE_SETTING)}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    elif entry["action"] == "extend":
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["statusLine"] = dict(STATUSLINE_SETTING)
+        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    return entry
+
+
 def apply(repo_root, config, plugin_root=None, force_owned=False):
     """Write the defaults that are missing, and replace everything we own.
 
@@ -1228,6 +1350,7 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
     created = []
     replaced = []
     declined = []
+    extended = []
     for entry in plan(repo_root, config, force_owned=force_owned):
         if entry["action"] == "create":
             render_to(repo_root, entry["path"], render(entry["path"], config))
@@ -1238,7 +1361,24 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
         elif entry["action"] == "decline":
             declined.append(entry["path"])
 
-    return {"created": created, "replaced": replaced, "declined": declined}
+    # The statusLine key, applied at the key rather than at the file (#479). It is not
+    # in `plan()` because `plan()` walks paths and this one is a key inside a path whose
+    # other keys are not ours -- rendering it as a file-level action would say we own a
+    # file we must never rewrite.
+    settings = apply_settings(repo_root)
+    if settings["action"] == "create":
+        created.append(settings["path"])
+    elif settings["action"] == "extend":
+        extended.append(settings["path"])
+    elif settings["action"] == "decline":
+        declined.append(settings["path"])
+
+    return {
+        "created": created,
+        "replaced": replaced,
+        "declined": declined,
+        "extended": extended,
+    }
 
 
 def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rules_plan=None):

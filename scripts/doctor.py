@@ -2028,6 +2028,66 @@ def _fragments_directory(project_dir, config):
     return None
 
 
+def check_statusline(project_dir):
+    """Is the status line wired to something, and is it wired to ours (#479)?
+
+    Four states, and the fourth is the reason this is a check rather than a scaffold
+    fix. `.claude/settings.json` is not ours -- `scaffold.apply_settings` writes the
+    `statusLine` key only when it is absent -- so a repo that already had one keeps it,
+    and this reports rather than repairs.
+
+    * the key names `<OWNED_DIR>/statusline.py` -- OK, it is ours and it is running.
+    * the key names something else -- OK with the command quoted. Somebody chose that,
+      and a diagnostic that WARNs about a working status line is noise on every run.
+    * no `statusLine` key, or no settings file -- WARN, and the remedy is the block to
+      paste, because `/oss:scaffold` writes it only when the file has no key at all and
+      a reader whose file was declined needs the text rather than the command.
+    * the file could not be read or parsed -- `unknown`. Whether a status line is wired
+      here was not established, which is not the same as it having none, and the row
+      must not read as either of the two answers above.
+    """
+    if scaffold is None:  # pragma: no cover - guarded the same way the callers are
+        unmeasured("statusline", NO_SCAFFOLD)
+        return
+    settings = Path(project_dir) / ".claude" / "settings.json"
+    block = json.dumps({"statusLine": dict(scaffold.STATUSLINE_SETTING)}, indent=2)
+    if not _safe_is_file(settings):
+        report(
+            "WARN",
+            "statusline: {} has no statusLine -- the loop's board, next tick and "
+            "plugin currency are not on screen. /oss:scaffold writes this key when the "
+            "file has none: {}".format(settings, block),
+        )
+        return
+    try:
+        document = json.loads(settings.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        report(
+            "WARN",
+            "statusline: {} could not be read ({}), so whether a status line is wired "
+            "here is unknown -- not absent.".format(settings, exc),
+        )
+        return
+    if not isinstance(document, dict) or "statusLine" not in document:
+        report(
+            "WARN",
+            "statusline: {} sets no statusLine. To wire ours: {}".format(settings, block),
+        )
+        return
+    command = ""
+    entry = document.get("statusLine")
+    if isinstance(entry, dict):
+        command = str(entry.get("command") or "")
+    if "statusline.py" in command:
+        report("OK", "statusline: wired to {}".format(command))
+        return
+    report(
+        "OK",
+        "statusline: wired to a status line that is not ours ({}) -- a decision, left "
+        "alone.".format(command or "no command"),
+    )
+
+
 def check_fragments_readme(project_dir, config):
     """Does `<changelog_dir>/README.md` document the Compatibility bullet a `removed`
     fragment must carry (#260)?
@@ -4092,6 +4152,21 @@ def owned_drift(repo_root, config, plugin_root=None):
             present = stat.S_ISREG(mode)
 
         if not present:
+            # The gate answers one question -- does a changelog gate already run here
+            # under another name -- so it governs the files that question is about and
+            # no others (#479). An owned file outside that set is plainly `absent`:
+            # reading the gate for it would report a decline scaffold never made, with
+            # a remedy (`--force-owned`) that is not the one that writes it.
+            gated_here = getattr(scaffold, "CHANGELOG_OWNED", frozenset(scaffold.OWNED))
+            if name not in gated_here:
+                findings.append(
+                    {
+                        "path": name,
+                        "state": "absent",
+                        "detail": "{}: not in this repo. Run /oss:scaffold.".format(name),
+                    }
+                )
+                continue
             if not gate:
                 gate.append(_gate_verdict(repo_root, config))
             verdict = gate[0]
@@ -6224,6 +6299,7 @@ def main(argv=None):
     )
     check_state_file(project_dir, config)
     check_fragments_readme(project_dir, config)
+    check_statusline(project_dir)
     check_ci_enforcement(project_dir, config)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.

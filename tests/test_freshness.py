@@ -288,6 +288,16 @@ def test_an_owned_file_that_cannot_be_looked_at_is_unknown_and_not_absent(tmp_pa
 # printed regardless of state carries no information.
 
 
+def _gated_findings(findings):
+    """Only the findings the changelog gate is an answer about (#479).
+
+    `owned_drift` covers every owned file, and since #479 one of them -- the status
+    line -- is written whatever the gate says. A gate-state assertion over the whole
+    set would be asserting something the gate does not decide.
+    """
+    return [f for f in findings if f["path"] in scaffold.CHANGELOG_OWNED]
+
+
 def _gated(root):
     """A repo that already runs somebody else's changelog gate, so scaffold declines."""
     workflows = root / ".github" / "workflows"
@@ -310,12 +320,16 @@ def test_a_declined_trio_is_declined_and_an_ungated_repo_still_warns(tmp_path):
     """
     gated = _gated(tmp_path / "gated")
     scaffold.apply(gated, _config(), plugin_root=REPO_ROOT)
-    findings = doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)
-    assert {f["state"] for f in findings} == {"declined"}, findings
-    for finding in findings:
+    findings = {f["path"]: f for f in doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)}
+    # Scoped to the files the gate is an answer about (#479). The ungated owned files
+    # were written by the same `apply` above, so they report `current` and say nothing
+    # about the decline either way.
+    declined = [findings[name] for name in scaffold.CHANGELOG_OWNED]
+    assert {f["state"] for f in declined} == {"declined"}, declined
+    for finding in declined:
         assert "Run /oss:scaffold." not in finding["detail"], finding
         assert "--force-owned" in finding["detail"], finding
-    assert {state for state, _ in doctor.owned_drift_summary(findings)} == {"OK"}
+    assert {state for state, _ in doctor.owned_drift_summary(declined)} == {"OK"}
 
     ungated = tmp_path / "ungated"
     ungated.mkdir(parents=True, exist_ok=True)
@@ -356,7 +370,7 @@ def test_a_gate_that_could_not_be_detected_is_unknown_and_never_declined(tmp_pat
         "check_changelog_gate",
         lambda root, config: [{"state": "unknown", "detail": "could not read: x.yml"}],
     )
-    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    findings = _gated_findings(doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT))
     assert {f["state"] for f in findings} == {"unknown"}, findings
     assert all("Run /oss:scaffold." not in f["detail"] for f in findings)
     assert {state for state, _ in doctor.owned_drift_summary(findings)} == {"WARN"}
@@ -373,7 +387,7 @@ def test_a_gate_state_this_doctor_has_never_heard_of_lands_in_unknown(tmp_path, 
         "check_changelog_gate",
         lambda root, config: [{"state": "a-state-invented-tomorrow", "detail": "who knows"}],
     )
-    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    findings = _gated_findings(doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT))
     assert {f["state"] for f in findings} == {"unknown"}, findings
     assert all("Run /oss:scaffold." not in f["detail"] for f in findings)
 
@@ -387,21 +401,28 @@ def test_a_gate_check_that_raises_is_unknown_rather_than_a_traceback(tmp_path, m
         raise OSError("the tree could not be walked")
 
     monkeypatch.setattr(scaffold, "check_changelog_gate", _boom)
-    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    findings = _gated_findings(doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT))
     assert {f["state"] for f in findings} == {"unknown"}, findings
 
 
-def test_the_changelog_gate_governs_every_owned_file(tmp_path):
-    """The coupling doctor now depends on, asserted rather than assumed.
+def test_the_changelog_gate_governs_the_changelog_owned_files_and_only_those(tmp_path):
+    """The coupling doctor depends on, asserted rather than assumed.
 
-    `owned_drift` reads one gate answer and applies it to all of `scaffold.OWNED`,
-    because `scaffold.plan` does exactly that. If the gate is ever narrowed to a
-    subset, this fails here rather than silently reporting two of three files as
-    declined when scaffold would have written them.
+    `owned_drift` reads one gate answer and applies it to `scaffold.CHANGELOG_OWNED`,
+    because `scaffold.plan` does exactly that. The set was every owned file until #479
+    added `.oss/statusline.py`, which the changelog gate has nothing to say about -- so
+    what is asserted here is the split itself, in both directions. If either side drifts
+    this fails here rather than silently reporting a file as declined when scaffold would
+    have written it, or as writable when scaffold declines it.
     """
     gated = _gated(tmp_path / "coupling")
     entries = {e["path"]: e["action"] for e in scaffold.plan(gated, _config())}
-    assert {entries[name] for name in scaffold.OWNED} == {"decline"}, entries
+    assert scaffold.CHANGELOG_OWNED, "an empty gated set would make this vacuous"
+    assert {entries[name] for name in scaffold.CHANGELOG_OWNED} == {"decline"}, entries
+
+    ungated = set(scaffold.OWNED) - set(scaffold.CHANGELOG_OWNED)
+    assert ungated, "no ungated owned file -- the other half of this test is vacuous"
+    assert {entries[name] for name in ungated} == {"replace"}, entries
 
     # Positive control: the same call on an ungated repo replaces all of them, so the
     # assertion above is about the gate and not about `plan` declining everything.

@@ -320,50 +320,34 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `805debb`, the commit `v0.10.0` is cut from, with zero commits after it** — the delta
-this release carries is 22 commits and 22 merged pull requests, `git rev-list --count v0.9.0..HEAD`
-returning `22`. Every claim below is graded **observed** (a named command produced it) or **reasoned**
+**Measured at `53e2d0c`, the commit `v0.11.0` is cut from, with zero commits after it** — the delta
+this release carries is 17 commits and 16 merged pull requests, `git rev-list --count v0.10.0..v0.11.0`
+returning `17`. Every claim below is graded **observed** (a named command produced it) or **reasoned**
 (argued from code that was read, not run). **Re-derive this at each release rather than editing it.**
-The version it replaces was measured at `c570977`; before that at `d4c12c1`, `7690fd0`, `01212b0` and
-`e8e75b2`.
+The version it replaces was measured at `805debb`; before that at `c570977`, `d4c12c1`, `7690fd0`,
+`01212b0` and `e8e75b2`.
 
-**Both counts agree here, and that is a property of this range rather than a vindication of the
-counting rule.** The previous round recorded that `git log --oneline | grep -cE '\(#[0-9]+\)$'`
-overcounts, because a commit pushed straight to `main` carrying an *issue* number in its subject
-matches the same pattern. This range contains no such commit — all 22 are squash merges — so the
-grep and the truth coincide. The count above was taken by intersecting `git rev-list` with the merge
-commit of every merged pull request the forge lists, which answers the question directly instead of
-matching on subject text.
+**The two counts disagree here, and the disagreement is the point.** 17 commits, 16 merged pull
+requests: one commit in the range is not a squash merge of a pull request. The count above was taken
+by intersecting `git rev-list v0.10.0..v0.11.0` with the merge commit of every merged pull request the
+forge lists, which answers the question directly. `git log --oneline | grep -cE '\(#[0-9]+\)$'`
+would have said 17 and called them all pull requests — the overcount this method exists to avoid, and
+the first range in six rounds where the two numbers actually come apart.
 
-### #235 was paid three times, and this round the guard settled the ordering question outright
+### #235: the guard still binds, and this round it caught the section a release late
 
-The previous three rounds each got this marker wrong in a different way: once by writing it a session
-late, once by keying it to the release that had already shipped, and once by re-deriving it correctly
-*before* a fold that then invalidated it. The last of those produced the sharpest statement of the
-problem — **the marker and the changelog are two records of one fact with no mechanism tying them
-together** — and predicted that any ordering rule is just a person remembering to do two things in
-sequence.
+The previous round recorded that `tests/test_claude_md_currency.py` enforces **fold, then
+re-derive** — a marker naming an uncut release is refused. What it does not enforce is *promptness*,
+and this round is the instance: `v0.11.0` shipped with the section still keyed to `v0.10.0`, and
+nothing said so until an unrelated branch added a changelog fragment. The guard only fires while a
+fragment is pending, because that is its only signal that a release is being prepared — so between
+a tag and the next fragment, a stale section is invisible.
 
-**This round tried to fix it by re-deriving first, and the guard refused that outright**, which is
-worth more than the attempt:
+That is a bound worth stating rather than fixing by hand: the check is *a release is being prepared
+and the section is behind*, never *the section is current*. It caught this one. It would not have
+caught it if this branch had shipped without a fragment.
 
-```
-AssertionError: The section names release(s) with no heading in CHANGELOG.md: 0.10.0.
-A marker naming a release that was never cut is decoration, not a date.
-```
-
-So the ordering is not a preference and never was: `tests/test_claude_md_currency.py` enforces
-**fold, then re-derive**, because a tree cannot carry a marker for a release that does not exist in
-its own `CHANGELOG.md`. Every round that reasoned about *when* to re-derive was arguing with a
-guard that already had an answer. The section above was written keyed to `v0.10.0`, refused, and
-re-taken after the fold — which is the correct sequence and is also the first time this file records
-the guard teaching it rather than catching it late.
-
-**What that still does not do**, repeated rather than assumed: the guard cannot tell a re-derivation
-from a hand-edited marker, and it cannot read the tree the sha names, because `actions/checkout` runs
-at depth 1. It bounds the ordering and nothing else.
-
-### How far the loop has reached — observed, and eight rounds now with one movement
+### How far the loop has reached — observed, and nine rounds now with one movement
 
 Population selected on the thing being measured: `gh repo list Digital-Process-Tools --limit 100`
 returns **eleven** repositories, and each of four artifacts was probed in every one of them —
@@ -377,16 +361,16 @@ returns **eleven** repositories, and each of four artifacts was probed in every 
 - **The remaining seven carry none of the four.** `claude-marketplace`, `.github` and the four
   `mcp-*-warm` servers answered `no` to every file. Reported as loudly as the hits.
 
-**Both numbers are unchanged for the fourth consecutive round.** The pair has now been measured eight
-times and moved once. `v0.10.0` is 22 commits of work on the loop itself and reached nobody outside
-this repository — the fourth consecutive release of which that is the whole sentence.
+**Both numbers are unchanged for the fifth consecutive round.** The pair has now been measured nine
+times and moved once. `v0.11.0` is 17 commits of work on the loop itself and reached nobody outside
+this repository — the fifth consecutive release of which that is the whole sentence.
 
-What has *not* been observed, across eight rounds: any repository scaffolded **by a maintainer who is
+What has *not* been observed, across nine rounds: any repository scaffolded **by a maintainer who is
 not the author of this plugin**.
 
 ### Owned files go stale in the field, and this round neither column moved again — observed
 
-Rendering all three at `805debb` with `scaffold.render_owned(name, config, ".")`, encoding to UTF-8
+Rendering all three at `53e2d0c` with `scaffold.render_owned(name, config, ".")`, encoding to UTF-8
 before counting, and comparing `sha256` against what each repo carries:
 
 | owned file | would write today | `claude-jit-context` | `claude-5h-window-spread` | `claude-remember` |
@@ -395,16 +379,17 @@ before counting, and comparing `sha256` against what each repo carries:
 | `.oss/README.md` | 1,753 B (`c380cfe0`) | 1,753 `c380cfe0` — **identical** | 1,325 `68de5d32` — **drifted** | 1,753 `c380cfe0` — **identical** |
 | `.github/workflows/oss-changelog.yml` | 12,639 B (`c820d2dc`) | 9,954 `dae31dc9` — **drifted** | 2,159 `032184b4` — **drifted** | 8,943 `8108fede` — **drifted** |
 
-- **The nine remote cells are byte-identical to the previous round's, for the fourth round running.**
+- **The nine remote cells are byte-identical to the previous round's, for the fifth round running.**
   Seven drifted, two identical, no movement in either direction.
 - **None of the three `would write today` hashes moved either**, so the column has now sat still
-  through two consecutive releases and through two of five overall. A gate on it would have been
-  silent across both.
+  through three consecutive releases. A gate on it would have been silent across all three.
+- **A fourth owned file exists as of this release and is in none of these repositories.**
+  `.oss/statusline.py` (#479) has never been scaffolded anywhere, so it has no column here and no
+  drift to report — an absence produced by nothing having run yet, which is why it is named rather
+  than omitted.
 - **Drift is a property of a file, not of a repository.** Two of nine cells are byte-for-byte what
   scaffold would write today, in two different repositories.
-- **Two repositories carry the same drifted assembler**, `102,079` / `b16cc044` in both, so they were
-  scaffolded from the same version of this plugin and neither has been re-scaffolded since.
-- **The repair is still unobserved.** Across eight re-derivations, nothing has been observed clearing
+- **The repair is still unobserved.** Across nine re-derivations, nothing has been observed clearing
   a drifted copy anywhere.
 
 Equal byte counts are not taken as equality — every identity here is a `sha256` match over bytes after
@@ -415,50 +400,54 @@ an explicit `encode("utf-8")`.
 `doctor` in this clone: `WARN jit rule layer: 5 hook script(s) of claude-jit-context 0.5.0 were read
 and none carries a fixed layer list. The only layer list(s) found are outside the hook set
 (test-layer-enumeration.sh:494)`. That is #241's fix holding — the check reports `unknown` rather than
-reading a fixture as a pass.
+reading a fixture as a pass. Unchanged.
 
-### Dogfooding still finds what the suite cannot, and this round it found tonight's own fix
+### Dogfooding still finds what the suite cannot, and this round it found a defect in the new work
 
-`python3 scripts/doctor.py --root .` in the clone: `VERDICT: usable with gaps -- 4 warning(s)`.
+`python3 scripts/doctor.py --root .` in the clone: `VERDICT: usable with gaps -- 4 warning(s)`, and
+the four are the same four as last round: the plugin-copy scope `not established`, `./supertool`
+pointing at a local checkout, `changelog.d/README.md` missing the Compatibility bullet (#260), and
+the jit layer `unknown` above. **The count has now read five, six, five, three, three, three, three,
+four and four across ten measurements.**
 
-**The warning count has now read five, six, five, three, three, three, three and four across nine
-measurements, and the fourth one this round is new work rather than new decay.** It is
-`check_fragments_readme` (#260), firing correctly on this repository's own `changelog.d/README.md`,
-which predates #259 and documents the Compatibility rule in prose rather than as the literal bullet.
-Its remedy line reads `scripts/scaffold.py --show changelog.d/README.md` — **repo-relative**, which is
-#438's fix observable in the field: the round-one release audit caught that same message emitting an
-absolute path `scaffold.show` refuses, three lines under a docstring reasoning about exactly that
-hazard.
+The new instance is in #479's own status line and the suite could not have caught it, because it is a
+fact about this machine's `installed_plugins.json` rather than about the code: **one plugin has one
+entry per scope and per project that ever installed it, and those entries carry different versions.**
+`oss` was recorded at `0.1.0`, `0.5.0`, `0.9.0` and `0.10.0` simultaneously. The first version of
+`statusline.installed_plugins` took whichever entry came last, so the line reported `oss 0.9.0` — *a
+release behind* — on a machine holding `0.10.0`. It renders a version chosen by dict order as a
+finding about the install. Fixed to take the newest recorded version, with the multi-entry document as
+the fixture.
 
-The other three are unchanged: the plugin-copy scope `not established`, `./supertool` pointing at a
-local checkout, and the jit layer `unknown` above.
-
-### The launcher went stale a seventh time, and the consequence was nil a fourth time — observed
+### The launcher went stale an eighth time, and the consequence was nil a fifth time — observed
 
 `~/.local/bin/oss-workspace` still resolves to `…/oss/0.7.0/bin/oss-workspace` while the tree's
-manifest reads `0.9.0` going into this release, and the cache holds `0.9.0` — so a target has existed
-for two releases and nothing points at it. **Seventh consecutive instance of #289 on this machine.**
+manifest reads `0.11.0` and the cache holds `0.10.0` — so a target has existed for three releases and
+nothing points at it. **Eighth consecutive instance of #289 on this machine.**
 
-`diff` reports the cached `0.7.0` copy, the cached `0.9.0` copy and this tree's as all three
-**identical**, so the stale link resolves to the correct bytes. Fourth consecutive release where the
+`diff` reports the cached `0.7.0` copy, the cached `0.10.0` copy and this tree's as all three
+**identical**, so the stale link resolves to the correct bytes. Fifth consecutive release where the
 class fired and cost nothing, against one where it pinned `0.5.0` across `v0.6.0`'s fix *in that same
-file*. The cost is decided by whether a release happened to touch one file, which is exactly why a
-hand-repair is not a fix.
+file*.
 
-### A version string cannot tell two installs apart, and this release is where that stopped being true
+**And this round the machine gives four different answers to "which version is installed".** The
+launcher says `0.7.0`; `installed_plugins.json` records `0.9.0` and `0.10.0` in different entries; the
+newest cache directory is `0.10.0`; the clone is `0.11.0`. Every one of those is a real reading of a
+real artifact, and nothing reconciles them — which is the same class as #289 rather than a second one,
+and is what the status line now puts on screen every message instead of once per release.
 
-#418 landed in this delta, and the release gate used it within the hour. Both manifests read `0.9.0`
-— the installed plugin and this clone — and `doctor.plugin_identity` separates them:
+### A version string cannot tell two installs apart, and #418 is still the thing that does
+
+Both copies were measured with `doctor.plugin_identity`:
 
 ```
-installed: 0.9.0, git HEAD 17fe73b, content 0d5796495095 over 29 file(s)
-clone    : 0.9.0, git HEAD 199cd35, content 16966c41535d over 30 file(s)
+installed: 0.10.0, git HEAD 42129e4, content 962ee957157f over 30 file(s)
+clone    : 0.11.0, git HEAD 53e2d0c, content cc62d5f38446 over 30 file(s)
 ```
 
-So the release auditor for `v0.10.0` ran a checklist whose tree predates 16 of the 22 commits it was
-auditing, and **the gate could say so** instead of reporting a matching version. Before this release
-the two copies were indistinguishable by any check this repository had. It annotates rather than
-blocking, and it is a config finding for the repository that ships the definitions.
+Different versions this time, so a version comparison would also have separated them — which is
+precisely the case #418 was *not* built for. It is kept in the record because the reading is cheap and
+the interesting instance is the one where the two versions agree.
 
 ### `gh` is emulated, and nothing in the loop looks at the tools it spawns — unchanged
 
@@ -474,23 +463,21 @@ it is re-earned rather than inherited here. **The surface is thin because it has
 because it is sound.**
 
 What changed since the previous round: nothing in the reach, nothing in the nine remote cells, nothing
-in the three local `would write today` hashes. A release of 22 commits landed and **every number in
-this section describing anything outside this file stayed where it was**, for the fourth consecutive
+in the three local `would write today` hashes. A release of 17 commits landed and **every number in
+this section describing anything outside this file stayed where it was**, for the fifth consecutive
 release.
 
 `tests/test_claude_md_currency.py` still cannot check that a claim above is true, and still does not
 try. The mechanism to add more of is a **second measurement** contradicting the prose beside it. This
-round produced three unprompted, and all three came from the release gate rather than from reading:
-the checklist skew above, which a version comparison could not have seen; `doctor`'s fourth warning,
-which is one of tonight's own fixes firing on this repository; and the round-two audit finding that
-`_destination_occupied` claims the shape of `lane_setup.worktree_occupancy` and does not have it on
-the one platform where the difference matters (#444).
+round produced two: the dict-order version defect above, found by running the new status line against
+this machine rather than by reading it; and the four-way disagreement about which version is installed,
+which no single check in this repository asks about.
 
 One claim stays deliberately unguarded, and the decision is re-taken rather than inherited: the
 "would write today" column is computed entirely from this tree and a three-line test could hold it.
-**Declined again**, and this round the argument is stronger than reasoning: the column did not move
-across `v0.10.0` either, so a gate on it would now have been silent through two consecutive releases.
-The reason not to add it is unchanged — it would redden unrelated pull requests until somebody edited
-`CLAUDE.md` to make CI green, training the reflex of editing the section instead of re-deriving it.
+**Declined again**, and the argument is now three releases of evidence rather than two: the column has
+not moved across `v0.10.0` or `v0.11.0`, so a gate on it would have been silent throughout. The reason
+not to add it is unchanged — it would redden unrelated pull requests until somebody edited `CLAUDE.md`
+to make CI green, training the reflex of editing the section instead of re-deriving it.
 
 Treat this as tested, not proven.
