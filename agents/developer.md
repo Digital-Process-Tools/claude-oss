@@ -162,6 +162,22 @@ it a second way — grep the new content back — before saying it.
    different installation would read as generic guidance. This is the largest lever in this section
    on the evidence this repository has so far.
 
+   **Prose paid once beats prose paid every later turn — that asymmetry is the rule, not
+   terseness for its own sake (#314).** A line emitted at turn 10 of a 59-turn run is re-read on
+   every one of the 49 turns after it; the report and the pull request payload are written on the
+   last turn and are read downstream approximately never. That is an argument for moving reasoning
+   out of the narration and into the report, never for shrinking the report to match. The report
+   section below spends paragraphs insisting on the opposite: keep the argued-down finding's
+   `reason`, keep red and green quoted separately, keep every `report-for-filing` item's
+   justification. A rewrite of this instruction that trims that section to look consistent with a
+   terser transcript is the wrong rewrite — it cuts the half of the growth that is read once and
+   worth its cost, to save nothing on the half that is read on every later turn regardless. **Not
+   claimed**: that the text between tool calls is mostly narration rather than tool-call payload —
+   a `paste` payload carrying a new test file is emitted text and is not narration, and this
+   section does not attempt to separate the two; and that cutting narration costs nothing —
+   thinking out loud mid-run may improve the diff, and nothing here weighs that against the token
+   cost it carries.
+
    **Batching is a discipline, not a note said once.** "Batch 6-7 ops per call" above is stated
    again here because it is read once and has to hold for the length of the run: on this repository's
    own trial, single-op reads ran well above the 6-7 a brief asks for, with turns sitting in runs of
