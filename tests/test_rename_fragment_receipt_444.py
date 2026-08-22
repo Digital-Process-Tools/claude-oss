@@ -243,3 +243,69 @@ def test_destination_occupied_still_answers_could_not_look_for_a_non_directory_c
         )
 
     assert rcf._destination_occupied(under) is False
+
+
+def test_destination_occupied_answers_could_not_look_for_an_embedded_null(tmp_path):
+    """Reviewer finding on this same fix: `os.stat` raises `ValueError`, not
+    `OSError`, for a path carrying an embedded null byte, so neither `except` arm
+    in `_destination_occupied` caught it and it escaped as a raw traceback --
+    exactly the class this issue's own fix closes elsewhere in this function.
+    `lane_setup.worktree_occupancy` (this function's stated model) already has a
+    `except ValueError` arm for this (see `tests/test_unlookable_absence_380.py`);
+    this pins the sibling."""
+    bad = str(tmp_path / "222.fixed.md") + chr(0) + "extra"
+    assert rcf._destination_occupied(bad) is None
+
+
+def test_a_git_add_that_cannot_even_run_returns_refused_not_a_traceback(tmp_path, monkeypatch):
+    """Reviewer finding on this same fix: `git mv` is wrapped in
+    `except (OSError, ValueError)` to survive git becoming unspawnable mid-run,
+    but the new `git add` call was not -- so an unspawnable `git` between the two
+    calls (deleted, locked by AV, fork/exec exhaustion) raised straight past
+    `rename()` instead of returning the REFUSED receipt this same commit's
+    subject line promises for a failed `git add`."""
+    root, frag = _git_repo(tmp_path, "111.fixed.md", "- Fixed the thing (#111).\n")
+    real_run = subprocess.run
+
+    def fake_run(argv, *args, **kwargs):
+        if len(argv) >= 2 and argv[1] == "add":
+            raise OSError("git vanished mid-run (injected)")
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(rcf.subprocess, "run", fake_run)
+
+    state, message, new_path = _rename_in(root, frag, 222)
+
+    assert state == REFUSED, (
+        "an unspawnable `git add` must return REFUSED, not raise past rename()",
+        state,
+        message,
+    )
+    assert "add" in message.lower()
+
+
+def test_an_unwritable_rewrite_does_not_overclaim_the_on_disk_state(tmp_path, monkeypatch):
+    """Reviewer finding on this same fix: `Path.write_text` truncates on open
+    before writing, so an `OSError` raised *during* the write (disk full mid-
+    flush) can leave the file empty or partially written, not holding the OLD
+    body as the original message unconditionally asserted. The receipt must not
+    name a specific on-disk state it cannot verify."""
+    root, frag = _git_repo(tmp_path, "111.fixed.md", "- Fixed the thing (#111).\n")
+
+    real_write_text = Path.write_text
+
+    def fake_write_text(self, *args, **kwargs):
+        if self.name == "222.fixed.md":
+            raise OSError("disk full mid-write (injected)")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fake_write_text)
+
+    state, message, new_path = _rename_in(root, frag, 222)
+
+    assert state == REFUSED
+    assert "OLD body" not in message, (
+        "the message must not assert a specific on-disk state write_text's "
+        "failure mode cannot guarantee",
+        message,
+    )
