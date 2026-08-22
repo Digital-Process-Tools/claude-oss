@@ -416,16 +416,17 @@ CROSS_CUTTING_GUARDS = (
      "a script added, removed, or dropped from its last live reference"),
     ("bin/", "tests/test_unwired_scripts_253.py",
      "a script added, removed, or dropped from its last live reference"),
-    ("scripts/oss_config.py", "tests/test_gate_state_consumers_328.py",
-     "a possible new consumer of the changelog scaffolding gate's state"),
-    ("commands/changelog.md", "tests/test_gate_state_consumers_328.py",
-     "a registered consumer of the changelog scaffolding gate's state"),
-    ("commands/scaffold.md", "tests/test_gate_state_consumers_328.py",
-     "a registered consumer of the changelog scaffolding gate's state"),
-    ("scripts/release_version.py", "tests/test_gate_state_consumers_328.py",
-     "a registered consumer of the changelog scaffolding gate's state"),
-    ("scripts/doctor.py", "tests/test_gate_state_consumers_328.py",
-     "a registered consumer of the changelog scaffolding gate's state"),
+    # test_gate_state_consumers_328.py scans *every* tracked file under commands/ and
+    # scripts/ for a bare occurrence of the gate producer's identifier, not only the
+    # files that already call it -- an auditor caught the first version of this
+    # mapping naming only the four current consumers, which reported nothing for a
+    # brand-new file that started calling it, exactly the PR #431 shape this issue is
+    # about. So the trigger here is the same two directories the real guard scans,
+    # not an enumeration of who currently calls it.
+    ("scripts/", "tests/test_gate_state_consumers_328.py",
+     "may add or lose a consumer of the changelog scaffolding gate's state"),
+    ("commands/", "tests/test_gate_state_consumers_328.py",
+     "may add or lose a consumer of the changelog scaffolding gate's state"),
     ("CLAUDE.md", "tests/test_claude_md_currency.py",
      "the 'What is not proven yet' release marker paragraph"),
     ("changelog.d/", "tests/test_claude_md_currency.py",

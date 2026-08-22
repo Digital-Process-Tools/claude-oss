@@ -83,6 +83,25 @@ def test_a_script_change_also_trips_unwired_scripts_guard_independently():
     assert "tests/test_unwired_scripts_253.py" in tests_hit
 
 
+def test_a_brand_new_script_still_trips_the_gate_state_guard():
+    """Regression: the guard's own real check
+    (`tests/test_gate_state_consumers_328.py::unlisted_callers`) scans *every*
+    tracked file under `scripts/` and `commands/` for a bare occurrence of the
+    gate producer's identifier -- it does not only watch the files that already
+    call it. An earlier version of this mapping listed only the four current
+    consumer files and reported nothing for a file with no history at all, which
+    is exactly the PR #431 shape this issue exists to close: a brand-new
+    `scripts/` file that starts calling the gate would trip the real guard on CI
+    while this mechanism stayed silent about it."""
+    hits = lane_setup.guards_for_files(["scripts/a_file_that_has_never_existed_before.py"])
+    tests_hit = [entry["test"] for entry in hits]
+    assert "tests/test_gate_state_consumers_328.py" in tests_hit
+
+    hits = lane_setup.guards_for_files(["commands/a_command_that_has_never_existed_before.md"])
+    tests_hit = [entry["test"] for entry in hits]
+    assert "tests/test_gate_state_consumers_328.py" in tests_hit
+
+
 def test_claude_md_change_trips_currency_guard():
     hits = lane_setup.guards_for_files(["CLAUDE.md"])
     tests_hit = [entry["test"] for entry in hits]
