@@ -60,22 +60,36 @@ this module does not reach for `scripts/shell_sources.py`'s shebang detection: t
 answers "is this shell", and after removing the suffix test there is no question left
 to ask.
 
-Three states, not two, in three places:
+Four states, not two, in four places -- the fourth arrived with #396:
 
 * `git ls-files` failing, or returning nothing, is *unknown* and skips with the
   reason; it is not a pass.
-* A file that cannot be opened, and a file that is not valid UTF-8, both come back
-  in `unsearchable` with the reason -- separately from files that were read and did
-  not match. `errors="replace"` is deliberately not used: it cannot raise, so an
-  undecodable file was silently turned into U+FFFD and filed as "read, no match",
-  which is the two answers rendering alike. `UnicodeDecodeError` is a `ValueError`,
-  not an `OSError`, so both are caught by name.
+* A file that is *there* and cannot be opened, and a file that is not valid UTF-8,
+  both come back in `unsearchable` with the reason -- separately from files that were
+  read and did not match. `errors="replace"` is deliberately not used: it cannot
+  raise, so an undecodable file was silently turned into U+FFFD and filed as "read, no
+  match", which is the two answers rendering alike. `UnicodeDecodeError` is a
+  `ValueError`, not an `OSError`, so both are caught by name.
 * `unsearchable` does **not** on its own fail the assertion, and that is reasoned
   rather than lax: decoding more files can only ever *add* references, never remove
   them. So an unsearchable file cannot turn a wired script into an unwired one -- it
   can only leave an offender unexplained. It is therefore reported beside the
   offenders when there are any, and surfaced as a skip when there are none, instead
   of reddening the suite because somebody committed a PNG.
+* **A file that is not on disk at all is `absent`, and that reasoning does not reach
+  it (#396).** `git ls-files` reports the **index** while every read here happens in
+  the **working tree**, so an uncommitted delete -- the changelog fold produces
+  twenty-one at once -- hands this survey paths that are gone. Until #396 those went
+  into `unsearchable`, under the argument in the bullet above, and that argument is
+  false for them: an undecodable file's references are *unread*, an absent file's
+  references are *lost*. Losing references does not leave an offender unexplained, it
+  **manufactures** one -- which is the very shape the first bullet's `changelog.d/`
+  half already describes, arriving through the read rather than through the
+  exclusion list. So absence is decided from the exception in hand
+  (`FileNotFoundError`, never a second question to the filesystem), reported by name
+  in its own bucket, and the offender list declines to accuse while anything is in
+  it. A candidate that is itself absent is not accused either: it is being deleted,
+  not left unwired.
 """
 
 import re
@@ -159,9 +173,18 @@ def _is_narrative(rel):
 
 
 def _searchable_text(root, rel):
-    """(text, None) for a file that can be searched, or (None, reason) for one that cannot.
+    """(text, None, None), or (None, kind, reason) for a file that cannot be searched.
 
-    The reason is the third state and is propagated, never folded into "did not match".
+    `kind` is "unsearchable" for a file that is there and will not read or decode, and
+    "absent" for one `git ls-files` reports and the working tree does not hold. The
+    reason is propagated in both cases, never folded into "did not match".
+
+    The two are separated because they fail in opposite directions, which is the whole
+    of #396 -- see the module docstring's third bullet. The exception already in hand
+    decides which: `FileNotFoundError` is absence, any other `OSError` is a read that
+    failed. No second question is put to the filesystem; `exists()` swallows a short
+    list of errnos and re-raises the rest.
+
     Decoding is strict on purpose: `errors="replace"` cannot raise, so an undecodable
     file was quietly turned into U+FFFD and counted as read. `UnicodeDecodeError` is a
     `ValueError` rather than an `OSError`, so it is caught by name -- catching only
@@ -169,38 +192,51 @@ def _searchable_text(root, rel):
     """
     try:
         raw = (root / rel).read_bytes()
+    except FileNotFoundError as error:
+        return None, "absent", error.strerror or str(error)
     except OSError as error:
-        return None, error.strerror or str(error)
+        return None, "unsearchable", error.strerror or str(error)
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as error:
-        return None, "not valid UTF-8 ({})".format(error.reason)
+        return None, "unsearchable", "not valid UTF-8 ({})".format(error.reason)
     if rel == "pyproject.toml" or rel.endswith("/pyproject.toml"):
         text = COVERAGE_RUN_RE.sub("[tool.coverage.run]\n", text)
-    return text, None
+    return text, None, None
 
 
 def survey_unwired(root, tracked):
-    """Return (unwired, unsearchable) for the files under the surveyed directories.
+    """Return (unwired, unsearchable, absent) for the surveyed directories.
 
-    Two lists rather than one verdict: a script nothing mentions and a file we could not
-    read are different findings, and they must not render alike. `unsearchable` entries
-    are `(path, reason)` pairs.
+    Three lists rather than one verdict. A script nothing mentions, a file that would
+    not read, and a file that is not there are three findings, and they must not render
+    alike. `unsearchable` and `absent` entries are `(path, reason)` pairs.
     """
     candidates = _surveyed_paths(tracked)
     unsearchable = []
+    absent = []
     texts = {}
     for rel in tracked:
         if _is_narrative(rel):
             continue
-        text, reason = _searchable_text(root, rel)
+        text, kind, reason = _searchable_text(root, rel)
+        if kind == "absent":
+            absent.append((rel, reason))
+            continue
         if text is None:
             unsearchable.append((rel, reason))
             continue
         texts[rel] = text
 
+    # A candidate the working tree does not hold is being deleted, not left unwired, so
+    # it is named in `absent` and not accused. "Wire it, delete it, or except it" is
+    # advice about a file somebody has already deleted.
+    gone = {rel for rel, _reason in absent}
+
     unwired = []
     for rel in candidates:
+        if rel in gone:
+            continue
         full, base = _mention_res(rel)
         if any(
             other != rel and (full.search(body) or base.search(body))
@@ -208,7 +244,17 @@ def survey_unwired(root, tracked):
         ):
             continue
         unwired.append(rel)
-    return unwired, sorted(unsearchable)
+    return unwired, sorted(unsearchable), sorted(absent)
+
+
+def offenders_are_conclusive(unwired, absent):
+    """Whether an offender list is a finding or a maybe.
+
+    Split out and given both halves a fixture, because the real tree is expected to
+    have nothing absent -- a guard written inline would never execute and would be
+    believed the first time it mattered.
+    """
+    return not (unwired and absent)
 
 
 def stale_exceptions(exceptions, unwired):
@@ -325,7 +371,7 @@ def test_survey_flags_an_orphan_and_spares_a_used_script(tmp_path):
         "scripts/used.py",
     ]
 
-    unwired, unreadable = survey_unwired(tmp_path, tracked)
+    unwired, unreadable, _ = survey_unwired(tmp_path, tracked)
 
     assert unwired == ["scripts/orphan.py"], (
         "the survey must flag a script nothing uses even when a suppression names it -- "
@@ -360,7 +406,7 @@ def test_a_basename_that_is_a_suffix_of_another_is_not_a_reference(tmp_path):
     )
     tracked = ["caller.py", "scripts/oss_state.py", "scripts/state.py"]
 
-    unwired, unreadable = survey_unwired(tmp_path, tracked)
+    unwired, unreadable, _ = survey_unwired(tmp_path, tracked)
 
     assert "scripts/state.py" in unwired, (
         "scripts/state.py is referenced by nothing -- the only mention of the string "
@@ -376,22 +422,55 @@ def test_a_basename_that_is_a_suffix_of_another_is_not_a_reference(tmp_path):
 
 
 def test_survey_reports_an_unreadable_file_separately(tmp_path):
-    """A file we could not read must not be silently counted as one that did not match."""
+    """A file we could not read must not be silently counted as one that did not match.
+
+    This fixture used to establish "could not read" by naming a file that was never
+    written -- `tracked = [..., "vanished.py"]` -- which **is** the conflation #396 was
+    filed for, in miniature: it asserted that a path in the index and absent from the
+    working tree lands in `unsearchable`, so the wrong behaviour had a passing test.
+    The condition is now reached the only way it honestly can be, by denying the read
+    on a file that is still there, and the deny is measured rather than assumed.
+    `test_a_tracked_file_missing_from_the_working_tree_is_absent_not_unsearchable` is
+    the other half.
+    """
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "orphan.py").write_text("print(2)\n", encoding="utf-8")
-    tracked = ["scripts/orphan.py", "vanished.py"]
+    denied = tmp_path / "denied.py"
+    denied.write_text("print(3)\n", encoding="utf-8")
+    tracked = ["denied.py", "scripts/orphan.py"]
 
-    unwired, unsearchable = survey_unwired(tmp_path, tracked)
+    try:
+        denied.chmod(0)
+        try:
+            denied.read_bytes()
+        except OSError:
+            pass
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read here, so this platform cannot produce a "
+                "tracked-and-unreadable file. UNTESTED here: whether a file that "
+                "exists and will not read is reported separately rather than counted "
+                "as one that did not match."
+            )
 
-    assert [name for name, _ in unsearchable] == ["vanished.py"], (
-        "an unreadable tracked file must come back in its own list, not folded into "
-        "the clean path; got {!r}".format(unsearchable)
-    )
-    assert unsearchable[0][1], (
-        "the entry must carry the reason it could not be searched -- a bare path is the "
-        "same absence one field along, and the reason is the part a reader can act on"
-    )
-    assert unwired == ["scripts/orphan.py"]
+        unwired, unsearchable, absent = survey_unwired(tmp_path, tracked)
+
+        assert [name for name, _ in unsearchable] == ["denied.py"], (
+            "an unreadable tracked file must come back in its own list, not folded into "
+            "the clean path; got {!r}".format(unsearchable)
+        )
+        assert unsearchable[0][1], (
+            "the entry must carry the reason it could not be searched -- a bare path is "
+            "the same absence one field along, and the reason is the part a reader can "
+            "act on"
+        )
+        assert absent == [], (
+            "a file that is on disk and will not read is not an absent one, or #396's "
+            "split has collapsed in the other direction; got {!r}".format(absent)
+        )
+        assert unwired == ["scripts/orphan.py"]
+    finally:
+        denied.chmod(0o600)
 
 
 def test_a_file_with_no_extension_is_still_surveyed(tmp_path):
@@ -409,7 +488,7 @@ def test_a_file_with_no_extension_is_still_surveyed(tmp_path):
     (tmp_path / "caller.py").write_text("run('scripts/used.py')\n", encoding="utf-8")
     tracked = ["caller.py", "scripts/tool", "scripts/used.py"]
 
-    unwired, _ = survey_unwired(tmp_path, tracked)
+    unwired, _, _ = survey_unwired(tmp_path, tracked)
 
     assert "scripts/tool" in unwired, (
         "an extensionless file under scripts/ is referenced by nothing and must be "
@@ -451,7 +530,7 @@ def test_narrative_files_do_not_count_as_a_reference(tmp_path):
         "scripts/used.py",
     ]
 
-    unwired, _ = survey_unwired(tmp_path, tracked)
+    unwired, _, _ = survey_unwired(tmp_path, tracked)
 
     assert "scripts/gone.py" in unwired, (
         "the only mentions of scripts/gone.py are the three files whose subject is that "
@@ -480,7 +559,7 @@ def test_a_same_named_file_in_another_directory_is_not_a_reference(tmp_path):
     )
     tracked = ["notes.md", "scripts/foo.py"]
 
-    unwired, _ = survey_unwired(tmp_path, tracked)
+    unwired, _, _ = survey_unwired(tmp_path, tracked)
 
     assert "scripts/foo.py" in unwired, (
         "scripts/foo.py is referenced by nothing -- both mentions are other directories' "
@@ -501,7 +580,7 @@ def test_a_file_that_is_not_utf8_is_reported_as_unsearchable(tmp_path):
     (tmp_path / "blob.bin").write_bytes(b"\xff\xfe\x00 scripts/orphan.py \xc3\x28")
     tracked = ["blob.bin", "scripts/orphan.py"]
 
-    unwired, unsearchable = survey_unwired(tmp_path, tracked)
+    unwired, unsearchable, _ = survey_unwired(tmp_path, tracked)
 
     named = [entry[0] if isinstance(entry, tuple) else entry for entry in unsearchable]
     assert "blob.bin" in named, (
@@ -510,6 +589,138 @@ def test_a_file_that_is_not_utf8_is_reported_as_unsearchable(tmp_path):
         "and counted as read; got {!r}".format(unsearchable)
     )
     assert "scripts/orphan.py" in unwired
+
+
+def test_a_tracked_file_missing_from_the_working_tree_is_absent_not_unsearchable(
+    tmp_path,
+):
+    """#396. `git ls-files` reports the index and every read here happens in the
+    working tree, so an uncommitted delete arrives as a path that is not on disk.
+    Filing it under `unsearchable` is wrong in a way the docstring's own reasoning
+    does not cover: an undecodable file's references are *unread*, an absent file's
+    references are *gone*, and only the second can manufacture an offender.
+
+    Paired with a file that is there and will not read, which is the control -- a
+    fix that renamed every failed read to `absent` would otherwise pass. The deny is
+    measured rather than assumed.
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "orphan.py").write_text("print(1)\n", encoding="utf-8")
+    denied = tmp_path / "denied.md"
+    denied.write_text("nothing relevant\n", encoding="utf-8")
+    tracked = ["denied.md", "gone.md", "scripts/orphan.py"]
+
+    try:
+        denied.chmod(0)
+        try:
+            denied.read_bytes()
+        except OSError:
+            deny_took = True
+        else:
+            deny_took = False
+
+        unwired, unsearchable, absent = survey_unwired(tmp_path, tracked)
+
+        assert [name for name, _why in absent] == ["gone.md"], (
+            "a tracked path the working tree does not hold is not a file that would "
+            "not decode -- it is a file whose references are lost, which is the one "
+            "way this survey can invent an offender; got absent={!r} "
+            "unsearchable={!r}".format(absent, unsearchable)
+        )
+        if deny_took:
+            assert [name for name, _why in unsearchable] == ["denied.md"], (
+                "the control: a file that IS there and will not read must still fill "
+                "the unsearchable bucket; got {!r}".format(unsearchable)
+            )
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read here, so this platform cannot produce a "
+                "tracked-and-unreadable file. UNTESTED here: whether a file that "
+                "exists and will not read still lands in `unsearchable` rather than "
+                "being folded into the `absent` bucket #396 added. The absent half "
+                "above was asserted."
+            )
+        assert "scripts/orphan.py" in unwired
+    finally:
+        denied.chmod(0o600)
+
+
+def test_an_absent_reference_holder_leaves_the_offender_list_inconclusive(tmp_path):
+    """The harm, stated as behaviour rather than as a bucket name.
+
+    `scripts/tool.py` is referenced by exactly one file, and that file is deleted and
+    not yet committed. The survey cannot read it, so the only mention of `tool.py`
+    is gone and `tool.py` reads as unwired -- a red build caused by a delete nobody
+    has committed, which `CLAUDE.md` already documents as the fold-window shape.
+
+    So the survey has to say the offender list is *unreliable* while any reference
+    holder is absent. The must-not-fire half is the test below it: with the same
+    tree and nothing missing, the offender list is trustworthy and empty.
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "tool.py").write_text("print(1)\n", encoding="utf-8")
+    tracked = ["notes.md", "scripts/tool.py"]
+
+    unwired, _unsearchable, absent = survey_unwired(tmp_path, tracked)
+
+    assert "scripts/tool.py" in unwired, (
+        "the mechanism: with its only reference holder off disk, the script does read "
+        "as unwired. That is the false red, and the caller has to be told it may be "
+        "one; got {!r}".format(unwired)
+    )
+    assert offenders_are_conclusive(unwired, absent) is False, (
+        "an offender list computed while a reference holder was unreadable-because-"
+        "absent must not be presented as a finding: the reference may be sitting in "
+        "the file that is not there"
+    )
+
+
+def test_the_offender_list_is_conclusive_when_nothing_is_absent(tmp_path):
+    """The must-not-fire half. Without it, a guard that always reported the list as
+    inconclusive would pass the test above and disable the check outright.
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "tool.py").write_text("print(1)\n", encoding="utf-8")
+    (tmp_path / "notes.md").write_text("uses scripts/tool.py\n", encoding="utf-8")
+    tracked = ["notes.md", "scripts/tool.py"]
+
+    unwired, _unsearchable, absent = survey_unwired(tmp_path, tracked)
+
+    assert unwired == []
+    assert absent == []
+    assert offenders_are_conclusive(unwired, absent) is True, (
+        "with every tracked file on disk, an empty offender list is a finding and "
+        "must be reported as one"
+    )
+    assert offenders_are_conclusive(["scripts/tool.py"], []) is True, (
+        "and so is a non-empty one -- the guard is about absence, not about whether "
+        "anything was found"
+    )
+
+
+def test_a_candidate_that_is_itself_absent_is_not_reported_as_unwired(tmp_path):
+    """The other side of the same disagreement. A script deleted from the working
+    tree and not yet committed has nothing to wire, and telling somebody to wire it,
+    delete it or except it is advice about a file they have already deleted.
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "here.py").write_text("print(1)\n", encoding="utf-8")
+    tracked = ["scripts/gone.py", "scripts/here.py"]
+
+    unwired, _unsearchable, absent = survey_unwired(tmp_path, tracked)
+
+    assert "scripts/gone.py" not in unwired, (
+        "a candidate that is in the index and not on disk is being deleted, not left "
+        "unwired; got {!r}".format(unwired)
+    )
+    assert [name for name, _why in absent] == ["scripts/gone.py"], (
+        "and it must still be named -- dropping it silently is the absence this "
+        "plugin is named after; got {!r}".format(absent)
+    )
+    assert "scripts/here.py" in unwired, (
+        "the control: an ordinary orphan beside it must still be reported, or the "
+        "absent arm has swallowed the check"
+    )
 
 
 def test_tracked_paths_survive_a_non_ascii_name(tmp_path):
@@ -577,7 +788,7 @@ def test_a_stale_exception_is_detected():
 def test_every_exception_is_still_needed():
     """An exception list that has drifted is a licence rather than a decision."""
     tracked = _tracked_files()
-    unwired, _ = survey_unwired(REPO_ROOT, tracked)
+    unwired, _, _ = survey_unwired(REPO_ROOT, tracked)
     stale = stale_exceptions(UNWIRED_EXCEPTIONS, unwired)
     assert not stale, (
         "these files are listed as allowed to be unreferenced but something now "
@@ -604,8 +815,26 @@ def test_the_survey_actually_looked_at_something():
 
 def test_nothing_in_the_surveyed_directories_is_referenced_by_nothing():
     tracked = _tracked_files()
-    unwired, unsearchable = survey_unwired(REPO_ROOT, tracked)
+    unwired, unsearchable, absent = survey_unwired(REPO_ROOT, tracked)
     offenders = sorted(set(unwired) - set(UNWIRED_EXCEPTIONS))
+    if not offenders_are_conclusive(offenders, absent):
+        # #396. An absent file's references are gone rather than merely unread, so it is
+        # the one thing that can *manufacture* an offender -- and between the changelog
+        # fold and the release commit there are twenty-one of them at once. Accusing a
+        # script here would be a red build caused by a delete nobody has committed.
+        # A clean list needs no such caveat, which is why this guards the offenders
+        # rather than the run: absence can only add offenders, never hide one.
+        pytest.skip(
+            "{} tracked file(s) are in the index and not on disk, so the reference "
+            "that would clear {} may be sitting in one of them. This is what an "
+            "uncommitted delete looks like. Absent: {}. Provisional offender(s): "
+            "{}".format(
+                len(absent),
+                "them" if len(offenders) != 1 else "it",
+                "; ".join("{} ({})".format(name, why) for name, why in absent),
+                ", ".join(offenders),
+            )
+        )
     caveat = ""
     if unsearchable:
         caveat = (
@@ -636,13 +865,36 @@ def test_unsearchable_files_are_surfaced_rather_than_silent():
     than the fact disappearing into a green tick.
     """
     tracked = _tracked_files()
-    _, unsearchable = survey_unwired(REPO_ROOT, tracked)
+    _, unsearchable, absent = survey_unwired(REPO_ROOT, tracked)
     if unsearchable:
         pytest.skip(
             "{} tracked file(s) could not be searched, so any offender above is "
             "'unwired unless one of these mentions it': {}".format(
                 len(unsearchable),
                 "; ".join("{} ({})".format(name, why) for name, why in unsearchable),
+            )
+        )
+
+
+def test_absent_files_are_surfaced_rather_than_silent():
+    """#396's third state gets a voice of its own, on the ordinary green run.
+
+    The assertion above already declines to accuse while anything is absent, but a
+    skip that only happens when there are offenders would leave the usual fold-window
+    tree -- twenty-one deleted fragments, no offenders -- reporting nothing at all. A
+    file deleted in a diff nobody meant to make is worth saying out loud even when it
+    changes no verdict, which is exactly what #395 settled for the two sites it fixed.
+    """
+    tracked = _tracked_files()
+    _, _, absent = survey_unwired(REPO_ROOT, tracked)
+    if absent:
+        pytest.skip(
+            "{} tracked file(s) are in the index and not on disk, so their references "
+            "are lost rather than merely unread. This is what an uncommitted delete "
+            "looks like -- most often the changelog fold before the release commit: "
+            "{}".format(
+                len(absent),
+                "; ".join("{} ({})".format(name, why) for name, why in absent),
             )
         )
 

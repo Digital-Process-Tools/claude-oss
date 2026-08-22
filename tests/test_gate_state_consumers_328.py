@@ -50,6 +50,16 @@ it must come back clean, and against synthetic text written to break exactly one
 thing, where it must fire for a named reason. A checker that cannot fire passes
 on prose nobody constrained. And a document or a function body that could not be
 read is a failure with its own name, never an empty set of findings.
+
+A document that is not *there* is a fourth answer, added by #396. `tracked_paths`
+asks git for the index and `readable_texts` reads the working tree, so an
+uncommitted delete arrives as a path that is not on disk -- and calling that
+"could not read" reddened this census on a tree with nothing wrong with it. It is
+named and does not sink the completeness claim: a file that is there and will not
+read might name the producer and nobody can tell, while one that has been deleted
+is a document leaving the tree. Nothing fired here before #396 only because the
+scope is `commands/` and `scripts/`, which the changelog fold does not touch --
+an accident of scope, not a property of the guard.
 """
 
 import re
@@ -120,9 +130,22 @@ def _doc(path):
     """Text, or a failure with its own name. Returning "" would make every
     check below fire at once and read like a document that names nothing, which
     is a different fact about the world.
+
+    Both arms still fail, and that is deliberate: these are the *hardcoded* consumer
+    paths rather than an enumeration of the index, so a named document that is gone
+    means `GATE_STATE_CONSUMERS` is stale -- a finding, not the ordinary uncommitted
+    delete `readable_texts` learned to tolerate. Only the sentence differed, and it
+    said `could not read` about a file that was simply not there (#396).
     """
     try:
         return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        pytest.fail(
+            "{} is named as a gate-state consumer and is not on disk. Either it was "
+            "deleted and GATE_STATE_CONSUMERS still names it, or it was renamed -- "
+            "update the tuple. (Nothing failed to read here; there was nothing to "
+            "read.)".format(path)
+        )
     except OSError as exc:
         pytest.fail("could not read {}: {!r}".format(path, exc))
 
@@ -234,22 +257,41 @@ def tracked_paths(root, directories):
 
 
 def readable_texts(paths):
-    """({path: text}, [(path, exception)]) -- two lists, never one.
+    """({path: text}, unreadable, absent) -- three lists, never one.
 
     A path that will not read is reported rather than skipped. Skipping it
     removes a possible consumer from the census and leaves the caller saying
     "nothing is missing" about a file it never opened.
+
+    `absent` is the third of them and it is a different fact (#396). `tracked_paths`
+    asks git for the **index**; every read here happens in the **working tree**, so
+    an uncommitted delete hands this function a path that is not there. Both lists
+    are named by the caller and only `unreadable` sinks the completeness claim: a
+    file that is there and will not read might name the producer and nobody can
+    tell, while one that has been deleted is a document leaving the tree rather
+    than a hole in the census. This site is green today only because its scope is
+    `commands/` and `scripts/`, which the changelog fold does not touch -- an
+    accident of scope, not a property of the guard.
+
+    The exception already in hand decides which: `FileNotFoundError` is absence,
+    any other `OSError` is a read that failed. No second question is put to the
+    filesystem -- `exists()` swallows a short list of errnos and re-raises the rest.
+    On Windows several Win32 codes fold onto ENOENT, so an unlookable path reads as
+    absent there; degraded, not silent, because it is named either way.
     """
     texts = {}
     unreadable = []
+    absent = []
     for path in paths:
         if path == PRODUCER:
             continue
         try:
             texts[path] = path.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:
+            absent.append((path, exc))
         except (OSError, UnicodeDecodeError) as exc:
             unreadable.append((path, exc))
-    return texts, unreadable
+    return texts, unreadable, absent
 
 
 def unlisted_callers(texts, listed):
@@ -443,7 +485,7 @@ def test_the_consumer_census_lists_every_file_that_calls_the_gate():
         "git tracks no files under commands/ or scripts/, which cannot be "
         "true of this repository -- the census is looking somewhere wrong"
     )
-    texts, unreadable = readable_texts(paths)
+    texts, unreadable, absent = readable_texts(paths)
     assert not unreadable, (
         "the consumer census could not read {} -- so it cannot claim that no "
         "consumer is missing from GATE_STATE_CONSUMERS. An unreadable file is "
@@ -451,6 +493,18 @@ def test_the_consumer_census_lists_every_file_that_calls_the_gate():
             [(str(p), repr(e)) for p, e in unreadable]
         )
     )
+    # #396. Absence is named rather than dropped, and it does not sink the claim the
+    # way `unreadable` does: a path git lists and the working tree does not hold is a
+    # document leaving the tree, not a file this census failed to read. The assertion
+    # runs first so an uncommitted delete cannot disable the check for every other
+    # file, and the absence rides along in the message; the skip below reports it on
+    # the ordinary green run, where there is no message to ride on.
+    caveat = ""
+    if absent:
+        caveat = "\n\n  Note: {} tracked path(s) are in the index and not on disk, " \
+            "so the census did not read them: {}".format(
+                len(absent), [str(p) for p, _e in absent]
+            )
     missing = unlisted_callers(texts, set(GATE_STATE_CONSUMERS))
     assert not missing, (
         "{} name `{}` and are in neither ENFORCED_CONSUMERS nor "
@@ -459,7 +513,18 @@ def test_the_consumer_census_lists_every_file_that_calls_the_gate():
             sorted(str(p.relative_to(REPO_ROOT)) for p in missing),
             PRODUCER_FUNCTION,
         )
+        + caveat
     )
+    if absent:
+        pytest.skip(
+            "the census is clean, but {} tracked path(s) are in the index and not on "
+            "disk and were not read. This is what an uncommitted delete under "
+            "commands/ or scripts/ looks like; before #396 it read as a tree that "
+            "could not be read and reddened this test: {}".format(
+                len(absent),
+                [(str(p), repr(e)) for p, e in absent],
+            )
+        )
 
 
 # --- positive controls: every checker above must be able to fire ------------
@@ -525,7 +590,7 @@ def test_the_census_fires_on_a_caller_that_is_on_neither_list(tmp_path):
     listed.write_text("calls scaffolded_changelog_gate\n", encoding="utf-8")
     stranger = tmp_path / "stranger.md"
     stranger.write_text("also calls scaffolded_changelog_gate\n", encoding="utf-8")
-    texts, unreadable = readable_texts([listed, stranger])
+    texts, unreadable, _ = readable_texts([listed, stranger])
     assert unreadable == []
     assert unlisted_callers(texts, {listed}) == {stranger}
 
@@ -538,7 +603,7 @@ def test_the_census_stays_silent_when_every_caller_is_listed(tmp_path):
     listed.write_text("calls scaffolded_changelog_gate\n", encoding="utf-8")
     quiet = tmp_path / "quiet.md"
     quiet.write_text("mentions nothing at all\n", encoding="utf-8")
-    texts, _ = readable_texts([listed, quiet])
+    texts, _, _ = readable_texts([listed, quiet])
     assert unlisted_callers(texts, {listed}) == set()
 
 
@@ -551,10 +616,148 @@ def test_the_census_reports_a_file_it_cannot_decode_rather_than_skipping_it(
     """
     bad = tmp_path / "bad.md"
     bad.write_bytes(b"\xff\xfe calls scaffolded_changelog_gate\n")
-    texts, unreadable = readable_texts([bad])
+    texts, unreadable, _ = readable_texts([bad])
     assert bad not in texts
     assert [path for path, _exc in unreadable] == [bad]
     assert isinstance(unreadable[0][1], (UnicodeDecodeError, OSError))
+
+
+def test_a_named_consumer_that_is_gone_fails_with_the_right_sentence(tmp_path):
+    """The same wrong word one function over, found by dogfooding #396.
+
+    `_doc` reads the *hardcoded* consumer paths rather than an enumeration, so it is
+    not the index-versus-tree class and it is right to fail: a document named in
+    `GATE_STATE_CONSUMERS` that has been deleted means the tuple is stale, which is a
+    finding rather than an ordinary uncommitted delete. Only its sentence was wrong --
+    it said `could not read` about a file that was simply not there, which is the
+    exact wording #396 is about.
+
+    So the verdict is unchanged and asserted here: both arms still fail. Paired with
+    the unreadable arm below, which must keep its own words.
+    """
+    # `pytest.fail.Exception` rather than `Exception`: pytest's outcome types derive
+    # from `BaseException`, so a bare `raises(Exception)` would let the failure sail
+    # past and skip the enclosing test -- a green tick over an assertion that never
+    # ran, which `CLAUDE.md` names as a trap. Pinning it also proves this is the
+    # `fail` arm and not some other error on the way.
+    gone = tmp_path / "never-written.md"
+    with pytest.raises(pytest.fail.Exception) as caught:
+        _doc(gone)
+    message = str(caught.value)
+    assert "could not read" not in message, (
+        "a document that is not there is not one this process failed to read: "
+        "{!r}".format(message)
+    )
+    assert "not on disk" in message, message
+    assert str(gone) in message, message
+
+    denied = tmp_path / "denied.md"
+    denied.write_text("hello\n", encoding="utf-8")
+    try:
+        denied.chmod(0)
+        try:
+            denied.read_bytes()
+        except OSError:
+            pass
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read here, so this platform cannot produce a "
+                "named consumer that exists and will not read. UNTESTED here: whether "
+                "that arm keeps its own `could not read` wording. The absent arm above "
+                "was asserted."
+            )
+        with pytest.raises(pytest.fail.Exception) as caught:
+            _doc(denied)
+        assert "could not read" in str(caught.value), (
+            "the control: a file that IS there and will not read must keep the "
+            "`could not read` wording, or the split has collapsed the other way; got "
+            "{!r}".format(str(caught.value))
+        )
+    finally:
+        denied.chmod(0o600)
+
+
+def test_a_path_in_the_index_and_not_on_disk_is_absent_not_unreadable(tmp_path):
+    """#396. `tracked_paths` asks git for the **index** and `readable_texts` reads the
+    **working tree**, so an uncommitted delete arrives here as a path that is not
+    there. Filing it under `unreadable` sinks the census's completeness claim and
+    reddens `test_the_consumer_census_lists_every_file_that_calls_the_gate` on a tree
+    with nothing wrong with it.
+
+    This site is green today only because its scope is `commands/` and `scripts/`,
+    which the changelog fold does not touch -- an accident of scope, not a property of
+    the guard. Any uncommitted delete under those two directories reddens it.
+
+    Paired with a file that is there and will not read, which is the control: a fix
+    that renamed every failed read to `absent` would otherwise pass. The deny is
+    measured, because root ignores the mode bit and some filesystems do too.
+    """
+    denied = tmp_path / "denied.md"
+    denied.write_text("calls scaffolded_changelog_gate\n", encoding="utf-8")
+    gone = tmp_path / "gone.md"
+
+    try:
+        denied.chmod(0)
+        try:
+            denied.read_bytes()
+        except OSError:
+            deny_took = True
+        else:
+            deny_took = False
+
+        texts, unreadable, absent = readable_texts([denied, gone])
+
+        assert [path for path, _exc in absent] == [gone], (
+            "a path git lists and the working tree does not hold is not a file this "
+            "process failed to read; got absent={!r} unreadable={!r}".format(
+                absent, unreadable
+            )
+        )
+        assert gone not in texts
+        if deny_took:
+            assert [path for path, _exc in unreadable] == [denied], (
+                "the control: a file that IS there and will not read must still sink "
+                "the completeness claim; got {!r}".format(unreadable)
+            )
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read here, so this platform cannot produce a "
+                "listed-and-unreadable file. UNTESTED here: whether a file that exists "
+                "and will not read still lands in `unreadable` rather than being "
+                "folded into the `absent` bucket #396 added. The absent half above was "
+                "asserted."
+            )
+    finally:
+        denied.chmod(0o600)
+
+
+def test_an_absent_path_does_not_sink_the_completeness_claim(tmp_path):
+    """Why absence is reported and does not refuse, where `unreadable` refuses.
+
+    A file that is there and will not read is a hole in the census: it might name the
+    producer and nobody can tell. A file that has been deleted is not a hole -- it is
+    a document leaving the tree, and it will be gone from the tuple too. So it is
+    named and does not decide the verdict, which is the shape #395 settled.
+
+    The must-fire half is the assertion in the census test itself, which still refuses
+    on `unreadable`; `test_the_census_reports_a_file_it_cannot_decode_rather_than_
+    skipping_it` keeps that bucket filling.
+    """
+    listed = tmp_path / "listed.md"
+    listed.write_text("calls scaffolded_changelog_gate\n", encoding="utf-8")
+    gone = tmp_path / "gone.md"
+
+    texts, unreadable, absent = readable_texts([listed, gone])
+
+    assert unreadable == [], (
+        "an uncommitted delete must not read as a tree this census could not read; "
+        "got {!r}".format(unreadable)
+    )
+    assert [path for path, _exc in absent] == [gone]
+    assert unlisted_callers(texts, {listed}) == set(), (
+        "the control: the census must still work normally around the absent path, or "
+        "the absent arm has cost it the files it can read"
+    )
 
 
 def test_the_census_reports_a_listing_it_could_not_get(tmp_path):

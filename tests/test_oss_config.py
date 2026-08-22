@@ -584,19 +584,150 @@ def test_inspecting_a_tree_says_which_candidates_carry_a_version(tmp_path):
     assert evidence == {
         ".claude-plugin/plugin.json": "version",
         "README.md": "none",
-        "package.json": "unreadable",
+        # Read completely; what is wrong with it is its contents, not the read (#396).
+        "package.json": "malformed",
         "Cargo.toml": "version",
         "pyproject.toml": "none",
     }
 
 
-def test_a_candidate_listed_but_absent_from_disk_is_unreadable_not_absent(tmp_path):
-    """The file list and the tree disagreeing is a fact about the probe, not about
-    the repo, and it must not read as 'this file carries no version'.
+def test_a_candidate_in_the_index_and_not_on_disk_is_absent_not_unreadable(tmp_path):
+    """#396. `files` comes from `git ls-files`, which reports the **index**, while
+    this function reads the **working tree**. Between an uncommitted `rm` and its
+    commit -- most reliably the changelog fold -- the two disagree about exactly
+    those paths, and calling them `unreadable` made `/oss:setup` print *could not
+    read, so not claimed as version sites* about a file that is simply not there.
+
+    Paired in one fixture with a file that is there and will not read, which is the
+    control: without it, a fix that renamed every refusal to `absent` would pass.
+    The deny is measured rather than assumed -- root ignores the mode bit, some
+    filesystems ignore it, and Windows' `os.chmod` toggles a read-only attribute.
     """
-    assert oss_config.inspect_version_sites(tmp_path, ["README.md"]) == {
-        "README.md": "unreadable"
+    denied = tmp_path / "README.md"
+    denied.write_text("# thing\n\nv1.2.3\n", encoding="utf-8")
+
+    try:
+        denied.chmod(0)
+        try:
+            with open(str(denied), "rb"):
+                pass
+        except OSError:
+            deny_took = True
+        else:
+            deny_took = False
+
+        evidence = oss_config.inspect_version_sites(
+            tmp_path, ["README.md", "package.json"]
+        )
+
+        assert evidence["package.json"] == "absent", (
+            "a candidate git lists and the working tree does not hold is not a file "
+            "this process failed to read -- it is a file that is not there, and the "
+            "receipt says so in different words; got {!r}".format(evidence)
+        )
+        if deny_took:
+            assert evidence["README.md"] == "unreadable", (
+                "the control: a file that IS there and will not read must still fill "
+                "the unreadable bucket, or absence has simply renamed every refusal; "
+                "got {!r}".format(evidence)
+            )
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read here, so this platform cannot produce a "
+                "listed-and-unreadable candidate. UNTESTED here: whether a file that "
+                "exists and will not read still reports `unreadable` rather than "
+                "being folded into the `absent` bucket #396 added. The absent half "
+                "above was asserted."
+            )
+    finally:
+        denied.chmod(0o600)
+
+
+def test_a_candidate_that_reads_completely_but_will_not_parse_is_malformed(tmp_path):
+    """#396's design call. `unreadable` was carrying three different facts, and two
+    of them are not about the read at all: a `package.json` whose every byte arrived
+    and is not JSON, and one that parses into something that is not an object.
+
+    Reporting *could not read* about a file this process read in full is the same
+    defect the absent bucket fixes, one line over -- the tool's answer about its own
+    read rendered as an answer about the file. So `unreadable` now means exactly
+    what the word means, and the structural failures have their own name.
+    """
+    (tmp_path / "package.json").write_text("{ not json at all", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\nversion = "1.4.0"\n', encoding="utf-8"
+    )
+    evidence = oss_config.inspect_version_sites(
+        tmp_path, ["package.json", "Cargo.toml"]
+    )
+    assert evidence["package.json"] == "malformed", (
+        "a JSON candidate that read completely and did not parse is a fact about the "
+        "file, discovered by reading all of it -- not a read that failed; got "
+        "{!r}".format(evidence)
+    )
+    assert evidence["Cargo.toml"] == "version", (
+        "the control: an ordinary candidate beside it must still be measured, or "
+        "`malformed` has swallowed the happy path"
+    )
+
+
+def test_a_json_candidate_that_parses_to_a_non_object_is_malformed(tmp_path):
+    """The second of the two facts `unreadable` was carrying. A `package.json`
+    holding a JSON array read completely and parsed completely; what is wrong with
+    it is its shape.
+    """
+    (tmp_path / "package.json").write_text('["not", "an", "object"]', encoding="utf-8")
+    evidence = oss_config.inspect_version_sites(tmp_path, ["package.json"])
+    assert evidence["package.json"] == "malformed", (
+        "got {!r}".format(evidence)
+    )
+
+
+def test_the_setup_receipt_says_absent_and_unreadable_in_different_words(capsys):
+    """The wrong receipt #396 was filed for, asserted at the surface that prints it.
+
+    One NOTE per state, and the absent sentence must not claim a read was attempted
+    and failed. All four states are present in one probe so a receipt that collapses
+    any two of them fails here rather than in somebody's terminal.
+    """
+    probe = {
+        "labels": [],
+        "version_evidence": {
+            "README.md": "version",
+            "CHANGELOG.md": "absent",
+            "package.json": "unreadable",
+            "Cargo.toml": "malformed",
+        },
     }
+    oss_config._report_probe_notes(probe, {})
+    printed = capsys.readouterr().err
+
+    absent_line = [line for line in printed.splitlines() if "CHANGELOG.md" in line]
+    assert absent_line, "the absent candidate was not named at all: {!r}".format(printed)
+    assert "could not read" not in absent_line[0], (
+        "an uncommitted delete is being reported as a read that failed, which is the "
+        "wrong receipt #396 was filed for: {!r}".format(absent_line[0])
+    )
+    assert "not on disk" in absent_line[0], absent_line[0]
+
+    unreadable_line = [line for line in printed.splitlines() if "package.json" in line]
+    assert unreadable_line, "the unreadable candidate vanished: {!r}".format(printed)
+    assert "could not read" in unreadable_line[0], (
+        "the control: a file that is there and will not read must keep its own "
+        "sentence, or absence has renamed every refusal: {!r}".format(unreadable_line[0])
+    )
+
+    malformed_line = [line for line in printed.splitlines() if "Cargo.toml" in line]
+    assert malformed_line, "the malformed candidate vanished: {!r}".format(printed)
+    assert "could not read" not in malformed_line[0], (
+        "a file read in full whose contents are the wrong shape is not a read that "
+        "failed: {!r}".format(malformed_line[0])
+    )
+
+    assert "README.md" not in printed, (
+        "a candidate that was read and carries a version has nothing to report, so "
+        "naming it turns the receipt into noise: {!r}".format(printed)
+    )
 
 
 def test_a_root_python_module_with_a_version_constant_is_measured_not_guessed(tmp_path):
