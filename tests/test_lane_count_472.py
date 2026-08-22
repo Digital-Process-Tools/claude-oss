@@ -144,6 +144,21 @@ def test_a_registry_under_a_denied_parent_is_could_not_run_not_unknown(denied_re
     assert result["count"] is None
 
 
+def test_an_embedded_null_byte_reports_could_not_run_not_a_crash(tmp_path):
+    """The review round on this fix found `os.stat` raises `ValueError`, not `OSError`,
+    for a path carrying an embedded null byte -- `worktree_root` comes from
+    `.oss.local.json` and JSON can spell one -- and the new `try/except` block did not
+    carry over the guard `worktree_occupancy` already has for the identical case
+    (#380). Before this test existed, `lane_setup.lane_count` raised an uncaught
+    `ValueError` on a path like this instead of returning any of the three documented
+    states -- strictly worse than the swallowing `os.path.isdir` this fix replaces.
+    """
+    result = lane_setup.lane_count("x\x00y")
+
+    assert result["state"] == "could-not-run"
+    assert result["count"] is None
+
+
 def test_the_denied_registry_detail_does_not_claim_a_confirmed_absence(denied_registry):
     """The harm the issue names: the *sentence*, not just the state. A caller in a
     hurry may print only `detail`.

@@ -614,10 +614,16 @@ def lane_count(worktree_root):
                        confirmed empty render identically on disk** -- neither may
                        report `0`, which is a specific claim of certainty this
                        function cannot make. `count` is None.
-      could-not-run    the registry exists and holds at least one record that could
-                       not be read at all (corrupt JSON, a missing field). A partial
-                       count built by skipping it would silently undercount, so this
-                       is reported instead of swallowed. `count` is None.
+      could-not-run    either the registry exists and holds at least one record
+                       that could not be read at all (corrupt JSON, a missing
+                       field) -- a partial count built by skipping it would
+                       silently undercount, so this is reported instead of
+                       swallowed -- or the registry's own existence could not be
+                       examined at all (#472: an ancestor this process cannot
+                       traverse, or a path carrying an embedded null byte). The
+                       second case is deliberately not folded into `unknown`,
+                       because a registry that could not be examined is not a
+                       confirmed absence. `count` is None either way.
 
     A record older than the TTL is pruned as a side effect of this read and excluded
     from the count -- never counted as live, and never folding the whole answer to
@@ -653,6 +659,16 @@ def lane_count(worktree_root):
             }
         found = None
     except OSError as exc:
+        return {
+            "state": "could-not-run",
+            "count": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    except ValueError as exc:
+        # `os.stat` raises `ValueError`, not `OSError`, for a path carrying an embedded
+        # null byte -- `worktree_root` comes from `.oss.local.json` and JSON can spell
+        # one. `worktree_occupancy` already guards this (#380); the review round on
+        # this fix found the guard had not been carried over here.
         return {
             "state": "could-not-run",
             "count": None,
