@@ -1,3 +1,34 @@
+# The Python floor, and the only place it is declared (#410).
+#
+# Until this key existed the only floor anywhere was the CI matrix in
+# .github/workflows/tests.yml, and a matrix says what is TESTED, not what is
+# SUPPORTED. The two were read as one throughout -- including by the README's
+# `python-3.9+` badge, which made the claim with nothing behind it. The absence was
+# not inert: the fix/398 lane declined to put a `sys.version_info` gate in
+# scripts/doctor.sh's sentinel probe precisely because doing so would have turned a
+# working 3.8 install into `VERDICT: could not run` on the strength of a fact this
+# project had never stated.
+#
+# 3.9 is a decision, not a derivation, and it is deliberately WIDER than what the
+# code needs. Measured over all 132 tracked .py files: every one parses at
+# `feature_version=(3, 7)`, there are no builtin-generic or `X | Y` annotations, and
+# no post-3.9 standard library name (no tomllib, no functools.cache, no Path.walk).
+# The floor is 3.9 because 3.9 is the oldest version anything here has ever been
+# demonstrated on, which is a support statement rather than a technical bound.
+#
+# No `version` key, on purpose. scripts/oss_config.py's VERSION_CANDIDATES probes
+# `pyproject.toml` for exactly `[project] version`; adding one would make this a
+# fifth version site, and .oss.json's `version_sites` names four others, so
+# /oss:release would leave it stale. No `[build-system]` either: nothing builds or
+# installs this repository as a package -- it is a Claude Code plugin -- and adding a
+# backend to satisfy a table nobody reads would be furniture for its own sake.
+#
+# tests/test_python_floor_410.py holds this key against the four sites that have to
+# agree with it, since none of them can read a manifest key at parse time.
+[project]
+name = "claude-oss"
+requires-python = ">=3.9"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # `-rs` prints the reason behind every skip. A skipped check is this plugin

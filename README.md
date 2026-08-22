@@ -209,8 +209,17 @@ the gap and deliberately not a design.
 python3 -m pytest tests/ -q
 ```
 
-CI runs the suite on ubuntu, macOS and Windows across Python 3.9-3.12. A green macOS run is not
-evidence on its own.
+**The supported floor is Python 3.9**, declared in `pyproject.toml` as
+`[project] requires-python = ">=3.9"` and nowhere else. CI runs the suite on ubuntu, macOS and
+Windows across Python 3.9-3.12; that is what the code is *demonstrated* on, which is a different
+question from what it *supports*, and reading the two as one is what #410 filed. The floor is wider
+than the code needs — nothing tracked here uses a syntax or standard-library feature above 3.7 — and
+it is set at 3.9 because 3.9 is the oldest version anything here has ever been run on.
+
+The badge above, the matrix, the `Python X.Y compatible` line eight modules under `scripts/` carry,
+and the oldest explicit `python3.N` in `scripts/doctor.sh`'s interpreter walk are all *derived* from
+that key. None of them can read a manifest at parse time, so `tests/test_python_floor_410.py` is what
+makes them agree. A green macOS run is not evidence on its own.
 
 A separate ubuntu leg runs `bash -n` and `shellcheck -S warning` over every tracked shell source.
 Which files those are is derived rather than listed — `python3 scripts/shell_sources.py` prints the
