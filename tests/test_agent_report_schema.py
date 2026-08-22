@@ -176,6 +176,54 @@ def _mutations():
         report["review"]["findings"] = {"state": "returned-nothing", "items": []}
         return report
 
+    def below_bar_item_without_an_anchor(report):
+        report["adjacent"] = {
+            "state": "checked",
+            "items": [
+                {
+                    "text": "the sibling helper carries the same swallowed OSError",
+                    "file": None,
+                    "in_blast_radius": False,
+                    "action": "below-bar",
+                }
+            ],
+        }
+        return report
+
+    def below_bar_item_with_no_pull_request_to_be_recorded_in(report):
+        report["pr_body"] = {
+            "state": "not-written",
+            "path": None,
+            "reason": "the maintainer opens this one by hand",
+        }
+        report["adjacent"] = {
+            "state": "checked",
+            "items": [
+                {
+                    "text": "the sibling helper carries the same swallowed OSError",
+                    "file": None,
+                    "in_blast_radius": False,
+                    "action": "below-bar",
+                    "pr_anchor": "the sibling helper carries the same swallowed OSError",
+                }
+            ],
+        }
+        return report
+
+    def below_bar_finding_without_a_reason(report):
+        report["review"]["findings"] = {
+            "state": "checked",
+            "items": [
+                {
+                    "class": "correctness",
+                    "disposition": "below-bar",
+                    "text": "the docstring is wider than the code under it",
+                    "pr_anchor": "the docstring is wider than the code under it",
+                }
+            ],
+        }
+        return report
+
     return {
         "required-keys": missing_required_key,
         "types": wrong_type,
@@ -204,6 +252,11 @@ def _mutations():
         "pr-body-closing-nothing-carries-a-reason": (
             pr_body_closing_nothing_without_a_reason
         ),
+        "below-bar-item-carries-a-quotable-pr-anchor": below_bar_item_without_an_anchor,
+        "below-bar-item-needs-a-pull-request-body": (
+            below_bar_item_with_no_pull_request_to_be_recorded_in
+        ),
+        "below-bar-finding-carries-a-reason": below_bar_finding_without_a_reason,
     }
 
 
@@ -574,6 +627,31 @@ def _report_with_payload(
     return report
 
 
+def _report_with_a_below_bar_item(tmp_path, body, anchor, name="below-bar.pr.json"):
+    """A report whose one adjacent item took the third receipt, over a body it names.
+
+    The receipt is "a line in the pull request", so the fixture has to own both sides:
+    the item claiming it, and the body that either carries it or does not. Pass the two
+    independently, because the whole question is whether they agree.
+    """
+    payload = _payload()
+    payload["body"] = body
+    report = _report_with_payload(tmp_path, payload=payload, name=name)
+    report["adjacent"] = {
+        "state": "checked",
+        "items": [
+            {
+                "text": "The docstring above the helper is wider than the code under it.",
+                "file": "scripts/example.py",
+                "in_blast_radius": False,
+                "action": "below-bar",
+                "pr_anchor": anchor,
+            }
+        ],
+    }
+    return report
+
+
 def test_a_written_payload_the_forge_can_consume_is_accepted(tmp_path):
     report = _report_with_payload(tmp_path)
     assert report_schema.validate(report) == []
@@ -667,6 +745,19 @@ def _disk_mutations(tmp_path):
                     "state": "closes-nothing",
                     "reason": "Part of #250; the issue stays open for the second half.",
                 },
+            ),
+            tmp_path,
+        ),
+        # A payload the forge would accept, saying nothing at all about the below-bar
+        # item the report says is recorded in it. Nothing else in this table can refuse
+        # it: the shape pass is satisfied (the anchor is present, long enough, and the
+        # body was written), and the only defect is that the receipt is not there.
+        "below-bar-anchor-appears-in-the-pull-request-body": (
+            _report_with_a_below_bar_item(
+                tmp_path,
+                body="A body about something else entirely.",
+                anchor="the docstring above the helper is wider than the code under it",
+                name="unrecorded.pr.json",
             ),
             tmp_path,
         ),
@@ -1568,10 +1659,12 @@ def test_a_finding_left_for_filing_carries_its_reason():
 def test_the_adjacent_survey_is_deliberately_not_held_to_the_same_contract():
     """The asymmetry the docstring above claims, asserted rather than described.
 
-    Two fields record the same act under the same word, and only one is checked.
-    That is a real difference and it is easy to state backwards -- so it is
-    pinned here: `adjacent` has no `reason` slot at all, and an item carrying
-    none is accepted. If a `reason` is ever added there, this fails and whoever
+    Two fields record the same act under the same word, and only one carries an
+    argument the validator refuses it without. That is a real difference and it is
+    easy to state backwards -- so it is pinned here: `adjacent` has no `reason`
+    slot at all, and an item carrying none is accepted. It is an asymmetry about
+    `reason` and nothing wider: since #411 `adjacent` does carry the enforced
+    `pr_anchor`, so "adjacent is the unchecked one" is too broad to write. If a `reason` is ever added there, this fails and whoever
     adds it decides in the same breath whether it is enforced, instead of
     leaving two surveys that look symmetrical and are not.
     """
@@ -1597,4 +1690,238 @@ def test_the_adjacent_survey_is_deliberately_not_held_to_the_same_contract():
     assert report_schema.validate(report) == [], (
         "an adjacent item left for filing with no argument is refused, so the "
         "two surveys are symmetrical after all and the docstring is wrong"
+    )
+
+
+# --- the third receipt (#411) ---------------------------------------------------
+#
+# #393 gave an item three receipts and the enum encoded two, so a lane that decided
+# "below the bar, this belongs in the pull request body" had to label it
+# `report-for-filing` and disclaim it in prose. The maintainer read the label first
+# and nearly filed the thing the item argued against filing -- the bar failing in
+# the direction it was created to prevent.
+#
+# `below-bar` is deliberately not a verb. `filed` misread as an act the agent had
+# performed (#254); `report-for-filing` misreads as an act the reader should perform.
+# A phrase with no verb and no tense has no act in it to attribute either way.
+#
+# And it is CHECKED rather than declared. The receipt is a line in the pull request
+# body, the report already names that file, and this validator already opens it -- so
+# an item claiming the third receipt carries `pr_anchor`, a fragment it also wrote
+# into the body, and the on-disk pass looks for it. Same standing as the `closes`
+# check it borrows from: an absence detector, so a finding is strong and a pass is
+# weak. A body containing the anchor and nothing else would pass, which is why the
+# anchor has to be long enough to cost a phrase rather than a word.
+
+
+def test_a_report_can_say_all_three_receipts(tmp_path):
+    """The issue's test: one item of each kind, all three accepted.
+
+    Before this change the third was unsayable, so a lane wrote the second label over
+    it. All three in one report because that is the shape that proves the vocabulary
+    is a set rather than a swap -- adding the third must not cost either of the two.
+    """
+    anchor = "the docstring above the helper is wider than the code under it"
+    payload = _payload()
+    payload["body"] = (
+        "Splits on either separator.\n\n"
+        "Below the filing bar and recorded here rather than as an issue: "
+        + anchor
+        + ". True, and no caller reaches it."
+    )
+    report = _report_with_payload(tmp_path, payload=payload, name="three.pr.json")
+    report["adjacent"] = {
+        "state": "checked",
+        "items": [
+            {
+                "text": "The sibling helper had the same swallowed OSError.",
+                "file": "scripts/example.py",
+                "in_blast_radius": True,
+                "action": "fixed",
+            },
+            {
+                "text": "The scaffold writes the trio without checking the tree is readable.",
+                "file": "scripts/scaffold.py",
+                "in_blast_radius": False,
+                "action": "report-for-filing",
+            },
+            {
+                "text": "The docstring above the helper is wider than the code under it.",
+                "file": "scripts/example.py",
+                "in_blast_radius": False,
+                "action": "below-bar",
+                "pr_anchor": anchor,
+            },
+        ],
+    }
+    assert report_schema.validate(report) == []
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []
+
+
+def test_a_below_bar_item_whose_substance_is_not_in_the_body_is_refused(tmp_path):
+    """Must-fire, with its control in the same fixture.
+
+    The pair is the point: the absent half alone would pass against a checker that
+    refuses every below-bar item, and the present half alone would pass against one
+    that never looks. Only the body differs between them.
+    """
+    anchor = "the docstring above the helper is wider than the code under it"
+    absent = _report_with_a_below_bar_item(
+        tmp_path,
+        body="Splits on either separator. Nothing here about anything else.",
+        anchor=anchor,
+        name="absent.pr.json",
+    )
+    assert report_schema.validate(absent) == [], (
+        "the shape pass has an opinion about the body, which it must not: it never "
+        "opens a file"
+    )
+    errors = report_schema.validate_pr_body(absent, base_dir=tmp_path)
+    assert any("pr_anchor" in error for error in errors), (
+        "a below-bar item whose receipt is nowhere in the body was accepted, so the "
+        "third receipt is a promise rather than a guarantee: {}".format(errors)
+    )
+
+    present = _report_with_a_below_bar_item(
+        tmp_path,
+        body="Splits on either separator.\n\nBelow the bar: " + anchor + ".",
+        anchor=anchor,
+        name="present.pr.json",
+    )
+    assert report_schema.validate_pr_body(present, base_dir=tmp_path) == []
+
+
+def test_a_wrapped_body_still_carries_the_anchor(tmp_path):
+    """A body is prose somebody wrapped, and the anchor is one the agent quoted.
+
+    Matching on raw text would make the check fire on where a line happened to break,
+    which is a false finding about a receipt that is really there -- and a checker
+    with false findings gets worked around rather than fixed.
+    """
+    anchor = "the docstring above the helper is wider than the code under it"
+    report = _report_with_a_below_bar_item(
+        tmp_path,
+        body="Below the bar: the docstring above the helper\nis wider than the\ncode under it.",
+        anchor=anchor,
+        name="wrapped.pr.json",
+    )
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []
+
+    # The same body with CRLF line endings, which is what a payload written on
+    # Windows carries. `str.split()` with no argument splits on every whitespace
+    # character, so the carriage returns collapse with the newlines -- observed here
+    # rather than reasoned, because a checker that fired on one platform's line
+    # endings would report a real receipt as missing on exactly one leg of the matrix.
+    crlf = _report_with_a_below_bar_item(
+        tmp_path,
+        body=(
+            "Below the bar: the docstring above the helper\r\n"
+            "is wider than the\r\ncode under it."
+        ),
+        anchor=anchor,
+        name="crlf.pr.json",
+    )
+    assert report_schema.validate_pr_body(crlf, base_dir=tmp_path) == []
+
+
+def test_a_sentence_the_body_capitalises_is_still_the_receipt(tmp_path):
+    """Found by writing the first real report against this check, not by reasoning.
+
+    The body carried the sentence inside `**bold**`, where it opens a bullet and so
+    starts with a capital; the anchor quoted it mid-sentence in lower case, and a
+    case-sensitive containment refused a receipt that was plainly there. Folding can
+    only turn a finding into a pass, so it costs the check nothing it could claim --
+    and the pair below is what stops that being a licence: an anchor the body does
+    not carry at all is still refused.
+    """
+    report = _report_with_a_below_bar_item(
+        tmp_path,
+        body="- **The docstring above the helper is wider than the code under it.**",
+        anchor="the docstring above the helper is wider than the code under it",
+        name="capitalised.pr.json",
+    )
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []
+
+    # Must-fire, same fixture: folding case is not folding the sentence away.
+    absent = _report_with_a_below_bar_item(
+        tmp_path,
+        body="- **THE DOCSTRING SAYS SOMETHING ELSE ENTIRELY ABOUT THE HELPER.**",
+        anchor="the docstring above the helper is wider than the code under it",
+        name="folded-away.pr.json",
+    )
+    assert report_schema.validate_pr_body(absent, base_dir=tmp_path)
+
+
+def test_an_anchor_hidden_in_an_html_comment_is_not_a_receipt(tmp_path):
+    """The receipt is a line somebody reads. A comment renders to nothing.
+
+    Same reasoning as the closing-keyword check one function over: the question is
+    what reaches the reader, not what is in the file.
+    """
+    anchor = "the docstring above the helper is wider than the code under it"
+    report = _report_with_a_below_bar_item(
+        tmp_path,
+        body="Splits on either separator.\n\n<!-- " + anchor + " -->",
+        anchor=anchor,
+        name="hidden.pr.json",
+    )
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path), (
+        "an anchor visible to nobody was accepted as a receipt"
+    )
+
+
+def test_an_anchor_too_short_to_be_evidence_is_refused():
+    """The floor, and the honest limit of it.
+
+    Containment cannot tell substance from a pasted token, so what it buys is a cost:
+    the anchor has to be a phrase. A word or two can appear in a body that never
+    mentions the finding, at which point the check passes on nothing.
+    """
+    report = _example()
+    report["adjacent"] = {
+        "state": "checked",
+        "items": [
+            {
+                "text": "The docstring is wider than the code under it.",
+                "file": None,
+                "in_blast_radius": False,
+                "action": "below-bar",
+                "pr_anchor": "the docstring",
+            }
+        ],
+    }
+    errors = report_schema.validate(report)
+    assert any("pr_anchor" in error for error in errors), (
+        "a two-word anchor was accepted: {}".format(errors)
+    )
+
+    # Must-not-fire, same fixture: a phrase long enough to have been written on purpose.
+    report["adjacent"]["items"][0]["pr_anchor"] = (
+        "the docstring above the helper is wider than the code under it"
+    )
+    assert report_schema.validate(report) == []
+
+
+def test_the_third_receipt_is_spellable_in_both_surveys():
+    """One act, one word, both surveys -- the same join #254 made for filing.
+
+    A finding is below the bar or it is not; who noticed it does not change that. Two
+    spellings would be two things to grep for and a second thing to get wrong, and the
+    maintainer reads both surveys.
+    """
+    actions = set(_schema()["$defs"]["adjacent"]["properties"]["action"]["enum"])
+    assert "below-bar" in actions
+    assert "below-bar" in _finding_dispositions()
+
+
+def test_the_two_older_receipts_did_not_move():
+    """Adding a value must widen the vocabulary, never swap one out.
+
+    An older report carries only the two, and this is the assertion that says so: a
+    rename dressed as an addition fails here rather than in somebody's archive.
+    """
+    actions = set(_schema()["$defs"]["adjacent"]["properties"]["action"]["enum"])
+    assert {"fixed", "report-for-filing"} <= actions
+    assert {"fixed", "refused", "argued-down", "report-for-filing", "open"} <= (
+        _finding_dispositions()
     )

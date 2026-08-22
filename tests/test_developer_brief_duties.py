@@ -1023,9 +1023,15 @@ def test_the_adjacent_policy_matches_the_vocabulary_the_schema_enforces():
         (REPO_ROOT / "schemas" / "agent-report.schema.json").read_text(encoding="utf-8")
     )
     adjacent = schema["$defs"]["adjacent"]["properties"]
-    assert set(adjacent["action"]["enum"]) == {"fixed", "report-for-filing"}
+    assert set(adjacent["action"]["enum"]) == {"fixed", "report-for-filing", "below-bar"}
     assert "in_blast_radius" in adjacent
 
     brief = _developer()
-    for token in ("`fixed`", "`report-for-filing`", "`in_blast_radius`"):
+    for token in (
+        "`fixed`",
+        "`report-for-filing`",
+        "`below-bar`",
+        "`pr_anchor`",
+        "`in_blast_radius`",
+    ):
         assert _flatten(token) in brief, f"the brief never names {token}"

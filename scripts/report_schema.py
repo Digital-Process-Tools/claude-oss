@@ -94,6 +94,16 @@ CONTRACT_FINGERPRINTS = {
     # copy refuses every version-4 report because `closes` is an unknown key, and a
     # version-4 copy refuses every version-3 report because the key is absent.
     4: "eec52e1f12bdac241428aa446abae980fa8180ab4c348d6e076b232e3adbf37f",
+    # 5 (#411): `below-bar` joins both filing enums, and an item using it carries a
+    # `pr_anchor` the on-disk pass finds in the pull request body. Breaking in both
+    # directions, which is why the number moved: a version-4 copy refuses every
+    # version-5 report that takes the third receipt, because the value is not in its
+    # enum and `pr_anchor` is an unknown key. It is NOT breaking for a version-4
+    # report that never used it -- the two older values and their rules are
+    # untouched -- but the number is not a claim about one direction, and an old
+    # copy meeting a new report answers UNVALIDATABLE rather than INVALID exactly so
+    # that the difference does not have to be guessed at from the findings.
+    5: "51f55eabb5ea56703987103ad2dc3633c6bce3a9cbb677564f99c8f288a2e7cd",
 }
 
 _TYPES = {
@@ -412,7 +422,7 @@ def _rule_review_survey(node, path, errors):
 
 
 def _rule_finding(node, path, errors):
-    """The two dispositions that hand something to the reader, and what each owes.
+    """The dispositions that hand something to the reader, and what each owes.
 
     A refusal owes its argument: with no reason it reads exactly like a
     well-argued one.
@@ -423,15 +433,23 @@ def _rule_finding(node, path, errors):
     value can mean is a request (#254). What the maintainer needs before they can
     act on one is why the agent did not simply fix it.
 
+    `below-bar` owes it for the reason opposite again (#411): the maintainer is
+    being asked NOT to open anything, so the argument they need is the one for
+    leaving it closed. Its second obligation is a claim about a file rather than
+    about this node, so it is checked in `below_bar_report_errors` -- outside
+    `_RULES`, which hands a rule its own node and nothing else.
+
     That is the same judgment the developer brief demands of an `adjacent` item, and
     it is NOT the same contract, which is worth saying rather than implying: an
     `adjacent` item has no `reason` field at all -- `$defs/adjacent` is
-    `additionalProperties: false` over `text`, `file`, `in_blast_radius` and
-    `action`, and `_RULES` has no entry for it -- so there the argument rides inside
-    the free-text `text` and nothing checks that it arrived. Here it is a field of
-    its own and it is refused when empty. Claiming parity would be this repository's
-    own defect class in a docstring: an enforcement asserted by the prose next to the
-    checker rather than by the checker.
+    `additionalProperties: false` and defines no such key, and `_RULES` has no entry
+    for it -- so there the argument rides inside the free-text `text` and nothing
+    checks that it arrived. Here it is a field of its own and it is refused when
+    empty. Claiming parity would be this repository's own defect class in a
+    docstring: an enforcement asserted by the prose next to the checker rather than
+    by the checker. The asymmetry is `reason` alone, and narrowly: `adjacent` does
+    carry the enforced `pr_anchor`, so "adjacent is unchecked" is now too broad a
+    sentence to write.
     """
     if not _text(node, "text"):
         errors.append("{}: a finding carries its sentence, not a boolean".format(_label(path)))
@@ -446,6 +464,13 @@ def _rule_finding(node, path, errors):
             "handed to the maintainer, and without the argument for not fixing it "
             "here they have to reconstruct the judgment before they can "
             "file".format(_label(path))
+        )
+    if node.get("disposition") == BELOW_BAR and not _text(node, "reason"):
+        errors.append(
+            "{}: disposition 'below-bar' needs a reason -- this one asks the "
+            "maintainer NOT to open an issue, so what they need in order to leave it "
+            "closed is the argument that the class has no reachable caller. Without "
+            "it, a judged decision and a shrug render identically".format(_label(path))
         )
 
 
@@ -523,6 +548,143 @@ def _rule_pr_body(node, path, errors):
         )
 
 
+# --- the third receipt (#411) ---------------------------------------------------
+#
+# The filing bar defines three receipts and this contract encoded two, so a lane
+# that decided "real, below the bar, belongs in the pull request body" had to spell
+# it `report-for-filing` and disclaim it in the free text underneath. The label said
+# file this and the prose said do not; the maintainer read the label first.
+#
+# `below-bar` is the third word, and it is checked rather than declared. The report
+# already names the pull request payload and this validator already opens it, so the
+# item quotes a fragment of the body it was recorded at and the on-disk pass looks
+# for it. Same standing as the closing-keyword check above -- an absence detector.
+
+BELOW_BAR = "below-bar"
+
+# An anchor shorter than this proves nothing: two or three words can appear in a body
+# that never mentions the finding, and the containment check would then pass on a
+# receipt nobody wrote. The floor cannot make containment mean substance -- nothing
+# stdlib can read prose for that -- so what it buys is a cost, and the number is the
+# length of a short phrase rather than a measurement of anything.
+ANCHOR_FLOOR = 24
+
+
+def _collapse(text):
+    """One space between words, so wrapping a body is free.
+
+    A body is prose somebody wrapped and an anchor is a fragment somebody quoted;
+    matching raw text would fire on where a line happened to break, which is a false
+    finding about a receipt that is really there. A checker with false findings gets
+    worked around rather than fixed.
+    """
+    return " ".join(text.split())
+
+
+def below_bar_items(report):
+    """Every item claiming the third receipt, as `(label, item)`, from both surveys.
+
+    Both, because a finding is below the bar or it is not and who noticed it does not
+    change that: `adjacent` is what the agent found itself and `review.findings` is
+    what a spawn handed over. Written defensively rather than with the schema in hand,
+    because it runs before the shape pass has agreed the report is even shaped right.
+    """
+    if not isinstance(report, dict):
+        return []
+    found = []
+    surveys = [("adjacent", report.get("adjacent"), "action")]
+    review = report.get("review")
+    if isinstance(review, dict):
+        surveys.append(("review.findings", review.get("findings"), "disposition"))
+    for prefix, survey, key in surveys:
+        if not isinstance(survey, dict) or not isinstance(survey.get("items"), list):
+            continue
+        for index, item in enumerate(survey["items"]):
+            if isinstance(item, dict) and item.get(key) == BELOW_BAR:
+                found.append(("{}.items[{}]".format(prefix, index), item))
+    return found
+
+
+def below_bar_report_errors(report):
+    """What a below-bar item owes inside the report itself, before any file is opened.
+
+    Two things, and the second is what stops the on-disk check being optional: an
+    item whose receipt is a line in the pull request body needs there to BE a pull
+    request body. Without this, `pr_body: not-written` is a route that makes every
+    below-bar claim unverifiable while still rendering as a decision -- a guard
+    nominally on and effectively off, which is the defect class this repo is named
+    after wearing the clothes of the fix for it.
+    """
+    items = below_bar_items(report)
+    if not items:
+        return []
+    node = report.get("pr_body") if isinstance(report, dict) else None
+    state = node.get("state") if isinstance(node, dict) else None
+    errors = []
+    for label, item in items:
+        anchor = _collapse(_text(item, "pr_anchor"))
+        if not anchor:
+            errors.append(
+                "{}: below-bar needs a `pr_anchor` -- the receipt for this item is a "
+                "line in the pull request body, and without a fragment to look for, "
+                "the claim that it is there is checked by nobody. That is the silent "
+                "drop the third receipt exists to stop.".format(label)
+            )
+        elif len(anchor) < ANCHOR_FLOOR:
+            errors.append(
+                "{}: `pr_anchor` is {} character(s); a fragment shorter than {} can "
+                "turn up in a body that never mentions this finding, so containment "
+                "would pass on a receipt nobody wrote. Quote a phrase from the line "
+                "you actually wrote.".format(label, len(anchor), ANCHOR_FLOOR)
+            )
+        if state != "written":
+            errors.append(
+                "{}: below-bar says this is recorded in the pull request body, and "
+                "pr_body.state is {!r}. There is no body for it to be in, so the "
+                "decision has no receipt -- file it, fix it, or write the body."
+                .format(label, state)
+            )
+    return errors
+
+
+def below_bar_body_errors(report, body):
+    """Compare each below-bar item's anchor against what the body actually says.
+
+    HTML comments go first, because a receipt nobody can read is not one. Code spans
+    deliberately do NOT -- unlike the closing-keyword check, where stripping them is
+    correct because a forge does not honour a backticked keyword. A reader sees a
+    backticked sentence perfectly well, and the reader is who this receipt is for.
+    """
+    if not isinstance(body, str):
+        return []
+    text = _collapse(_HTML_COMMENT.sub(" ", body)).casefold()
+    errors = []
+    for label, item in below_bar_items(report):
+        anchor = _collapse(_text(item, "pr_anchor"))
+        if not anchor:
+            # The shape pass already named this. Saying it twice buries the rest.
+            continue
+        # Case-folded, and that is a measurement rather than a preference: the first
+        # report ever written against this check quoted a sentence the body carries
+        # inside `**bold**`, where the word is capitalised, and a case-sensitive
+        # containment refused a receipt that was plainly there. Folding can only turn
+        # a finding into a pass, never the reverse, so it costs the check nothing it
+        # was ever able to claim -- and a checker with false findings gets worked
+        # around rather than fixed.
+        if anchor.casefold() in text:
+            continue
+        errors.append(
+            "pr_body.payload.body: {} says it is recorded in the pull request body "
+            "and the body does not carry its `pr_anchor` ({}). A below-bar item is a "
+            "named decision not to file; with nothing in the body it is a silent "
+            "drop that reads like one. An anchor found only inside an HTML comment "
+            "does not count, because nobody reads it.".format(
+                label, _one_line(anchor, 80)
+            )
+        )
+    return errors
+
+
 def _issue_numbers(value):
     """The integers in `issues`, with bools -- which are ints in Python -- excluded."""
     if not isinstance(value, list):
@@ -550,6 +712,10 @@ def validate(report, schema=None):
     for name, node, path in rules:
         if isinstance(node, dict):
             _RULES[name](node, path, errors)
+    # Not an x-rule: this one spans the whole report. A below-bar item is a claim
+    # about pr_body, and _RULES hands each rule its own node and nothing else, so a
+    # per-node rule could not see the field it has to be checked against.
+    errors.extend(below_bar_report_errors(report))
     return errors
 
 
@@ -785,6 +951,7 @@ def validate_pr_body(report, schema=None, base_dir=None):
     # read has no closing keyword to be missing, and reporting one for it would be
     # this file's own defect class inside the check written against it.
     errors.extend(closing_body_errors(node.get("closes"), payload.get("body")))
+    errors.extend(below_bar_body_errors(report, payload.get("body")))
     return errors
 
 
