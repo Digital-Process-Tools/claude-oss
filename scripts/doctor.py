@@ -2166,6 +2166,17 @@ def check_statusline(project_dir):
     status line that never runs. This is established from the syntax alone -- nobody has
     run a status line on Windows to confirm it (reasoned, not observed) -- so the WARN
     below names that gap rather than asserting the command definitely fails.
+
+    This fires on a freshly-scaffolded repo's own default, which is real rather than a
+    test artifact: `/oss:doctor` on Windows now warns about the exact command
+    `/oss:scaffold` just wrote, with no other statusLine present to fall back to, and
+    that WARN needs a remedy a reader can act on rather than only naming the gap --
+    `statusLine` is left alone once a key is present (second bullet above), so replacing
+    the written command with one of the reader's own choosing silences it. The remedy
+    offered uses `%CLAUDE_PROJECT_DIR%` and a bare `python`: correct IF `cmd.exe` is what
+    actually runs the string, reasoned from Claude Code exporting the variable as
+    ordinary process environment rather than doing its own substitution -- untested, so
+    it is offered as a thing to try and said so in the message, not asserted as fixed.
     """
     if scaffold is None:  # pragma: no cover - guarded the same way the callers are
         unmeasured("statusline", NO_SCAFFOLD)
@@ -2202,12 +2213,23 @@ def check_statusline(project_dir):
     unresolved = _statusline_windows_gap(command)
     if "statusline.py" in command:
         if unresolved:
+            # A remedy, not just a name for the gap: `statusLine` is left alone once a
+            # key is present (this function's own docstring, second bullet), so a reader
+            # who wants this WARN gone can replace the `command` this plugin wrote with
+            # one of their own. `%CLAUDE_PROJECT_DIR%` and a bare `python` are what
+            # cmd.exe's own variable syntax and Windows's usual interpreter name would
+            # be IF cmd.exe is what actually runs this string -- reasoned from Claude
+            # Code exporting the variable as ordinary process environment, not observed
+            # by running a status line on Windows, so it is offered as a thing to try
+            # rather than asserted as the fix.
+            windows_try = 'python "%CLAUDE_PROJECT_DIR%"/' + scaffold.OWNED_DIR + "/statusline.py"
             report(
                 "WARN",
                 "statusline: wired to {} -- this is POSIX shell syntax ({}); Windows's "
                 "default command interpreter does not expand it, so this is reasoned "
                 "from the syntax, not observed, but the status line may not be running "
-                "here.".format(command, unresolved),
+                "here. Untested, offered as a thing to try rather than a confirmed fix: "
+                "{}".format(command, unresolved, windows_try),
             )
             return
         report("OK", "statusline: wired to {}".format(command))

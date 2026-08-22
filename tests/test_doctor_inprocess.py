@@ -706,7 +706,19 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
     doctor.main()
-    assert "VERDICT: ok" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    if os.name == "nt":
+        # #487, real rather than simulated: on the actual platform this leg runs, the
+        # command scaffold.apply just wrote for this repo uses POSIX `$VAR` syntax that
+        # cmd.exe does not expand, and check_statusline's own job is to say so rather
+        # than pass it as OK. A fully-scaffolded repo is not exempt from that -- it is
+        # the case the check exists for -- so "clean" on Windows is one named warning,
+        # not zero, and asserting `VERDICT: ok` here would be the older, wrong answer
+        # this file is not supposed to hold any more.
+        assert "VERDICT: usable with gaps -- 1 warning(s)" in out, out
+        assert "WARN statusline:" in out and "%CLAUDE_PROJECT_DIR%" in out, out
+    else:
+        assert "VERDICT: ok" in out, out
 
 
 def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys):

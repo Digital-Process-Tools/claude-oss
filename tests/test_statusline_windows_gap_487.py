@@ -78,7 +78,10 @@ def test_defaults_to_the_real_os_name_when_windows_is_not_given():
 def test_check_statusline_warns_when_the_gap_detector_fires(tmp_path, monkeypatch):
     """Integration: when `_statusline_windows_gap` reports a gap, `check_statusline`
     must WARN rather than the unqualified OK it used to give for any command
-    containing the substring `statusline.py`."""
+    containing the substring `statusline.py`. The WARN also carries a remedy an
+    actual reader can act on -- not just the name of the gap -- because the message
+    is what a Windows user sees when this fires on the exact command scaffold
+    wrote for them, with no other statusLine to fall back to."""
     monkeypatch.setattr(doctor, "_statusline_windows_gap", lambda command: "$CLAUDE_PROJECT_DIR")
     _settings(tmp_path, scaffold.STATUSLINE_COMMAND)
     _reset()
@@ -87,6 +90,8 @@ def test_check_statusline_warns_when_the_gap_detector_fires(tmp_path, monkeypatc
     state, message = doctor.FINDINGS[0]
     assert state == "WARN", doctor.FINDINGS
     assert "statusline.py" in message and "$" in message
+    assert "%CLAUDE_PROJECT_DIR%" in message, message
+    assert "not observed" in message, message
 
 
 def test_check_statusline_stays_ok_when_the_gap_detector_is_clean(tmp_path, monkeypatch):
