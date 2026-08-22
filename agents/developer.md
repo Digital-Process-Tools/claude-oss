@@ -812,8 +812,13 @@ or not.
 
    **`UNVALIDATABLE` is not `INVALID`, and it is the answer you are most likely to get right now.**
    A copy that prints `UNVALIDATABLE` and exits `2` is saying it does not hold the contract your
-   report names — a newer `schema_version` than it implements, an older one, or a schema declaring
-   no version at all. **It is not a finding about your report and you must not edit the report to
+   report names — a newer `schema_version` than it implements, an older one it cannot vouch for, or
+   a schema declaring no version at all. **An older number is not automatically that answer**: since
+   #416 the schema declares, per version, whether it widened the one below it, and a chain of
+   declared widenings back to your number means the copy answers `ok` and says in the same line
+   which contract it read and why. So a copy that refuses an older report is making a specific
+   claim — some step between the two contracts removed or tightened something — rather than
+   comparing integers. **It is not a finding about your report and you must not edit the report to
    make it go away.** It carries the two numbers in one line, which is the skew stated by the tool
    rather than reconstructed from a manifest comparison, so quote that line. A copy predating this
    verdict says `INVALID … schema_version: expected N, got M` instead; that spelling is the same

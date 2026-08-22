@@ -20,11 +20,20 @@ booleans -- the sentence is what an orchestrator can still argue with.
 
 Three verdicts, three exit codes, because two of them used to be one. `ok` is 0 and
 `INVALID` is 1; `UNVALIDATABLE` is 2 and means this copy does not hold the contract the
-report names -- a newer report, an older one, or a schema that does not declare its own
-version. That is not the same as malformed, and printing it as `INVALID` is how a
-correct report written yesterday reads as a broken one today. A missing or unparseable
-file is an error, never a pass: a report that could not be read is not a report with no
-findings.
+report names -- a newer report, an older one it cannot vouch for, or a schema that does
+not declare its own version. That is not the same as malformed, and printing it as
+`INVALID` is how a correct report written yesterday reads as a broken one today. A
+missing or unparseable file is an error, never a pass: a report that could not be read
+is not a report with no findings.
+
+An older contract is not automatically unreadable, though it was until #416: every
+bump invalidated every in-flight lane's report on the strength of an integer
+comparison, and the window was as long as a lane takes. The schema declares, per
+version, whether it widened the version below it, and a chain of declared widenings
+back to the report's own number means a document valid there is valid here -- so the
+verdict is `ok` and the sentence says which contract it read and why. Nothing derives
+that: a copy holds one schema, the older one is absent rather than unread, and an
+undeclared step refuses. A real narrowing still answers `UNVALIDATABLE`.
 
 Every verdict row names the contract it was decided against, on the pass as well as on
 the failure. A validator that announces its version only when it objects cannot be
@@ -56,11 +65,12 @@ _KEYWORDS = {
     "items", "$ref", "allOf",
     # ours
     "x-items", "x-rule",
-    # the contract number, read by the version pass below rather than by _walk
-    "x-schema-version",
+    # the contract number and the relations between contracts, both read by the
+    # version pass below rather than by _walk
+    "x-schema-version", "x-schema-compatibility",
     # annotations, carried for readers and ignored on purpose
     "$schema", "$id", "$defs", "$comment", "title", "description", "examples",
-    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning",
+    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
     "x-enforced", "x-enforced-on-disk", "x-convention",
 }
 
@@ -70,10 +80,18 @@ _KEYWORDS = {
 # number to make CI green. x-schema-version is stripped too: the fingerprint answers
 # "what does this contract require", which has to be independent of its own label or
 # the comparison is circular.
+# x-schema-compatibility is stripped for exactly the reason x-schema-version is, and
+# the argument is the same one: it is a claim about how this contract RELATES to its
+# predecessor, not a constraint any document has to satisfy. Inside the fingerprint the
+# comparison would be circular -- correcting version N's claim about N-1 would demand a
+# bump to N+1, whose own claim would then be unrecorded. The cost is named rather than
+# hidden: a compatibility declaration that is simply WRONG moves no fingerprint and this
+# guard cannot see it. Nothing here can, because checking it needs the other schema.
 _ANNOTATION_KEYS = {
     "title", "description", "examples", "$comment",
-    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-convention",
-    "x-schema-version",
+    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
+    "x-convention",
+    "x-schema-version", "x-schema-compatibility",
 }
 
 # One entry per version this schema has ever declared, mapping it to the fingerprint of
@@ -142,8 +160,26 @@ def load_schema(path=None):
 # nothing to distinguish an older contract from a malformed file.
 
 VERSION_CURRENT = "current"
+VERSION_READABLE = "readable"
 VERSION_MISMATCH = "mismatch"
 VERSION_UNDECIDABLE = "undecidable"
+
+# The relation each contract declares to the contract immediately below it, and the
+# only three words that mean anything here. `additive` is the claim that every document
+# valid under the predecessor is valid under this version -- nothing removed from an
+# enum, nothing newly required, no pattern tightened -- which is what makes this copy
+# able to answer about a report from that predecessor. Anything else, INCLUDING an
+# absent entry and a word nobody recognises, is not readable: the failure of a bump
+# that forgot to declare is silence, and silence has to land on the refusing side.
+COMPAT_ADDITIVE = "additive"
+COMPAT_BREAKING = "breaking"
+COMPAT_UNKNOWN = "unknown"
+COMPAT_VALUES = (COMPAT_ADDITIVE, COMPAT_BREAKING, COMPAT_UNKNOWN)
+
+# 1 is not a contract and no declaration can make it one: it is the value every report
+# written before anybody counted carries, across at least three mutually incompatible
+# schemas, so a chain declared additive all the way down must still stop above it.
+FIRST_CONTRACT = 2
 
 
 def contract_version(schema):
@@ -154,14 +190,70 @@ def contract_version(schema):
     return value
 
 
+def contract_compatibility(schema):
+    """`{version: relation-to-the-version-below}`, as the schema declares it.
+
+    Declared rather than derived, and that is the judgment this makes (#416). The
+    alternative is comparing the two schema documents and deciding subset for
+    itself -- but a copy of this validator holds exactly ONE document. The older
+    schema is not unread, it is absent, so there is nothing to compare and the
+    cleverness has no input. The author records the relation at the bump, which is
+    the one moment anybody holds both contracts at once.
+
+    A key that is not an integer, or a value that is not a string, is dropped
+    rather than guessed at. It then reads as undeclared, which refuses.
+    """
+    raw = schema.get("x-schema-compatibility") if isinstance(schema, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    declared = {}
+    for key, value in raw.items():
+        if isinstance(key, bool) or not isinstance(key, (int, str)):
+            continue
+        try:
+            version = int(key)
+        except (TypeError, ValueError):
+            continue
+        declared[version] = value if isinstance(value, str) else None
+    return declared
+
+
+def readable_from(schema):
+    """The OLDEST contract this copy can still answer for, or None if it has no number.
+
+    Walked step by step rather than read off a single `minimum-readable`, because
+    the two fail in opposite directions. One number left unchanged through a
+    breaking bump keeps vouching for contracts that stopped being subsets -- the
+    accepts-everything-older failure #416 says must not be caused. A missing step
+    declaration refuses, which costs a lane one relayed sentence.
+    """
+    ours = contract_version(schema)
+    if ours is None:
+        return None
+    declared = contract_compatibility(schema)
+    oldest = ours
+    while oldest > FIRST_CONTRACT and declared.get(oldest) == COMPAT_ADDITIVE:
+        oldest -= 1
+    return oldest
+
+
 def version_verdict(report, schema):
     """Return `(state, sentence)`: which contract this report claims, versus ours.
 
-    Three states, and the third is load-bearing:
+    Four states, and the two that are not `current` or `mismatch` are the ones
+    doing the work:
 
     - `current`   -- the numbers agree. The sentence still names the number, because
                      announcing the contract on a PASS is the whole of #212's remedy.
-    - `mismatch`  -- both sides named a contract and they differ. Not invalid.
+    - `readable`  -- the report names an OLDER contract, and every step from it up to
+                     ours is declared additive, so a document valid under it is valid
+                     under ours and this copy can answer about it (#416). The sentence
+                     says so rather than passing as though the numbers matched: `ok`
+                     and `ok, older contract, additive only` are not the same claim.
+    - `mismatch`  -- both sides named a contract, they differ, and nothing declares
+                     the difference away. A NEWER report always lands here: the
+                     declarations only run backwards, and a widening chain behind us
+                     says nothing about the step in front.
     - `undecidable` -- one side named nothing. A report with no version, or a schema
                      that does not declare its own, leaves nothing to compare; that is
                      not agreement, and answering `current` by default would be a
@@ -184,6 +276,16 @@ def version_verdict(report, schema):
         )
     if theirs == ours:
         return VERSION_CURRENT, "report schema version {}".format(ours)
+    oldest = readable_from(schema)
+    if oldest <= theirs < ours:
+        return VERSION_READABLE, (
+            "report schema version {}, read under version {} -- every contract "
+            "change from {} to {} is declared additive, so a report written "
+            "against {} is a document this copy holds the contract for. Not the "
+            "same claim as a report written against {}.".format(
+                theirs, ours, theirs, ours, theirs, ours
+            )
+        )
     newer = theirs > ours
     return VERSION_MISMATCH, (
         "this report was written against report schema version {} and this copy "
@@ -1098,7 +1200,12 @@ def main(argv=None):
             return 1
 
         # Three verdicts, ranked, and the ranking turns on ONE question: can this copy
-        # speak for this report at all? It cannot when the numbers differ, and it
+        # speak for this report at all? It cannot when the numbers differ in a way
+        # nothing declares away -- `readable` is exactly the case where they differ and
+        # this copy CAN speak, so it is deliberately absent from the test below and
+        # falls through to ok/INVALID with everything else. Its shape findings are real
+        # findings about the report: a widening only ever accepts more, so anything our
+        # contract refuses the older one refused too. And it
         # cannot when the schema it loaded declares no number -- in that second case
         # it holds no stateable contract, so it has no standing to call anything
         # invalid, however much the shape pass found. Shape findings must never
