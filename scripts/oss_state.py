@@ -1035,6 +1035,10 @@ def cohort_freeze(cohort, counts, why=None):
 
     taken = {}
     for route, value in counts.items():
+        if not isinstance(route, str) or not route.strip():
+            raise StateError(
+                "route name must be a non-empty string, not {!r}".format(route)
+            )
         if value is None:
             continue
         if isinstance(value, bool) or not isinstance(value, int):
@@ -1087,6 +1091,35 @@ def cohort_freeze(cohort, counts, why=None):
     record["state"] = COHORT_MEASURED
     record["count"] = next(iter(distinct))
     return record
+
+
+def cohort_freeze_from_pairs(cohort, pairs, why=None):
+    """`cohort_freeze`, from a raw list of ``(route, value)`` pairs rather than a dict.
+
+    This is the CLI's entry point, and it exists for one reason: a plain ``dict(pairs)``
+    silently keeps only the last value for a route named twice, which is exactly the
+    failure #407 was filed about, one level removed -- a route re-counted after an
+    earlier read disagreed with itself would have its own disagreement erased before
+    ``cohort_freeze`` ever saw it, and the collapsed pair would look like a single
+    clean count. So a repeated route name is refused here, before the collapse, rather
+    than silently resolved by "last write wins".
+    """
+    seen = {}
+    repeated = []
+    for route, value in pairs or []:
+        if route in seen and seen[route] != value:
+            repeated.append(route)
+        seen[route] = value
+    if repeated:
+        raise StateError(
+            "route(s) {} were given more than once with different counts -- naming "
+            "a route twice is likely a re-count after the first answer looked wrong, "
+            "and collapsing it to 'the last one given' would silently erase exactly "
+            "the disagreement this metric exists to catch. Give each route once, "
+            "under a distinct name if you mean to keep both counts (e.g. "
+            "'filtered_query_2')".format(", ".join(sorted(set(repeated))))
+        )
+    return cohort_freeze(cohort, dict(pairs or []), why=why)
 
 
 def cohort_freeze_line(record):
@@ -1518,9 +1551,9 @@ def _main(argv=None):
                     "frozen, so a count nobody can name a cohort for is not "
                     "recorded."
                 )
-            pending_cohort = cohort_freeze(
+            pending_cohort = cohort_freeze_from_pairs(
                 args.cohort,
-                dict(args.cohort_count),
+                args.cohort_count,
                 why=args.cohort_why,
             )
         elif args.cohort:

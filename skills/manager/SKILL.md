@@ -1190,8 +1190,12 @@ writing down either number.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
   --decision "froze <cohort> at N" --at "…" \
   --cohort <cohort> \
-  --cohort-count filtered_query=19 --cohort-count per_issue_read=22
+  --cohort-count filtered_query=22 --cohort-count per_issue_read=22
 ```
+
+Passing `--cohort-count filtered_query=19 --cohort-count per_issue_read=22` instead — the routes
+disagreeing, as the earlier example in this section did — records `unknown`, not a freeze at either
+number. Re-counting rather than writing either one down is the correct response to that state.
 
 ### Intake: filings per merged pull request
 

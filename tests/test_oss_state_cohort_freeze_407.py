@@ -136,6 +136,14 @@ def test_counts_must_be_a_non_empty_mapping():
         oss_state.cohort_freeze(COHORT, None)
 
 
+def test_a_non_string_route_name_is_refused_rather_than_crashing():
+    """Found in review: a non-string key made the disagreement message's `sorted()`
+    raise a bare TypeError instead of the module's own StateError.
+    """
+    with pytest.raises(oss_state.StateError):
+        oss_state.cohort_freeze(COHORT, {1: 19, "b": 22})
+
+
 def test_a_negative_count_is_refused():
     with pytest.raises(oss_state.StateError):
         oss_state.cohort_freeze(COHORT, {"filtered_query": -1, "per_issue_read": 22})
@@ -193,6 +201,44 @@ def test_cli_records_a_measured_cohort_freeze(tmp_path):
     entries = oss_state.read(str(state_file))
     assert entries[-1]["detail"]["cohort_freeze"]["state"] == oss_state.COHORT_MEASURED
     assert entries[-1]["detail"]["cohort_freeze"]["count"] == 22
+
+
+def test_cli_refuses_a_repeated_route_rather_than_silently_collapsing_it(tmp_path):
+    """The bug this whole feature exists to catch, reachable through the tool built to
+    catch it: two `--cohort-count a=…` flags for the same route silently collapsed to
+    the last one given, turning a real disagreement (19 then 22 from the same route)
+    into a false "measured, routes agree" verdict. Found in review of #407 itself.
+    """
+    state_file = tmp_path / "state.json"
+    result = _piped(
+        [
+            str(state_file),
+            "--decision",
+            "froze cohort-6",
+            "--at",
+            "2026-08-22T00:00:00Z",
+            "--cohort",
+            COHORT,
+            "--cohort-count",
+            "a=19",
+            "--cohort-count",
+            "a=22",
+            "--cohort-count",
+            "b=22",
+        ]
+    )
+    assert result.returncode != 0, result.stdout
+    assert "FAIL" in result.stdout
+    assert "a" in result.stdout  # names the repeated route
+    entries = oss_state.read(str(state_file))
+    assert entries == []
+
+
+def test_repeated_route_names_are_refused_before_dict_collapse():
+    with pytest.raises(oss_state.StateError):
+        oss_state.cohort_freeze_from_pairs(
+            COHORT, [("a", 19), ("a", 22), ("b", 22)]
+        )
 
 
 def test_cli_disagreeing_routes_records_unknown_not_a_number(tmp_path):
