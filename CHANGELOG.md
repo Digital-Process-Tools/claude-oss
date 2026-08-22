@@ -7,6 +7,384 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-22
+
+### Added
+
+- `doctor` now reports whether `<changelog_dir>/README.md` documents the
+  `- Compatibility: breaking|compatible - <reason>` bullet a `removed` fragment must
+  carry. `scripts/release_version.py` already refused a `removed` fragment declaring no
+  compatibility verdict and quoted the bullet in full, but nothing said so before the
+  release stopped -- and the fragments README is a *default* under this repository's
+  ownership contract, created once when absent and never replaced, so a repository
+  scaffolded before the section existed (#259) cannot receive it by re-running
+  `/oss:scaffold`. The check therefore reports rather than fixes: present-and-silent
+  warns, and the remedy says in as many words that `/oss:scaffold` will not fix it --
+  paste the section by hand from `scripts/scaffold.py --show <changelog_dir>/README.md`.
+  Absent is the ordinary state of a repository with no fragment practice and reports OK
+  rather than a finding, so it does not warn on nearly every scaffolded repo. The
+  directory checked is resolved the same way `release_version._fragment_dir` resolves
+  it, following a nulled `changelog_dir` to the directory scaffold's own gate workflow
+  polices on disk (#325) rather than defaulting to `changelog.d/` and silently checking
+  the wrong file (#260).
+
+- `scripts/lane_setup.py` can now render a fleet lane in one canonical form instead of leaving the
+  maintainer to intersect a glob against a literal path by eye. Two live briefs collided this way:
+  `fix/247-244`'s lane was `skills/manager/SKILL.md` and `fix/262-248`'s was `commands/*.md`, and the
+  second agent's correct fix touched `commands/tick.md` -- a file assigned to a still-running agent,
+  because nothing checked the intersection. `--lane PATTERN` (repeatable) and `--against PATTERN`
+  (repeatable) resolve both sides to sorted, deduplicated repo-relative paths -- expanding every glob
+  against what is actually on disk, keeping every literal path as asserted -- and report the overlap
+  in the receipt and the `--json` payload. `skills/manager/SKILL.md` now asks for this before a second
+  brief in a fleet is written, rather than after (#267).
+
+- A recorded wait is now a claim a later tick can test, not prose it must trust (#337). Measured on
+  2026-08-16: the loop recorded itself as "blocked on audit completion" at 01:15Z, ninety minutes
+  after the audit had already returned and its four output issues had been filed on the tracker --
+  three hours ten minutes passed with a green default branch, an empty pull request board and four
+  unstarted issues, and nothing re-read the wait. `scripts/oss_state.py` gains `wait`/`check_wait`:
+  a blocked tick records a dispatch, an observable and when it was recorded (`--wait-dispatch`,
+  `--wait-observable`), and the next tick tests it (`--pending-wait`, `--check-wait`) into one of
+  three states -- `holds`, `cleared` with what cleared it, or `could-not-evaluate` with why, never
+  rendered alike. Stored on the state entry as `detail.wait`. `commands/tick.md` and the manager
+  skill wire the check into step 1 of every tick, ahead of anything else.
+
+- The supported Python floor is now declared, once, as `[project] requires-python = ">=3.9"` in
+  `pyproject.toml`. Nothing stated it before: the only floor anywhere was the CI matrix, and a matrix
+  says what is tested rather than what is supported. The two were read as one throughout - by
+  `CLAUDE.md`'s grading paragraphs, and by a README badge that has claimed `python-3.9+` for this
+  project's whole life with nothing behind it. The absence was not inert: #398's lane declined to put
+  a `sys.version_info` gate in `scripts/doctor.sh`'s sentinel probe because doing so would have
+  turned a working 3.8 install into `VERDICT: could not run` on the strength of a fact nobody had
+  stated (#410).
+- `3.9` is a support decision and deliberately wider than what the code needs. Measured over all 132
+  tracked `.py` files before it was declared: every one parses at `ast.parse(feature_version=(3, 7))`,
+  none carries a builtin-generic or `X | Y` annotation, and none imports or calls a standard-library
+  name added after 3.9 - no `tomllib`, `functools.cache`, `Path.walk`, `contextlib.chdir` or
+  `datetime.UTC`. `python3.11 -m compileall scripts tests bin` exits 0, which additionally rules out
+  a PEP 701 f-string only 3.12 can tokenise. The floor is 3.9 because 3.9 is the oldest version
+  anything here has ever been demonstrated on (#410).
+- Four sites are derived from that one key, and `tests/test_python_floor_410.py` is what makes them
+  agree, since a workflow matrix, a shields.io badge and a shell `for` list cannot read a manifest at
+  parse time: the CI matrix's lowest entry, the README badge, the `Python X.Y compatible` line eight
+  modules under `scripts/` carry, and the oldest explicit `python3.N` in `doctor.sh`'s interpreter
+  walk. The comparison is a pure function driven by fixtures in both directions, and every real site
+  asserts it *found* something before comparing it - an empty survey and a clean survey are the same
+  `[]` (#410).
+- `pyproject.toml` deliberately gains no `version` key and no `[build-system]`.
+  `scripts/oss_config.py` probes `pyproject.toml` for exactly `[project] version`, so one would
+  become a fifth version site that `.oss.json` does not list and `/oss:release` would leave stale
+  (#410).
+- Compatibility: compatible - the key is a declaration, not a gate. `scripts/doctor.sh` still runs on
+  whatever interpreter the machine offers, and no code path refuses one below the floor (#410).
+
+- The maintainer's manager skill now names `scripts/rename_changelog_fragment.py`, which renames a
+  changelog fragment to a new issue/PR number and rewrites its own self-reference in the same
+  operation -- so a fragment rename on pull-request open (`git mv changelog.d/N.section.md
+  changelog.d/M.section.md`) can no longer leave the body naming the old number while the filename
+  carries the new one, which the `fragment` leg refuses (#426, #335, measured on PR #338).
+
+- A test written to assert on a specific platform can quietly start skipping there
+  instead, and CI stays green -- a skip does not fail a build, and `-rs` prints the
+  reason but nothing is obliged to read it. `@pytest.mark.must_assert_on("win32")`
+  is a new promise a test can carry: a new pytest plugin,
+  `tests/must_assert_plugin.py` (loaded for the whole suite via the new
+  `tests/conftest.py`), fails the whole session if a marked test reports SKIPPED
+  while `sys.platform` matches the platform the marker names. Applied to
+  `tests/test_skip_symlink_265.py::test_the_real_junction_mechanism_is_measured_not_assumed`
+  -- the one test #265 spent four rounds and a real Windows CI failure establishing
+  observed claims on -- so a future runner image, Python version or Windows policy
+  that takes the junction mechanism away turns that test's silent skip into a red
+  `windows-latest` leg instead. Deliberately on the test rather than in the
+  workflow, so the "must assert here" fact has nowhere to go stale against; and
+  deliberately silent everywhere the marker's platform does not match the host, so
+  a POSIX leg's correct, permanent skip of the same test stays green. A survey of
+  every `pytest.skip` call in `tests/` (#430) found this to be the only test making
+  a platform-conditional "must generally assert" claim today, so the marker ships
+  as a mechanism available to future tests rather than being applied more broadly.
+  A malformed marker (no positional platform argument -- e.g. a keyword
+  `platform=...` spelling, or a bare `@pytest.mark.must_assert_on()`) fails
+  collection loudly rather than being silently treated as absent, closing the
+  same failure mode one layer up in the marker's own configuration surface.
+  (#430)
+
+### Fixed
+
+- The symlink fixture shared by `tests/test_agent_report_schema.py` and
+  `tests/test_oss_config.py` no longer skips a directory-target containment case
+  on the strength of `symlink_to` alone. An unelevated `windows-latest` runner
+  without Developer Mode raises `OSError [WinError 1314]` there, which is why
+  both the escape assertion and its positive control skipped together on all
+  four Windows legs (#234's guard therefore asserted on at most 9 of 13, with a
+  skipped leg reading the same green as one that ran). The fixture, now shared
+  as `tests/skip_symlink.py`, tries a Windows directory junction
+  (`cmd /c mklink /J`) as a fallback for directory targets before giving up --
+  junctions need no privilege and `Path.resolve()` follows one exactly the way
+  it follows a symlink. There is no equivalent for a file target, so that case
+  is unchanged and still skips on its own. When both mechanisms fail the skip
+  names both reasons rather than one, so which of the two went untested is
+  still legible from `-rs` output. `windows-latest`/3.10 in CI has since
+  exercised the directory-target case for real and the junction landed, so
+  "junctions need no privilege" and "`Path.resolve()` follows one" are now
+  *observed* on that leg rather than merely reasoned from documented
+  Windows/CPython behaviour; the mechanism's three *failure* arms (a spawn
+  that fails, a non-zero `mklink` exit, a junction that lands but does not
+  resolve to the target) remain unexercised by any CI run so far and are
+  still reasoned only. None of the three ever raises out of the fixture on a
+  wrong guess: a failed attempt just folds into the skip message next to
+  `symlink_to`'s own failure (#265).
+
+- `agents/developer.md` now names the exact local command a lane can run to check its own
+  changelog fragment before committing — `assemble_changelog.py --check`, located at
+  `.oss/assemble_changelog.py` or `scripts/assemble_changelog.py`, whichever exists. Every
+  developer brief already required a fragment, but the checker that judges one is a CI leg
+  `test_command` (`pytest`) never reaches, so a lane that ran the full suite green three times had
+  checked everything it was told to check and had not checked the fragment at all (#335).
+
+- `compare_versions` guarded a digit with `str.isdigit()` and converted with `int()`,
+  and the two predicates do not agree on a domain (#388). U+00B2 SUPERSCRIPT TWO
+  passes `isdigit()` and `int()` refuses it, so the guard let an uncaught `ValueError`
+  through where the docstring promises `unknown`; U+0662 ARABIC-INDIC DIGIT TWO passes
+  both and `int()` converts it to `2`, so `0.4.٢` compared equal to `0.4.2` and a stale
+  install could report `current`. The parser now checks every character against the
+  ASCII digit set directly -- `str.isdecimal()` alone would not have closed this, since
+  U+0662 is also decimal. Swept the rest of `scripts/` for the same guard: one other
+  site (`release_delta.py`'s `_number`, wrapping `git rev-list --count`) guards output
+  git itself always emits as plain ASCII digits, so it is not reachable and was left
+  alone.
+
+- An uncommitted delete is no longer reported as a file that could not be read, at the
+  three remaining sites that enumerate the git index and then read the working tree
+  (#396). `git ls-files` answers about the index; the read happens in the tree, and
+  between an uncommitted `rm` and its commit -- the changelog fold produces twenty-one
+  at once -- the two disagree about exactly those paths. Absence is now decided from
+  the exception already in hand (`FileNotFoundError`, never a second question to the
+  filesystem), reported by name in its own bucket, and does not decide the verdict.
+  This completes the class #395 fixed for the two sites that were firing.
+  - `/oss:setup` printed *could not read, so not claimed as version sites* about a
+    candidate that was simply not on disk. It now says so in its own words. The same
+    note also covered a `package.json` this process had read in full and found not to
+    be JSON, so `version_evidence` gains `malformed` as well: `unreadable` now means
+    only what the word means -- the file is there and its bytes did not come back.
+  - `tests/test_unwired_scripts_253.py` filed a deleted path under `unsearchable`,
+    whose documented argument is that decoding more files can only *add* references.
+    That is sound for a file that will not decode and false for a deleted one, whose
+    references are lost -- so absence could manufacture an offender rather than merely
+    leave one unexplained, and a script whose only mention sat in a pending fragment
+    flipped from wired to unwired inside the fold window. The prose is corrected too.
+  - `tests/test_gate_state_consumers_328.py` put such a path in `unreadable`, which
+    sinks the consumer census's completeness claim. It was green only because its scope
+    is `commands/` and `scripts/`, which the fold does not touch -- an accident of
+    scope, not a property of the guard.
+- The fourth site of the same class, held back from the fix above because it needed a
+  decision about a *consumer* rather than an application of the settled pattern (#396).
+  `_workflow_jobs` fed its problems to `gather()`'s unconditional refusal, so an
+  uncommitted delete of one tracked workflow aborted probe generation for the **whole
+  repository** with `could not read` -- the exact sentence the rest of this entry
+  retires. The enumeration now reports absence in a bucket of its own, and the consumer
+  question is answered by splitting it:
+  - **A workflow that is in the index and not in the working tree declares no jobs**, so
+    `gather()` proceeds. That is a measurement rather than a gap, and the "a probe is
+    returned only when every field in it was measured" contract is satisfied rather than
+    relaxed. `--probe` names the file in a `NOTE` on stderr, because `files` is the index
+    and goes on listing it -- without the note, a probe taken mid-delete is a shorter job
+    list with nothing to explain it.
+  - **A workflow that is on disk and will not read still refuses**, unchanged. How many
+    jobs it declares is unknown, and an unknown counted as zero understates the required
+    checks -- the direction that lets a red leg through.
+  - Three states here rather than the five `version_evidence` grew above, argued rather
+    than copied: this is a line scan, not a parser, so it has no `malformed` to report.
+    It cannot tell a workflow that declares no jobs from one whose `jobs:` block the scan
+    did not match, and a state the code cannot support is a claim rather than a fact.
+  - `gather()` now returns `(probe, problems, notes)`. A note is a true statement that is
+    not a failure, and there was previously nowhere to put one: folding it into `problems`
+    aborts the probe and folding it into silence is this repository's own defect class.
+- Found by dogfooding the above rather than filed: `_doc` in the same test module said
+  *could not read* about a hardcoded consumer path that had been deleted. That one reads
+  a named path rather than an enumeration, so it is right to fail -- a document named in
+  `GATE_STATE_CONSUMERS` that is gone means the tuple is stale. The verdict is unchanged;
+  only the sentence is, and it now says what is actually wrong.
+
+- `scripts/doctor.sh` no longer prefers a newer interpreter over the one the machine itself calls
+  `python3`. The candidate walk ran `python3.14` down to `python3.9` before bare `python3`, which
+  encoded "newest is best" and consulted neither the CI matrix (3.9-3.12, so the first candidate
+  tried was the one no leg covers) nor the fact that a `python3.N` on PATH is no evidence it is the
+  good build - measured on macOS arm64, the only 3.14 was an x86_64 build under binary translation
+  while the native one answers to bare `python3`, so `bash scripts/doctor.sh` and
+  `python3 scripts/doctor.py` reported different interpreter-architecture lines on the same tree.
+  The walk is now `python3`, then the band CI covers newest-first, then newer-than-band, then
+  `python`, then `py -3`. Nothing is removed from it: every candidate is still proved by being run
+  and compared against a sentinel, which is what rejects Windows' App Execution Alias, and an
+  interpreter newer than the band is still selected when it is the only one present (#398).
+
+- `doctor` no longer reports a machine without the `hw.nperflevels` sysctl as one whose CPU-topology
+  probe failed. `cpu_topology` read the value-only `_sysctl_int` helper, which discards the errno the
+  same commit added to tell "this sysctl does not exist" from "the call failed" - so an absent sysctl
+  became a `WARN` reading "the hw.nperflevels probe did not answer", which is false and which no
+  remedy clears. It now compares the errno against `_SYSCTL_ABSENT` and reports the existing "no
+  performance/efficiency core split" answer at `OK`, while every other errno keeps its `WARN` (#400).
+
+- A cohort freeze count is no longer trusted from a single route (#407). Freezing
+  `cohort-6` at the `v0.9.0` tag re-counted it immediately after the last of 22 label
+  writes, all 22 exiting zero, and `issues?state=open&labels=cohort-6` read 19 -- a
+  minute later the same route, and a per-issue read taken at the same instant as the
+  low count, both said 22. GitHub's label filter is an index and it lags the writes
+  that feed it; the manager skill's existing rule ("re-count after the last write")
+  bounds ordering and says nothing about settling, and a cohort can only shrink, so a
+  low freeze written down that way is never corrected by any later count.
+  `scripts/oss_state.py` gains `cohort_freeze`: given two or more named routes' counts
+  it reports `measured` only when they agree, `unknown` when they disagree -- never
+  the lower number, never the first one given -- and `could-not-count` when fewer than
+  two routes answered. Wired into the CLI as `--cohort`/`--cohort-count`, and the
+  result is recorded on the state entry as `detail.cohort_freeze`. The manager skill
+  now names the settling failure and the two-route rule directly, rather than leaving
+  it as a rule nobody performs.
+
+- The report schema can spell the third receipt the filing bar defines. #393 gave an item three
+  outcomes - a new issue, a comment on the class issue, or a named line in the pull request - and
+  `adjacent.action` and `finding.disposition` encoded two, so a lane that correctly decided a
+  finding was below the bar had to label it `report-for-filing` and disclaim it in prose. The label
+  said file this, the prose said do not, and the maintainer read the label first. Both enums now
+  carry `below-bar`: a phrase with no verb and no tense, unlike `filed` (removed in #254 for
+  reading as an act the agent performed) and unlike `report-for-filing` (which reads as an act the
+  reader should perform). The two older values are unchanged, so this widens the vocabulary rather
+  than renaming anything.
+
+  The receipt is checked rather than promised. A `below-bar` item carries `pr_anchor`, a verbatim
+  fragment of the pull request body where it was recorded, and `scripts/report_schema.py` refuses
+  the report when the body does not carry it - whitespace collapsed so wrapping is free, case folded
+  after the first real report hit a false finding on a sentence its body carried inside bold, HTML
+  comments removed because a receipt nobody reads is not one - and refuses it when
+  `pr_body.state` is not `written`, since a receipt needs somewhere to be. Like the closing-keyword
+  check it borrows its shape from, this is an absence detector: a finding is strong and a pass is
+  weak, and nothing here reads prose for substance. The contract number moves to 5, so an older
+  copy of the validator meeting a report that uses the new value answers `UNVALIDATABLE` rather
+  than reporting it as malformed (#411).
+
+- Two receipts in `scripts/oss_config.py` narrated an uncommitted delete as the *cause* of an
+  absent path, on the strength of a bare `FileNotFoundError` -- which CI has measured Windows also
+  returns for a path it could not even look up (errno 2, no distinguishing winerror; #380). The
+  bucket assignment was already right and stays right; only the sentence claiming a cause the
+  signal cannot support has changed. `gather()`'s NOTE for `absent_workflows` and the
+  `version_evidence` sentence for the `absent` state (#412, #408) now share one hedge -- an
+  uncommitted delete is the usual cause, stated as likely rather than as fact -- instead of two
+  independent copies of the same overclaim. `PROBE_SCHEMA_HELP` (printed by `--help`) carried the
+  same unhedged claim about both fields and is worded the same way now (#413).
+
+- `/oss:doctor`'s plugin-copy comparison now looks at `schemas/`, and names the contract number when
+  it differs. The compared set was `agents`, `commands`, `scripts`, `skills` and the manifest -- chosen
+  when the contract between two copies lived entirely in code and prose. It stopped living there once
+  `schemas/agent-report.schema.json` started declaring a version that `scripts/report_schema.py`
+  reads, so two copies differing *only* there were reported as carrying the same bytes while every
+  agent report written against the newer one came back `UNVALIDATABLE` at exit 2 from the older. Both
+  statements were true and together they misled. Measured on the copies on the maintainer's machine:
+  the installed `0.7.0` and this clone now report `declares agent-report contract version 4 and the
+  checkout being diagnosed declares 5`.
+
+  The byte difference is the detection; the two declared numbers are the fact a reader acts on, so
+  they ride on the existing SKEW line rather than on a second one - a separate line would have to be
+  read as *the schemas match* when it was silent, which is the absence this check exists to avoid. It
+  has three states, not two. When the bytes differ and the numbers do not, it says so and does not
+  imply a refusal that will not happen - and says that this is what the copies **declare**, since a
+  schema can change without its number moving. When either side ships no schema, or one that will not
+  parse, or one declaring no version, that is *not established* rather than agreement.
+
+  Skew stays a `WARN` and stays clearable, exactly as it already was for the other four directories:
+  it fires when two copies differ and goes away when they do not.
+
+  The class rather than the instance: a tuple cannot report a directory it does not contain, which is
+  how `schemas/` went uncompared for its whole life. Deriving the set from the tree was weighed and
+  refused - an install legitimately ships no `tests/` or `changelog.d/`, and scoring those as
+  differences buys a permanent `WARN` no release can clear. Instead the tuple is now half of a
+  partition: `NOT_COMPARED_TOP_LEVEL` carries every other top-level entry with a reason, and a test
+  fails when a tracked entry lands in neither half. The next `schemas/` reddens the commit that adds
+  it (#415).
+
+- A schema bump no longer invalidates every in-flight lane's report. `scripts/report_schema.py`
+  compared the report's `schema_version` against its own and answered `UNVALIDATABLE` whenever they
+  differed in either direction, so the window in which every running lane's report was unvalidatable
+  was exactly as long as a lane takes. Measured on `fix/410`, dispatched before the contract moved
+  from 4 to 5 and refused on handing back - with `the shape pass found nothing` printed directly
+  underneath the refusal.
+
+  The schema now declares, in `x-schema-compatibility`, what each contract does to the one below it:
+  `additive` means every document valid under the predecessor is valid under this version, and the
+  validator walks that chain down from its own number. A report from a contract it reaches is read,
+  with `ok ... read under version N` naming both contracts - a weaker claim than a plain `ok` and
+  written as one. A report from a contract it does not reach still answers `UNVALIDATABLE`, and so
+  does a report whose step was declared `breaking`, declared `unknown`, or never declared at all: a
+  bump that forgets to declare fails toward refusing rather than toward vouching. Version 1 is never
+  reachable whatever is declared, because 1 is not a contract.
+
+  Declared rather than derived, and the reason is not caution. Deciding whether contract A is a
+  subset of contract B needs both documents, and a copy of this validator holds exactly one - the
+  older schema is absent, not unread. So the relation is recorded at the bump, the one moment
+  anybody holds both. It is a claim about the whole contract and not about the schema document
+  alone: the cross-field rules are Python and the on-disk pass leaves the report entirely, so a bump
+  that adds an optional key while tightening a rule is `breaking` however additive the document
+  looks. The map is inside the contract fingerprint, so editing it afterwards without moving the
+  number is caught like any other enforcing change; what no fingerprint can catch is a declaration
+  that was wrong when it was written, because checking that needs the other schema. The suite holds
+  that every recorded contract has a declaration at all.
+
+  Generalised from a single instance, said plainly rather than left to be inferred: 5 is the only
+  additive bump this schema has ever had. What is taken from it is the shape of the question, not a
+  claim that additive bumps are common or that the next one will be as easy to be sure about (#416).
+
+- `doctor`'s "oss plugin version" line now carries a content digest alongside the version
+  string, from a new `plugin_identity()` (`scripts/doctor.py`). The version alone cannot tell two
+  installs apart: `.claude-plugin/plugin.json` keeps the last RELEASED number for the whole
+  cycle that follows a release, so a plugin cache directory unpacked mid-cycle from `main` and
+  the tag it is named for both read the same manifest version while implementing different
+  contracts. Measured directly: a cache directory named `0.9.0` declared agent-report contract
+  5 while the `v0.9.0` tag it was named for declared contract 4, both manifests reading "0.9.0"
+  (#418). `plugin_identity()` reuses the `plugin_tree_digest` / `_tree_identity` pair
+  `plugin_provenance` already uses to compare two trees, so a single install now carries its own
+  discriminator without needing a second tree on disk to diff against.
+
+- A wait recorded in one tick is no longer dropped from view by the next entry
+  landing after it (#436). `--pending-wait` and `--check-wait` (#337) used to read
+  only the last state entry, so a wait that still `holds` became unreachable the
+  moment any other entry appended -- a cohort freeze (#407), a lane record, a plain
+  intake -- and both readers then printed exactly what they print when no wait was
+  ever recorded: `no pending wait`, byte-identical to the case where nothing was ever
+  waiting. Found by the release-auditor as a composition defect between #337 and
+  #407, neither of whose own diffs contains it. Settled as: a wait's lifetime is not
+  one entry -- both readers now scan back to the most recent entry that carries a
+  `detail.wait` record, skipping over entries that recorded something else, paired in
+  the fixture with the control that a file which genuinely never recorded a wait
+  still answers `no pending wait` after the same kind of intervening entry.
+  `--check-wait`'s refusal also no longer misreports the state it found: it used to
+  fill its message with the required `WAIT_HOLDS` constant regardless of what the
+  most recently recorded wait actually said, so a wait already checked `cleared` was
+  reported as "state holds"; it now names the state actually read off disk. Found by
+  self-review of this same fix: both readers now key "was any wait ever recorded"
+  off the entry the scan found rather than off the wait record's own value, so a
+  hand-authored `detail.wait: null` no longer collapses into the same "never
+  recorded" absence one layer down.
+
+- `scripts/rename_changelog_fragment.py`'s `--no-git` rename path guarded against
+  overwriting an existing destination with `Path.exists()`, the one call this repo
+  forbids for classification: it swallows a version-dependent set of `OSError`s and
+  answers `False` for a path that could not be stat'd, not only one that is absent.
+  The guard now matches the `os.stat`-and-classify-from-the-exception-in-hand shape
+  `oss_config._version_state` (#396/#413) already uses, and refuses the overwrite
+  on either an occupied destination or one it could not look at, rather than
+  guessing the second case is free. Separately, its `git mv`/`git add` argv carried
+  no `--` separator, so a directory component beginning with a dash was parsed by
+  git as an option cluster instead of a path; both calls now pass `--` (#437).
+
+- `doctor`'s fragments-README WARN offered `scripts/scaffold.py --show <path>` as
+  the remedy, quoting the same absolute path the diagnostic clause names -- which
+  is what `scripts/doctor.sh` and `CLAUDE_PROJECT_DIR` produce. `scaffold.show`
+  matches by string equality against repo-relative template keys, so the remedy
+  command failed with `is not a known template, owned file or rule` everywhere
+  except under `--root .`. The remedy clause now renders the path relative to the
+  project root (`Path.relative_to(...).as_posix()`); the diagnostic clause above it
+  still names the absolute file on disk, since it is naming a file rather than a
+  template key. Found by the release-auditor at gate 3 of the v0.10.0 round-one
+  audit (#438).
+
 ## [0.9.0] - 2026-08-22
 
 ### Added
@@ -3938,7 +4316,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.7.0
