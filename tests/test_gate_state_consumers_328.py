@@ -76,7 +76,7 @@ PRODUCER_FUNCTION = "scaffolded_changelog_gate"
 CHANGELOG_COMMAND = REPO_ROOT / "commands" / "changelog.md"
 SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "scaffold.md"
 RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
-DOCTOR = REPO_ROOT / "scripts" / "doctor.py"
+DOCTOR_CHECK_FRAGMENTS_README = REPO_ROOT / "scripts" / "doctor_check_fragments_readme.py"
 
 # #348's producer/consumer pair. Both functions live in the same file, so
 # there is exactly one `_doc` read and one `_function_body` extraction on
@@ -102,16 +102,21 @@ LAUNCHER_CONSUMER_FUNCTION = "check_oss_workspace_launcher"
 # `.oss/assemble_changelog.py` and `commands/changelog.md`) -- so the one line that
 # names the new state there sits in a file this lane does not hold. It is deferred
 # below rather than skipped past.
-# `DOCTOR` joined in #260: `_fragments_directory` calls `scaffolded_changelog_gate`
-# directly to follow a nulled `changelog_dir` to the directory scaffold's own gate
-# workflow polices, mirroring `release_version._fragment_dir`. It handles every
-# state -- `present` and `present-other-dir` resolve a directory; `absent`,
-# `unknown`, `present-refused-dir` and `present-bare-dir` are deliberately
-# collapsed into one "nothing to check" answer, named as a comment beside the
-# `return None` that implements the collapse, because doctor's non-blocking
-# contract needs only one answer for all four rather than release_version's four
-# distinct remedies. Enforced rather than deferred: nothing here is unhandled.
-ENFORCED_CONSUMERS = (SCAFFOLD_COMMAND, RELEASE_VERSION, DOCTOR)
+# `DOCTOR` joined in #260, naming `scripts/doctor.py`: `_fragments_directory` calls
+# `scaffolded_changelog_gate` directly to follow a nulled `changelog_dir` to the
+# directory scaffold's own gate workflow polices, mirroring
+# `release_version._fragment_dir`. #497 moved `_fragments_directory` and
+# `check_fragments_readme` out of `doctor.py` into their own module,
+# `scripts/doctor_check_fragments_readme.py` -- the function that actually
+# consumes the contract, so this entry follows it there rather than staying on
+# a file that no longer contains the code. It handles every state -- `present`
+# and `present-other-dir` resolve a directory; `absent`, `unknown`,
+# `present-refused-dir` and `present-bare-dir` are deliberately collapsed into
+# one "nothing to check" answer, named as a comment beside the `return None`
+# that implements the collapse, because doctor's non-blocking contract needs
+# only one answer for all four rather than release_version's four distinct
+# remedies. Enforced rather than deferred: nothing here is unhandled.
+ENFORCED_CONSUMERS = (SCAFFOLD_COMMAND, RELEASE_VERSION, DOCTOR_CHECK_FRAGMENTS_README)
 
 # Not empty as of #347. `commands/changelog.md`'s resolver already refuses a state
 # it does not recognise -- its own trailing `else` prints `UNKNOWN: unrecognised
