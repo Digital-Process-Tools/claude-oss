@@ -4619,10 +4619,11 @@ def test_bundling_is_distinguished_from_clustering():
 
 def test_handback_releases_a_pull_request_closed_without_merging():
     body = _manager_section(_HANDBACK_SECTION_HEADING)
-    assert "mergedAt" in body and "CLOSED" in body, (
+    assert "merged_at" in body and "CLOSED" in body, (
         "the handback section no longer names the closed-without-merging release "
         "rule (#465) -- a pull request that closes unmerged leaves its issue "
-        "assigned forever"
+        "assigned forever, and the field it keys on must be the one gh-pr:N:status "
+        "actually prints (merged_at, not mergedAt)"
     )
     assert "--remove-assignee @me" in body, (
         "the closed-unmerged release no longer names the same release call the "

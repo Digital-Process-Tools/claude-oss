@@ -450,10 +450,11 @@ reports the overlap in the payload (`--json`) or the receipt. Run it with the ne
 `--lane` and every already-dispatched, still-running lane's as `--against` before that brief is
 written, not after.
 
-When the disjoint areas run out, say so rather than inventing another lane. **Bundling two related
-issues into one brief is better than splitting one file across two agents.** Stacking is the other
-lever: branch the second agent off the first's branch rather than off the default branch. It costs a
-rebase per merge. Do not stack more than two deep without a reason.
+When the disjoint areas run out, say so rather than inventing another lane. **Bundling related
+issues into one brief is better than splitting one file across two agents** — the fuller rule for
+when and how far to bundle is below, beside the claim it is dispatched alongside. Stacking is the
+other lever: branch the second agent off the first's branch rather than off the default branch. It
+costs a rebase per merge. Do not stack more than two deep without a reason.
 
 **Claim before you spawn, not after.** Until this week the tracker had one reader; a first external
 maintainer running this loop on their own repository makes a second reader a real thing rather than a
@@ -489,8 +490,10 @@ as one lane: **cap at three, never four.** This is a bundle, not a cluster — `
 correctly refuses to cluster on a shared file, because a cluster claims one change fixes several
 issues and needs a shared failure to back that; a bundle claims only that the fixes share a
 worktree, and the file each one reads is exactly the right evidence for that weaker claim. A bundle
-stays three fixes, not one: **each issue keeps its own test story and its own changelog fragment**,
-and the pull request closes all of them. **Never bundle an issue a running lane already touches** —
+of two or three stays two or three fixes, never one: **each issue keeps its own test story and its
+own changelog fragment**, and the pull request closes every issue it carries.
+
+**Never bundle an issue a running lane already touches** —
 check with the same `scripts/lane_setup.py --lane PATTERN --against PATTERN` call the disjointness
 rule above already runs, read the other way: overlap there means conflict, and overlap here, at
 selection time, against a *candidate's* declared lane rather than a running one, means the two are
@@ -500,7 +503,7 @@ refusal to pair up two issues would pin that noise as a fact, the same mistake #
 test that froze one interpreter's answer into a hardcoded platform one. Carry the caveat with the
 number rather than silently dropping either.
 
-Launch them in a single message so they run concurrently.
+Launch every dispatched lane — bundled or not — in a single message so they run concurrently.
 
 **Run `scripts/lane_setup.py <issue>` from the clone before writing each brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
@@ -595,17 +598,18 @@ which is what stops it being picked again, not the assignee field being cleared.
 **A pull request that closes without merging releases its issue too (#465).** It is further along
 than a lane that never committed — a commit exists, a pull request was opened — and ends in the same
 state: an assignee, no lane behind it, and a selection step that now skips it forever because it
-reads as somebody's. `gh-pr:N:status` already reads `state` and `mergedAt`; when `state` is `CLOSED`
-and `mergedAt` is null, unassign the linked issue the same way — `gh issue edit <N> --remove-assignee
-@me`. Three states, unchanged from the claim above: **released** — closed unmerged; **still-assigned**
-— merged, or still open, or the read failed; and the read failing **must never render as released**,
-for the same reason a claim state that could not be read must never render as free. The reachable
-event is the one this loop's own decision produces: when this loop is the one that closes a pull
-request without merging — a superseded approach, a scope change, a duplicate — run this check as
-part of that same step, not a separate sweep. **A pull request closed by someone else, outside a
-tick this loop ran, is not observed by this step**; that gap is named rather than silently solved,
-because nothing in the loop currently re-reads a closed pull request on its own once it drops off
-the board a merge would have closed it from.
+reads as somebody's. `gh-pr:N:status` already reads `state` and `merged_at`; when `state` is `CLOSED`
+and `merged_at` reads as unset (the op prints `-`, never the word `null`), unassign the linked issue
+the same way — `gh issue edit <N> --remove-assignee @me`. Three states, exactly as parallel as the
+claim step's own: **released** — `state` is `CLOSED` and `merged_at` is unset; **still-assigned** —
+`state` is `MERGED` or still `OPEN`; and **could not read the pull request state** — the call failed
+or was not made, and this **must never render as released**, for the same reason a claim state that
+could not be read must never render as free. The reachable event is the one this loop's own decision
+produces: when this loop is the one that closes a pull request without merging — a superseded
+approach, a scope change, a duplicate — run this check as part of that same step, not a separate
+sweep. **A pull request closed by someone else, outside a tick this loop ran, is not observed by this
+step**; that gap is named rather than silently solved, because nothing in the loop currently re-reads
+a closed pull request on its own once it drops off the board a merge would have closed it from.
 
 ## Opening the pull request
 
