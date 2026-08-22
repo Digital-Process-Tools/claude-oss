@@ -132,6 +132,86 @@ def test_unknown_keys_are_reported_not_ignored():
     assert any("worktre_root" in p for p in oss_config.validate(config))
 
 
+def test_an_underscore_prefixed_key_is_maintainer_prose_not_a_typo():
+    """#355. `.oss.json` is JSON with no comment syntax, so the only place a
+    maintainer can record *why* a value is what it is has always been a key -- and
+    every key not on the known list was refused as a typo. A leading underscore is
+    the declared escape: it is documented, skipped by `validate()`, and lets the
+    note sit right beside the value it explains (`_milestones_note` next to
+    `milestones`), which is the property that made the note useful in the first
+    place.
+
+    This is the positive control for the test above: the same config, differing
+    only in the one character that marks the key as prose, must validate clean --
+    otherwise the fix is "accept everything" rather than a declared slot.
+    """
+    config = _valid()
+    config["_milestones_note"] = "kept for the release train, not because they're open"
+    assert oss_config.validate(config) == []
+
+
+def test_an_underscore_prefixed_credential_is_still_refused():
+    """The prose escape hatch does not launder a secret. `_api_key` is refused for
+    exactly the reason a bare `api_key` is -- an underscore does not make a
+    committed token safe.
+    """
+    config = _valid()
+    config["_api_key"] = "x"
+    problems = oss_config.validate(config)
+    assert any("_api_key" in p and "credential" in p for p in problems)
+
+
+def test_an_underscore_prefixed_key_hidden_in_the_local_file_is_flagged(tmp_path):
+    """#355 follow-up. `split()`'s own docstring says an unknown key is routed to
+    the project half on purpose so it never becomes "one maintainer's private
+    mystery" hidden in the git-excluded local file. The reserved-prefix escape
+    must not reopen that hole: a note is exactly the kind of thing worth sharing
+    with every other maintainer, so one placed only in `.oss.local.json` is
+    reported as misplaced -- the same treatment any other project-scoped key
+    gets when it turns up there -- rather than silently merged in unseen by
+    everyone else, or silently dropped.
+    """
+    config = _valid()
+    project, local = oss_config.split(config)
+    local["_milestones_note"] = "kept for the release train, not because they're open"
+    project_path = tmp_path / oss_config.CONFIG_NAME
+    project_path.write_text(json.dumps(project), encoding="utf-8")
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+
+    reloaded, problems = oss_config.load(project_path)
+    assert any("_milestones_note" in p and oss_config.LOCAL_CONFIG_NAME in p for p in problems), problems
+    assert "_milestones_note" not in reloaded
+
+
+def test_an_underscore_prefixed_key_is_skipped_regardless_of_its_value_shape():
+    """The slot is for prose, and prose is not always a string -- a maintainer may
+    reasonably want a structured note. Nothing here type-checks it, unlike the
+    reserved `notes` key alternative weighed in #355 and not taken: the value is
+    maintainer prose and this validator has no opinion on its shape.
+    """
+    config = _valid()
+    config["_context"] = {"why": ["a", "list", "of", "reasons"]}
+    assert oss_config.validate(config) == []
+
+
+def test_the_release_block_honours_the_same_underscore_escape():
+    """#355 follow-up. `_validate_release` refuses an unknown key with its own
+    message, unconditionally -- the escape landed in the top-level loop and not
+    here, so a note nested under `release` (arguably the block with the most
+    opinionated, hand-tuned settings a maintainer would want to explain) was
+    still told it was a typo.
+    """
+    config = _valid()
+    config["release"] = {"_note": "draft until the fragment backlog clears"}
+    assert oss_config.validate(config) == []
+
+
+def test_the_release_triggers_block_honours_the_same_underscore_escape():
+    config = _valid()
+    config["release"] = {"triggers": {"_note": "tuned after #301's flaky leg"}}
+    assert oss_config.validate(config) == []
+
+
 def test_load_reports_a_missing_file_as_a_finding_not_a_crash():
     problems = oss_config.load(REPO_ROOT / "does-not-exist.json")[1]
     assert problems and any("not found" in p for p in problems)
