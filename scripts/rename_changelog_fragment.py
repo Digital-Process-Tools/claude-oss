@@ -47,6 +47,7 @@ fired, not just that something did.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -79,6 +80,35 @@ def _new_name(fragment, new_issue):
     return ".".join(parts) + ".md"
 
 
+def _destination_occupied(path):
+    """Whether something already sits at `path`: True, False, or None for "could
+    not look".
+
+    `Path.exists()` is not the "never raises" call it looks like -- it swallows
+    a version-dependent set of `OSError`s and answers `False` for a path that
+    could not be stat'd, not only one that is absent (CLAUDE.md). This is an
+    overwrite guard, so a `False` earned that way is the exact failure this
+    function exists to close: `rename()`'s caller trusted it and `Path.rename`
+    clobbered a destination the guard never actually looked at.
+
+    `os.stat` and the exception in hand classify instead, the same shape
+    `oss_config._version_evidence` (#396/#413) and `lane_setup._path_state`
+    already use elsewhere in this repo: `FileNotFoundError` /
+    `NotADirectoryError` are the absence arm, matching what Python's own
+    interpreter normalises platform errors into. Anything else is "could not
+    look", and the caller treats that the same as occupied -- refusing an
+    overwrite on an unreadable destination is the safe direction, where
+    guessing it is free is not.
+    """
+    try:
+        os.stat(str(path))
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return None
+    return True
+
+
 def rename(fragment_path, new_issue, use_git=True):
     """Rename `fragment_path` to carry `new_issue`, rewriting its own
     self-reference to match. Returns `(state, message, new_path)` --
@@ -101,8 +131,14 @@ def rename(fragment_path, new_issue, use_git=True):
         )
 
     new_path = old_path.with_name(_new_name(fragment, new_issue))
-    if new_path.exists():
-        return REFUSED, "{0}: already exists, refusing to overwrite".format(new_path), None
+    occupied = _destination_occupied(new_path)
+    if occupied is not False:
+        detail = (
+            "already exists, refusing to overwrite"
+            if occupied
+            else "could not be examined, refusing to overwrite rather than guess it is free"
+        )
+        return REFUSED, "{0}: {1}".format(new_path, detail), None
 
     text = old_path.read_text(encoding="utf-8")
     pattern = re.compile(_SELF_REF.format(fragment.issue))
@@ -116,7 +152,7 @@ def rename(fragment_path, new_issue, use_git=True):
             return REFUSED, "git is not on PATH -- cannot `git mv` {0}".format(old_path), None
         try:
             result = subprocess.run(
-                [git, "mv", str(old_path), str(new_path)],
+                [git, "mv", "--", str(old_path), str(new_path)],
                 capture_output=True,
                 text=True,
                 errors="replace",
@@ -144,7 +180,9 @@ def rename(fragment_path, new_issue, use_git=True):
         # `git mv` above staged the pre-rewrite bytes; without this, `git commit
         # --amend` (no `-a`) would commit the old body under the new filename --
         # the exact defect this tool exists to close, one layer later.
-        subprocess.run([git, "add", str(new_path)], capture_output=True, text=True, errors="replace")
+        subprocess.run(
+            [git, "add", "--", str(new_path)], capture_output=True, text=True, errors="replace"
+        )
 
     finding = self_reference_finding(new_path.name, rewritten)
     if finding:
