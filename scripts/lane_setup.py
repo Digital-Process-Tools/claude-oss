@@ -614,10 +614,16 @@ def lane_count(worktree_root):
                        confirmed empty render identically on disk** -- neither may
                        report `0`, which is a specific claim of certainty this
                        function cannot make. `count` is None.
-      could-not-run    the registry exists and holds at least one record that could
-                       not be read at all (corrupt JSON, a missing field). A partial
-                       count built by skipping it would silently undercount, so this
-                       is reported instead of swallowed. `count` is None.
+      could-not-run    either the registry exists and holds at least one record
+                       that could not be read at all (corrupt JSON, a missing
+                       field) -- a partial count built by skipping it would
+                       silently undercount, so this is reported instead of
+                       swallowed -- or the registry's own existence could not be
+                       examined at all (#472: an ancestor this process cannot
+                       traverse, or a path carrying an embedded null byte). The
+                       second case is deliberately not folded into `unknown`,
+                       because a registry that could not be examined is not a
+                       confirmed absence. `count` is None either way.
 
     A record older than the TTL is pruned as a side effect of this read and excluded
     from the count -- never counted as live, and never folding the whole answer to
@@ -630,7 +636,45 @@ def lane_count(worktree_root):
     root = lane_registry_dir(worktree_root)
     if root is None:
         return {"state": "unknown", "count": None, "detail": "worktree_root is not known."}
-    if not os.path.isdir(root):
+    # #472: `os.path.isdir` (`genericpath.isdir`) swallows `(OSError, ValueError)`
+    # unconditionally, so a registry that exists under an untraversable parent used to
+    # answer `False` here, and the `detail` below then claimed a confirmed absence for a
+    # registry that was never examined. `os.stat` is asked directly instead, the same
+    # move `worktree_occupancy` already made for the identical swallow (#373, #380): the
+    # exception decides which arm runs, and `FileNotFoundError` / `NotADirectoryError`
+    # are confirmed via `_absence_confirmed` rather than trusted on their own, because
+    # Windows folds an over-`MAX_PATH` name onto the same exception with no
+    # distinguishing signal. Every other `OSError` (a `PermissionError` on the parent,
+    # the case this issue was filed from) is "could not examine", not "not there".
+    try:
+        found = os.stat(root)
+    except (FileNotFoundError, NotADirectoryError):
+        if _absence_confirmed(root) is not True:
+            return {
+                "state": "could-not-run",
+                "count": None,
+                "detail": "a lane registry may exist at {0} but could not be examined "
+                "-- an ancestor could not be looked at, which is not a confirmed "
+                "absence.".format(root),
+            }
+        found = None
+    except OSError as exc:
+        return {
+            "state": "could-not-run",
+            "count": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    except ValueError as exc:
+        # `os.stat` raises `ValueError`, not `OSError`, for a path carrying an embedded
+        # null byte -- `worktree_root` comes from `.oss.local.json` and JSON can spell
+        # one. `worktree_occupancy` already guards this (#380); the review round on
+        # this fix found the guard had not been carried over here.
+        return {
+            "state": "could-not-run",
+            "count": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    if found is None or not stat.S_ISDIR(found.st_mode):
         return {
             "state": "unknown",
             "count": None,
