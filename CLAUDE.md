@@ -298,23 +298,45 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `2fb53e4`, nine commits and eight merged pull requests after `v0.8.0`** — `git
-rev-list --count v0.8.0..main` returns `9`, and `d4c12c1` is the commit the annotated tag object `1969f5f` points at,
-which `git ls-remote --tags origin v0.8.0` confirms is the ref the remote carries. So this marker
-names a descendant of the previous release commit rather than the release commit itself, which is
-what the four before it named. Every claim below is graded **observed** (a named command produced
-it) or **reasoned** (argued from code that was read, not run). **Re-derive this at each release
-rather than editing it.** The version it replaces was measured at `d4c12c1`, zero pull requests
-after `v0.8.0`; before that at `7690fd0`, zero after `v0.7.0`; at `01212b0`, zero after `v0.6.0`;
-and at `e8e75b2`, zero after `v0.5.0`.
+**Measured at `c570977`, the `v0.9.0` release commit, with zero commits after it** — the delta this
+release carries is nine commits and eight merged pull requests, `git rev-list --count v0.8.0..main`
+returning `9` at `2fb53e4`, the last commit before this one. Every claim below is graded **observed**
+(a named command produced it) or **reasoned** (argued from code that was read, not run).
+**Re-derive this at each release rather than editing it.** The version it replaces was measured at
+`d4c12c1`, zero pull requests after `v0.8.0`; before that at `7690fd0`, zero after `v0.7.0`; at
+`01212b0`, zero after `v0.6.0`; and at `e8e75b2`, zero after `v0.5.0`.
 
-**This round the re-derivation ran before the fold rather than after it, and that is the whole of
-what #235 asked for.** The previous round's marker was written by the session that cut `v0.8.0` —
-but only after PR #387 had already gone red on all three ubuntu legs, because two fragments armed
-the guard first. The cost was paid and measured there. Here the section was re-derived while the
-release audit was still running and before any version site moved, so nothing reddened. One
-instance is not a practice, and the guard still cannot tell a re-derivation from a hand-edited
-marker.
+**This paragraph was keyed to the wrong release for forty minutes, and the guard caught it on
+somebody else's branch — which is #235 firing for the second consecutive round.** The first version
+written this cycle opened *nine commits and eight merged pull requests after `v0.8.0`*: true as a
+description of the delta, and wrong as a marker, because the newest version it named was the release
+that had *already* shipped rather than the one being cut. `tests/test_claude_md_currency.py` reads
+the newest release in this paragraph and compares it to the newest in `CHANGELOG.md`, so the fold
+made it stale the moment it wrote `## [0.9.0]`. It stayed silent through the release commit — that
+commit folded every fragment, and the guard skips when none are pending — and went red on `fix/404`,
+a security lane whose diff has nothing to do with this section. **The marker is keyed to the release
+being cut, not to the delta being released.** Every earlier marker did this correctly and none of
+them said so, which is why it was re-derivable and still got written wrong.
+
+**Running the re-derivation early was not enough, and this round is where that became a
+measurement rather than a hope.** The previous round's marker was written by the session that cut
+`v0.8.0`, but only after PR #387 had gone red on all three ubuntu legs because two fragments armed
+the guard first — so the previous round's lesson was read as *ordering*: re-derive before the fold
+and nothing reddens.
+
+This round did exactly that, and #404 went red anyway. Ordering was never the whole of it. The
+section was re-derived before the fold, at a moment when the newest shipped release genuinely *was*
+`v0.8.0` — and the fold then changed the answer under it by writing `## [0.9.0]`, which is the one
+event a re-derivation performed beforehand cannot account for. So the two failures have the same
+symptom and different causes: the previous round was late, this round was early and keyed to a fact
+the release itself invalidated.
+
+**Which is the sharpest available statement of #235 so far: the property is not "re-derive at the
+right time", it is that the marker and the changelog are two records of one fact with no mechanism
+tying them together.** Any ordering rule is a person remembering to do two things in a sequence, and
+that is the thing #235 says is not enforced. Three consecutive rounds have now paid for it, twice as
+a red build on a pull request whose diff has nothing to do with this section. The guard still cannot
+tell a re-derivation from a hand-edited marker, and it still cannot read the tree the sha names.
 
 The count is `rev-list --count` rather than `git log | wc -l`, and that is not cosmetic: the pipeline
 was rewritten by a hook to `rtk git log`, which emits a bare newline for an empty result, so an empty
