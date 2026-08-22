@@ -630,7 +630,35 @@ def lane_count(worktree_root):
     root = lane_registry_dir(worktree_root)
     if root is None:
         return {"state": "unknown", "count": None, "detail": "worktree_root is not known."}
-    if not os.path.isdir(root):
+    # #472: `os.path.isdir` (`genericpath.isdir`) swallows `(OSError, ValueError)`
+    # unconditionally, so a registry that exists under an untraversable parent used to
+    # answer `False` here, and the `detail` below then claimed a confirmed absence for a
+    # registry that was never examined. `os.stat` is asked directly instead, the same
+    # move `worktree_occupancy` already made for the identical swallow (#373, #380): the
+    # exception decides which arm runs, and `FileNotFoundError` / `NotADirectoryError`
+    # are confirmed via `_absence_confirmed` rather than trusted on their own, because
+    # Windows folds an over-`MAX_PATH` name onto the same exception with no
+    # distinguishing signal. Every other `OSError` (a `PermissionError` on the parent,
+    # the case this issue was filed from) is "could not examine", not "not there".
+    try:
+        found = os.stat(root)
+    except (FileNotFoundError, NotADirectoryError):
+        if _absence_confirmed(root) is not True:
+            return {
+                "state": "could-not-run",
+                "count": None,
+                "detail": "a lane registry may exist at {0} but could not be examined "
+                "-- an ancestor could not be looked at, which is not a confirmed "
+                "absence.".format(root),
+            }
+        found = None
+    except OSError as exc:
+        return {
+            "state": "could-not-run",
+            "count": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    if found is None or not stat.S_ISDIR(found.st_mode):
         return {
             "state": "unknown",
             "count": None,
