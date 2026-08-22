@@ -37,9 +37,18 @@ config cannot show:
   repo has a priority vocabulary spelled some way the patterns miss, say so — that is
   a decision for the human, not something to paper over by writing the labels in
   yourself.
-- **`could not read, so not claimed as version sites`** — a candidate file that could
-  not be read. Not the same as one read and found to hold no version, which is dropped
-  silently and correctly.
+- **Three separate notes about version candidates**, and they are three different
+  facts (#396). None is the same as a candidate read and found to hold no version,
+  which is dropped silently and correctly.
+  - **`in the index and not on disk`** — `git ls-files` reports the index and the
+    probe reads the working tree, so this is what an uncommitted delete looks like.
+    Nothing was wrong with the read; there was nothing to read. Until #396 this
+    printed *could not read* about a file that was simply not there.
+  - **`are on disk and could not read`** — the file is there and its bytes did not
+    come back. The tool failed to answer: a mode bit, an encoding, a filesystem.
+  - **`read completely and their contents are not the shape the file type promises`**
+    — every byte arrived and the structure is wrong, a `.json` that is not JSON or
+    that is not an object. A fact about the file, not about the read.
 - **`worktree_root: ...` / `state_file: ...` — a guess from a naming convention, not
   something measured on disk** — neither has a filesystem signal to measure on a repo
   being set up for the first time. If the repo has been onboarded before under a

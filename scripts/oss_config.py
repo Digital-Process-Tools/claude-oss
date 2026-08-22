@@ -811,10 +811,28 @@ VERSION_CANDIDATES = (
     ("README.md", "text"),
 )
 
-# Three states, not two. `none` is a measured negative -- the file was read and holds
-# no version -- and dropping it silently is correct. `unreadable` is the tool failing
-# to answer, which is a different fact and is reported rather than folded into `none`.
-VERSION_EVIDENCE_STATES = {"version", "none", "unreadable"}
+# Five states, and each of the last three is a different fact about a candidate that
+# yielded no version. `none` is a measured negative -- the file was read and holds none
+# -- and dropping it silently is correct. The other three are not measurements, and they
+# were one word until #396:
+#
+#   absent      in the index, not in the working tree. `git ls-files` reports the index
+#               and every read here happens in the tree, so between an uncommitted `rm`
+#               and its commit -- the changelog fold produces twenty-one at once -- the
+#               two disagree about exactly these paths. Not a defect and not a refusal;
+#               reported by name because a file deleted in a diff nobody meant to make
+#               is worth saying out loud.
+#   unreadable  the file is there and its bytes did not come back. The TOOL failed to
+#               answer: a mode bit, an encoding, a filesystem.
+#   malformed   every byte arrived and the structure is not what the candidate's kind
+#               promises -- a `.json` that is not JSON, or one that is not an object.
+#               A fact about the FILE, found by reading all of it.
+#
+# Splitting `malformed` out is the same repair as splitting `absent` out, one line over:
+# printing "could not read" about a file this process read in full renders the tool's
+# answer about its own read as an answer about the file. Adding members can only widen
+# what `probe_problems` accepts, so a probe written by an older copy stays valid.
+VERSION_EVIDENCE_STATES = {"version", "none", "absent", "unreadable", "malformed"}
 
 # The probe schema, in one place, because it had none: the key names were discoverable
 # only by reading this file and the semantics of `files` were written down nowhere. A
@@ -855,10 +873,14 @@ the defect, not the workaround.
   workflow_jobs     job names read out of .github/workflows/*
   merge_method      "squash" | "merge" | "rebase" | null when more than one is
                     allowed and the repo has not decided
-  version_evidence  {candidate path: "version" | "none" | "unreadable"} for every
-                    version candidate present in `files`. "none" means read and
-                    carries none; "unreadable" means could not be read, which is
-                    not the same answer and is reported rather than dropped.
+  version_evidence  {candidate path: "version" | "none" | "absent" |
+                    "unreadable" | "malformed"} for every version candidate
+                    present in `files`. "none" means read and carries none.
+                    The last three are not measurements and are reported
+                    rather than dropped: "absent" is in the index and not on
+                    disk -- what an uncommitted delete looks like -- while
+                    "unreadable" is on disk and would not read, and
+                    "malformed" read completely and holds the wrong shape.
 
 Every key is required. Absent is not empty: `probe.get("files") or []` made a
 typo'd key and an empty repo identical, and the config that came out said so with
@@ -935,17 +957,33 @@ _PY_VERSION_CONST_RE = re.compile(r"""(?m)^(?:__version__|VERSION)\s*=\s*["'](.+
 
 
 def _version_state(path, kind):
+    """One candidate, in five states -- see `VERSION_EVIDENCE_STATES` for the split.
+
+    The exception already in hand decides absence: `FileNotFoundError` is a file that
+    is not there, any other `OSError` is a file that is there and would not read. No
+    second question is put to the filesystem -- `exists()` swallows a short list of
+    errnos and re-raises the rest, a trap this repository has already paid for (#396,
+    and `_read_config` in `release_delta.py` before it).
+
+    One consequence worth writing down: Windows folds several Win32 codes onto ENOENT,
+    so a path that is unlookable rather than missing arrives here as
+    `FileNotFoundError` and reads as `absent`. That is a degraded answer, not a silent
+    one -- the receipt names the path either way.
+    """
     try:
         text = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return "absent"
     except (OSError, UnicodeDecodeError):
         return "unreadable"
     if kind == "json":
+        # Read in full, so nothing below is a statement about the read.
         try:
             payload = json.loads(text)
         except ValueError:
-            return "unreadable"
+            return "malformed"
         if not isinstance(payload, dict):
-            return "unreadable"
+            return "malformed"
         value = payload.get("version")
         if isinstance(value, str) and VERSION_RE.search(value):
             return "version"
@@ -2063,8 +2101,10 @@ def _report_probe_notes(probe, config):
     guessed. None of these is a failure.
 
     The first two are absences the tool produced rather than absences in the world:
-    unclassified labels leave `priority: []`, and an unreadable candidate leaves it
-    off `version_sites`. The second two are the opposite shape and the one #85 was
+    unclassified labels leave `priority: []`, and a candidate that yielded no version
+    for any reason other than being read leaves it off `version_sites` -- in three
+    different words, because they are three different facts (#396). The second two
+    are the opposite shape and the one #85 was
     filed over -- a value that *was* produced, at exit 0, that reads exactly like a
     measurement and is not one. Silence in either direction reads as a measurement,
     so both are stated here instead.
@@ -2080,17 +2120,34 @@ def _report_probe_notes(probe, config):
             ),
             file=sys.stderr,
         )
-    unreadable = sorted(
-        name for name, state in (probe.get("version_evidence") or {}).items()
-        if state == "unreadable"
-    )
-    if unreadable:
-        print(
-            "NOTE could not read, so not claimed as version sites: {}".format(
-                ", ".join(unreadable)
-            ),
-            file=sys.stderr,
-        )
+    # One sentence per state, because they are three different facts and the maintainer
+    # does three different things about them (#396). Until this split, an ordinary
+    # uncommitted delete printed "could not read" about a file that was simply not
+    # there, and a `package.json` this process read in full printed it too.
+    evidence = probe.get("version_evidence") or {}
+    for state, sentence in (
+        (
+            "absent",
+            "in the index and not on disk, so there was nothing to read and they are "
+            "not claimed as version sites. This is what an uncommitted delete looks "
+            "like",
+        ),
+        (
+            "unreadable",
+            "are on disk and could not read, so not claimed as version sites",
+        ),
+        (
+            "malformed",
+            "read completely and their contents are not the shape the file type "
+            "promises, so not claimed as version sites",
+        ),
+    ):
+        named = sorted(name for name, value in evidence.items() if value == state)
+        if named:
+            print(
+                "NOTE {}: {}".format(sentence, ", ".join(named)),
+                file=sys.stderr,
+            )
 
     # No NOTE about a leg count, because no leg count is written (#113). The caveat this
     # used to print -- a matrix, a reusable workflow or an org/app-level check multiplies
