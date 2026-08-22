@@ -190,6 +190,30 @@ it a second way — grep the new content back — before saying it.
    always. A change nobody can discover is not shipped. If the repo uses changelog fragments, add
    one; do not hand-edit the assembled file.
 
+   **The fragment has a real checker and `test_command` does not reach it — run it yourself before
+   you commit, and paste what it said.** `test_command` is `pytest`; the thing that judges a
+   fragment is `assemble_changelog.py`, a CI leg pytest never touches. An agent that ran the full
+   suite green three times has checked everything it was told to check and has not checked the
+   fragment — measured once already: an entry naming its issue only in the **filename**
+   (`274.fixed.md`, body silent) passed a green suite and was refused on the `fragment` leg, because
+   the fold consumes the filename and nothing carries the number into `CHANGELOG.md` without it.
+   Locate the assembler at `.oss/assemble_changelog.py` if that file exists, else
+   `scripts/assemble_changelog.py` — the same order this repo's own `oss_rules.assembler_path()`
+   checks — and run `python3 <that path> --check` from inside your worktree. It is a plain read: it
+   derives its own root by walking up for `.git` and needs neither `--dir` nor `--changelog` in this
+   mode, unlike the fold, which refuses without both (`CLAUDE.md`'s `assemble_changelog.py` trap).
+   A refusal names the fragment and the line; fix it and re-run rather than guessing.
+
+   This is not the only requirement here whose checker `test_command` cannot reach — the report
+   itself has one, `report_schema.py`, already named explicitly where the report format is
+   described below — but it is the only *other* one backed by a real automated gate. Docs review and
+   the diagnostic convention, both just below, have no script to run; they are judged by a human
+   reading the diff, which is why both are marked **observed rather than enforced** rather than
+   given a command. A pytest test that shells out to `assemble_changelog.py --check` on every run
+   was considered and declined: it would duplicate a CI leg into every lane's every suite run for a
+   check that costs under a second run directly, and `test_command` staying `pytest`-only is a
+   decision about suite runtime, not an oversight.
+
    **Nothing checks the docs half, so your report is the only record that it happened.** The
    changelog half is gated on every pull request. A matching gate for this half was **measured on this
    plugin's own repository, against its last thirty merged pull requests** rather than assumed, and
