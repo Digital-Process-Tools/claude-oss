@@ -2055,13 +2055,28 @@ def check_fragments_readme(project_dir, config):
     if COMPATIBILITY_BULLET in text:
         report("OK", "fragments readme: {} documents the Compatibility bullet".format(path))
         return
+    # The diagnostic clause above names `path` -- a file on disk -- and stays
+    # absolute whenever `project_dir` is (which `scripts/doctor.sh` and
+    # `CLAUDE_PROJECT_DIR` both produce). The remedy clause names a
+    # `scaffold.show` argument instead, and `scaffold.show` matches by string
+    # equality against REPO-RELATIVE template keys (`fragments_dir(config) +
+    # "/README.md"`) -- so quoting the same absolute `path` there named a
+    # command that fails everywhere except `--root .` (#438). `relative_to`
+    # can only fail if `directory` ever escaped `project_dir`, which
+    # `_fragments_directory` never returns; the `except` exists so a future
+    # change to that invariant degrades to the pre-#438 (broken-under-abs-root)
+    # message rather than raising out of a diagnostic that must always exit 0.
+    try:
+        shown_path = path.relative_to(Path(project_dir)).as_posix()
+    except ValueError:
+        shown_path = str(path)
     report(
         "WARN",
         "fragments readme: {} exists and does not document `{}`, which "
         "`scripts/release_version.py` requires on a `removed` fragment. "
         "/oss:scaffold will not fix it -- the file is a default and is never "
         "replaced once it exists. Paste the section by hand from "
-        "`scripts/scaffold.py --show {}`.".format(path, COMPATIBILITY_BULLET, path),
+        "`scripts/scaffold.py --show {}`.".format(path, COMPATIBILITY_BULLET, shown_path),
     )
 
 

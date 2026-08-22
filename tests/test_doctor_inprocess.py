@@ -2260,6 +2260,37 @@ def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_nam
     assert str(expected_dir) not in message
 
 
+def test_fragments_readme_warn_remedy_is_a_command_scaffold_show_accepts(tmp_path):
+    """#438: `doctor.sh` and `CLAUDE_PROJECT_DIR` hand this an ABSOLUTE `project_dir`
+    (`tmp_path` already is one), so `directory / "README.md"` is absolute too --
+    `scaffold.show` matches by string equality against repo-relative template keys,
+    so quoting the absolute form in the remedy names a command that fails on the
+    ordinary invocation and only works under `--root .`.
+
+    Paired must-fire control: the diagnostic clause naming the file on disk must
+    stay absolute -- the fix belongs in the remedy's command, not in what the WARN
+    says exists."""
+    readme = _fragments_readme(
+        tmp_path, "changelog.d", "# Fragments\n\nNo compatibility section here.\n"
+    )
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+
+    # Diagnostic half: still names the absolute file on disk.
+    assert str(readme) in message
+
+    # Remedy half: the `--show` argument, pulled out of the message, is one
+    # `scaffold.show` accepts without raising -- the positive control the issue's
+    # reporter ran by hand (repo-relative form, exit 0).
+    marker = "--show "
+    start = message.index(marker) + len(marker)
+    end = message.index("`", start)
+    shown_path = message[start:end]
+    assert shown_path == "changelog.d/README.md", message
+    scaffold.show(tmp_path, {"changelog_dir": "changelog.d"}, path=shown_path)
+
+
 def test_fragments_readme_unmeasured_without_config(tmp_path):
     doctor.check_fragments_readme(tmp_path, None)
     state, message = doctor.FINDINGS[-1]
