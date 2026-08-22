@@ -886,11 +886,12 @@ the defect, not the workaround.
   labels            label names as they are spelled on the repo
   milestones        milestone titles
   workflow_jobs     job names read out of .github/workflows/* in the WORKING TREE.
-                    A candidate `files` lists that is not on disk -- an uncommitted
-                    delete -- declares no jobs and is named in a NOTE on stderr
-                    rather than refusing the probe. One that is on disk and will
-                    not read still refuses: an unknown counted as zero understates
-                    the checks.
+                    A candidate `files` lists that is not on disk declares no jobs
+                    and is named in a NOTE on stderr rather than refusing the
+                    probe -- usually an uncommitted delete, though a bare
+                    FileNotFoundError does not confirm that (#413). One that is on
+                    disk and will not read still refuses: an unknown counted as
+                    zero understates the checks.
   merge_method      "squash" | "merge" | "rebase" | null when more than one is
                     allowed and the repo has not decided
   version_evidence  {candidate path: "version" | "none" | "absent" |
@@ -898,7 +899,8 @@ the defect, not the workaround.
                     present in `files`. "none" means read and carries none.
                     The last three are not measurements and are reported
                     rather than dropped: "absent" is in the index and not on
-                    disk -- what an uncommitted delete looks like -- while
+                    disk -- usually an uncommitted delete, though a bare
+                    FileNotFoundError does not confirm that (#413) -- while
                     "unreadable" is on disk and would not read, and
                     "malformed" read completely and holds the wrong shape.
 
