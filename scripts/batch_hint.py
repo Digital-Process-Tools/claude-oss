@@ -52,13 +52,72 @@ THRESHOLD = 3
 # the turns actually worth collapsing. This is a judgement call, not a
 # measurement; the number to change first if it fires too often is this one.
 
-_MUTATION_MARKER = "@-"  # edit:@-, paste:@-, batch:@- -- this repo's own convention
+_MUTATION_MARKER = "@-"  # edit:@-, paste:@-, batch:@- -- fallback for an op this
+                          # module does not recognise by name (see below)
 _CHAIN_OPERATORS = re.compile(r"(?<!\\)(&&|\|\||;)")
 _CD_PREFIX = re.compile(r"^\s*cd\s+\S+\s*&&\s*")
 _SUPERTOOL_CALL = re.compile(
     r"^(?:\./)?supertool\s+((?:'[^']*'\s*)+)$"
 )
 _QUOTED_ARG = re.compile(r"'([^']*)'")
+
+# Derived from `supertool 'ops:roster'` (2026-08-22), which is the single
+# authority for which ops write or reach outside this tree ("*"/"!") versus
+# read ("unmarked") -- see that op's own text, quoted in CLAUDE.md, on why a
+# second copy of this classification drifts. This module needs the answer to
+# a different question than a permission grant does (batchable vs not, not
+# read vs write access), so it keeps its own copy rather than shelling out to
+# supertool on every single Bash call -- but it is a copy of a published
+# classification, not a guess, and it is dated so staleness is visible.
+# Re-derive with: supertool 'ops:roster'
+_WRITE_OP_PREFIXES = frozenset({
+    "append", "batch", "edit", "format", "format_staged", "gc",
+    "git-checkout", "git-commit", "git-merge", "git-resolve", "paste",
+    "rename", "replace", "replace_lines", "vim",
+})
+_EXTERNAL_OP_PREFIXES = frozenset({
+    "channel", "gh-batch-follow", "gh-batch-star", "gh-follow",
+    "gh-issue-create", "gh-pr-create", "gh-pr-edit", "gh-pr-merge",
+    "gh-star", "git-push", "radar", "unwatch", "watch",
+})
+_READ_OP_PREFIXES = frozenset({
+    "around", "around_line", "between", "check", "cwd", "diag", "diff",
+    "gh-branch", "gh-check", "gh-find-followable", "gh-find-starable",
+    "gh-following", "gh-issue", "gh-issues", "gh-job", "gh-labels",
+    "gh-pr", "gh-prs", "gh-run", "gh-starred", "git-blame", "git-conflicts",
+    "git-diff", "git-diverge", "git-investigate", "git-status", "git-trail",
+    "git-worktrees", "glob", "grep", "grep_around", "guard", "head", "help",
+    "hover", "introduction", "ls", "map", "ops", "ops-compact",
+    "output-format", "read", "registry", "replace_dry", "repo", "resolve",
+    "stat", "tail", "tree", "validate", "validate_staged", "version",
+    "watches", "wc", "workspace",
+})
+
+
+def _op_verdict(op: str) -> str:
+    """Classify one op string by its own name, not by scanning its argument.
+
+    Fixes the false positive/negative pair a substring search on the whole
+    op string produces: `'grep:foo@-bar:file.py'` is a read whose *pattern*
+    happens to contain "@-" (false not_offender under a substring check),
+    and `'edit:::OLD:::NEW:::path.py'` is this repo's inline-argument
+    mutation form, which never contains "@-" at all (false single_readonly
+    under the same check). Looking up the op's own name against the
+    published roster gets both right.
+    """
+    prefix = op.split(":", 1)[0]
+    if prefix in _WRITE_OP_PREFIXES or prefix in _EXTERNAL_OP_PREFIXES:
+        return "not_offender"
+    if prefix in _READ_OP_PREFIXES:
+        return "single_readonly"
+    # An op name this module does not recognise -- the roster grew since the
+    # comment above was dated, or this is not really an op call at all. A
+    # trailing payload marker is still a strong, self-contained signal that
+    # this consumes stdin and mutates; anything else is genuinely unknown
+    # rather than guessed at.
+    if op.endswith(_MUTATION_MARKER):
+        return "not_offender"
+    return "unknown"
 
 
 def _state_dir() -> Path:
@@ -110,13 +169,6 @@ def classify_command(command: str) -> str:
     if _CHAIN_OPERATORS.search(unquoted):
         return "not_offender"
 
-    # A payload marker (edit:@-, paste:@-, batch:@- -- this repo's own
-    # convention) is an unambiguous mutation regardless of what a heredoc
-    # attached to the same line does to the quoting the regex below expects,
-    # so it is checked before the strict shape match rather than after it.
-    if _MUTATION_MARKER in stripped:
-        return "not_offender"
-
     if not re.search(r"(?:^|\s)(?:\./)?supertool(?:\s|$)", stripped):
         return "not_offender"  # confidently not a supertool call at all
 
@@ -125,6 +177,17 @@ def classify_command(command: str) -> str:
         # Looks like it is trying to be a supertool call (the word is
         # there) but does not parse cleanly -- ambiguous, not a confident
         # negative. Must not silently count as batchable-and-clear either.
+        # A heredoc-carrying payload call (edit:@- <<'EOF' ...) lands here
+        # too, since the heredoc body -- and the quote the delimiter itself
+        # opens, e.g. <<'EOF' -- defeats the strict single-line shape match.
+        # Only trust the "take the first op" fallback when "<<" is actually
+        # present -- otherwise a plain malformed/truncated command (a stray
+        # trailing token after a closed quote, say) would read as a clean
+        # single op instead of the "unknown" it actually is.
+        if "<<" in stripped:
+            first_op = re.search(r"(?:^|\s)(?:\./)?supertool\s+'([^']*)'", stripped)
+            if first_op:
+                return _op_verdict(first_op.group(1))
         return "unknown"
 
     ops = _QUOTED_ARG.findall(match.group(1))
@@ -133,7 +196,7 @@ def classify_command(command: str) -> str:
     if len(ops) > 1:
         return "not_offender"  # already batched -- exactly what this hook wants
 
-    return "single_readonly"
+    return _op_verdict(ops[0])
 
 
 def update_state(state: dict, classification: str) -> tuple[dict, "str | None"]:
@@ -184,7 +247,29 @@ def _save_state(path: Path, state: dict) -> None:
         pass  # best-effort; a lost streak is silence, never a false fire
 
 
+def status(session_id: str) -> dict:
+    """Read back one session's counters -- the third state made observable.
+
+    `state["unknown"]` is written on every call this module could not
+    classify, but nothing else in this repository reads it (#490's own
+    audit: a counter nobody consumes is functionally invisible even though
+    it is correctly kept). This is the read side, for a human -- or a
+    future `doctor.py` check -- to actually look. It is deliberately not
+    wired into `doctor.py` in this change: that is a decision about what
+    the diagnostic surfaces repo-wide, out of scope for one hook.
+    """
+    return _load_state(_state_path(session_id))
+
+
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "--status":
+        if len(argv) != 2:
+            print("usage: batch_hint.py --status SESSION_ID", file=sys.stderr)
+            return 2
+        print(json.dumps(status(argv[1])))
+        return 0
+
     try:
         payload = json.loads(sys.stdin.read() or "{}")
     except json.JSONDecodeError:

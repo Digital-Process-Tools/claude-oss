@@ -48,6 +48,36 @@ def test_mutating_payload_call_is_not_an_offender():
     assert batch_hint.classify_command("supertool 'edit:@-' <<'EOF'\nx\nEOF") == "not_offender"
 
 
+def test_inline_argument_mutation_form_is_not_an_offender():
+    # This repo documents a second mutation shape that never uses "@-" at
+    # all -- `edit:::OLD:::NEW:::PATH` / `paste:::PATH:::CONTENT` -- so a
+    # classifier keyed on the "@-" substring alone misses it entirely.
+    assert batch_hint.classify_command("supertool 'edit:::OLD:::NEW:::path.py'") == "not_offender"
+    assert batch_hint.classify_command("supertool 'paste:::path.py:::content'") == "not_offender"
+
+
+def test_a_read_op_argument_containing_the_mutation_marker_text_is_still_readonly():
+    # The opposite failure of the same substring check: a `grep` pattern
+    # that happens to contain the literal text "@-" is a read, not a
+    # mutation. Classification is by the op's own name, never by scanning
+    # its argument for a marker that can appear anywhere by coincidence.
+    assert batch_hint.classify_command("supertool 'grep:foo@-bar:file.py'") == "single_readonly"
+
+
+def test_an_op_name_this_module_does_not_recognise_is_unknown():
+    # Third state again: an op the roster grew to include after this
+    # module's own static copy was last derived must not silently pass as
+    # either a confident read or a confident mutation.
+    assert batch_hint.classify_command("supertool 'some-future-op:x'") == "unknown"
+
+
+def test_an_unrecognised_op_with_a_payload_marker_is_still_a_mutation():
+    # The "@-" substring stays as a fallback signal for exactly the op names
+    # this module has not yet been told about -- a new write op would still
+    # be caught, just less precisely than one already in the roster copy.
+    assert batch_hint.classify_command("supertool 'some-future-op:@-'") == "not_offender"
+
+
 def test_non_supertool_command_is_not_an_offender():
     assert batch_hint.classify_command("python3 -m pytest tests/ -q") == "not_offender"
 
@@ -186,3 +216,23 @@ def test_hook_end_to_end_never_fires_on_a_run_it_could_not_classify(tmp_path):
     for _ in range(6):
         out = _run_hook(tmp_path, session, "supertool 'read:a\'oops")
     assert out.get("hookSpecificOutput", {}).get("additionalContext") is None
+
+
+def test_status_cli_makes_the_unknown_counter_observable(tmp_path):
+    # The third state has to be *readable*, not just correctly kept
+    # internally -- this is the read side the self-review asked for.
+    session = "test-session-490-status"
+    _run_hook(tmp_path, session, "supertool 'read:a\'oops")
+    _run_hook(tmp_path, session, "supertool 'read:a\'oops")
+    env = {**__import__("os").environ, "BATCH_HINT_STATE_DIR": str(tmp_path)}
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "batch_hint.py"), "--status", session],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    state = json.loads(result.stdout)
+    assert state["unknown"] == 2
+    assert state["streak"] == 0
