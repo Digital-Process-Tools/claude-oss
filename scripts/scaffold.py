@@ -1263,9 +1263,23 @@ def settings_plan(repo_root):
     The fourth state is the one that matters. A settings file that does not parse is not
     a settings file with no `statusLine` -- rewriting it would destroy configuration this
     process could not read, which is the difference between `create` and `decline` here.
+
+    There is deliberately no `path.exists()` pre-check (#485): `exists()` swallows a
+    short list of errnos and re-raises everything else, and which is which moves between
+    interpreter versions (the trap CLAUDE.md names by that call's own name, and the same
+    reason `doctor._safe_is_file` exists) -- so on one version the run died before the
+    `decline` this docstring promises, and on another `exists()` swallowed to `False` and
+    a present, unreadable file was treated as absent. Routing through `_safe_is_file`
+    would not have fixed that: it swallows to `False` the same way, on the same
+    exception, and a `False` there is exactly the signal this fix has to keep. So the
+    read is attempted directly and the exception actually raised decides the arm --
+    `FileNotFoundError` first and separately, because it is the only one that means
+    "create": everything else means something is there and could not be read.
     """
     path = Path(repo_root) / SETTINGS_PATH
-    if not path.exists():
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {
             "path": SETTINGS_PATH,
             "action": "create",
@@ -1273,9 +1287,19 @@ def settings_plan(repo_root):
             + OWNED_DIR
             + "/statusline.py",
         }
+    except OSError as exc:
+        return {
+            "path": SETTINGS_PATH,
+            "action": "decline",
+            "reason": (
+                "present and could not be read ({}), so whether it already sets a "
+                "statusLine is unknown -- which is not the same as it having none; "
+                "not written.".format(exc)
+            ),
+        }
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        document = json.loads(text)
+    except ValueError as exc:
         return {
             "path": SETTINGS_PATH,
             "action": "decline",

@@ -2048,6 +2048,11 @@ def check_auto_update(project_dir):
       not collapse them.
     * **no receipt at all** -- the hook has not run in this install, or could not write.
       That is not "up to date": nothing has been established, and the row says so.
+    * **a receipt that exists and is broken** (#484) -- corrupt JSON, or a permission
+      that changed underneath it. Told apart from "no receipt at all" by the exception
+      `plugin_update.read_receipt` actually caught, never by asking the filesystem a
+      second question; folding it into "no receipt" would report a broken receipt as
+      the ordinary pre-first-run state.
     """
     if plugin_update is None:
         unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
@@ -2056,6 +2061,17 @@ def check_auto_update(project_dir):
     receipt = plugin_update.read_receipt()
     if off:
         report("OK", "auto-update: off -- {}".format(where))
+        return
+    if isinstance(receipt, plugin_update.ReceiptUnreadable):
+        # A receipt that exists and is broken is not a receipt that was never written
+        # (#484) -- the "ordinary state" arm below is only honest about absence, and
+        # this is the exception in hand saying the opposite: something is there.
+        report(
+            "WARN",
+            "auto-update: receipt at {} exists and could not be read ({}) -- this is "
+            "not the ordinary before-the-next-session state; something was written "
+            "and is now broken.".format(plugin_update.receipt_path(), receipt.detail),
+        )
         return
     if not isinstance(receipt, dict):
         # The ordinary state of a fresh install: the hook runs at the NEXT session
@@ -2095,6 +2111,34 @@ def check_auto_update(project_dir):
     )
 
 
+#: POSIX shell variable expansion -- `$VAR` or `${VAR}`. cmd.exe, Windows's default
+#: command interpreter, expands `%VAR%` instead and does not touch this syntax at all,
+#: so a command written with it is a claim about a shell that may not be the one
+#: running it (#487). This is the establishable half: the syntax is a fact about the
+#: string. Which shell actually executes a `statusLine` command on Windows is not --
+#: nobody has run one there to confirm -- so this flags the syntax gap without
+#: asserting the command definitely fails.
+_POSIX_VAR_RE = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?")
+
+
+def _statusline_windows_gap(command, windows=None):
+    """The POSIX-only syntax found in `command`, or `""` if none, on THIS platform.
+
+    Only fires when `windows` is true, which defaults to `os.name == "nt"` -- the
+    syntax is unremarkable and correct on every platform this plugin actually runs the
+    command on, and a check that warned on POSIX too would be noise on every run there.
+    `windows` is a parameter rather than read from `os.name` unconditionally so a test
+    can drive both branches without monkeypatching `os.name` itself, which `pathlib`
+    also reads and which breaks `Path()` construction the moment it is patched.
+    """
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows or not command:
+        return ""
+    match = _POSIX_VAR_RE.search(command)
+    return match.group(0) if match else ""
+
+
 def check_statusline(project_dir):
     """Is the status line wired to something, and is it wired to ours (#479)?
 
@@ -2112,6 +2156,16 @@ def check_statusline(project_dir):
     * the file could not be read or parsed -- `unknown`. Whether a status line is wired
       here was not established, which is not the same as it having none, and the row
       must not read as either of the two answers above.
+
+    A fifth thing this substring match used to miss (#487), folded into the first two
+    states above rather than given a fifth of its own: `statusline.py` appearing in the
+    command string is not the same claim as the command RUNNING here. The written
+    command uses `$CLAUDE_PROJECT_DIR` (POSIX shell variable expansion) and a bare
+    `python3`; on Windows, whose default command interpreter expands `%VAR%` rather than
+    `$VAR`, that syntax does not resolve, so a repo can be graded `OK ... wired` about a
+    status line that never runs. This is established from the syntax alone -- nobody has
+    run a status line on Windows to confirm it (reasoned, not observed) -- so the WARN
+    below names that gap rather than asserting the command definitely fails.
     """
     if scaffold is None:  # pragma: no cover - guarded the same way the callers are
         unmeasured("statusline", NO_SCAFFOLD)
@@ -2145,8 +2199,26 @@ def check_statusline(project_dir):
     entry = document.get("statusLine")
     if isinstance(entry, dict):
         command = str(entry.get("command") or "")
+    unresolved = _statusline_windows_gap(command)
     if "statusline.py" in command:
+        if unresolved:
+            report(
+                "WARN",
+                "statusline: wired to {} -- this is POSIX shell syntax ({}); Windows's "
+                "default command interpreter does not expand it, so this is reasoned "
+                "from the syntax, not observed, but the status line may not be running "
+                "here.".format(command, unresolved),
+            )
+            return
         report("OK", "statusline: wired to {}".format(command))
+        return
+    if unresolved:
+        report(
+            "WARN",
+            "statusline: wired to a status line that is not ours ({}) -- POSIX shell "
+            "syntax ({}) that Windows's default command interpreter does not expand; "
+            "reasoned from the syntax, not observed.".format(command, unresolved),
+        )
         return
     report(
         "OK",
