@@ -1062,6 +1062,49 @@ def _safe_is_dir(path):
         return False
 
 
+def _rglob_md(root):
+    """Every ``*.md`` file under ``root``, recursively -- ``(files, unreadable)``.
+
+    ``Path.rglob`` swallows ``PermissionError`` while it walks and silently
+    yields nothing for the subtree it could not enter -- CLAUDE.md's own
+    `Path.rglob`/`Path.is_dir` bullet (#124), measured directly for this file
+    in `tests/test_swallow_census_383.py`: `sorted((denied).rglob("*.md"))`
+    over a mode-000 directory returns ``[]``, never a raise, on every
+    interpreter this repo runs. So an `except OSError` wrapped around the
+    call -- the shape both call sites this replaces used -- can never fire
+    for the case it was written for (#383). There is no argument to `rglob`
+    that makes it speak; `os.walk(onerror=...)` is the only shape that does,
+    because its callback runs with the exception in hand for whichever
+    directory `scandir` could not enter.
+
+    ``unreadable`` holds one message per directory the walk could not enter.
+    ``root`` itself not existing, or not being a directory, is reported as
+    *nothing found* rather than as unreadable -- `os.walk` would otherwise
+    call `onerror` for that case too, and a directory that plainly is not
+    there is not the same fact as one this process could not read. A caller
+    that needs to tell those two apart at the top level already has a
+    dedicated three-state check for it (`_dir_state`); this function answers
+    a narrower question, same as `_workflow_scan` does for one directory
+    level -- an empty ``unreadable`` here means "as much of the tree as this
+    process could enter had no unreadable subtree", not "root is present".
+    """
+    root_str = os.path.normpath(str(root))
+    files = []
+    unreadable = []
+
+    def _onerror(exc):
+        failed = os.path.normpath(getattr(exc, "filename", None) or root_str)
+        if failed == root_str and isinstance(exc, (FileNotFoundError, NotADirectoryError)):
+            return
+        unreadable.append(_one_line(str(exc)))
+
+    for dirpath, _dirnames, filenames in os.walk(root_str, onerror=_onerror):
+        for name in filenames:
+            if name.endswith(".md"):
+                files.append(Path(dirpath) / name)
+    return sorted(files), unreadable
+
+
 # How far up the tree `_absence_confirmed` will walk. See the sibling constant in
 # `scripts/lane_setup.py`: a belt on a walk that already stops at the anchor.
 _ANCESTOR_LIMIT = 512
@@ -1275,7 +1318,17 @@ def plugin_supertool_entries(cache_root=None, record=None):
             continue
         for version in versions:
             entry = base / version / SUPERTOOL_CORE
-            if entry.is_file():
+            # #383: a bare `Path.is_file()` here raises unguarded for an
+            # unreadable entry on at least 3.9/3.11/3.13 (`_safe_is_file`'s
+            # own measurement, this repo's local 3.14 excepted), which would
+            # crash this function's caller with a traceback instead of the
+            # "could not tell" state `entries` being empty already produces.
+            # `_safe_is_file` -- same precedent as #363's `_jit_layer_verdict`
+            # comprehension -- drops the one bad candidate and keeps the rest,
+            # which is safe here specifically because an entry dropped this
+            # way still lands in the existing `unknown-plugin-path` /
+            # `unknown-comparison` states below rather than a false `ok`.
+            if _safe_is_file(entry):
                 found.append((version, entry))
     return found
 
@@ -3471,10 +3524,26 @@ def check_jit_rules(project_dir):
         )
         return
 
+    rule_files, unreadable = _rglob_md(rules_dir)
+    if unreadable:
+        # #383: `Path.rglob` swallows `PermissionError` while it walks and
+        # silently yields nothing for the subtree it could not enter, so the
+        # layer count below could otherwise miss a whole layer with no sign
+        # anything was skipped -- the #124 shape one call site over. Named
+        # rather than silent, and if nothing at all could be read there is
+        # nothing to compare "holds no rules" against, so that sentence is
+        # not printed on top of it.
+        report(
+            "WARN",
+            "{}: could not fully walk -- {} -- so the layer count below is "
+            "a floor, not a total.".format(JIT_RULES_DIR, "; ".join(unreadable)),
+        )
+        if not rule_files:
+            return
+
     layers = {}
-    for rule in sorted(rules_dir.rglob("*.md")):
-        if rule.is_file():
-            layers.setdefault(rule.parent, []).append(rule)
+    for rule in rule_files:
+        layers.setdefault(rule.parent, []).append(rule)
 
     if not layers:
         report("WARN", "{}: directory exists but holds no rules".format(JIT_RULES_DIR))
@@ -5052,11 +5121,16 @@ def agent_dispatch(plugin_root=None):
     scanned = 0
     for directory in DISPATCHING_DIRECTORIES:
         base = root / directory
-        try:
-            paths = sorted(base.rglob("*.md"))
-        except OSError as exc:
-            unreadable.append("{}/: {}".format(directory, _one_line(str(exc))))
-            continue
+        # #383: this used to be `sorted(base.rglob("*.md"))` inside a
+        # try/except OSError. `Path.rglob` swallows `PermissionError` while
+        # it walks and returns `[]` for a directory it cannot enter -- it
+        # does not raise -- so that `except` was dead code for exactly the
+        # input it was written to catch, measured directly in
+        # `tests/test_swallow_census_383.py`. `_rglob_md` uses
+        # `os.walk(onerror=...)`, the only shape that speaks.
+        paths, walk_unreadable = _rglob_md(base)
+        for detail in walk_unreadable:
+            unreadable.append("{}/: {}".format(directory, detail))
         for path in paths:
             try:
                 text = path.read_text(encoding="utf-8")
