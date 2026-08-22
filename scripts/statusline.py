@@ -555,15 +555,40 @@ def _gh_count(repo, kind):
 
 
 def _latest_release(repo):
+    """The version a plugin's own manifest declares on its default branch.
+
+    **Not `releases/latest`, and the difference is not cosmetic.** A GitHub Release is a
+    document somebody publishes; `claude plugin update` resolves the marketplace's source
+    repository, so the manifest on the default branch is what would actually install.
+    Measured: `claude-jit-context` carries tag `v0.5.0` and a latest *release object* of
+    `v0.4.0`, so reading releases reported an install that is current as `ahead` -- a
+    finding about a publication step, rendered in the column that means "your install is
+    out of step".
+
+    `doctor.published_versions` already asks this exact question this exact way. Two
+    sources for one question is how a status line and a diagnostic come to disagree in
+    front of the same person, which is worse than either being wrong alone.
+    """
     if not repo:
         return None
-    return (
-        _run(
-            ["gh", "api", "repos/{}/releases/latest".format(repo), "--jq", ".tag_name"],
-            timeout=25,
-        )
-        or None
+    encoded = _run(
+        [
+            "gh",
+            "api",
+            "repos/{}/contents/.claude-plugin/plugin.json".format(repo),
+            "--jq",
+            ".content",
+        ],
+        timeout=25,
     )
+    if not encoded:
+        return None
+    try:
+        import base64
+
+        return json.loads(base64.b64decode(encoded).decode("utf-8")).get("version")
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return None
 
 
 def refresh(root):

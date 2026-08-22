@@ -264,6 +264,28 @@ def test_the_unicode_render_is_still_the_default_where_it_encodes():
     assert line != statusline.render(_facts(), ascii_only=True)
 
 
+def test_latest_is_asked_of_the_manifest_the_installer_would_read(monkeypatch):
+    """One question, one source -- the same one `doctor.published_versions` uses.
+
+    `releases/latest` is a different question: `claude-jit-context` carries tag `v0.5.0`
+    and a latest release object of `v0.4.0`, so reading releases reported a current
+    install as `ahead`. A status line and a diagnostic disagreeing in front of the same
+    person is worse than either being wrong alone.
+    """
+    seen = []
+
+    def fake_run(command, timeout=5):
+        seen.append(list(command))
+        return None
+
+    monkeypatch.setattr(statusline, "_run", fake_run)
+    statusline._latest_release("owner/name")
+    assert seen, "nothing was asked -- this test would pass against a stub that never calls"
+    asked = " ".join(seen[0])
+    assert "contents/.claude-plugin/plugin.json" in asked, asked
+    assert "releases/latest" not in asked, asked
+
+
 # ------------------------------------------------------- scaffold: the owned file
 
 
