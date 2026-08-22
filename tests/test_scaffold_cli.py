@@ -320,7 +320,7 @@ def test_the_preview_stops_hiding_the_three_files_the_apply_would_overwrite(tmp_
     # here would be asserting the defect. The subject of this test is the trio, and it
     # is still declined -- named file by file rather than by a substring that three
     # different write contracts all happen to share.
-    for name in sorted(scaffold.OWNED):
+    for name in sorted(scaffold.CHANGELOG_OWNED):
         assert "----- {} (would replace".format(name) not in unforced, unforced
     # Positive control, so the loop above cannot pass on an empty preview: the run does
     # still show something it would replace, and it is the layer.

@@ -1345,7 +1345,7 @@ def test_plan_declines_the_owned_trio_when_a_gate_already_exists(tmp_path):
         name="changelog.yml",
     )
     paths = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
-    for name in scaffold.OWNED:
+    for name in scaffold.CHANGELOG_OWNED:
         assert paths[name] == "decline", name
 
 
@@ -1357,8 +1357,10 @@ def test_apply_does_not_write_the_owned_trio_when_a_gate_already_exists(tmp_path
         name="changelog.yml",
     )
     result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
-    assert result["replaced"] == []
-    assert result["declined"] == sorted(scaffold.OWNED)
+    # The gated files are declined; the ungated ones are still written, which is the
+    # split #479 introduced and the reason this is not `replaced == []` any more.
+    assert result["replaced"] == sorted(set(scaffold.OWNED) - set(scaffold.CHANGELOG_OWNED))
+    assert result["declined"] == sorted(scaffold.CHANGELOG_OWNED)
     assert not (tmp_path / ".oss" / "assemble_changelog.py").exists()
     assert not (tmp_path / ".github" / "workflows" / "oss-changelog.yml").exists()
 
@@ -1385,7 +1387,7 @@ def test_an_unreadable_workflow_also_blocks_writing_the_trio(tmp_path, monkeypat
 
     monkeypatch.setattr(Path, "read_text", _boom)
     result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
-    assert result["declined"] == sorted(scaffold.OWNED)
+    assert result["declined"] == sorted(scaffold.CHANGELOG_OWNED)
 
 
 def test_force_owned_writes_the_trio_anyway(tmp_path):
@@ -1646,10 +1648,10 @@ def test_the_trio_is_declined_over_a_tree_that_could_not_be_read(tmp_path):
 
     with _denied(private):
         actions = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
-        for name in scaffold.OWNED:
+        for name in scaffold.CHANGELOG_OWNED:
             assert actions[name] == "decline"
         result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
-        assert result["declined"] == sorted(scaffold.OWNED)
+        assert result["declined"] == sorted(scaffold.CHANGELOG_OWNED)
         assert not (tmp_path / ".github" / "workflows" / "oss-changelog.yml").exists()
 
     # Positive control on the identical tree: readable, the trio is planned as replace.
@@ -1764,7 +1766,7 @@ def test_the_plan_honours_force_owned_and_still_declines_without_it(tmp_path):
         assert forced[name] == "replace"
 
     unforced = {e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config())}
-    for name in scaffold.OWNED:
+    for name in scaffold.CHANGELOG_OWNED:
         assert unforced[name] == "decline"
 
 
@@ -1784,7 +1786,7 @@ def test_the_preview_shows_the_three_files_force_owned_is_about_to_overwrite(tmp
         assert forced.get(name) == "replace"
 
     unforced = {path for path, _, _ in scaffold.show(tmp_path, _config(), plugin_root=REPO_ROOT)}
-    for name in scaffold.OWNED:
+    for name in scaffold.CHANGELOG_OWNED:
         assert name not in unforced
 
 
