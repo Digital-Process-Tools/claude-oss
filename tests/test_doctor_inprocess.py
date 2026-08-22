@@ -2184,3 +2184,74 @@ def test_a_repo_scaffolded_before_the_preset_fix_warns_and_its_remedy_works(tmp_
     stale["presets"].append(doctor.WATCH_PRESET)
     (tmp_path / doctor.WATCH_CONFIG).write_text(json.dumps(stale), encoding="utf-8")
     assert doctor.radar_publish_state(tmp_path)[0] == "publishes"
+
+
+# --- #260: the fragments README is a default, and scaffold cannot deliver a section
+# added to its template after a repo was already scaffolded (#259). This check reports
+# rather than fixes, because a default is never replaced once it exists.
+
+
+def _fragments_readme(root, changelog_dir, body):
+    directory = root / changelog_dir
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "README.md"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_fragments_readme_ok_when_it_documents_the_compatibility_bullet(tmp_path):
+    _fragments_readme(
+        tmp_path, "changelog.d",
+        "# Fragments\n\n- Compatibility: breaking|compatible - <reason>\n",
+    )
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK"
+    assert "changelog.d" in message
+
+
+def test_fragments_readme_warns_and_names_that_scaffold_will_not_fix_it(tmp_path):
+    """The remedy must not name a command that declines to act -- naming one that does
+    nothing reads as a fix and performs nothing, which is the `misdirects` row."""
+    _fragments_readme(tmp_path, "changelog.d", "# Fragments\n\nNo compatibility section here.\n")
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "/oss:scaffold will not fix it" in message
+    assert "--show" in message
+
+
+def test_fragments_readme_absent_is_the_ordinary_state_not_a_pass_or_a_finding(tmp_path):
+    """Most repos have no fragment practice at all. That must not render as a
+    finding (WARN/FAIL) -- it would warn on nearly every scaffolded repo -- and the
+    wording must not read as a verified pass either."""
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK"
+    assert "not a finding" in message
+    assert "absent" in message
+
+
+def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_name(tmp_path):
+    """#259's second defect on this same line: a hardcoded directory name. A custom
+    `changelog_dir` must be the directory actually checked."""
+    _fragments_readme(tmp_path, "notes/fragments", "- Compatibility: breaking|compatible - <reason>\n")
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "notes/fragments"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK"
+    assert "notes/fragments" in message
+
+    # Must-fire control: the default directory name must NOT be consulted when a
+    # non-default one is configured, or this would pass by accident on the default.
+    doctor.FINDINGS.clear()
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK"
+    assert "absent" in message
+
+
+def test_fragments_readme_unmeasured_without_config(tmp_path):
+    doctor.check_fragments_readme(tmp_path, None)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "not checked" in message

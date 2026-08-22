@@ -1934,6 +1934,85 @@ def check_state_file(project_dir, config):
         )
 
 
+#: The literal template line scaffold's fragments-README writes for a `removed`
+#: fragment (#259). `release_version.py` quotes this same text in its own refusal, so
+#: matching it here rather than a looser pattern means "documents the bullet" answers
+#: the identical question that refusal already asks.
+COMPATIBILITY_BULLET = "- Compatibility: breaking|compatible - <reason>"
+
+
+def check_fragments_readme(project_dir, config):
+    """Does `<changelog_dir>/README.md` document the Compatibility bullet a `removed`
+    fragment must carry (#260)?
+
+    `scripts/release_version.py` already refuses a `removed` fragment with no
+    compatibility verdict and quotes the required bullet in full, so nobody is
+    stranded by this alone -- they are sent to a document that may be silent, with
+    the answer already on their screen. This converts *discovered at the moment a
+    release stops* into *reported before it does*.
+
+    Why a `doctor` check and not a `scaffold` fix: the fragments README is a
+    DEFAULT under this repository's ownership contract (see CLAUDE.md's "Three
+    ownership contracts") -- created once when absent, then the repo's own forever.
+    Scaffold's template gained the Compatibility section in #259, but a repo
+    scaffolded before that change already carries the old file, and re-running
+    `/oss:scaffold` will not deliver the new section to it: a default is never
+    replaced, or the promise that a decision somebody made is never overwritten
+    breaks. The only mechanism that can reach a repository already carrying the old
+    file is one that REPORTS -- same shape as #205.
+
+    Three states, and the third is load-bearing:
+
+    * the file exists and carries the bullet -- OK.
+    * the file exists and does not -- WARN, and the remedy must say
+      `/oss:scaffold` will NOT fix it, because naming a command that declines to
+      act reads as a fix and performs nothing (the `misdirects` row).
+    * the file is absent or unreadable -- most repos have no fragment practice at
+      all, so this is the ORDINARY state. It must not render as a finding (that
+      would WARN on nearly every scaffolded repo) and the wording must not read as
+      a verified pass either, so it reports OK with "not checked" in the text --
+      the same shape `jit_index_drift`'s undecidable-and-untouched arm uses, and
+      for the identical reason: "not a finding" only if the state doesn't say so.
+    """
+    if config is None:
+        unmeasured("fragments readme")
+        return
+    if oss_config is None:
+        unmeasured("fragments readme", NO_SCAFFOLD)
+        return
+    raw = config.get("changelog_dir")
+    problem = oss_config.changelog_dir_problem(raw)
+    directory = raw if raw and not problem else oss_config.DEFAULT_FRAGMENTS_DIR
+    path = Path(project_dir) / str(directory) / "README.md"
+    if not _safe_is_file(path):
+        report(
+            "OK",
+            "fragments readme: {} absent -- the ordinary state for a repo with no "
+            "fragment practice, and not a finding on its own.".format(path),
+        )
+        return
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        report(
+            "OK",
+            "fragments readme: {} unreadable -- {}, so the Compatibility bullet "
+            "could not be checked.".format(path, _os_error_detail(exc)),
+        )
+        return
+    if COMPATIBILITY_BULLET in text:
+        report("OK", "fragments readme: {} documents the Compatibility bullet".format(path))
+        return
+    report(
+        "WARN",
+        "fragments readme: {} exists and does not document `{}`, which "
+        "`scripts/release_version.py` requires on a `removed` fragment. "
+        "/oss:scaffold will not fix it -- the file is a default and is never "
+        "replaced once it exists. Paste the section by hand from "
+        "`scripts/scaffold.py --show {}`.".format(path, COMPATIBILITY_BULLET, path),
+    )
+
+
 MEMORY_DIR = ".remember"
 JIT_RULES_DIR = ".claude/jit-context"
 JIT_INDEX = "00-index.tsv"
@@ -5876,6 +5955,7 @@ def main(argv=None):
         "worktree_root", config.get("worktree_root") if found else None, config_found=found
     )
     check_state_file(project_dir, config)
+    check_fragments_readme(project_dir, config)
     check_ci_enforcement(project_dir, config)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
