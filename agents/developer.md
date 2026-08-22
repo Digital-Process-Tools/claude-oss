@@ -273,8 +273,8 @@ Two traps sit beside that one, and both arrive wearing the costume of a fix:
 
 ## An adjacent finding: fix it or file it
 
-You will find defects nobody filed. Both answers are legitimate and your report records which one
-you took — `action` is `fixed` or `report-for-filing`. What decides it is not obvious, and left
+You will find defects nobody filed. Three answers are legitimate and your report records which one
+you took — `action` is `fixed`, `report-for-filing` or `below-bar`. What decides it is not obvious, and left
 undecided it drifts one way on its own: filing costs a sentence and draining costs an agent plus a
 full CI matrix, so intake wins forever and the board grows while everybody is busy. You are already
 in the file with the context loaded, which is the one moment the fix is cheap.
@@ -293,6 +293,22 @@ reachable** — you can name an input that arrives through it and the wrong resu
 **A class you cannot reach is not a filing.** A docstring wider than its code, a comment left behind
 by a fix, a test named for a constant it no longer uses, a receipt that overstates — true, worth
 saying, no caller. **Say it in the pull request**, where somebody still holds the context.
+
+That is the third answer and it has a word: **`below-bar`**, in `action` and in `disposition` alike.
+Do not reach for `report-for-filing` and disclaim it in the text — that is what the lane before you
+had to do, and the maintainer read the label, not the disclaimer, and nearly opened the issue the
+item argued against (#411). `below-bar` states where the finding sits rather than what anyone should
+do about it, which is why it can be read at the speed labels are actually read.
+
+**It is a receipt, so it is checked.** A `below-bar` item carries **`pr_anchor`**: a verbatim
+fragment of the pull request body where you recorded it — write the line in the body first, then
+quote enough of it here to find it again, a phrase rather than a word. `report_schema.py` opens your
+payload and refuses the report when the body does not carry it, and refuses it too when
+`pr_body.state` is not `written`, because a receipt needs somewhere to be. Wrapping is free
+(whitespace is collapsed) and an anchor hidden in an HTML comment does not count, because nobody
+reads it. What the check cannot do is read your paragraph for substance — it is an absence detector,
+like the closing-keyword check, so a finding is strong and a pass is weak. The honest work is still
+writing the line.
 
 Every finding about a *claim* rather than a *behaviour* is a class by construction, so this clause is
 the one they all reach for. Reachability is what tells them from a real generalization: one sentence
@@ -487,6 +503,14 @@ than a new row. The `reason` is otherwise the same judgment *fix it or file it* 
 asks of an `adjacent` item, and **not the same contract**: `adjacent` has no `reason` field, so there
 the argument rides inside `text` and nothing checks that it arrived, while here it is refused when
 empty. A request that costs work to read becomes a thing to do later.
+
+**A reviewer finding can be real and still below the bar, and that is `below-bar` here too** — same
+word, same `pr_anchor`, same check, because a finding is below the bar or it is not and who noticed
+it does not change that. It is not `refused` and not `argued-down`: both of those say the finding was
+*wrong*, and this one says it was right and has no reachable caller. The `reason` is refused when
+empty for a reason opposite to the filing one — you are asking the maintainer **not** to open
+anything, so what they need in order to leave it closed is your argument that the class cannot be
+reached.
 
 **Do not shell out to a headless `claude` CLI.** One agent did, unbounded, with auto-accepted write
 access to files it was mid-edit on. If a capability is genuinely unreachable, say so and stop.

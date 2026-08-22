@@ -775,6 +775,19 @@ the receipt -- whichever of the three -- is what keeps #254 closed: an item with
 still open. An issue is the receipt that costs the most to drain, so it is the one that needs the
 bar, not the default.
 
+**The third receipt has its own label, and you will meet it as `below-bar` rather than as
+`report-for-filing`.** Until #411 the report schema encoded two outcomes for three receipts, so a
+lane that had routed correctly had to write the filing label over a decision *not* to file and
+disclaim it in the prose underneath -- and the label is what gets read first. `"action":
+"below-bar"` and `"disposition": "below-bar"` are now the third value in both surveys, and reading
+one as work is the misfire this closes: **it is already receipted.** The item carries a `pr_anchor`
+quoting the line of the pull request body where it lives, `scripts/report_schema.py` refuses the
+report when that line is not in the body, and the argument for the routing is in the item's
+`reason`. So the only thing a `below-bar` item asks of you is the one thing structure makes easy to
+skip: **read the reason and disagree with it if it is wrong.** Overturning one is a decision you
+take, out loud, in the same pass -- what it must never be is a row that appears on the board because
+somebody scanned a label.
+
 ### An issue body is tech to tech
 
 Written for an engineer who will open the file, not for a reader who needs the story. Four parts, in
