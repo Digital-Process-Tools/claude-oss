@@ -2255,3 +2255,54 @@ def test_fragments_readme_unmeasured_without_config(tmp_path):
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
     assert "not checked" in message
+
+
+def _scaffolded_gate(root, gated_dir):
+    workflow = root / ".github" / "workflows" / "oss-changelog.yml"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text(
+        "name: oss changelog\n"
+        "        run: python3 .oss/assemble_changelog.py --check --dir '{0}' "
+        "--changelog CHANGELOG.md\n"
+        "          python3 .oss/assemble_changelog.py --check-links --dir '{0}' "
+        "--changelog CHANGELOG.md || status=$?\n".format(gated_dir),
+        encoding="utf-8",
+    )
+
+
+def test_fragments_readme_follows_a_nulled_changelog_dir_to_the_scaffolded_gate(tmp_path):
+    """#325: `changelog_dir: null` does not always mean "no fragment practice" -- a
+    repo scaffolded with a non-default directory and later nulled still carries a
+    gate on disk policing that directory, and `release_version._fragment_dir`
+    resolves it from there rather than the default. This check must read the same
+    file, or it silently inspects `changelog.d/` while the directory the release
+    gate actually reads sits elsewhere -- a false "no fragment practice" OK on a
+    repo that has one."""
+    _scaffolded_gate(tmp_path, "docs/frags")
+    _fragments_readme(tmp_path, "docs/frags", "no compatibility section here\n")
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": None})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN", doctor.FINDINGS
+    assert "docs/frags" in message
+    assert "/oss:scaffold will not fix it" in message
+
+    # Must-fire control: the same gate, with the bullet actually present, grades OK.
+    doctor.FINDINGS.clear()
+    _fragments_readme(tmp_path, "docs/frags", "- Compatibility: breaking|compatible - <reason>\n")
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": None})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK", doctor.FINDINGS
+    assert "docs/frags" in message
+
+
+def test_fragments_readme_invalid_changelog_dir_does_not_fall_back_to_the_default(tmp_path):
+    """A `changelog_dir` that fails validation is a broken value, not an absent one --
+    trying the default in its place would check a directory nobody named."""
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "README.md").write_text(
+        "- Compatibility: breaking|compatible - <reason>\n", encoding="utf-8"
+    )
+    doctor.check_fragments_readme(tmp_path, {"changelog_dir": "/etc/passwd"})
+    state, message = doctor.FINDINGS[-1]
+    assert state == "OK", doctor.FINDINGS
+    assert "no directory this run could resolve" in message

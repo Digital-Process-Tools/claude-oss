@@ -1941,6 +1941,32 @@ def check_state_file(project_dir, config):
 COMPATIBILITY_BULLET = "- Compatibility: breaking|compatible - <reason>"
 
 
+def _fragments_directory(project_dir, config):
+    """The changelog fragments directory this repo actually uses, or ``None`` when
+    nothing here can name one.
+
+    Mirrors `release_version._fragment_dir`'s resolution for the config-file half
+    (`--dir` on a command line is that function's own first arm and has no
+    equivalent here): an explicit, valid `changelog_dir` wins; a null or invalid
+    one falls through to `oss_config.scaffolded_changelog_gate`, which reads the
+    directory back out of the scaffolded gate workflow on disk rather than
+    guessing the default. A `changelog_dir` that fails validation returns `None`
+    here rather than silently trying the default -- the value is broken, not
+    absent, and a directory picked in its place would be one nobody named.
+    """
+    named = config.get("changelog_dir")
+    if isinstance(named, str) and named.strip():
+        if oss_config.changelog_dir_problem(named):
+            return None
+        return Path(project_dir) / named
+    state, detail = oss_config.scaffolded_changelog_gate(project_dir)
+    if state == "present":
+        return Path(project_dir) / oss_config.DEFAULT_FRAGMENTS_DIR
+    if state == "present-other-dir":
+        return Path(project_dir) / detail
+    return None
+
+
 def check_fragments_readme(project_dir, config):
     """Does `<changelog_dir>/README.md` document the Compatibility bullet a `removed`
     fragment must carry (#260)?
@@ -1973,6 +1999,18 @@ def check_fragments_readme(project_dir, config):
       a verified pass either, so it reports OK with "not checked" in the text --
       the same shape `jit_index_drift`'s undecidable-and-untouched arm uses, and
       for the identical reason: "not a finding" only if the state doesn't say so.
+
+    The directory is never just `config.get("changelog_dir")` or-else-the-default:
+    a null `changelog_dir` is ambiguous between "never adopted fragments" and
+    "adopted through scaffold's own fallback, which does not always pick the
+    default directory" (#325). `release_version._fragment_dir` resolves that
+    ambiguity by reading the directory back out of the scaffolded gate workflow
+    on disk when the key is null, and this check reuses the exact same
+    `oss_config.scaffolded_changelog_gate` lookup -- otherwise a repo whose
+    `changelog_dir` was set at scaffold time and later nulled (legal; the key is
+    in `NULLABLE_KEYS`) would have this check silently look at `changelog.d/`
+    while the actual, gated, `removed`-fragment-refusing directory sits
+    elsewhere entirely.
     """
     if config is None:
         unmeasured("fragments readme")
@@ -1980,10 +2018,16 @@ def check_fragments_readme(project_dir, config):
     if oss_config is None:
         unmeasured("fragments readme", NO_SCAFFOLD)
         return
-    raw = config.get("changelog_dir")
-    problem = oss_config.changelog_dir_problem(raw)
-    directory = raw if raw and not problem else oss_config.DEFAULT_FRAGMENTS_DIR
-    path = Path(project_dir) / str(directory) / "README.md"
+    directory = _fragments_directory(project_dir, config)
+    if directory is None:
+        report(
+            "OK",
+            "fragments readme: changelog_dir names no directory this run could "
+            "resolve -- the ordinary state for a repo with no fragment practice, "
+            "and not a finding on its own.",
+        )
+        return
+    path = directory / "README.md"
     if not _safe_is_file(path):
         report(
             "OK",
