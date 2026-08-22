@@ -834,6 +834,21 @@ VERSION_CANDIDATES = (
 # what `probe_problems` accepts, so a probe written by an older copy stays valid.
 VERSION_EVIDENCE_STATES = {"version", "none", "absent", "unreadable", "malformed"}
 
+# Shared because two receipts independently asserting the same claim is what this
+# repository's first rule forbids (#413): both narrated an uncommitted delete as
+# the *cause* of a bare `FileNotFoundError`, when CI has measured that Windows
+# returns the identical exception -- errno 2, no distinguishing winerror -- for a
+# path it could not even look up (folding several Win32 codes, including
+# `ERROR_FILENAME_EXCED_RANGE`, onto `ENOENT`). The exception says the path is not
+# there; it does not say why. The bucket is still decided correctly from the
+# exception already in hand -- that part is not in question, here or at either
+# call site -- only the sentence claiming a cause the signal cannot support.
+_ABSENT_CAUSE_HEDGE = (
+    "The usual cause is an uncommitted delete, but the same `FileNotFoundError` is "
+    "also what Windows returns for a path it could not look up at all, so this "
+    "signal alone does not confirm which one it is"
+)
+
 # The probe schema, in one place, because it had none: the key names were discoverable
 # only by reading this file and the semantics of `files` were written down nowhere. A
 # caller who guessed produced a schema-valid config that was confidently wrong, with no
@@ -2143,10 +2158,11 @@ def gather(root):
     if absent_workflows:
         notes.append(
             "{} workflow file(s) are in the index and not on disk, so there was "
-            "nothing to read and they contributed no jobs: {}. This is what an "
-            "uncommitted delete looks like; `files` still lists them because `files` "
-            "is the index. The probe is complete for the working tree it was "
-            "measured from.".format(len(absent_workflows), ", ".join(absent_workflows))
+            "nothing to read and they contributed no jobs: {}. {}; `files` still "
+            "lists them because `files` is the index. The probe is complete for "
+            "the working tree it was measured from.".format(
+                len(absent_workflows), ", ".join(absent_workflows), _ABSENT_CAUSE_HEDGE
+            )
         )
 
     probe = {
@@ -2202,8 +2218,7 @@ def _report_probe_notes(probe, config):
         (
             "absent",
             "in the index and not on disk, so there was nothing to read and they are "
-            "not claimed as version sites. This is what an uncommitted delete looks "
-            "like",
+            "not claimed as version sites. {}".format(_ABSENT_CAUSE_HEDGE),
         ),
         (
             "unreadable",
