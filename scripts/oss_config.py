@@ -1447,6 +1447,34 @@ def load(path):
     return config, problems
 
 
+def _unknown_key_problems(key, unknown_message):
+    """One rule, one place: whether `key` is refused for looking like a credential,
+    waved through as maintainer prose (`_RESERVED_PREFIX`), or reported unknown.
+
+    #471: `10a6002` implemented this ordering three times -- once at top level, once
+    in `_validate_release`, once in its `triggers` loop -- and got the credential
+    check running *before* the prefix escape in only the first. The other two ran the
+    prefix skip first, so `release._api_key` and `release.triggers._api_key`
+    validated clean: a real secret laundered by an underscore into a tracked,
+    committed file. All three call sites route through here now, so there is exactly
+    one place this ordering can be gotten wrong.
+
+    The credential check runs before the reserved-prefix escape, and on purpose:
+    `_api_key` is not made safe by being spelled as maintainer prose, and a
+    maintainer writing a real secret under a leading underscore must be refused
+    exactly as a bare `api_key` would be.
+    """
+    if SECRET_RE.search(key):
+        return [
+            "{}: looks like a credential. This file is committed -- secrets never "
+            "go here; gh holds its own auth.".format(key)
+        ]
+    if key.startswith(_RESERVED_PREFIX):
+        # #355: maintainer prose, not a typo -- see _RESERVED_PREFIX above.
+        return []
+    return [unknown_message]
+
+
 def validate(config):
     """Return a list of problems. An empty list means the config is usable as-is."""
     problems = []
@@ -1463,20 +1491,11 @@ def validate(config):
             )
 
     for key in sorted(set(config) - KNOWN_KEYS):
-        # The credential check runs before the reserved-prefix escape, and on
-        # purpose: `_api_key` is not made safe by being spelled as maintainer
-        # prose, and a maintainer writing a real secret under a leading
-        # underscore must be refused exactly as a bare `api_key` would be.
-        if SECRET_RE.search(key):
-            problems.append(
-                "{}: looks like a credential. This file is committed -- secrets never "
-                "go here; gh holds its own auth.".format(key)
+        problems.extend(
+            _unknown_key_problems(
+                key, "{}: unknown key (typo, or a schema change nobody wrote down)".format(key)
             )
-        elif key.startswith(_RESERVED_PREFIX):
-            # #355: maintainer prose, not a typo -- see _RESERVED_PREFIX above.
-            continue
-        else:
-            problems.append("{}: unknown key (typo, or a schema change nobody wrote down)".format(key))
+        )
 
     repo = repo_problem(config.get("repo"))
     if repo:
@@ -1536,16 +1555,14 @@ def _validate_release(release):
     problems = []
 
     for key in sorted(set(release) - RELEASE_KEYS):
-        if key.startswith(_RESERVED_PREFIX):
-            # #355: maintainer prose, not a typo -- see _RESERVED_PREFIX above. The
-            # release block is the one with the most opinionated, hand-tuned
-            # settings a maintainer would want to leave a reason beside.
-            continue
-        problems.append(
-            "release.{}: unknown key. The release gates are not configurable -- green at "
-            "leg level, nothing mid-review, audit passed, every version site bumped, tag "
-            "verified on the remote -- so a key that reads like one is refused rather "
-            "than ignored.".format(key)
+        problems.extend(
+            _unknown_key_problems(
+                key,
+                "release.{}: unknown key. The release gates are not configurable -- green "
+                "at leg level, nothing mid-review, audit passed, every version site "
+                "bumped, tag verified on the remote -- so a key that reads like one is "
+                "refused rather than ignored.".format(key),
+            )
         )
 
     for key in ("tag_pattern", "commit_subject"):
@@ -1589,10 +1606,11 @@ def _validate_release(release):
             problems.append("release.triggers: expected an object")
         else:
             for key in sorted(set(triggers) - TRIGGER_KEYS):
-                if key.startswith(_RESERVED_PREFIX):
-                    # #355: maintainer prose, not a typo.
-                    continue
-                problems.append("release.triggers.{}: unknown key".format(key))
+                problems.extend(
+                    _unknown_key_problems(
+                        key, "release.triggers.{}: unknown key".format(key)
+                    )
+                )
             for key in sorted(TRIGGER_KEYS & set(triggers)):
                 value = triggers[key]
                 if value is not None and not isinstance(value, int):

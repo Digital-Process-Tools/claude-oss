@@ -161,6 +161,41 @@ def test_an_underscore_prefixed_credential_is_still_refused():
     assert any("_api_key" in p and "credential" in p for p in problems)
 
 
+def test_an_underscore_prefixed_credential_is_still_refused_in_the_release_block():
+    """#471. The reserved-prefix escape was added in three places by 10a6002 and got
+    the credential-first ordering right in only one -- the top-level check above. The
+    two nested loops (`_validate_release` and its `triggers` loop) ran the prefix
+    skip first, so `release._api_key` and `release.triggers._api_key` validated
+    clean: a real secret laundered by an underscore into a tracked, committed file.
+    """
+    config = _valid()
+    config["release"] = {"_api_key": "x"}
+    problems = oss_config.validate(config)
+    assert any("_api_key" in p and "credential" in p for p in problems), problems
+
+
+def test_an_underscore_prefixed_credential_is_still_refused_in_release_triggers():
+    """#471, the `release.triggers` sibling of the test above."""
+    config = _valid()
+    config["release"] = {"triggers": {"_github_token": "x"}}
+    problems = oss_config.validate(config)
+    assert any("_github_token" in p and "credential" in p for p in problems), problems
+
+
+def test_an_underscore_prefixed_note_still_validates_clean_in_the_release_block():
+    """Positive control for the two tests above: the escape must still work for its
+    actual purpose inside the nested blocks, not just at the top level. A fix that
+    refuses every underscore-prefixed key in `release` and `release.triggers` would
+    pass the two tests above and still be wrong.
+    """
+    config = _valid()
+    config["release"] = {
+        "_note": "hand-tuned for this repo's release cadence",
+        "triggers": {"_note": "counts observed empirically, see #123"},
+    }
+    assert oss_config.validate(config) == []
+
+
 def test_an_underscore_prefixed_key_hidden_in_the_local_file_is_flagged(tmp_path):
     """#355 follow-up. `split()`'s own docstring says an unknown key is routed to
     the project half on purpose so it never becomes "one maintainer's private
