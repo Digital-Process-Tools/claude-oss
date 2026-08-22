@@ -45,6 +45,59 @@ def test_a_cache_missing_a_count_is_unknown_for_that_count_alone():
     assert board["issues"] is None
 
 
+# ------------------------------------------------------------- last user message
+
+
+def _user_message(timestamp):
+    return {"type": "user", "timestamp": timestamp, "message": {"role": "user", "content": "hi"}}
+
+
+def test_no_transcript_is_unknown_for_last_user_message_too():
+    user = statusline.last_user_message(None, now=0.0)
+    assert user["state"] == "unknown"
+
+
+def test_scanned_transcript_without_a_user_record_reports_none(tmp_path):
+    """The must-fire control for the arm above: a file that was read and held
+    no user-role record at all is not the same as one this process never read.
+    """
+    path = _transcript(tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}])
+    user = statusline.last_user_message(str(path), now=0.0)
+    assert user["state"] == "none"
+
+
+def test_the_last_user_message_reports_a_genuinely_nonzero_age(tmp_path):
+    """This is the whole point of #504: at render time the age of the last user
+    message cannot be zero the way a naive "last message" age would be, because
+    a render only happens after the assistant has replied to it.
+    """
+    path = _transcript(tmp_path, [_user_message("2026-08-22T10:00:00.000Z")])
+    now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
+    user = statusline.last_user_message(str(path), now=now)
+    assert user["state"] == "measured"
+    assert user["age"] == pytest.approx(240, abs=1)
+
+
+def test_the_last_of_several_user_messages_wins(tmp_path):
+    path = _transcript(
+        tmp_path,
+        [_user_message("2026-08-22T10:00:00.000Z"), _user_message("2026-08-22T10:05:00.000Z")],
+    )
+    now = statusline.parse_timestamp("2026-08-22T10:06:00.000Z")
+    user = statusline.last_user_message(str(path), now=now)
+    assert user["age"] == pytest.approx(60, abs=1)
+
+
+def test_a_truncated_scan_for_last_user_message_reports_unknown_rather_than_none(tmp_path):
+    """Same shape as `next_tick`'s own truncation case: a scan that never reached
+    the top of the file must not report the same thing as a file scanned whole
+    and found empty.
+    """
+    path = _transcript(tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}] * 40)
+    user = statusline.last_user_message(str(path), now=0.0, max_bytes=200)
+    assert user["state"] == "unknown"
+
+
 # ----------------------------------------------------------------------- next tick
 
 
@@ -190,6 +243,36 @@ def test_an_unparseable_version_does_not_erase_a_readable_one(tmp_path):
     assert statusline.installed_plugins(tmp_path)["oss"]["version"] == "0.10.0"
 
 
+# --------------------------------------------------------------------- gather
+
+
+def test_gather_populates_the_render_stamp_and_last_user_age(tmp_path, monkeypatch):
+    """End to end: `gather()` is what turns a transcript path and a clock into the
+    two facts `render()` merely formats (#504).
+    """
+    # Not what this test is about, and a real fork here would launch a detached
+    # `gh`-calling subprocess per test run.
+    monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
+    (tmp_path / ".oss.json").write_text(
+        json.dumps({"repo": "owner/name"}), encoding="utf-8"
+    )
+    transcript = _transcript(tmp_path, [_user_message("2026-08-22T10:00:00.000Z")])
+    now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
+    payload = {"transcript_path": str(transcript)}
+    facts = statusline.gather(payload, str(tmp_path), now=now)
+    assert facts["last"] == "10:04"
+    assert facts["user"]["state"] == "measured"
+    assert facts["user"]["age"] == pytest.approx(240, abs=1)
+
+
+def test_gather_reports_the_render_stamp_in_utc():
+    """The stamp is a wall-clock reading of `now`, in UTC -- not the machine's
+    local timezone, which the transcript's own ISO stamps do not carry either.
+    """
+    now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
+    assert statusline._render_stamp(now) == "10:04"
+
+
 # ------------------------------------------------------------------------- render
 
 
@@ -202,6 +285,8 @@ def _facts(**overrides):
         "version": "0.10.0",
         "board": {"state": "measured", "prs": 2, "issues": 18, "age": 30},
         "tick": {"state": "armed", "seconds": 480},
+        "last": "23:47",
+        "user": {"state": "measured", "age": 240},
         "plugins": [
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),
             ("supertool", {"state": "behind", "installed": "0.48.0", "latest": "0.49.0"}),
@@ -250,6 +335,39 @@ def test_render_marks_an_unknown_tick_apart_from_no_tick():
     none = statusline.render(_facts(tick={"state": "none"}), ascii_only=True)
     assert unknown != none
     assert "?" in unknown
+
+
+def test_render_shows_the_wall_clock_stamp_of_this_render():
+    """#504: a frozen clock time stays readable against the reader's own clock,
+    which is the whole reason it is a stamp rather than an age.
+    """
+    line = statusline.render(_facts(last="23:47"), ascii_only=True)
+    assert "23:47" in line
+
+
+def test_render_shows_dash_when_no_render_stamp_is_available():
+    """The must-fire control above proves the field can render text; this is the
+    third state -- nobody computed one -- and it must not print an empty clock.
+    """
+    line = statusline.render(_facts(last=None), ascii_only=True)
+    assert "last ?" in line
+
+
+def test_render_shows_a_genuinely_nonzero_user_age():
+    line = statusline.render(_facts(user={"state": "measured", "age": 240}), ascii_only=True)
+    assert "you 4m" in line
+
+
+def test_render_marks_no_user_message_apart_from_unknown():
+    """Same three-state shape as the tick field: `none` (scanned, nothing found)
+    must render differently from `unknown` (never scanned, or scanned but cut
+    off before reaching a user record).
+    """
+    none = statusline.render(_facts(user={"state": "none"}), ascii_only=True)
+    unknown = statusline.render(_facts(user={"state": "unknown"}), ascii_only=True)
+    assert none != unknown
+    assert "you -" in none
+    assert "you ?" in unknown
 
 
 def test_ascii_only_render_survives_a_codepage_that_cannot_encode_the_symbols():
@@ -307,6 +425,58 @@ def test_the_must_fire_control_an_ordinary_latest_still_renders():
     line = statusline.render(facts, ascii_only=True)
     assert "9.9.9" in line
     assert line != statusline.render(_facts(), ascii_only=True)
+
+
+def test_no_string_valued_fact_reaches_the_line_unfolded():
+    """A property over `render`'s inputs (#493), not a fourth enumerated case.
+
+    `_one_line` was applied at three entry points while `render()` interpolated
+    four more values that passed through nothing. Rather than name the two live
+    ones (`repo_name`, `model`), this walks every string-valued key `_facts()`
+    carries and hostiles it in turn, so a fifth field added later without an
+    explicit fold is caught the same way.
+
+    `branch` is excluded -- not because the fold protects it, but because git
+    itself refuses a ref name containing these characters, confirmed by the
+    control test right below rather than assumed.
+    """
+    hostile = "\nFAKE STATUS LINE\x1b[31mX"
+    unreachable = {"branch"}
+    base = _facts()
+    for key, value in base.items():
+        if key in unreachable or not isinstance(value, str):
+            continue
+        facts = _facts(**{key: hostile})
+        line = statusline.render(facts, ascii_only=True)
+        assert "\n" not in line, key
+        assert "\x1b" not in line, key
+
+
+def test_the_must_fire_control_for_the_property_above():
+    """Paired with the property test: an ordinary value in every folded field
+    still renders, so a renderer that prints nothing could not pass either.
+    """
+    base = _facts()
+    for key, value in base.items():
+        if key == "branch" or not isinstance(value, str):
+            continue
+        line = statusline.render(_facts(**{key: value}), ascii_only=True)
+        assert value in line or "?" not in line, key
+
+
+def test_a_branch_name_with_hostile_control_characters_is_refused_by_git():
+    """`branch` is excluded from the property above because git makes the hostile
+    value unreachable at the source, not because `render` folds it. Confirmed
+    with the same check statusline's own audit used (#493), not assumed.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "check-ref-format", "--branch", "main\nFAKE\x1b[31mX"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    assert result.returncode != 0
 
 
 def test_a_newline_and_escape_in_a_dependency_name_do_not_reach_the_line():
