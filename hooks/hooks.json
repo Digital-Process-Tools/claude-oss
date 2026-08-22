@@ -10,6 +10,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/batch-hint.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

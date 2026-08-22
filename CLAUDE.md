@@ -291,6 +291,28 @@ bin/oss-workspace           open a session over the repo you are standing in
 docs/autonomy.md            what "autonomous in somebody else's repo" would take, and does not
 ```
 
+## Agent definitions have a size budget (#491)
+
+Every byte in `agents/*.md` is re-read on every turn of every lane that runs it — median 55 turns,
+observed max 329 — so growth there is never free, even before a single instruction changes anything.
+`scripts/agent_budgets.py` is the one place the budget is declared; `tests/test_agent_definition_
+budget_491.py` fails when a file crosses it. **Replace, don't append**: pay for a new paragraph by
+cutting one, or raise the number in the same diff with a sentence saying what was weighed. The budget
+cannot judge whether a paragraph earns its size — that stays a human call — it can only stop growth
+from being invisible.
+
+| file | measured (baseline) | budget |
+| --- | --- | --- |
+| `agents/developer.md` | 75,194 B | 82,800 B |
+| `agents/auditor.md` | 14,329 B | 15,800 B |
+| `agents/release-auditor.md` | 17,857 B | 19,700 B |
+| `agents/triager.md` | 17,702 B | 19,500 B |
+
+The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
+history is largely expensive lessons written down so they are not paid twice, and a trim that removes
+a still-live trap costs a whole extra review round — a cost that will not show up next to the token
+count it saved. The budget is a visible number, not a mandate to shrink.
+
 No agent is granted `Read`, `Grep` or `Glob`. Reads go through supertool via `Bash`, which is
 what makes the batching instruction binding rather than advisory. The triager is additionally denied
 `Edit` and `Write`.

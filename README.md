@@ -169,6 +169,17 @@ that gestures at findings without stating them, which two rounds of brief langua
 #392) failed to prevent. `agents/developer.md` is where it is actually driven from; the script's own
 docstring has the full mechanism, including why input is framed rather than read raw (#404).
 
+`scripts/batch_hint.py` is a `PostToolUse` hook (`hooks/hooks.json`) that flags a run of 3 or more
+consecutive single-op read-only supertool calls with one line naming the collapsed form, and only
+that -- it never blocks. It exists because the equivalent instruction in prose, in `agents/
+developer.md`, measured at zero effect across 612 transcripts and a controlled A/B (#490): a hook
+costs nothing on a clean run, where prose is charged on every turn whether or not it ever applies.
+
+`scripts/agent_budgets.py` records a size budget for each `agents/*.md` definition -- every byte
+there is re-read on every turn of every lane that runs it -- and `tests/test_agent_definition_
+budget_491.py` fails when one crosses it. `CLAUDE.md` carries the current sizes and the
+replace-don't-append rule that goes with them (#491).
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial
