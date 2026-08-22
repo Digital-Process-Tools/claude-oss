@@ -110,6 +110,30 @@ def test_developer_stops_at_a_commit():
         assert phrase in text, "developer.md no longer states: {}".format(phrase)
 
 
+def test_developer_narration_vs_report_314():
+    """#314: narration between tool calls is re-read on every later turn; the report is
+    read once. The instruction distinguishing them has to say so without also licensing
+    a shrunk report -- a blunt "be terser" cuts both, and the report is what makes the
+    review work at all.
+
+    Positive control: the phrase has to land in developer.md specifically, and the
+    surrounding report-quality guarantees it argues for keeping (the argued-down
+    finding's `reason`, red and green quoted separately) must still be present. A
+    fixture that loaded the wrong file, or an edit that replaced that guidance instead
+    of citing it, would fail this half instead of passing everything vacuously.
+    """
+    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    assert "#314" in text, "developer.md does not cite #314's narration-vs-report finding"
+    assert "argued-down finding" in text, (
+        "developer.md no longer keeps the report-quality guarantee the #314 instruction "
+        "argues for preserving -- positive control failed"
+    )
+    assert "red and green quoted separately" in text, (
+        "developer.md no longer keeps the report-quality guarantee the #314 instruction "
+        "argues for preserving -- positive control failed"
+    )
+
+
 # --------------------------------------------------------------- recipe preconditions
 #
 # The shape these share: a recipe that depends on state the recipe itself has not
