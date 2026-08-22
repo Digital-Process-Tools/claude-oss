@@ -348,8 +348,14 @@ def _short_name(name):
     yet gets a label without anybody adding a row here. A per-name map would be the
     per-repo fact this codebase keeps out of shared code, and it would be wrong the
     first time a plugin is renamed.
+
+    Folded through `_one_line` first: this text is a dependency name declared inside
+    another plugin's own tracked manifest (`plugin_facts`'s `record["dependencies"]`),
+    the same class of foreign text as `version`/`installed`/`latest` -- and folding
+    after the truncation below would be too late, since a newline or ESC surviving a
+    four-character slice is still a newline or ESC in the rendered line.
     """
-    text = str(name or "")
+    text = _one_line(str(name or ""))
     if text.startswith("claude-"):
         text = text[len("claude-"):]
     # Trimmed after the cut, not before it: a four-character cap lands mid-word as
