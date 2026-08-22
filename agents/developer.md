@@ -122,6 +122,18 @@ it a second way — grep the new content back — before saying it.
    Not worth it when the change is confined to one module whose own tests are green and nothing
    moved underneath it.
 
+   **A narrowed run can be green while a guard it never touched fails on CI (#432).** Some tests are
+   keyed to *what your diff does* rather than to a module it renames — a new call site of
+   `oss_config.scaffolded_changelog_gate`, a line added under `agents/` or `skills/`, a script moved
+   under `scripts/`, a change to `CLAUDE.md` or `pyproject.toml` — and their own filename carries no
+   visible relationship to yours, so a subset you name by hand will not include them. Measured on PR
+   #431: three named test files, 362 passed, and CI failed four legs on
+   `tests/test_gate_state_consumers_328.py`, which was in none of them. Before you settle on a
+   narrowed command, run `python3 scripts/lane_setup.py <issue> --lane <each file you touched>` (repeat
+   `--lane` per file) and add every guard test its receipt names under `guard` to whatever you run —
+   `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS` is the derived list, not a copy of one, so a
+   guard added there later reaches this brief with no further edit here.
+
    The anti-pattern is the expensive half: **never re-run the full suite to watch a failure you have
    already seen.** Go back to the one file. Re-running everything to re-read the same assertion is
    the most wasteful loop available to a delegated agent.

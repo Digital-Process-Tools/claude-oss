@@ -37,6 +37,21 @@ REQUIRED_KEYS = {
 
 OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged"}
 
+# #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
+# can record *why* a value is what it is has always been a key -- and every key not
+# on the schema was refused as a typo, indistinguishably from one. A leading
+# underscore is the declared escape hatch: any such key is maintainer prose,
+# skipped by `validate()`, never emitted by this module, and never load-bearing.
+# It is deliberately a prefix rather than the one `notes` key already reserved
+# above: a note kept *next to* the value it explains (`_milestones_note` beside
+# `milestones`) is the property that made the note useful the first time it was
+# written, and a single top-level `notes` blob loses that adjacency. The cost is
+# real and is not hidden: an underscore typo in a key meant to be load-bearing
+# (`_est_command`) is silently accepted as prose rather than refused as a typo --
+# accepted because this loop is not the one place a schema-shaped key could be
+# born, and drawing the line any narrower reopens the failure this fixes.
+_RESERVED_PREFIX = "_"
+
 # Keys this plugin used to write and no longer reads. Tolerated, never emitted, never
 # validated -- a type check over a value with no consumer is asserting against nothing.
 #
@@ -1308,6 +1323,21 @@ def _read_json_object(path):
     return document, None
 
 
+def _is_project_scoped(key):
+    """Whether `key` belongs in the tracked half regardless of where it lands.
+
+    `PROJECT_KEYS` alone used to answer this, until #355's reserved-prefix escape
+    (`_RESERVED_PREFIX`, see `OPTIONAL_KEYS` above) added a second class of key
+    that must never be sourced from the git-excluded local file: a note is exactly
+    the kind of thing worth sharing with every other maintainer, and `split()`'s
+    docstring already explains why an unknown key goes to the project half on
+    purpose -- hidden in an untracked file it would be one maintainer's private
+    mystery. A `_`-prefixed key is no different, and treating it as project-scoped
+    everywhere `PROJECT_KEYS` was previously the answer keeps that guarantee.
+    """
+    return key in PROJECT_KEYS or key.startswith(_RESERVED_PREFIX)
+
+
 def _scope_problems(project, local, local_exists):
     """Where a key sits, as opposed to whether its value is any good.
 
@@ -1325,7 +1355,7 @@ def _scope_problems(project, local, local_exists):
         )
 
     if local:
-        for key in sorted(PROJECT_KEYS & set(local)):
+        for key in sorted(k for k in local if _is_project_scoped(k)):
             problems.append(
                 "{}: project-scoped key overridden in {}. The committed value wins -- a "
                 "project fact that differs per machine is how two maintainers cut two "
@@ -1369,7 +1399,7 @@ def load(path):
 
     config = dict(project)
     for key, value in sorted((local or {}).items()):
-        if key not in PROJECT_KEYS:
+        if not _is_project_scoped(key):
             config[key] = value
 
     problems.extend(_scope_problems(project, local, local_exists))
@@ -1393,11 +1423,18 @@ def validate(config):
             )
 
     for key in sorted(set(config) - KNOWN_KEYS):
+        # The credential check runs before the reserved-prefix escape, and on
+        # purpose: `_api_key` is not made safe by being spelled as maintainer
+        # prose, and a maintainer writing a real secret under a leading
+        # underscore must be refused exactly as a bare `api_key` would be.
         if SECRET_RE.search(key):
             problems.append(
                 "{}: looks like a credential. This file is committed -- secrets never "
                 "go here; gh holds its own auth.".format(key)
             )
+        elif key.startswith(_RESERVED_PREFIX):
+            # #355: maintainer prose, not a typo -- see _RESERVED_PREFIX above.
+            continue
         else:
             problems.append("{}: unknown key (typo, or a schema change nobody wrote down)".format(key))
 
@@ -1453,6 +1490,11 @@ def _validate_release(release):
     problems = []
 
     for key in sorted(set(release) - RELEASE_KEYS):
+        if key.startswith(_RESERVED_PREFIX):
+            # #355: maintainer prose, not a typo -- see _RESERVED_PREFIX above. The
+            # release block is the one with the most opinionated, hand-tuned
+            # settings a maintainer would want to leave a reason beside.
+            continue
         problems.append(
             "release.{}: unknown key. The release gates are not configurable -- green at "
             "leg level, nothing mid-review, audit passed, every version site bumped, tag "
@@ -1501,6 +1543,9 @@ def _validate_release(release):
             problems.append("release.triggers: expected an object")
         else:
             for key in sorted(set(triggers) - TRIGGER_KEYS):
+                if key.startswith(_RESERVED_PREFIX):
+                    # #355: maintainer prose, not a typo.
+                    continue
                 problems.append("release.triggers.{}: unknown key".format(key))
             for key in sorted(TRIGGER_KEYS & set(triggers)):
                 value = triggers[key]
