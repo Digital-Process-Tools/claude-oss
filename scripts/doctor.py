@@ -5275,6 +5275,17 @@ def declared_contract(root):
     relative = SCHEMA_CONTRACT_FILE
     if report_schema is None:  # pragma: no cover - the module sits beside this file
         return None, "report_schema.py could not be imported beside doctor.py"
+    # `getattr` rather than a call, because `main` has no outer `except` and this
+    # check runs from it: a sibling module that has changed shape would take out
+    # `doctor`'s *exit 0 always, one VERDICT line* contract from three frames away,
+    # which is #124 exactly. A fifth way to have no number is cheaper than that, and
+    # it is a state a reader can act on rather than a traceback.
+    extract = getattr(report_schema, "contract_version", None)
+    if not callable(extract):
+        return None, (
+            "the report_schema.py beside doctor.py exposes no contract_version(), so "
+            "nothing here can read a declared contract number"
+        )
     path = Path(root).joinpath(*relative.split("/"))
     try:
         raw = path.read_text(encoding="utf-8")
@@ -5286,7 +5297,7 @@ def declared_contract(root):
         doc = json.loads(raw)
     except ValueError:
         return None, "its {} would not parse".format(relative)
-    version = report_schema.contract_version(doc)
+    version = extract(doc)
     if version is None:
         return None, "its {} declares no contract version".format(relative)
     return version, None

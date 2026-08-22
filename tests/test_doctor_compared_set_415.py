@@ -147,6 +147,32 @@ def test_a_copy_shipping_no_schema_says_the_contract_was_not_established(tmp_pat
     assert "UNVALIDATABLE" not in message, message
 
 
+def test_a_sibling_module_of_the_wrong_shape_does_not_take_out_the_run(tmp_path, monkeypatch):
+    """`doctor.main` has no outer `except`, and this check runs from it.
+
+    `report_schema.py` is a live file (#416 is editing it as this lands), so
+    `contract_version` disappearing has to be a fifth way to have no number rather
+    than an `AttributeError` three frames from the VERDICT line -- which is #124's
+    shape exactly. The must-fire half sits in the same fixture: with the real module
+    in place the number IS read, so this cannot pass by never reading one.
+    """
+    answered = _plugin_tree(tmp_path / "installed", contract=4)
+    checkout = _plugin_tree(tmp_path / "clone", contract=5)
+
+    assert doctor.declared_contract(answered) == (4, None), "the control did not fire"
+
+    class _Hollow(object):
+        pass
+
+    monkeypatch.setattr(doctor, "report_schema", _Hollow())
+    version, why = doctor.declared_contract(answered)
+    assert version is None
+    assert "contract_version" in why, why
+    level, message = _copy_line(answered, checkout)
+    assert level == "WARN", message
+    assert "not established" in message, message
+
+
 # --- the class, not the instance ---------------------------------------------------
 
 
