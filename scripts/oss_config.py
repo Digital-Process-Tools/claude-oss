@@ -2101,10 +2101,12 @@ def _report_probe_notes(probe, config):
     guessed. None of these is a failure.
 
     The first two are absences the tool produced rather than absences in the world:
-    unclassified labels leave `priority: []`, and a candidate that yielded no version
-    for any reason other than being read leaves it off `version_sites` -- in three
-    different words, because they are three different facts (#396). The second two
-    are the opposite shape and the one #85 was
+    unclassified labels leave `priority: []`, and a candidate that was never *measured*
+    leaves it off `version_sites`. Only `none` is a measurement -- read, and it holds
+    no version -- so it is dropped silently and correctly. The other three each get
+    their own sentence, because they are three different facts (#396), and one of them
+    is not about the read at all: a `malformed` candidate was read in full and its
+    contents are the wrong shape. The second two are the opposite shape and the one #85 was
     filed over -- a value that *was* produced, at exit 0, that reads exactly like a
     measurement and is not one. Silence in either direction reads as a measurement,
     so both are stated here instead.
