@@ -2235,11 +2235,20 @@ def test_fragments_readme_absent_is_the_ordinary_state_not_a_pass_or_a_finding(t
 def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_name(tmp_path):
     """#259's second defect on this same line: a hardcoded directory name. A custom
     `changelog_dir` must be the directory actually checked."""
+    # Built with Path, not a "notes/fragments" string literal: the point of this
+    # assertion is that the check followed the CONFIGURED directory rather than
+    # the hardcoded changelog.d/ default, and a POSIX-literal substring stops
+    # proving that on Windows -- the message is rendered with str(Path), which is
+    # backslash-joined there, so "notes/fragments" never matches a passing run
+    # (#260 review). Comparing the resolved Path's own str() asserts the same
+    # fact on every platform: the message names THIS directory, joined the way
+    # this platform joins it.
+    expected_dir = tmp_path / "notes" / "fragments"
     _fragments_readme(tmp_path, "notes/fragments", "- Compatibility: breaking|compatible - <reason>\n")
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": "notes/fragments"})
     state, message = doctor.FINDINGS[-1]
     assert state == "OK"
-    assert "notes/fragments" in message
+    assert str(expected_dir) in message
 
     # Must-fire control: the default directory name must NOT be consulted when a
     # non-default one is configured, or this would pass by accident on the default.
@@ -2248,6 +2257,7 @@ def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_nam
     state, message = doctor.FINDINGS[-1]
     assert state == "OK"
     assert "absent" in message
+    assert str(expected_dir) not in message
 
 
 def test_fragments_readme_unmeasured_without_config(tmp_path):
@@ -2278,12 +2288,18 @@ def test_fragments_readme_follows_a_nulled_changelog_dir_to_the_scaffolded_gate(
     file, or it silently inspects `changelog.d/` while the directory the release
     gate actually reads sits elsewhere -- a false "no fragment practice" OK on a
     repo that has one."""
+    # See the sibling assertion in test_fragments_readme_resolves_changelog_dir_
+    # from_config_not_a_hardcoded_name for why this is str(Path) and not a
+    # "docs/frags" string literal (#260 review): the message is rendered with
+    # str(Path), backslash-joined on Windows, and a POSIX literal never matches
+    # a passing run there.
+    expected_dir = tmp_path / "docs" / "frags"
     _scaffolded_gate(tmp_path, "docs/frags")
     _fragments_readme(tmp_path, "docs/frags", "no compatibility section here\n")
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": None})
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN", doctor.FINDINGS
-    assert "docs/frags" in message
+    assert str(expected_dir) in message
     assert "/oss:scaffold will not fix it" in message
 
     # Must-fire control: the same gate, with the bullet actually present, grades OK.
@@ -2292,7 +2308,7 @@ def test_fragments_readme_follows_a_nulled_changelog_dir_to_the_scaffolded_gate(
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": None})
     state, message = doctor.FINDINGS[-1]
     assert state == "OK", doctor.FINDINGS
-    assert "docs/frags" in message
+    assert str(expected_dir) in message
 
 
 def test_fragments_readme_invalid_changelog_dir_does_not_fall_back_to_the_default(tmp_path):
