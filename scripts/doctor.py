@@ -5170,19 +5170,29 @@ def agent_dispatch(plugin_root=None):
             )
         )
 
-    try:
-        shipped = {path.stem for path in (root / "agents").glob("*.md")}
-    except OSError as exc:
+    # #383: same class as the two rglob call sites above -- `Path.glob("*.md")`
+    # swallows `PermissionError` scanning `root / "agents"` itself and returns
+    # `[]`, so the `except OSError` this used to be wrapped in could never
+    # fire for the case it was written for (confirmed directly, same fixture
+    # shape as `tests/test_swallow_census_383.py`'s rglob reproduction, one
+    # level shallower). `_rglob_md` is written for a recursive walk, but
+    # `agents/` has never had subdirectories and a flat `os.walk` first level
+    # is the same one-directory scan `glob` performed -- the recursion never
+    # runs because there is nothing to recurse into, so this is not a second
+    # helper, only a documented reuse of the first one.
+    agent_files, agents_unreadable = _rglob_md(root / "agents")
+    if agents_unreadable:
         return lines + [
             (
                 "WARN",
                 "agent dispatch: could not be checked -- agents/ could not be listed "
                 "({}), so "
                 "there was nothing to check the dispatched names against".format(
-                    _one_line(str(exc))
+                    "; ".join(agents_unreadable)
                 ),
             )
         ]
+    shipped = {path.stem for path in agent_files}
 
     missing = sorted(name for name in dispatched if name not in shipped)
     if missing:

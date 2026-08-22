@@ -429,8 +429,16 @@ def _compute_range(repo, match):
     # downstream needs a sharper "unreadable" than "could not run" either way:
     # `git rev-parse` over the same path fails no more informatively.
     if not os.path.isdir(str(repo)):
+        # "not a directory" covers both a path that genuinely is not one and a
+        # path `os.path.isdir` could not stat at all (EACCES on a parent) --
+        # `genericpath.isdir` answers `False` for both, and the message says
+        # so rather than asserting the sharper of the two as fact. Nothing
+        # downstream reads a difference: `STATE_COULD_NOT_RUN` is the one
+        # bucket for both, never folded into "no delta" the way an empty
+        # world would be.
         return _could_not_run(
-            "the path is not a directory, so there is no repository to read",
+            "the path is not a directory, or could not be examined, so there "
+            "is no repository to read",
             str(repo),
         )
 

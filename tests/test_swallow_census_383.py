@@ -265,15 +265,35 @@ def test_agent_dispatch_unreadable_directory_is_reported_real_chmod(tmp_path):
     assert "oss:triager" in joined, joined
 
 
-def test_agent_dispatch_genuinely_absent_directory_still_scans_the_rest():
+def test_agent_dispatch_genuinely_absent_directory_still_scans_the_rest(tmp_path):
     """Must-not-fire control at the DISPATCHING_DIRECTORIES level itself: a
-    genuinely absent directory (no `skills/` at all) must not be reported as
-    unreadable -- that would be the opposite defect, an absence read as a
-    permission finding.
+    genuinely absent directory must not be reported as unreadable -- that
+    would be the opposite defect, an absence read as a permission finding.
+
+    Self-review, #383: an earlier version of this test called
+    `doctor.agent_dispatch(REPO_ROOT)`, on the belief that no `skills/`
+    directory exists there, and it does -- this checkout ships
+    `skills/manager/SKILL.md`. The assertion was an `or` that is true
+    whenever no unreadable-directory message appears at all, which is the
+    ordinary case on any readable tree regardless of whether this fix is
+    applied -- reverting the whole commit leaves it passing unchanged. A
+    fabricated root with `commands/` but no `skills/` or `agents/` at all is
+    what the docstring actually claims to test.
     """
-    lines = doctor.agent_dispatch(REPO_ROOT)
+    root = _fake_plugin(
+        tmp_path,
+        {"commands/release.md": 'Agent(subagent_type: "oss:developer")'},
+        ["developer"],
+    )
+    assert not (root / "skills").exists(), "fixture assumption: no skills/ dir"
+
+    lines = doctor.agent_dispatch(root)
     joined = " ".join(message for _, message in lines)
-    assert "skills" not in joined or "could not" not in joined, lines
+    assert "could not" not in joined, lines
+    assert "skills" not in joined, lines
+    # And the must-fire half stays reachable in the same fixture: the one
+    # directory that IS there and readable is still scanned and used.
+    assert "oss:developer" in joined, joined
 
 
 # ---------------------------------------------------------------------------
@@ -359,13 +379,31 @@ def test_rename_source_genuinely_absent_is_still_refused_as_no_such_file(tmp_pat
 
 
 def test_compute_range_unreadable_repo_path_does_not_raise(monkeypatch, tmp_path):
+    """`_compute_range` was rewritten to call `os.path.isdir`, not
+    `Path.is_dir` -- `genericpath.isdir` reaches `os.stat` directly, never
+    through `pathlib`, so the injected raise has to sit on `os.stat` itself
+    (self-review, #383: a first version of this test patched `Path.is_dir`,
+    which the fixed code no longer calls at all, and passed only because the
+    fixture target genuinely does not exist -- a guard with no positive
+    control on the code path it claims to exercise).
+    """
     target = tmp_path / "maybe-a-repo"
-    _raise_for(monkeypatch, "is_dir", target, PermissionError(errno.EACCES, "denied"))
+    real_stat = os.stat
+    target_str = str(target)
 
-    # Before the fix, this raised straight out of `_compute_range` -- a
-    # crash from a function `compute()`'s own docstring says never raises.
+    def fake_stat(path, *a, **kw):
+        if os.fspath(path) == target_str:
+            raise PermissionError(errno.EACCES, "denied")
+        return real_stat(path, *a, **kw)
+
+    monkeypatch.setattr(os, "stat", fake_stat)
+
+    # Before the fix, `_compute_range` called `Path.is_dir()`, which raises
+    # unguarded for exactly this fixture on at least 3.9/3.11/3.13 -- a crash
+    # from a function `compute()`'s own docstring says never raises.
     payload = release_delta.compute(str(target))
     assert payload["state"] == release_delta.STATE_COULD_NOT_RUN, payload
+    assert "could not be examined" in payload["reason"], payload
 
 
 def test_compute_range_genuinely_absent_repo_path_still_could_not_run(tmp_path):
@@ -374,3 +412,82 @@ def test_compute_range_genuinely_absent_repo_path_still_could_not_run(tmp_path):
     payload = release_delta.compute(str(target))
     assert payload["state"] == release_delta.STATE_COULD_NOT_RUN, payload
     assert "not a directory" in payload["reason"], payload
+
+
+# ---------------------------------------------------------------------------
+# agent_dispatch's OWN comparison directory: `Path.glob("*.md")` over
+# `agents/` swallows the same way `Path.rglob` does one level up (self-review
+# finding, #383) -- the `except OSError` around it could never fire for the
+# case it was written for.
+# ---------------------------------------------------------------------------
+
+
+def test_agent_dispatch_unreadable_agents_directory_is_reported_injected(monkeypatch, tmp_path):
+    root = _fake_plugin(
+        tmp_path,
+        {"commands/release.md": 'Agent(subagent_type: "oss:developer")'},
+        ["developer"],
+    )
+    agents_dir = root / "agents"
+    _raise_scandir_for(monkeypatch, agents_dir, PermissionError(errno.EACCES, "denied"))
+
+    lines = doctor.agent_dispatch(root)
+    joined = " ".join(message for _, message in lines)
+
+    # Must-fire half: before the fix, `Path.glob` over `agents/` swallows the
+    # PermissionError and returns [], so `shipped` becomes `{}` and every
+    # dispatched name is reported FAIL-missing instead of WARN-could-not-tell.
+    assert any(level == "WARN" for level, _ in lines), lines
+    assert "agents/ could not be listed" in joined, joined
+    assert not any(level == "FAIL" for level, _ in lines), lines
+
+
+def test_agent_dispatch_unreadable_agents_directory_is_reported_real_chmod(tmp_path):
+    root = _fake_plugin(
+        tmp_path,
+        {"commands/release.md": 'Agent(subagent_type: "oss:developer")'},
+        ["developer"],
+    )
+    agents_dir = root / "agents"
+
+    try:
+        os.chmod(str(agents_dir), 0o000)
+    except OSError as exc:
+        pytest.skip(
+            "os.chmod would not set mode 000 ({}); what went untested is "
+            "whether a real unreadable agents/ is reported".format(exc)
+        )
+    try:
+        if os.access(str(agents_dir), os.R_OK):
+            pytest.skip(
+                "this process can read a 0o000 directory (root, or a "
+                "filesystem without POSIX modes); what went untested is "
+                "whether a real unreadable agents/ is reported"
+            )
+        lines = doctor.agent_dispatch(root)
+    finally:
+        os.chmod(str(agents_dir), 0o700)
+
+    # Before the fix (measured directly, real chmod, not just this suite):
+    # the loop over DISPATCHING_DIRECTORIES already warns about agents/
+    # being unreadable, but the separate `shipped` comparison still swallowed
+    # the same directory via a bare `Path.glob` and reported a false FAIL
+    # ("no agents/<name>.md ships it") for a name that is not missing, only
+    # unreadable.
+    assert not any(level == "FAIL" for level, _ in lines), lines
+    assert any(level == "WARN" for level, _ in lines), lines
+
+
+def test_agent_dispatch_readable_agents_directory_still_scans_clean(tmp_path):
+    """Must-not-fire control, same fixture shape: an ordinary readable
+    agents/ directory must still resolve normally -- this file's other test,
+    `test_agent_dispatch_is_clean_on_this_plugin_and_still_states_what_it_cannot_know`,
+    already covers the real plugin tree; this is the fabricated-fixture twin.
+    """
+    root = _fake_plugin(
+        tmp_path,
+        {"commands/release.md": 'Agent(subagent_type: "oss:developer")'},
+        ["developer"],
+    )
+    lines = doctor.agent_dispatch(root)
+    assert [level for level, _ in lines] == ["OK"], lines
