@@ -34,6 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import report_schema  # noqa: E402
+import skip_symlink  # noqa: E402
 
 SCHEMA_PATH = REPO_ROOT / "schemas" / "agent-report.schema.json"
 
@@ -893,50 +894,19 @@ def test_a_payload_outside_the_report_directory_is_never_opened(tmp_path, monkey
 
 
 def _symlink_or_skip(link, target, target_is_directory=False):
-    """Create a symlink, or skip carrying what this platform actually said.
+    """`skip_symlink.symlink_or_skip`, naming the property this file's case needs.
 
-    The fixture is a measurement, not a given. Symlink creation needs a privilege
-    or developer mode on Windows, so `os.symlink` raises for an unprivileged
-    runner, and some filesystems carry no links at all. Attempt the exact
-    operation the case needs and, when it does not take, say which platform, what
-    it raised and what therefore went untested -- never assert against a table of
-    platform error codes, and never let the skip read as a pass.
-
-    The link is then confirmed to *resolve* to its target rather than merely to
-    exist, because that resolution is the entire condition under test: a link
-    that resolved to itself would leave the refusal below passing for a reason
-    nobody chose.
+    See `tests/skip_symlink.py` (#265) for why a directory target also tries a
+    Windows junction before giving up: a symlink alone leaves both the escape
+    assertion and its positive control skipping together on every unelevated
+    Windows leg, which is the same green as one that actually ran.
     """
-    try:
-        link.symlink_to(target, target_is_directory=target_is_directory)
-    except (OSError, NotImplementedError) as exc:
-        pytest.skip(
-            "{}: this platform would not create the symlink ({}, errno {!r}, winerror {!r}), "
-            "so 'a symlink inside the base pointing out of it is refused unopened' went "
-            "untested here".format(
-                sys.platform,
-                type(exc).__name__,
-                getattr(exc, "errno", None),
-                getattr(exc, "winerror", None),
-            )
-        )
-    try:
-        landed = link.resolve() == Path(target).resolve()
-    except OSError as exc:
-        pytest.skip(
-            "{}: the link was created but would not resolve ({}, errno {!r}), so "
-            "'a symlink inside the base pointing out of it is refused unopened' went "
-            "untested here".format(sys.platform, type(exc).__name__, getattr(exc, "errno", None))
-        )
-    if not landed:
-        pytest.skip(
-            "{}: {} was created but resolves to {} rather than to {}, so the escape this "
-            "case needs does not exist here and 'a symlink inside the base pointing out of "
-            "it is refused unopened' went untested".format(
-                sys.platform, link, link.resolve(), Path(target).resolve()
-            )
-        )
-    return link
+    return skip_symlink.symlink_or_skip(
+        link,
+        target,
+        target_is_directory=target_is_directory,
+        what="'a symlink inside the base pointing out of it is refused unopened'",
+    )
 
 
 @pytest.mark.parametrize("kind", ["file", "directory"])
