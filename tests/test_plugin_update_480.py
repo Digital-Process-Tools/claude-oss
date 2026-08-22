@@ -234,6 +234,35 @@ def test_an_unreadable_install_record_is_could_not_check_not_current(tmp_path):
     assert document["from"] is None and document["to"] is None
 
 
+def test_before_readable_after_not_is_still_could_not_check(tmp_path, monkeypatch):
+    """The must-fire half of the review round's own finding: the old guard only fired
+    when BOTH `before` and `after` were `None`. If the install record is readable
+    before the update calls and goes unreadable for the second read (a race, or a
+    write in progress), `before` is a real string and `after` is `None` -- and the old
+    code's `before and after and ...` guard is false either way, so it fell through to
+    `current` with a `None` on one end of the receipt. One unknown is enough."""
+    plugins = _plugins_root(tmp_path, "0.9.0")
+    calls = {"n": 0}
+    real_installed_version = plugin_update.installed_version
+
+    def flaky_installed_version(name, plugins_root=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_installed_version(name, plugins_root)
+        return None  # the second read -- "after" -- comes back unreadable
+
+    monkeypatch.setattr(plugin_update, "installed_version", flaky_installed_version)
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=plugins,
+        env={},
+        runner=_Runner([(True, ""), (True, "")]),
+    )
+    assert document["state"] == "could-not-check", document
+    assert document["from"] == "0.9.0" and document["to"] is None
+
+
 def test_a_partial_failure_reaches_the_receipt_detail(tmp_path):
     """#484: a scope that failed must not vanish from the receipt just because the
     run as a whole still reports `current` -- additive, must not touch the state

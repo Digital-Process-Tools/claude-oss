@@ -295,7 +295,13 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             len(failures), len(scopes), "; ".join(failures)
         )
 
-    if before is None and after is None:
+    if before is None or after is None:
+        # Either side being unknown is enough: the review round that read this file
+        # found the symmetric-only version of this guard still let the asymmetric case
+        # -- one read succeeding while the install record went briefly unreadable for
+        # the other -- fall through to `current` with a `None` on one end of the
+        # receipt, exactly the "nothing was there" vs "could not tell" collapse #484
+        # exists to remove. One `None` is one unknown; it needs no partner to be one.
         return {
             "state": "could-not-check",
             "at": stamp,
@@ -303,7 +309,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "from": before,
             "to": after,
             "scopes": scopes,
-            "detail": "the install record could not be read, so the version before and "
+            "detail": "the install record could not be read, so the version before and/or "
             "after is unknown{}".format(partial),
         }
 
