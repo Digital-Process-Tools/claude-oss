@@ -29,6 +29,32 @@ Skill(manager)
    tick** — settle it, then start over at this step. `no entries yet` means a first tick and
    nothing else.
 
+   **If the last entry carries a pending wait, test it before anything else in this tick (#337).**
+   *Blocked on audit completion* is unfalsifiable prose and once outlived the audit it named by
+   ninety minutes with nothing re-reading it — three hours ten minutes with a green default branch,
+   an empty pull request board and four unstarted issues. Check for one directly:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --pending-wait
+   ```
+
+   `no pending wait` means proceed as normal. A record means test its `observable` against the
+   repo or the tracker — whatever it names — right now, then record what you found before doing
+   anything else this tick:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+     --decision "…" --at "<ISO timestamp>" \
+     --check-wait cleared --wait-cleared-by "<what was actually observed>"
+   # or: --check-wait holds          (tested, not yet observed)
+   # or: --check-wait could-not-evaluate --wait-why "<why the observable could not be tested>"
+   ```
+
+   **`could-not-evaluate` is not `holds`.** `holds` is a measurement that came back negative;
+   `could-not-evaluate` is no measurement at all, and rendering the two alike is the defect this
+   field exists to close. Only record a fresh wait (`--wait-dispatch`/`--wait-observable` on step
+   6's `--decision` call) when this tick itself becomes blocked on something new.
+
 2. **Read the board**, batched into one call:
 
    ```bash
@@ -225,6 +251,19 @@ Skill(manager)
    authorship rule and why no target ratio is claimed are in the skill under *Intake: filings per
    merged pull request*.
 
+   **If this tick is closing blocked (#337), attach the wait to the same `--decision` call** rather
+   than leaving it in the `reason` string alone:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+     --decision "blocked on the gate 3 audit" --at "<ISO timestamp>" \
+     --wait-dispatch "<what was set in motion>" --wait-observable "<what clears it>"
+   ```
+
+   Step 1 of the *next* tick is what tests this, via `--pending-wait` and `--check-wait` — see
+   above. Recording a wait here without step 1 testing it next time is the same failure with the
+   test simply never run.
+
 7. **Arm the next tick, and keep working in this one.**
 
    ```
@@ -249,8 +288,10 @@ Skill(manager)
 
    **The `reason` names what is being waited on in a form a later turn can re-read.** *Blocked on
    audit completion* is unfalsifiable prose and outlived the audit by ninety minutes; *blocked on the
-   gate 3 audit dispatched at 23:12Z* is a claim the next turn fails in one call. Same for step 6's
-   state entry, and a wait recorded in one tick is re-read in the next rather than believed.
+   gate 3 audit dispatched at 23:12Z* is a claim the next turn fails in one call. Step 6's
+   `--wait-dispatch`/`--wait-observable` is the machine-readable half of the same claim (#337) — the
+   `reason` string is for a human skimming the schedule, the state entry is what step 1 of the next
+   tick actually tests. A wait recorded in one tick is re-read in the next rather than believed.
 
    **The three states below say how this tick closes, not whether the loop stops. None of them stops
    the loop.**

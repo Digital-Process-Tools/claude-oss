@@ -1333,6 +1333,14 @@ completion* is unfalsifiable prose, and it survived ninety minutes after the aud
 call. This binds the wakeup's `reason` and the state entry alike — and a wait is re-read at the top
 of the next tick, never carried forward from the belief that recorded it.
 
+**#337 is the executable half: `scripts/oss_state.py` carries `detail.wait` as a field, not only as
+prose in `--decision`.** `--wait-dispatch`/`--wait-observable` on the blocking tick's `--decision`
+call record the claim; `--pending-wait` at the top of the *next* tick reads it back; `--check-wait
+{holds,cleared,could-not-evaluate}` re-derives it once the observable has actually been tested. Three
+states, not two, for the same reason `intake` and `cohort_freeze` have three: `holds` is a
+measurement that came back negative, `could-not-evaluate` is no measurement at all, and rendering the
+two alike is exactly the bug this closes. `commands/tick.md` step 1 is where the call is wired.
+
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.
 
@@ -1371,9 +1379,11 @@ matters to the PR belongs in the PR body.
 
 Entries also carry machine-readable fields, each written above at its own duty: `detail.intake`,
 the tick's filing counts and window, so the ratio can be re-added across ticks rather than
-re-asserted; `detail.lanes`, the dispatched developer lanes and their models; and
-`detail.cohort_freeze`, a frozen cohort's count and the routes it was taken from. Prose cannot be
-summed — that is what each of these exists to fix.
+re-asserted; `detail.lanes`, the dispatched developer lanes and their models; `detail.cohort_freeze`,
+a frozen cohort's count and the routes it was taken from; and `detail.wait` (#337), what a blocked
+tick is waiting on — a dispatch, an observable and the timestamp it was recorded, re-derived by the
+next tick rather than believed. Prose cannot be summed, and a wait recorded only in prose cannot be
+tested — that is what each of these exists to fix.
 
 **The handoff is not the repo.** The state file records what was believed when it was written. The
 first call of every session is the repo itself: `git log --oneline -1`, `gh-prs`, `gh-issues`.
