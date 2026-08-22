@@ -180,6 +180,16 @@ there is re-read on every turn of every lane that runs it -- and `tests/test_age
 budget_491.py` fails when one crosses it. `CLAUDE.md` carries the current sizes and the
 replace-don't-append rule that goes with them (#491).
 
+`python3 scripts/preflight_check.py --pattern PATTERN --path FILE_OR_DIR` searches the tree for a
+pattern the issue names, in three states -- `matched`, `not-matched`, `could-not-search`, the last
+of which must never render as the second -- so a dispatch decision can tell an issue whose fix
+already shipped from one still genuinely open before an agent is briefed for it (#457).
+
+`python3 scripts/transcript_refusals.py` also now reports `turns_over_threshold_count`/`_share`
+against a measured 140-turn threshold and `decile_bytes`/`first_fifth_byte_share`, the two lane-cost
+findings #498 measured across 612 transcripts -- read after a lane completes, never surfaced to the
+one running.
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial
