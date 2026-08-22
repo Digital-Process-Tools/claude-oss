@@ -2779,6 +2779,124 @@ def check_radar_publish(project_dir):
     )
 
 
+# Can the merge call skip supertool's own confirm gate? (#421)
+#
+# `presets/_publish_safety.py:require_confirm` is one function, shared by three
+# ops, and it returns early on any of three opt-outs -- a `|force` suffix per
+# call, `$SUPERTOOL_NO_PUBLISH_CONFIRM`, or `"no_publish_confirm": true` in this
+# repo's `.supertool.json`. Reading the file and the environment is the whole
+# check: no call, no spawn, nothing published.
+#
+# The opt-out is wider than the merge: setting the flag turns confirmation off
+# for whichever of the three ops this repo's `presets` currently route, and a
+# later preset arrives with confirmation already off, silently. So this is a
+# read of the loaded presets, not a constant naming `gh-pr-merge` alone.
+#
+# Deliberately scoped to supertool's own gate. The harness's own permission
+# layer sits above it, can refuse the call before supertool sees it, and an
+# allowlist entry does not clear it reliably -- #421's own comment measured
+# exactly that: an allowlist entry naming this call, denied five times across
+# four pull requests, on a machine where the identical shape merged normally
+# in a different repo. Nothing here can read that layer, so every message
+# built from this state says so rather than implying a guarantee.
+PUBLISH_OP_PRESETS = {
+    "github": MERGE_OP,
+    "devto": "devto_publish",
+    "bluesky": "bluesky_publish",
+}
+
+
+def publish_confirm_state(project_dir, env=None):
+    """Can supertool's confirm gate be skipped here? Three answers, not two.
+
+    `confirmable` / `needs-force` / `could-not-tell`. `needs-force` is the
+    shipped default -- no `.supertool.json` at all resolves here, same as one
+    that declares the key `false` -- and it is not a fault. `could-not-tell`
+    is reserved for a file that is there and broken (unreadable, not an
+    object, or a `no_publish_confirm` that is not a plain boolean): a broken
+    file must never render as either of the other two, because both would be
+    a guess about a document that would not read.
+    """
+    env = os.environ if env is None else env
+    doc, problem, detail = _supertool_document(project_dir)
+    if problem:
+        return "could-not-tell", detail
+    if doc is None:
+        doc = {}
+
+    flag = doc.get("no_publish_confirm", False)
+    if not isinstance(flag, bool):
+        return "could-not-tell", "`no_publish_confirm` in {} is not true or false".format(
+            WATCH_CONFIG
+        )
+
+    presets = doc.get("presets")
+    if isinstance(presets, list) and all(isinstance(p, str) for p in presets):
+        routed = sorted(op for name, op in PUBLISH_OP_PRESETS.items() if name in presets)
+        route_known = True
+    else:
+        routed = []
+        route_known = False
+
+    confirm_off = flag or env.get("SUPERTOOL_NO_PUBLISH_CONFIRM") == "1"
+    verb = "reaches" if confirm_off else "gates"
+    if not route_known:
+        reach = (
+            "which op(s) this {} could not be read (`presets` in {} is absent "
+            "or not a list of strings)".format(verb, WATCH_CONFIG)
+        )
+    elif routed:
+        reach = "{} {} here today".format(verb, ", ".join(routed))
+    else:
+        reach = "{} none of {} today (no publish preset is enabled)".format(
+            verb, ", ".join(sorted(PUBLISH_OP_PRESETS.values()))
+        )
+
+    if confirm_off:
+        source = (
+            "`no_publish_confirm: true` in {}".format(WATCH_CONFIG)
+            if flag
+            else "SUPERTOOL_NO_PUBLISH_CONFIRM=1 in the environment"
+        )
+        return "confirmable", "{}, so it {}".format(source, reach)
+    return "needs-force", "no opt-out is set, so the confirm gate {}".format(reach)
+
+
+def check_publish_confirm(project_dir, env=None):
+    """Report supertool's publish-confirm gate before the merge step is where a
+    maintainer meets it -- `skills/manager/SKILL.md`'s "before the first tick"
+    section names this arrangement and nothing performs or checks it (#421).
+
+    `needs-force` renders as OK, deliberately: it is the shipped default and
+    most repos are in it, so flagging it as a warning trains a maintainer to
+    skim doctor output, which costs more than the thing it would warn about.
+    """
+    state, detail = publish_confirm_state(project_dir, env=env)
+    if state == "could-not-tell":
+        report(
+            "WARN",
+            "publish confirm: {}, so whether the merge call can skip supertool's "
+            "confirm gate is unknown -- not answered as either state, because "
+            "both would be a guess about a file that would not read.".format(detail),
+        )
+        return
+    if state == "confirmable":
+        report(
+            "OK",
+            "publish confirm: {}. This is supertool's own gate only -- the "
+            "harness's own permission layer sits above it and can still refuse "
+            "the call regardless.".format(detail),
+        )
+        return
+    report(
+        "OK",
+        "publish confirm: {}. Append |force to the call, set "
+        "SUPERTOOL_NO_PUBLISH_CONFIRM=1, or add `no_publish_confirm: true` to "
+        "{} before the first tick if batch merging is wanted -- this is the "
+        "shipped default, not a fault.".format(detail, WATCH_CONFIG),
+    )
+
+
 def _derivable_watch_name(project_dir):
     """Can `bin/oss-workspace` derive a channel name for this repo, and which?
 
@@ -6043,6 +6161,10 @@ def main(argv=None):
     # The merge permission is settled here or it is settled at the merge step,
     # with the whole review already spent.
     check_merge_permission(project_dir)
+    # Same reason, one layer down: an allowlist rule can exist and the merge
+    # can still refuse for want of |force (#421). Needs no config either --
+    # both live in supertool's file and this process's environment.
+    check_publish_confirm(project_dir)
     # Needs no config: the channel is supertool's file and this process's
     # environment, so it answers on a repo that has never run /oss:setup.
     check_watch_channel(project_dir)
