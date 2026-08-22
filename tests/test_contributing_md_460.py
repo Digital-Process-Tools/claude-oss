@@ -191,6 +191,49 @@ def test_render_refuses_a_null_branch_pattern_rather_than_writing_none():
         scaffold.render("CONTRIBUTING.md", _config(branch_pattern=None))
 
 
+def test_render_refuses_a_branch_pattern_carrying_a_line_break():
+    """The reviewer-found gap: `branch_pattern` reaches `_code_span` with no
+    character-class check, and CommonMark decides block structure before an inline
+    span is parsed -- so a blank line inside the "span" ends the enclosing element
+    regardless of the backticks around it, and the remainder of the value becomes
+    real Markdown structure rather than literal text. A heading and an <img> tag
+    both escape the span this way when the value is not refused first."""
+    injected = "fix/{issue}\n\n## Injected heading\n\n<img src=x onerror=alert(1)>"
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.render("CONTRIBUTING.md", _config(branch_pattern=injected))
+
+
+def test_a_branch_pattern_that_would_have_escaped_the_span_produces_no_new_heading():
+    """The positive control for the refusal above: proves the checker below can
+    see the corruption at all, by re-deriving the pre-fix render (no character
+    check on `branch_pattern`, `_code_span` only) and showing an injected `##`
+    line survives as a literal heading -- rather than trusting that the refusal
+    firing means the corruption was real."""
+    import oss_config
+
+    injected = "fix/{issue}\n\n## Injected heading\n\n<img src=x onerror=alert(1)>"
+    config = _config(branch_pattern=injected)
+
+    def _pre_fix_render(config):
+        command = scaffold.test_command(config)
+        test_line = scaffold._fenced(command) if command else scaffold.TEST_COMMAND_NOT_DETECTED
+        return scaffold.CONTRIBUTING_MD.format(
+            repo=scaffold.repo_slug(config),
+            default_branch=scaffold._code_span(scaffold.default_branch_name(config)),
+            branch_pattern=scaffold._code_span(config["branch_pattern"]),
+            changelog_dir=scaffold._code_span(scaffold.fragments_dir(config) + "/"),
+            test_line=test_line,
+        )
+
+    corrupted = _pre_fix_render(config)
+    assert "\n## Injected heading\n" in corrupted, (
+        "the positive control did not reproduce the corruption -- the assertion "
+        "below would pass even against a checker that never looked"
+    )
+    # And the real path refuses it outright, per the two tests above.
+    assert oss_config.branch_pattern_problem(injected) is not None
+
+
 # No refusal test for `repo=None`: `scaffold.repo_slug`'s own funnel deliberately
 # accepts null and defers to `validate()` -- "Null is accepted here and refused one
 # layer up" (see its docstring). That is an existing, documented choice this issue

@@ -109,12 +109,24 @@ def test_a_clean_receipt_renders_every_row(tmp_path, stubbed):
 
 
 def test_a_newline_in_branch_pattern_forges_no_line(tmp_path, stubbed):
+    """`oss_config.branch_pattern_problem` (#460) now refuses a `branch_pattern`
+    carrying a line break outright, so this fixture stopped being silently accepted
+    and started producing one legitimate `config warn:` line -- the same shape as
+    the hostile-key case below ("one extra line is legitimate and expected -- the
+    problem itself. Two would mean the value forged one."). The forging question is
+    unchanged: does that one warning line, or anything else, expand into more than
+    one line. It must not.
+    """
     clean = _lines(_write(tmp_path, "clean"))
     forged = _lines(_write(tmp_path, "forged", branch_pattern="fix/{issue}" + FORGE))
-    assert len(forged) == len(clean), "branch_pattern forged {} extra receipt line(s): {}".format(
-        len(forged) - len(clean), forged
+    assert len(forged) == len(clean) + 1, (
+        "expected exactly one extra line (the branch_pattern problem sentence); "
+        "got {}: {}".format(len(forged) - len(clean), forged)
     )
-    # Not just the count: the value must still be *there*, folded, rather than dropped.
+    warn = [ln for ln in forged if ln.startswith("config warn:") and "branch_pattern" in ln]
+    assert len(warn) == 1, forged
+    # The branch row still renders -- `compute()` reports the problem and continues,
+    # it does not stop deriving the branch -- and it is still exactly one line.
     branch_row = [ln for ln in forged if ln.startswith("branch    :")]
     assert len(branch_row) == 1, forged
     assert "attacker-branch" in branch_row[0], branch_row
@@ -124,11 +136,14 @@ def test_a_carriage_return_in_branch_pattern_forges_no_line(tmp_path, stubbed):
     """A bare CR is a line terminator to `str.splitlines()` and repaints the current
     line on a terminal, and it is the one a fold written against newlines alone misses.
     `_one_line` splits on whitespace, so it catches both -- pinned rather than assumed.
+
+    Same one-legitimate-line adjustment as the test above, for the same reason:
+    `branch_pattern_problem` now refuses this value too.
     """
     clean = _lines(_write(tmp_path, "clean"))
     cr = "fix/{issue}\rboard     :\r  idle  attacker  /tmp/x"
     forged = _lines(_write(tmp_path, "cr", branch_pattern=cr))
-    assert len(forged) == len(clean), forged
+    assert len(forged) == len(clean) + 1, forged
 
 
 # ------------------------- the site the audit did not reach: a hostile config *key*

@@ -328,10 +328,15 @@ def branch_pattern_value(config):
     caller that skips validation writes `None` into a generated file as though it
     were a measured fact.
 
-    No shape check beyond "a string": unlike `default_branch`, this value is never
-    a git ref by itself -- it is a pattern containing a literal `{issue}` -- so
-    `_git_ref_problem` does not apply. It is still written into a code span, so the
-    render funnels it through `_code_span` exactly as `default_branch_name` does.
+    Refused through `oss_config.branch_pattern_problem`, which reuses the same
+    character class `default_branch_problem` does (`_git_ref_problem`) rather than
+    inventing a second one -- not because this value is a git ref itself (it
+    carries a literal `{issue}` no single branch ever has), but because it is
+    written into the same kind of code span for the same reason: CommonMark decides
+    block structure before an inline span is parsed, so a line break inside the
+    "span" is read as real document structure regardless of the backticks around
+    it. Every pattern this plugin ships or a maintainer would plausibly write
+    passes that class unchanged.
     """
     value = config.get("branch_pattern")
     if value is None:
@@ -340,10 +345,9 @@ def branch_pattern_value(config):
             "sentence stating it. A generated file is read as measured, so the "
             "value is refused rather than written as 'None'."
         )
-    if not isinstance(value, str):
-        raise ScaffoldError(
-            "branch_pattern: expected the pattern as a string; got {!r}.".format(value)
-        )
+    problem = oss_config.branch_pattern_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
     return value
 
 
