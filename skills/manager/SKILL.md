@@ -559,12 +559,19 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <the report path the ag
 older contract than the clone the work was done in, and routinely does, because a merged fix is
 invisible to the running loop until a tag is cut and installed. So:
 
-- **`ok`**, with the contract version it validated against — the routine answer.
+- **`ok`**, with the contract version it validated against — the routine answer. Since #416 that
+  version is sometimes **older than the copy's own**, and the line says so: the schema declares per
+  version whether it widened the one below it, and a chain of declared widenings back to the
+  report's number means a document valid there is valid here. `ok … read under version N` is a
+  weaker claim than a plain `ok` and is worth reading as one — it says the report satisfies a
+  contract this copy holds, not that it was written against this copy's contract.
 - **A finding** — the report is wrong, and the message says how.
 - **`UNVALIDATABLE`, exit 2** — the report names a contract *this copy does not hold*. That is a
   statement about the **validator**, not about the report, and it is the answer to relay rather than
   a defect to chase. A copy predating that verdict spells the same fact as
-  `INVALID … schema_version: expected N, got M`, which reads as a finding and is not one.
+  `INVALID … schema_version: expected N, got M`, which reads as a finding and is not one. An **older**
+  number reaching this answer now means something more specific than a version skew: some step
+  between the two contracts was declared breaking, or nobody declared it at all.
 
 When the two disagree, **the clone is the authority** — it is the tree the work was done in and the
 tree the release will ship. Nothing distinguishes the two copies by name; both manifests read `oss`,
