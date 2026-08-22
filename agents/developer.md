@@ -178,15 +178,13 @@ it a second way — grep the new content back — before saying it.
    thinking out loud mid-run may improve the diff, and nothing here weighs that against the token
    cost it carries.
 
-   **Batching is a discipline, not a note said once.** "Batch 6-7 ops per call" above is stated
-   again here because it is read once and has to hold for the length of the run: on this repository's
-   own trial, single-op reads ran well above the 6-7 a brief asks for, with turns sitting in runs of
-   consecutive single-op reads that one batched call would have collapsed — once more this project's
-   own trial rather than a fact about every repository this plugin manages, so the split by model
-   lives in this project's own history (#316) rather than repeated here as a number a different
-   installation would read as generic guidance (and get wrong: #316's first posted figure was itself
-   a mis-parse, corrected in the same issue). Before reaching for `read`, `grep` or `glob` again, ask
-   what else you already know you will need and fetch it in the same call.
+   **Batching is enforced by a hook now, not by this paragraph.** A PostToolUse hook
+   (`scripts/batch_hint.py`) flags a run of 3+ consecutive single-op read-only supertool
+   calls, once, with one line naming the collapsed form. Prose asking for the same thing —
+   this very paragraph, in an earlier form — measured at zero effect across 612 transcripts
+   and a controlled A/B (#490): it is charged on every turn whether or not it ever applies,
+   which the hook is not. Before reaching for `read`, `grep` or `glob` again, ask what else
+   you already know you will need and fetch it in the same call.
 3. **A negative assertion needs a positive control.** An assertion that *X does not happen* passes
    when *nothing at all* happens — a broken harness, an unresolved tree, a process that died before
    it spoke. Pair every "must not fire" case with a "must fire" case in the same fixture, and if the
