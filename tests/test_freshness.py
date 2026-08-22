@@ -79,6 +79,22 @@ def test_an_unparseable_version_is_unknown_not_behind():
     assert doctor.compare_versions("0.4.0", "unknown") == "unknown"
 
 
+def test_non_ascii_digits_do_not_raise_or_silently_compare_equal():
+    """`str.isdigit()` and `int()` do not agree on a domain (#388).
+
+    U+00B2 SUPERSCRIPT TWO is True for `isdigit()` and `int()` refuses it, so the
+    guard passes and the conversion raised -- a traceback where the contract promises
+    `unknown`. U+0662 ARABIC-INDIC DIGIT TWO is True for both, and `int()` accepts
+    it, so a version string nobody typed compared equal to a real one and a stale
+    install reported `current`. Paired with the positive controls so a parser that
+    returns `None` for everything cannot satisfy this test.
+    """
+    assert doctor.compare_versions("0.4.²", "0.5.0") == "unknown"
+    assert doctor.compare_versions("0.4.٢", "0.4.2") == "unknown"
+    assert doctor.compare_versions("0.4.0", "0.5.0") == "behind"
+    assert doctor.compare_versions("0.4.0", "0.4.0") == "current"
+
+
 # --------------------------------------------------------------- dependency report
 
 

@@ -3322,7 +3322,17 @@ def compare_versions(installed, latest):
         if not isinstance(value, str):
             return None
         parts = value.split(".")
-        if not parts or not all(part.isdigit() for part in parts):
+        # `str.isdigit()` and `int()` do not agree on a domain (#388):
+        # U+00B2 SUPERSCRIPT TWO is True for `isdigit()` and `int()` refuses it, so
+        # that guard alone lets the conversion below raise where the docstring
+        # promises `unknown`. U+0662 ARABIC-INDIC DIGIT TWO is True for `isdigit()`
+        # *and* accepted by `int()`, converting to 2 -- so a version string nobody
+        # typed would silently compare equal to a real one. An ASCII-only digit
+        # test closes both: `str.isdecimal()` alone does not, since U+0662 is also
+        # decimal.
+        if not parts or not all(
+            part and all(ch in "0123456789" for ch in part) for part in parts
+        ):
             return None
         return tuple(int(part) for part in parts)
 
