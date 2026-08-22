@@ -657,14 +657,21 @@ def below_bar_body_errors(report, body):
     """
     if not isinstance(body, str):
         return []
-    text = _collapse(_HTML_COMMENT.sub(" ", body))
+    text = _collapse(_HTML_COMMENT.sub(" ", body)).casefold()
     errors = []
     for label, item in below_bar_items(report):
         anchor = _collapse(_text(item, "pr_anchor"))
         if not anchor:
             # The shape pass already named this. Saying it twice buries the rest.
             continue
-        if anchor in text:
+        # Case-folded, and that is a measurement rather than a preference: the first
+        # report ever written against this check quoted a sentence the body carries
+        # inside `**bold**`, where the word is capitalised, and a case-sensitive
+        # containment refused a receipt that was plainly there. Folding can only turn
+        # a finding into a pass, never the reverse, so it costs the check nothing it
+        # was ever able to claim -- and a checker with false findings gets worked
+        # around rather than fixed.
+        if anchor.casefold() in text:
             continue
         errors.append(
             "pr_body.payload.body: {} says it is recorded in the pull request body "

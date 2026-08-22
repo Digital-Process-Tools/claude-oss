@@ -1824,6 +1824,34 @@ def test_a_wrapped_body_still_carries_the_anchor(tmp_path):
     assert report_schema.validate_pr_body(crlf, base_dir=tmp_path) == []
 
 
+def test_a_sentence_the_body_capitalises_is_still_the_receipt(tmp_path):
+    """Found by writing the first real report against this check, not by reasoning.
+
+    The body carried the sentence inside `**bold**`, where it opens a bullet and so
+    starts with a capital; the anchor quoted it mid-sentence in lower case, and a
+    case-sensitive containment refused a receipt that was plainly there. Folding can
+    only turn a finding into a pass, so it costs the check nothing it could claim --
+    and the pair below is what stops that being a licence: an anchor the body does
+    not carry at all is still refused.
+    """
+    report = _report_with_a_below_bar_item(
+        tmp_path,
+        body="- **The docstring above the helper is wider than the code under it.**",
+        anchor="the docstring above the helper is wider than the code under it",
+        name="capitalised.pr.json",
+    )
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []
+
+    # Must-fire, same fixture: folding case is not folding the sentence away.
+    absent = _report_with_a_below_bar_item(
+        tmp_path,
+        body="- **THE DOCSTRING SAYS SOMETHING ELSE ENTIRELY ABOUT THE HELPER.**",
+        anchor="the docstring above the helper is wider than the code under it",
+        name="folded-away.pr.json",
+    )
+    assert report_schema.validate_pr_body(absent, base_dir=tmp_path)
+
+
 def test_an_anchor_hidden_in_an_html_comment_is_not_a_receipt(tmp_path):
     """The receipt is a line somebody reads. A comment renders to nothing.
 

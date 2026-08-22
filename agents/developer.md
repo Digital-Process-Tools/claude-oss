@@ -305,7 +305,8 @@ fragment of the pull request body where you recorded it — write the line in th
 quote enough of it here to find it again, a phrase rather than a word. `report_schema.py` opens your
 payload and refuses the report when the body does not carry it, and refuses it too when
 `pr_body.state` is not `written`, because a receipt needs somewhere to be. Wrapping is free
-(whitespace is collapsed) and an anchor hidden in an HTML comment does not count, because nobody
+(whitespace is collapsed) and so is capitalisation (case is folded, so a sentence your body opens a
+bullet with still matches), while an anchor hidden in an HTML comment does not count, because nobody
 reads it. What the check cannot do is read your paragraph for substance — it is an absence detector,
 like the closing-keyword check, so a finding is strong and a pass is weak. The honest work is still
 writing the line.
