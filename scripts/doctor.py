@@ -60,12 +60,15 @@ sys.path.insert(0, str(SCRIPT_DIR))
 # That only resolves correctly when THIS module is what "doctor" names in
 # `sys.modules`. When this file runs as the script entry point its own module
 # name is `__main__`, not `doctor`, so without this alias each moved module's
-# `import doctor` would trigger a SECOND, independent execution of this file
-# under `sys.modules["doctor"]` -- a different module object with its own
-# separate `FINDINGS` list that `main()` (running as `__main__`) never
-# inspects, silently dropping every finding a moved check reports.
+# `import doctor` would reenter this very file under `sys.modules["doctor"]`
+# while it is still mid-import. Observed (by disabling this alias and running
+# the script): with `import doctor` placed before each module's own `def
+# check_X`, that reentry raises `ImportError: cannot import name 'check_X'`
+# immediately and doctor.py exits 1 -- loud, not the silent FINDINGS-undercount
+# a two-independent-copies story would suggest, though a future reordering of a
+# moved module's own imports could still produce that quieter failure instead.
 # `tests/test_doctor_check_relocation_497.py` runs this file as a subprocess to
-# hold this specific failure mode down; no other test exercises `__main__`.
+# hold this down either way; no other test exercises `__main__`.
 if __name__ == "__main__":
     sys.modules.setdefault("doctor", sys.modules[__name__])
 

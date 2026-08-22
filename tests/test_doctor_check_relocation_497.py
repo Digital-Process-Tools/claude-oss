@@ -17,9 +17,12 @@ the tool, rendered identically to a clean run.
 """
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -106,12 +109,18 @@ def test_doctor_py_runs_as_the_script_entry_point_and_reaches_every_moved_check(
     Without `doctor.py` aliasing itself into `sys.modules["doctor"]` when it is
     `__main__`, each `import doctor` inside a moved module would trigger a SECOND,
     independent execution of doctor.py under the name "doctor" -- a different
-    module object, with its own separate `FINDINGS` list that the real, running
-    `__main__` copy's `main()` never inspects. Every finding a moved check reports
-    would vanish from the tally silently: exit 0, a VERDICT line, just the wrong
-    one. Asserting on the report TEXT for each moved check (not merely "some
-    report happened") is what tells that apart from the checks running and being
-    dropped anyway.
+    module object, reentering its own `from doctor_check_X import check_X` at the
+    exact statement that started the reentry. Observed, by temporarily disabling
+    the alias: with every moved module's `import doctor` placed before its own
+    `def check_X`, this is not the silent FINDINGS-undercount it might sound like --
+    Python's partial-module guard raises `ImportError: cannot import name
+    'check_auto_update' from 'doctor_check_auto_update'` immediately, and doctor.py
+    exits 1, which the `returncode == 0` assertion below already catches. The
+    VERDICT-count comparison further down is retained anyway, as insurance against
+    a differently-ordered future edit (`import doctor` placed after the `def`,
+    say) under which the crash might soften into the silent undercount this was
+    originally written to describe -- reasoned, not reproduced, since the current
+    file layout crashes first every time this was tried.
     """
     completed = subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "doctor.py"), "--root", str(tmp_path)],
@@ -146,3 +155,42 @@ def test_doctor_py_runs_as_the_script_entry_point_and_reaches_every_moved_check(
                 check_name, needle, output
             )
         )
+    # The substring checks above are not the whole test: `_emit` prints
+    # unconditionally regardless of which module object's `FINDINGS` list a
+    # `doctor.report(...)` call happened to append to, so every one of those
+    # substrings would still appear in `output` even with the aliasing bug this
+    # test exists to catch -- a duplicate "doctor" module still calls the same
+    # `_emit`/`_safe_print`, it just tallies into a `FINDINGS` list `main()`
+    # never reads. The bug's only visible effect is in the VERDICT line's own
+    # arithmetic: `main()` sums FAIL/WARN counts from ITS `FINDINGS`, so a check
+    # whose report landed in a second module's list is missing from that sum
+    # while its own report line still printed. Recomputing the counts from the
+    # printed lines and comparing them to the VERDICT line's own numbers is
+    # what actually exercises the aliasing fix rather than merely the fact that
+    # `main()` ran to completion.
+    verdict_line = lines[-1]
+    printed_fails = sum(1 for line in lines[:-1] if line.startswith("FAIL "))
+    printed_warns = sum(1 for line in lines[:-1] if line.startswith("WARN "))
+    match = re.search(
+        r"(\d+) failure\(s\), (\d+) warning\(s\)|(\d+) warning\(s\)", verdict_line
+    )
+    if verdict_line == "VERDICT: ok":
+        stated_fails, stated_warns = 0, 0
+    elif match and match.group(1) is not None:
+        stated_fails, stated_warns = int(match.group(1)), int(match.group(2))
+    elif match and match.group(3) is not None:
+        stated_fails, stated_warns = 0, int(match.group(3))
+    else:
+        pytest.fail(
+            "the VERDICT line has neither the `ok` shape nor a parseable "
+            "failure/warning count: {!r}".format(verdict_line)
+        )
+    assert (stated_fails, stated_warns) == (printed_fails, printed_warns), (
+        "the VERDICT line claims {} failure(s) and {} warning(s), but {} FAIL "
+        "and {} WARN line(s) were actually printed -- this is exactly what the "
+        "aliasing bug would produce: every moved check's own report line still "
+        "prints (through a second module's identical `_emit`), while its state "
+        "never reaches `main()`'s own `FINDINGS` tally.\n{}".format(
+            stated_fails, stated_warns, printed_fails, printed_warns, output
+        )
+    )
