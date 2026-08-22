@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import oss_config  # noqa: E402
+import skip_symlink  # noqa: E402
 
 
 # --------------------------------------------------------------------------- schema
@@ -382,23 +383,15 @@ def test_a_symlinked_target_escaping_the_root_is_refused(tmp_path):
     root.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    try:
-        (root / "evil").symlink_to(outside, target_is_directory=True)
-    except (OSError, NotImplementedError) as exc:
-        # The fixture is a measurement, not a given: symlink creation needs a
-        # privilege on Windows. Say which platform declined, what it raised and
-        # what therefore went untested -- a bare "will not create" reads as a
-        # property nobody had to check.
-        pytest.skip(
-            "{}: this platform would not create a directory symlink ({}, errno {!r}, "
-            "winerror {!r}), so 'a symlinked worktree target escaping the root is "
-            "refused' went untested here".format(
-                sys.platform,
-                type(exc).__name__,
-                getattr(exc, "errno", None),
-                getattr(exc, "winerror", None),
-            )
-        )
+    # A directory target, so #265's Windows-junction fallback applies here too:
+    # see tests/skip_symlink.py for why a plain symlink alone would leave this
+    # case skipping on every unelevated Windows leg.
+    skip_symlink.symlink_or_skip(
+        root / "evil",
+        outside,
+        target_is_directory=True,
+        what="'a symlinked worktree target escaping the root is refused'",
+    )
     with pytest.raises(oss_config.ContainmentError):
         oss_config.resolve_worktree(root, "evil")
 
