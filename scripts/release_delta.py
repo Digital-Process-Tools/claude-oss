@@ -418,9 +418,27 @@ def compute(repo, match=None, config=None):
 
 def _compute_range(repo, match):
     repo = Path(repo)
-    if not repo.is_dir():
+    # #383: `Path.is_dir()` is not the "never raises" call `compute()`'s own
+    # docstring promises -- it swallows a version-dependent set of `OSError`s
+    # (the same fact `_read_config`, just below, is written around) and can
+    # raise for an unreadable parent on at least 3.9/3.11/3.13. `os.path.isdir`
+    # is the stdlib's own always-swallowing sibling (`genericpath.isdir`
+    # catches `(OSError, ValueError)` unconditionally, unlike `Path.is_dir()`),
+    # so the message below stays accurate for the ordinary case and the gate
+    # no longer depends on which interpreter happens to be running it. Nothing
+    # downstream needs a sharper "unreadable" than "could not run" either way:
+    # `git rev-parse` over the same path fails no more informatively.
+    if not os.path.isdir(str(repo)):
+        # "not a directory" covers both a path that genuinely is not one and a
+        # path `os.path.isdir` could not stat at all (EACCES on a parent) --
+        # `genericpath.isdir` answers `False` for both, and the message says
+        # so rather than asserting the sharper of the two as fact. Nothing
+        # downstream reads a difference: `STATE_COULD_NOT_RUN` is the one
+        # bucket for both, never folded into "no delta" the way an empty
+        # world would be.
         return _could_not_run(
-            "the path is not a directory, so there is no repository to read",
+            "the path is not a directory, or could not be examined, so there "
+            "is no repository to read",
             str(repo),
         )
 

@@ -53,6 +53,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -129,14 +130,41 @@ def _destination_occupied(path):
     return True
 
 
+def _source_present(path):
+    """Whether `path` is there and a plain file: True, False, or None for
+    "could not look" -- the same shape `_destination_occupied` uses for the
+    rename's destination, applied to its source (#383).
+
+    A bare `Path.is_file()` swallows a version-dependent set of `OSError`s
+    (CLAUDE.md) rather than being the "never raises" call it looks like, so
+    it could answer "no such file" -- the exact REFUSED message below -- for
+    a source this process could not stat at all, on whichever interpreter
+    does not happen to swallow that particular errno. `os.stat` and the
+    exception in hand classify instead, matching `_destination_occupied`.
+    """
+    try:
+        st = os.stat(str(path))
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return None
+    return stat.S_ISREG(st.st_mode)
+
+
 def rename(fragment_path, new_issue, use_git=True):
     """Rename `fragment_path` to carry `new_issue`, rewriting its own
     self-reference to match. Returns `(state, message, new_path)` --
     `new_path` is `None` only when nothing was written at all.
     """
     old_path = Path(fragment_path)
-    if not old_path.is_file():
-        return REFUSED, "{0}: no such file".format(old_path), None
+    present = _source_present(old_path)
+    if present is not True:
+        detail = (
+            "no such file"
+            if present is False
+            else "could not be examined, refusing to guess it is there"
+        )
+        return REFUSED, "{0}: {1}".format(old_path, detail), None
 
     try:
         fragment = parse_fragment_name(old_path.name)
