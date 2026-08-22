@@ -97,6 +97,23 @@ def test_rename_moves_the_self_reference_with_the_filename(tmp_path):
         after.stderr,
     )
 
+    # `git mv` alone stages the pre-rewrite bytes; the rewrite happens on disk
+    # afterwards, so it must also be staged, or `git commit --amend` (no `-a`,
+    # the instruction skills/manager/SKILL.md gives) would commit the OLD body
+    # under the NEW filename -- the exact defect this tool exists to close,
+    # one layer later.
+    unstaged = subprocess.run(
+        ["git", "diff", "--", "changelog.d/425.fixed.md"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+    )
+    assert unstaged.stdout == "", (
+        "the rewritten body was not staged -- an amend without an explicit "
+        "`git add` would commit the pre-rewrite text",
+        unstaged.stdout,
+    )
+
 
 def test_rename_refuses_when_the_body_never_named_the_old_issue(tmp_path):
     """Control on the failure path: a fragment that never named its own issue

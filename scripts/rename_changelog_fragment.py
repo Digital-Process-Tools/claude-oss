@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -110,11 +111,24 @@ def rename(fragment_path, new_issue, use_git=True):
     )
 
     if use_git:
-        result = subprocess.run(
-            ["git", "mv", str(old_path), str(new_path)],
-            capture_output=True,
-            text=True,
-        )
+        git = shutil.which("git")
+        if git is None:
+            return REFUSED, "git is not on PATH -- cannot `git mv` {0}".format(old_path), None
+        try:
+            result = subprocess.run(
+                [git, "mv", str(old_path), str(new_path)],
+                capture_output=True,
+                text=True,
+                errors="replace",
+            )
+        except (OSError, ValueError) as exc:
+            return (
+                REFUSED,
+                "git mv {0} {1} failed to run: {2}: {3}".format(
+                    old_path, new_path, type(exc).__name__, exc
+                ),
+                None,
+            )
         if result.returncode != 0:
             return (
                 REFUSED,
@@ -125,6 +139,12 @@ def rename(fragment_path, new_issue, use_git=True):
         old_path.rename(new_path)
 
     new_path.write_text(rewritten, encoding="utf-8")
+
+    if use_git and git is not None:
+        # `git mv` above staged the pre-rewrite bytes; without this, `git commit
+        # --amend` (no `-a`) would commit the old body under the new filename --
+        # the exact defect this tool exists to close, one layer later.
+        subprocess.run([git, "add", str(new_path)], capture_output=True, text=True, errors="replace")
 
     finding = self_reference_finding(new_path.name, rewritten)
     if finding:
