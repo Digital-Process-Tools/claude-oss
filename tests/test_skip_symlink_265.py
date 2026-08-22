@@ -94,7 +94,20 @@ def test_the_real_junction_mechanism_is_measured_not_assumed(tmp_path, monkeypat
     monkeypatch.setattr(Path, "symlink_to", _refuse)
     link = tmp_path / "evil"
     if landed:
-        result = skip_symlink.symlink_or_skip(link, target, target_is_directory=True, what="the probe")
+        # Same trap as the sibling test just below this one: a caller
+        # regression that discards a landed junction raises
+        # pytest.skip.Exception, which an unhandled call here would let
+        # propagate -- reporting SKIPPED, not FAILED, on the one branch a
+        # real Windows leg is now known to reach (windows-latest/3.10).
+        try:
+            result = skip_symlink.symlink_or_skip(
+                link, target, target_is_directory=True, what="the probe"
+            )
+        except pytest.skip.Exception as exc:
+            pytest.fail(
+                "symlink_or_skip skipped ({}) even though the real junction landed -- "
+                "a successful fallback must be asserted, not silently skipped".format(exc)
+            )
         assert result == link
         assert link.resolve() == target.resolve()
     else:

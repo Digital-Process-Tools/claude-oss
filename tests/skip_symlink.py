@@ -23,14 +23,26 @@ Both mechanisms are measured the same way: created, then confirmed to
 junction that resolved to itself would leave the caller's assertion passing
 for a reason nobody chose.
 
-Nothing here has been observed against an actual Windows runner -- there is
-none on this machine. The junction fallback is *reasoned*: `mklink /J` needing
-no privilege and `os.path.realpath`/`Path.resolve()` following a junction
-since Python 3.8 (bpo-9949) are both documented Windows/CPython behaviour, not
-something this suite has watched happen. A failed junction attempt never
-raises out of this module -- it is folded into the skip reason next to the
-symlink failure, so a wrong guess about Windows costs a slightly less precise
-skip message, never a red leg.
+Nothing here has been observed against an actual Windows runner from THIS
+machine -- there is none on it. But this module has since been run on one:
+`windows-latest`/3.10 in CI exercised the directory-target case for real and
+the junction landed, so two of the three claims below moved from *reasoned* to
+*observed* -- not by this authoring machine, by that CI leg. What that one
+run establishes, and what it does not:
+
+- **observed** (windows-latest/3.10): `mklink /J` needs no elevated privilege
+  on an unprivileged runner -- it did not raise there.
+- **observed** (windows-latest/3.10): `Path.resolve()` follows the junction it
+  created, the same way it follows a symlink -- `_junction`'s own internal
+  `landed` check passed there.
+- **still reasoned, not observed**: the three *failure* arms of `_junction`
+  (the subprocess failing to spawn, `mklink` exiting non-zero, or a created
+  junction that does not resolve to the target) have not been exercised by any
+  CI run so far -- the one Windows leg that has run this took the success
+  path. A failed junction attempt never raises out of this module regardless
+  -- it is folded into the skip reason next to the symlink failure, so a wrong
+  guess about any of those three arms costs a slightly less precise skip
+  message, never a red leg.
 """
 
 import subprocess
