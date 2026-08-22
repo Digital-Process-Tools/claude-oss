@@ -53,6 +53,25 @@ PLUGIN_ROOT = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
+# #497: five `check_*` functions moved out of this file into their own modules
+# (`scripts/doctor_check_*.py`), each reaching this module's shared names through
+# `import doctor` rather than `from doctor import name` -- so a monkeypatch on
+# `doctor.<name>` from a test still reaches code that used to be inline here.
+# That only resolves correctly when THIS module is what "doctor" names in
+# `sys.modules`. When this file runs as the script entry point its own module
+# name is `__main__`, not `doctor`, so without this alias each moved module's
+# `import doctor` would reenter this very file under `sys.modules["doctor"]`
+# while it is still mid-import. Observed (by disabling this alias and running
+# the script): with `import doctor` placed before each module's own `def
+# check_X`, that reentry raises `ImportError: cannot import name 'check_X'`
+# immediately and doctor.py exits 1 -- loud, not the silent FINDINGS-undercount
+# a two-independent-copies story would suggest, though a future reordering of a
+# moved module's own imports could still produce that quieter failure instead.
+# `tests/test_doctor_check_relocation_497.py` runs this file as a subprocess to
+# hold this down either way; no other test exercises `__main__`.
+if __name__ == "__main__":
+    sys.modules.setdefault("doctor", sys.modules[__name__])
+
 try:
     import oss_config
 except ImportError:  # pragma: no cover - the module sits beside this file
@@ -1993,733 +2012,65 @@ def check_state_file(project_dir, config):
         )
 
 
-#: The literal template line scaffold's fragments-README writes for a `removed`
-#: fragment (#259). `release_version.py` quotes this same text in its own refusal, so
-#: matching it here rather than a looser pattern means "documents the bullet" answers
-#: the identical question that refusal already asks.
-COMPATIBILITY_BULLET = "- Compatibility: breaking|compatible - <reason>"
+# COMPATIBILITY_BULLET and _fragments_directory moved to
+# scripts/doctor_check_fragments_readme.py along with check_fragments_readme
+# (#497); see that module.
 
 
-def _fragments_directory(project_dir, config):
-    """The changelog fragments directory this repo actually uses, or ``None`` when
-    nothing here can name one.
-
-    Mirrors `release_version._fragment_dir`'s resolution for the config-file half
-    (`--dir` on a command line is that function's own first arm and has no
-    equivalent here): an explicit, valid `changelog_dir` wins; a null or invalid
-    one falls through to `oss_config.scaffolded_changelog_gate`, which reads the
-    directory back out of the scaffolded gate workflow on disk rather than
-    guessing the default. A `changelog_dir` that fails validation returns `None`
-    here rather than silently trying the default -- the value is broken, not
-    absent, and a directory picked in its place would be one nobody named.
-    """
-    named = config.get("changelog_dir")
-    if isinstance(named, str) and named.strip():
-        if oss_config.changelog_dir_problem(named):
-            return None
-        return Path(project_dir) / named
-    state, detail = oss_config.scaffolded_changelog_gate(project_dir)
-    if state == "present":
-        return Path(project_dir) / oss_config.DEFAULT_FRAGMENTS_DIR
-    if state == "present-other-dir":
-        return Path(project_dir) / detail
-    # `absent` (never adopted), `unknown` (the gate could not be read),
-    # `present-refused-dir` (the gate names a directory that cannot be used) and
-    # `present-bare-dir` (a `--dir` flag on disk with no argument) all resolve to
-    # "nothing to check" here, deliberately collapsed rather than given the four
-    # distinct refusal messages `release_version._fragment_dir` returns for them:
-    # those exist to steer a release-blocking failure with a remedy per cause,
-    # and this is a non-blocking diagnostic whose only obligation on this arm is
-    # "do not warn" -- one directory-not-found answer satisfies all four.
-    return None
+# Moved to scripts/doctor_check_auto_update.py (#497) -- see that module for
+# the check and its docstring, unchanged; this is a pure relocation.
+from doctor_check_auto_update import check_auto_update
 
 
-def check_auto_update(project_dir):
-    """Did the SessionStart updater run, and what did it do (#480)?
-
-    Four states, and the fourth is the one this whole feature turns on:
-
-    * **off** -- switched off by the environment or by a config key. Reported at OK with
-      the switch named, because a user who turned it off is not carrying a gap.
-    * **updated** -- with the versions it moved between, and the fact that this session
-      is still running the old code until Claude Code restarts.
-    * **current** / **could-not-check** -- the updater's own two answers, relayed. A run
-      that could not reach the marketplace must never read as `current`, so the row does
-      not collapse them.
-    * **no receipt at all** -- the hook has not run in this install, or could not write.
-      That is not "up to date": nothing has been established, and the row says so.
-    * **a receipt that exists and is broken** (#484) -- corrupt JSON, or a permission
-      that changed underneath it. Told apart from "no receipt at all" by the exception
-      `plugin_update.read_receipt` actually caught, never by asking the filesystem a
-      second question; folding it into "no receipt" would report a broken receipt as
-      the ordinary pre-first-run state.
-    """
-    if plugin_update is None:
-        unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
-        return
-    off, where = plugin_update.opt_out(project_dir)
-    receipt = plugin_update.read_receipt()
-    if off:
-        report("OK", "auto-update: off -- {}".format(where))
-        return
-    if isinstance(receipt, plugin_update.ReceiptUnreadable):
-        # A receipt that exists and is broken is not a receipt that was never written
-        # (#484) -- the "ordinary state" arm below is only honest about absence, and
-        # this is the exception in hand saying the opposite: something is there.
-        report(
-            "WARN",
-            "auto-update: receipt at {} exists and could not be read ({}) -- this is "
-            "not the ordinary before-the-next-session state; something was written "
-            "and is now broken.".format(plugin_update.receipt_path(), receipt.detail),
-        )
-        return
-    if not isinstance(receipt, dict):
-        # The ordinary state of a fresh install: the hook runs at the NEXT session
-        # start, so every repo would carry this warning on the day it was set up. It
-        # reports at OK and says in the text that nothing was established -- the same
-        # shape `check_fragments_readme` uses for its absent arm, and for the same
-        # reason: "not a finding" only if the wording does not read as a pass either.
-        report(
-            "OK",
-            "auto-update: no receipt at {} -- the SessionStart hook has not run in this "
-            "install yet, which is the ordinary state before the next session starts. "
-            "Nothing here says the plugin is current; it says nothing was "
-            "recorded.".format(plugin_update.receipt_path()),
-        )
-        return
-    when = receipt.get("at")
-    stamp = ""
-    if isinstance(when, (int, float)):
-        stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
-    state = receipt.get("state")
-    if state == "updated":
-        report(
-            "WARN",
-            "auto-update: updated {} from {} to {}{} -- this session is still running "
-            "the old copy; restart Claude Code.".format(
-                receipt.get("plugin"), receipt.get("from"), receipt.get("to"), stamp
-            ),
-        )
-        return
-    if state == "current":
-        report("OK", "auto-update: {} already current{}".format(receipt.get("plugin"), stamp))
-        return
-    report(
-        "WARN",
-        "auto-update: could not check{} -- {}. This is not a statement that the plugin "
-        "is current.".format(stamp, receipt.get("detail")),
-    )
+# Moved to scripts/doctor_check_statusline.py (#497) -- see that module for
+# the check, its private helper and their docstrings, unchanged; this is a
+# pure relocation.
+from doctor_check_statusline import _POSIX_VAR_RE, _statusline_windows_gap, check_statusline
 
 
-#: POSIX shell variable expansion -- `$VAR` or `${VAR}`. cmd.exe, Windows's default
-#: command interpreter, expands `%VAR%` instead and does not touch this syntax at all,
-#: so a command written with it is a claim about a shell that may not be the one
-#: running it (#487). This is the establishable half: the syntax is a fact about the
-#: string. Which shell actually executes a `statusLine` command on Windows is not --
-#: nobody has run one there to confirm -- so this flags the syntax gap without
-#: asserting the command definitely fails.
-_POSIX_VAR_RE = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?")
+# Moved to scripts/doctor_check_fragments_readme.py (#497) -- see that module
+# for the check, its private helper and constant, and their docstrings,
+# unchanged; this is a pure relocation.
+from doctor_check_fragments_readme import (
+    COMPATIBILITY_BULLET,
+    _fragments_directory,
+    check_fragments_readme,
+)
 
 
-def _statusline_windows_gap(command, windows=None):
-    """The POSIX-only syntax found in `command`, or `""` if none, on THIS platform.
-
-    Only fires when `windows` is true, which defaults to `os.name == "nt"` -- the
-    syntax is unremarkable and correct on every platform this plugin actually runs the
-    command on, and a check that warned on POSIX too would be noise on every run there.
-    `windows` is a parameter rather than read from `os.name` unconditionally so a test
-    can drive both branches without monkeypatching `os.name` itself, which `pathlib`
-    also reads and which breaks `Path()` construction the moment it is patched.
-    """
-    if windows is None:
-        windows = os.name == "nt"
-    if not windows or not command:
-        return ""
-    match = _POSIX_VAR_RE.search(command)
-    return match.group(0) if match else ""
-
-
-def check_statusline(project_dir):
-    """Is the status line wired to something, and is it wired to ours (#479)?
-
-    Four states, and the fourth is the reason this is a check rather than a scaffold
-    fix. `.claude/settings.json` is not ours -- `scaffold.apply_settings` writes the
-    `statusLine` key only when it is absent -- so a repo that already had one keeps it,
-    and this reports rather than repairs.
-
-    * the key names `<OWNED_DIR>/statusline.py` -- OK, it is ours and it is running.
-    * the key names something else -- OK with the command quoted. Somebody chose that,
-      and a diagnostic that WARNs about a working status line is noise on every run.
-    * no `statusLine` key, or no settings file -- WARN, and the remedy is the block to
-      paste, because `/oss:scaffold` writes it only when the file has no key at all and
-      a reader whose file was declined needs the text rather than the command.
-    * the file could not be read or parsed -- `unknown`. Whether a status line is wired
-      here was not established, which is not the same as it having none, and the row
-      must not read as either of the two answers above.
-
-    A fifth thing this substring match used to miss (#487), folded into the first two
-    states above rather than given a fifth of its own: `statusline.py` appearing in the
-    command string is not the same claim as the command RUNNING here. The written
-    command uses `$CLAUDE_PROJECT_DIR` (POSIX shell variable expansion) and a bare
-    `python3`; on Windows, whose default command interpreter expands `%VAR%` rather than
-    `$VAR`, that syntax does not resolve, so a repo can be graded `OK ... wired` about a
-    status line that never runs. This is established from the syntax alone -- nobody has
-    run a status line on Windows to confirm it (reasoned, not observed) -- so the WARN
-    below names that gap rather than asserting the command definitely fails.
-
-    This fires on a freshly-scaffolded repo's own default, which is real rather than a
-    test artifact: `/oss:doctor` on Windows now warns about the exact command
-    `/oss:scaffold` just wrote, with no other statusLine present to fall back to, and
-    that WARN needs a remedy a reader can act on rather than only naming the gap --
-    `statusLine` is left alone once a key is present (second bullet above), so replacing
-    the written command with one of the reader's own choosing silences it. The remedy
-    offered uses `%CLAUDE_PROJECT_DIR%` and a bare `python`: correct IF `cmd.exe` is what
-    actually runs the string, reasoned from Claude Code exporting the variable as
-    ordinary process environment rather than doing its own substitution -- untested, so
-    it is offered as a thing to try and said so in the message, not asserted as fixed.
-    """
-    if scaffold is None:  # pragma: no cover - guarded the same way the callers are
-        unmeasured("statusline", NO_SCAFFOLD)
-        return
-    settings = Path(project_dir) / ".claude" / "settings.json"
-    block = json.dumps({"statusLine": dict(scaffold.STATUSLINE_SETTING)}, indent=2)
-    if not _safe_is_file(settings):
-        report(
-            "WARN",
-            "statusline: {} has no statusLine -- the loop's board, next tick and "
-            "plugin currency are not on screen. /oss:scaffold writes this key when the "
-            "file has none: {}".format(settings, block),
-        )
-        return
-    try:
-        document = json.loads(settings.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        report(
-            "WARN",
-            "statusline: {} could not be read ({}), so whether a status line is wired "
-            "here is unknown -- not absent.".format(settings, exc),
-        )
-        return
-    if not isinstance(document, dict) or "statusLine" not in document:
-        report(
-            "WARN",
-            "statusline: {} sets no statusLine. To wire ours: {}".format(settings, block),
-        )
-        return
-    command = ""
-    entry = document.get("statusLine")
-    if isinstance(entry, dict):
-        command = str(entry.get("command") or "")
-    unresolved = _statusline_windows_gap(command)
-    if "statusline.py" in command:
-        if unresolved:
-            # A remedy, not just a name for the gap: `statusLine` is left alone once a
-            # key is present (this function's own docstring, second bullet), so a reader
-            # who wants this WARN gone can replace the `command` this plugin wrote with
-            # one of their own. `%CLAUDE_PROJECT_DIR%` and a bare `python` are what
-            # cmd.exe's own variable syntax and Windows's usual interpreter name would
-            # be IF cmd.exe is what actually runs this string -- reasoned from Claude
-            # Code exporting the variable as ordinary process environment, not observed
-            # by running a status line on Windows, so it is offered as a thing to try
-            # rather than asserted as the fix.
-            windows_try = 'python "%CLAUDE_PROJECT_DIR%"/' + scaffold.OWNED_DIR + "/statusline.py"
-            report(
-                "WARN",
-                "statusline: wired to {} -- this is POSIX shell syntax ({}); Windows's "
-                "default command interpreter does not expand it, so this is reasoned "
-                "from the syntax, not observed, but the status line may not be running "
-                "here. Untested, offered as a thing to try rather than a confirmed fix: "
-                "{}".format(command, unresolved, windows_try),
-            )
-            return
-        report("OK", "statusline: wired to {}".format(command))
-        return
-    if unresolved:
-        report(
-            "WARN",
-            "statusline: wired to a status line that is not ours ({}) -- POSIX shell "
-            "syntax ({}) that Windows's default command interpreter does not expand; "
-            "reasoned from the syntax, not observed.".format(command, unresolved),
-        )
-        return
-    report(
-        "OK",
-        "statusline: wired to a status line that is not ours ({}) -- a decision, left "
-        "alone.".format(command or "no command"),
-    )
-
-
-def check_fragments_readme(project_dir, config):
-    """Does `<changelog_dir>/README.md` document the Compatibility bullet a `removed`
-    fragment must carry (#260)?
-
-    `scripts/release_version.py` already refuses a `removed` fragment with no
-    compatibility verdict and quotes the required bullet in full, so nobody is
-    stranded by this alone -- they are sent to a document that may be silent, with
-    the answer already on their screen. This converts *discovered at the moment a
-    release stops* into *reported before it does*.
-
-    Why a `doctor` check and not a `scaffold` fix: the fragments README is a
-    DEFAULT under this repository's ownership contract (see CLAUDE.md's "Three
-    ownership contracts") -- created once when absent, then the repo's own forever.
-    Scaffold's template gained the Compatibility section in #259, but a repo
-    scaffolded before that change already carries the old file, and re-running
-    `/oss:scaffold` will not deliver the new section to it: a default is never
-    replaced, or the promise that a decision somebody made is never overwritten
-    breaks. The only mechanism that can reach a repository already carrying the old
-    file is one that REPORTS -- same shape as #205.
-
-    Three states, and the third is load-bearing:
-
-    * the file exists and carries the bullet -- OK.
-    * the file exists and does not -- WARN, and the remedy must say
-      `/oss:scaffold` will NOT fix it, because naming a command that declines to
-      act reads as a fix and performs nothing (the `misdirects` row).
-    * the file is absent or unreadable -- most repos have no fragment practice at
-      all, so this is the ORDINARY state. It must not render as a finding (that
-      would WARN on nearly every scaffolded repo) and the wording must not read as
-      a verified pass either, so it reports OK with "not checked" in the text --
-      the same shape `jit_index_drift`'s undecidable-and-untouched arm uses, and
-      for the identical reason: "not a finding" only if the state doesn't say so.
-
-    The directory is never just `config.get("changelog_dir")` or-else-the-default:
-    a null `changelog_dir` is ambiguous between "never adopted fragments" and
-    "adopted through scaffold's own fallback, which does not always pick the
-    default directory" (#325). `release_version._fragment_dir` resolves that
-    ambiguity by reading the directory back out of the scaffolded gate workflow
-    on disk when the key is null, and this check reuses the exact same
-    `oss_config.scaffolded_changelog_gate` lookup -- otherwise a repo whose
-    `changelog_dir` was set at scaffold time and later nulled (legal; the key is
-    in `NULLABLE_KEYS`) would have this check silently look at `changelog.d/`
-    while the actual, gated, `removed`-fragment-refusing directory sits
-    elsewhere entirely.
-    """
-    if config is None:
-        unmeasured("fragments readme")
-        return
-    if oss_config is None:
-        unmeasured("fragments readme", NO_SCAFFOLD)
-        return
-    directory = _fragments_directory(project_dir, config)
-    if directory is None:
-        report(
-            "OK",
-            "fragments readme: changelog_dir names no directory this run could "
-            "resolve -- the ordinary state for a repo with no fragment practice, "
-            "and not a finding on its own.",
-        )
-        return
-    path = directory / "README.md"
-    if not _safe_is_file(path):
-        report(
-            "OK",
-            "fragments readme: {} absent -- the ordinary state for a repo with no "
-            "fragment practice, and not a finding on its own.".format(path),
-        )
-        return
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        report(
-            "OK",
-            "fragments readme: {} unreadable -- {}, so the Compatibility bullet "
-            "could not be checked.".format(path, _os_error_detail(exc)),
-        )
-        return
-    if COMPATIBILITY_BULLET in text:
-        report("OK", "fragments readme: {} documents the Compatibility bullet".format(path))
-        return
-    # The diagnostic clause above names `path` -- a file on disk -- and stays
-    # absolute whenever `project_dir` is (which `scripts/doctor.sh` and
-    # `CLAUDE_PROJECT_DIR` both produce). The remedy clause names a
-    # `scaffold.show` argument instead, and `scaffold.show` matches by string
-    # equality against REPO-RELATIVE template keys (`fragments_dir(config) +
-    # "/README.md"`) -- so quoting the same absolute `path` there named a
-    # command that fails everywhere except `--root .` (#438). `relative_to`
-    # can only fail if `directory` ever escaped `project_dir`, which
-    # `_fragments_directory` never returns; the `except` exists so a future
-    # change to that invariant degrades to the pre-#438 (broken-under-abs-root)
-    # message rather than raising out of a diagnostic that must always exit 0.
-    try:
-        shown_path = path.relative_to(Path(project_dir)).as_posix()
-    except ValueError:
-        shown_path = str(path)
-    report(
-        "WARN",
-        "fragments readme: {} exists and does not document `{}`, which "
-        "`scripts/release_version.py` requires on a `removed` fragment. "
-        "/oss:scaffold will not fix it -- the file is a default and is never "
-        "replaced once it exists. Paste the section by hand from "
-        "`scripts/scaffold.py --show {}`.".format(path, COMPATIBILITY_BULLET, shown_path),
-    )
-
-
-MEMORY_DIR = ".remember"
 JIT_RULES_DIR = ".claude/jit-context"
 JIT_INDEX = "00-index.tsv"
 
 
-MEMORY_CONFIG_DIR = ".claude/remember"
+# MEMORY_DIR, MEMORY_CONFIG_DIR, memory_layout, _display, _listdir,
+# _identity_names and check_memory moved to scripts/doctor_check_memory.py
+# (#497); see that module for the check and its private helpers, unchanged.
+from doctor_check_memory import (
+    MEMORY_DIR,
+    MEMORY_CONFIG_DIR,
+    memory_layout,
+    _display,
+    _listdir,
+    _identity_names,
+    check_memory,
+)
 
 
-def memory_layout(project_dir):
-    """Where the memory plugin keeps its config and its saved sessions.
-
-    Two different places: `config.json` sits in `.claude/remember/`, while sessions go
-    to the `data_dir` that config names (`.remember` by default).
-
-    identity.md can sit in either, and which one is READ depends on the install layout,
-    which is why this went round twice. Measured against the plugin's session-start
-    hook rather than reasoned about: it tries `$REMEMBER_DIR/identity.md` (the data
-    dir), then the data dir's parent, then the plugin's own directory. In a local
-    install the plugin's own directory IS `<repo>/.claude/remember/`, so identity there
-    is read -- as the last-resort fallback. In a marketplace or dependency install,
-    which is how this plugin declares it, the plugin lives outside the repo entirely
-    and `<repo>/.claude/remember/identity.md` is never read at all.
-
-    So the data dir is the location that works in every layout, and it is also the safe
-    one: the plugin writes a `.gitignore` containing `*` there, so the file cannot be
-    committed by accident. `.claude/` is partly tracked in a scaffolded repo and is not
-    safe in the same way.
-    """
-    root = Path(project_dir)
-    config_dir = root / MEMORY_CONFIG_DIR
-    data_dir = root / MEMORY_DIR
-    try:
-        doc = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
-        if isinstance(doc, dict) and doc.get("data_dir"):
-            data_dir = root / str(doc["data_dir"])
-    except (OSError, ValueError):
-        pass
-    return config_dir, data_dir
-
-
-def _display(project_dir, path):
-    """A path the reader can act on, relative to the repo when it is inside it."""
-    try:
-        return path.relative_to(Path(project_dir)).as_posix()
-    except ValueError:
-        return str(path)
-
-
-def _listdir(directory):
-    """One directory's entries, in three states rather than two.
-
-    Returns ``(entries, problem)``. ``problem`` is ``None`` when the listing
-    succeeded, ``"absent"`` when the directory is not there, and a sentence when it
-    is there and could not be read.
-
-    ``Path.is_dir`` and ``Path.glob`` are both unusable here, and for the same
-    reason: each destroys the answer. ``is_dir()`` swallows ``OSError`` and returns
-    True for a directory that exists and cannot be entered, and pathlib's glob
-    swallows ``PermissionError`` while walking and yields nothing -- so "read it,
-    found no identity file" and "could not read it" arrived at the caller
-    identically, and the caller then said the first out loud (#284, and the same
-    mechanism as #124 one directory over).
-
-    No second question is asked of the filesystem to explain why the first failed:
-    the exception already in hand settles it. ``FileNotFoundError`` is absence,
-    ``NotADirectoryError`` is a file standing where a directory was expected, and
-    anything else is unreadable. ``Path.exists()`` would answer with its own
-    swallowed errno list and gets no vote.
-    """
-    try:
-        return sorted(os.listdir(str(directory))), None
-    except FileNotFoundError:
-        return [], "absent"
-    except NotADirectoryError:
-        return [], "is a file, not a directory"
-    except OSError as exc:
-        return [], "could not be read ({})".format(exc.strerror or exc.__class__.__name__)
-
-
-def _identity_names(entries):
-    """identity.md, specifically.
-
-    An earlier version of this accepted core-memories.md too, because two of our own
-    repos have no identity.md and the warning was inconvenient -- which is widening a
-    check until a real gap disappears. Core memories are what the agent LEARNED;
-    identity is who it is, and it is the file injected at session start. They are not
-    substitutes.
-    """
-    return [n for n in entries if n.startswith("identity") and n.endswith(".md")]
-
-
-def check_memory(project_dir):
-    """Is the memory plugin configured, or merely installed?
-
-    Installed-and-unconfigured is the invisible state: it still runs and still saves.
-    What is missing is the identity file, which records who the AGENT is in this repo
-    and is injected at session start. Without it the loop still works and starts every
-    session as nobody in particular.
-
-    Not scaffolded silently. An identity asserts values and a voice, and writing one
-    into somebody else's repository picks a persona they did not choose.
-
-    **Both locations are listed before anything is reported, and that ordering is the
-    whole of #284.** This used to return early on ``not store.is_dir()`` with "no memory
-    store in this project ... it will create one on first save" -- true, reassuring, and
-    unreachable-past. A marketplace install on day one has exactly that shape: nothing
-    has saved a session, so there is no data dir, and the installer has put identity.md
-    at ``.claude/remember/identity.md`` because that is where it looks like it goes. The
-    stray branch below is the one that would have said so, and the early return meant it
-    never ran. A check that cannot look must not print what a check that looked and found
-    nothing prints.
-
-    Where the file is READ is settled in ``memory_layout``'s docstring, measured against
-    the memory plugin's session-start hook. That reasoning stays there, in one copy; what
-    the messages below owe is the same conclusion, and the tests are what bind them
-    together rather than a second prose copy that drifts.
-    """
-    config_dir, store = memory_layout(project_dir)
-    # Data dir first, because that is the hook's first choice and the only location
-    # read in every layout (see memory_layout).
-    store_entries, store_problem = _listdir(store)
-    config_entries, config_problem = _listdir(config_dir)
-    identity = _identity_names(store_entries)
-    if identity:
-        report(
-            "OK",
-            "memory store configured ({} in {})".format(
-                identity[0], _display(project_dir, store)
-            ),
-        )
-        return
-
-    if store_problem not in (None, "absent"):
-        # The third state. Everything below this line asserts an absence, and an
-        # absence asserted about a directory nobody could read is a finding invented
-        # by the tool.
-        report(
-            "WARN",
-            "{} {} -- so whether an identity.md is configured here is unknown, not "
-            "absent. Nothing else in this check can answer while that listing "
-            "fails.".format(_display(project_dir, store), store_problem),
-        )
-        return
-
-    # How the data dir stands, carried into whichever message follows. The old early
-    # return was the only thing saying this, and the fix must not buy the branch below
-    # by dropping the fact.
-    store_state = (
-        "{} does not exist yet -- the remember plugin creates it on first save".format(
-            _display(project_dir, store)
-        )
-        if store_problem == "absent"
-        else "{} exists and holds no identity.md".format(_display(project_dir, store))
-    )
-
-    stray = _identity_names(config_entries)
-    if stray:
-        # Read only when the plugin is installed INTO the repo, which is what a
-        # scripts/ directory beside config.json means. Otherwise the file exists, looks
-        # deliberate, and is never injected -- the worst of the three, because every
-        # signal says configured. Two of our own repos are in exactly this state.
-        #
-        # Tested against the listing already in hand rather than with a fresh
-        # `is_dir()`, which would ask the filesystem a second question and swallow the
-        # error from it.
-        if "scripts" in config_entries:
-            report(
-                "OK",
-                "memory store configured ({} in {}, local install)".format(
-                    stray[0], _display(project_dir, config_dir)
-                ),
-            )
-            return
-        report(
-            "WARN",
-            "{}/{} exists but is never read. The plugin is not installed into this repo, "
-            "so the session-start hook resolves identity against {} and the plugin's own "
-            "directory -- never this one. It looks configured from every angle except the "
-            "one that matters. Move it to {}/identity.md ({}).".format(
-                _display(project_dir, config_dir),
-                stray[0],
-                _display(project_dir, store),
-                _display(project_dir, store),
-                store_state,
-            ),
-        )
-        return
-
-    if config_problem not in (None, "absent"):
-        report(
-            "WARN",
-            "no identity.md in {}, and {} {} -- so whether one is sitting there unread "
-            "is unknown rather than answered. {}.".format(
-                _display(project_dir, store),
-                _display(project_dir, config_dir),
-                config_problem,
-                store_state[0].upper() + store_state[1:],
-            ),
-        )
-        return
-
-    # Name the paths consulted. The previous message named MEMORY_DIR while the lookup
-    # read the config dir, so following it to the letter left the warning byte-for-byte
-    # unchanged and gave the reader nothing to tell "wrong place" from "wrong content".
-    report(
-        "WARN",
-        "no identity.md in {} or {} ({}). It records who the AGENT is here -- name, "
-        "voice, working style -- and is injected at session start, so without it every "
-        "session begins as nobody in particular. Saving still works, which is exactly "
-        "what makes the gap invisible. Seed {}/identity.md from the memory plugin's "
-        "identity.example.md and edit it -- that directory self-ignores, so the file "
-        "cannot be committed by accident, and it is the only location read in every "
-        "install layout.".format(
-            _display(project_dir, store),
-            _display(project_dir, config_dir),
-            store_state,
-            _display(project_dir, store),
-        ),
-    )
-
-
-# The op the maintainer loop merges with. Matching is on the literal command
-# string, so this substring is what an allow rule has to contain in some form --
-# `Bash(./supertool 'gh-pr-merge:*')`, an absolute-path spelling of the same, or
-# a per-call entry naming one exact merge.
-MERGE_OP = "gh-pr-merge"
-MERGE_RULE_FILE = ".claude/settings.local.json"
-
-
-def settings_candidates(project_dir, home=None):
-    """Where a permission rule can live. Project scope first, then user scope --
-    a rule in either one is a rule, and reading only the project's would WARN at
-    a maintainer who already arranged it in their home settings.
-    """
-    candidates = [
-        Path(project_dir) / ".claude" / "settings.json",
-        Path(project_dir) / ".claude" / "settings.local.json",
-    ]
-    if home is None:
-        try:
-            home = Path.home()
-        except RuntimeError:
-            # No HOME / USERPROFILE to resolve. User scope is then unreadable, but
-            # this is a diagnostic: it exits 0 and reports, it does not traceback.
-            return candidates
-    return candidates + [
-        Path(home) / ".claude" / "settings.json",
-        Path(home) / ".claude" / "settings.local.json",
-    ]
-
-
-def _permission_entries(data, key):
-    permissions = data.get("permissions")
-    if not isinstance(permissions, dict):
-        return []
-    entries = permissions.get(key)
-    if not isinstance(entries, list):
-        return []
-    return [entry for entry in entries if isinstance(entry, str)]
-
-
-def _entry_count(count, key, path):
-    """`2 allow entries in /path/to/settings.json` -- the count and the file, and
-    nothing the file's author wrote."""
-    return "{} {} {} in {}".format(
-        count, key, "entry" if count == 1 else "entries", path
-    )
-
-
-def merge_permission_state(project_dir, home=None):
-    """Is there a settings rule naming the merge op? Four answers, not two.
-
-    `present` / `denied` / `absent` / `unknown`, and the last one is the reason
-    this is not a boolean. A settings file that could not be parsed produces no
-    matching entry, which looks exactly like a file that was read and had none --
-    and the two send a maintainer to opposite places.
-
-    A rule that WAS read settles the question, so an unreadable neighbour does not
-    drag a found rule back to `unknown`.
-
-    The detail names how many entries matched and which file they are in, never
-    the entry text. The text was never needed -- the question is "is there a rule,
-    and where do I go to change it" -- and printing it handed a tracked,
-    contributor-writable file the ability to write this script's own output
-    lines. Counts and paths answer the question and carry nothing chosen by the
-    tree being diagnosed except a path it already had to be told about.
-    """
-    unreadable = []
-    allowed = []
-    denied = []
-    for path in settings_candidates(project_dir, home=home):
-        try:
-            found_here = path.exists()
-        except OSError:
-            # #363: an unreadable candidate must land in the `unknown` bucket
-            # this function already has, not be silently skipped as though
-            # it were simply not there.
-            unreadable.append(str(path))
-            continue
-        if not found_here:
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            unreadable.append(str(path))
-            continue
-        if not isinstance(data, dict):
-            unreadable.append(str(path))
-            continue
-        for key, found in (("allow", allowed), ("deny", denied)):
-            matches = [e for e in _permission_entries(data, key) if MERGE_OP in e]
-            if matches:
-                found.append(_entry_count(len(matches), key, path))
-    # Every candidate is read before anything is decided, and deny wins. Returning
-    # on the first allow would report `present` while holding, already parsed, a deny
-    # rule for the same op -- an OK built on evidence the function had in hand and
-    # dropped, which is worse than not looking.
-    if denied:
-        return "denied", "; ".join(denied)
-    if allowed:
-        return "present", "; ".join(allowed)
-    if unreadable:
-        return "unknown", "; ".join(unreadable)
-    return "absent", ""
-
-
-def check_merge_permission(project_dir, home=None):
-    """Report the rule, and never more than the rule.
-
-    This is a file read, not a probe of the harness. The harness decides at call
-    time and an allowlist entry is one input to that decision -- so `present`
-    cannot promise the merge will run, and `absent` cannot promise it will be
-    denied. Both messages have to carry that limit, or the check becomes the
-    defect it is here to prevent: an OK that reads as a guarantee nobody measured.
-    """
-    state, detail = merge_permission_state(project_dir, home=home)
-    if state == "present":
-        report(
-            "OK",
-            "a settings rule names {} ({}). This is a file read, not a probe of the "
-            "harness: it says the rule exists, not that the merge call will be "
-            "permitted.".format(MERGE_OP, detail),
-        )
-        return
-    if state == "denied":
-        report(
-            "WARN",
-            "the only settings rule naming {} is a deny rule ({}). The merge step will "
-            "stop there.".format(MERGE_OP, detail),
-        )
-        return
-    if state == "unknown":
-        report(
-            "WARN",
-            "could not read {}, so whether a {} rule exists is unknown -- not answered "
-            "as absent, because that would send you to add a rule you may already "
-            "have.".format(detail, MERGE_OP),
-        )
-        return
-    report(
-        "WARN",
-        "no settings rule names {}, so the merge step is the place you would find out. "
-        "Add one to {} (machine scope, untracked) before the first tick. A rule is not "
-        "the only thing that can allow or deny this call, so this is not a prediction "
-        "that the merge will fail.".format(MERGE_OP, MERGE_RULE_FILE),
-    )
+# MERGE_OP, MERGE_RULE_FILE, settings_candidates, _permission_entries,
+# _entry_count, merge_permission_state and check_merge_permission moved to
+# scripts/doctor_check_merge_permission.py (#497); see that module for the
+# check and its private helpers, unchanged. `MERGE_OP` is imported back here
+# too: `PUBLISH_OP_PRESETS` below (`check_publish_confirm`, unmoved) still
+# reads it as a bare name.
+from doctor_check_merge_permission import (
+    MERGE_OP,
+    MERGE_RULE_FILE,
+    settings_candidates,
+    _permission_entries,
+    _entry_count,
+    merge_permission_state,
+    check_merge_permission,
+)
 
 
 # The watch channel, and why this is a diagnostic rather than a setting (#150).
