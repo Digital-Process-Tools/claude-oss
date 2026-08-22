@@ -1522,6 +1522,15 @@ def test_an_undeclared_step_is_refused_rather_than_assumed_additive():
         )
         assert state == report_schema.VERSION_MISMATCH, compat
 
+    # The positive control, and it is not decoration: every arm above is a refusal,
+    # and the validator BEFORE #416 refused all four of them too -- so without this
+    # line the test passes verbatim against a copy with the feature deleted, which
+    # review caught. It has to be the same report and the same fixture, so what is
+    # being read is the declaration and nothing else.
+    assert report_schema.version_verdict(
+        older, _schema_declaring(5, {"5": "additive"})
+    )[0] == report_schema.VERSION_READABLE
+
 
 def test_a_chain_is_only_as_readable_as_its_weakest_step():
     """Two steps back is two declarations, not one.
@@ -1582,6 +1591,15 @@ def test_a_newer_report_stays_unvalidatable_whatever_the_older_steps_declared():
     assert state == report_schema.VERSION_MISMATCH, sentence
     assert "Install" in sentence, sentence
 
+    # Positive control against the same schema, for the same reason as above: a
+    # refusal-only test passes against the pre-#416 validator, which refused
+    # everything. The chain declared here reaches 3, so a version-3 report is read
+    # while the version-6 one is not -- one fixture, both directions.
+    older = dict(_example(), schema_version=3)
+    assert report_schema.version_verdict(older, schema)[0] == (
+        report_schema.VERSION_READABLE
+    )
+
 
 def test_the_shipped_schema_declares_a_relation_for_every_contract_it_records():
     """A bump that forgets the declaration fails safe and quietly. This is the loud half.
@@ -1597,7 +1615,7 @@ def test_the_shipped_schema_declares_a_relation_for_every_contract_it_records():
         "the schema declares no x-schema-compatibility, so no older report can "
         "ever be read and nothing says whether that was decided or forgotten"
     )
-    known = {"additive", "breaking", "unknown"}
+    known = set(report_schema.COMPAT_VALUES)
     for version in report_schema.CONTRACT_FINGERPRINTS:
         assert str(version) in declared, (
             "contract {} has a recorded fingerprint and no declared relation to "
@@ -1606,6 +1624,57 @@ def test_the_shipped_schema_declares_a_relation_for_every_contract_it_records():
         assert declared[str(version)] in known, declared[str(version)]
     assert str(_contract_version()) in declared, (
         "the current contract does not say whether it widened its predecessor"
+    )
+
+
+def test_the_chain_steps_to_the_previous_RECORDED_contract_not_to_the_number_below():
+    """A gap in the numbering must not invent a predecessor.
+
+    Found by review, unreachable today -- the numbering has been contiguous 2..5 --
+    and wrong in both directions at once, which is why it is worth a test before it
+    is reachable. Decrementing from a schema at 7 whose real predecessor is 5 reads
+    a report claiming 6, a number no contract ever had and therefore a typo or a
+    forged value, and refuses the genuine 5.
+    """
+    record = {2: "", 3: "", 4: "", 5: "", 7: ""}
+    schema = _schema_declaring(7, {"7": "additive", "5": "breaking"})
+
+    assert report_schema.readable_from(schema, record) == 5
+    assert report_schema.version_verdict(
+        dict(_example(), schema_version=6), schema, record
+    )[0] == report_schema.VERSION_MISMATCH, "a number that was never a contract was read"
+    assert report_schema.version_verdict(
+        dict(_example(), schema_version=5), schema, record
+    )[0] == report_schema.VERSION_READABLE, "the real predecessor was refused"
+
+
+def test_a_compatibility_declaration_is_inside_the_contract_fingerprint():
+    """The first version of #416 stripped it, by a false analogy with the version.
+
+    x-schema-version is circular because the fingerprint RECORD IS KEYED BY IT.
+    Nothing keys on the compatibility map, and it decides which documents this
+    validator accepts -- so an edit to it with no bump is #221's own shape one layer
+    up: two installed copies both announcing version 5, disagreeing about whether a
+    version-4 report is `ok`. Must-fire, paired with the must-not-fire below it.
+    """
+    widened = _schema()
+    widened["x-schema-compatibility"] = dict(
+        widened["x-schema-compatibility"], **{"4": "additive", "3": "additive"}
+    )
+    assert report_schema.readable_from(widened) == 2, (
+        "the fixture does not actually widen anything, so the assertion below "
+        "would pass for the wrong reason"
+    )
+    assert report_schema.contract_drift(widened) is not None, (
+        "editing the compatibility map moved what this validator accepts and no "
+        "fingerprint noticed"
+    )
+
+    reworded = _schema()
+    reworded["x-honesty-compatibility"] = "Rewritten."
+    assert report_schema.contract_drift(reworded) is None, (
+        "the PROSE about the map is a narrative like every other one and must not "
+        "demand a bump"
     )
 
 

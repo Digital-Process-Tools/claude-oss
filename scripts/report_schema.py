@@ -80,18 +80,28 @@ _KEYWORDS = {
 # number to make CI green. x-schema-version is stripped too: the fingerprint answers
 # "what does this contract require", which has to be independent of its own label or
 # the comparison is circular.
-# x-schema-compatibility is stripped for exactly the reason x-schema-version is, and
-# the argument is the same one: it is a claim about how this contract RELATES to its
-# predecessor, not a constraint any document has to satisfy. Inside the fingerprint the
-# comparison would be circular -- correcting version N's claim about N-1 would demand a
-# bump to N+1, whose own claim would then be unrecorded. The cost is named rather than
-# hidden: a compatibility declaration that is simply WRONG moves no fingerprint and this
-# guard cannot see it. Nothing here can, because checking it needs the other schema.
+# x-schema-compatibility is deliberately NOT stripped, and the first version of #416
+# stripped it. The argument for stripping was that it is a claim about how contracts
+# relate rather than a constraint a document satisfies, by analogy with
+# x-schema-version -- and review took the analogy apart. x-schema-version is circular
+# because the fingerprint RECORD IS KEYED BY IT; hashing the key would compare a value
+# against a table that value selects. Nothing keys on the compatibility map. It decides
+# which documents this validator accepts, which is precisely the enforcing-versus-
+# annotation line x-honesty-versioning draws, and two failures were being conflated:
+#
+#   - a declaration wrong at the moment it was written. Uncatchable here, because
+#     checking it needs the other schema, which this copy does not hold. Still true.
+#   - a declaration EDITED afterwards with no bump. Entirely catchable, and it is #221's
+#     own shape one layer up -- two installed copies both announcing version 5 and
+#     disagreeing about whether a version-4 report is `ok` or UNVALIDATABLE.
+#
+# The prose about the map (x-honesty-compatibility) is stripped, like every other
+# narrative. The map itself is inside.
 _ANNOTATION_KEYS = {
     "title", "description", "examples", "$comment",
     "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
     "x-convention",
-    "x-schema-version", "x-schema-compatibility",
+    "x-schema-version",
 }
 
 # One entry per version this schema has ever declared, mapping it to the fingerprint of
@@ -99,6 +109,13 @@ _ANNOTATION_KEYS = {
 # is what every report written before anyone counted says, across at least three
 # mutually incompatible schemas, and no fingerprint can be recovered for a contract
 # nobody recorded. Adding an entry here is the act of declaring a new contract.
+#
+# The keys are also the list of numbers that were ever contracts, which is what the
+# compatibility chain walks: "the contract below N" is the largest RECORDED version
+# under N, never N-1, so a gap in the numbering cannot make a version nobody declared
+# look like a predecessor. Each note below says what its bump did to the contract below
+# it, in the same words the schema's x-schema-compatibility declares in machine-readable
+# form; they are two statements of one fact and they must agree.
 CONTRACT_FINGERPRINTS = {
     2: "d687807f452f7aa4c4773519fcbc00ab3aff097c04facf1b5e2652bf931bcb70",
     # 3 (#254): the review-finding disposition `filed` is gone and
@@ -113,15 +130,25 @@ CONTRACT_FINGERPRINTS = {
     # version-4 copy refuses every version-3 report because the key is absent.
     4: "eec52e1f12bdac241428aa446abae980fa8180ab4c348d6e076b232e3adbf37f",
     # 5 (#411): `below-bar` joins both filing enums, and an item using it carries a
-    # `pr_anchor` the on-disk pass finds in the pull request body. Breaking in both
-    # directions, which is why the number moved: a version-4 copy refuses every
-    # version-5 report that takes the third receipt, because the value is not in its
-    # enum and `pr_anchor` is an unknown key. It is NOT breaking for a version-4
-    # report that never used it -- the two older values and their rules are
-    # untouched -- but the number is not a claim about one direction, and an old
-    # copy meeting a new report answers UNVALIDATABLE rather than INVALID exactly so
-    # that the difference does not have to be guessed at from the findings.
-    5: "51f55eabb5ea56703987103ad2dc3633c6bce3a9cbb677564f99c8f288a2e7cd",
+    # `pr_anchor` the on-disk pass finds in the pull request body. ADDITIVE, and so
+    # far the only bump that is: nothing was removed from an enum, nothing became
+    # required, no pattern tightened, and the new rules fire only on an item that
+    # takes the third receipt -- which no version-4 report can spell. The number
+    # still moved, because breaking in ONE direction is breaking: a version-4 copy
+    # refuses every version-5 report that takes the receipt, since the value is not
+    # in its enum and `pr_anchor` is an unknown key. The two directions are separate
+    # questions and this record answers the backwards one; x-schema-compatibility
+    # declares the same thing where the validator can read it (#416).
+    #
+    # 5's fingerprint was RE-TAKEN at #416, from
+    # 51f55eab...288a2e7cd, and the contract did not move with it. What moved is the
+    # strip method: x-schema-compatibility went from annotation to enforcing content,
+    # which semantic_fingerprint's own docstring says is re-recorded rather than
+    # bumped, since the value is method-dependent and no document's requirements
+    # changed. 2, 3 and 4 are NOT re-taken and cannot be: they hash documents that no
+    # longer exist, so they were computed under whatever method shipped with them and
+    # only the current version's entry is ever compared against anything.
+    5: "bf53ecee7c14789b2cfd1144ec06588efc9b1c17f209803148df15cf6879de22",
 }
 
 _TYPES = {
@@ -150,27 +177,42 @@ def load_schema(path=None):
 # remedy #212 proposed (have the validator announce which schema it validated against)
 # would have printed 1 from both copies and CONFIRMED the skew rather than revealed it.
 #
-# The three states below are the whole point. A copy of this validator holds exactly
-# ONE contract. It can compare two numbers; it cannot compute the relationship between
-# its contract and another version's, because it does not have the other one. So a
-# newer report and an older report are the same epistemic state -- unvalidatable by
-# this copy -- and neither is invalid. Collapsing either into "invalid" recreates #212
-# one layer down: the maintainer hit exactly that on 2026-08-16, when a report written
-# the day before came back as a bare `INVALID ... missing required key 'docs'` with
-# nothing to distinguish an older contract from a malformed file.
+# The four states below are the whole point, and a report this copy cannot speak for
+# must never be called invalid. Collapsing that into "invalid" recreates #212 one layer
+# down: the maintainer hit exactly that on 2026-08-16, when a report written the day
+# before came back as a bare `INVALID ... missing required key 'docs'` with nothing to
+# distinguish an older contract from a malformed file.
+#
+# A copy of this validator holds exactly ONE contract document, so it cannot COMPUTE
+# the relationship between its contract and another version's -- it does not have the
+# other one, which is why #416 is answered by a declaration rather than by a comparison
+# of two schemas. What it can do is read what the author recorded at each bump. That
+# makes a newer report and an older one two different epistemic states rather than one:
+# nothing here holds a claim about a contract that did not exist when this copy shipped,
+# so a newer report is always unvalidatable, while an older one is unvalidatable only
+# where the chain of declarations does not reach it.
 
 VERSION_CURRENT = "current"
 VERSION_READABLE = "readable"
 VERSION_MISMATCH = "mismatch"
 VERSION_UNDECIDABLE = "undecidable"
 
-# The relation each contract declares to the contract immediately below it, and the
-# only three words that mean anything here. `additive` is the claim that every document
-# valid under the predecessor is valid under this version -- nothing removed from an
-# enum, nothing newly required, no pattern tightened -- which is what makes this copy
-# able to answer about a report from that predecessor. Anything else, INCLUDING an
-# absent entry and a word nobody recognises, is not readable: the failure of a bump
-# that forgot to declare is silence, and silence has to land on the refusing side.
+# The relation each contract declares to the contract below it, and the only three words
+# that mean anything here. `additive` is the claim that every document valid under the
+# predecessor is valid under this version -- nothing removed from an enum, nothing newly
+# required, no pattern tightened -- which is what makes this copy able to answer about a
+# report from that predecessor. Anything else, INCLUDING an absent entry and a word
+# nobody recognises, is not readable: the failure of a bump that forgot to declare is
+# silence, and silence has to land on the refusing side.
+#
+# It is a claim about the whole contract, NOT about the schema document alone, and the
+# difference has teeth. The cross-field rules live in _RULES and in the functions
+# validate() calls directly, and validate_pr_body() leaves the report entirely -- none
+# of which the schema document describes. Declaring `additive` because only an optional
+# key was added, while a rule in this file quietly started refusing something, makes
+# every older report render as INVALID: a hard finding against a contract it was never
+# written for, where before #416 the same finding printed under UNVALIDATABLE with "not
+# necessarily defects in the report". So the declaration is a claim about this file too.
 COMPAT_ADDITIVE = "additive"
 COMPAT_BREAKING = "breaking"
 COMPAT_UNKNOWN = "unknown"
@@ -218,7 +260,20 @@ def contract_compatibility(schema):
     return declared
 
 
-def readable_from(schema):
+def _previous_contract(version, record):
+    """The contract immediately below `version` -- the largest RECORDED number under it.
+
+    Not `version - 1`. The numbering is contiguous today and nothing says it stays
+    that way, and decrementing through a gap invents a predecessor: a schema at 7
+    whose real predecessor is 5 would read a report claiming 6 -- a number no
+    contract ever had, so a typo or a forged value -- and refuse the genuine 5.
+    Review found that; it was unreachable and wrong in both directions at once.
+    """
+    below = [known for known in record if known < version]
+    return max(below) if below else None
+
+
+def readable_from(schema, record=None):
     """The OLDEST contract this copy can still answer for, or None if it has no number.
 
     Walked step by step rather than read off a single `minimum-readable`, because
@@ -226,18 +281,30 @@ def readable_from(schema):
     breaking bump keeps vouching for contracts that stopped being subsets -- the
     accepts-everything-older failure #416 says must not be caused. A missing step
     declaration refuses, which costs a lane one relayed sentence.
+
+    `record` is the set of numbers that were ever contracts, defaulting to
+    CONTRACT_FINGERPRINTS. It is the chain's own footing: a version nobody recorded
+    is a contract nobody described, and claiming a document from it is a subset of
+    ours is a claim about a thing this copy has no record of.
     """
     ours = contract_version(schema)
     if ours is None:
         return None
+    record = CONTRACT_FINGERPRINTS if record is None else record
     declared = contract_compatibility(schema)
     oldest = ours
-    while oldest > FIRST_CONTRACT and declared.get(oldest) == COMPAT_ADDITIVE:
-        oldest -= 1
+    while declared.get(oldest) == COMPAT_ADDITIVE:
+        below = _previous_contract(oldest, record)
+        # FIRST_CONTRACT is the second lock rather than the first: `record` already
+        # omits 1 on purpose and always will. Both are kept, because the floor is a
+        # fact about the value 1 and not about any particular record a caller passes.
+        if below is None or below < FIRST_CONTRACT:
+            break
+        oldest = below
     return oldest
 
 
-def version_verdict(report, schema):
+def version_verdict(report, schema, record=None):
     """Return `(state, sentence)`: which contract this report claims, versus ours.
 
     Four states, and the two that are not `current` or `mismatch` are the ones
@@ -245,11 +312,14 @@ def version_verdict(report, schema):
 
     - `current`   -- the numbers agree. The sentence still names the number, because
                      announcing the contract on a PASS is the whole of #212's remedy.
-    - `readable`  -- the report names an OLDER contract, and every step from it up to
-                     ours is declared additive, so a document valid under it is valid
-                     under ours and this copy can answer about it (#416). The sentence
-                     says so rather than passing as though the numbers matched: `ok`
-                     and `ok, older contract, additive only` are not the same claim.
+    - `readable`  -- the report names an OLDER contract that WAS a contract, and every
+                     step from it up to ours is declared additive, so a document valid
+                     under it is valid under ours and this copy can answer about it
+                     (#416). The sentence says so rather than passing as though the
+                     numbers matched: `ok` and `ok, older contract, additive only` are
+                     not the same claim. `record` is the set of numbers that were ever
+                     contracts; a number outside it is nobody's contract and lands on
+                     `mismatch` however the chain reads.
     - `mismatch`  -- both sides named a contract, they differ, and nothing declares
                      the difference away. A NEWER report always lands here: the
                      declarations only run backwards, and a widening chain behind us
@@ -276,8 +346,9 @@ def version_verdict(report, schema):
         )
     if theirs == ours:
         return VERSION_CURRENT, "report schema version {}".format(ours)
-    oldest = readable_from(schema)
-    if oldest <= theirs < ours:
+    record = CONTRACT_FINGERPRINTS if record is None else record
+    oldest = readable_from(schema, record)
+    if oldest <= theirs < ours and theirs in record:
         return VERSION_READABLE, (
             "report schema version {}, read under version {} -- every contract "
             "change from {} to {} is declared additive, so a report written "
