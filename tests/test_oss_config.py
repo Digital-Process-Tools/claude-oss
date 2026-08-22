@@ -836,8 +836,10 @@ def test_gathering_produces_a_probe_that_build_accepts(tmp_path, monkeypatch):
         },
     )
     monkeypatch.setattr(oss_config, "_gh_json", _fake_gh)
-    probe, problems = oss_config.gather(tmp_path)
+    probe, problems, notes = oss_config.gather(tmp_path)
     assert problems == []
+    # Every workflow this fixture tracks is on disk, so there is nothing to note (#396).
+    assert notes == []
     assert "tests/test_thing.py" in probe["files"]
     assert "tests" not in probe["files"]
     assert probe["version_evidence"] == {
@@ -859,13 +861,13 @@ def test_gathering_produces_a_probe_that_build_accepts(tmp_path, monkeypatch):
 def test_gathering_names_the_labels_it_could_not_classify(tmp_path, monkeypatch):
     _git_repo(tmp_path, {"README.md": "# thing\n"})
     monkeypatch.setattr(oss_config, "_gh_json", _fake_gh)
-    probe, _ = oss_config.gather(tmp_path)
+    probe, _, _ = oss_config.gather(tmp_path)
     assert oss_config.classify_labels(probe["labels"])["unclassified"] == ["bug"]
 
 
 def test_gathering_a_directory_that_is_not_a_repo_is_a_refusal(tmp_path):
     """A directory git cannot read must not come back as a repo with no files."""
-    probe, problems = oss_config.gather(tmp_path / "nowhere")
+    probe, problems, _ = oss_config.gather(tmp_path / "nowhere")
     assert probe is None
     assert problems
 
@@ -877,7 +879,7 @@ def test_gathering_refuses_when_the_remote_half_cannot_be_measured(tmp_path, mon
     monkeypatch.setattr(
         oss_config, "_gh_json", lambda root, args: (False, None, "gh: not authenticated")
     )
-    probe, problems = oss_config.gather(tmp_path)
+    probe, problems, _ = oss_config.gather(tmp_path)
     assert probe is None
     assert any("gh" in problem for problem in problems)
 
@@ -893,7 +895,7 @@ def test_a_merge_method_that_cannot_be_told_apart_stays_null(tmp_path, monkeypat
         return ok, payload, detail
 
     monkeypatch.setattr(oss_config, "_gh_json", both_allowed)
-    probe, problems = oss_config.gather(tmp_path)
+    probe, problems, _ = oss_config.gather(tmp_path)
     assert problems == []
     assert probe["merge_method"] is None
 

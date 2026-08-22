@@ -21,6 +21,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --probe . | python3 "${CLA
 so and writes no probe at all — half a probe is the underspecified probe this replaced.
 Relay the `FAIL` line rather than filling the gap in by hand.
 
+**`--probe` prints `NOTE` lines on stderr too, and they are not failures.** One exists
+today (#396): **`N workflow file(s) are in the index and not on disk`**, with the
+names. `git ls-files` reports the index and the jobs are read out of the working tree,
+so this is an uncommitted delete — the file declares no jobs, which is a measurement,
+and the probe is complete for the tree it was measured from. Until #396 that path was
+filed as *could not read* and aborted probe generation for the whole repository. A
+workflow that is on disk and will not read is a different fact and still refuses: how
+many jobs it declares is unknown, and an unknown counted as zero understates the
+checks. Relay the `NOTE` — if the delete was not intentional, that is worth knowing
+before the config is written from a shorter job list.
+
 Run the two separately when you want to look at the probe first; `--help` prints the
 full schema, including what `files` and `version_evidence` mean:
 
