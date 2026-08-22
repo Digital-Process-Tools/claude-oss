@@ -72,6 +72,11 @@ try:
 except ImportError:  # pragma: no cover - the module sits beside this file
     oss_state = None
 
+try:
+    import report_schema
+except ImportError:  # pragma: no cover - the module sits beside this file
+    report_schema = None
+
 FINDINGS = []
 
 # Far above any message this file composes -- the only thing that can reach it is
@@ -4908,8 +4913,61 @@ def check_freshness(project_dir, config):
 # refused there would be switched off within a week.
 
 #: What decides behaviour: the text a command or a skill injects, the agents it
-#: dispatches, and the scripts it runs. Deliberately not a version number.
-COMPARED_DIRECTORIES = ("agents", "commands", "scripts", "skills")
+#: dispatches, the scripts it runs, and the contracts those scripts enforce.
+#: Deliberately not a version number.
+#:
+#: `schemas/` joined this on #415, and how it was missing is the point. The set was
+#: chosen when the contract between two copies lived entirely in code and prose. It
+#: no longer does: `schemas/agent-report.schema.json` declares a contract number,
+#: `scripts/report_schema.py` reads it, and a mismatch refuses an agent report with
+#: `UNVALIDATABLE` at exit 2. So two copies differing ONLY there were reported as
+#: carrying the same bytes -- a comparison that looked, found nothing, and could not
+#: say it had not looked everywhere.
+COMPARED_DIRECTORIES = ("agents", "commands", "schemas", "scripts", "skills")
+
+#: The other half of a partition over the plugin tree's top level, with why each entry
+#: is not compared. A tuple cannot report a directory it does not contain, which is
+#: exactly how `schemas/` went uncompared for its whole life -- so the fix for the
+#: CLASS is not a longer tuple, it is writing the complement down and checking it:
+#: `tests/test_doctor_compared_set_415.py` fails when a tracked top-level entry lands
+#: in neither half, so the next `schemas/` reddens the commit that adds it.
+#:
+#: Deriving the set at runtime instead -- compare everything shipped in the tree -- was
+#: weighed and refused. An installed copy legitimately does not ship `tests/` or
+#: `changelog.d/`, and every file under a directory present on one side only scores as
+#: a difference, so derivation buys a permanent WARN that no release can clear. That
+#: is the failure `translation_state`'s docstring describes: a verdict line that always
+#: reads `usable with gaps` cannot carry a real finding any more. A listed set with a
+#: checked complement gets the coverage without the noise.
+NOT_COMPARED_TOP_LEVEL = {
+    ".claude": "this repository's own session rule layers; a managed repo's copy is "
+               "written by scaffold and is not part of any plugin copy",
+    ".claude-plugin": "its plugin.json is compared as a file above; nothing else in "
+                      "there is read at runtime",
+    ".github": "runs in this repository's CI, never in an install",
+    ".gitignore": "a checkout's own bookkeeping, not read at runtime",
+    ".oss.json": "the config of whatever repo is being diagnosed, not of a plugin copy",
+    ".supertool.json": "op configuration for a checkout, not read from a plugin copy",
+    "CHANGELOG.md": "release history; a copy behind the clone is expected to differ and "
+                    "the difference decides nothing",
+    "CLAUDE.md": "prose for a session in this repository",
+    "CODE_OF_CONDUCT.md": "project prose, read by people",
+    "LICENSE": "project prose, read by people",
+    "README.md": "project prose, read by people",
+    "SECURITY.md": "project prose, read by people",
+    "bin": "the launcher is copied onto PATH rather than read from the tree, so WHICH "
+           "copy of it runs is the `launcher` check's question and not this one",
+    "changelog.d": "unreleased fragments, emptied at every fold; a copy at the tag "
+                   "holding none of them is the healthy state",
+    "docs": "prose for people; nothing dispatches or executes it",
+    "pyproject.toml": "test and lint configuration for this checkout",
+    "tests": "not shipped by every install and never read at runtime",
+}
+
+#: The one compared file whose skew has a named, user-visible consequence. Byte
+#: difference is how it is DETECTED; the two declared contract numbers are the fact a
+#: reader acts on, which is why the skew line carries them (#415).
+SCHEMA_CONTRACT_FILE = "schemas/agent-report.schema.json"
 
 #: Compared as bytes as well, so a manifest edit is visible. Read for its ``name``
 #: -- never for its ``version``, which is the field this whole check exists because
@@ -5200,6 +5258,84 @@ def _version_sentence(ours, theirs):
     )
 
 
+def declared_contract(root):
+    """``(version, why)`` -- exactly one is None. The agent-report contract a copy declares.
+
+    Four ways to have no number, and they are not one: no schema shipped at all, a
+    schema that could not be read, one that would not parse, and one that declares no
+    ``x-schema-version``. Every one of them is *not established* rather than
+    *version 0*, and the sentence below says which.
+
+    The number is extracted by ``report_schema.contract_version`` -- OUR copy's
+    function, applied to the other copy's parsed document -- rather than by reaching
+    for the key name here. Two spellings of the same field name in two files is how a
+    rename becomes a check that confidently reads nothing; and nothing here imports or
+    executes the other tree's code, which would be a diagnostic running a stranger.
+    """
+    relative = SCHEMA_CONTRACT_FILE
+    if report_schema is None:  # pragma: no cover - the module sits beside this file
+        return None, "report_schema.py could not be imported beside doctor.py"
+    path = Path(root).joinpath(*relative.split("/"))
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "it ships no {}".format(relative)
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, "its {} could not be read ({})".format(relative, exc.__class__.__name__)
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return None, "its {} would not parse".format(relative)
+    version = report_schema.contract_version(doc)
+    if version is None:
+        return None, "its {} declares no contract version".format(relative)
+    return version, None
+
+
+def schema_contract_sentence(script_root, project_dir):
+    """The sentence carried by a skew line when the agent-report schemas differ.
+
+    "These bytes differ" is the detection. This is the consequence, and it has three
+    states rather than two:
+
+    * the numbers differ -- an agent report written against one copy is refused by the
+      other, by name, at exit 2. That is the fact the reader acts on.
+    * the numbers agree -- something moved that the number does not track: a
+      description, an annotation, a comment. The byte skew is still reported (this
+      line's subject is which copy answered, and suppressing a real difference to make
+      a check quieter trades a loud finding for a silent one), but the line must not
+      imply a refusal that will not happen. Nor may it claim the CONTRACTS agree: #221
+      is precisely a number that stayed still while the contract moved, so this says
+      what the copies DECLARE and says that a declaration is not a measurement.
+    * one side named no number -- absent, unreadable, unparseable, or declaring none.
+      Not agreement, and not a mismatch. Saying which side and why is the whole of it.
+    """
+    ours, our_why = declared_contract(script_root)
+    theirs, their_why = declared_contract(project_dir)
+    if ours is None or theirs is None:
+        return (
+            " Which agent-report contract each copy implements was not established: "
+            "for the copy that answered, {}; for the checkout being diagnosed, {}."
+            .format(
+                "it declares version {}".format(ours) if our_why is None else our_why,
+                "it declares version {}".format(theirs) if their_why is None else their_why,
+            )
+        )
+    if ours == theirs:
+        return (
+            " Both copies' {} declares contract version {}, so an agent report is not "
+            "refused by either on its number -- though that is what they DECLARE, and a "
+            "schema can change without its number moving.".format(SCHEMA_CONTRACT_FILE, ours)
+        )
+    return (
+        " The copy that answered declares agent-report contract version {} and the "
+        "checkout being diagnosed declares {}, so a report written against one is "
+        "UNVALIDATABLE by the other's scripts/report_schema.py, at exit 2.".format(
+            ours, theirs
+        )
+    )
+
+
 def plugin_provenance(script_root, project_dir, attested=None, attested_source=None):
     """``[(level, message)]`` -- two lines, and neither may be silent.
 
@@ -5362,13 +5498,22 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
         incomplete = " {} path(s) could not be read ({}), so this did not compare the " \
             "whole tree.".format(len(blocked), _named_few(_detail_list(blocked)))
 
+    # The consequence rides on the detection rather than on a line of its own (#415).
+    # A second line would be a second mechanism reporting the same difference, and the
+    # one it is about only exists when this one already fired; more to the point, a
+    # reader who sees SKEW and no contract sentence would have to know that silence
+    # meant "the schemas match" rather than "nobody asked".
+    contract = ""
+    if SCHEMA_CONTRACT_FILE in differing:
+        contract = schema_contract_sentence(script_root, project_dir)
+
     if differing:
         lines.append(
             (
                 "WARN",
                 "plugin copy: SKEW -- the copy that answered ({}, {}) and the "
                 "checkout being diagnosed ({}, {}) differ in {} of {} compared "
-                "file(s): {}. {}{}".format(
+                "file(s): {}. {}{}{}".format(
                     script_root,
                     identity,
                     project_dir,
@@ -5377,6 +5522,7 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
                     len(every),
                     _named_few(differing),
                     version,
+                    contract,
                     incomplete,
                 ),
             )
