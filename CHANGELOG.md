@@ -7,6 +7,150 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-22
+
+### Added
+
+- `scripts/lane_setup.py` now records this lane's own presence in a registry beside the
+  numbered worktree directories (`worktree_root/.oss-lanes/`) and reports how many lanes are
+  currently recorded live -- the payload's `lanes` field and a new receipt row. This is the
+  count `#367`'s worker-sizing line in `doctor.py` could not report: no process can enumerate
+  its sibling lanes, so the count has to be written down by the thing that starts a lane, not
+  discovered afterwards (#385). A record older than four hours is pruned by the next reader and
+  excluded from the count, and a registry that was never written to reports `unknown`, never
+  `0` -- those are different facts and `0` is the wrong one. `doctor.py` is unchanged: it is
+  held by a concurrent lane, and the doctor line this would need is filed for that lane to add.
+
+- `doctor` reports whether the merge call can skip supertool's own publish-confirm gate before the merge step is where a maintainer used to meet it, in three states: `confirmable`, `needs-force` (the shipped default, reported as neutral information rather than a warning), and `could not tell` when `.supertool.json` is unreadable or malformed. The line names every op the same opt-out reaches today, not only `gh-pr-merge`, and is scoped to supertool's own gate: the harness's own permission layer sits above it and can still refuse the call regardless (#421).
+
+- `scripts/lane_setup.py` now enumerates the cross-cutting guard tests keyed to *what a diff
+  does* rather than to a module it renames -- `test_content_invariants.py`,
+  `test_unwired_scripts_253.py`, `test_gate_state_consumers_328.py`, `test_claude_md_currency.py`
+  and `test_python_floor_410.py` -- and reports which of them a lane's declared files trip
+  (`--lane`, `guards_for_files`, and the receipt's new `guard` line). A lane's local test command
+  narrowing to a handful of named files could look green while one of these failed on CI instead,
+  because its own filename carries no visible relationship to the diff that trips it (#432,
+  measured on PR #431). The `test_gate_state_consumers_328.py` mapping covers the two whole
+  directories that guard actually scans (`commands/` and `scripts/`), not only the files that
+  already call the gate producer, so a brand-new file is covered too.
+
+- Scaffold `CONTRIBUTING.md` for the repos this plugin manages (#460). A default,
+  not owned -- created once when absent and never overwritten -- generated entirely
+  from `.oss.json`, addressed to a contributor rather than to this repository's own
+  maintainer, and linking to `CLAUDE.md` for the reasoning. Compatibility: compatible
+  - a new file created only when absent; nothing existing changes shape.
+
+- The dispatch step of the manager loop now assigns each issue to the account running the loop
+  before spawning its developer, and selection now excludes any issue already carrying a
+  non-empty assignee list -- previously a lane could run for hours while its issue read
+  `Assignees: none`, so a second reader of the same tracker could pick up the same work (#461).
+  A lane that ends without a commit is released, so the claim never outlives the lane that made
+  it.
+
+### Changed
+
+- `agents/developer.md` now distinguishes narration paid on every later turn from the
+  report paid once (#314), so the existing "no narration turn" guidance does not read
+  as licence to shrink the report too. The report's own guarantees -- the argued-down
+  finding's `reason`, red and green quoted separately, every `report-for-filing`
+  item's justification -- are called out by name as the half that stays full.
+
+- `.oss.json` accepts a leading-underscore key as maintainer prose, skipped by
+  `oss_config.validate()` rather than refused as an unknown key. JSON has no comment
+  syntax, so a note explaining *why* a value is what it is (e.g. `_milestones_note`
+  beside `milestones`) had nowhere else to live, and every place that note was written
+  got the message `unknown key (typo, or a schema change nobody wrote down)` — which
+  disabled `/oss:scaffold` outright, since it raises on any validation problem. A
+  key beginning with `_` still is not exempt from the credential check: `_api_key`
+  is refused exactly as `api_key` is. The escape also covers `release` and
+  `release.triggers`, which had their own separate unknown-key checks, and a
+  `_`-prefixed key placed only in the git-excluded `.oss.local.json` is reported as
+  misplaced rather than silently merged in unseen by every other maintainer — the
+  same "hidden in an untracked file" failure the project/local split already exists
+  to prevent for every other key (#355).
+
+- The maintainer skill now names which `gh-pr-merge` invocation spelling clears the harness
+  permission classifier -- the bare `supertool 'gh-pr-merge:N:squash|force'`, never
+  `python3 supertool.py 'gh-pr-merge:...'` for the merge call itself -- and reads a
+  `Blocked by classifier` denial as a claim about the command string rather than about the
+  merge action. Three sessions chased the wrong cause before this was written down (#445).
+- *Merge gates* and `commands/tick.md`'s merge step now document `gh-pr-merge`'s own
+  `|cleanup` token as the default, in place of raw `gh api -X DELETE` and
+  `git worktree remove`: the token runs its three deletions only after the op's own
+  `MERGED` read-back, and the worktree half is skipped with a stated reason whenever the
+  board holds more than one idle tree, which a fleet-running loop is expected to reap
+  itself. The raw commands stay documented only as the fallback for what the op
+  deliberately refuses to touch: a cross-repository head, an unestablished branch, or the
+  default branch (#446).
+- *Run a fleet, not a queue* now states fleet size as a floor as well as a ceiling: each
+  tick dispatches one developer per file-disjoint lane the board offers, and running fewer
+  must be stated with a count and a reason. Three states -- `filled`, `under-filled`, and
+  `could-not-tell`, which must never render as `filled` (#448).
+
+### Fixed
+
+- Fixed three `rglob`/`glob` walks in `doctor.py` that silently swallowed `PermissionError` for a directory they could not enter (#383), and three narrower unguarded `is_file()`/`is_dir()` sites of the same class found while censusing the rest of `scripts/` for it — one more in `doctor.py`, one each in `rename_changelog_fragment.py` and `release_delta.py`.
+
+- `.supertool.json` now declares `ops.git-commit.coauthor` explicitly, as
+  `Claude Opus 5 (1M context) <noreply@anthropic.com>` -- the identity this project's own commit
+  history already carries far more often than any other. Every agent commit through supertool's
+  `git-commit` op used to fall back to supertool's own unset default, `Max <noreply>` -- documented
+  and intentional upstream, but never a value this project chose, and not a valid email address.
+  Fixed forward only: the commits already merged under the old default are squash-merge subjects in
+  `main`'s history, and rewriting shared history to correct a trailer on them is not a trade this
+  project makes (#441).
+
+- `--pending-wait` no longer renders a `could-not-evaluate` wait the same as nothing
+  being pending. It used to fall into the same branch as `cleared` and no wait ever
+  having been recorded, printing `no pending wait` and dropping the recorded `why` on
+  the floor -- so a tick that could not test whether it was still blocked proceeded as
+  though it was not. `could-not-evaluate` now joins `holds` on the "something is
+  pending" side of the answer, distinguishable from it by the record's own `state` and
+  `why` (#443).
+
+- `scripts/rename_changelog_fragment.py` no longer reports OK when `git add` fails to
+  stage the rewritten fragment, and no longer lets an `OSError` from the rewrite escape
+  as a traceback -- both used to render identically to success, reproducing the amend
+  defect the tool exists to close one layer later (#444). Its overwrite guard also now
+  confirms absence the same way `lane_setup.worktree_occupancy` does, rather than
+  trusting the exception type alone, which mattered on a platform that folds an
+  over-`MAX_PATH` destination onto the same exception a genuine absence raises. A
+  self-review of this same fix found and closed three adjacent gaps: an unspawnable
+  `git add` still raised past the function, an embedded-null path still escaped the
+  overwrite guard as a traceback, and a rewrite failure's receipt overclaimed which
+  body the file was left holding on disk.
+
+- `README.md` had been amended per-fix for many releases, so a reader met the launcher install
+  command twice, a stale count claiming "all seven `oss:` skills resolve and none of the four
+  `oss:` agents does" (the repo ships one skill, seven commands and four agents), and a
+  `/oss:doctor` Commands-table cell of roughly 700 words narrating issue numbers and benchmark
+  ratios in a table whose other rows are a sentence or two. The duplicate install block is gone,
+  the count is stated with no number so it cannot go stale silently again, and the doctor cell
+  points at `commands/doctor.md` for its mechanism instead of carrying it. `tests/test_readme_scope_451.py`
+  guards all three, each with a positive control (#451).
+
+- `scripts/rename_changelog_fragment.py`'s source-side overwrite guard,
+  `_source_present`, no longer reports a source fragment absent on the
+  exception type alone: it now confirms absence the same way
+  `_destination_occupied` (#444) does, so a source folded onto
+  `FileNotFoundError` by an over-`MAX_PATH` name (the Windows fold CLAUDE.md
+  records) is reported as "could not be examined" rather than as a false
+  "no such file" (#468). It also gained the `except ValueError` arm its
+  sibling already carries, for an embedded-null path -- unreachable through
+  this script's own CLI, since POSIX argv cannot carry a NUL, but a hazard
+  for an importing caller.
+
+- The reserved-underscore escape (#355) that lets a maintainer leave prose beside a
+  key (`_milestones_note`) skipped the credential check in the two nested
+  `release` blocks instead of running after it. `release._api_key` and
+  `release.triggers._api_key` validated clean, so a real secret spelled with a
+  leading underscore passed silently into a tracked, committed `.oss.json`
+  instead of being refused the way `_api_key` at the top level, and every
+  other credential-looking key, already was. The credential-first ordering
+  now lives in one helper all three sites (top level, `release`,
+  `release.triggers`) call, so the ordering cannot drift between them again
+  (#471).
+
 ## [0.10.0] - 2026-08-22
 
 ### Added
@@ -4316,7 +4460,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.8.0
