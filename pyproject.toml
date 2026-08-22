@@ -31,6 +31,13 @@ requires-python = ">=3.9"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `must_assert_on(platform)` -- #430. A promise, on the test itself, that it
+# must run its real assertion (never SKIP) on the named platform; registered
+# here so an unregistered typo warns rather than silently applying nothing.
+# tests/must_assert_plugin.py is what holds the promise to account.
+markers = [
+    "must_assert_on(platform): fails the whole session if this test is SKIPPED while sys.platform == platform (#430)",
+]
 # `-rs` prints the reason behind every skip. A skipped check is this plugin
 # saying it could not answer, and that third state only pays for itself if the
 # reason reaches a human. Rendered as a bare `s`, a green run with silent skips

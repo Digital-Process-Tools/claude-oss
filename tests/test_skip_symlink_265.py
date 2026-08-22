@@ -7,6 +7,13 @@ observed on any platform is the shape of the fallback logic itself --
 `_junction` answering "not windows" for real off this machine's own
 `sys.platform`, and the skip message naming both mechanisms once a directory
 case's `symlink_to` is made to fail -- so that is what these tests measure.
+
+`test_the_real_junction_mechanism_is_measured_not_assumed` below carries
+`@pytest.mark.must_assert_on("win32")` -- #430. If a future runner image,
+Python version or Windows policy takes the junction mechanism away, that test
+would otherwise start SKIPPING again silently; the marker makes the whole
+session fail instead, on `windows-latest`, rather than rendering as green.
+`tests/must_assert_plugin.py` is what reads the marker.
 """
 
 import sys
@@ -65,6 +72,7 @@ def test_a_directory_case_names_both_mechanisms_when_both_fail(tmp_path, monkeyp
     assert "the probe" in reason
 
 
+@pytest.mark.must_assert_on("win32")
 def test_the_real_junction_mechanism_is_measured_not_assumed(tmp_path, monkeypatch):
     """The real, unforced `_junction` -- a measurement, not a given, exactly
     this repo's own rule for a capability fixture. Off Windows it refuses
