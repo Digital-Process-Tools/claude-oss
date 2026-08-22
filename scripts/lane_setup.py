@@ -381,18 +381,117 @@ def lane_overlap(files_a, files_b):
     return sorted(set(files_a) & set(files_b))
 
 
+# #432: a lane's local test command narrows to the files a brief names, and CI then
+# reddens on a guard test whose own filename has no visible relationship to the
+# diff -- measured on PR #431, where a diff that started calling the changelog
+# scaffolding gate's producer function (in `scripts/oss_config.py`) was invisible
+# to a narrowed run naming three doctor-shaped test files, and CI failed on
+# `tests/test_gate_state_consumers_328.py` instead. Five guard tests answer to
+# *what a diff does* rather than to a module it renames -- enumerated here by
+# reading each one's own docstring for its trigger, not by trusting the issue's
+# own list, which is #335's own sentence about how this seam got here in the
+# first place. A guard list is a fact about the repository, so it lives beside
+# `resolve_lane` rather than being re-typed into every brief.
+#
+# Each entry is (path prefix a resolved lane file must start with or equal, the
+# guard test file, one-line why). A file can trip more than one guard for
+# different reasons -- `scripts/oss_config.py` is both an ordinary script under
+# `scripts/` (test_unwired_scripts_253) and the one file that can register a new
+# consumer of that gate's state (test_gate_state_consumers_328).
+#
+# Deliberately not naming the gate producer's function identifier by its exact
+# spelling anywhere in this module: `tests/test_gate_state_consumers_328.py`
+# scans every file under `scripts/` for a bare occurrence of that name and
+# demands it be a *registered* consumer, and this file names it only to describe
+# the guard, never to call it -- the same bug this issue is about, one level up,
+# caught by writing the fix and running the guard it documents.
+CROSS_CUTTING_GUARDS = (
+    ("skills/", "tests/test_content_invariants.py",
+     "hardcoded repo facts in skill/agent/command prose"),
+    ("agents/", "tests/test_content_invariants.py",
+     "hardcoded repo facts in skill/agent/command prose"),
+    ("commands/", "tests/test_content_invariants.py",
+     "hardcoded repo facts in skill/agent/command prose"),
+    ("scripts/", "tests/test_unwired_scripts_253.py",
+     "a script added, removed, or dropped from its last live reference"),
+    ("bin/", "tests/test_unwired_scripts_253.py",
+     "a script added, removed, or dropped from its last live reference"),
+    ("scripts/oss_config.py", "tests/test_gate_state_consumers_328.py",
+     "a possible new consumer of the changelog scaffolding gate's state"),
+    ("commands/changelog.md", "tests/test_gate_state_consumers_328.py",
+     "a registered consumer of the changelog scaffolding gate's state"),
+    ("commands/scaffold.md", "tests/test_gate_state_consumers_328.py",
+     "a registered consumer of the changelog scaffolding gate's state"),
+    ("scripts/release_version.py", "tests/test_gate_state_consumers_328.py",
+     "a registered consumer of the changelog scaffolding gate's state"),
+    ("scripts/doctor.py", "tests/test_gate_state_consumers_328.py",
+     "a registered consumer of the changelog scaffolding gate's state"),
+    ("CLAUDE.md", "tests/test_claude_md_currency.py",
+     "the 'What is not proven yet' release marker paragraph"),
+    ("changelog.d/", "tests/test_claude_md_currency.py",
+     "fragment presence gates whether the release marker must be current"),
+    ("pyproject.toml", "tests/test_python_floor_410.py",
+     "the declared Python floor and its four derived sites"),
+    ("README.md", "tests/test_python_floor_410.py",
+     "the Python floor's README support badge"),
+    ("scripts/doctor.sh", "tests/test_python_floor_410.py",
+     "the Python floor's oldest python3.N candidate in the interpreter walk"),
+    (".github/workflows/tests.yml", "tests/test_python_floor_410.py",
+     "the Python floor's CI matrix lowest entry"),
+)
+
+
+def known_guards():
+    """The full enumeration, grouped by guard test with every trigger reason that
+    maps to it. Answers #432's own sizing question -- how many of these exist --
+    as a derived count rather than a pasted one, so a sixth guard added later
+    changes this return value instead of needing a second list updated by hand.
+    """
+    grouped = {}
+    for prefix, test_path, why in CROSS_CUTTING_GUARDS:
+        grouped.setdefault(test_path, []).append({"prefix": prefix, "why": why})
+    return [{"test": test_path, "triggers": grouped[test_path]} for test_path in sorted(grouped)]
+
+
+def guards_for_files(files):
+    """Which guard tests a lane's resolved files (`resolve_lane`'s `files` list --
+    repo-relative POSIX paths, never a module-name guess) trip, deduplicated to one
+    entry per guard even when several files or several reasons point at it.
+
+    Matches by prefix on the canonical path form the rest of this module already
+    produces, not by trusting a caller's own idea of which area a change belongs
+    to -- the seam #432 exists to close was exactly a human's idea of "these three
+    files are about doctor" being wrong about a fourth, unrelated-by-name file.
+    """
+    hits = {}
+    for f in files or []:
+        for prefix, test_path, why in CROSS_CUTTING_GUARDS:
+            if f == prefix or f.startswith(prefix):
+                reasons = hits.setdefault(test_path, [])
+                if why not in reasons:
+                    reasons.append(why)
+    return [{"test": test_path, "why": hits[test_path]} for test_path in sorted(hits)]
+
+
 def lane_report(repo, lane_patterns, against_patterns):
     """The `lane` section of a lane-setup payload, or None when neither side
     was asked for. Two lanes given: also the overlap between them, so a
     developer brief's setup call can carry the collision check the maintainer
     would otherwise have to run by eye.
+
+    `guards` (#432) is computed only from the `lane` side's resolved files --
+    the files a developer brief is actually about to touch -- never from
+    `against`, which names a sibling lane's off-limits files. Reporting a
+    guard triggered by the sibling's files would tell a developer to run a
+    test for a change it must not make.
     """
     if not lane_patterns and not against_patterns:
         return None
     a = resolve_lane(repo, lane_patterns) if lane_patterns else None
     b = resolve_lane(repo, against_patterns) if against_patterns else None
     overlap = lane_overlap(a["files"], b["files"]) if a and b else None
-    return {"lane": a, "against": b, "overlap": overlap}
+    guards = guards_for_files(a["files"]) if a else []
+    return {"lane": a, "against": b, "overlap": overlap, "guards": guards}
 
 
 def derive_worktree(config, issue):
@@ -816,6 +915,15 @@ def receipt(payload):
             lines.append("  overlap : " + ", ".join(lane["overlap"]))
         else:
             lines.append("  overlap : none")
+        # #432: guards the lane side's own files trip -- a narrowed local test
+        # command that omits these will look green and CI will not.
+        if lane["lane"] is None:
+            pass
+        elif lane["guards"]:
+            for entry in lane["guards"]:
+                lines.append("  guard   : {0} ({1})".format(entry["test"], "; ".join(entry["why"])))
+        else:
+            lines.append("  guard   : none of the lane's files match a known cross-cutting guard")
 
     return _render(lines)
 
