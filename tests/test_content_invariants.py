@@ -116,21 +116,22 @@ def test_developer_narration_vs_report_314():
     a shrunk report -- a blunt "be terser" cuts both, and the report is what makes the
     review work at all.
 
-    Positive control: the phrase has to land in developer.md specifically, and the
-    surrounding report-quality guarantees it argues for keeping (the argued-down
-    finding's `reason`, red and green quoted separately) must still be present. A
-    fixture that loaded the wrong file, or an edit that replaced that guidance instead
-    of citing it, would fail this half instead of passing everything vacuously.
+    Positive control: the phrase has to land in developer.md specifically, and phrases from
+    the pre-existing report-quality guidance the #314 paragraph argues for keeping -- wording
+    that predates this instruction rather than wording the new paragraph itself coined -- must
+    still be present. A fixture that loaded the wrong file, or an edit that gutted that
+    guidance instead of citing it, would fail this half instead of passing everything
+    vacuously.
     """
     text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
     assert "#314" in text, "developer.md does not cite #314's narration-vs-report finding"
-    assert "argued-down finding" in text, (
-        "developer.md no longer keeps the report-quality guarantee the #314 instruction "
-        "argues for preserving -- positive control failed"
+    assert "argued-down" in text, (
+        "developer.md no longer keeps the report-for-filing disposition guidance the #314 "
+        "instruction argues for preserving -- positive control failed"
     )
-    assert "red and green quoted separately" in text, (
-        "developer.md no longer keeps the report-quality guarantee the #314 instruction "
-        "argues for preserving -- positive control failed"
+    assert "the red output and the green output reported separately" in text, (
+        "developer.md no longer keeps the red/green-quoted-separately guidance the #314 "
+        "instruction argues for preserving -- positive control failed"
     )
 
 
