@@ -497,6 +497,46 @@ def default_branch_problem(value):
     return None
 
 
+def branch_pattern_problem(value):
+    """Why this `branch_pattern` cannot be used, or None when it is fine.
+
+    Not a git ref by itself -- it carries a literal placeholder (`fix/{issue}`) no
+    single branch ever has -- so this is not "would git accept this as a ref". It
+    is the same question `default_branch_problem` asks for the same reason: the
+    value is written into a code span of a generated CONTRIBUTING.md (#460), and
+    CommonMark decides block structure -- where a paragraph or a heading starts --
+    before an inline span is parsed, so a blank line or a heading marker inside the
+    "span" is read as real document structure regardless of the backticks around
+    it, the same seam #180 closed for `default_branch` and `test_command`.
+
+    `_git_ref_problem`'s character class already excludes every line break and
+    control character for exactly that reason, and it is reused rather than a
+    second class invented beside it: every pattern this plugin ships or a
+    maintainer would plausibly write (`fix/{issue}`, `issue-{issue}`, a nested
+    `area/{issue}`) contains only `/`, letters, digits and the placeholder's own
+    braces, none of which `_git_ref_problem` forbids, so nothing that already
+    passes today would start failing.
+
+    Null is accepted here and refused one layer up, matching every other
+    render-time funnel in this file: `branch_pattern` is required and
+    non-nullable in `REQUIRED_KEYS`, so `validate()` already reports a null with
+    its own sentence.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return "branch_pattern: expected the pattern as a string; got {!r}.".format(value)
+    problem = _git_ref_problem(value)
+    if problem:
+        return (
+            "branch_pattern: {}. It is written into a code span of the "
+            "CONTRIBUTING.md generated for another repository, where a character "
+            "that ends a line puts the remainder at column 0, outside the span, as "
+            "real Markdown structure; got {!r}.".format(problem, value)
+        )
+    return None
+
+
 # `changelog_dir` is the one value in this file that becomes shell source. `scaffold.py`
 # substitutes it into a `run:` line of the workflow it writes into somebody else's
 # repository, so a value carrying `$(...)` is a command that runs in their CI -- and this
@@ -1454,6 +1494,12 @@ def validate(config):
     test_command = test_command_problem(config.get("test_command"))
     if test_command:
         problems.append(test_command)
+
+    # `scaffold._render_contributing_md` substitutes this one, same reason and same
+    # re-check-at-the-chokepoint shape as the two above (#460).
+    branch_pattern = branch_pattern_problem(config.get("branch_pattern"))
+    if branch_pattern:
+        problems.append(branch_pattern)
 
     labels = config.get("labels")
     if labels is not None:
