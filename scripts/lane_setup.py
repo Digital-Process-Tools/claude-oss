@@ -53,6 +53,7 @@ Python 3.9 compatible: no match statements, no `X | Y` annotations.
 import argparse
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -255,6 +256,143 @@ def branch_occupancy(repo, remote, name):
     )
     exists_remote = None if remote_code is None else remote_code == 0
     return exists_local, exists_remote
+
+
+_LANE_WILDCARD_CHARS = frozenset("*?[")
+
+
+def _is_lane_glob(pattern):
+    return any(ch in pattern for ch in _LANE_WILDCARD_CHARS)
+
+
+def _lane_pattern_problem(pattern):
+    """Why `pattern` cannot be rendered as part of a lane, or None when it can.
+
+    #267: a lane an agent implements gets asserted from a maintainer's memory,
+    never re-derived. A lane pattern reaching this function is one step closer
+    to trusted than that -- it is still typed by a human, but it is about to be
+    turned into the one canonical form (a resolved, repo-relative path) that a
+    second brief's lane can be checked against, rather than eyeballed. It is
+    refused the same way `oss_config.resolve_worktree` refuses a worktree
+    target: absolute, drive-prefixed or traversing out of the repo is refused
+    before anything touches the filesystem, not caught after.
+
+    **Deliberately not `os.path.isabs`.** The auditor measured
+    `posixpath.isabs("/etc/passwd")` and `ntpath.isabs("/etc/passwd")`
+    disagreeing with each other -- True and False -- so a check that delegates
+    to whichever `os.path` the host aliases refuses a POSIX-rooted pattern on
+    Linux/macOS and lets the identical string through, unrefused, on Windows.
+
+    #435 sharpened this: it is not only a platform fact, it is an *interpreter*
+    fact on top of a platform one. `ntpath.isabs("/etc/passwd")` answers True on
+    CPython 3.9-3.12 (observed on this repo's own CI, a 3.9.25 run) and False on
+    3.13 (observed locally) -- the same string, the same module, two different
+    answers depending on which interpreter loaded it. This repo's CI runs three
+    platforms *and* four Python versions, so `os.path.isabs` was never a stable
+    foundation on any one of the six combinations it actually gates, only on
+    whichever combination happened to be sitting on the machine that wrote the
+    check. The string test below needs neither the platform's nor the
+    interpreter's answer to agree with any other: a leading `/` (which also
+    catches a leading `//` UNC root) or a drive-letter prefix.
+    """
+    if not isinstance(pattern, str) or not pattern.strip():
+        return "lane pattern is empty"
+    normalized = pattern.replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", pattern):
+        return "lane pattern {0!r} is not relative".format(pattern)
+    if ".." in normalized.split("/"):
+        return "lane pattern {0!r} is a traversal".format(pattern)
+    return None
+
+
+def resolve_lane(repo, patterns):
+    """Render a maintainer-asserted lane -- a mix of literal paths and glob
+    patterns, exactly what a brief's `lane:` line carries today -- in the one
+    canonical form the issue asks for: a sorted, deduplicated list of
+    repo-relative POSIX paths, so a second brief's lane can be compared to it
+    by `lane_overlap` instead of by eye.
+
+    #267, instance two: `fix/247-244`'s lane was a literal path
+    (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob
+    (`commands/*.md`); the second agent's fix correctly touched
+    `commands/tick.md`, and nothing caught the collision because a glob and a
+    path cannot be intersected by eye. Both forms resolve through here to the
+    same shape.
+
+    Three states per pattern, not two: `literal` (asserted, not checked
+    against the tree -- the file may not exist yet, such as a changelog
+    fragment about to be created), `glob-resolved` (expanded against files
+    that exist), and `glob-no-match` (the pattern was well-formed and matched
+    nothing -- reported rather than silently folded into an empty result, the
+    same distinction `derive_branch`'s `unknown` state draws elsewhere in this
+    file). A fourth, `refused`, covers a pattern `_lane_pattern_problem` will
+    not resolve at all.
+    """
+    repo = Path(repo)
+    entries = []
+    files = set()
+    for pattern in patterns:
+        problem = _lane_pattern_problem(pattern)
+        if problem is not None:
+            entries.append({"pattern": pattern, "state": "refused", "files": [], "detail": problem})
+            continue
+        # #267 review: normalized once here, and both branches below use the
+        # normalized form -- the literal branch always did (`os.path.normpath`
+        # needs it to collapse `.` and repeated separators), and the glob
+        # branch used to pass the raw pattern straight to `Path.glob`, which
+        # treats a backslash as a literal filename character on POSIX rather
+        # than a separator. A pattern typed with Windows-style separators
+        # silently matched nothing there -- a laundered false negative in the
+        # exact tool #267 exists to stop one.
+        normalized = pattern.replace("\\", "/")
+        if _is_lane_glob(pattern):
+            try:
+                matches = sorted(
+                    p.relative_to(repo).as_posix()
+                    for p in repo.glob(normalized)
+                    if p.is_file()
+                )
+            except (OSError, ValueError) as exc:
+                entries.append(
+                    {
+                        "pattern": pattern,
+                        "state": "refused",
+                        "files": [],
+                        "detail": "{0}: {1}".format(type(exc).__name__, exc),
+                    }
+                )
+                continue
+            state = "glob-resolved" if matches else "glob-no-match"
+            entries.append({"pattern": pattern, "state": state, "files": matches, "detail": ""})
+            files.update(matches)
+        else:
+            rel = os.path.normpath(normalized).replace(os.sep, "/")
+            entries.append({"pattern": pattern, "state": "literal", "files": [rel], "detail": ""})
+            files.add(rel)
+    return {"patterns": entries, "files": sorted(files)}
+
+
+def lane_overlap(files_a, files_b):
+    """The files two resolved lanes -- `resolve_lane`'s `files` list, from
+    either side -- both claim. This is the disjointness check #267 asks for:
+    run against two lanes rendered in one form, rather than against a
+    maintainer's memory of which glob might touch which path.
+    """
+    return sorted(set(files_a) & set(files_b))
+
+
+def lane_report(repo, lane_patterns, against_patterns):
+    """The `lane` section of a lane-setup payload, or None when neither side
+    was asked for. Two lanes given: also the overlap between them, so a
+    developer brief's setup call can carry the collision check the maintainer
+    would otherwise have to run by eye.
+    """
+    if not lane_patterns and not against_patterns:
+        return None
+    a = resolve_lane(repo, lane_patterns) if lane_patterns else None
+    b = resolve_lane(repo, against_patterns) if against_patterns else None
+    overlap = lane_overlap(a["files"], b["files"]) if a and b else None
+    return {"lane": a, "against": b, "overlap": overlap}
 
 
 def derive_worktree(config, issue):
@@ -489,8 +627,16 @@ def read_board(repo):
     return {"state": "ok", "lines": _condense_board(done.stdout), "detail": ""}
 
 
-def compute(repo, issue, remote="origin"):
-    """Everything a lane brief needs, in one payload. `config.state` gates the exit."""
+def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=None):
+    """Everything a lane brief needs, in one payload. `config.state` gates the exit.
+
+    `lane_patterns` / `against_patterns` are optional (#267): when neither is
+    given, `payload["lane"]` is None -- an absent ask must not read as a
+    checked, empty lane. When either is given, both sides are rendered
+    through `resolve_lane` and, when both sides are present, compared with
+    `lane_overlap` -- the disjointness check the manager skill currently runs
+    by eye.
+    """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
     config, problems = oss_config.load(config_path)
@@ -504,6 +650,7 @@ def compute(repo, issue, remote="origin"):
             "branch": None,
             "worktree": None,
             "board": None,
+            "lane": lane_report(repo, lane_patterns, against_patterns),
         }
 
     default_branch = config.get("default_branch")
@@ -537,6 +684,7 @@ def compute(repo, issue, remote="origin"):
         "branch": branch,
         "worktree": worktree,
         "board": board,
+        "lane": lane_report(repo, lane_patterns, against_patterns),
     }
 
 
@@ -650,6 +798,25 @@ def receipt(payload):
         for line in board["lines"]:
             lines.append("  " + line)
 
+    lane = payload.get("lane")
+    if lane is not None:
+        lines.append("lane      :")
+        for side_label, side in (("lane", lane["lane"]), ("against", lane["against"])):
+            if side is None:
+                continue
+            for entry in side["patterns"]:
+                lines.append(
+                    "  [{0}] {1} ({2}): {3}".format(
+                        side_label, entry["pattern"], entry["state"], ", ".join(entry["files"]) or "-"
+                    )
+                )
+        if lane["overlap"] is None:
+            lines.append("  overlap : n/a -- only one side given")
+        elif lane["overlap"]:
+            lines.append("  overlap : " + ", ".join(lane["overlap"]))
+        else:
+            lines.append("  overlap : none")
+
     return _render(lines)
 
 
@@ -665,6 +832,20 @@ def main(argv=None):
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
     parser.add_argument("--remote", default="origin", help="remote to fetch from (default: origin)")
     parser.add_argument("--json", action="store_true", help="emit the payload instead of the receipt")
+    parser.add_argument(
+        "--lane",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="a file or glob this brief's lane touches; repeatable (#267)",
+    )
+    parser.add_argument(
+        "--against",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="a file or glob to check --lane against for overlap; repeatable (#267)",
+    )
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -673,7 +854,7 @@ def main(argv=None):
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
 
-    payload = compute(args.repo, args.issue, args.remote)
+    payload = compute(args.repo, args.issue, args.remote, args.lane, args.against)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

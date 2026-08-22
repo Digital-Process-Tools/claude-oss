@@ -253,6 +253,19 @@ separately rather than one list.
   sentence naming what went untested when the injection did not take. Same rule as the permission
   fixture, one axis over: never assert on a condition you did not establish.
 
+- **A stdlib function can disagree with itself across interpreter versions on the identical
+  input, and a test that pins the answer it happens to get locally is pinning the wrong thing.**
+  `#267`'s fix for a lane-pattern containment check replaced `os.path.isabs` with a string test,
+  reasoning from a real platform disagreement: `posixpath.isabs("/etc/passwd")` is `True` and
+  `ntpath.isabs("/etc/passwd")` is `False`. The regression test asserted that second value as a
+  fact and passed locally on CPython 3.13 -- where it is `False` -- and failed on every CI leg at
+  3.9-3.12, where the identical call answers `True` (#435). The fix was never in question; the
+  test had turned an interpreter-version fact into a hardcoded platform one, on the version that
+  happened to be installed. Nothing here proposes a per-version table: the fix, in both places,
+  was to stop depending on any real `os.path` answer at all -- a fabricated stand-in module for
+  the assertion, a normalized string test for the product code -- so neither has a live stdlib
+  fact left under it to change again on 3.14.
+
 ## Layout
 
 ```

@@ -425,6 +425,16 @@ The real limit is **how many file-disjoint areas the board actually offers right
 usually lower than any ceiling you set. Two agents in one file is reckless at any fleet size. Before
 launching, write down which files each brief will touch and check the intersections.
 
+**Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
+(`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
+correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
+not intersect visibly (#267).** `scripts/lane_setup.py <issue> --lane PATTERN [--lane PATTERN ...]
+--against PATTERN [--against PATTERN ...]` renders both sides in one canonical form -- a sorted,
+deduplicated list of repo-relative paths, each glob expanded against what is actually on disk -- and
+reports the overlap in the payload (`--json`) or the receipt. Run it with the new brief's lane as
+`--lane` and every already-dispatched, still-running lane's as `--against` before that brief is
+written, not after.
+
 When the disjoint areas run out, say so rather than inventing another lane. **Bundling two related
 issues into one brief is better than splitting one file across two agents.** Stacking is the other
 lever: branch the second agent off the first's branch rather than off the default branch. It costs a
