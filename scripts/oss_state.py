@@ -122,6 +122,26 @@ COHORT_MEASURED = "measured"
 COHORT_UNKNOWN = "unknown"
 COHORT_COULD_NOT_COUNT = "could-not-count"
 
+# A recorded wait (#337): what a tick is blocked on, in a form a later tick can test
+# rather than believe. "Blocked on audit completion" names no dispatch, no observable
+# and no time, so no later turn can fail it -- and a wait that cannot fail is
+# indistinguishable from one that is still true. `wait` records the claim; `check_wait`
+# re-derives it, and the check itself must have a third state, same shape as `intake`'s
+# and `cohort_freeze`'s: a wait that still holds and a wait nobody could test must not
+# render alike, or the second reads as the first forever.
+#
+#   holds                the wait was recorded, or re-checked, and the condition it
+#                        names has not been observed to clear.
+#   cleared              re-checked, and the observable was seen -- `cleared_by` says
+#                        what was seen, so a later reader can tell this from a guess.
+#   could-not-evaluate   re-checked, but the observable could not be tested at all
+#                        (the tracker was unreachable, the dispatch could not be
+#                        found). Never the same rendering as `holds`: `holds` is a
+#                        measurement that came back negative, this is no measurement.
+WAIT_HOLDS = "holds"
+WAIT_CLEARED = "cleared"
+WAIT_COULD_NOT_EVALUATE = "could-not-evaluate"
+
 
 class StateError(Exception):
     """The state file could not be read, or an entry was refused."""
@@ -1156,6 +1176,122 @@ def _cohort_freeze_sentence(record):
     )
 
 
+def wait(dispatch, observable, at):
+    """Record a fresh wait (#337): what a tick is blocked on, in a form the next tick
+    can test rather than believe.
+
+    ``dispatch`` names what was set in motion -- "gate 3 audit dispatched at 23:12Z" --
+    and ``observable`` names what a later tick looks for to know it cleared -- "four
+    output issues filed on the tracker". Neither is optional: a dispatch with no
+    observable is a wait nothing can test, and an observable with no dispatch is a
+    condition nobody can trace back to what it was waiting on.
+
+    Always starts ``holds`` -- a wait is recorded at the moment the condition is judged
+    not yet met. ``check_wait`` is what re-derives it on a later tick.
+    """
+    if not dispatch or not str(dispatch).strip():
+        raise StateError(
+            "a wait needs a dispatch -- what was set in motion. A wait with no "
+            "dispatch is a claim nothing can trace back to what it is waiting on."
+        )
+    if not observable or not str(observable).strip():
+        raise StateError(
+            "a wait needs an observable -- what a later tick looks for to know it "
+            "cleared. A wait with no observable is prose, not a claim that can fail."
+        )
+    if not at or not str(at).strip():
+        raise StateError(
+            "a wait needs an ISO timestamp for when it was recorded, not read from a "
+            "clock in here."
+        )
+    return {
+        "dispatch": str(dispatch).strip(),
+        "observable": str(observable).strip(),
+        "recorded_at": str(at).strip(),
+        "state": WAIT_HOLDS,
+    }
+
+
+def check_wait(record, state, cleared_by=None, why=None):
+    """Re-derive a recorded wait (#337): still holds, has cleared, or could not be
+    evaluated at all.
+
+    ``record`` is the wait record carried by a previous entry's ``detail["wait"]``.
+    The dispatch, observable and original timestamp are carried over unchanged, so the
+    history keeps what was originally waited on even after it clears.
+
+    ``state`` must be one of the three. ``holds`` needs nothing more -- the condition
+    was tested and not yet observed. ``cleared`` requires ``cleared_by``, what was
+    actually observed, so a later reader can tell a real clearance from a guess.
+    ``could-not-evaluate`` requires ``why`` -- the observable could not be tested at
+    all, which must never render the same as ``holds``: ``holds`` is a measurement that
+    came back negative, this is no measurement.
+    """
+    if not isinstance(record, dict) or not record.get("dispatch") or not record.get(
+        "observable"
+    ):
+        raise StateError(
+            "check_wait needs a wait record carrying dispatch and observable, not "
+            "{!r}".format(record)
+        )
+    if state not in (WAIT_HOLDS, WAIT_CLEARED, WAIT_COULD_NOT_EVALUATE):
+        raise StateError(
+            "{!r} is not a recognised wait state ({}, {} or {})".format(
+                state, WAIT_HOLDS, WAIT_CLEARED, WAIT_COULD_NOT_EVALUATE
+            )
+        )
+    result = {
+        "dispatch": record["dispatch"],
+        "observable": record["observable"],
+        "recorded_at": record.get("recorded_at"),
+        "state": state,
+    }
+    if state == WAIT_CLEARED:
+        if not cleared_by or not str(cleared_by).strip():
+            raise StateError(
+                "a cleared wait needs cleared_by -- what was actually observed. "
+                "Reporting 'cleared' with nothing seen is the same unfalsifiable "
+                "prose this exists to replace."
+            )
+        result["cleared_by"] = str(cleared_by).strip()
+    elif state == WAIT_COULD_NOT_EVALUATE:
+        if not why or not str(why).strip():
+            raise StateError(
+                "could-not-evaluate needs why -- an unexplained 'could not check' is "
+                "indistinguishable from a check that was simply skipped."
+            )
+        result["why"] = str(why).strip()
+    return result
+
+
+def wait_line(record):
+    """One line a tick report can print. The state decides the sentence, not the caller."""
+    return _receipt_line(_wait_sentence(record))
+
+
+def _wait_sentence(record):
+    """`wait_line`'s branches. Unfolded on purpose -- it has one caller."""
+    if not isinstance(record, dict):
+        raise StateError("wait_line takes a wait record, not {!r}".format(record))
+    state = record.get("state")
+    dispatch = record.get("dispatch") or "an unstated wait"
+    head = "wait on {}: ".format(dispatch)
+
+    if state == WAIT_HOLDS:
+        return head + "still holds -- watching for {}".format(
+            record.get("observable") or "an unstated observable"
+        )
+    if state == WAIT_CLEARED:
+        return head + "cleared -- {}".format(
+            record.get("cleared_by") or "no reason recorded"
+        )
+    if state == WAIT_COULD_NOT_EVALUATE:
+        return head + "could not evaluate -- {}".format(
+            record.get("why") or "no reason recorded"
+        )
+    return head + "unrecognised wait state {!r}, so nothing is claimed".format(state)
+
+
 def _count_argument(text):
     """A CLI count: a whole number, or the literal ``unknown``.
 
@@ -1317,6 +1453,12 @@ def _main(argv=None):
         action="store_true",
         help="print the lane-model mix re-added across the whole history",
     )
+    group.add_argument(
+        "--pending-wait",
+        action="store_true",
+        help="print the last entry's wait record if it still holds (#337), "
+        "or 'no pending wait' if there is none",
+    )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
     parser.add_argument(
@@ -1368,6 +1510,31 @@ def _main(argv=None):
         "--cohort-why",
         help="why fewer than two routes were counted; required when that happens",
     )
+    parser.add_argument(
+        "--wait-dispatch",
+        help="record a fresh wait (#337): what was set in motion; use with "
+        "--wait-observable",
+    )
+    parser.add_argument(
+        "--wait-observable",
+        help="what a later tick looks for to know the wait cleared; use with "
+        "--wait-dispatch",
+    )
+    parser.add_argument(
+        "--check-wait",
+        choices=(WAIT_HOLDS, WAIT_CLEARED, WAIT_COULD_NOT_EVALUATE),
+        help="re-derive the last entry's pending wait: holds, cleared (needs "
+        "--wait-cleared-by) or could-not-evaluate (needs --wait-why)",
+    )
+    parser.add_argument(
+        "--wait-cleared-by",
+        help="what was observed to clear the wait; required with --check-wait cleared",
+    )
+    parser.add_argument(
+        "--wait-why",
+        help="why the wait could not be evaluated; required with --check-wait "
+        "could-not-evaluate",
+    )
     args = parser.parse_args(argv)
 
     intake_flags = [
@@ -1399,6 +1566,17 @@ def _main(argv=None):
         )
         if value is not None
     ]
+    wait_flags = [
+        name
+        for name, value in (
+            ("--wait-dispatch", args.wait_dispatch),
+            ("--wait-observable", args.wait_observable),
+            ("--check-wait", args.check_wait),
+            ("--wait-cleared-by", args.wait_cleared_by),
+            ("--wait-why", args.wait_why),
+        )
+        if value is not None
+    ]
 
     # The intake pair and the lane record, each once it has been built and while the
     # entry carrying it has not landed. `refuse` reads both, so a refusal after either
@@ -1408,6 +1586,7 @@ def _main(argv=None):
     pending_intake = None
     pending_lanes = None
     pending_cohort = None
+    pending_wait_record = None
 
     def refuse(message):
         """Print the verdict, then what the run did not record. In that order.
@@ -1434,10 +1613,20 @@ def _main(argv=None):
         if pending_cohort is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
+        if pending_wait_record is not None:
+            sys.stdout.flush()
+            _say("NOT RECORDED " + wait_line(pending_wait_record), sys.stderr)
         return 1
 
     try:
-        reading_mode = args.read or args.last or args.trend or args.migrate or args.model_trend
+        reading_mode = (
+            args.read
+            or args.last
+            or args.trend
+            or args.migrate
+            or args.model_trend
+            or args.pending_wait
+        )
         if reading_mode and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
             # 0, with the reading mode's own output looking entirely normal.
@@ -1458,6 +1647,21 @@ def _main(argv=None):
                 "accept them and drop them".format(", ".join(cohort_flags))
             )
             return 1
+        if reading_mode and not args.pending_wait and wait_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(wait_flags))
+            )
+            return 1
+        if args.pending_wait:
+            entry = last(args.path)
+            detail = entry.get("detail") if isinstance(entry, dict) else None
+            record = detail.get("wait") if isinstance(detail, dict) else None
+            if isinstance(record, dict) and record.get("state") == WAIT_HOLDS:
+                print(json.dumps(record, indent=2))
+            else:
+                print("no pending wait")
+            return 0
         if args.model_trend:
             trend = lane_model_trend(read(args.path))
             # Same three-label vocabulary as --trend, one metric over: TREND marks a
@@ -1561,6 +1765,45 @@ def _main(argv=None):
                 "--cohort needs --cohort-count (at least two); --cohort alone "
                 "records nothing."
             )
+        if (args.wait_dispatch is not None or args.wait_observable is not None) and (
+            args.check_wait is not None
+        ):
+            return refuse(
+                "--wait-dispatch/--wait-observable (recording a fresh wait) and "
+                "--check-wait (re-deriving the last one) cannot both be given in "
+                "one call"
+            )
+        if args.wait_dispatch is not None or args.wait_observable is not None:
+            if args.wait_dispatch is None or args.wait_observable is None:
+                return refuse(
+                    "a wait record needs both --wait-dispatch and --wait-observable; "
+                    "either alone is a claim nothing can test"
+                )
+            pending_wait_record = wait(args.wait_dispatch, args.wait_observable, args.at)
+        elif args.check_wait is not None:
+            previous = last(args.path)
+            previous_wait = (
+                previous.get("detail", {}).get("wait")
+                if isinstance(previous, dict) and isinstance(previous.get("detail"), dict)
+                else None
+            )
+            if not isinstance(previous_wait, dict) or previous_wait.get("state") != WAIT_HOLDS:
+                return refuse(
+                    "--check-wait was given but the last entry carries no pending "
+                    "wait (state {}); there is nothing to re-derive".format(
+                        WAIT_HOLDS
+                    )
+                )
+            pending_wait_record = check_wait(
+                previous_wait,
+                args.check_wait,
+                cleared_by=args.wait_cleared_by,
+                why=args.wait_why,
+            )
+        elif args.wait_cleared_by is not None or args.wait_why is not None:
+            return refuse(
+                "--wait-cleared-by/--wait-why are only meaningful with --check-wait"
+            )
         if intake_flags:
             missing = [
                 name
@@ -1621,6 +1864,18 @@ def _main(argv=None):
                     "the other"
                 )
             detail["cohort_freeze"] = pending_cohort
+        if pending_wait_record is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a wait record is attached"
+                )
+            if "wait" in detail:
+                return refuse(
+                    "--detail already carries a 'wait' key; pass one or the other"
+                )
+            detail["wait"] = pending_wait_record
         entry = append(args.path, args.at, args.decision, detail=detail)
         # After the write, never before. The line is a receipt for an entry that is on
         # disk, and a receipt printed ahead of the write it receipts is one that a
@@ -1631,6 +1886,8 @@ def _main(argv=None):
             _say("RECORDED " + lane_models_line(pending_lanes), sys.stderr)
         if pending_cohort is not None:
             _say("RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
+        if pending_wait_record is not None:
+            _say("RECORDED " + wait_line(pending_wait_record), sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
