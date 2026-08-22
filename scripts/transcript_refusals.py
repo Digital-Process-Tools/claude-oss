@@ -135,6 +135,25 @@ _REFUSAL_PATTERNS = (
     ("plain-op-error", "ERROR:"),
 )
 
+#: Lane-length threshold, in assistant turns (#498). Measured across 612
+#: agent transcripts: median 55, p90 140, p99 272. p90 is chosen over p99
+#: because the cost this issue names scales roughly with the square of a
+#: lane's length, so a threshold anywhere below the tail still catches most
+#: of the compounding before it happens -- a lane stopped at 140 turns has
+#: paid for at most (140/272)**2 ~= 26% of what one that ran to p99 would
+#: have. p99 (272) would flag only the same ~1% of lanes already named as
+#: "five lanes out of 612" and would leave the whole 90th-99th-percentile
+#: band -- which is not a rounding error, it is nine percentiles of lanes --
+#: unmeasured. What would make this wrong: the issue's own "Not claimed"
+#: section says a long lane may be honestly hard work, not a lane that
+#: should have split, and splitting has a real, unmeasured cost of its own
+#: (a handback loses working context). If most lanes in the 140-272 range
+#: turn out to be exactly that -- single, coherent, hard-to-split issues --
+#: p90 is too eager and p99 is the safer choice. This constant is that
+#: judgement call, named so a later measurement can argue with it rather
+#: than with a vibe.
+DEFAULT_TURNS_THRESHOLD = 140
+
 # A call boundary (start of string, or after ; & | or a newline -- a
 # newline is bash's own default statement separator and this repository's
 # own agent briefs model multi-line command blocks as the norm, so a
@@ -234,6 +253,10 @@ def analyze_transcript(path):
     ops_per_call = []
     calls_by_class = {"read-only": 0, "write-only": 0, "mixed": 0}
     call_kinds = []  # ordered "single-read" / "other", across every tool call
+    tool_result_bytes = []  # #498: bytes of each tool_result content, in
+    # the order it arrived, one entry per tool_result block regardless of
+    # refusal classification -- what the orientation-cost finding is
+    # measured over.
     refusals = {}
     models_seen = set()
     agent = None
@@ -322,6 +345,7 @@ def analyze_transcript(path):
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
                 text = _content_text(block.get("content"))
+                tool_result_bytes.append(len(text.encode("utf-8")))
                 cls = classify_refusal(text)
                 if cls is not None:
                     refusals[cls] = refusals.get(cls, 0) + 1
@@ -381,6 +405,7 @@ def analyze_transcript(path):
         "refusals": refusals,
         "tokens": tokens,
         "parse_errors": parse_errors,
+        "tool_result_bytes": tool_result_bytes,
     }
 
 
@@ -462,7 +487,49 @@ def _histogram(counts, buckets=(1, 2, 3, 4, 5)):
     return hist
 
 
-def _summarize_group(analyses):
+def decile_shares(analyses):
+    """Bytes and calls by decile of each transcript's own tool-result count
+    (#498). Each analysis' `tool_result_bytes` list is split into ten
+    roughly-equal buckets by call position -- item at position `i` of `n`
+    lands in bucket `min(9, i * 10 // n)` -- and the buckets are summed
+    across every analysis in the group, matching the shape #498's own table
+    measured: call counts flat across deciles, bytes concentrated early.
+
+    Three states, not two: a group where not one transcript carries a
+    tool_result is `"no-data"` -- there is nothing to bucket, which must not
+    render the same as `"measured"` with every bucket at zero. `"measured"`
+    always carries a `"deciles"` list of exactly ten entries and a
+    `"first_fifth_byte_share"` (deciles 0 and 1 combined, over the total)."""
+    decile_bytes = [0] * 10
+    decile_calls = [0] * 10
+    total_calls = 0
+    for a in analyses:
+        sizes = a.get("tool_result_bytes") or []
+        n = len(sizes)
+        if not n:
+            continue
+        total_calls += n
+        for i, size in enumerate(sizes):
+            bucket = min(9, (i * 10) // n)
+            decile_bytes[bucket] += size
+            decile_calls[bucket] += 1
+
+    if total_calls == 0:
+        return {"state": "no-data"}
+
+    total_bytes = sum(decile_bytes)
+    first_fifth = decile_bytes[0] + decile_bytes[1]
+    return {
+        "state": "measured",
+        "deciles": [
+            {"decile": i, "bytes": decile_bytes[i], "calls": decile_calls[i]}
+            for i in range(10)
+        ],
+        "first_fifth_byte_share": (first_fifth / total_bytes) if total_bytes else None,
+    }
+
+
+def _summarize_group(analyses, turns_threshold=DEFAULT_TURNS_THRESHOLD):
     turns = [a["turns"] for a in analyses]
     tool_calls = [a["tool_calls"] for a in analyses]
     text_only = [a["turns_text_only"] for a in analyses]
@@ -477,9 +544,15 @@ def _summarize_group(analyses):
     single_op = sum(1 for n in all_ops if n == 1)
     single_op_share = (single_op / len(all_ops)) if all_ops else None
     all_runs = [length for a in analyses for length in a["single_read_run_lengths"]]
+    over_threshold = [t for t in turns if t > turns_threshold]
+    over_threshold_share = (len(over_threshold) / len(turns)) if turns else None
 
     return {
         "count": len(analyses),
+        "turns_threshold": turns_threshold,
+        "turns_over_threshold_count": len(over_threshold),
+        "turns_over_threshold_share": over_threshold_share,
+        "decile_bytes": decile_shares(analyses),
         "median_turns": _median(turns),
         "median_tool_calls": _median(tool_calls),
         "median_text_only_turns": _median(text_only),
@@ -497,7 +570,7 @@ def _summarize_group(analyses):
     }
 
 
-def run(roots, agent_filter=None, detail=False):
+def run(roots, agent_filter=None, detail=False, turns_threshold=DEFAULT_TURNS_THRESHOLD):
     """The whole scan over `roots`. Returns the report dict; never raises."""
     files, unreadable_dirs = discover_transcripts(roots)
 
@@ -554,7 +627,7 @@ def run(roots, agent_filter=None, detail=False):
     for agent_bucket in by_agent.values():
         by_model = {}
         for model, model_analyses in agent_bucket["by_model"].items():
-            by_model[model] = _summarize_group(model_analyses)
+            by_model[model] = _summarize_group(model_analyses, turns_threshold=turns_threshold)
         agent_bucket["by_model"] = by_model
         del agent_bucket["_analyses"]
 
@@ -574,7 +647,7 @@ def run(roots, agent_filter=None, detail=False):
         "unreadable_dirs": unreadable_dirs,
         "refusal_totals": refusal_totals,
         "by_agent": by_agent,
-        "overall": _summarize_group(analyses),
+        "overall": _summarize_group(analyses, turns_threshold=turns_threshold),
     }
     if detail:
         report["transcripts"] = analyses
@@ -633,6 +706,13 @@ def _build_parser():
     parser.add_argument("--agent", default=None, help="Filter to one attributionAgent value, e.g. oss:developer.")
     parser.add_argument("--detail", action="store_true", help="Include a full per-transcript row list in the output.")
     parser.add_argument("--indent", type=int, default=2, help="JSON indent (0 for compact).")
+    parser.add_argument(
+        "--turns-threshold",
+        type=int,
+        default=DEFAULT_TURNS_THRESHOLD,
+        help="Lane-length threshold in assistant turns (#498). Default is the "
+        "p90 measured across 612 transcripts ({0}).".format(DEFAULT_TURNS_THRESHOLD),
+    )
     return parser
 
 
@@ -644,7 +724,7 @@ def main(argv=None):
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
 
     roots = [Path(r) for r in args.root] if args.root else [default_transcripts_root()]
-    report = run(roots, agent_filter=args.agent, detail=args.detail)
+    report = run(roots, agent_filter=args.agent, detail=args.detail, turns_threshold=args.turns_threshold)
     indent = args.indent if args.indent > 0 else None
     print(json.dumps(report, indent=indent, sort_keys=True))
     return EXIT_MEASURED if report["state"] == STATE_MEASURED else EXIT_NO_TRANSCRIPTS

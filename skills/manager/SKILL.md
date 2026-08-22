@@ -211,6 +211,28 @@ into the probe.
   the body alone is a known way to burn a whole agent run.
 - **Re-derive the issue's own claims.** A body goes stale while its comments accumulate. Grep for the
   *concept*, not the issue's spelling of it.
+- **The issue can go stale against the code, and neither bullet above catches that axis.** Both of
+  the two above are about the body going stale against its own comments — nothing yet asks whether
+  the whole issue, comments included, has gone stale against what actually shipped. A lane was
+  dispatched for part 3 of #81 after the fix had already landed and shipped: the body and every
+  comment were read exactly as asked, and the brief was still written for finished work (#457). Before
+  writing a brief, run `scripts/preflight_check.py --pattern PATTERN --path FILE_OR_DIR` against the
+  code path the issue names — for #81 that was one grep for `could not run` in `commands/release.md`
+  — and read its `state` in three, never two: **`matched`**, **`not-matched`**, or
+  **`could-not-search`**, which must never be read as `not-matched`. Whether a match means
+  **already-shipped** or **still-open** depends on what the pattern names — a contract that should
+  exist, or a symptom that should not — and that direction is the maintainer's own judgement to record
+  alongside the call, never the script's to guess. `could-not-search` becomes **`could-not-tell`** at
+  the dispatch decision and must never render as **`still-open`** either — the issue names no code
+  path precise enough to check is the honest reading, not a nudge to dispatch anyway.
+  **For a multi-part issue, run it once per part.** A whole-issue verdict hides exactly the case
+  #457 records: #81 had three parts in three different states (one filed elsewhere, one shipped, one
+  genuinely open), and a single check over the whole issue would have called it open and dispatched
+  it again. **The same check belongs where a bundle is assembled, not only where a single issue is
+  chosen** — a stale member wastes a share of the whole bundle's brief in proportion to the bundle's
+  size, and a bundle reads exactly as healthy at dispatch whether or not one of its members has
+  already shipped. Run it for every candidate before it is added to a bundle, not only for the one
+  issue a single-issue lane would have picked.
 - **Rank by what cannot be undone**, then by who is walking away:
 
   | Class | Blocks a release? | Embargo when reported upstream? |
@@ -504,6 +526,42 @@ test that froze one interpreter's answer into a hardcoded platform one. Carry th
 number rather than silently dropping either.
 
 Launch every dispatched lane — bundled or not — in a single message so they run concurrently.
+
+**Lane length is itself a cost decision, and it is measured after a lane completes, never during
+it (#498).** Cost scales roughly with the square of a lane's own length — turns times the average
+context across those turns, and the context itself grows with the turns — so five lanes out of 612
+measured (298-329 turns each) accounted for around 7% of all consumption, and splitting a long lane
+into two with a handback between them costs about half. **This is deliberately not a paragraph
+asking an agent to watch its own length**: a metric an agent can see is a metric it will optimise,
+and the cheap ways to shorten a lane are exactly the ones this project exists to prevent — fewer
+files read, no positive control, three states collapsed to two, stopping at the first plausible fix.
+This repository has measured that a judgement-shaped instruction like this one does not change
+behaviour twice already — `developer.md`'s batching paragraph across 612 transcripts, and the #490
+A/B where a fuller cost model in the brief made the single-op rate 6% *worse*, not better — so the
+threshold lives in a script the maintainer runs after a lane reports back, not in a sentence the
+agent reads mid-run.
+
+`scripts/transcript_refusals.py` (already the source of the numbers above) reports, per lane and per
+group: `turns_over_threshold_count` / `_share` against `DEFAULT_TURNS_THRESHOLD` (140 turns, the
+measured p90 — chosen over the p99 of 272 because the cost is quadratic, so a threshold anywhere
+below the tail already captures most of the compounding, and p99 would leave the entire 90th-99th
+percentile band unmeasured; see the constant's own docstring for the argument and what would make it
+wrong), and `decile_bytes` — bytes and calls bucketed by decile of each transcript's own length,
+carrying `first_fifth_byte_share` for the orientation finding below. Run it against a completed
+lane's own transcript at handback, or periodically across a window of them, to decide whether
+**future**, not current, related work should be bundled differently or handed back and re-briefed
+sooner — a lane already past the threshold is not failing and is not stopped mid-run; it is simply
+expensive, named as such, and used to shape the next dispatch.
+
+**The orientation half — bytes arriving in the first fifth of a lane are read roughly ten times more
+than ones arriving at the end — is constrained the same way: measured after, never surfaced
+in-context.** `decile_bytes.first_fifth_byte_share` on a completed lane names how much of its
+byte cost landed in the expensive early calls; a share well above the 20% an even split would
+produce is the signal that a brief over-fetched context up front (`scripts/lane_setup.py`'s own
+byte budget, #317, already targets exactly this for the setup-shaped calls it replaces — this is
+the same lever applied to whatever else a brief hands a lane before it starts working, watched
+rather than bounded, because nothing here can distinguish a genuinely wide orientation read from
+one that could have waited).
 
 **Run `scripts/lane_setup.py <issue>` from the clone before writing each brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
