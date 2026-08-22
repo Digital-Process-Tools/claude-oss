@@ -213,8 +213,10 @@ Skill(manager)
    the paragraph above.
 
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
-   optional. In particular: the check states must sum to the leg count, cleanup is a separate call
-   gated on the verified merge result, and the default branch's own run gets checked after the squash.
+   optional. In particular: the check states must sum to the leg count, cleanup runs via the merge
+   op's own `|cleanup` token gated on its `MERGED` read-back rather than a second raw call, a fleet
+   holding more than one idle tree gets `skipped: reason` on the worktree half of that token and
+   reaps the rest separately, and the default branch's own run gets checked after the squash.
 
    **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
    commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and

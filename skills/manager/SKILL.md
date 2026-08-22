@@ -142,7 +142,7 @@ label that does not exist on the repo.
 | Filing | `gh-issue-create:@FILE` |
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Correcting a published body | `gh-pr-edit:N:@FILE` — same payload shape; refuses a dropped `Closes #N` and verifies the write landed |
-| Merging | `gh-pr-merge:N:squash\|force` — see below; without `\|force` it previews and merges nothing |
+| Merging | `gh-pr-merge:N:squash\|force\|cleanup` — see below; without `\|force` it previews and merges nothing |
 
 **The route is the row, not a class.** Where a row names an op, that op *is* the route — writes
 included: filing, opening, correcting and merging all have one. Raw `gh` is for the needs no row
@@ -424,6 +424,21 @@ serialised issue waits on a human-speed review that could have happened concurre
 The real limit is **how many file-disjoint areas the board actually offers right now**, which is
 usually lower than any ceiling you set. Two agents in one file is reckless at any fleet size. Before
 launching, write down which files each brief will touch and check the intersections.
+
+**That count is a floor, not only a ceiling.** The paragraph above bounds fleet size from above —
+never exceed the disjoint-area count — and stops there, which answers *may I run more?* and never
+*am I running fewer than I could?* Both questions matter: **each tick dispatches one developer per
+file-disjoint lane the board offers.** Running fewer is permitted only when it is *stated*, the way
+every other third state in this loop is stated — `dispatched 3 of 6 available, because …` — with a
+real reason such as review bandwidth, an unmerged pull request holding the files, or a brief that is
+not yet writable. Three states, computed rather than felt: **`filled`** — one developer per available
+lane; **`under-filled`** — with the count and the reason; and **`could-not-tell`** — when the
+available count itself could not be computed, **which must never render as `filled`**. The count
+comes from the same mechanism as the intersection check above — `scripts/lane_setup.py`'s
+`resolve_lane`/`lane_overlap` renders a lane as resolved paths, and the floor is a set intersection
+over that form for the candidate lanes you name, not an enumeration the script performs on its own:
+an issue's files are not derivable from its body (#267), so naming candidate lanes stays the
+maintainer's job and the script answers only which of them are mutually disjoint.
 
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
@@ -896,6 +911,19 @@ round trip each to rediscover:
   `state` / `mergedAt` / `mergeCommit` back. **Do not route around a denied merge.** Say the call
   was denied, name it exactly, and let the maintainer run or permit it.
 
+**Which spelling to type, stated rather than left to be inferred.** Use the bare
+`supertool 'gh-pr-merge:N:squash|force'` from the clone root — an allowlist rule anchored on the
+`supertool ` prefix matches it. **Do not use `python3 supertool.py 'gh-pr-merge:…'` for the merge**,
+even in a repo whose own rules require that exact spelling for file operations: that requirement
+exists so a worktree's edits run against its own branch's core rather than whatever the global
+binary resolves to, and the merge op is a forge call that does not care which tree's core runs it,
+so the constraint does not carry over to it. One merge per Bash call — a loop or a compound command
+no longer *starts* with the allowed prefix, so it is denied even when each call inside it would be
+allowed on its own. And **read `Blocked by classifier` as a claim about the command string, not
+about the action**: on a call the allowlist appears to cover, it means the spelling in front of the
+op differs from the one the rule was written against, not that merging itself was refused. Three
+sessions chased the wrong cause before this was written down (#445).
+
 ## Merge gates
 
 Merge only when all hold: **CI fully green at leg level, the review passed, and the change is a
@@ -908,30 +936,41 @@ is not on this list is just a way of not fixing things.
 
 - **"Not failing" is not "green" — count the checks.** The state counts must sum to the number of
   legs, and any leg not `SUCCESS` gets named before merging.
-- **Cleanup is a separate call, gated on the verified merge result.** Chaining merge and cleanup once
-  deleted a branch after a failed merge and auto-closed the PR. Recovery was possible only because
-  the forge keeps the PR ref.
+- **Cleanup is gated on the verified merge result — use the op's own `|cleanup` token rather than a
+  second, separate call.** Chaining merge and cleanup by hand once deleted a branch after a failed
+  merge and auto-closed the PR; recovery was possible only because the forge keeps the PR ref. That
+  is the exact guarantee `|cleanup` runs inside the op instead: `gh-pr-merge:N:squash|force|cleanup`
+  is the documented default, and its three deletions run only **after** the op's own `MERGED`
+  read-back, never before.
 - **Verify the linked issue actually closed.** Write one `Closes #N` per issue — the *keyword*
   repeated, not just the `#`. `Closes #A B` silently references only A, and `Closes #A #B` links
   both and closes only A, so "each number has its own `#`" is not the rule and satisfying it is not
   enough. A check that greps a *fragment* of the line cannot audit either case. Read the whole line.
 - **`Part of` is a decision, not a defect.** Do not close such an issue because the work shipped.
-- **Delete merged worktrees**, but read ownership before you reap. `git-worktrees` boards every
-  tree with an occupancy verdict and a merge state; `git-worktrees:PATH` gates one, and supertool's
-  exit is 0 only for `idle`. Both columns have three states and the third is never a yes: `cannot
-  tell` is not `idle`, and `merge unknown` is not `merged`. The merge column consults a merged PR as
-  well as ancestry, because **ancestry cannot see a squash merge** — the same blind spot the branch
-  bullet below names, on the same refs. Then `git worktree remove`, not `prune` — `prune` will not
-  touch a directory that still exists. A shell that has to branch on the verdict must run the preset
-  `worktrees.py` itself: supertool collapses the exit to 0/1, so `cannot tell` (2) arrives
-  indistinguishable from `occupied` (1), and treating both as "not idle" is the only safe read
-  through supertool. That is the one read this document sanctions outside supertool, and only for
-  that reason — the op's own `help` names the script, so derive its path from the installed tool
-  rather than from a path written down anywhere.
-- **Delete merged branches through the API**, `gh api -X DELETE repos/OWNER/REPO/git/refs/heads/<b>`,
-  never `git push --delete` in a loop. And note `git branch -r --merged` **cannot see squash
-  merges** — it reported 4 on a repo holding 96 merged branches. Intersect the live branch list with
-  merged PR head refs instead.
+- **Delete merged worktrees**, but read ownership before you reap, and know that `|cleanup` only
+  does this half when the board holds exactly one idle tree. A fleet-running loop normally holds
+  several, so on any of them `|cleanup` reports `skipped: reason` for the worktree while still
+  deleting the branch; that skip is correct, not a failure, and it is not free to notice — a skip and
+  a success both end with no error. **Reap the rest yourself**, the same way whether or not
+  `|cleanup` handled this one: `git-worktrees` boards every tree with an occupancy verdict and a
+  merge state; `git-worktrees:PATH` gates one, and supertool's exit is 0 only for `idle`. Both
+  columns have three states and the third is never a yes: `cannot tell` is not `idle`, and `merge
+  unknown` is not `merged`. The merge column consults a merged PR as well as ancestry, because
+  **ancestry cannot see a squash merge** — the same blind spot the branch bullet below names, on the
+  same refs. Then `git worktree remove`, not `prune` — `prune` will not touch a directory that still
+  exists. A shell that has to branch on the verdict must run the preset `worktrees.py` itself:
+  supertool collapses the exit to 0/1, so `cannot tell` (2) arrives indistinguishable from `occupied`
+  (1), and treating both as "not idle" is the only safe read through supertool. That is the one read
+  this document sanctions outside supertool, and only for that reason — the op's own `help` names the
+  script, so derive its path from the installed tool rather than from a path written down anywhere.
+- **The branch deletion is `|cleanup`'s, not a second call.** Inside the token it is
+  `gh api -X DELETE repos/OWNER/REPO/git/refs/heads/<b>`, never `git push --delete`, and only once the
+  head branch is established to be in this repository and the remote ref reads back at the PR's own
+  head commit. Reach for the raw command by hand only in the three cases the op deliberately refuses
+  to touch: a cross-repository head, an unestablished branch, or the default branch — where it prints
+  no command at all. And note `git branch -r --merged` **cannot see squash merges** — it reported 4 on
+  a repo holding 96 merged branches, which is why the op reads the remote ref back rather than
+  trusting ancestry.
 
 ### The merge is not done when the PR is green
 
@@ -939,7 +978,7 @@ is not on this list is just a way of not fixing things.
 Three steps, not one:
 
 1. merge → read `state` / `mergedAt` / `mergeCommit`
-2. clean up, in a separate call, gated on that result
+2. clean up via `|cleanup` on the same call, gated on that op's own `MERGED` read-back
 3. **check the default branch's own run** — `gh-branch`, which is conjunctive over every workflow on
    the head SHA and states GREEN / NOT GREEN / NO RUN / UNKNOWN apart. Not `gh run list --limit 1`,
    which returns whichever *workflow* started last and reports its conclusion as the commit's.
