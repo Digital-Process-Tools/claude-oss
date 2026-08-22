@@ -455,6 +455,30 @@ issues into one brief is better than splitting one file across two agents.** Sta
 lever: branch the second agent off the first's branch rather than off the default branch. It costs a
 rebase per merge. Do not stack more than two deep without a reason.
 
+**Claim before you spawn, not after.** Until this week the tracker had one reader; a first external
+maintainer running this loop on their own repository makes a second reader a real thing rather than a
+hypothetical one, and a lane that runs for hours while the issue still reads `Assignees: none` is how
+two readers pick the same issue. A spawn that dies before its first call must not leave an unclaimed
+issue with a worktree already attached to it, so the assignment happens **before** the spawn: `gh
+issue edit <N> --add-assignee @me`, resolved from the authenticated session rather than a handle
+written down anywhere in this repository — `tests/test_content_invariants.py` fails on a maintainer
+handle under `skills/` for the same reason a hardcoded one would assign a stranger's issues to a
+stranger, and `@me` is also the only spelling that is correct on a repository this project's author
+does not own.
+
+**Selection reads the same field the claim writes.** Before naming a candidate lane, check the
+issue's own assignees (`gh-issue:N` reports it) and exclude any that are non-empty — an assigned
+issue is somebody's, whoever they are. Three states, never two: **assigned** — skip it; **unassigned**
+— free to dispatch; **could not read the assignees** — the forge call failed or was not made, and this
+must never render as `unassigned`. Picking an issue whose claim state is unknown is the defect this
+repository is named after, one layer up: an absence produced by the tool, read as an absence in the
+world.
+
+A contributor without write access cannot self-assign — GitHub restricts assignment to write or
+triage permission — so this mechanism claims for the maintainer's own loop only. What an outside
+contributor uses to claim an issue is a separate decision (#460); it must land somewhere this same
+selection step reads, not in a channel of its own that renders an actually-claimed issue as free.
+
 Launch them in a single message so they run concurrently.
 
 **Run `scripts/lane_setup.py <issue>` from the clone before writing each brief, rather than typing
@@ -535,6 +559,16 @@ diverges, and a brief is the copy nobody proofreads.
 
 The `developer` definition already asks for both files, so a brief adds nothing about the format —
 only the unconditional publishing clause above, which is unchanged. The agent commits. You push.
+
+**Release what a lane did not finish.** The developer never writes to the forge, so the assignment
+placed at dispatch is still sitting on the issue when this report comes back, and the report already
+carries what tells the two cases apart — `files` empty, no commit made. When a lane ends without a
+commit, unassign the issue it was claimed under before the spawn:
+`gh issue edit <N> --remove-assignee @me`. Skipping this turns a collision problem into a permanent
+lock: an issue assigned to a lane that
+no longer exists is indistinguishable from one still being worked, which is this repository's own
+defect class landing on the mechanism meant to prevent it. A lane that *did* return a commit needs no
+release here — merging the pull request against a body that closes the issue is what ends its claim.
 
 ## Opening the pull request
 

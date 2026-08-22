@@ -3106,6 +3106,62 @@ def test_the_op_table_rows_are_found_at_all():
     assert routes.get("reads") == {"supertool"}, routes
 
 
+#: #461: a lane that claims nothing on the tracker lets two readers of the same
+#: board pick the same issue. The claim happens at dispatch, in the fleet
+#: section; the release happens at handback, in the report section -- two
+#: sites, and prose is not a guard, so this pins both rather than one.
+_DISPATCH_SECTION_HEADING = "Run a fleet, not a queue"
+_HANDBACK_SECTION_HEADING = "What comes back is a file, not a document"
+
+
+def _manager_section(heading):
+    text = MANAGER_SKILL.read_text(encoding="utf-8")
+    for name, body in _sections(text):
+        if name.strip() == heading:
+            return body
+    raise AssertionError(
+        "no '{}' section found in {} -- the site this claim/release pair belongs "
+        "under has moved or been renamed".format(heading, MANAGER_SKILL)
+    )
+
+
+def test_dispatch_claims_the_issue_before_the_spawn():
+    body = _manager_section(_DISPATCH_SECTION_HEADING)
+    assert "--add-assignee @me" in body, (
+        "the dispatch section no longer names the claim call (#461) -- a lane that "
+        "runs for hours must not leave its issue reading 'Assignees: none'"
+    )
+    assert "before" in body.lower() and "spawn" in body.lower(), (
+        "the claim has to happen before the spawn, not after -- a spawn that dies on "
+        "its first call must not leave an unclaimed issue with a worktree attached"
+    )
+    assert "could not read the assignees" in body.lower() or "could-not-read" in body.lower(), (
+        "selection needs its own third state: an issue whose claim state could not be "
+        "read must never render as free (#461)"
+    )
+
+
+def test_handback_releases_a_lane_that_returned_no_commit():
+    body = _manager_section(_HANDBACK_SECTION_HEADING)
+    assert "--remove-assignee @me" in body, (
+        "the handback section no longer names the release call (#461) -- assign with "
+        "no release turns a collision problem into a permanent lock"
+    )
+
+
+def test_developer_definition_makes_no_forge_writes_for_the_claim():
+    """#461 is explicit: nothing goes in agents/developer.md. It stops at a commit
+    and makes no forge writes, and that boundary is worth more than the call it
+    would save. The claim/release calls belong to the maintainer half only.
+    """
+    for path in AGENTS:
+        text = path.read_text(encoding="utf-8")
+        assert "--add-assignee" not in text and "--remove-assignee" not in text, (
+            "{} names an assignee call -- the claim and release belong to the "
+            "manager, not to the developer it spawns (#461)".format(path)
+        )
+
+
 # The heading and the write rows exactly as this document carried them before
 # #247, kept as a literal because CI checks out at depth 1.
 PRE_247_OP_TABLE = r"""## Reads go through supertool. Writes go through `gh`.
