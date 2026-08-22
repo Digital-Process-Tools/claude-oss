@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Rename a changelog fragment to a new issue/PR number, and rewrite its own
+self-reference in the same operation (#426).
+
+## Why this exists
+
+A maintainer renames a fragment when opening a pull request --
+`git mv changelog.d/N.section.md changelog.d/M.section.md`, keying it to the
+pull request's own number, which does not exist until the pull request is
+open. Measured on PR #338: the fold consumes the *filename*, so the fragment
+body must independently name the number the filename carries
+(`assemble_changelog.py`'s `self_reference_finding`). A bare `git mv` moves
+the number in the filename and leaves the body naming the old one, and the
+`fragment` leg that just passed refuses:
+
+    assemble    : refused     (1 fragment(s) will not assemble)
+      changelog.d/338.fixed.md:1: the entry never names #338 -- ...
+
+#335 (the lane-facing half of this same defect) argued the fix should not be
+a procedure line for a human to remember, because the rename and the body
+rewrite are coupled -- renaming without rewriting produces exactly the
+broken fragment above, and rewriting without renaming leaves the filename
+wrong. This script performs both together, so there is no window in which
+only one half has happened.
+
+## Three states, and the third one is why the rest of this file exists
+
+  0 (OK)        renamed and rewritten, or the fragment already carried the
+                target number and nothing needed to move.
+  3 (REFUSED)   the source does not parse as a fragment, the destination
+                already exists, `git mv` failed, or -- the third state,
+                distinct from the other two -- the rewrite left a fragment
+                `--check` would still reject. That happens when the old body
+                never named its own issue *before* the rename either: there
+                is nothing here to move, and inventing text would be a
+                guess this script refuses to make. The fragment is still
+                renamed in that case (the correct filename is not in
+                question), but the body needs a human's `(#N)` before it
+                will pass.
+  2              argparse usage error.
+
+A refusal never renames a fragment onto a name that isn't there and never
+claims a rewrite that didn't happen -- the receipt says which of the above
+fired, not just that something did.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# Import the sibling module by location rather than by package, matching how
+# every other script in this directory is invoked directly with `python3`.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from assemble_changelog import (  # noqa: E402
+    BadFragment,
+    parse_fragment_name,
+    self_reference_finding,
+)
+
+OK, REFUSED = 0, 3
+
+#: The same shape `assemble_changelog.self_reference_finding` looks for, with
+#: the prefix captured so a replacement can keep it and change only the
+#: number. Transcribed rather than reinvented, because a rewrite that
+#: recognises a narrower set of self-references than the checker accepts
+#: would silently leave some of them behind.
+_SELF_REF = r"(#|/(?:issues|pull)/){0}(?![0-9])"
+
+
+def _new_name(fragment, new_issue):
+    parts = [str(new_issue), fragment.section]
+    if fragment.slug:
+        parts.append(fragment.slug)
+    return ".".join(parts) + ".md"
+
+
+def rename(fragment_path, new_issue, use_git=True):
+    """Rename `fragment_path` to carry `new_issue`, rewriting its own
+    self-reference to match. Returns `(state, message, new_path)` --
+    `new_path` is `None` only when nothing was written at all.
+    """
+    old_path = Path(fragment_path)
+    if not old_path.is_file():
+        return REFUSED, "{0}: no such file".format(old_path), None
+
+    try:
+        fragment = parse_fragment_name(old_path.name)
+    except BadFragment as exc:
+        return REFUSED, str(exc), None
+
+    if fragment.issue == new_issue:
+        return (
+            OK,
+            "{0}: already named for #{1}, nothing to do".format(old_path, new_issue),
+            old_path,
+        )
+
+    new_path = old_path.with_name(_new_name(fragment, new_issue))
+    if new_path.exists():
+        return REFUSED, "{0}: already exists, refusing to overwrite".format(new_path), None
+
+    text = old_path.read_text(encoding="utf-8")
+    pattern = re.compile(_SELF_REF.format(fragment.issue))
+    rewritten, count = pattern.subn(
+        lambda m: "{0}{1}".format(m.group(1), new_issue), text
+    )
+
+    if use_git:
+        result = subprocess.run(
+            ["git", "mv", str(old_path), str(new_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return (
+                REFUSED,
+                "git mv {0} {1} failed: {2}".format(old_path, new_path, result.stderr.strip()),
+                None,
+            )
+    else:
+        old_path.rename(new_path)
+
+    new_path.write_text(rewritten, encoding="utf-8")
+
+    finding = self_reference_finding(new_path.name, rewritten)
+    if finding:
+        detail = finding
+        if count == 0:
+            detail += (
+                " -- the old body never named #{0} either, so nothing here could be moved "
+                "automatically; write (#{1}) into the entry by hand and re-run --check"
+                .format(fragment.issue, new_issue)
+            )
+        return REFUSED, detail, new_path
+
+    return (
+        OK,
+        "{0} -> {1}, {2} self-reference(s) rewritten to #{3}".format(
+            old_path, new_path, count, new_issue
+        ),
+        new_path,
+    )
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=(
+            "Rename a changelog fragment to a new issue/PR number and rewrite its "
+            "self-reference in the same operation, so the rename and the body it "
+            "depends on cannot drift apart (#426)."
+        ),
+        epilog="exit 0 = renamed (or already correct); exit 3 = refused; exit 2 = usage error.",
+    )
+    parser.add_argument(
+        "fragment", help="path to the existing fragment, e.g. changelog.d/338.fixed.md"
+    )
+    parser.add_argument(
+        "new_issue", type=int, help="the issue or pull request number to key the fragment to"
+    )
+    parser.add_argument(
+        "--no-git",
+        action="store_true",
+        help="move the file with a plain filesystem rename instead of `git mv`",
+    )
+    args = parser.parse_args(argv)
+
+    # A Windows console encodes stdout/stderr with its own codepage, not this
+    # file's -- an unencodable character here must not kill the process at
+    # the print after the rename already happened.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
+
+    state, message, _ = rename(args.fragment, args.new_issue, use_git=not args.no_git)
+    out = sys.stdout if state == OK else sys.stderr
+    print(("OK: " if state == OK else "REFUSED: ") + message, file=out)
+    return state
+
+
+if __name__ == "__main__":
+    sys.exit(main())
