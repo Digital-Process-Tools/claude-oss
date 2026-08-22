@@ -284,6 +284,9 @@ scripts/review_return.py    what a review spawn handed back: states-findings / n
 scripts/oss_rules.py        the 01-oss rule layer
 scripts/scaffold.py         templates, owned files, repo metadata checks
 scripts/doctor.py           diagnostics; exit 0 always, one VERDICT line
+scripts/statusline.py       the status line: board, next tick, plugin currency; `?` for every unknown
+scripts/plugin_update.py    the SessionStart updater: off / updated / current / could-not-check
+hooks/session-start-update.sh  forks that updater and returns; never blocks a session
 bin/oss-workspace           open a session over the repo you are standing in
 docs/autonomy.md            what "autonomous in somebody else's repo" would take, and does not
 ```
