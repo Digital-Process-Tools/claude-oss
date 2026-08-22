@@ -45,6 +45,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -66,6 +67,11 @@ try:
     import oss_rules
 except ImportError:  # pragma: no cover - the module sits beside this file
     oss_rules = None
+
+try:
+    import plugin_update
+except ImportError:  # pragma: no cover - the module sits beside this file
+    plugin_update = None
 
 try:
     import oss_state
@@ -2026,6 +2032,61 @@ def _fragments_directory(project_dir, config):
     # and this is a non-blocking diagnostic whose only obligation on this arm is
     # "do not warn" -- one directory-not-found answer satisfies all four.
     return None
+
+
+def check_auto_update(project_dir):
+    """Did the SessionStart updater run, and what did it do (#480)?
+
+    Four states, and the fourth is the one this whole feature turns on:
+
+    * **off** -- switched off by the environment or by a config key. Reported at OK with
+      the switch named, because a user who turned it off is not carrying a gap.
+    * **updated** -- with the versions it moved between, and the fact that this session
+      is still running the old code until Claude Code restarts.
+    * **current** / **could-not-check** -- the updater's own two answers, relayed. A run
+      that could not reach the marketplace must never read as `current`, so the row does
+      not collapse them.
+    * **no receipt at all** -- the hook has not run in this install, or could not write.
+      That is not "up to date": nothing has been established, and the row says so.
+    """
+    if plugin_update is None:
+        unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
+        return
+    off, where = plugin_update.opt_out(project_dir)
+    receipt = plugin_update.read_receipt()
+    if off:
+        report("OK", "auto-update: off -- {}".format(where))
+        return
+    if not isinstance(receipt, dict):
+        report(
+            "WARN",
+            "auto-update: no receipt at {} -- the SessionStart hook has not run in this "
+            "install, or could not write one. Nothing here says the plugin is current; "
+            "it says nothing was recorded.".format(plugin_update.receipt_path()),
+        )
+        return
+    when = receipt.get("at")
+    stamp = ""
+    if isinstance(when, (int, float)):
+        stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
+    state = receipt.get("state")
+    if state == "updated":
+        report(
+            "WARN",
+            "auto-update: updated {} from {} to {}{} -- this session is still running "
+            "the old copy; restart Claude Code.".format(
+                receipt.get("plugin"), receipt.get("from"), receipt.get("to"), stamp
+            ),
+        )
+        return
+    if state == "current":
+        report("OK", "auto-update: {} already current{}".format(receipt.get("plugin"), stamp))
+        return
+    report(
+        "WARN",
+        "auto-update: could not check{} -- {}. This is not a statement that the plugin "
+        "is current.".format(stamp, receipt.get("detail")),
+    )
 
 
 def check_statusline(project_dir):
@@ -6300,6 +6361,7 @@ def main(argv=None):
     check_state_file(project_dir, config)
     check_fragments_readme(project_dir, config)
     check_statusline(project_dir)
+    check_auto_update(project_dir)
     check_ci_enforcement(project_dir, config)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
