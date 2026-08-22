@@ -268,11 +268,19 @@ def _manifest_version(plugin_root):
 def plugin_version():
     """The RUNNING install's version, as a string that always prints.
 
-    Deliberately still global and still argument-free. Surveyed for #350: its only
-    other caller is `main()`'s `oss plugin version {}` header, which is a claim
-    about the install the reader invoked and would be wrong if it took a root from
-    anywhere else. The parameterised question got its own function above instead of
-    a new keyword here, so no existing caller's meaning moved.
+    Deliberately still global and still argument-free. Surveyed for #350: at the
+    time, its only other caller was `main()`'s `oss plugin version {}` header,
+    which is a claim about the install the reader invoked and would be wrong if it
+    took a root from anywhere else. The parameterised question got its own
+    function above instead of a new keyword here, so no existing caller's meaning
+    moved.
+
+    `main()`'s header now calls `plugin_identity(PLUGIN_ROOT)` instead (#418),
+    which wraps this same version answer with a content digest -- the version
+    string alone stays at the last RELEASED number for a whole cycle, so it
+    cannot tell a tag from a same-numbered cache dir unpacked mid-cycle apart.
+    This function is unchanged and still used directly by `_manifest_version`'s
+    other callers and by the test suite.
     """
     state, version = _manifest_version(PLUGIN_ROOT)
     if state == "read":
@@ -5176,6 +5184,37 @@ def _tree_identity(root, files, unreadable=()):
     )
 
 
+def plugin_identity(plugin_root):
+    """Version plus content digest for the plugin copy at ``plugin_root`` (#418).
+
+    The version alone cannot tell two installs apart: ``.claude-plugin/plugin.json``
+    keeps the last RELEASED number for the whole cycle that follows it, so a cache
+    directory unpacked mid-cycle from ``main`` and the tag it is named for both read
+    the same manifest string while carrying different code. Measured directly by
+    #418: a cache directory named ``0.9.0`` declared agent-report contract 5 while
+    the ``v0.9.0`` tag it was named for declared contract 4 -- both manifests
+    reading "0.9.0", six hours apart.
+
+    The content digest is what actually distinguishes them, built from the same
+    ``plugin_tree_digest`` / ``_tree_identity`` pair ``plugin_provenance`` already
+    uses to compare two trees -- so a single install now carries the same
+    discriminator on its own, without needing a second tree on disk to diff
+    against. Returns a string and never raises: the two failure states
+    ``_manifest_version`` can return fold into ``"unknown"`` / ``"unreadable"``,
+    exactly like ``plugin_version()`` -- so a version-shaped placeholder never
+    reads as a version here either.
+    """
+    state, version = _manifest_version(plugin_root)
+    if state == "read":
+        label = version
+    elif state == "no-version-field":
+        label = "unknown"
+    else:
+        label = "unreadable"
+    files, unreadable = plugin_tree_digest(plugin_root)
+    return "{}, {}".format(label, _tree_identity(plugin_root, files, unreadable))
+
+
 def plugin_manifest(root):
     """``(doc, reason)``. Exactly one is None.
 
@@ -5763,7 +5802,12 @@ def main(argv=None):
         root, os.environ.get("CLAUDE_PROJECT_DIR"), os.getcwd()
     )
 
-    report("OK", "oss plugin version {}".format(plugin_version()))
+    # #418: the version alone cannot tell two installs apart -- it stays at the
+    # last RELEASED number for the whole cycle that follows a release, so a copy
+    # unpacked mid-cycle and the tag it is named for both print it. The content
+    # digest from `plugin_identity` rides on the same line, right where a reader
+    # (or a report) is most likely to actually see it.
+    report("OK", "oss plugin version {}".format(plugin_identity(PLUGIN_ROOT)))
     for problem in arg_problems:
         report("FAIL", problem)
     for state, message in resolution:
