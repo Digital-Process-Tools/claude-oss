@@ -6,6 +6,15 @@ what is worth building, delegate it, review hard, merge on green, release.
 Default branch `main`. Tests: `python3 -m pytest tests/ -q`. CI is 13 legs — 3 OS × Python 3.9–3.12,
 plus shellcheck.
 
+**Supported floor: Python 3.9**, declared once in `pyproject.toml` as `[project]
+requires-python = ">=3.9"`. That is not the same fact as the matrix above, and every grading
+paragraph in this file used to cite the matrix as though it settled the support question (#410). The
+matrix is what the code is demonstrated on; `requires-python` is what it promises. Four sites are
+derived from that key — the matrix's lowest entry, the README badge, the `Python X.Y compatible`
+docstring line eight modules under `scripts/` carry, and the oldest explicit `python3.N` in
+`doctor.sh`'s walk — and none of them can read a manifest at parse time, so
+`tests/test_python_floor_410.py` is what holds them together.
+
 ## Why this exists, because it decides most arguments here
 
 The loop used to be three diverged prose copies in three repos, each carrying its own repo's facts.
