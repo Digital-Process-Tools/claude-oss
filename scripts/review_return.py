@@ -66,9 +66,12 @@ believed it*, which is invisible by construction.
                        back-reference -- so this tool cannot tell a review that
                        stated its findings in prose from one that gestured, and
                        says so instead of guessing.
-  could-not-read       the CLI was given a path it could not open. Nothing was
-                       looked at, which is not the same as looking and finding
-                       nothing, and is not `could-not-classify` either.
+  could-not-read       nothing was reliably looked at, which is not the same
+                       as looking and finding nothing, and is not
+                       `could-not-classify` either. Four ways in: a path that
+                       could not be opened; a closed or unopenable stdin
+                       (#405); and, under `--framed`, a frame that never
+                       closed or one whose message is not indented (#404).
 
 `could-not-classify` is the load-bearing one and it is deliberately not a
 catch-all: calling an undecidable message clean is the defect this repository
@@ -98,7 +101,7 @@ verdict over a message that is precisely #392. Two consequences:
     would be the false alarm above. The brief's definition of
     `referred-not-stated` carries this qualification for the same reason.
 
-## The message is untrusted input
+## The message is untrusted input, and the transport is part of that
 
 A final message is written by somebody else's agent. Nothing from inside it is
 echoed unreduced: the residue this module quotes is folded to one printable
@@ -108,6 +111,20 @@ occupy the receipt's own `VERDICT:` column. That is the same rule
 the Windows legs encode stdout with the console codepage, typically cp1252,
 where a box-drawing glyph or an em dash raises `UnicodeEncodeError` at the
 print -- after the work the print was reporting already happened.
+
+None of that could defend the boundary that decides what this module receives
+in the first place, and #404 is the instance: the transport `agents/
+developer.md` documented put the message at column zero of a stream **bash**
+parses, closed by a fixed one-word terminator. A message carrying that word --
+and the likeliest carrier is a reviewer quoting the documented block, not an
+attacker -- ended the stream early. The audit's single invocation produced
+both halves at once: a line of message text ran as a command in the
+developer's session, and this module classified the surviving prefix
+`referred-not-stated`, manufacturing the failure it exists to measure.
+
+The fix is `--framed`, below. It is a construction rather than a stronger
+terminator, because any terminator this file writes down is one an ordinary
+message can quote.
 
 ## The residue
 
@@ -350,6 +367,100 @@ def classify(message):
     )
 
 
+# -- the framed transport (#404) -------------------------------------------
+#
+# The caller is an agent whose only route to this script is `Bash`, so the
+# message is always embedded in something a parser resolves before this
+# process starts. What `--framed` changes is that no line of the message can
+# be the thing that parser is looking for.
+#
+# A quoted heredoc ends at the first line *equal* to its terminator, with no
+# leading whitespace. Indenting every content line makes such a line
+# unconstructible -- a construction, not an assertion that a construction is
+# safe. Lengthening or randomising the terminator instead does not work: the
+# route the issue calls likeliest is a reviewer quoting this very code block,
+# terminator and all, so any terminator written down here is one an ordinary
+# message can carry.
+#
+# The closing sentinel is the second, independent half, and it detects rather
+# than prevents. If the indentation was not applied and a message line did end
+# the stream early, this process receives a prefix and the sentinel never
+# arrives -- so it answers `could-not-read` instead of classifying a truncated
+# message, which is what produced #404's `referred-not-stated` over a review
+# that referred to nothing. The sentinel cannot itself be forged from inside
+# the message, because a message line carrying it is indented.
+
+FRAME_INDENT = "    "
+FRAME_END = "END OF MESSAGE"
+
+
+def unframe(text):
+    """Return ``(message, error)`` -- exactly one of the two is None.
+
+    Undoes the transport in `agents/developer.md`: every line of the message
+    indented by ``FRAME_INDENT``, closed by ``FRAME_END`` at column zero.
+
+    The indent is stripped rather than tolerated, because column zero is where
+    `_BLOCK` counts and an indented message would enumerate nothing.
+    """
+    # `split("\n")`, not `splitlines()`. `splitlines()` also breaks on `\r`,
+    # `\v`, `\f`, `\x1c`-`\x1e`, `\x85`, U+2028 and U+2029 -- none of which
+    # bash treats as a line boundary, and none of which whoever applied the
+    # indent treated as one either. So a message carrying one of those mid-line
+    # arrives as a single indented line from bash and would be split here into
+    # a first part that is indented and a rest that is not, handing a message
+    # the power to produce an unindented line at will. That is #404's own
+    # mechanism one layer down, and it needs no adversary: a stray `\r` from
+    # pasted mixed-ending text is enough. Splitting on exactly what bash split
+    # on keeps the two parsers agreeing about what a line is.
+    lines = text.split("\n")
+    end = None
+    for index, line in enumerate(lines):
+        # The *first* sentinel, not the last: the frame ends where it first
+        # says it does, so nothing after it can be appended to the message.
+        if line.rstrip() == FRAME_END:
+            end = index
+            break
+    if end is None:
+        return None, (
+            "the framing never closed -- no {0!r} line at column zero, so what "
+            "arrived is a prefix of the message and the rest of it was parsed "
+            "by the shell".format(FRAME_END)
+        )
+    # Nothing may follow the sentinel. A content line carrying the sentinel
+    # unindented is indistinguishable from the real one, so the frame closes
+    # early and the rest of the message is dropped -- silently, with a
+    # confident verdict over a prefix, which is exactly the shape this
+    # function exists to refuse. What that case *does* leave behind is
+    # material after the close, and that is decidable. The one residue is a
+    # message whose final line is an unindented sentinel, which nothing can
+    # tell from the real one; it costs that line and cannot truncate a body.
+    trailing = [line for line in lines[end + 1 :] if line.strip()]
+    if trailing:
+        return None, (
+            "the frame closed at line {0} and {1} line(s) follow it, so where "
+            "the message ends is not decidable -- an unindented {2!r} inside "
+            "the message looks exactly like this. First trailing line: {3}".format(
+                end + 1, len(trailing), FRAME_END, fold_to_one_ascii_line(trailing[0])
+            )
+        )
+    out = []
+    for number, line in enumerate(lines[:end], 1):
+        if not line.strip():
+            out.append("")
+            continue
+        if not line.startswith(FRAME_INDENT):
+            return None, (
+                "line {0} of the framed message is not indented by the {1} "
+                "spaces the transport requires, so nothing here can be relied "
+                "on to be content: {2}".format(
+                    number, len(FRAME_INDENT), fold_to_one_ascii_line(line)
+                )
+            )
+        out.append(line[len(FRAME_INDENT) :])
+    return "\n".join(out), None
+
+
 EXIT_CODES = {
     "states-findings": 0,
     "no-findings": 0,
@@ -370,7 +481,25 @@ def _read_source(source):
     the line that kills the process on an over-long or untraversable path.
     """
     if source == "-":
-        data = sys.stdin.buffer.read()
+        # #405: `sys.stdin` is None when the harness hands the process a
+        # closed or unopenable standard input, so `.buffer` raises before any
+        # of this module's handling runs -- exit 1 and no VERDICT line, on the
+        # one route `agents/developer.md` mandates. The correct answer already
+        # existed three lines below; the branch that needed it could not reach
+        # it. An *open* stdin carrying no bytes is a different thing and stays
+        # `returned-nothing`: read and found nothing, not could not read.
+        stream = getattr(sys.stdin, "buffer", None)
+        if stream is None:
+            return None, (
+                "no readable stdin: the process was handed a closed or "
+                "unopenable standard input"
+            )
+        try:
+            data = stream.read()
+        except (OSError, ValueError) as exc:
+            return None, "unreadable stdin: {0}".format(
+                getattr(exc, "strerror", None) or exc.__class__.__name__
+            )
         return data.decode("utf-8", errors="replace"), None
     try:
         data = Path(source).read_bytes()
@@ -395,9 +524,20 @@ def main(argv=None):
         default="-",
         help="path to a file holding the final message, or - for stdin",
     )
+    parser.add_argument(
+        "--framed",
+        action="store_true",
+        help=(
+            "the message is indented by four spaces and closed by a line "
+            "reading 'END OF MESSAGE' at column zero, so no line of it can "
+            "end the stream that carried it (#404)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     text, error = _read_source(args.source)
+    if error is None and args.framed:
+        text, error = unframe(text)
     if error is not None:
         verdict = _verdict(
             "could-not-read",

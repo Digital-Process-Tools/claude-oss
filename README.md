@@ -258,6 +258,19 @@ of #392's two candidate mechanisms is the real one. `could-not-classify` is the 
 a message with no sentinel, no header and no back-reference is one this tool cannot decide, and
 saying so is the whole point of it.
 
+The message reaches it **framed** — `--framed`, every line indented by four spaces and closed by
+`END OF MESSAGE` at column zero. A reviewer's final message is the least trusted string in the
+system, and the transport that carried it used to place it at column zero of a stream bash parses,
+closed by a fixed one-word terminator: a message containing that word ended its own transport, and
+the rest of it ran as commands. That needs no attacker — the first observed instance was a reviewer
+quoting the documented block, terminator included. Indenting makes such a line unconstructible,
+which is why the fix is not a longer terminator; the missing `END OF MESSAGE` is the second half,
+and it turns a truncated message into `could-not-read` rather than a confident verdict over a
+prefix (#404). Both stdin failures now answer in the documented six as well: a closed or unopenable
+standard input is `could-not-read` at exit `6`, where it used to raise and exit `1` with no
+`VERDICT:` line at all (#405). An *open* stdin carrying no bytes stays `returned-nothing` — read
+and found nothing is not the same as could not read.
+
 ## License
 
 Community License — see [LICENSE](LICENSE). Source-available, not open source: no commercial
