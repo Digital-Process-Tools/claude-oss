@@ -5,9 +5,13 @@ and `git worktree remove`), and #448 (fleet size is a floor, not only a ceiling)
 
 Each check is a content invariant over `skills/manager/SKILL.md` and, for #446,
 `commands/tick.md` -- the same shape `test_manager_op_inventory_claims.py` and
-`test_claude_md_currency.py` already use. Every "must not appear" assertion is
-paired with a "must appear" positive control in the same fixture, so a broken
-read of the file cannot pass by producing no matches at all.
+`test_claude_md_currency.py` already use. These are all "must appear" checks
+rather than "must not appear" ones: every fix here is additive prose naming a
+spelling, a token or a state that was previously absent, so there is no old
+wording to assert the absence of. `test_content_invariants.py` and
+`test_worktree_ownership_guidance.py` already carry this document's "must not
+appear" guards (the raw `git worktree list` command, negative op-inventory
+claims); this file does not duplicate them.
 """
 
 import re

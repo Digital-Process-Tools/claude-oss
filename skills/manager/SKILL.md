@@ -978,7 +978,7 @@ is not on this list is just a way of not fixing things.
 Three steps, not one:
 
 1. merge → read `state` / `mergedAt` / `mergeCommit`
-2. clean up, in a separate call, gated on that result
+2. clean up via `|cleanup` on the same call, gated on that op's own `MERGED` read-back
 3. **check the default branch's own run** — `gh-branch`, which is conjunctive over every workflow on
    the head SHA and states GREEN / NOT GREEN / NO RUN / UNKNOWN apart. Not `gh run list --limit 1`,
    which returns whichever *workflow* started last and reports its conclusion as the commit's.
