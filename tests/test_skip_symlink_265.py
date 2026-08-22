@@ -74,6 +74,77 @@ def test_a_file_case_names_only_the_symlink_mechanism_when_it_fails(tmp_path, mo
     assert "the probe" in reason
 
 
+def test_the_directory_case_actually_calls_junction_when_symlink_to_fails(tmp_path, monkeypatch):
+    """The message-content assertions above (`"junction" in reason`) are satisfied
+    by the literal text of the skip format string whether or not `_junction` was
+    ever invoked -- a maintainer reproduction confirmed this by hardcoding the
+    call site's result to `(False, "disabled")` without touching `_junction` at
+    all, and the message-only tests kept passing. This spies on `_junction`
+    itself so a directory-kind case whose `symlink_to` fails is pinned to
+    actually attempting the fallback, not merely to a message that mentions it.
+    """
+    def _refuse(self, target, target_is_directory=False):
+        raise OSError(1314, "a client does not have the required privilege")
+
+    monkeypatch.setattr(Path, "symlink_to", _refuse)
+    calls = []
+
+    def _spy(link, target):
+        calls.append((link, target))
+        return False, "spy declined"
+
+    monkeypatch.setattr(skip_symlink, "_junction", _spy)
+    link = tmp_path / "evil"
+    target = tmp_path / "outside"
+    target.mkdir()
+    with pytest.raises(pytest.skip.Exception):
+        skip_symlink.symlink_or_skip(link, target, target_is_directory=True, what="the probe")
+    assert calls == [(link, target)]
+
+
+def test_the_file_case_never_calls_junction_at_all(tmp_path, monkeypatch):
+    """Negative half of the spy control: a file-kind case has no junction
+    fallback, so `_junction` must not even be attempted for it -- attempting
+    and discarding the result would still be a wasted `mklink` subprocess on
+    every unelevated Windows leg, for a mechanism that can never apply.
+    """
+    def _refuse(self, target, target_is_directory=False):
+        raise OSError(1314, "a client does not have the required privilege")
+
+    monkeypatch.setattr(Path, "symlink_to", _refuse)
+    calls = []
+
+    def _spy(link, target):
+        calls.append((link, target))
+        return False, "spy declined"
+
+    monkeypatch.setattr(skip_symlink, "_junction", _spy)
+    link = tmp_path / "evil.txt"
+    target = tmp_path / "outside.txt"
+    target.write_text("x", encoding="utf-8")
+    with pytest.raises(pytest.skip.Exception):
+        skip_symlink.symlink_or_skip(link, target, target_is_directory=False, what="the probe")
+    assert calls == []
+
+
+def test_a_successful_junction_returns_the_link_without_skipping(tmp_path, monkeypatch):
+    """The actual Windows post-condition #265 exists for: when the fallback
+    lands, the case must assert (return the link), not skip. A spy alone could
+    pass while the caller still discarded a successful junction and skipped
+    anyway -- this is the pairing that catches that.
+    """
+    def _refuse(self, target, target_is_directory=False):
+        raise OSError(1314, "a client does not have the required privilege")
+
+    monkeypatch.setattr(Path, "symlink_to", _refuse)
+    monkeypatch.setattr(skip_symlink, "_junction", lambda link, target: (True, None))
+    link = tmp_path / "evil"
+    target = tmp_path / "outside"
+    target.mkdir()
+    result = skip_symlink.symlink_or_skip(link, target, target_is_directory=True, what="the probe")
+    assert result == link
+
+
 def test_a_working_symlink_is_returned_and_resolves_to_target(tmp_path):
     """Positive control: on a platform that can make a plain symlink (this
     machine, observed), the ordinary path is taken and nothing is skipped.
