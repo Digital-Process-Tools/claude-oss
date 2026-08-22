@@ -84,6 +84,67 @@ def test_traversal_pattern_is_refused_not_silently_dropped(tmp_path):
     assert result["files"] == []
 
 
+# --- resolve_lane: a backslash-separated glob must match the same files a
+# forward-slash one does -- the literal branch already normalizes separators
+# and the glob branch silently did not, so a Windows-typed pattern reported
+# glob-no-match against files that plainly exist. -------------------------------
+
+
+def test_glob_pattern_with_backslash_separators_still_matches(tmp_path):
+    """Review finding on #267: the literal branch normalizes `\\` to `/` before
+    touching the filesystem and the glob branch passed the raw pattern straight
+    to `Path.glob`, which treats a backslash as a literal filename character on
+    POSIX -- so `commands\\*.md` silently resolved to zero files while
+    `commands/*.md` found two. A silent empty match here is exactly the
+    laundered false negative #267 exists to close.
+    """
+    import lane_setup  # noqa: E402
+
+    _make_tree(tmp_path)
+    forward = lane_setup.resolve_lane(tmp_path, ["commands/*.md"])
+    backslash = lane_setup.resolve_lane(tmp_path, ["commands\\*.md"])
+    assert backslash["patterns"][0]["state"] == "glob-resolved"
+    assert backslash["files"] == forward["files"] == ["commands/release.md", "commands/tick.md"]
+
+
+# --- _lane_pattern_problem: the absolute-path refusal must not depend on which
+# platform's os.path happens to be running -- posixpath.isabs("/etc/passwd") is
+# True and ntpath.isabs("/etc/passwd") is False, so a check built on
+# `os.path.isabs` alone refuses a POSIX-rooted pattern on Linux/macOS and lets
+# the identical string through, unrefused, on Windows. -----------------------
+
+
+def test_posix_rooted_pattern_is_refused_regardless_of_os_path_isabs(tmp_path, monkeypatch):
+    """Review finding on #267: simulate the platform this repository's own CI
+    tests -- Windows' ntpath.isabs, which answers False for a driveless
+    POSIX-style root -- and confirm the refusal still fires. If the refusal
+    were still built on `os.path.isabs`, this would pass on Windows and fail
+    here, one call away from the containment gap the audit measured directly
+    with ntpath/posixpath.
+    """
+    import lane_setup  # noqa: E402
+    import ntpath
+
+    assert ntpath.isabs("/etc/passwd") is False  # the platform fact that made this reachable
+    monkeypatch.setattr(lane_setup.os, "path", ntpath)
+    try:
+        problem = lane_setup._lane_pattern_problem("/etc/passwd")
+    finally:
+        monkeypatch.undo()
+    assert problem is not None
+    assert "not relative" in problem
+
+
+def test_ordinary_relative_pattern_is_still_accepted(tmp_path):
+    """Control for the case above: an ordinary relative lane pattern must not
+    be refused by tightening the absolute-path check.
+    """
+    import lane_setup  # noqa: E402
+
+    assert lane_setup._lane_pattern_problem("scripts/lane_setup.py") is None
+    assert lane_setup._lane_pattern_problem("commands/*.md") is None
+
+
 # --- lane_overlap: the actual disjointness check, both directions ----------------
 
 

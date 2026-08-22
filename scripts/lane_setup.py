@@ -276,13 +276,23 @@ def _lane_pattern_problem(pattern):
     refused the same way `oss_config.resolve_worktree` refuses a worktree
     target: absolute, drive-prefixed or traversing out of the repo is refused
     before anything touches the filesystem, not caught after.
+
+    **Deliberately not `os.path.isabs`.** The auditor measured
+    `posixpath.isabs("/etc/passwd")` and `ntpath.isabs("/etc/passwd")`
+    disagreeing -- True and False -- so a check that delegates to whichever
+    `os.path` the host aliases refuses a POSIX-rooted pattern on Linux/macOS
+    and lets the identical string through, unrefused, on Windows. This repo's
+    own CI runs all three. The check below is a string test against the
+    backslash-normalized pattern instead: a leading `/` (which also catches a
+    leading `//` UNC root) or a drive-letter prefix, neither of which needs
+    the host's own path module to answer the same on every platform.
     """
     if not isinstance(pattern, str) or not pattern.strip():
         return "lane pattern is empty"
-    if os.path.isabs(pattern) or re.match(r"^[A-Za-z]:", pattern):
+    normalized = pattern.replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", pattern):
         return "lane pattern {0!r} is not relative".format(pattern)
-    parts = pattern.replace("\\", "/").split("/")
-    if ".." in parts:
+    if ".." in normalized.split("/"):
         return "lane pattern {0!r} is a traversal".format(pattern)
     return None
 
@@ -318,11 +328,20 @@ def resolve_lane(repo, patterns):
         if problem is not None:
             entries.append({"pattern": pattern, "state": "refused", "files": [], "detail": problem})
             continue
+        # #267 review: normalized once here, and both branches below use the
+        # normalized form -- the literal branch always did (`os.path.normpath`
+        # needs it to collapse `.` and repeated separators), and the glob
+        # branch used to pass the raw pattern straight to `Path.glob`, which
+        # treats a backslash as a literal filename character on POSIX rather
+        # than a separator. A pattern typed with Windows-style separators
+        # silently matched nothing there -- a laundered false negative in the
+        # exact tool #267 exists to stop one.
+        normalized = pattern.replace("\\", "/")
         if _is_lane_glob(pattern):
             try:
                 matches = sorted(
                     p.relative_to(repo).as_posix()
-                    for p in repo.glob(pattern)
+                    for p in repo.glob(normalized)
                     if p.is_file()
                 )
             except (OSError, ValueError) as exc:
@@ -339,7 +358,7 @@ def resolve_lane(repo, patterns):
             entries.append({"pattern": pattern, "state": state, "files": matches, "detail": ""})
             files.update(matches)
         else:
-            rel = os.path.normpath(pattern.replace("\\", "/")).replace(os.sep, "/")
+            rel = os.path.normpath(normalized).replace(os.sep, "/")
             entries.append({"pattern": pattern, "state": "literal", "files": [rel], "detail": ""})
             files.add(rel)
     return {"patterns": entries, "files": sorted(files)}
