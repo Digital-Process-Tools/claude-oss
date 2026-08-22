@@ -1500,8 +1500,9 @@ def _main(argv=None):
     group.add_argument(
         "--pending-wait",
         action="store_true",
-        help="print the most recently recorded wait if it still holds (#337, "
-        "#436), or 'no pending wait' if there is none",
+        help="print the most recently recorded wait if anything is still pending "
+        "-- holds or could-not-evaluate (#337, #436, #443) -- or 'no pending "
+        "wait' if it was cleared or none was ever recorded",
     )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
@@ -1729,7 +1730,17 @@ def _main(argv=None):
                         record
                     )
                 )
-            if record["state"] == WAIT_HOLDS:
+            if record["state"] in (WAIT_HOLDS, WAIT_COULD_NOT_EVALUATE):
+                # #443: could-not-evaluate is no measurement at all, exactly as
+                # unresolved as holds -- neither is a negative measurement, so
+                # `--pending-wait` answers *is anything pending* by putting both on
+                # this side. They stay distinguishable because the printed record
+                # itself carries a different `state` (and a `why` `holds` never
+                # has), never collapsing to the same bytes -- this branch used to
+                # fall to the `else` below, which is where `cleared` and no wait
+                # ever having been recorded both correctly land, so a could-not-
+                # evaluate wait rendered byte-identical to nothing being pending at
+                # all, with `why` reaching nobody.
                 print(json.dumps(record, indent=2))
             else:
                 print("no pending wait")
