@@ -1964,6 +1964,14 @@ def _fragments_directory(project_dir, config):
         return Path(project_dir) / oss_config.DEFAULT_FRAGMENTS_DIR
     if state == "present-other-dir":
         return Path(project_dir) / detail
+    # `absent` (never adopted), `unknown` (the gate could not be read),
+    # `present-refused-dir` (the gate names a directory that cannot be used) and
+    # `present-bare-dir` (a `--dir` flag on disk with no argument) all resolve to
+    # "nothing to check" here, deliberately collapsed rather than given the four
+    # distinct refusal messages `release_version._fragment_dir` returns for them:
+    # those exist to steer a release-blocking failure with a remedy per cause,
+    # and this is a non-blocking diagnostic whose only obligation on this arm is
+    # "do not warn" -- one directory-not-found answer satisfies all four.
     return None
 
 
