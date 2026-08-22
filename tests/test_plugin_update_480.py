@@ -93,7 +93,7 @@ def test_a_version_change_is_reported_as_updated_and_names_both_ends(tmp_path):
 
     def runner(command, timeout=180):
         if command[:3] == ["claude", "plugin", "update"]:
-            _plugins_root(tmp_path, "0.11.0")
+            _plugins_root(tmp_path, "9.9.9")
         return True, ""
 
     document = plugin_update.update(
@@ -104,7 +104,7 @@ def test_a_version_change_is_reported_as_updated_and_names_both_ends(tmp_path):
         runner=runner,
     )
     assert document["state"] == "updated"
-    assert document["from"] == "0.9.0" and document["to"] == "0.11.0"
+    assert document["from"] == "0.9.0" and document["to"] == "9.9.9"
     assert "restart" in document["detail"]
 
 
@@ -112,7 +112,7 @@ def test_no_version_change_is_current(tmp_path):
     document = plugin_update.update(
         root=tmp_path,
         plugin_root=_plugin_root(tmp_path),
-        plugins_root=_plugins_root(tmp_path, "0.11.0"),
+        plugins_root=_plugins_root(tmp_path, "9.9.9"),
         env={},
         runner=_Runner([(True, ""), (True, "")]),
     )
@@ -233,7 +233,7 @@ def test_the_newest_recorded_install_is_the_one_reported(tmp_path):
                 "plugins": {
                     "oss@dpt": [
                         {"version": "0.5.0"},
-                        {"version": "0.11.0"},
+                        {"version": "9.9.9"},
                         {"version": "unknown"},
                     ]
                 }
@@ -241,7 +241,7 @@ def test_the_newest_recorded_install_is_the_one_reported(tmp_path):
         ),
         encoding="utf-8",
     )
-    assert plugin_update.installed_version("oss", root) == "0.11.0"
+    assert plugin_update.installed_version("oss", root) == "9.9.9"
 
 
 # ------------------------------------------------------------------------- receipt

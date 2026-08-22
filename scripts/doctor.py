@@ -2058,11 +2058,17 @@ def check_auto_update(project_dir):
         report("OK", "auto-update: off -- {}".format(where))
         return
     if not isinstance(receipt, dict):
+        # The ordinary state of a fresh install: the hook runs at the NEXT session
+        # start, so every repo would carry this warning on the day it was set up. It
+        # reports at OK and says in the text that nothing was established -- the same
+        # shape `check_fragments_readme` uses for its absent arm, and for the same
+        # reason: "not a finding" only if the wording does not read as a pass either.
         report(
-            "WARN",
+            "OK",
             "auto-update: no receipt at {} -- the SessionStart hook has not run in this "
-            "install, or could not write one. Nothing here says the plugin is current; "
-            "it says nothing was recorded.".format(plugin_update.receipt_path()),
+            "install yet, which is the ordinary state before the next session starts. "
+            "Nothing here says the plugin is current; it says nothing was "
+            "recorded.".format(plugin_update.receipt_path()),
         )
         return
     when = receipt.get("at")
@@ -5426,7 +5432,11 @@ def check_freshness(project_dir, config):
 #: `UNVALIDATABLE` at exit 2. So two copies differing ONLY there were reported as
 #: carrying the same bytes -- a comparison that looked, found nothing, and could not
 #: say it had not looked everywhere.
-COMPARED_DIRECTORIES = ("agents", "commands", "schemas", "scripts", "skills")
+#: `hooks/` joined on #480 and belongs in the first half rather than the second: the
+#: harness executes what is in there at every session start, so two copies differing
+#: only there behave differently from the first second of a session -- which is the
+#: exact property this tuple selects for.
+COMPARED_DIRECTORIES = ("agents", "commands", "hooks", "schemas", "scripts", "skills")
 
 #: The other half of a partition over the plugin tree's top level, with why each entry
 #: is not compared. A tuple cannot report a directory it does not contain, which is
