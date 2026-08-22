@@ -108,25 +108,47 @@ def test_glob_pattern_with_backslash_separators_still_matches(tmp_path):
 
 
 # --- _lane_pattern_problem: the absolute-path refusal must not depend on which
-# platform's os.path happens to be running -- posixpath.isabs("/etc/passwd") is
-# True and ntpath.isabs("/etc/passwd") is False, so a check built on
-# `os.path.isabs` alone refuses a POSIX-rooted pattern on Linux/macOS and lets
-# the identical string through, unrefused, on Windows. -----------------------
+# os.path answers True/False for a given string -- posixpath.isabs("/etc/passwd")
+# and ntpath.isabs("/etc/passwd") have disagreed with EACH OTHER (True vs False),
+# and ntpath.isabs alone has disagreed with ITSELF across CPython versions on the
+# identical input: True on 3.9-3.12 (observed on CI, #435 -- a 3.9.25 run failed
+# an earlier version of this test that asserted the opposite), False on 3.13
+# (observed locally). A check built on `os.path.isabs` is therefore not safe on
+# any single platform either, once the interpreter axis is in play -- so the
+# fixture below does not assert a real ntpath/posixpath answer at all, which
+# would only ever be true for the interpreter running the suite at that moment.
+# It fabricates a path module whose `isabs` always answers False and confirms
+# `_lane_pattern_problem`'s own answer does not move when that stand-in is
+# substituted for the real one -- deterministic on every CPython version,
+# because there is no live stdlib fact left to change under it. -----------------
 
 
-def test_posix_rooted_pattern_is_refused_regardless_of_os_path_isabs(tmp_path, monkeypatch):
-    """Review finding on #267: simulate the platform this repository's own CI
-    tests -- Windows' ntpath.isabs, which answers False for a driveless
-    POSIX-style root -- and confirm the refusal still fires. If the refusal
-    were still built on `os.path.isabs`, this would pass on Windows and fail
-    here, one call away from the containment gap the audit measured directly
-    with ntpath/posixpath.
+def test_absolute_pattern_refusal_does_not_depend_on_os_path_isabs(tmp_path, monkeypatch):
+    """Review finding on #267, corrected after #435: the fix (a normalized
+    string test replacing `os.path.isabs`) was right; the first version of this
+    test pinned a *specific* `ntpath.isabs` answer as though it were a platform
+    fact, and CPython changed that answer between the interpreters CI gates
+    (3.9-3.12) and the one this suite happened to run on locally (3.13) -- so
+    the test failed on CI for a reason that had nothing to do with the fix
+    under test. This version asserts only that `_lane_pattern_problem` still
+    refuses when the underlying path module cannot be trusted to say so,
+    without claiming to know what any particular Python version's `ntpath`
+    or `posixpath` actually answers.
     """
     import lane_setup  # noqa: E402
-    import ntpath
 
-    assert ntpath.isabs("/etc/passwd") is False  # the platform fact that made this reachable
-    monkeypatch.setattr(lane_setup.os, "path", ntpath)
+    class _NeverAbs:
+        """Stands in for "whatever os.path this host aliases might answer" --
+        deliberately the least favourable case, since a real isabs() that says
+        False for an obviously-rooted string is exactly what made #267's
+        containment gap reachable in the first place.
+        """
+
+        @staticmethod
+        def isabs(path):
+            return False
+
+    monkeypatch.setattr(lane_setup.os, "path", _NeverAbs)
     try:
         problem = lane_setup._lane_pattern_problem("/etc/passwd")
     finally:

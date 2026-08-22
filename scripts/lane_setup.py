@@ -279,13 +279,21 @@ def _lane_pattern_problem(pattern):
 
     **Deliberately not `os.path.isabs`.** The auditor measured
     `posixpath.isabs("/etc/passwd")` and `ntpath.isabs("/etc/passwd")`
-    disagreeing -- True and False -- so a check that delegates to whichever
-    `os.path` the host aliases refuses a POSIX-rooted pattern on Linux/macOS
-    and lets the identical string through, unrefused, on Windows. This repo's
-    own CI runs all three. The check below is a string test against the
-    backslash-normalized pattern instead: a leading `/` (which also catches a
-    leading `//` UNC root) or a drive-letter prefix, neither of which needs
-    the host's own path module to answer the same on every platform.
+    disagreeing with each other -- True and False -- so a check that delegates
+    to whichever `os.path` the host aliases refuses a POSIX-rooted pattern on
+    Linux/macOS and lets the identical string through, unrefused, on Windows.
+
+    #435 sharpened this: it is not only a platform fact, it is an *interpreter*
+    fact on top of a platform one. `ntpath.isabs("/etc/passwd")` answers True on
+    CPython 3.9-3.12 (observed on this repo's own CI, a 3.9.25 run) and False on
+    3.13 (observed locally) -- the same string, the same module, two different
+    answers depending on which interpreter loaded it. This repo's CI runs three
+    platforms *and* four Python versions, so `os.path.isabs` was never a stable
+    foundation on any one of the six combinations it actually gates, only on
+    whichever combination happened to be sitting on the machine that wrote the
+    check. The string test below needs neither the platform's nor the
+    interpreter's answer to agree with any other: a leading `/` (which also
+    catches a leading `//` UNC root) or a drive-letter prefix.
     """
     if not isinstance(pattern, str) or not pattern.strip():
         return "lane pattern is empty"
