@@ -2392,6 +2392,36 @@ def test_publish_confirm_needs_force_when_neither_opt_out_is_set(tmp_path):
     assert "gh-pr-merge" in detail
 
 
+def test_publish_confirm_detail_is_grammatical_with_no_config_at_all(tmp_path):
+    """No `.supertool.json` at all means `presets` cannot be read either, so the
+    `route_known is False` arm composes with the rest of the sentence -- this is
+    the single most common repo state a fresh check like this one will hit, and
+    a composition bug there would go unnoticed by a test that only asserts the
+    state."""
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "needs-force"
+    assert detail == (
+        "no opt-out is set, so which op(s) it gates could not be read "
+        "(`presets` in {} is absent or not a list of strings)".format(
+            doctor.WATCH_CONFIG
+        )
+    )
+
+
+def test_publish_confirm_detail_is_grammatical_when_confirmable_with_no_route(tmp_path):
+    """The must-fire pair for the test above: same unreadable-route shape, this
+    time with the opt-out on, so the `confirmable` branch's own composition of
+    the same `reach` fragment is exercised too."""
+    _supertool_config(tmp_path, {"no_publish_confirm": True})
+    state, detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "confirmable"
+    assert detail == (
+        "`no_publish_confirm` in {} is truthy, so which op(s) it reaches "
+        "could not be read (`presets` in {} is absent or not a list of "
+        "strings)".format(doctor.WATCH_CONFIG, doctor.WATCH_CONFIG)
+    )
+
+
 def test_publish_confirm_names_every_op_the_switch_reaches_not_only_the_merge(tmp_path):
     """The opt-out is wider than the merge: `require_confirm` gates three ops, and
     a project whose `presets` enable more than `github` must see all of them
@@ -2447,12 +2477,21 @@ def test_publish_confirm_could_not_tell_on_a_malformed_config(tmp_path):
     assert state == "could-not-tell"
 
 
-def test_publish_confirm_could_not_tell_on_a_non_boolean_flag(tmp_path):
-    """A contributor-broken flag (present, wrong type) is a file that is there and
-    broken -- `could-not-tell`, not silently read as false."""
+def test_publish_confirm_reads_a_truthy_non_boolean_flag_like_the_real_gate(tmp_path):
+    """`_publish_safety.require_confirm` reads the key with plain `bool()`, not a
+    type check -- `"yes"` really does turn confirmation off there, so reporting
+    it as `could-not-tell` would be a wrong answer dressed as caution."""
     _supertool_config(tmp_path, {"presets": ["github"], "no_publish_confirm": "yes"})
     state, _detail = doctor.publish_confirm_state(tmp_path, env={})
-    assert state == "could-not-tell"
+    assert state == "confirmable"
+
+
+def test_publish_confirm_needs_force_control_for_a_falsy_non_boolean_flag(tmp_path):
+    """The must-not-fire control for the test above: same shape, a falsy value --
+    `bool("")` is `False`, same as the gate it reports on."""
+    _supertool_config(tmp_path, {"presets": ["github"], "no_publish_confirm": ""})
+    state, _detail = doctor.publish_confirm_state(tmp_path, env={})
+    assert state == "needs-force"
 
 
 def test_check_publish_confirm_never_renders_needs_force_as_a_fault(tmp_path, capsys):

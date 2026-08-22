@@ -2811,11 +2811,19 @@ def publish_confirm_state(project_dir, env=None):
 
     `confirmable` / `needs-force` / `could-not-tell`. `needs-force` is the
     shipped default -- no `.supertool.json` at all resolves here, same as one
-    that declares the key `false` -- and it is not a fault. `could-not-tell`
-    is reserved for a file that is there and broken (unreadable, not an
-    object, or a `no_publish_confirm` that is not a plain boolean): a broken
-    file must never render as either of the other two, because both would be
-    a guess about a document that would not read.
+    that declares the key `false` -- and it is not a fault.
+
+    The flag is read with plain `bool()`, matching the gate it reports on
+    (`_publish_safety.require_confirm` does `bool(_supertool_config().get(
+    "no_publish_confirm"))`, not a type check) -- so a truthy non-boolean
+    value such as `"yes"` really does turn confirmation off, and reporting
+    that as `could-not-tell` would be a wrong answer dressed as caution.
+
+    `could-not-tell` is reserved for a file that is there and broken --
+    unreadable, or not an object -- because a broken file cannot be read at
+    all, and a guess about a document that would not read is not the same
+    thing as reading the flag it declares. It must never render as either of
+    the other two.
     """
     env = os.environ if env is None else env
     doc, problem, detail = _supertool_document(project_dir)
@@ -2824,42 +2832,33 @@ def publish_confirm_state(project_dir, env=None):
     if doc is None:
         doc = {}
 
-    flag = doc.get("no_publish_confirm", False)
-    if not isinstance(flag, bool):
-        return "could-not-tell", "`no_publish_confirm` in {} is not true or false".format(
-            WATCH_CONFIG
-        )
+    raw_flag = doc.get("no_publish_confirm")
+    confirm_off = bool(raw_flag) or env.get("SUPERTOOL_NO_PUBLISH_CONFIRM") == "1"
+    verb = "reaches" if confirm_off else "gates"
 
     presets = doc.get("presets")
     if isinstance(presets, list) and all(isinstance(p, str) for p in presets):
         routed = sorted(op for name, op in PUBLISH_OP_PRESETS.items() if name in presets)
-        route_known = True
+        if routed:
+            reach = "it {} {} here today".format(verb, ", ".join(routed))
+        else:
+            reach = "it {} none of {} today (no publish preset is enabled)".format(
+                verb, ", ".join(sorted(PUBLISH_OP_PRESETS.values()))
+            )
     else:
-        routed = []
-        route_known = False
-
-    confirm_off = flag or env.get("SUPERTOOL_NO_PUBLISH_CONFIRM") == "1"
-    verb = "reaches" if confirm_off else "gates"
-    if not route_known:
         reach = (
-            "which op(s) this {} could not be read (`presets` in {} is absent "
+            "which op(s) it {} could not be read (`presets` in {} is absent "
             "or not a list of strings)".format(verb, WATCH_CONFIG)
-        )
-    elif routed:
-        reach = "{} {} here today".format(verb, ", ".join(routed))
-    else:
-        reach = "{} none of {} today (no publish preset is enabled)".format(
-            verb, ", ".join(sorted(PUBLISH_OP_PRESETS.values()))
         )
 
     if confirm_off:
         source = (
-            "`no_publish_confirm: true` in {}".format(WATCH_CONFIG)
-            if flag
+            "`no_publish_confirm` in {} is truthy".format(WATCH_CONFIG)
+            if raw_flag
             else "SUPERTOOL_NO_PUBLISH_CONFIRM=1 in the environment"
         )
-        return "confirmable", "{}, so it {}".format(source, reach)
-    return "needs-force", "no opt-out is set, so the confirm gate {}".format(reach)
+        return "confirmable", "{}, so {}".format(source, reach)
+    return "needs-force", "no opt-out is set, so {}".format(reach)
 
 
 def check_publish_confirm(project_dir, env=None):
