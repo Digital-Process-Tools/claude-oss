@@ -190,6 +190,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read off the import statement, because `from doctor import PLUGIN_ROOT as here` leaves every
   use site spelling nothing and would otherwise wave a genuine pin through (#399).
 
+- `scripts/review_return.py` answers `could-not-read` at exit 6 when it is handed a closed or
+  unopenable standard input, instead of raising `AttributeError` and exiting 1 with no `VERDICT:`
+  line. The file route already computed that answer three lines away; the stdin route — the one
+  `agents/developer.md` mandates — could not reach it. An open stdin carrying no bytes still answers
+  `returned-nothing`: read and found nothing is not the same as could not read (#405).
+
+### Security
+
+- The reviewer's final message no longer reaches `scripts/review_return.py` through a stream bash
+  parses on its own terms. `agents/developer.md` placed it at column zero of a quoted heredoc closed
+  by a fixed one-word terminator, so a message carrying that word ended its own transport and the
+  rest of it was executed as commands in the developer's session — and the classifier then returned
+  `referred-not-stated` over the surviving prefix, manufacturing the failure it exists to measure.
+  It needs no adversary: the first observed instance was a reviewer quoting the documented block,
+  terminator included. The message is now handed over `--framed`, with every line indented by four
+  spaces so a line that ends the stream cannot be constructed, and closed by `END OF MESSAGE` at
+  column zero so a message that did end early answers `could-not-read` instead of being classified
+  (#404).
+
 ## [0.8.0] - 2026-08-20
 
 ### Added
