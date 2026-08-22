@@ -37,6 +37,8 @@ session-level exit-code behaviour rather than a single test's outcome.
 
 import sys
 
+import pytest
+
 MARKER_NAME = "must_assert_on"
 
 _skipped_nodeids = set()
@@ -49,6 +51,29 @@ def pytest_configure(config):
         "sys.platform == platform; the whole session fails if it skips there "
         "anyway (#430)".format(MARKER_NAME),
     )
+
+
+def pytest_collection_modifyitems(config, items):
+    # A reviewer finding on this same round: `marker.args` is empty for both
+    # a bare `@pytest.mark.must_assert_on()` and a keyword
+    # `@pytest.mark.must_assert_on(platform="win32")` -- either spelling made
+    # the session-finish check below read it as "no marker" and silently
+    # pass the test over, which is the exact failure mode this plugin exists
+    # to catch, moved one layer up into its own configuration surface. A
+    # malformed instance of the promise is refused loudly, at collection,
+    # rather than treated as absent.
+    for item in items:
+        marker = item.get_closest_marker(MARKER_NAME)
+        if marker is None:
+            continue
+        if not marker.args:
+            raise pytest.UsageError(
+                "{}: {}(...) requires one positional platform argument (e.g. "
+                "'win32'), given as `sys.platform` would give it -- a keyword "
+                "argument or a bare marker is silently ignored instead of "
+                "checked, which is the exact defect #430 exists to catch "
+                "(#430)".format(item.nodeid, MARKER_NAME)
+            )
 
 
 def pytest_runtest_logreport(report):

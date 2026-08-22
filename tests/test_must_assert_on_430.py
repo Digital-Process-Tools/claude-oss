@@ -106,6 +106,51 @@ def test_a_marked_test_that_skips_on_a_different_platform_does_not_fail_the_sess
     assert result.ret == 0
 
 
+def test_a_marker_with_no_positional_platform_argument_fails_collection(pytester):
+    """Reviewer finding on this same round: `marker.args` is empty for both
+    `@pytest.mark.must_assert_on()` (bare) and
+    `@pytest.mark.must_assert_on(platform=sys.platform)` (keyword) -- either
+    spelling made the old `if marker is None or not marker.args: continue`
+    silently disable the check for that test, with no error anywhere. A
+    malformed instance of a promise this plugin exists to hold to account
+    must not itself go unheld: this must fail loudly, at collection, rather
+    than being read as "no marker" and passed over in silence.
+    """
+    pytester.makeconftest(_PLUGIN_SOURCE)
+    pytester.makepyfile(
+        test_probe="""
+        import pytest
+
+        @pytest.mark.must_assert_on()
+        def test_it():
+            pytest.skip("this would have gone unnoticed before the fix")
+        """
+    )
+    result = pytester.runpytest_subprocess()
+    assert result.ret != 0
+    result.stderr.fnmatch_lines(["*must_assert_on*requires one positional*"])
+
+
+def test_a_marker_with_a_keyword_platform_argument_fails_collection(pytester):
+    """Same defect, the other spelling: `platform=` as a keyword rather than
+    positional. `marker.args` is empty either way.
+    """
+    pytester.makeconftest(_PLUGIN_SOURCE)
+    pytester.makepyfile(
+        test_probe="""
+        import sys
+        import pytest
+
+        @pytest.mark.must_assert_on(platform=sys.platform)
+        def test_it():
+            pytest.skip("this would have gone unnoticed before the fix")
+        """
+    )
+    result = pytester.runpytest_subprocess()
+    assert result.ret != 0
+    result.stderr.fnmatch_lines(["*must_assert_on*requires one positional*"])
+
+
 def test_an_unmarked_skip_does_not_fail_the_session(pytester):
     """The suite this ships into has 180+ ordinary `pytest.skip()` calls with
     no marker at all -- every one of them a legitimate "this environment
