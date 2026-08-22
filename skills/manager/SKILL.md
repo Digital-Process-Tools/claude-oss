@@ -1173,6 +1173,26 @@ the cohort label, exit 0, nothing errors, and the freeze verified minutes earlie
 whole set is what you mean. And re-count the cohort **after the last label write of the tick**,
 never before it — a count taken first measures a set that is still being edited.
 
+**Ordering is not settling, and the filtered query can still read low after the last write.**
+GitHub's label filter is an index and it lags the writes that feed it: 22 label writes, all 22
+exiting zero, and `issues?state=open&labels=<cohort>` returned 19 immediately afterward and 22 about
+a minute later — every one of the 22 issues carried the label the whole time. A cohort can only
+shrink, so a low freeze recorded here is never corrected by any later count. **Take the freeze from
+two routes that disagree by construction** — the filtered query plus either `search/issues`'s
+`total_count` or a per-issue read of the set — and never record a number where they disagree. This
+is `scripts/oss_state.py`'s `cohort_freeze`: given two or more route counts it reports `measured`
+only when they agree, `unknown` when they do not (never the lower one, never the first one), and
+`could-not-count` when fewer than two routes answered. Record the result as `detail.cohort_freeze`
+on the state entry that documents the freeze, and if it reads `unknown`, re-count rather than
+writing down either number.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+  --decision "froze <cohort> at N" --at "…" \
+  --cohort <cohort> \
+  --cohort-count filtered_query=19 --cohort-count per_issue_read=22
+```
+
 ### Intake: filings per merged pull request
 
 The cohort measures the drain. This measures the fill, and without it the board's growth is a
@@ -1330,9 +1350,11 @@ The `state_file` named in `.oss.json` — every decision and its reasoning, writ
 first every tick. Keep entries short: the decision and the one reason for it. Reasoning that only
 matters to the PR belongs in the PR body.
 
-Entries also carry one machine-readable field, and only one: `detail.intake`, the tick's counts and
-window as written above under *Intake: filings per merged pull request*. It is there so the ratio
-can be re-added across ticks rather than re-asserted — prose cannot be summed.
+Entries also carry machine-readable fields, each written above at its own duty: `detail.intake`,
+the tick's filing counts and window, so the ratio can be re-added across ticks rather than
+re-asserted; `detail.lanes`, the dispatched developer lanes and their models; and
+`detail.cohort_freeze`, a frozen cohort's count and the routes it was taken from. Prose cannot be
+summed — that is what each of these exists to fix.
 
 **The handoff is not the repo.** The state file records what was believed when it was written. The
 first call of every session is the repo itself: `git log --oneline -1`, `gh-prs`, `gh-issues`.

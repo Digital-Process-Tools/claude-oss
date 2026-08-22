@@ -97,6 +97,31 @@ LANES_PARTIAL = "partial"
 CHOICE_DEFAULT = "default"
 CHOICE_OVERRIDE = "override"
 
+# A cohort freeze count (#407): a frozen label re-counted right after the writes that
+# made it. GitHub's label filter is an index and it lags the writes that feed it, so a
+# single route -- the filtered query the manager skill's own rule re-counts with -- can
+# read low at the exact instant nothing has actually gone missing. A freeze is the one
+# measurement where that matters permanently: a cohort only ever shrinks, so a low
+# count recorded as the baseline is never corrected by any later measurement.
+#
+# Three states, not two, for the same reason `intake`'s and `lane_models`'s are -- a
+# low count and a correct count must never render alike:
+#
+#   measured          two or more routes were counted and they agree. That number is
+#                      the freeze.
+#   unknown            two or more routes were counted and they disagree. Neither
+#                       number is kept over the other -- a lower count is not evidence
+#                       of a smaller cohort, it is evidence of a stale index, and
+#                       guessing which route to trust is exactly the bug #407 reports.
+#   could-not-count    fewer than two routes were counted. A single route is exactly
+#                       the situation #407 was filed about, so it is never enough by
+#                       itself to freeze on. Not the same state as `unknown`, which
+#                       means two routes disagreed rather than one route answering
+#                       alone.
+COHORT_MEASURED = "measured"
+COHORT_UNKNOWN = "unknown"
+COHORT_COULD_NOT_COUNT = "could-not-count"
+
 
 class StateError(Exception):
     """The state file could not be read, or an entry was refused."""
@@ -975,6 +1000,129 @@ def lane_model_trend(entries):
     return trend
 
 
+def cohort_freeze(cohort, counts, why=None):
+    """One cohort freeze count (#407): a label's count taken from more than one route.
+
+    ``counts`` maps a route name -- ``"filtered_query"``, ``"search_total_count"``,
+    ``"per_issue_read"``, or whatever a caller wants to call each route -- to the
+    count that route returned, or ``None`` for a route that was not attempted or
+    could not be read.
+
+    Fewer than two routes actually counted refuses to freeze on a lone number: a
+    single filtered-query read is exactly the measurement #407 was filed about, so
+    ``why`` is required for the same reason it is in ``intake`` -- an unexplained
+    absence is indistinguishable from a measurement of nothing.
+
+    Two or more counted routes that disagree return ``unknown`` with no count
+    picked. GitHub's label filter is an index and it lags the writes that feed it,
+    so a lower number is not evidence of a smaller cohort, it is evidence of a
+    stale index -- and since a cohort can only shrink, a wrong number frozen here
+    is never corrected by any later measurement. This refuses to guess between the
+    routes rather than trusting the lower one, the higher one, or the first one
+    given.
+
+    Two or more counted routes that agree return ``measured`` with that count.
+    """
+    if not cohort or not str(cohort).strip():
+        raise StateError(
+            "a cohort freeze record needs the cohort's own label -- a count with "
+            "no label attached cannot be read against any other freeze."
+        )
+    if not isinstance(counts, dict) or not counts:
+        raise StateError(
+            "counts must be a non-empty mapping of route name to count or None"
+        )
+
+    taken = {}
+    for route, value in counts.items():
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise StateError(
+                "route {!r}: count must be a whole number or None, not {!r}".format(
+                    route, value
+                )
+            )
+        if value < 0:
+            raise StateError(
+                "route {!r}: count cannot be negative ({})".format(route, value)
+            )
+        taken[route] = value
+
+    record = {
+        "cohort": str(cohort).strip(),
+        "counts": dict(counts),
+        "count": None,
+        "state": None,
+        "why": None,
+    }
+
+    if len(taken) < 2:
+        if not why or not str(why).strip():
+            raise StateError(
+                "fewer than two routes were counted, and a single route is "
+                "exactly the situation #407 was filed about -- a why is required "
+                "so this is not indistinguishable from a freeze nobody thought "
+                "to check twice."
+            )
+        record["state"] = COHORT_COULD_NOT_COUNT
+        record["why"] = str(why).strip()
+        return record
+
+    distinct = set(taken.values())
+    if len(distinct) > 1:
+        record["state"] = COHORT_UNKNOWN
+        record["why"] = (
+            "routes disagree ({}); a lower count is not evidence of a smaller "
+            "cohort, it is evidence of a stale index, and this freeze can only "
+            "shrink so a wrong number here is never corrected later".format(
+                ", ".join(
+                    "{}={}".format(route, value)
+                    for route, value in sorted(taken.items())
+                )
+            )
+        )
+        return record
+
+    record["state"] = COHORT_MEASURED
+    record["count"] = next(iter(distinct))
+    return record
+
+
+def cohort_freeze_line(record):
+    """One line a tick report can print. The state decides the sentence, not the caller.
+
+    The single join, so `_receipt_line` cannot be skipped by adding a branch below.
+    """
+    return _receipt_line(_cohort_freeze_sentence(record))
+
+
+def _cohort_freeze_sentence(record):
+    """`cohort_freeze_line`'s branches. Unfolded on purpose -- it has one caller."""
+    if not isinstance(record, dict):
+        raise StateError(
+            "cohort_freeze_line takes a cohort freeze record, not {!r}".format(record)
+        )
+    state = record.get("state")
+    cohort = record.get("cohort") or "an unstated cohort"
+    head = "cohort freeze {}: ".format(cohort)
+
+    if state == COHORT_MEASURED:
+        return head + "{} (routes agree)".format(record.get("count"))
+    if state == COHORT_UNKNOWN:
+        return head + "unknown -- {}".format(
+            record.get("why") or "routes disagreed for no recorded reason"
+        )
+    if state == COHORT_COULD_NOT_COUNT:
+        return head + (
+            "could not count ({}) -- this is not a route count of zero, and it "
+            "must not be frozen on".format(record.get("why") or "no reason recorded")
+        )
+    return head + "unrecognised cohort freeze state {!r}, so nothing is claimed".format(
+        state
+    )
+
+
 def _count_argument(text):
     """A CLI count: a whole number, or the literal ``unknown``.
 
@@ -998,6 +1146,34 @@ def _count_argument(text):
     if value < 0:
         raise argparse.ArgumentTypeError("a count cannot be negative ({})".format(value))
     return value
+
+
+def _cohort_count_argument(text):
+    """A CLI cohort route count: ``ROUTE=N``, or ``ROUTE=unknown`` for a route that
+    was not attempted or could not be read.
+    """
+    import argparse
+
+    if "=" not in text:
+        raise argparse.ArgumentTypeError("{!r} is not ROUTE=N or ROUTE=unknown".format(text))
+    route, _, value_text = text.partition("=")
+    route = route.strip()
+    if not route:
+        raise argparse.ArgumentTypeError(
+            "{!r}: a route name is required before '='".format(text)
+        )
+    value_text = value_text.strip()
+    if value_text.lower() == "unknown":
+        return (route, None)
+    try:
+        value = int(value_text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "{!r}: {!r} is neither a whole number nor 'unknown'".format(text, value_text)
+        )
+    if value < 0:
+        raise argparse.ArgumentTypeError("{!r}: a count cannot be negative".format(text))
+    return (route, value)
 
 
 def _lane_argument(text):
@@ -1146,6 +1322,19 @@ def _main(argv=None):
     parser.add_argument(
         "--lane-why", help="why the mix is 'unknown'; required when --lanes unknown is"
     )
+    parser.add_argument(
+        "--cohort", help="the frozen cohort's label, e.g. cohort-6 -- required with --cohort-count"
+    )
+    parser.add_argument(
+        "--cohort-count",
+        action="append",
+        type=_cohort_count_argument,
+        help="one route's count, ROUTE=N or ROUTE=unknown; repeatable, at least two needed",
+    )
+    parser.add_argument(
+        "--cohort-why",
+        help="why fewer than two routes were counted; required when that happens",
+    )
     args = parser.parse_args(argv)
 
     intake_flags = [
@@ -1168,6 +1357,15 @@ def _main(argv=None):
         )
         if value is not None
     ]
+    cohort_flags = [
+        name
+        for name, value in (
+            ("--cohort", args.cohort),
+            ("--cohort-count", args.cohort_count),
+            ("--cohort-why", args.cohort_why),
+        )
+        if value is not None
+    ]
 
     # The intake pair and the lane record, each once it has been built and while the
     # entry carrying it has not landed. `refuse` reads both, so a refusal after either
@@ -1176,6 +1374,7 @@ def _main(argv=None):
     # recorded nothing. (#222, and #316 the same shape one field over)
     pending_intake = None
     pending_lanes = None
+    pending_cohort = None
 
     def refuse(message):
         """Print the verdict, then what the run did not record. In that order.
@@ -1199,6 +1398,9 @@ def _main(argv=None):
         if pending_lanes is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + lane_models_line(pending_lanes), sys.stderr)
+        if pending_cohort is not None:
+            sys.stdout.flush()
+            _say("NOT RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
         return 1
 
     try:
@@ -1215,6 +1417,12 @@ def _main(argv=None):
             _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(lane_flags))
+            )
+            return 1
+        if reading_mode and cohort_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(cohort_flags))
             )
             return 1
         if args.model_trend:
@@ -1303,6 +1511,23 @@ def _main(argv=None):
             pending_lanes = lane_models([], window=args.lane_window)
         elif args.lanes == "unknown":
             pending_lanes = lane_models(None, window=args.lane_window, why=args.lane_why)
+        if args.cohort_count:
+            if not args.cohort:
+                return refuse(
+                    "a cohort freeze record needs --cohort -- the label being "
+                    "frozen, so a count nobody can name a cohort for is not "
+                    "recorded."
+                )
+            pending_cohort = cohort_freeze(
+                args.cohort,
+                dict(args.cohort_count),
+                why=args.cohort_why,
+            )
+        elif args.cohort:
+            return refuse(
+                "--cohort needs --cohort-count (at least two); --cohort alone "
+                "records nothing."
+            )
         if intake_flags:
             missing = [
                 name
@@ -1349,6 +1574,20 @@ def _main(argv=None):
                     "--detail already carries a 'lanes' key; pass one or the other"
                 )
             detail["lanes"] = pending_lanes
+        if pending_cohort is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a cohort freeze record "
+                    "is attached"
+                )
+            if "cohort_freeze" in detail:
+                return refuse(
+                    "--detail already carries a 'cohort_freeze' key; pass one or "
+                    "the other"
+                )
+            detail["cohort_freeze"] = pending_cohort
         entry = append(args.path, args.at, args.decision, detail=detail)
         # After the write, never before. The line is a receipt for an entry that is on
         # disk, and a receipt printed ahead of the write it receipts is one that a
@@ -1357,6 +1596,8 @@ def _main(argv=None):
             _say("RECORDED " + intake_line(pending_intake), sys.stderr)
         if pending_lanes is not None:
             _say("RECORDED " + lane_models_line(pending_lanes), sys.stderr)
+        if pending_cohort is not None:
+            _say("RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
