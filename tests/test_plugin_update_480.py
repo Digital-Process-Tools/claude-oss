@@ -219,6 +219,80 @@ def test_an_unreadable_manifest_is_could_not_check_not_current(tmp_path):
     assert document["state"] == "could-not-check"
 
 
+def test_an_unreadable_install_record_is_could_not_check_not_current(tmp_path):
+    """Both `before` and `after` come back `None` when `installed_plugins.json` cannot
+    be read -- two unknowns, and the old code rendered that as `current` (#484)."""
+    plugins = tmp_path / "plugins"  # never created: no installed_plugins.json at all
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=plugins,
+        env={},
+        runner=_Runner([(True, ""), (True, "")]),
+    )
+    assert document["state"] == "could-not-check", document
+    assert document["from"] is None and document["to"] is None
+
+
+def test_before_readable_after_not_is_still_could_not_check(tmp_path, monkeypatch):
+    """The must-fire half of the review round's own finding: the old guard only fired
+    when BOTH `before` and `after` were `None`. If the install record is readable
+    before the update calls and goes unreadable for the second read (a race, or a
+    write in progress), `before` is a real string and `after` is `None` -- and the old
+    code's `before and after and ...` guard is false either way, so it fell through to
+    `current` with a `None` on one end of the receipt. One unknown is enough."""
+    plugins = _plugins_root(tmp_path, "0.9.0")
+    calls = {"n": 0}
+    real_installed_version = plugin_update.installed_version
+
+    def flaky_installed_version(name, plugins_root=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_installed_version(name, plugins_root)
+        return None  # the second read -- "after" -- comes back unreadable
+
+    monkeypatch.setattr(plugin_update, "installed_version", flaky_installed_version)
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=plugins,
+        env={},
+        runner=_Runner([(True, ""), (True, "")]),
+    )
+    assert document["state"] == "could-not-check", document
+    assert document["from"] == "0.9.0" and document["to"] is None
+
+
+def test_a_partial_failure_reaches_the_receipt_detail(tmp_path):
+    """#484: a scope that failed must not vanish from the receipt just because the
+    run as a whole still reports `current` -- additive, must not touch the state
+    `test_one_scope_succeeding_is_not_a_failed_run` fixes."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "0.9.0", "scope": "project"},
+                        {"version": "0.9.0", "scope": "user"},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=root,
+        env={},
+        runner=_Runner([(True, ""), (True, ""), (False, "not found at user scope")]),
+    )
+    assert document["state"] == "current", document
+    assert "user" in document["detail"] and "not found at user scope" in document["detail"]
+
+
 def test_the_plugin_names_itself_from_its_own_manifest(tmp_path):
     """Never spelled inline: a name in shared code is wrong the first time it changes."""
     assert plugin_update.plugin_name(_plugin_root(tmp_path, "renamed-tomorrow")) == "renamed-tomorrow"
@@ -255,6 +329,21 @@ def test_a_receipt_round_trips(tmp_path):
     path = tmp_path / "auto-update.json"
     plugin_update.write_receipt({"state": "current", "at": 1.0}, path)
     assert plugin_update.read_receipt(path)["state"] == "current"
+
+
+def test_corrupt_json_is_unreadable_not_absent(tmp_path):
+    """The must-fire half of #484: broken JSON is not the same state as no file."""
+    path = tmp_path / "auto-update.json"
+    path.write_text("{not json", encoding="utf-8")
+    result = plugin_update.read_receipt(path)
+    assert isinstance(result, plugin_update.ReceiptUnreadable), result
+    assert "not json" in result.detail or result.detail
+
+
+def test_absence_is_still_none_not_unreadable(tmp_path):
+    """The must-not-fire control for the test above: a file that was never written is
+    still `None`, not the broken-receipt state."""
+    assert plugin_update.read_receipt(tmp_path / "absent.json") is None
 
 
 # ------------------------------------------------- the red run this file cannot have

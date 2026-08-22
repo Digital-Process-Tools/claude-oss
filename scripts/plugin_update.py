@@ -62,15 +62,43 @@ def receipt_path():
     return receipt_dir() / RECEIPT_NAME
 
 
-def read_receipt(path=None):
-    """The last run's receipt, or ``None``.
+class ReceiptUnreadable(object):
+    """A receipt file exists but could not be parsed (#484).
 
-    ``None`` is "no receipt", which is not "it did not update" -- the caller says which.
+    Distinct from ``None`` on purpose: ``None`` means nothing was ever written, which is
+    the ordinary state before the first SessionStart hook runs. This means something WAS
+    written and is now broken -- corrupt JSON, or a permission that changed underneath
+    it -- and a caller that folds the two together reports "nothing recorded" about a
+    receipt that is sitting right there and cannot be trusted.
     """
+
+    def __init__(self, detail):
+        self.detail = detail
+
+    def __repr__(self):
+        return "ReceiptUnreadable({!r})".format(self.detail)
+
+
+def read_receipt(path=None):
+    """The last run's receipt, ``None``, or a `ReceiptUnreadable`.
+
+    ``None`` is "no receipt" -- the file was never written, which is not "it did not
+    update"; the caller says which. A `ReceiptUnreadable` is the third state: a receipt
+    exists and the exception in hand says why it could not be read, told apart from
+    absence by the exception that was actually raised rather than by asking the
+    filesystem a second question (the trap this repo's own CLAUDE.md names).
+    """
+    target = Path(path or receipt_path())
     try:
-        return json.loads(Path(path or receipt_path()).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        text = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return None
+    except OSError as exc:
+        return ReceiptUnreadable(str(exc))
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        return ReceiptUnreadable(str(exc))
 
 
 def opt_out(root=None, env=None):
@@ -255,6 +283,36 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
         }
 
     after = installed_version(name, plugins_root)
+
+    # A partial failure must reach the receipt without becoming a failed run: one
+    # scope succeeding is enough for `updated`/`current` to stand (that is what
+    # `test_one_scope_succeeding_is_not_a_failed_run` fixes), but a scope that was
+    # silently left behind is the whole thing `installed_scopes`' own docstring warns
+    # about, and the receipt is the only record anybody reads.
+    partial = ""
+    if failures:
+        partial = " -- but {} of {} scope(s) failed: {}".format(
+            len(failures), len(scopes), "; ".join(failures)
+        )
+
+    if before is None or after is None:
+        # Either side being unknown is enough: the review round that read this file
+        # found the symmetric-only version of this guard still let the asymmetric case
+        # -- one read succeeding while the install record went briefly unreadable for
+        # the other -- fall through to `current` with a `None` on one end of the
+        # receipt, exactly the "nothing was there" vs "could not tell" collapse #484
+        # exists to remove. One `None` is one unknown; it needs no partner to be one.
+        return {
+            "state": "could-not-check",
+            "at": stamp,
+            "plugin": name,
+            "from": before,
+            "to": after,
+            "scopes": scopes,
+            "detail": "the install record could not be read, so the version before and/or "
+            "after is unknown{}".format(partial),
+        }
+
     if before and after and before != after:
         return {
             "state": "updated",
@@ -263,7 +321,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "from": before,
             "to": after,
             "detail": "restart Claude Code before the new version runs -- this session "
-            "is still on {}".format(before),
+            "is still on {}{}".format(before, partial),
         }
     return {
         "state": "current",
@@ -271,7 +329,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
         "plugin": name,
         "from": before,
         "to": after,
-        "detail": "already at the newest published version",
+        "detail": "already at the newest published version{}".format(partial),
     }
 
 

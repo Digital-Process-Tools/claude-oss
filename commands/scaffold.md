@@ -145,7 +145,7 @@ is **declined**, not rewritten: "could not read it" is not "it has no statusLine
 answers one question — does a changelog gate already run here under another name — and it is not an
 answer about a status line.
 
-The first eleven are created once when absent and are yours afterwards. The last three are ours and
+The first eleven are created once when absent and are yours afterwards. The last four are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
 already has everything.
 

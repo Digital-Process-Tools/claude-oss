@@ -2077,3 +2077,20 @@ def test_an_absolute_config_path_is_never_widened(tmp_path, monkeypatch):
     resolved, origin, detail = oss_config.resolve_config_path(worktree / ".oss.json")
     assert (resolved, origin) == (None, "missing")
     assert str(clone) not in detail
+
+def test_the_owned_file_count_in_the_doc_matches_scaffold_owned():
+    """#487's second, smaller instance: `commands/scaffold.md` said "the last three"
+    while `scaffold.OWNED` (the table it is describing) already had four entries --
+    `.oss/statusline.py` landed in #479 and the sentence was never updated. Derived
+    from `scaffold.OWNED` itself, so a fifth owned file added later fails this test
+    instead of silently going stale the same way.
+    """
+    doc = (REPO_ROOT / "commands" / "scaffold.md").read_text(encoding="utf-8")
+    match = re.search(r"The last (\w+) are ours", doc)
+    assert match, 'expected a "The last <N> are ours" sentence in commands/scaffold.md'
+    words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+    assert match.group(1) == words[len(scaffold.OWNED)], (
+        "commands/scaffold.md says {!r} owned files; scaffold.OWNED has {}".format(
+            match.group(1), len(scaffold.OWNED)
+        )
+    )
