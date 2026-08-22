@@ -134,7 +134,7 @@ The full list, so a plan line is never the first time you hear of a file:
 | `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
 | `.github/workflows/oss-changelog.yml` | the workflow that calls it — **replaced every run** |
 
-The first ten are created once when absent and are yours afterwards. The last three are ours and
+The first eleven are created once when absent and are yours afterwards. The last three are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
 already has everything.
 

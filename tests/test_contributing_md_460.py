@@ -203,12 +203,44 @@ def test_render_refuses_a_branch_pattern_carrying_a_line_break():
         scaffold.render("CONTRIBUTING.md", _config(branch_pattern=injected))
 
 
+#: An ATX heading: one to six `#` followed by a space or the end of the line, at
+#: column 0 -- CommonMark section 4.2. The same test `test_claude_md_injection.py`
+#: uses for the identical reason: a substring match on `"## Injected heading"`
+#: would pass even for text a real renderer never treats as a heading (indented
+#: `##`, one inside a fence), so this checks *structure* the way a Markdown parser
+#: would see it, without depending on a Markdown parser as a test dependency --
+#: `test_claude_md_injection.py`'s own module docstring declines that dependency
+#: for the same file family this test belongs to.
+_ATX = re.compile(r"\A#{1,6}(?: |\Z)")
+
+
+def _atx_headings(text):
+    """Every column-0 ATX heading line in `text`, in order."""
+    return [line for line in text.splitlines() if _ATX.match(line)]
+
+
+def _expected_headings(config):
+    """The headings a correct render carries, with `{repo}` resolved -- the only
+    config value CONTRIBUTING_MD's own headings ever substitute. Everything else
+    that renders as an ATX heading is a value that broke out of its span, exactly
+    the shape `test_claude_md_injection.py`'s `_expected_headings` checks for
+    CLAUDE.md.
+    """
+    return [
+        line.replace("{repo}", str(config.get("repo")))
+        for line in scaffold.CONTRIBUTING_MD.splitlines()
+        if _ATX.match(line)
+    ]
+
+
 def test_a_branch_pattern_that_would_have_escaped_the_span_produces_no_new_heading():
     """The positive control for the refusal above: proves the checker below can
     see the corruption at all, by re-deriving the pre-fix render (no character
     check on `branch_pattern`, `_code_span` only) and showing an injected `##`
-    line survives as a literal heading -- rather than trusting that the refusal
-    firing means the corruption was real."""
+    line is read as a real ATX heading -- structurally, the way a Markdown
+    renderer would see it, not merely as a substring that happens to appear --
+    rather than trusting that the refusal firing means the corruption was real.
+    """
     import oss_config
 
     injected = "fix/{issue}\n\n## Injected heading\n\n<img src=x onerror=alert(1)>"
@@ -226,9 +258,12 @@ def test_a_branch_pattern_that_would_have_escaped_the_span_produces_no_new_headi
         )
 
     corrupted = _pre_fix_render(config)
-    assert "\n## Injected heading\n" in corrupted, (
-        "the positive control did not reproduce the corruption -- the assertion "
-        "below would pass even against a checker that never looked"
+    headings = _atx_headings(corrupted)
+    injected_headings = [h for h in headings if h not in _expected_headings(config)]
+    assert injected_headings == ["## Injected heading"], (
+        "the positive control did not reproduce a real structural heading -- the "
+        "assertion below would pass even against a checker that never looked; got "
+        "{}".format(injected_headings)
     )
     # And the real path refuses it outright, per the two tests above.
     assert oss_config.branch_pattern_problem(injected) is not None
