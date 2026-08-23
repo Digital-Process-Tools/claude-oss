@@ -383,9 +383,9 @@ def _tail_lines(path, max_bytes):
 
 def _scan_transcript(transcript_path, max_bytes):
     """The transcript tail, read once, for callers that each need their own answer
-    out of it (#504). ``next_tick`` and ``last_user_message`` both read the same
-    bytes; a render happens on every message, so a second full tail read is a
-    doubled, unmeasured cost paid every time -- one scan is shared instead.
+    out of it (#504). It had two callers -- ``next_tick`` and the user-age field #513
+    removed -- and keeping the split is what makes the error state one thing rather
+    than each caller's own guess at why a file could not be read.
 
     Returns ``(lines, truncated, error)``; on error the first two are ``None`` and
     ``error`` is the detail string a caller's ``unknown`` state should carry.
@@ -447,67 +447,31 @@ def _next_tick_from_lines(lines, truncated, now=None):
     return {"state": state, "seconds": seconds, "reason": payload.get("reason")}
 
 
-def last_user_message(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
-    """When the user last spoke, from the transcript's own record timestamps (#504).
-
-    Same three-state shape as ``next_tick``: ``measured`` (age in seconds --
-    genuinely non-zero at render time, because a render only happens after the
-    assistant has answered the message being timed), ``none`` (the whole file was
-    read and holds no user-role record), and ``unknown`` -- no transcript, an
-    unreadable one, or a tail scan that did not reach the top of the file without
-    finding one. A user message above the scan window must never render as "no
-    user message at all" -- the same failure this repository's own docstring
-    already names for ``next_tick``'s wakeup scan.
-
-    This is deliberately NOT an age of "the last message" in general: that value
-    is computed at render time, which is the instant it is smallest, and would
-    freeze at that reading -- the defect #504 exists to avoid. The user's own
-    last turn is the one quantity that is genuinely non-zero by the time
-    anything renders.
-    """
-    lines, truncated, error = _scan_transcript(transcript_path, max_bytes)
-    if error is not None:
-        return {"state": "unknown", "detail": error}
-    return _last_user_message_from_lines(lines, truncated, now=now)
-
-
-def _last_user_message_from_lines(lines, truncated, now=None):
-    now = time.time() if now is None else now
-    found = None
-    for raw in lines:
-        if b'"user"' not in raw:
-            continue
-        try:
-            record = json.loads(raw.decode("utf-8", "replace"))
-        except ValueError:
-            continue
-        if record.get("type") != "user":
-            continue
-        stamp = parse_timestamp(record.get("timestamp"))
-        if stamp is not None:
-            found = stamp
-
-    if found is None:
-        if truncated:
-            return {
-                "state": "unknown",
-                "detail": "the tail scan did not reach the top of the transcript",
-            }
-        return {"state": "none", "detail": "no user message in this transcript"}
-    return {"state": "measured", "age": max(0.0, now - found)}
-
-
 def _render_stamp(now):
     """The wall-clock reading for the "stamp of the last render" field (#504).
 
-    UTC, not the machine's local zone: the transcript's own timestamps this
-    module already parses (``parse_timestamp``) carry none either, and a stamp
-    that silently meant two different clocks depending on where it ran would be
-    worse than one that is merely frozen.
-    """
-    import datetime
+    **The machine's local zone, not UTC (#511).** This shipped as UTC on the reasoning that
+    the transcript timestamps ``parse_timestamp`` reads carry no zone either, and that a
+    stamp meaning two different clocks depending on where it ran would be worse than one
+    that is merely frozen. The first half is about parsing -- ``parse_timestamp`` returns
+    epoch seconds, which are unambiguous by the time they arrive here -- and the second
+    describes a risk this field does not carry: the stamp is produced and read on one
+    machine, in the same second, by the person looking at it.
 
-    return datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%H:%M")
+    What it did carry was the defect the field exists to prevent. ``_last_field`` renders a
+    clock time rather than an age precisely so the reader can subtract it from their own
+    clock and recover how stale the line is; a UTC stamp makes that subtraction silently
+    wrong in every zone but one. Measured at `last 10:11` against a wall clock reading
+    12:15.
+
+    ``None`` when the platform cannot convert the instant, so ``_last_field`` renders `?`.
+    Falling back to UTC under a label that means local would be this same defect one layer
+    down, and quieter.
+    """
+    try:
+        return time.strftime("%H:%M", time.localtime(now))
+    except (OSError, OverflowError, ValueError):
+        return None
 
 
 # --------------------------------------------------------------------------- render
@@ -576,20 +540,6 @@ def _last_field(stamp):
     being internally produced.
     """
     return "last " + (_one_line(str(stamp)) if stamp else "?")
-
-
-def _user_field(user):
-    """How long since the user's own last message, or the two ways that is
-    unknown (#504). Genuinely non-zero at render time: a render only happens
-    after the assistant has answered the turn being timed, so this is the one
-    age on this line that cannot be caught reading zero.
-    """
-    state = (user or {}).get("state")
-    if state == "measured":
-        return "you " + _duration(user.get("age") or 0)
-    if state == "none":
-        return "you -"
-    return "you ?"
 
 
 def _board_field(board, symbols, color=False):
@@ -717,21 +667,52 @@ def _short_name(name):
     return text[:4].rstrip("-_.") or "?"
 
 
-def _plugin_field(name, status, symbols, color):
-    name = _short_name(name)
-    installed = _short_version(status.get("installed")) or "?"
-    state = status.get("state")
-    if state == "behind":
-        marker = symbols["behind"] + (_short_version(status.get("latest")) or "?")
-        if color:
-            marker = YELLOW + marker + RESET
-    elif state == "current":
-        marker = symbols["current"]
-    elif state == "ahead":
-        marker = symbols["ahead"]
-    else:
-        marker = "?"
-    return "{} {}{}".format(name, installed, marker)
+def _plugins_field(plugins, symbols, color=False):
+    """`plug 4ok`, and the names of whatever is not (#512).
+
+    The block this replaces spent 45 characters at the right-hand end of the line --
+    `oss 0.12.0 ✓ · supe 0.49.0 ✓ · reme 0.21.0 ✓ · jit 0.5.0 ✓` -- to say, on almost every
+    render, that there is nothing to do. What a reader needs from four plugins that are
+    current is the number of them.
+
+    **The count is what makes the collapse safe, and it is why this is not simply hidden
+    when everything is fine.** ``plugin_facts`` argues the case for its own shape: a plugin
+    absent because it is fine and a plugin absent because nothing looked at it render
+    identically, and only the second is a problem. `4ok` says four were looked at and four
+    answered; `plug ?` says nobody looked; and a plugin whose version could not be compared
+    is neither, so it gets its own group rather than being counted current.
+
+    Anything not current is named, because "one of these is behind" is not actionable
+    without knowing which.
+    """
+    if not plugins:
+        return "plug " + symbols["unk"]
+    current = 0
+    unknown = 0
+    named = []
+    for name, status in plugins:
+        state = (status or {}).get("state")
+        if state == "current":
+            current += 1
+            continue
+        if state == "behind":
+            marker = symbols["behind"].strip() + (_short_version(status.get("latest")) or "?")
+            shade = YELLOW
+        elif state == "ahead":
+            marker = symbols["ahead"].strip() + (_short_version(status.get("installed")) or "?")
+            shade = GREEN
+        else:
+            unknown += 1
+            continue
+        text = _short_name(name) + marker
+        named.append(shade + text + RESET if color else text)
+    count = "{}{}".format(current, symbols["ok"])
+    parts = [GREEN + count + RESET if color and current else count]
+    parts.extend(named)
+    if unknown:
+        text = "{}{}".format(unknown, symbols["unk"])
+        parts.append(DIM + text + RESET if color else text)
+    return "plug " + " ".join(parts)
 
 
 def render(facts, ascii_only=False, color=False):
@@ -786,14 +767,8 @@ def render(facts, ascii_only=False, color=False):
     blocks.append(_release_field(facts.get("release")))
     blocks.append(_tick_field(facts.get("tick")))
     blocks.append(_last_field(facts.get("last")))
-    blocks.append(_user_field(facts.get("user")))
 
-    plugins = [
-        _plugin_field(name, status, symbols, color)
-        for name, status in (facts.get("plugins") or [])
-    ]
-    if plugins:
-        blocks.append(symbols["dot"].join(plugins))
+    blocks.append(_plugins_field(facts.get("plugins") or [], symbols, color))
     return symbols["sep"].join(blocks)
 
 
@@ -1121,10 +1096,8 @@ def gather(payload, root, now=None):
     lines, truncated, error = _scan_transcript(payload.get("transcript_path"), DEFAULT_TAIL_BYTES)
     if error is not None:
         tick = {"state": "unknown", "detail": error}
-        user = {"state": "unknown", "detail": error}
     else:
         tick = _next_tick_from_lines(lines, truncated, now=now)
-        user = _last_user_message_from_lines(lines, truncated, now=now)
 
     return {
         "model": ((payload.get("model") or {}).get("display_name") or "").split(" ")[0] or None,
@@ -1137,7 +1110,6 @@ def gather(payload, root, now=None):
         "release": git_release_progress(root),
         "tick": tick,
         "last": _render_stamp(now),
-        "user": user,
         "plugins": plugin_facts(loop_name, installed_plugins(), latest),
     }
 
