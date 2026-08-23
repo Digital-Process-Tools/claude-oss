@@ -1,5 +1,7 @@
 # claude-oss
 
+**OSS is open-source software.** This is the maintainer loop for a public repo.
+
 ![claude-oss — triage, build, review, merge, ship](docs/oss.png)
 
 > Run an open-source repo as its maintainer. Triage the tracker, delegate the work, review hard, merge on green.
