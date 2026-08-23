@@ -298,15 +298,15 @@ def _facts(**overrides):
 
 def test_render_states_the_measured_board():
     line = statusline.render(_facts(), ascii_only=True)
-    assert "2PR" in line and "18IS" in line
+    assert "2pr" in line and "18is" in line
 
 
 def test_render_never_prints_a_zero_for_an_unknown_board():
     """The must-not-fire half. Paired with the test above, which proves it can print."""
     line = statusline.render(_facts(board={"state": "unknown", "prs": None, "issues": None}),
                              ascii_only=True)
-    assert "?PR" in line and "?IS" in line
-    assert "0PR" not in line and "0IS" not in line
+    assert "?pr" in line and "?is" in line
+    assert "0pr" not in line and "0is" not in line
 
 
 def test_render_distinguishes_a_zero_board_from_an_unknown_one():
@@ -315,7 +315,7 @@ def test_render_distinguishes_a_zero_board_from_an_unknown_one():
     unknown = statusline.render(_facts(board={"state": "unknown", "prs": None, "issues": None}),
                                 ascii_only=True)
     assert zero != unknown
-    assert "0PR" in zero
+    assert "0pr" in zero
 
 
 def test_a_plugin_label_is_derived_not_tabled():
