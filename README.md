@@ -1,5 +1,7 @@
 # claude-oss
 
+![claude-oss — triage, build, review, merge, ship](docs/oss.png)
+
 > Run an open-source repo as its maintainer. Triage the tracker, delegate the work, review hard, merge on green.
 
 ![Version](https://img.shields.io/badge/version-0.12.0-orange)
