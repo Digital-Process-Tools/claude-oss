@@ -4,6 +4,7 @@
 
 > Run an open-source repo as its maintainer. Triage the tracker, delegate the work, review hard, merge on green.
 
+[![Tests](https://github.com/Digital-Process-Tools/claude-oss/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Digital-Process-Tools/claude-oss/actions/workflows/tests.yml)
 ![Version](https://img.shields.io/badge/version-0.12.0-orange)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![OS](https://img.shields.io/badge/os-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
