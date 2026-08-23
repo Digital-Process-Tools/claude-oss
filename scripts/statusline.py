@@ -35,8 +35,16 @@ from pathlib import Path
 #: is append-only and can reach tens of megabytes, and this runs once per message.
 DEFAULT_TAIL_BYTES = 2 * 1024 * 1024
 
-#: How old a cached board reading may be before a refresh is forked, in seconds.
-REFRESH_AFTER = 300
+#: How old a cached board reading may be before a refresh is forked, in seconds. Short,
+#: because this is the half a maintainer watches move: at 300 the line showed a merged pull
+#: request and three still-open issues that had just been closed (#515).
+REFRESH_AFTER = 60
+
+#: The same, for the version each installed plugin's source repository publishes. Four of a
+#: refresh's seven forge calls are these, and they answer a question that changes on the
+#: order of weeks -- so they are carried forward between long intervals rather than making
+#: the board wait on them.
+LATEST_REFRESH_AFTER = 3600
 
 #: How long a refresh may hold its lock before another render is allowed to retry. A
 #: lock that outlives a killed refresher would otherwise freeze the counts forever.
@@ -219,7 +227,7 @@ def git_release_progress(root, window=RELEASE_WINDOW):
     Local git rather than the forge on purpose: this field must be right on a render that
     happens once per message, and the cached forge counts beside it are up to
     ``REFRESH_AFTER`` seconds old. A commit that just landed would otherwise not move the
-    numerator for five minutes -- the one moment somebody is looking at it.
+    numerator until that interval expires -- the one moment somebody is looking at it.
 
     ``for-each-ref`` rather than ``show-ref`` because an annotated tag's own object hash is
     not the commit's: ``*objectname`` dereferences it, and is empty for a lightweight tag,
@@ -333,6 +341,66 @@ def cache_dir():
         return Path(base) / "oss-statusline"
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
     return Path(base) / "oss-statusline"
+
+
+def board_is_due(cache, now):
+    """Is the board half of the cache older than its own interval (#515)?
+
+    Or has something said so outright: `stale_after` is written by the `PostToolUse` hook
+    when this session itself merges a pull request or closes an issue (#516), because the
+    interval alone leaves the line wrong for exactly the seconds it is most watched. It is
+    a timestamp rather than a flag so that the forge's own search-index lag can be waited
+    out -- a refresh taken the instant a merge returns can record the pre-merge counts.
+    """
+    if isinstance(cache, dict):
+        stale_after = cache.get("stale_after")
+        if isinstance(stale_after, (int, float)) and now >= stale_after:
+            return True
+    return _is_due(cache, "fetched_at", REFRESH_AFTER, now)
+
+
+def mark_board_stale(repo, now=None, delay=0):
+    """Say that this repo's cached board is out of date as of ``now + delay`` (#516).
+
+    Rewrites the stamp and nothing else: the counts stay readable until a refresh replaces
+    them, because a board that is known-stale is still better than `?` while the refresh
+    runs. Silent on any failure -- the caller is a hook on every `Bash` call.
+    """
+    now = time.time() if now is None else now
+    path = cache_path(repo)
+    document = read_cache(path)
+    document = document if isinstance(document, dict) else {}
+    document["stale_after"] = now + delay
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(document), encoding="utf-8")
+        os.replace(str(tmp), str(path))
+    except OSError:
+        return False
+    return True
+
+
+def latest_is_due(cache, now):
+    """The same question for the published plugin versions, on the long clock.
+
+    A cache written before this split carries `fetched_at` and no `latest_fetched_at`, and
+    that one stamp is when those versions were fetched -- so it is what the age is measured
+    from. Reading a missing stamp as "just now" would freeze the version column for a whole
+    interval on every upgrade, which is the quiet direction to be wrong in.
+    """
+    if isinstance(cache, dict) and not isinstance(cache.get("latest_fetched_at"), (int, float)):
+        return _is_due(cache, "fetched_at", LATEST_REFRESH_AFTER, now)
+    return _is_due(cache, "latest_fetched_at", LATEST_REFRESH_AFTER, now)
+
+
+def _is_due(cache, key, interval, now):
+    if not isinstance(cache, dict):
+        return True
+    stamp = cache.get(key)
+    if not isinstance(stamp, (int, float)):
+        return True
+    return (now - stamp) > interval
 
 
 def cache_path(repo):
@@ -1021,24 +1089,56 @@ def _latest_release(repo):
         return None
 
 
-def refresh(root):
-    """Fill the cache for one managed repository. Runs detached, never on the render path."""
+def refresh(root, now=None):
+    """Fill the cache for one managed repository. Runs detached, never on the render path.
+
+    Two clocks (#515). The board -- open pull requests, open issues, their check rollups --
+    is re-read every time; the version each plugin's source repository publishes is re-read
+    only when its own longer interval has passed, and carried forward from the previous
+    cache in between. Four of the seven forge calls were the second kind, which is why the
+    board's own interval could not be shortened while they shared one.
+
+    A carried-forward value carries its own stamp with it. Stamping it `now` would make an
+    hour-old reading indistinguishable from one just taken, which is the same defect this
+    module spends the rest of its length avoiding.
+    """
+    now = time.time() if now is None else now
     root = Path(root)
     config = repo_config(root)
     repo = config.get("repo")
-    document = {"fetched_at": time.time(), "repo": repo}
+    previous = read_cache(cache_path(repo)) or {}
+    document = {"fetched_at": now, "repo": repo}
     if repo:
         document["prs"] = _gh_count(repo, "pr")
         document["issues"] = _gh_count(repo, "issue")
         document["pr_checks"] = check_rollup_counts(_gh_rollups(repo), document["prs"])
-    latest = {}
-    for record in installed_plugins().values():
-        slug = repo_from_url(record.get("repository"))
-        if slug and slug not in latest:
-            tag = _latest_release(slug)
-            if tag:
-                latest[slug] = tag
-    document["latest"] = latest
+    carried = previous.get("latest")
+    carried = dict(carried) if isinstance(carried, dict) else {}
+    carried_stamp = previous.get("latest_fetched_at")
+    if not isinstance(carried_stamp, (int, float)):
+        carried_stamp = previous.get("fetched_at")
+    if not latest_is_due(previous, now):
+        document["latest"] = carried
+        document["latest_fetched_at"] = carried_stamp
+    else:
+        latest = {}
+        answered = False
+        for record in installed_plugins().values():
+            slug = repo_from_url(record.get("repository"))
+            if slug and slug not in latest:
+                tag = _latest_release(slug)
+                if tag:
+                    latest[slug] = tag
+                    answered = True
+        if answered:
+            document["latest"] = latest
+            document["latest_fetched_at"] = now
+        else:
+            # Asked and got nothing back. A network that answered once and cannot now is
+            # not a plugin with no published version, so the previous reading stays --
+            # under its own old stamp, which is what makes it due again immediately.
+            document["latest"] = carried
+            document["latest_fetched_at"] = carried_stamp
     path = cache_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -1085,7 +1185,7 @@ def gather(payload, root, now=None):
     config = repo_config(root)
     cache = read_cache(cache_path(config.get("repo")))
     board = board_from_cache(cache, now=now)
-    if board["age"] is None or board["age"] > REFRESH_AFTER:
+    if board_is_due(cache, now):
         _fork_refresh(root, config.get("repo"))
     latest = (cache or {}).get("latest") or {}
     loop_name = os.environ.get("OSS_STATUSLINE_PLUGIN", "oss")
