@@ -11,6 +11,7 @@ Every assertion below pairs a must-not-fire with a must-fire, because an asserti
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -43,59 +44,6 @@ def test_a_cache_missing_a_count_is_unknown_for_that_count_alone():
     board = statusline.board_from_cache({"prs": 2, "fetched_at": 0})
     assert board["prs"] == 2
     assert board["issues"] is None
-
-
-# ------------------------------------------------------------- last user message
-
-
-def _user_message(timestamp):
-    return {"type": "user", "timestamp": timestamp, "message": {"role": "user", "content": "hi"}}
-
-
-def test_no_transcript_is_unknown_for_last_user_message_too():
-    user = statusline.last_user_message(None, now=0.0)
-    assert user["state"] == "unknown"
-
-
-def test_scanned_transcript_without_a_user_record_reports_none(tmp_path):
-    """The must-fire control for the arm above: a file that was read and held
-    no user-role record at all is not the same as one this process never read.
-    """
-    path = _transcript(tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}])
-    user = statusline.last_user_message(str(path), now=0.0)
-    assert user["state"] == "none"
-
-
-def test_the_last_user_message_reports_a_genuinely_nonzero_age(tmp_path):
-    """This is the whole point of #504: at render time the age of the last user
-    message cannot be zero the way a naive "last message" age would be, because
-    a render only happens after the assistant has replied to it.
-    """
-    path = _transcript(tmp_path, [_user_message("2026-08-22T10:00:00.000Z")])
-    now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
-    user = statusline.last_user_message(str(path), now=now)
-    assert user["state"] == "measured"
-    assert user["age"] == pytest.approx(240, abs=1)
-
-
-def test_the_last_of_several_user_messages_wins(tmp_path):
-    path = _transcript(
-        tmp_path,
-        [_user_message("2026-08-22T10:00:00.000Z"), _user_message("2026-08-22T10:05:00.000Z")],
-    )
-    now = statusline.parse_timestamp("2026-08-22T10:06:00.000Z")
-    user = statusline.last_user_message(str(path), now=now)
-    assert user["age"] == pytest.approx(60, abs=1)
-
-
-def test_a_truncated_scan_for_last_user_message_reports_unknown_rather_than_none(tmp_path):
-    """Same shape as `next_tick`'s own truncation case: a scan that never reached
-    the top of the file must not report the same thing as a file scanned whole
-    and found empty.
-    """
-    path = _transcript(tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}] * 40)
-    user = statusline.last_user_message(str(path), now=0.0, max_bytes=200)
-    assert user["state"] == "unknown"
 
 
 # ----------------------------------------------------------------------- next tick
@@ -256,21 +204,30 @@ def test_gather_populates_the_render_stamp_and_last_user_age(tmp_path, monkeypat
     (tmp_path / ".oss.json").write_text(
         json.dumps({"repo": "owner/name"}), encoding="utf-8"
     )
-    transcript = _transcript(tmp_path, [_user_message("2026-08-22T10:00:00.000Z")])
+    transcript = _transcript(tmp_path, [_wakeup("2026-08-22T10:00:00.000Z", 600)])
     now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
     payload = {"transcript_path": str(transcript)}
     facts = statusline.gather(payload, str(tmp_path), now=now)
-    assert facts["last"] == "10:04"
-    assert facts["user"]["state"] == "measured"
-    assert facts["user"]["age"] == pytest.approx(240, abs=1)
+    # The local reading of that instant, not "10:04" (#511): the stamp is compared by
+    # the reader against their own clock, so it is rendered in their own zone. Asserted
+    # against the platform's own answer rather than a fixed string, which would pin this
+    # test to the runner that happened to write it.
+    assert facts["last"] == time.strftime("%H:%M", time.localtime(now))
+    assert facts["tick"]["state"] == "armed"
 
 
-def test_gather_reports_the_render_stamp_in_utc():
-    """The stamp is a wall-clock reading of `now`, in UTC -- not the machine's
-    local timezone, which the transcript's own ISO stamps do not carry either.
+def test_gather_reports_the_render_stamp_in_the_local_zone():
+    """A wall-clock reading of `now` in the zone the person reading it lives in (#511).
+
+    This shipped as UTC, reasoning from the transcript's zone-less ISO stamps. That
+    reasoning was about parsing -- `parse_timestamp` hands back epoch seconds, which are
+    unambiguous -- and the field's own purpose is a subtraction against the reader's clock,
+    which UTC makes silently wrong outside one zone. Measured at `last 10:11` on a wall
+    clock reading 12:15. See tests/test_statusline_width_511_512.py for the pair of
+    assertions that distinguishes the two zones where the runner allows it.
     """
     now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
-    assert statusline._render_stamp(now) == "10:04"
+    assert statusline._render_stamp(now) == time.strftime("%H:%M", time.localtime(now))
 
 
 # ------------------------------------------------------------------------- render
@@ -286,7 +243,6 @@ def _facts(**overrides):
         "board": {"state": "measured", "prs": 2, "issues": 18, "age": 30},
         "tick": {"state": "armed", "seconds": 480},
         "last": "23:47",
-        "user": {"state": "measured", "age": 240},
         "plugins": [
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),
             ("supertool", {"state": "behind", "installed": "0.48.0", "latest": "0.49.0"}),
@@ -353,21 +309,17 @@ def test_render_shows_dash_when_no_render_stamp_is_available():
     assert "last ?" in line
 
 
-def test_render_shows_a_genuinely_nonzero_user_age():
-    line = statusline.render(_facts(user={"state": "measured", "age": 240}), ascii_only=True)
-    assert "you 4m" in line
+def test_no_field_reports_how_long_since_the_user_last_spoke():
+    """#513 removed that field rather than fixing it a second time.
 
-
-def test_render_marks_no_user_message_apart_from_unknown():
-    """Same three-state shape as the tick field: `none` (scanned, nothing found)
-    must render differently from `unknown` (never scanned, or scanned but cut
-    off before reaching a user record).
+    It counted tool results as the user speaking, then -- once those were excluded --
+    could still only see the last message the transcript had recorded, which lags the
+    conversation by the length of the turn. `last` already says when the line was
+    rendered, which is the same staleness without a second number to be wrong about.
     """
-    none = statusline.render(_facts(user={"state": "none"}), ascii_only=True)
-    unknown = statusline.render(_facts(user={"state": "unknown"}), ascii_only=True)
-    assert none != unknown
-    assert "you -" in none
-    assert "you ?" in unknown
+    line = statusline.render(_facts(), ascii_only=True)
+    assert "you " not in line
+    assert "last " in line  # the field that replaced it is still there
 
 
 def test_ascii_only_render_survives_a_codepage_that_cannot_encode_the_symbols():
@@ -487,17 +439,26 @@ def test_a_newline_and_escape_in_a_dependency_name_do_not_reach_the_line():
     `claude-` strip -- so a fold applied only after the four-character truncation
     would still miss them.
     """
+    # Not `current`: since #512 the block collapses to a count and names only what is not
+    # current, so a hostile name on a current plugin never reaches the line and this test
+    # would pass without folding anything.
     hostile = "\nFAKE STATUS LINE\x1b[31mX"
-    facts = _facts(plugins=[(hostile, {"state": "current", "installed": "1.0.0"})])
+    facts = _facts(
+        plugins=[(hostile, {"state": "behind", "installed": "1.0.0", "latest": "2.0.0"})]
+    )
     line = statusline.render(facts, ascii_only=True)
     assert "\n" not in line
     assert "\x1b" not in line
 
 
 def test_the_must_fire_control_an_ordinary_dependency_name_still_renders():
-    facts = _facts(plugins=[("claude-jit-context", {"state": "current", "installed": "1.0.0"})])
+    facts = _facts(
+        plugins=[
+            ("claude-jit-context", {"state": "behind", "installed": "1.0.0", "latest": "2.0.0"})
+        ]
+    )
     line = statusline.render(facts, ascii_only=True)
-    assert "jit " in line
+    assert "jit>2.0.0" in line
 
 
 def test_latest_is_asked_of_the_manifest_the_installer_would_read(monkeypatch):
