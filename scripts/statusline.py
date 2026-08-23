@@ -42,6 +42,16 @@ REFRESH_AFTER = 300
 #: lock that outlives a killed refresher would otherwise freeze the counts forever.
 LOCK_STALE_AFTER = 180
 
+#: How far back the release-progress field reads the log. Bounded because this runs once
+#: per message and a repository's history is not: an unbounded `git rev-list` is fine in
+#: this repo at a few hundred commits and is megabytes of output in a large one. A window
+#: that does not reach the previous tag reports the missing half rather than a smaller one.
+RELEASE_WINDOW = 500
+
+#: How many recent releases the typical size is taken over. A release train that changed
+#: pace is described by its recent pace; the whole history would average the change away.
+RELEASE_GAPS = 5
+
 RESET = "\033[0m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
@@ -128,6 +138,14 @@ def board_from_cache(cache, now=None):
     issues = cache.get("issues")
     prs = prs if isinstance(prs, int) else None
     issues = issues if isinstance(issues, int) else None
+    checks = cache.get("pr_checks")
+    if not (
+        isinstance(checks, dict)
+        and all(isinstance(checks.get(key), int) for key in ("green", "red", "running", "unknown"))
+    ):
+        # A cache written before this field existed, or by a refresh whose rollup call did
+        # not answer. Neither is "every pull request is green".
+        checks = None
     fetched = cache.get("fetched_at")
     age = None
     if isinstance(fetched, (int, float)):
@@ -138,7 +156,169 @@ def board_from_cache(cache, now=None):
         state = "partial"
     else:
         state = "measured"
-    return {"state": state, "prs": prs, "issues": issues, "age": age}
+    return {"state": state, "prs": prs, "issues": issues, "checks": checks, "age": age}
+
+
+# ------------------------------------------------------------------ release progress
+
+
+def release_progress(commits, tags_by_hash):
+    """How far into the next release this clone is: commits banked, over the usual size.
+
+    Both halves come from the same two facts -- the log window and where the version tags
+    sit in it -- so they are in the same unit and cannot describe different things. And
+    both are separately absent: a repository with no version tag has no boundary to count
+    from, and one with a single tag has a boundary but no gap to take a size over. Neither
+    renders as `0`, which is a measurement this repository takes seriously enough to name
+    itself after: zero commits since the tag is a real and common state, and it has to stay
+    distinguishable from never having looked.
+
+    `commits` is newest-first, as `git rev-list` prints it. `tags_by_hash` maps a commit to
+    the tag names on it; anything `_version_tuple` cannot parse is not a release boundary
+    (`wip/274-preserved` is a real tag in this repository and shipped nothing).
+
+    The newest release is chosen by version, not by position in the log: a hotfix tagged
+    on an older commit sits further back than a tag it supersedes.
+    """
+    unknown = {"state": "unknown", "since": None, "typical": None}
+    if not commits:
+        return unknown
+    found = []
+    for index, sha in enumerate(commits):
+        for tag in tags_by_hash.get(sha) or []:
+            version = _version_tuple(tag)
+            if version is not None:
+                found.append((version, index))
+    if not found:
+        return unknown
+    found.sort(key=lambda pair: pair[0], reverse=True)
+    since = found[0][1]
+    gaps = []
+    for (_, newer), (_, older) in zip(found, found[1:]):
+        # A non-positive gap means the log order disagrees with the version order -- two
+        # tags on one commit, or a tag cut from a branch. That pair measures nothing, so
+        # it is dropped rather than counted as a release of zero commits.
+        if older > newer:
+            gaps.append(older - newer)
+        if len(gaps) == RELEASE_GAPS:
+            break
+    if not gaps:
+        return {"state": "partial", "since": since, "typical": None}
+    ordered = sorted(gaps)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        typical = ordered[middle]
+    else:
+        typical = int(round((ordered[middle - 1] + ordered[middle]) / 2.0))
+    return {"state": "measured", "since": since, "typical": typical}
+
+
+def git_release_progress(root, window=RELEASE_WINDOW):
+    """``release_progress`` over this clone's own log. Two git calls, no network.
+
+    Local git rather than the forge on purpose: this field must be right on a render that
+    happens once per message, and the cached forge counts beside it are up to
+    ``REFRESH_AFTER`` seconds old. A commit that just landed would otherwise not move the
+    numerator for five minutes -- the one moment somebody is looking at it.
+
+    ``for-each-ref`` rather than ``show-ref`` because an annotated tag's own object hash is
+    not the commit's: ``*objectname`` dereferences it, and is empty for a lightweight tag,
+    so one format string covers both without a second call to tell them apart.
+    """
+    refs = _run(["git", "-C", str(root), "for-each-ref",
+                 "--format=%(objectname) %(*objectname) %(refname:short)", "refs/tags"])
+    log = _run(["git", "-C", str(root), "rev-list", "-n", str(window), "HEAD"])
+    if refs is None or log is None:
+        # Not a git repository, or git could not answer. Nothing was measured, and the
+        # field says so rather than reporting a release with no commits in it.
+        return {"state": "unknown", "since": None, "typical": None}
+    tags = {}
+    for line in refs.splitlines():
+        parts = line.split(" ", 2)
+        if len(parts) != 3:
+            continue
+        direct, dereferenced, name = parts
+        tags.setdefault(dereferenced or direct, []).append(name)
+    return release_progress(log.split(), tags)
+
+
+#: The rollup states GitHub reports that mean the checks passed, and the ones that mean
+#: they have not finished. Everything else -- cancelled, neutral, skipped, timed out, and a
+#: pull request carrying no checks at all -- is none of them, and lands in `unknown` rather
+#: than being folded into green. A cancelled run is not a pass; reading it as one is how a
+#: status line comes to report a board that is fine.
+#: A leg that finished and did not pass, and needs somebody. `TIMED_OUT` and
+#: `ACTION_REQUIRED` are in here rather than in the group below because a leg that ran out
+#: of time is a leg that failed to answer.
+ROLLUP_RED = ("FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE")
+ROLLUP_RUNNING = ("PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED")
+ROLLUP_GREEN = ("SUCCESS",)
+
+
+def rollup_state(legs):
+    """What CI says about one pull request, from its own legs.
+
+    ``red`` if any leg finished without passing, ``running`` if any leg has not finished,
+    ``green`` only if there is at least one leg and every one of them passed. Everything
+    else is ``unknown``: a cancelled, skipped, neutral or stale leg is not a pass and not a
+    pending -- the rule this repository already applies when reading a pull request's
+    checks before a merge -- and a pull request carrying no legs at all has had nothing
+    said about it, which is not the same as being fine.
+
+    Computed here rather than read off GitHub's own `statusCheckRollupState`, for two
+    reasons and the second is the one that matters. The first is that `gh 2.50.0` does not
+    carry that field and answers `Unknown JSON field`, so the whole column read `?` on the
+    machine this was written on. The second is that the mapping above is a decision about
+    what a maintainer needs to see -- that a cancelled leg is not a pass -- and taking it
+    from a precomputed verdict puts it somewhere no test here can reach.
+    """
+    if not isinstance(legs, list) or not legs:
+        return "unknown"
+    seen = set()
+    for leg in legs:
+        if not isinstance(leg, dict):
+            seen.add("unknown")
+            continue
+        status = str(leg.get("status") or "").upper()
+        conclusion = str(leg.get("conclusion") or "").upper()
+        state = str(leg.get("state") or "").upper()
+        if status and status != "COMPLETED":
+            seen.add("running")
+        elif conclusion in ROLLUP_RED or state in ROLLUP_RED:
+            seen.add("red")
+        elif conclusion in ROLLUP_GREEN or state in ROLLUP_GREEN:
+            seen.add("green")
+        elif state in ROLLUP_RUNNING:
+            seen.add("running")
+        else:
+            seen.add("unknown")
+    for verdict in ("red", "running", "unknown"):
+        if verdict in seen:
+            return verdict
+    return "green"
+
+
+def check_rollup_counts(rows, total):
+    """Open pull requests grouped by what CI says, or ``None`` if nothing was read.
+
+    ``rows`` is what ``gh pr list --json number,statusCheckRollupState`` returned, and it
+    is capped by a page limit while ``total`` comes from an exact count. The difference is
+    not zero and it is not green: those are pull requests nobody read, so they land in
+    ``unknown`` and the four groups sum to the total. A row count larger than the total --
+    a stale count against a fresher page -- clamps at zero rather than going negative.
+
+    ``None`` for a reading that did not happen. A dict of four zeros means the forge was
+    asked and answered that there is nothing open, which is a different fact.
+    """
+    if not isinstance(rows, list):
+        return None
+    counts = {"green": 0, "red": 0, "running": 0, "unknown": 0}
+    for row in rows:
+        legs = row.get("statusCheckRollup") if isinstance(row, dict) else None
+        counts[rollup_state(legs)] += 1
+    if isinstance(total, int):
+        counts["unknown"] += max(0, total - len(rows))
+    return counts
 
 
 def cache_dir():
@@ -335,13 +515,27 @@ def _render_stamp(now):
 
 def _symbols(ascii_only):
     if ascii_only:
-        return {"sep": " | ", "dot": " . ", "current": "", "behind": ">", "ahead": "+"}
+        return {
+            "sep": " | ",
+            "dot": " . ",
+            "current": "",
+            "behind": ">",
+            "ahead": "+",
+            "ok": "ok",
+            "bad": "x",
+            "run": "...",
+            "unk": "?",
+        }
     return {
         "sep": " | ",
         "dot": " · ",
         "current": " ✓",
         "behind": " ⇡",
         "ahead": " ↑",
+        "ok": "✓",
+        "bad": "✗",
+        "run": "⋯",
+        "unk": "?",
     }
 
 
@@ -398,13 +592,62 @@ def _user_field(user):
     return "you ?"
 
 
-def _board_field(board, symbols):
+def _board_field(board, symbols, color=False):
+    """`4pr 2ok 1x 1... 0? . 23is` -- how many are open, and what CI says about each.
+
+    Lowercase because the fields either side of it are, and a status line that shouts one
+    field trains the eye to read that one first regardless of what it says.
+
+    **Every group renders, including the ones at zero.** A group that disappears when empty
+    makes the reader subtract to find what is missing, and `0x` -- nothing red -- and `0...`
+    -- nothing on the way -- are two of the more useful things this line can say. The one
+    thing that does collapse is a reading that never happened: rollups nobody could fetch
+    render as a single `?`, never as four zeros.
+    """
     prs = board.get("prs")
     issues = board.get("issues")
-    return "{}PR{}{}IS".format(
+    checks = board.get("checks")
+    if isinstance(checks, dict):
+        groups = " ".join(
+            _group(checks.get(key), symbols[symbol], shade, color)
+            for key, symbol, shade in (
+                ("green", "ok", GREEN),
+                ("red", "bad", RED),
+                ("running", "run", YELLOW),
+                ("unknown", "unk", DIM),
+            )
+        )
+    else:
+        groups = symbols["unk"]
+    return "{}pr {}{}{}is".format(
         "?" if prs is None else prs,
+        groups,
         symbols["dot"],
         "?" if issues is None else issues,
+    )
+
+
+def _group(count, symbol, shade, color):
+    """One group. A zero is dimmed rather than coloured: it is news, not an alarm."""
+    text = "{}{}".format("?" if not isinstance(count, int) else count, symbol)
+    if not color:
+        return text
+    return (shade if count else DIM) + text + RESET
+
+
+def _release_field(progress):
+    """`rel 4/17` -- banked since the last release, over what a release here usually costs.
+
+    Each half carries its own `?`, because they fail separately: a clone with one tag knows
+    exactly how much is banked and nothing about the usual size, and `rel 4/?` says that
+    where a single `?` would throw away the half that was measured.
+    """
+    progress = progress or {}
+    since = progress.get("since")
+    typical = progress.get("typical")
+    return "rel {}/{}".format(
+        "?" if not isinstance(since, int) else since,
+        "?" if not isinstance(typical, int) else typical,
     )
 
 
@@ -512,18 +755,35 @@ def render(facts, ascii_only=False, color=False):
 
     repo_name = facts.get("repo_name")
     repo_name = _one_line(str(repo_name)) if repo_name else "?"
-    # `branch` is not folded here: git itself refuses a ref name carrying a
-    # newline or an ESC (`git check-ref-format --branch` exits non-zero for
-    # both), so the value this function ever receives cannot carry them --
-    # confirmed in tests/test_statusline_479.py rather than assumed (#493).
-    where = [repo_name, facts.get("branch") or "?"]
+    # The branch only when it is not the declared default (#509): in the clone that field
+    # said `main` on every render, and this loop works in worktrees, so it cost width in
+    # the one place it carried nothing and was identical in the place it carries news.
+    # Silence here means "measured, and it is the default" -- so a branch git could not
+    # report still renders `?`, and a config declaring no default has nothing to compare
+    # against and renders the branch as before.
+    #
+    # Folded, which #493 deliberately declined to do here on the measured grounds that
+    # `git check-ref-format --branch` refuses a newline and an ESC, so the value cannot
+    # carry them. That measurement stands and is still asserted. The fold is kept anyway
+    # for a reason that measurement does not cover: the comparison below is what decides
+    # whether this field renders at all, and it compares `branch` against a value read out
+    # of `.oss.json`, which git never vetted. Folding one side and not the other would
+    # make two strings that differ only in a control character compare unequal and render
+    # a branch that is the default. Both sides through the same funnel, and the property
+    # test that treats every string-valued fact as untrusted then needs no exception here.
+    branch = _one_line(facts["branch"]) if facts.get("branch") else "?"
+    default = _one_line(facts["default_branch"]) if facts.get("default_branch") else None
+    where = [repo_name]
+    if default is None or branch != default:
+        where.append(branch)
     if facts.get("version"):
         # This repo's own tracked manifest -- written by a contributor, not fetched
         # over the network, but still text this function did not produce itself.
         where.append("v" + _one_line(str(facts["version"])))
     blocks.append(" ".join(where))
 
-    blocks.append(_board_field(facts.get("board") or {}, symbols))
+    blocks.append(_board_field(facts.get("board") or {}, symbols, color))
+    blocks.append(_release_field(facts.get("release")))
     blocks.append(_tick_field(facts.get("tick")))
     blocks.append(_last_field(facts.get("last")))
     blocks.append(_user_field(facts.get("user")))
@@ -712,6 +972,43 @@ def _gh_count(repo, kind):
         return None
 
 
+#: How many open pull requests one rollup page carries. Anything past it is counted as
+#: unknown rather than dropped, so the groups still sum to the exact count beside them.
+ROLLUP_PAGE = 100
+
+
+def _gh_rollups(repo):
+    """One page of open pull requests with what CI says about each, or ``None``.
+
+    A separate call from the counts above because the search API does not carry a check
+    rollup. It is bounded, and the bound is visible in the output rather than silent: the
+    remainder lands in the `?` group, which is what a page limit actually produced.
+    """
+    out = _run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--limit",
+            str(ROLLUP_PAGE),
+            "--json",
+            "number,statusCheckRollup",
+        ],
+        timeout=25,
+    )
+    if not out:
+        return None
+    try:
+        rows = json.loads(out)
+    except ValueError:
+        return None
+    return rows if isinstance(rows, list) else None
+
+
 def _latest_release(repo):
     """The version a plugin's own manifest declares on its default branch.
 
@@ -758,6 +1055,7 @@ def refresh(root):
     if repo:
         document["prs"] = _gh_count(repo, "pr")
         document["issues"] = _gh_count(repo, "issue")
+        document["pr_checks"] = check_rollup_counts(_gh_rollups(repo), document["prs"])
     latest = {}
     for record in installed_plugins().values():
         slug = repo_from_url(record.get("repository"))
@@ -833,8 +1131,10 @@ def gather(payload, root, now=None):
         "percent": (payload.get("context_window") or {}).get("used_percentage"),
         "repo_name": Path(root).name,
         "branch": branch_name(root),
+        "default_branch": config.get("default_branch"),
         "version": repo_version(root),
         "board": board,
+        "release": git_release_progress(root),
         "tick": tick,
         "last": _render_stamp(now),
         "user": user,
