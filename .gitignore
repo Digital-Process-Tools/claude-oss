@@ -18,6 +18,11 @@ __pycache__/
 # tracked -- CI checks out the repo and nothing else, so the assembler has to be there.
 # Here they would be a second copy of files this repo already carries under scripts/,
 # swept by the same guards and free to drift from the originals (#479).
+#
+# Because of that, this repo's own .claude/settings.json must NOT use scaffold's usual
+# statusLine default of .oss/statusline.py -- that path is gitignored here, so a fresh
+# clone would get a statusLine pointing at a file nobody checked in (#496). This repo's
+# own settings.json is re-pointed at scripts/statusline.py instead, which is tracked.
 /.oss/
 
 # Machine-local jit-context discovery logs: one checkout's session history,
