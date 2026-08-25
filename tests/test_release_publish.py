@@ -750,6 +750,40 @@ def test_execute_never_reaches_gh_with_a_body_over_the_limit(tmp_path):
     assert not record.exists()
 
 
+def test_the_measured_length_is_what_gh_will_actually_receive(tmp_path):
+    """`main` writes `section["body"] + "\n"` to the notes file -- one character more
+    than `section["body"]` itself -- and that file, not the bare body, is what
+    `--notes-file` hands to `gh`. A body of exactly `GITHUB_NOTES_LIMIT` characters
+    therefore produces a file one character *over* the limit, and the check has to
+    measure what is written, not what was extracted, or this boundary reintroduces
+    the exact failure #483 exists to prevent.
+    """
+    exact = "x" * release_publish.GITHUB_NOTES_LIMIT
+    changelog = "# Changelog\n\n## [9.9.9] - 2026-08-22\n\n" + exact + "\n"
+    section = release_publish.notes_section(changelog, "9.9.9")
+    assert section["notes"] == "found"
+    assert len(section["body"]) == release_publish.GITHUB_NOTES_LIMIT
+    repo = _repo(tmp_path / "repo", changelog=changelog, create_release=True, draft=False, latest=True)
+    code = release_publish.main(
+        [
+            "--repo",
+            str(repo),
+            "--version",
+            "9.9.9",
+            "--tag",
+            "v9.9.9",
+            "--notes-out",
+            str(tmp_path / "notes.md"),
+            "--gh",
+            "gh",
+            "--json",
+        ]
+    )
+    written = (tmp_path / "notes.md").read_text(encoding="utf-8")
+    assert len(written) == release_publish.GITHUB_NOTES_LIMIT + 1
+    assert code == release_publish.EXIT_COULD_NOT_RUN
+
+
 def test_a_body_under_the_limit_still_publishes_exactly_as_before(tmp_path):
     """The must-fire case above needs its must-not-fire partner at the CLI level too:
     an ordinary changelog section is unaffected by this change.

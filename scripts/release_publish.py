@@ -14,8 +14,10 @@ maintainer believing something shipped that did not:
   skipped                  policy says this repo tags without publishing. A
                            decision, named out loud, never silence
   could-not-run            the notes could not be extracted, `gh` is not on PATH,
-  could-not-create         the call failed, or `.oss.json` is not a JSON object at
-                           all and so states no policy. Not a release and not a skip
+  could-not-create         the notes are over GitHub's release-body length limit
+                           (#483), the call failed, or `.oss.json` is not a JSON
+                           object at all and so states no policy. Not a release and
+                           not a skip
 
 Exit codes, because a shell reads those and never reads prose:
 
@@ -514,8 +516,15 @@ def main(argv=None):
         handle, name = tempfile.mkstemp(prefix="oss-release-notes-", suffix=".md")
         os.close(handle)
         notes_path = Path(name)
+    # The exact string handed to `gh --notes-file` -- one character longer than
+    # `section["body"]` itself, for the trailing newline. Measured here, after the
+    # newline is appended and before the write, so the length check below sees what
+    # the file actually holds rather than the bare extracted body: a body of exactly
+    # `GITHUB_NOTES_LIMIT` characters would otherwise pass a check against `len(body)`
+    # while the file on disk -- and the request `gh` sends -- is one character over.
+    notes_text = section["body"] + "\n"
     try:
-        notes_path.write_text(section["body"] + "\n", encoding="utf-8")
+        notes_path.write_text(notes_text, encoding="utf-8")
     except OSError as exc:
         return _emit(
             _could_not_run(
@@ -536,7 +545,7 @@ def main(argv=None):
         tag=args.tag,
         notes_path=str(notes_path),
         gh=gh,
-        notes_len=len(section["body"]),
+        notes_len=len(notes_text),
     )
     if planned["state"] != STATE_CREATE or not args.execute:
         return _emit(planned, args.as_json)
