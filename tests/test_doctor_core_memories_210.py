@@ -132,6 +132,68 @@ def test_present_and_empty_is_distinct_from_absent(tmp_path):
     assert "no dated entries" in message.lower() or "holds nothing" in message.lower(), message
 
 
+def test_bullet_style_dated_entries_are_counted_too(tmp_path):
+    """The self-review finding: a real core-memories.md in the wild uses
+    `- YYYY-MM-DD: text` bullets, not `## YYYY-MM-DD` headers -- the ONLY shape
+    the first version of this check recognised. That file (11 real entries)
+    would have reported zero and printed "created and never filled" about a
+    repo that is actively and substantially learning.
+    """
+    store = tmp_path / ".remember"
+    store.mkdir()
+    (store / "core-memories.md").write_text(
+        "# Core Memories\n\n"
+        "Not a changelog. The moments that changed how I work here.\n\n"
+        "- 2026-03-06: first thing that happened.\n"
+        "- 2026-03-07: second thing that happened.\n"
+        "- 2026-03-08: third thing that happened.\n",
+        encoding="utf-8",
+    )
+    doctor_check_memory.check_core_memories(tmp_path)
+    state, message = _only()
+    assert state == "OK", message
+    assert "3" in message, message
+    assert "2026-03-08" in message, message
+
+
+def test_undated_content_is_ok_and_says_it_could_not_count_rather_than_warning(tmp_path):
+    """A third real shape: undated bold-paragraph entries, no isolated date
+    marker at all. Content is genuinely present -- this must be OK, honestly
+    saying entries could not be counted, never the WARN reserved for a file
+    that holds nothing but its own heading.
+    """
+    store = tmp_path / ".remember"
+    store.mkdir()
+    (store / "core-memories.md").write_text(
+        "# Core Memories\n\n"
+        '**"You are supposed to be autonomous."** -- Florian, after I asked '
+        "twice.\n\n"
+        "**Another correction, no date attached.**\n",
+        encoding="utf-8",
+    )
+    doctor_check_memory.check_core_memories(tmp_path)
+    state, message = _only()
+    assert state == "OK", message
+    assert "content present" in message.lower(), message
+    assert "no `## yyyy-mm-dd` or `- yyyy-mm-dd:` markers were found" in message.lower(), message
+
+
+def test_check_memory_and_check_core_memories_agree_on_a_wholly_absent_store(tmp_path):
+    """The coupling `check_core_memories` relies on: it reports OK for a wholly
+    absent store on the strength of `check_memory` already warning about it in
+    the same doctor run. Guarded here by calling both, so a future change to
+    `check_memory`'s absent-store handling that breaks the assumption fails
+    this test rather than silently losing the "nothing configured" signal.
+    """
+    doctor_check_memory.check_memory(tmp_path)
+    memory_state, memory_message = _only()
+    doctor.FINDINGS.clear()
+    doctor_check_memory.check_core_memories(tmp_path)
+    core_state, core_message = _only()
+    assert memory_state == "WARN", memory_message
+    assert core_state == "OK", core_message
+
+
 def test_present_with_content_is_ok_and_reports_count_and_newest_date(tmp_path):
     store = tmp_path / ".remember"
     store.mkdir()

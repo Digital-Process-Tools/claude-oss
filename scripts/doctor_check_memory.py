@@ -29,7 +29,23 @@ MEMORY_CONFIG_DIR = ".claude/remember"
 #: #210. Separate from identity.md on purpose -- see `check_core_memories` below.
 CORE_MEMORIES_NAME = "core-memories.md"
 
-_ENTRY_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\b", re.MULTILINE)
+#: A self-review finding: the first version of this matched only `## YYYY-MM-DD`
+#: headers, which is this repository's OWN convention and not a format anybody
+#: else was ever asked to follow. Checked against three real core-memories.md
+#: files in the wild: one uses `## YYYY-MM-DD -- title` headers (this repo's
+#: own), one uses `- YYYY-MM-DD: text` bullets, and one uses undated bold
+#: paragraphs with no isolated date marker at all. The header-only pattern
+#: would have found zero entries in the second file (11 real entries) and
+#: reported "created and never filled" about a repo that is actively learning
+#: -- the exact false signal this check exists to prevent. Widened to match
+#: both observed date-marker shapes; a file using neither still reports
+#: honestly (see `check_core_memories`) rather than claiming a count it
+#: cannot support.
+_ENTRY_HEADER_RE = re.compile(r"^(?:##|-)\s+(\d{4}-\d{2}-\d{2})\b", re.MULTILINE)
+
+#: Markdown heading lines, to tell "nothing here but a title" from "content
+#: below the title" without assuming any particular entry format.
+_HEADING_ONLY_RE = re.compile(r"^#{1,6}\s*.*$")
 
 
 def memory_layout(project_dir):
@@ -247,11 +263,32 @@ def check_memory(project_dir):
 
 def _core_memory_summary(text):
     """(entry_count, newest_date) from `core-memories.md`'s own structure -- the
-    `## YYYY-MM-DD` headers it is written in -- and never the entries' own words.
-    `(0, None)` for no dated headers, including an empty file.
+    dated markers it is written in (`## YYYY-MM-DD` headers or `- YYYY-MM-DD:`
+    bullets, see `_ENTRY_HEADER_RE`) -- and never the entries' own words.
+    `(0, None)` when no dated markers were found, which callers must NOT read
+    as "no entries": see `_has_content` for that question instead.
     """
     dates = _ENTRY_HEADER_RE.findall(text)
     return len(dates), (max(dates) if dates else None)
+
+
+def _has_content(text):
+    """Is there anything here besides a markdown title? True/False, structural
+    only -- no assumption about entry format, because #210's own review round
+    found real core-memories.md files that use no isolated date marker at all
+    (undated bold-paragraph entries). A heading-only file (just `# Core
+    Memories`, or nothing) is the one state that gets a WARN; anything else
+    present is content, whether or not `_core_memory_summary` can parse dates
+    out of it.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _HEADING_ONLY_RE.match(stripped):
+            continue
+        return True
+    return False
 
 
 def check_core_memories(project_dir):
@@ -334,12 +371,24 @@ def check_core_memories(project_dir):
             ),
         )
         return
-    count, newest = _core_memory_summary(text)
-    if count == 0:
+    if not _has_content(text):
         doctor.report(
             "WARN",
-            "{} exists and holds no dated entries -- created and never "
+            "{} exists and holds nothing but a heading -- created and never "
             "filled.".format(_display(project_dir, path)),
+        )
+        return
+    count, newest = _core_memory_summary(text)
+    if count == 0:
+        # Content is there, but not in either dated-marker shape this check
+        # recognises (`## YYYY-MM-DD` headers or `- YYYY-MM-DD:` bullets) --
+        # #210's own review round found a real core-memories.md using neither.
+        # Report the presence honestly rather than inventing a count.
+        doctor.report(
+            "OK",
+            "core memories: content present in {}, but no `## YYYY-MM-DD` or "
+            "`- YYYY-MM-DD:` markers were found to count entries or find the "
+            "newest one".format(_display(project_dir, path)),
         )
         return
     doctor.report(

@@ -2100,6 +2100,9 @@ JIT_INDEX = "00-index.tsv"
 # MEMORY_DIR, MEMORY_CONFIG_DIR, memory_layout, _display, _listdir,
 # _identity_names and check_memory moved to scripts/doctor_check_memory.py
 # (#497); see that module for the check and its private helpers, unchanged.
+# CORE_MEMORIES_NAME, _core_memory_summary and check_core_memories are NOT a
+# relocation -- they are new code, added by #210, living in the same module
+# because they share `memory_layout`/`_listdir` with `check_memory`.
 from doctor_check_memory import (
     MEMORY_DIR,
     MEMORY_CONFIG_DIR,
