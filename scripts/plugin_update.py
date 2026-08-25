@@ -101,6 +101,37 @@ def read_receipt(path=None):
         return ReceiptUnreadable(str(exc))
 
 
+def _confirm_absent(path):
+    """True / False / None for "is `path` genuinely not there", after `iterdir()`
+    already raised `FileNotFoundError` on it (#548, the local copy of the idea in
+    `scripts/doctor.py`'s `_absence_confirmed` -- see `opt_out`'s own docstring for
+    why this is a separate small copy rather than a shared import this round).
+
+    True  -- confirmed absent: the deepest ancestor this platform can still list
+             does not contain the next path component down.
+    False -- the name IS in its parent's own listing, so whatever stopped
+             `iterdir()` from reaching it is not "it does not exist".
+    None  -- nothing here could confirm either way (an unreadable ancestor, a
+             parent that is not a directory at all, or the walk ran out of
+             ancestors) -- the caller must not claim absence on this alone.
+    """
+    try:
+        current = os.path.abspath(os.fspath(path))
+    except (OSError, ValueError, TypeError):
+        return None
+    parent = os.path.dirname(current)
+    name = os.path.basename(current)
+    if not name or parent == current or not parent:
+        return None
+    try:
+        entries = os.listdir(parent)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError:
+        return None
+    return name not in entries
+
+
 def opt_out(root=None, env=None):
     """Is auto-update switched off, and by what? ``(status, where)``.
 
@@ -134,6 +165,19 @@ def opt_out(root=None, env=None):
     also swallows most `OSError`s but not `PermissionError`, so a locked ancestor
     directory would otherwise crash this walk outright rather than reporting "unknown";
     `iterdir()` is caught explicitly here for that reason.
+
+    `FileNotFoundError` out of `iterdir()` is not, on its own, "nothing is here" (#548).
+    CLAUDE.md's own #380 record: Windows folds an over-`MAX_PATH` name onto that exact
+    exception, indistinguishable from a candidate that genuinely does not exist -- so
+    reading the type alone as the verdict would silently skip PAST a directory that
+    declares an opt-out this walk could simply not read, and answer "on" about a repo
+    that turned auto-update off. `_confirm_absent` below asks the platform a question
+    it cannot fold: whether the candidate's own parent still lists it. See
+    `scripts/doctor.py`'s `_dir_state`/`_absence_confirmed` for the same idea against a
+    directory-or-not question rather than this walk's "declares nothing, or unlookable"
+    one -- not shared as a module here, deliberately: this file and doctor.py are edited
+    by different lanes this round, and the two call sites have different callers, return
+    shapes and existing tests.
     """
     env = os.environ if env is None else env
     if env.get(OPT_OUT_ENV):
@@ -156,8 +200,10 @@ def opt_out(root=None, env=None):
                 for entry in candidate.iterdir()
                 if entry.name in (".oss.json", ".oss.local.json")
             }
-        except FileNotFoundError:
-            continue
+        except FileNotFoundError as exc:
+            if _confirm_absent(candidate) is True:
+                continue
+            return "unknown", "could not list {}: {}".format(candidate, exc)
         except OSError as exc:
             return "unknown", "could not list {}: {}".format(candidate, exc)
         if not present:

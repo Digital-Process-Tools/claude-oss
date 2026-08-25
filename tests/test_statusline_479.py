@@ -9,6 +9,8 @@ Every assertion below pairs a must-not-fire with a must-fire, because an asserti
 `?` does not appear also passes against a renderer that produces nothing at all.
 """
 
+import ast
+import inspect
 import json
 import os
 import sys
@@ -322,6 +324,12 @@ def _facts(**overrides):
         "percent": 42,
         "repo_name": "claude-oss",
         "branch": "main",
+        # #547 instance 2: `render()` reads both `default_branch` (`:827`) and
+        # `release` (`:838`) and this fixture carried neither, so `_leaf_paths`
+        # -- itself derived from `_facts()` -- could never walk into them. Kept
+        # different from `branch` so the "not the default" fold at `:826-830`
+        # has something real to compare against.
+        "default_branch": "main-upstream",
         "version": "0.10.0",
         "board": {
             "state": "measured",
@@ -330,6 +338,7 @@ def _facts(**overrides):
             "age": 30,
             "checks": {"green": 1, "red": 0, "running": 0, "unknown": 0},
         },
+        "release": {"since": 4, "typical": 17},
         "tick": {"state": "armed", "seconds": 480},
         "last": "23:47",
         "plugins": [
@@ -761,3 +770,100 @@ def test_unparseable_settings_are_declined_rather_than_replaced(tmp_path):
     assert entry["action"] == "decline"
     scaffold.apply_settings(str(tmp_path))
     assert settings.read_text(encoding="utf-8") == "{not json"
+
+
+# --------------------------------------- render() reads vs _facts()'s coverage (#547)
+
+
+def _string_from_slice(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _render_reads_from_tree(tree):
+    """Every top-level key `facts["X"]` or `facts.get("X")` names, anywhere in the
+    given AST -- used both against the real `render()` and against a synthetic
+    snippet in the must-fire control below.
+    """
+    keys = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "facts"
+        ):
+            key = _string_from_slice(node.slice)
+            if key:
+                keys.add(key)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "facts"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            keys.add(node.args[0].value)
+    return keys
+
+
+def _render_top_level_reads():
+    """Parsed straight out of `statusline.render`'s own source (#547 instance 2),
+    not kept as a second list beside `_facts()` -- a key `render()` starts reading
+    and this fixture omits is then a failure here rather than a silent absence,
+    which is the coverage gap #535's own fix left in place: `_facts()` derived
+    `_leaf_paths` from ITSELF, not from what `render()` actually reads.
+    """
+    source = inspect.getsource(statusline.render)
+    return _render_reads_from_tree(ast.parse(source))
+
+
+def test_the_reader_itself_catches_a_read_it_has_never_seen_before():
+    """The must-fire control for `_render_reads_from_tree`, decoupled from the
+    real `render()`: a synthetic function reading a brand-new key must still be
+    picked up, so the derivation is not merely reporting what happens to be in
+    `render()` today by coincidence of how this parser was written.
+    """
+    synthetic = (
+        "def render(facts, ascii_only=False, color=False):\n"
+        "    x = facts.get(\"totally_new_key_nobody_wrote_down\")\n"
+        "    y = facts[\"another_brand_new_key\"]\n"
+    )
+    keys = _render_reads_from_tree(ast.parse(synthetic))
+    assert "totally_new_key_nobody_wrote_down" in keys
+    assert "another_brand_new_key" in keys
+
+
+def test_facts_fixture_carries_every_top_level_key_render_reads():
+    """The real assertion (#547 instance 2): every key `render()` reads must be a
+    key `_facts()` carries. Before this fix, `default_branch` and `release` were
+    read by `render()` (`:827`, `:838`) and absent from `_facts()` -- two whole
+    top-level keys `_leaf_paths` could never walk into, silently narrowing the
+    hostile-leaf property test above to 23 of the 26 reachable leaves.
+    """
+    reads = _render_top_level_reads()
+    missing = reads - set(_facts())
+    assert not missing, sorted(missing)
+
+
+def test_default_branch_and_release_are_reachable_by_the_leaf_walker():
+    """Exercised, not just counted (per the issue): with both keys present, the
+    walker must actually reach into them, and the hostile-leaf property must
+    still hold for both -- `default_branch` is folded (`:827`) and `release`'s
+    leaves are `isinstance(..., int)`-coerced (`_release_field`), so neither
+    should crash or leak control characters into the rendered line.
+    """
+    base = _facts()
+    assert ("default_branch",) in list(_leaf_paths(base))
+    assert ("release", "since") in list(_leaf_paths(base))
+    assert ("release", "typical") in list(_leaf_paths(base))
+
+    hostile = "\nFAKE STATUS LINE\x1b[31mX"
+    for path in (("default_branch",), ("release", "since"), ("release", "typical")):
+        facts = _with_leaf(base, path, hostile)
+        line = statusline.render(facts, ascii_only=True)
+        assert "\n" not in line, path
+        assert "\x1b" not in line, path

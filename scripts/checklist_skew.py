@@ -45,25 +45,27 @@ because, once, a human answered that second question by hand: diffing the
 auditor's own definition, `agents/auditor.md`, and the ranking table
 `skills/manager/SKILL.md` owns, and finding the ranking rows byte-identical.
 
-So when the state is `differs`, this module compares the same three files --
-the ones gate 3's own spawn actually reads or cross-references, fixed to what
-*this gate* depends on rather than to what one release happened to change --
-byte-for-byte between the two trees, and reports each as `identical`,
-`differs`, or `could-not-tell` (a file present on one side only, or an
-unreadable one, is not silently skipped).
+So when the state is `differs`, this module compares those three files, PLUS
+every `agents/*.md` path one of the three names in its own text -- e.g.
+`agents/auditor.md` delegating its platform band to `agents/developer.md`
+rather than reading it (#547) -- byte-for-byte between the two trees, and
+reports each as `identical`, `differs`, or `could-not-tell` (a file present on
+one side only, or an unreadable one, is not silently skipped).
 
 **This is not a semantic verdict, and callers must not read it as one.** A
 byte-identical ranking table is evidence that nothing in it moved; it is not
 proof that nothing *relevant* moved elsewhere in the two trees -- prose above
 or below the table, a file this gate does not name, a change to how the
-auditor is dispatched. The set of three files is stable because it is tied to
-what gate 3 itself consumes, not because it is guaranteed to be the complete
-set of files a given skew could have touched.
+auditor is dispatched. The base three are stable because they are what gate 3
+itself reads directly; the derived files on top of them are only as complete
+as what those three name in their own prose, which #547 is the record of once
+falling short of what they actually delegate to.
 """
 
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -75,15 +77,26 @@ EXIT_OK = 0
 
 MANIFEST_REL = (".claude-plugin", "plugin.json")
 
-#: The files gate 3's own release-auditor spawn actually reads or
-#: cross-references: its own definition, the per-PR auditor definition it may
-#: reference, and the ranking table the manager skill owns. Fixed to what
-#: *this gate* depends on -- not a copy of any one release's diff.
+#: The files gate 3's own release-auditor spawn reads directly: its own
+#: definition, the per-PR auditor definition it may reference, and the ranking
+#: table the manager skill owns. Not the full coverage set on its own -- see
+#: `_derive_definition_files` below, which is what `compute()` actually
+#: compares. #547: `agents/auditor.md` delegates its whole platform band to
+#: `agents/developer.md` by naming it in prose rather than reading it, so a
+#: fixed list beside this one went stale the moment that delegation was
+#: written, silently, with nothing to say the coverage had narrowed.
 DEFINITION_FILES = (
     "agents/release-auditor.md",
     "agents/auditor.md",
     "skills/manager/SKILL.md",
 )
+
+#: Matches a bare `agents/<name>.md` path the way these files actually write
+#: one -- inside a backtick span, often prefixed `${CLAUDE_PLUGIN_ROOT}/`. Not
+#: anchored to the prefix: the goal is "this text names a file", not "this
+#: text names it in one specific way", because the second is exactly the kind
+#: of narrow match a later rewording slips past.
+_AGENT_FILE_RE = re.compile(r"agents/[A-Za-z0-9_.-]+\.md")
 
 DEF_IDENTICAL = "identical"
 DEF_DIFFERS = "differs"
@@ -127,13 +140,52 @@ def _read_version(manifest_path):
     return _one_line(version, limit=80), None
 
 
+def _referenced_agent_files(text):
+    return sorted(set(_AGENT_FILE_RE.findall(text)))
+
+
+def _derive_definition_files(plugin_root, repo):
+    """`DEFINITION_FILES` plus every `agents/*.md` path one of those files
+    names in its own text (#547) -- the mechanism `agents/auditor.md` uses to
+    delegate its platform band to `agents/developer.md` instead of reading it
+    directly. The coverage set is derived from what the gate's own definitions
+    actually reference, so a new delegation reaches this comparison the moment
+    it is written rather than waiting for someone to notice the list beside it
+    went stale.
+
+    Reads BOTH trees for each base file and unions what each one references --
+    not just whichever resolves first (self-review finding: when the two
+    copies differ, which is exactly the `differs` state this function only
+    runs under, a reference the OTHER copy names would otherwise be silently
+    unseen -- the same "coverage set narrower than what it depends on" shape
+    this function exists to close, one level up). A base file unreadable on
+    BOTH sides contributes nothing, same as before this derivation existed;
+    that file's own row is still `could-not-tell` via `_compare_definitions`,
+    so nothing is silently dropped, only not derived from.
+    """
+    found = set()
+    for rel in DEFINITION_FILES:
+        for root in (repo, plugin_root):
+            path = root.joinpath(*rel.split("/"))
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            found.update(_referenced_agent_files(text))
+    ordered = list(DEFINITION_FILES)
+    for rel in sorted(found):
+        if rel not in ordered:
+            ordered.append(rel)
+    return tuple(ordered)
+
+
 def _compare_definitions(plugin_root, repo):
-    """Per-file receipt over `DEFINITION_FILES`. Never a relevance verdict --
-    see the module docstring's `## definitions` section for what this is and
-    is not evidence of.
+    """Per-file receipt over `_derive_definition_files(plugin_root, repo)`.
+    Never a relevance verdict -- see the module docstring's `## definitions`
+    section for what this is and is not evidence of.
     """
     rows = []
-    for rel in DEFINITION_FILES:
+    for rel in _derive_definition_files(plugin_root, repo):
         installed_path = plugin_root.joinpath(*rel.split("/"))
         repo_path_ = repo.joinpath(*rel.split("/"))
         try:
