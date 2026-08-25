@@ -33,6 +33,52 @@ LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 MARKER = "ASK_CONSUMER"
 
 
+def _home_env(home):
+    """An env mapping that redirects `os.path.expanduser("~")` to `home`,
+    verified rather than assumed (#557).
+
+    `HOME` alone only redirects `expanduser` on POSIX: CPython's `ntpath.
+    expanduser` (the implementation Windows uses) never consults `HOME` at
+    all -- it reads `USERPROFILE` first and `HOMEDRIVE`+`HOMEPATH` second,
+    falling through to the real, unredirected profile when neither of those
+    is overridden. The pre-fix fixture set only `HOME`, so on the Windows
+    runner every shape silently resolved against the real profile instead
+    of the fixture's `tmp_path` -- which is why CI's own stderr named that
+    real path rather than the fixture's. Setting all three here is the
+    fix; verifying it actually took, below, is what stops this from being
+    the same unverified assumption one env var over.
+    """
+    env = dict(os.environ)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    env["HOMEDRIVE"] = ""
+    env["HOMEPATH"] = str(home)
+    return env
+
+
+def _verify_home_redirect(env, home):
+    """Attempt the exact resolution the code under test performs, rather than
+    assuming the env override took. Returns None when it matches, or a
+    skip reason naming what did not take.
+    """
+    done = subprocess.run(
+        [sys.executable, "-c", "import os,sys; sys.stdout.write(os.path.expanduser('~'))"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        universal_newlines=True,
+    )
+    resolved = done.stdout
+    expected = str(home)
+    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(os.path.normpath(expected)):
+        return (
+            "os.path.expanduser('~') resolved to %r instead of the fixture's "
+            "%r on this platform (python %s) -- the HOME/USERPROFILE redirect "
+            "did not take, so this shape is untested here" % (resolved, expected, sys.version.split()[0])
+        )
+    return None
+
+
 def _extract_heredoc(marker):
     launcher = LAUNCHER.read_text(encoding="utf-8")
     opening = "<<'" + marker + "'"
@@ -83,8 +129,10 @@ def _run_ask_consumer(tmp_path, content):
     )
     script = tmp_path / "ask_consumer.py"
     script.write_text(_extract_heredoc(MARKER), encoding="utf-8")
-    env = dict(os.environ)
-    env["HOME"] = str(home)
+    env = _home_env(home)
+    skip_reason = _verify_home_redirect(env, home)
+    if skip_reason:
+        pytest.skip(skip_reason)
     done = subprocess.run(
         [sys.executable, str(script), "some-watch-name"],
         stdout=subprocess.PIPE,
@@ -138,8 +186,10 @@ def _run_find_consumer(tmp_path, content):
     )
     script = tmp_path / "find_consumer.py"
     script.write_text(_extract_heredoc(FIND_MARKER), encoding="utf-8")
-    env = dict(os.environ)
-    env["HOME"] = str(home)
+    env = _home_env(home)
+    skip_reason = _verify_home_redirect(env, home)
+    if skip_reason:
+        pytest.skip(skip_reason)
     return subprocess.run(
         [sys.executable, str(script)],
         stdout=subprocess.PIPE,
