@@ -76,21 +76,31 @@ def check_latest_skew(project_dir, config, now=None):
         return
     repo = config["repo"]
     path = statusline.cache_path(repo)
+    # The cache's own DIRECTORY is named below, not the resolved file path -- the
+    # file's basename is `statusline.cache_path`'s own slug of `repo` (every
+    # non-alphanumeric character folded to `-`), the identical transform
+    # `bin/oss-workspace` applies when it derives a watch-channel name from the
+    # same config key for an unrelated purpose. Naming the full path here would
+    # put that derived slug into this diagnostic's own text, which a caller
+    # asserting the launcher derived nothing cannot tell apart from the launcher
+    # having derived it -- not a claim about the repo, a collision between two
+    # unrelated derivations of the one input.
+    cache_dir = statusline.cache_dir()
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         doctor.report(
             "WARN",
-            "latest skew: could not be determined -- no cache at {} (the status "
-            "line has not run yet here, or writes to a different XDG_CACHE_HOME "
-            "than this process).".format(path),
+            "latest skew: could not be determined -- no cache for {} under {} "
+            "(the status line has not run yet here, or writes to a different "
+            "XDG_CACHE_HOME than this process).".format(repo, cache_dir),
         )
         return
     except OSError as exc:
         doctor.report(
             "WARN",
-            "latest skew: could not be determined -- {} could not be read ({}: "
-            "{}).".format(path, type(exc).__name__, exc),
+            "latest skew: could not be determined -- the cache for {} under {} "
+            "could not be read ({}: {}).".format(repo, cache_dir, type(exc).__name__, exc),
         )
         return
     try:
@@ -98,15 +108,15 @@ def check_latest_skew(project_dir, config, now=None):
     except ValueError as exc:
         doctor.report(
             "WARN",
-            "latest skew: could not be determined -- {} did not parse ({}: "
-            "{}).".format(path, type(exc).__name__, exc),
+            "latest skew: could not be determined -- the cache for {} under {} "
+            "did not parse ({}: {}).".format(repo, cache_dir, type(exc).__name__, exc),
         )
         return
     if not isinstance(document, dict):
         doctor.report(
             "WARN",
-            "latest skew: could not be determined -- {} is not a JSON "
-            "object.".format(path),
+            "latest skew: could not be determined -- the cache for {} under {} "
+            "is not a JSON object.".format(repo, cache_dir),
         )
         return
     cached_by_repo = document.get("latest")
@@ -115,8 +125,8 @@ def check_latest_skew(project_dir, config, now=None):
     if cached is None:
         doctor.report(
             "WARN",
-            "latest skew: could not be determined -- {} carries no `latest` "
-            "reading for {}.".format(path, repo),
+            "latest skew: could not be determined -- the cache under {} carries "
+            "no `latest` reading for {}.".format(cache_dir, repo),
         )
         return
     live = statusline._latest_release(repo)
