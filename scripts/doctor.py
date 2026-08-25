@@ -2512,6 +2512,253 @@ def _declared_watch_names(project_dir):
     }, None, ""
 
 
+# The push budget states (#295). Not applicable is the state #295's own
+# "Measured on this repository" section names as fine, not as a gap: no
+# `pre-push` hook means the 300s default cannot be too short for anything, so
+# reporting a gap here would be exactly the checker #126 already ruled out --
+# one that warns on every correctly configured repo forever.
+GIT_PUSH_BUDGET_NOT_APPLICABLE = "not-applicable"
+GIT_PUSH_BUDGET_CONFIGURED = "configured"
+GIT_PUSH_BUDGET_ACTIONABLE = "actionable"
+GIT_PUSH_BUDGET_COULD_NOT_TELL = "could-not-tell"
+
+# supertool's own documented default for `ops.git-push.budget` when nothing in
+# `.supertool.json` overrides it (`supertool help:git-push`: "precedence
+# :budget > ops.git-push.budget > 300"). This is a fact about the DEPENDENCY,
+# not about the managed repo -- the same kind of fact this repo already
+# hardcodes for the 300s default the issue itself cites, and it is stated
+# here rather than read from the installed supertool because a diagnostic
+# has to answer even when supertool is not on PATH at all.
+GIT_PUSH_DEFAULT_BUDGET = 300
+
+# The op-level timeout `ops.git-push.budget` is validated against when
+# `.supertool.json` does not override `ops.git-push.timeout` itself --
+# supertool's own `presets/git.json` declares this as the preset's default
+# for the git-push op. Same reasoning as the budget default above: a fact
+# about the dependency's shipped configuration, stated once here rather than
+# read from an installed copy this process may not have.
+GIT_PUSH_DEFAULT_TIMEOUT = 1920
+
+
+def _resolved_git_common_dir(project_dir):
+    """Where hooks for this checkout actually live -- ``(common_dir, detail)``.
+
+    ``.git`` is a DIRECTORY in a plain clone and a FILE in a worktree, containing
+    a single ``gitdir: <clone>/.git/worktrees/<name>`` line -- and hooks are not
+    duplicated per worktree, they live once at the shared common git directory
+    (`<clone>/.git`, found via that gitdir's own ``commondir`` file, which holds a
+    path relative to it -- ordinarily ``../..``). A naive ``project_dir/.git/hooks``
+    read from inside a worktree looks at a path that does not exist there at all
+    and used to silently report `not-applicable` for a repo whose real hook was
+    misconfigured (found by audit; #295's own sibling finding).
+
+    Resolved from git's own bookkeeping files rather than by shelling out to
+    ``git rev-parse --git-common-dir``, so this still answers when git itself is
+    not on PATH -- consistent with this function's own contract of never having a
+    process-spawning side effect. ``common_dir`` is ``None`` when nothing here
+    could be established; ``detail`` then says why, and is empty only for the
+    ordinary "no .git at all" case, which is `not-applicable`'s own state rather
+    than `unknown`'s.
+    """
+    dot_git = Path(project_dir) / ".git"
+    try:
+        if dot_git.is_dir():
+            return dot_git, ""
+        if not dot_git.is_file():
+            return None, ""
+        text = dot_git.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, "{} could not be examined ({})".format(dot_git, _os_error_detail(exc))
+    except UnicodeDecodeError as exc:
+        return None, "{} could not be decoded as UTF-8 ({})".format(dot_git, exc)
+    lines = text.strip().splitlines()
+    line = lines[0] if lines else ""
+    if not line.startswith("gitdir:"):
+        return None, "{} is a file but its first line is not 'gitdir: ...'".format(dot_git)
+    gitdir = Path(line[len("gitdir:"):].strip())
+    if not gitdir.is_absolute():
+        gitdir = Path(project_dir) / gitdir
+    try:
+        commondir_text = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        # No commondir file beside the gitdir -- this gitdir IS the common dir
+        # (a layout git has not always written one for).
+        try:
+            return gitdir.resolve(), ""
+        except OSError as exc:
+            return None, "{} could not be resolved ({})".format(gitdir, _os_error_detail(exc))
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, "{} could not be read ({})".format(gitdir / "commondir", exc)
+    common = Path(commondir_text)
+    if not common.is_absolute():
+        common = gitdir / common
+    try:
+        return common.resolve(), ""
+    except OSError as exc:
+        return None, "{} could not be resolved ({})".format(common, _os_error_detail(exc))
+
+
+def _pre_push_hook_present(project_dir):
+    """Does this repo have a real `pre-push` hook? ``(state, detail)``.
+
+    ``"yes"`` / ``"no"`` / ``"unknown"``. A git-shipped sample hook is named
+    ``pre-push.sample`` and never runs, so only the exact name counts -- and
+    the exact name is checked with ``Path.is_file`` rather than a broader
+    ``Path.exists``, whose swallow of some ``OSError`` values is the trap
+    `release_delta.py` was bitten by. Nothing here inspects the hook's
+    contents or runs it: that is a side effect a diagnostic must not have,
+    and the issue says so directly. The common git directory is resolved by
+    `_resolved_git_common_dir` first, so this answers the same way whether
+    ``project_dir`` is a plain clone or one of its worktrees.
+    """
+    common, problem = _resolved_git_common_dir(project_dir)
+    if common is None:
+        if problem:
+            return "unknown", problem
+        return "no", ""
+    hook = common / "hooks" / "pre-push"
+    try:
+        return ("yes" if hook.is_file() else "no"), ""
+    except OSError as exc:
+        return "unknown", _os_error_detail(exc)
+
+
+def git_push_budget_state(project_dir):
+    """Would a pre-push hook meet a push budget nobody raised? Four answers (#295).
+
+    Structural only -- hook present, budget set, arithmetic consistent -- never
+    a measurement of how long the hook actually takes, which would mean
+    running it. Returns ``(state, detail)``:
+
+    * ``not-applicable`` -- no ``pre-push`` hook, so the budget is irrelevant
+      whatever it says. This is #295's own measured state for this repository
+      and it is reported OK, not as a gap (#126).
+    * ``configured`` -- a hook exists, ``ops.git-push.budget`` is set, and it
+      is strictly under ``ops.git-push.timeout`` from the SAME merged entry
+      (explicit if given, `GIT_PUSH_DEFAULT_TIMEOUT` otherwise).
+    * ``actionable`` -- a hook exists and either no budget is set at all (the
+      300s default applies) or a budget IS set but does not clear the
+      arithmetic above -- the exact contradiction supertool's own git-push op
+      would refuse at push time, done here instead.
+    * ``could-not-tell`` -- ``.supertool.json`` is there and could not be
+      read or parsed, or ``ops.git-push`` is present and not an object, or
+      ``budget``/``timeout`` are present and not numbers. Never folded into
+      either of the other three: a broken config is not the same claim as a
+      repo with no hook, and not the same claim as one correctly configured.
+    """
+    present, detail = _pre_push_hook_present(project_dir)
+    if present == "unknown":
+        return GIT_PUSH_BUDGET_COULD_NOT_TELL, (
+            "the pre-push hook itself could not be examined ({})".format(detail)
+        )
+    if present == "no":
+        return GIT_PUSH_BUDGET_NOT_APPLICABLE, "no .git/hooks/pre-push"
+
+    doc, problem, doc_detail = _supertool_document(project_dir)
+    if problem:
+        return GIT_PUSH_BUDGET_COULD_NOT_TELL, (
+            "a pre-push hook exists, and {}, so whether ops.git-push.budget is "
+            "set could not be determined".format(doc_detail)
+        )
+    ops = doc.get("ops") if isinstance(doc, dict) else None
+    if doc is not None and "ops" in doc and not isinstance(ops, dict):
+        return GIT_PUSH_BUDGET_COULD_NOT_TELL, "`ops` in {} is not an object".format(
+            WATCH_CONFIG
+        )
+    block = ops.get("git-push") if isinstance(ops, dict) else None
+    if block is None:
+        return GIT_PUSH_BUDGET_ACTIONABLE, (
+            "a pre-push hook exists and {} sets no ops.git-push.budget -- the "
+            "{}s default applies".format(WATCH_CONFIG, GIT_PUSH_DEFAULT_BUDGET)
+        )
+    if not isinstance(block, dict):
+        return GIT_PUSH_BUDGET_COULD_NOT_TELL, "ops.git-push in {} is not an object".format(
+            WATCH_CONFIG
+        )
+
+    def _number(value, label):
+        if value is None:
+            return None, None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None, "{} is {!r}, not a number".format(label, value)
+        return value, None
+
+    budget, budget_problem = _number(block.get("budget"), "ops.git-push.budget")
+    if budget_problem:
+        return GIT_PUSH_BUDGET_COULD_NOT_TELL, budget_problem
+    if budget is None:
+        return GIT_PUSH_BUDGET_ACTIONABLE, (
+            "a pre-push hook exists and ops.git-push.budget is not set in {} "
+            "-- the {}s default applies".format(WATCH_CONFIG, GIT_PUSH_DEFAULT_BUDGET)
+        )
+    if budget <= 0:
+        # `budget < timeout` alone is satisfied by any non-positive number, so a
+        # corrupted or badly-templated config (0, or a negative value) would
+        # otherwise read as CONFIGURED -- OK -- while supertool's own git-push op
+        # refuses a non-positive budget outright before anything is pushed (found
+        # by review, #295's own sibling issue).
+        return GIT_PUSH_BUDGET_ACTIONABLE, (
+            "ops.git-push.budget is {} in {}, which is not a positive number of "
+            "seconds -- supertool's own git-push op would refuse this rather "
+            "than push with it".format(budget, WATCH_CONFIG)
+        )
+
+    timeout, timeout_problem = _number(block.get("timeout"), "ops.git-push.timeout")
+    if timeout_problem:
+        return GIT_PUSH_BUDGET_COULD_NOT_TELL, timeout_problem
+    timeout_declared = timeout is not None
+    if timeout is None:
+        timeout = GIT_PUSH_DEFAULT_TIMEOUT
+
+    timeout_clause = (
+        "ops.git-push.timeout {}".format(timeout)
+        if timeout_declared
+        else "the {}s default timeout".format(timeout)
+    )
+    if budget < timeout:
+        return GIT_PUSH_BUDGET_CONFIGURED, (
+            "ops.git-push.budget is {} in {}, strictly under {} -- OK".format(
+                budget, WATCH_CONFIG, timeout_clause
+            )
+        )
+    return GIT_PUSH_BUDGET_ACTIONABLE, (
+        "ops.git-push.budget is {} in {}, not strictly under {} -- the same "
+        "contradiction supertool's own git-push op would refuse at push "
+        "time".format(budget, WATCH_CONFIG, timeout_clause)
+    )
+
+
+def check_git_push_budget(project_dir):
+    """Say which of the four states `git_push_budget_state` found.
+
+    Never times the hook -- that would mean running it, which is a side
+    effect a diagnostic must not have. The sentence says plainly that the
+    duration was not measured (#295's own stated requirement), rather than
+    letting silence imply a number was checked.
+    """
+    state, detail = git_push_budget_state(project_dir)
+    if state == GIT_PUSH_BUDGET_NOT_APPLICABLE:
+        report("OK", "git-push budget: {} -- the default budget is fine here".format(detail))
+        return
+    if state == GIT_PUSH_BUDGET_CONFIGURED:
+        report("OK", "git-push budget: {}".format(detail))
+        return
+    if state == GIT_PUSH_BUDGET_ACTIONABLE:
+        report(
+            "WARN",
+            "git-push budget: {}. This is not measured -- the hook's own duration "
+            "was never run -- it is the structural fact that a pre-push hook "
+            "exists and the budget is not raised to clear it.".format(detail),
+        )
+        return
+    report(
+        "WARN",
+        "git-push budget: could not tell -- {}. Not answered as 'no hook', which "
+        "would clear on no evidence, and not as 'configured', which would pass "
+        "on none.".format(detail),
+    )
+
+
 def radar_publish_state(project_dir):
     """Does anything publish to this repo's board? Seven answers.
 
@@ -6359,6 +6606,9 @@ def main(argv=None):
     # how a repo with a route to nowhere read as healthy (#191). Also needs no
     # config: both live in supertool's file.
     check_radar_publish(project_dir)
+    # Needs no config either: the hook lives under .git/hooks and the budget
+    # lives in supertool's file. Structural only -- it never runs the hook.
+    check_git_push_budget(project_dir)
     check_freshness(project_dir, config)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")

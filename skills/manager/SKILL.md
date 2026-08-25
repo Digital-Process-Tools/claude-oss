@@ -1618,6 +1618,15 @@ states, not two, for the same reason `intake` and `cohort_freeze` have three: `h
 measurement that came back negative, `could-not-evaluate` is no measurement at all, and rendering the
 two alike is exactly the bug this closes. `commands/tick.md` step 1 is where the call is wired.
 
+**#477 is the same shape one fact over: a tick's own plugin identity is a prior nothing recorded, so
+"has the version changed since last tick" was not a question this system could answer.**
+`--plugin-identity` on step 6's `--decision` call records `doctor.plugin_identity()`'s own string —
+version folded with a content digest, never the version alone, because a manifest version stays put
+for a whole release cycle while the content underneath it can still move (#418). `--check-plugin-
+identity` at the top of the *next* tick compares against it: `changed`, `unchanged`, or
+`could-not-tell` when no prior was ever recorded — which must never render as `unchanged`.
+`commands/tick.md` step 1 is where the call is wired.
+
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.
 
@@ -1657,10 +1666,12 @@ matters to the PR belongs in the PR body.
 Entries also carry machine-readable fields, each written above at its own duty: `detail.intake`,
 the tick's filing counts and window, so the ratio can be re-added across ticks rather than
 re-asserted; `detail.lanes`, the dispatched developer lanes and their models; `detail.cohort_freeze`,
-a frozen cohort's count and the routes it was taken from; and `detail.wait` (#337), what a blocked
+a frozen cohort's count and the routes it was taken from; `detail.wait` (#337), what a blocked
 tick is waiting on — a dispatch, an observable and the timestamp it was recorded, re-derived by the
-next tick rather than believed. Prose cannot be summed, and a wait recorded only in prose cannot be
-tested — that is what each of these exists to fix.
+next tick rather than believed; and `detail.plugin_identity` (#477), this tick's own
+`doctor.plugin_identity()` reading, re-derived by the next tick into a three-state comparison rather
+than left as a version nobody wrote down. Prose cannot be summed, and a wait — or a version change —
+recorded only in prose cannot be tested — that is what each of these exists to fix.
 
 **The handoff is not the repo.** The state file records what was believed when it was written. The
 first call of every session is the repo itself: `git log --oneline -1`, `gh-prs`, `gh-issues`.
