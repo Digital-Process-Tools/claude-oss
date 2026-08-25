@@ -1398,7 +1398,10 @@ def apply_settings(repo_root):
             encoding="utf-8",
         )
     elif entry["action"] == "extend":
-        document = json.loads(path.read_text(encoding="utf-8"))
+        # Reuses the document `settings_plan` already parsed and carried on the entry
+        # (#536), rather than reading the file a second time -- the same class of
+        # unguarded second read that was fixed in `_settings_preview`, one call away.
+        document = dict(entry["document"])
         document["statusLine"] = dict(STATUSLINE_SETTING)
         path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     return entry

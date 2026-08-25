@@ -103,3 +103,42 @@ def test_settings_preview_extend_still_renders_an_ordinary_file(tmp_path):
     document = json.loads(body)
     assert document["enabledPlugins"] == {"oss@dpt-plugins": True}
     assert "statusLine" in document
+
+
+def test_apply_settings_extend_reads_settings_json_exactly_once(tmp_path, monkeypatch):
+    """The auditor's adjacent finding, same run: `apply_settings`'s `extend` arm did the
+    identical unguarded second read `_settings_preview` was fixed for, three lines below
+    a `settings_plan` call that -- after this issue's fix -- already carries the parsed
+    document on the entry. Mechanism, not tone: `Path.read_text` is wrapped to succeed on
+    the first call against settings.json and raise on any call after that; if
+    `apply_settings` still re-reads, this fires and the write never completes."""
+    _write_config(tmp_path)
+    settings_path = _write_settings(tmp_path, {"enabledPlugins": {"oss@dpt-plugins": True}})
+
+    calls = {"settings_reads": 0}
+    real_read_text = Path.read_text
+
+    def wrapped(self, *args, **kwargs):
+        if self == settings_path:
+            calls["settings_reads"] += 1
+            if calls["settings_reads"] > 1:
+                raise OSError(5, "Input/output error")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", wrapped)
+
+    entry = scaffold.apply_settings(str(tmp_path))
+
+    assert calls["settings_reads"] == 1, (
+        "apply_settings should reuse the document settings_plan already parsed, so "
+        "settings.json is read exactly once -- {} reads happened".format(
+            calls["settings_reads"]
+        )
+    )
+    assert entry["action"] == "extend"
+    # Restore the real read_text before verifying the write -- the wrapper above is a
+    # probe on apply_settings's own reads, not on this test's own cleanup read.
+    monkeypatch.undo()
+    written = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert written["enabledPlugins"] == {"oss@dpt-plugins": True}
+    assert written["statusLine"] == dict(scaffold.STATUSLINE_SETTING)
