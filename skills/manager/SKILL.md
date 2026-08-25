@@ -565,6 +565,26 @@ refusal to pair up two issues would pin that noise as a fact, the same mistake #
 test that froze one interpreter's answer into a hardcoded platform one. Carry the caveat with the
 number rather than silently dropping either.
 
+**The fleet-view label names what a lane covers, not what it starts with (#539).** Four
+concurrent lanes used to render as `Lane 534  auto-update path`, `Lane 535  statusline guard sets` —
+the first issue's number plus a phrase about it. A lane carrying three issues and a lane carrying one
+rendered identically, because the label is composed at the moment of the spawn and nothing checked it
+against what the lane actually carries. The count is the load-bearing half — a reader scanning four
+rows should see `x3, x1, x1, x1` without reading any phrase — so the multiplier spelling is the
+convention: `Lane 534 x3  auto-update path`, never `Lane 534 (+537, +495)  …`. The enumeration was
+considered and rejected: it describes only the phrase's own issue and leaves a bundle's other work as
+invisible as the count-free label did.
+
+Compose it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" <primary> <issue1,issue2,...>
+"<phrase>"` rather than typing it by hand, and paste its stdout as the `Agent` call's `description`.
+The label is a string handed to a tool parameter — nothing in this repository can inspect it again
+once the lane is running, which is why a guard has to sit in the one function that composes it rather
+than in something that checks the fleet view afterwards. `fleet_label.py` refuses to print anything
+when the caller has not named every issue the lane carries (an omitted or partial bundle), so a lane
+dispatched from a script that never ran cannot silently fall back to the thin label. A lane briefed by
+hand without running it is the one case this cannot catch — the same limit named for `lane_setup.py`
+above applies here for the same reason.
+
 Launch every dispatched lane — bundled or not — in a single message so they run concurrently.
 
 **Lane length is itself a cost decision, and it is measured after a lane completes, never during
