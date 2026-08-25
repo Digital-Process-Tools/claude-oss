@@ -49,12 +49,33 @@ states.
 
 | Stop | Why it cannot be taken back |
 | --- | --- |
-| **Tagging a release** | installed users resolve the tag; a moved or deleted one is a different artifact under a name somebody already holds |
-| **Publishing a release object** | it is the delivery, and it lands on machines nobody asked |
+| **Tagging a release** | installed users resolve the tag; a moved or deleted one is a different artifact under a name somebody already holds — conditional, see below |
+| **Publishing a release object** | it is the delivery, and it lands on machines nobody asked — conditional, see below |
 | **Force-pushing or rewriting shared history** | somebody else's clone has already fetched what is being replaced |
 | **Deleting anything with no copy elsewhere** | the `destroys` row below, applied to this loop's own hands |
 | **The embargo path** | a private disclosure cannot be un-sent, and sending it commits this project to somebody else's disclosure timing |
 | **A value the repository genuinely does not state** | inventing one is unrecoverable the same way a tag is; `tag_pattern: null` is the worked example, and a model because it refuses *and says why* |
+
+**The first two rows are conditional on a per-repository grant, and this table does not
+assert the answer — it names the key that does (#478).** `release.authority` in
+`.oss.json` is a fact about one repository, so it belongs there rather than in this shared
+file, per the governing rule at the top of `CLAUDE.md`. Read it with
+`oss_config.release_authority(config)`, which answers in the same three states this
+plugin's whole defect class demands:
+
+- **`loop`** — both rows above do not stop. The loop tags and publishes, and **names the
+  grant it acted under** in the release report, so a reader can tell an authorised act
+  from an assumed one.
+- **`maintainer`** — both rows stop, exactly as written above.
+- **`not-declared`** (absent, unreadable, or an unrecognised value) — both rows stop, the
+  same as `maintainer`. It must never default to autonomy: a repository that never opted
+  in is not tagged because a config file failed to parse.
+
+`/oss:doctor` reports which of the three a repo is in, before the tag step rather than at
+it. **This key governs tagging and publishing only.** It says nothing about the version
+number gate 4 decides during `## Releasing` below — that is a separate question, answered
+without reading this key at all, because `## Who decides` already lists deriving a
+version number as the loop's, unconditionally.
 
 **Two things look like they belong on that list and do not.** Both are places where stopping is the
 expensive answer, and neither is a detail.
@@ -1326,9 +1347,18 @@ Gates, each a call and not a feeling:
 4. **The number itself is proposed from the changelog fragments, not felt.** Every other input here
    is pinned somewhere; the version was the one thing nobody could derive, so it came from whoever
    was cutting the release. `scripts/release_version.py` reads the fragment sections and the current
-   version and answers in three states — `proposed`, `could not decide`, `no baseline`. **Quote the
-   receipt, then accept it or override the proposal, and record which.** The number is a promise to
-   users and stays a human decision; what this removes is an unsourced one.
+   version and answers in three states — `proposed`, `could not decide`, `no baseline`. **On
+   `proposed`, quote the receipt, accept the number, and record it — no stop (#467).** This is
+   unconditional and does not read `release.authority`: `## Who decides` above already lists
+   deriving a version number from rules the repository already states as the loop's, and stopping
+   to have the derivation confirmed was asking permission to use an authority already granted.
+   Override remains available — you may still override the proposal and record why; accepting by
+   default is the absence of a prompt, not the loss of that override.
+
+   **A major bump keeps its stop, and it is the one arm of this gate that does.** The proposal rule
+   reaches a major only at `1.0.0` or later — `payload["bump"] == "major"` in the receipt — where the
+   promise to users is a different promise. Say so and stop, the same shape as every other row in
+   the Stops table above.
 
    The two answers that are not a proposal share one property, deliberately: the rule
    **names no number** when it could not decide one. A default bump over a breaking change is

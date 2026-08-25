@@ -258,9 +258,10 @@ fragment sections, and reads the current version out of the last matching tag. P
 X.Y.Z` when the baseline is not a tag. **It proposes; it never writes, bumps or tags.**
 
 - **exit 0, `proposed`** — `version` is the number, with `change_class`, `line`, `bump` and the
-  fragments behind them. **Quote the receipt, then accept it or override the proposal, and record
-  which you did and why.** A release number is a promise to users, so the decision stays yours; what
-  this removes is the *unsourced* guess, not the judgement.
+  fragments behind them. **Quote the receipt, accept the number, and record it — no stop (#467),**
+  unless `bump` reads `major`, which keeps its own stop: that promise to users is a different
+  promise, and it is the one case in this gate where you stop and say why. Override remains
+  available on any bump; accepting by default is the absence of a prompt, not the loss of it.
 - **exit 3, `could not decide`** — no fragments, a file name that is not a fragment name, a section
   outside the six, a fragment whose bytes will not read, a compatibility line that will not read, or a
   `removed` fragment that declares nothing. **It names no number**, deliberately:
@@ -301,6 +302,21 @@ repository sitting in a document every repository reads. Nobody is stranded eith
 refusal above quotes the bullet in full, which is the sentence that reaches every repository, new
 or old, at the moment it is needed. Newly scaffolded repositories get the section as well, because
 the template now carries it.
+
+## Who may tag and publish (#478)
+
+Read `release.authority` from `.oss.json` before either step below —
+`oss_config.release_authority(config)`, three states:
+
+- **`loop`** — proceed through tag and publish. **Name the grant in the release report**, beside
+  the tag and the publish outcome, so a reader can tell an authorised act from an assumed one.
+- **`maintainer`** or **`not-declared`** (absent, unreadable, or an unrecognised value) — **stop
+  here.** Hand the gates, the accepted version and the folded notes to the maintainer rather than
+  tagging or publishing. Report which state was read; `not-declared` must never be read as
+  permission — a config that failed to parse is not a grant.
+
+This key governs tagging and publishing only. It says nothing about the version number above,
+which gate 4 already accepts unconditionally.
 
 ## Then
 
@@ -345,9 +361,18 @@ Three outcomes, exit codes because a shell reads those and never reads prose:
   A decision, reported as one. It never stops the release: the tag is the release for a project that
   tags deliberately without publishing.
 - **exit 3, `could-not-run` / `could-not-create`** — the notes could not be extracted, `gh` is not on
-  PATH, the API call failed, or `.oss.json` is not a JSON object at all. **Say so in those words.**
-  This is the one that must never read as either of the other two, and above all never as a release
-  that shipped: a maintainer who believes something is published stops looking at it.
+  PATH, the notes are over GitHub's `GITHUB_NOTES_LIMIT` (125000 characters), the API call failed, or
+  `.oss.json` is not a JSON object at all. **Say so in those words.** This is the one that must never
+  read as either of the other two, and above all never as a release that shipped: a maintainer who
+  believes something is published stops looking at it.
+
+  **The notes-length cause is measured before any `gh` command is built, on the dry run and
+  `--execute` alike — it is knowable and fixable ahead of the tag, not discovered at or after the
+  write the way the other three causes are.** Folding it into "the API call failed" would make it
+  invisible at exactly the moment it is cheapest to fix: `release_publish.py` names the measured
+  length, the limit, and the overage, so the remedy is trim `changelog.d` fragments for this version
+  (or split the release) and re-run, rather than a maintainer diagnosing a `gh` failure that never
+  actually ran.
 
 Three, because those are the answers a script that ran can give. A call the harness refuses never
 runs, and it is a fourth — *A denied call is a fourth answer* below. **Do not read the list above as

@@ -1125,7 +1125,15 @@ def _rglob_md(root):
 
     for dirpath, _dirnames, filenames in os.walk(root_str, onerror=_onerror):
         for name in filenames:
-            if name.endswith(".md"):
+            # #469: case-folded deliberately, to match what `Path.rglob("*.md")` --
+            # the walk this function replaced -- already did on Windows. This does
+            # NOT lean on the filesystem's own case-folding the way an NTFS-vs-APFS
+            # question would: `os.walk` returns each entry exactly as stored on every
+            # platform, and the fold happens here, once, in Python, before the
+            # comparison -- so it is exactly as deterministic on a case-sensitive
+            # POSIX filesystem as on a case-insensitive one. A directory holding only
+            # `.MD` files must not read as holding none.
+            if name.lower().endswith(".md"):
                 files.append(Path(dirpath) / name)
     return sorted(files), unreadable
 
@@ -1714,7 +1722,16 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     * ``matched`` -- the resolved target is either the same file as this running
       install's own `bin/oss-workspace` (`os.path.samefile`, so a symlink straight
       at it counts) or its bytes are identical (CRLF folded, matching every other
-      content comparison in this file).
+      content comparison in this file) AND the path carries no claim of belonging
+      to a different install -- see ``matched-elsewhere`` below for the one it does.
+    * ``matched-elsewhere`` (#519) -- bytes are identical today, but the resolved
+      target recognisably belongs to a DIFFERENT version-scoped plugin cache
+      directory than `plugin_root`'s own: `_oss_workspace_version_segment` parses a
+      version out of it, and that version disagrees with this running install's own
+      manifest version. A stale pin with correct bytes behaves exactly like a
+      current one -- until the next release that touches this file, which is
+      exactly the occurrence that cost #324 its security fix -- so this is reported
+      even though nothing differs today. `detail` is `(resolved, their_version)`.
     * ``mismatched`` -- the resolved target's bytes differ. `detail` is
       ``(resolved, their_version, our_version)``; `their_version` is
       `_oss_workspace_version_segment(resolved)` and may be `None`.
@@ -1774,11 +1791,23 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     except OSError as exc:
         return "unresolved-target", "{} ({})".format(resolved, exc.__class__.__name__)
 
-    if own_bytes.replace(b"\r\n", b"\n") == resolved_bytes.replace(b"\r\n", b"\n"):
-        return "matched", resolved
-
     their_version = _oss_workspace_version_segment(resolved)
     _our_state, our_version = _manifest_version(plugin_root)
+
+    if own_bytes.replace(b"\r\n", b"\n") == resolved_bytes.replace(b"\r\n", b"\n"):
+        # #519: content equality answers "are these bytes the same today", not "is
+        # this THIS running install" -- and those are different questions when the
+        # resolved target recognisably belongs to a DIFFERENT version-scoped plugin
+        # cache directory (`their_version` parses and disagrees with `our_version`).
+        # That is a stale pin whose bytes have not diverged YET, which is a fact
+        # about today, not about the next release that touches this file (#324).
+        # A version that fails to parse, or one that matches this running install's
+        # own, carries no such claim and stays plain `matched` -- an ordinary
+        # hand-copied path, or two paths onto the same install, is not stale.
+        if their_version is not None and their_version != our_version:
+            return "matched-elsewhere", (resolved, their_version)
+        return "matched", resolved
+
     return "mismatched", (resolved, their_version, our_version)
 
 
@@ -1868,6 +1897,22 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
                 detail
             ),
         )
+    elif state == "matched-elsewhere":
+        resolved, their_version = detail
+        _our_state, our_version = _manifest_version(plugin_root)
+        report(
+            "WARN",
+            "oss-workspace launcher: PINNED ELSEWHERE -- PATH resolves oss-workspace "
+            "to {} (cache version {}), a different install from this running one "
+            "(version {}). Its content happens to be identical today, so this is not "
+            "a mismatch -- but identical today is a fact about today, not a claim "
+            "about this running install: a stale pin with correct bytes behaves "
+            "exactly like a current one until the next release that touches this "
+            "file, which is what cost #324 its security fix. Re-point the symlink to "
+            "this running install's own bin/oss-workspace.".format(
+                resolved, their_version, our_version
+            ),
+        )
     elif state == "own-copy-unreadable":
         report(
             "WARN",
@@ -1937,9 +1982,9 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "WARN",
             "oss-workspace launcher: unrecognised state {!r} from "
             "oss_workspace_launcher_state -- not one of matched, "
-            "not-resolvable, path-unreadable, own-copy-unreadable, "
-            "unresolved-target, mismatched. Treat this as unknown, not "
-            "absent; this check's own code has fallen behind its "
+            "matched-elsewhere, not-resolvable, path-unreadable, "
+            "own-copy-unreadable, unresolved-target, mismatched. Treat this as "
+            "unknown, not absent; this check's own code has fallen behind its "
             "producer.".format(state),
         )
 
@@ -4602,6 +4647,44 @@ def check_jit_layer_readers(project_dir, record=None, cache_root=None):
         report(JIT_LAYER_LEVELS.get(finding["state"], "WARN"), finding["detail"])
 
 
+def check_release_authority(project_dir, config):
+    """#478: report which release-authority mode this repo is in, before the tag step
+    rather than at it -- the same reason #421 put the merge-call check here.
+
+    All three states are legitimate, so none of them is a WARN: the point is visibility,
+    not a preference between them. What must never happen is `not-declared` rendering as
+    anything but a stop -- so its detail names the same consequence `maintainer` gets,
+    in the same words.
+    """
+    if oss_config is None:
+        report("WARN", "release authority: not checked (scripts/oss_config.py could not be imported)")
+        return
+    if config is None:
+        report("WARN", "release authority: not checked (.oss.json could not be read)")
+        return
+    state = oss_config.release_authority(config)
+    if state == oss_config.AUTHORITY_LOOP:
+        report(
+            "OK",
+            "release authority: loop -- .oss.json's release.authority grants the loop "
+            "tagging and publishing without a stop. The release report must name this "
+            "grant every time it acts under it.",
+        )
+    elif state == oss_config.AUTHORITY_MAINTAINER:
+        report(
+            "OK",
+            "release authority: maintainer -- tagging and publishing stop, exactly as "
+            "skills/manager/SKILL.md's Stops table reads.",
+        )
+    else:
+        report(
+            "OK",
+            "release authority: not-declared (release.authority is absent, unreadable, "
+            "or an unrecognised value) -- tagging and publishing stop, the same as "
+            "maintainer. Set release.authority to \"loop\" in .oss.json to change that.",
+        )
+
+
 def check_ci_enforcement(project_dir, config):
     """Does anything in CI run the tests?
 
@@ -5815,6 +5898,9 @@ def main(argv=None):
     )
     check_state_file(project_dir, config)
     check_fragments_readme(project_dir, config)
+    # Visible before the tag step rather than at it -- same reason #421 put the
+    # merge-call check here.
+    check_release_authority(project_dir, config)
     check_statusline(project_dir)
     check_auto_update(project_dir)
     check_ci_enforcement(project_dir, config)
