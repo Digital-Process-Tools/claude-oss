@@ -165,6 +165,21 @@ def test_render_marks_a_drifted_site_distinctly_from_a_clean_one():
 
 # --- CLI ---------------------------------------------------------------------
 
+def test_closing_keyword_site_records_what_the_keywords_are_used_for():
+    """#556: the note beside the closing-keyword site must say more than "no reason
+    recorded". It has to record that the constant is used only as an absence
+    detector -- never to decide what a body will close -- and that GitHub matches a
+    keyword by position, not sentence meaning, which is what makes a negated closing
+    sentence harmless rather than a missed case. A note that only repeats "no reason
+    recorded" would validate the shape check above and still leave #556 open.
+    """
+    site = next(s for s in ba.SITES if s["id"] == "closing-keyword")
+    note = site["note"].lower()
+    assert "position" in note, site["note"]
+    assert "absence detector" in note, site["note"]
+    assert "#556" in site["note"], site["note"]
+
+
 def test_cli_exits_zero_and_prints_every_site():
     import subprocess
 

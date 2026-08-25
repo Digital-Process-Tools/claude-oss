@@ -142,13 +142,20 @@ SITES = (
         "resolve/resolves/resolved)",
         "authority": "GitHub's own closing-keyword syntax",
         "state": STATE_UNMEASURED,
-        "note": "Found by this census (#544); no reason or date is recorded beside "
-        "the constant. The surrounding comment explains a related but different "
-        "design decision (why this stays an absence detector rather than calling "
-        "supertool's own closing-reference reader) and does not address whether "
-        "the keyword list itself is complete or current. report_schema.py is "
-        "outside this lane's file set; not edited by this lane. Needs a follow-up "
-        "issue.",
+        "note": "Found by this census (#544). Observed 2026-08-25 (#556): PR #554's "
+        "body disclaimed closing #241 in prose and GitHub closed it anyway on "
+        "merge, because a forge matches a closing keyword by its position relative "
+        "to the reference, not by sentence meaning. Both call sites -- _binds and "
+        "_ANY_CLOSING_REFERENCE -- are equally positional, so they agree with the "
+        "forge in the negated case too, in both directions (see the comment beside "
+        "_CLOSING_KEYWORD and tests/test_pr_body_closing_reference_274.py). This "
+        "constant is used only as an absence detector, never to decide what a body "
+        "will close, which is what makes the negation case harmless rather than a "
+        "false negative. What remains unmeasured is the word list itself -- no "
+        "test compares (close/closes/closed, fix/fixes/fixed, "
+        "resolve/resolves/resolved) against GitHub's documented syntax, and there "
+        "is no read-only way to query that syntax the way GITHUB_NOTES_LIMIT's own "
+        "limit cannot be re-derived either.",
     },
 )
 

@@ -277,6 +277,47 @@ def test_the_repair_that_was_applied_by_hand_is_accepted(tmp_path, body):
     assert _errors(tmp_path, {"state": "closes", "issues": [275, 296]}, body) == [], body
 
 
+def test_negated_closing_keyword_still_binds_for_state_closes(tmp_path):
+    """#556: PR #554's body disclaimed closing #241 in prose ("It does not close
+    #241 and nothing here changes that check") and GitHub closed it anyway on merge,
+    because a forge matches a closing keyword by position, not sentence meaning. A
+    declared `closes` must not be refused just because the binding sits inside a
+    negated sentence -- the forge closes it either way, so refusing it here would be
+    a false alarm this checker does not need.
+    """
+    body = "It does not close #241 and nothing here changes that check."
+    errors = _errors(tmp_path, {"state": "closes", "issues": [241]}, body)
+    assert errors == [], errors
+
+
+def test_negated_closing_keyword_is_still_caught_under_closes_nothing(tmp_path):
+    """The inverse of the case above, in the same fixture shape (#556). `closes-
+    nothing` must still be refused when the body binds a keyword under a negation,
+    because the forge closes the issue regardless of the disclaiming prose around
+    it -- this is the actual PR #554 shape had it been declared `closes-nothing`. A
+    checker that started treating every negated sentence as unbound could not pass
+    both this test and the one above.
+    """
+    body = "It does not close #241 and nothing here changes that check."
+    declared = {"state": "closes-nothing", "reason": "Part of #241, deliberately."}
+    errors = _errors(tmp_path, declared, body)
+    assert errors, "the report says this closes nothing and the body binds #241"
+
+
+def test_the_matching_rule_is_recorded_beside_the_constant():
+    """#556, CLAUDE.md's #180 rule: a transcription is measured against its
+    authority in a test, or explained as unmeasurable with a reason -- not just
+    asserted in a comment nothing checks. This reads the module's own source for the
+    paragraph beside `_CLOSING_KEYWORD` and checks it states the fact that makes the
+    negation case harmless: matching is positional, not semantic.
+    """
+    source = Path(report_schema.__file__).read_text(encoding="utf-8")
+    marker = source.index("_CLOSING_KEYWORD = r")
+    nearby = source[max(0, marker - 1500):marker].lower()
+    assert "position" in nearby, nearby
+    assert "#556" in nearby, nearby
+
+
 def test_the_finding_names_gh_pr_create_as_the_authority(tmp_path):
     """The check must not imply a guarantee it does not make.
 
