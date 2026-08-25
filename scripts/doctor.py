@@ -940,6 +940,158 @@ def check_interpreter_environment():
         report(level, message)
 
 
+_ARCH_TOKEN_RE = re.compile(r"\b(x86_64|arm64|aarch64|i386)\b")
+
+
+def tool_binary_architecture(path, run=None, which=None):
+    """(arch, reason) for the architecture of the binary at `path`, via `file`.
+
+    #386: the interpreter probe above (`translation_state`) reads
+    `sysctl.proc_translated`, which answers for *this process*, not for a binary
+    this loop spawns as a subprocess -- `gh` is exactly that, and it can be an
+    x86_64 build under Rosetta while the interpreter running it is native. There
+    is no sysctl for "is that OTHER binary translated"; `file` reading the
+    Mach-O/ELF header is the mechanism that generalises to any binary on PATH,
+    at the cost of needing `file` on PATH itself -- present on macOS and
+    virtually every Linux install, absent by default on Windows, which is why
+    this returns a reason rather than a value there.
+
+    `run` and `which` are injected so every branch is assertable without
+    shelling out; `check_gh_binary` supplies the real `subprocess.run` and
+    `shutil.which`.
+    """
+    which = shutil.which if which is None else which
+    run = subprocess.run if run is None else run
+    file_bin = which("file")
+    if file_bin is None:
+        return None, "the `file` command is not on PATH here, so a spawned tool's own architecture could not be read"
+    try:
+        completed = run(
+            [file_bin, str(path)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "`file {}` did not run ({})".format(path, exc)
+    stdout = completed.stdout
+    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+    match = _ARCH_TOKEN_RE.search(text)
+    if not match:
+        return None, "`file` output did not name a recognisable architecture: {}".format(
+            _one_line(text, limit=200)
+        )
+    token = match.group(1)
+    return ("arm64" if token == "aarch64" else token), None
+
+
+def gh_binary_findings(system, resolved, gh_version, host=None, arch=None, arch_reason=None):
+    """[(level, message)] for the `gh` binary -- architecture against this host,
+    then version -- pure given its inputs so every branch is testable without a
+    Rosetta machine to reproduce it on. The probing lives in `check_gh_binary`.
+
+    Never claims a match or a mismatch from a gap state (`host is None` or
+    `arch is None`): both render as a WARN naming what could not be read,
+    the same rule `interpreter_architecture` follows one layer up.
+    """
+    if resolved is None:
+        return [("OK", "gh: not on PATH -- nothing to check")]
+    lines = []
+    if system != "Darwin":
+        lines.append(
+            (
+                "OK",
+                "gh architecture: not probed -- the Intel/ARM Homebrew prefix split #386 "
+                "found is Darwin-specific and the `file`-based probe only runs there "
+                "({})".format(resolved),
+            )
+        )
+    elif host is None:
+        lines.append(
+            (
+                "WARN",
+                "gh resolved to {}, and this host's own architecture could not be read "
+                "(hw.optional.arm64 did not answer) -- so whether gh runs under binary "
+                "translation is unknown, not clean".format(resolved),
+            )
+        )
+    elif arch is None:
+        lines.append(
+            (
+                "WARN",
+                "gh architecture could not be determined for {} -- {}".format(
+                    resolved, arch_reason
+                ),
+            )
+        )
+    elif arch != host:
+        prefix = os.path.dirname(os.path.dirname(resolved)) or resolved
+        lines.append(
+            (
+                "WARN",
+                "gh resolved to a {} build at {} (prefix {}) while this host is {} -- "
+                "every gh call runs under binary translation, and a tick spawns gh "
+                "dozens of times per run.".format(arch, resolved, prefix, host),
+            )
+        )
+    else:
+        lines.append(
+            ("OK", "gh architecture: {} build at {}, matches this host".format(arch, resolved))
+        )
+    if gh_version is None:
+        lines.append(
+            (
+                "WARN",
+                "gh version could not be read from {} -- the `gh-pr-edit` workaround in "
+                "skills/manager/SKILL.md is bounded by a gh version (cli/cli#13069) and "
+                "there is nothing to compare it against.".format(resolved),
+            )
+        )
+    else:
+        lines.append(
+            (
+                "OK",
+                "gh version: {} at {} -- skills/manager/SKILL.md's `gh-pr-edit` workaround "
+                "exists for a gh predating cli/cli#13069; compare there if `gh pr edit` "
+                "ever behaves oddly.".format(gh_version, resolved),
+            )
+        )
+    return lines
+
+
+def _gh_version_text(resolved):
+    """The first line of `gh --version`, or None -- never raises."""
+    try:
+        completed = subprocess.run(
+            [resolved, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    text = completed.stdout.decode("utf-8", "replace")
+    first_line = text.splitlines()[0] if text.splitlines() else ""
+    return _one_line(first_line, limit=100) or None
+
+
+def check_gh_binary():
+    """#386. `check_tool("gh", ...)` above answers "is it on PATH and does it
+    run"; this answers the two questions that surfaced a two-year-old x86_64
+    build running under Rosetta from a stale Intel Homebrew prefix while
+    everything else on the machine was native arm64.
+    """
+    resolved = shutil.which("gh")
+    system = platform.system()
+    host = None
+    arch = None
+    arch_reason = None
+    if resolved is not None and system == "Darwin":
+        _, host, _ = translation_state(system)
+        arch, arch_reason = tool_binary_architecture(resolved)
+    gh_version = _gh_version_text(resolved) if resolved is not None else None
+    for level, message in gh_binary_findings(
+        system, resolved, gh_version, host=host, arch=arch, arch_reason=arch_reason
+    ):
+        report(level, message)
+
+
 def check_tool(name, probe):
     """Is this dependency present, and does it run?
 
@@ -5887,6 +6039,11 @@ def main(argv=None):
     check_interpreter_environment()
 
     check_tool("gh", ["gh", "auth", "status"])
+    # #386: `check_tool` above answers "is it on PATH and does it run"; this
+    # answers the question #367's interpreter probe never asked -- whether the
+    # BINARY it spawns is a native build, which is a different fact from the
+    # interpreter running it.
+    check_gh_binary()
     check_tool("supertool", ["supertool", "version"])
     check_tool("git", ["git", "--version"])
     # PATH is not the question the briefs ask. Immediately under the PATH line, because
