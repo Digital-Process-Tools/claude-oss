@@ -139,15 +139,25 @@ def _derive_roster(timeout: float = 5.0):
     binary is not on PATH (`FileNotFoundError`), it errors out, it times out,
     or its output does not parse. All of those are the third state, not a
     guess in either direction -- see `_op_verdict`'s handling of it.
+
+    `encoding="utf-8"` is pinned rather than left to `text=True`'s locale
+    default (self-review finding on #537): this repo's own CLAUDE.md already
+    names the trap -- a console's default codepage on Windows is typically
+    cp1252, not UTF-8, and the roster's prose carries non-ASCII punctuation
+    (an em dash). Pinning the decode avoids depending on whatever codepage the
+    calling process happens to have; `UnicodeDecodeError` is still caught
+    alongside the other two failure modes so a genuinely undecodable byte
+    degrades to the same third state rather than crashing the hook.
     """
     try:
         proc = subprocess.run(
             ["supertool", "ops:roster"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return None
     if proc.returncode != 0:
         return None

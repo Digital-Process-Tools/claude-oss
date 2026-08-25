@@ -113,6 +113,19 @@ def test_derive_roster_returns_none_when_supertool_is_not_on_path(monkeypatch):
     assert batch_hint._derive_roster() is None
 
 
+def test_derive_roster_returns_none_on_a_decode_failure(monkeypatch):
+    """Self-review finding: `subprocess.run` decodes with a pinned `encoding=
+    "utf-8"` rather than the locale default (CLAUDE.md's own documented
+    Windows cp1252 trap). A genuinely undecodable byte must still degrade to
+    the third state, not crash the hook."""
+
+    def _raise(*a, **k):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(subprocess, "run", _raise)
+    assert batch_hint._derive_roster() is None
+
+
 def test_derive_roster_returns_none_on_a_nonzero_exit(monkeypatch):
     monkeypatch.setattr(
         subprocess,
