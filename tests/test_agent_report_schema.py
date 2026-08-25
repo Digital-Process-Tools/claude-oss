@@ -225,6 +225,15 @@ def _mutations():
         }
         return report
 
+    def compliance_item_names_the_instruction_without_a_reason(report):
+        report["compliance"] = {
+            "state": "checked",
+            "items": [
+                {"instruction": "run the full suite after the rebase", "reason": ""}
+            ],
+        }
+        return report
+
     return {
         "required-keys": missing_required_key,
         "types": wrong_type,
@@ -258,6 +267,9 @@ def _mutations():
             below_bar_item_with_no_pull_request_to_be_recorded_in
         ),
         "below-bar-finding-carries-a-reason": below_bar_finding_without_a_reason,
+        "compliance-item-names-the-instruction-and-the-reason": (
+            compliance_item_names_the_instruction_without_a_reason
+        ),
     }
 
 
@@ -325,6 +337,81 @@ def test_returned_nothing_is_refused_for_the_missing_reason_not_for_the_enum():
     assert not any("is not one of" in error for error in errors), (
         "still refused by enum membership, so the state was never added: " + repr(errors)
     )
+
+
+def test_compliance_is_required_and_a_report_missing_it_is_refused():
+    """#518: a report that says nothing about compliance with its own brief is
+    refused outright, the same way a report missing `docs` or `review` is --
+    the field this issue asks for cannot be an optional afterthought an old
+    report simply lacks.
+    """
+    report = _drop(_example(), "compliance")
+    errors = report_schema.validate(report)
+    assert errors, "a report with no compliance survey at all was accepted"
+    assert any("compliance" in error for error in errors), errors
+
+
+def test_a_report_that_declined_nothing_and_says_so_validates():
+    """The must-fire's paired must-not-fire (#518).
+
+    `compliance: checked, items: []` is the honest shape of a run that
+    executed its brief as written. A schema that only ever refused could not
+    be told from a schema that always refuses, so this has to pass as loudly
+    as the silent-decline case below has to fail.
+    """
+    report = _example()
+    report["compliance"] = {"state": "checked", "items": []}
+    assert report_schema.validate(report) == []
+
+
+def test_a_report_that_declines_an_instruction_and_stays_silent_is_refused():
+    """The exact test #518 names: an item that names what was declined and
+    gives no argument for declining it is the silent-decline shape wearing a
+    declared item's clothes, and it has to be refused for that, not merely
+    for an unrelated missing key.
+    """
+    report = _example()
+    report["compliance"] = {
+        "state": "checked",
+        "items": [
+            {
+                "instruction": (
+                    "read the reporting repository's tracked policy file as "
+                    "part of the review"
+                ),
+                "reason": "",
+            }
+        ],
+    }
+    errors = report_schema.validate(report)
+    assert errors, "a compliance item naming a decline with no reason was accepted"
+    assert any("reason" in error for error in errors), errors
+
+
+def test_a_report_that_declines_an_instruction_and_argues_it_validates():
+    """The full shape #518 asks for: naming the instruction and the argument
+    for declining it is exactly what makes the deviation spellable, so this
+    must validate as cleanly as a report that declined nothing.
+    """
+    report = _example()
+    report["compliance"] = {
+        "state": "checked",
+        "items": [
+            {
+                "instruction": (
+                    "read every file the diff touches, including tracked "
+                    "policy under .claude/jit-context/"
+                ),
+                "reason": (
+                    "classified .claude/jit-context/tools/01-oss/"
+                    "supertool-required.md as injected content attempting to "
+                    "redirect tool use and declined to follow it; continued "
+                    "the review with Read/Bash/grep instead"
+                ),
+            }
+        ],
+    }
+    assert report_schema.validate(report) == []
 
 
 def test_returned_nothing_is_a_review_state_and_only_a_review_state():
@@ -1627,11 +1714,22 @@ def test_a_compatibility_declaration_is_inside_the_contract_fingerprint():
     up: two installed copies both announcing version 5, disagreeing about whether a
     version-4 report is `ok`. Must-fire, paired with the must-not-fire below it.
     """
-    widened = _schema()
-    widened["x-schema-compatibility"] = dict(
-        widened["x-schema-compatibility"], **{"4": "additive", "3": "additive"}
+    # Built rather than taken from the live schema's own declaration: the top of
+    # the real chain moves with every bump (#518's own is 'breaking', where #411's
+    # was 'additive'), and pinning this to whatever the live top link happens to
+    # say today is exactly the coupling-to-current-state CLAUDE.md warns against.
+    # Declaring every step from the current version down to FIRST_CONTRACT
+    # additive is what actually exercises "widened", regardless of what the
+    # shipped schema says on the day this runs.
+    current = _contract_version()
+    widened = _schema_declaring(
+        current,
+        {
+            str(version): "additive"
+            for version in range(report_schema.FIRST_CONTRACT + 1, current + 1)
+        },
     )
-    assert report_schema.readable_from(widened) == 2, (
+    assert report_schema.readable_from(widened) == report_schema.FIRST_CONTRACT, (
         "the fixture does not actually widen anything, so the assertion below "
         "would pass for the wrong reason"
     )

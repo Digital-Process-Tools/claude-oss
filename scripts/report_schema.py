@@ -71,6 +71,7 @@ _KEYWORDS = {
     # annotations, carried for readers and ignored on purpose
     "$schema", "$id", "$defs", "$comment", "title", "description", "examples",
     "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
+    "x-honesty-compliance",
     "x-enforced", "x-enforced-on-disk", "x-convention",
 }
 
@@ -100,6 +101,7 @@ _KEYWORDS = {
 _ANNOTATION_KEYS = {
     "title", "description", "examples", "$comment",
     "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
+    "x-honesty-compliance",
     "x-convention",
     "x-schema-version",
 }
@@ -149,6 +151,16 @@ CONTRACT_FINGERPRINTS = {
     # longer exist, so they were computed under whatever method shipped with them and
     # only the current version's entry is ever compared against anything.
     5: "bf53ecee7c14789b2cfd1144ec06588efc9b1c17f209803148df15cf6879de22",
+    # 6 (#518): a top-level `compliance` survey, required, so a run can name an
+    # instruction from its own brief it declined and why -- the observed gap was
+    # a spawned reviewer misreading tracked policy as injected content and
+    # dropping the tooling it named, with nothing in the report able to say so.
+    # BREAKING, both directions: a version-5 copy refuses every version-6 report
+    # because `compliance` is required and unknown to it; a version-6 copy
+    # refuses every version-5 report because `compliance` is missing. Unlike #411
+    # this is not additive -- the new key is required, not merely a new enum
+    # member on an existing one, so an old document is no longer a subset.
+    6: "fbdd6e52e6cff60b6a3b9f540bf3bd4c848094660c2b7a2e9a9303146659c99c",
 }
 
 _TYPES = {
@@ -647,6 +659,32 @@ def _rule_finding(node, path, errors):
         )
 
 
+def _rule_compliance_item(node, path, errors):
+    """A declined instruction owes its argument, the same way a refusal does (#518).
+
+    `instruction` and `reason` are both schema-required, but `required` only
+    checks presence -- an empty string satisfies it. This is the rule that makes
+    the silent-decline shape actually unspellable: an item that names the
+    instruction and leaves the reason blank is exactly a decline that stays
+    quiet about itself, dressed as a declared one. It is refused for the same
+    reason `_rule_finding` refuses an empty reason on `refused` -- an argument
+    that never arrived reads identically to one that was not needed, and this
+    field exists to keep those apart.
+    """
+    if not _text(node, "instruction"):
+        errors.append(
+            "{}: a compliance item needs the instruction it declined, named "
+            "specifically enough that the maintainer can find it in the "
+            "brief".format(_label(path))
+        )
+    if not _text(node, "reason"):
+        errors.append(
+            "{}: a compliance item needs a reason -- an instruction named with no "
+            "argument is a decline that stays silent about itself, which is the "
+            "exact case this field exists to make unspellable".format(_label(path))
+        )
+
+
 def _rule_class_verdict(node, path, errors):
     if node.get("state") in ("not-applicable", "not-checked") and not _text(node, "why"):
         errors.append(
@@ -873,6 +911,7 @@ _RULES = {
     "docs-target": _rule_docs_target,
     "test-phase": _rule_test_phase,
     "pr-body": _rule_pr_body,
+    "compliance-item": _rule_compliance_item,
 }
 
 

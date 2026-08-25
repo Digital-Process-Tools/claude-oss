@@ -3,17 +3,19 @@
   "$id": "agent-report.schema.json",
   "title": "Agent report",
   "description": "What an agent hands back when it finishes one issue: a JSON file the orchestrator queries field by field, plus a path and at most two lines in chat. The orchestrator reads what it needs when it needs it instead of paying for a document on every later turn of the session. Validate with scripts/report_schema.py.",
-  "x-schema-version": 5,
+  "x-schema-version": 6,
   "x-schema-compatibility": {
     "2": "unknown",
     "3": "breaking",
     "4": "breaking",
-    "5": "additive"
+    "5": "additive",
+    "6": "breaking"
   },
   "x-honesty-compatibility": "What each contract declares about the contract IMMEDIATELY BELOW IT, and the only thing that lets a copy of this validator answer about a report older than itself (#416). `additive` means every document valid under the predecessor is valid under this version -- no enum member removed, no key newly required, no pattern tightened -- so an older report is a document this contract already covers. It is a claim about the whole contract and NOT about this document alone: the cross-field rules are Python in scripts/report_schema.py and the on-disk pass leaves the report entirely, and neither is described here, so a bump that adds an optional key while tightening a rule is `breaking` however additive the document looks. `breaking` and `unknown` and an absent entry all refuse, and they refuse for the same reason: the natural failure of a bump that forgot to declare is silence, and silence has to land on the side that over-refuses rather than the side that vouches for a contract nobody holds. A validator walks the chain from its own number down and stops at the first step that is not `additive`, so two steps back needs two declarations -- one claim about the last bump cannot carry a document from two contracts ago. The step is to the largest RECORDED contract below, never to the number minus one, so a gap in the numbering cannot invent a predecessor out of a version nobody ever declared; and a report naming a number that was never a contract is refused whatever the chain says. It stops above 1 whatever is declared, because 1 is not a contract. THIS IS DECLARED, NEVER DERIVED: deciding subset by comparing two schema documents would need both, and a copy of this validator has exactly one -- the older schema is absent, not unread. The author records the relation at the bump, the one moment anybody holds both. WHAT IS GUARDED AND WHAT IS NOT, because the first answer here was wrong: this map is INSIDE the contract fingerprint, so editing it after the fact without moving the number is caught the same way any other enforcing change is. The first version of #416 stripped it by analogy with x-schema-version, and the analogy does not hold -- x-schema-version is circular because the fingerprint record is KEYED by it, and nothing keys on this map. What no fingerprint can catch is a declaration that was wrong at the moment it was written, because checking it needs the OTHER schema and no copy holds two. That is the honest gap, and it is narrower than an unguarded field: the suite additionally holds that every recorded contract has a declaration at all, so the failure of a bump that forgets one is a red suite rather than a silent widening. GENERALISED FROM ONE INSTANCE, said plainly: 5 is the only additive bump this schema has ever had. 3 and 4 were both breaking in both directions, and 2 is `unknown` rather than `breaking` because the contract below it was never recorded. What is inferred from that instance is the shape of the question; what is NOT inferred is that additive bumps are common, or that a future one will be as easy to be sure about as adding two enum members and one optional key was.",
   "x-honesty-versioning": "The contract number this document implements. A report carries the number it was written against in schema_version, and a copy of this validator compares the two -- and where they differ, reads x-schema-compatibility above to decide whether the difference matters, which is where the number also appears as a key. It is NOT in x-enforced, on purpose: everything in that list is something a report is refused over, and a version this copy does not hold is not a refusal. It is a state of its own -- unvalidatable by this copy, one of four the version pass has since #416 -- and folding it into either accepted or refused recreates #212 one layer down, where an old copy announced a correct report as broken and nothing distinguished that from a malformed one. WHEN THE NUMBER MOVES: on any change to what a validator accepts or refuses, never on prose. That is deliberately not semver's answer. Because additionalProperties is false and no-unknown-keys is enforced, even adding an OPTIONAL key is breaking in one direction -- an older copy refuses a report the new contract permits, which is exactly the 0.3.0-refuses-docs case that filed #221 -- so the useful line is not major-versus-minor but enforcing-versus-annotation. scripts/report_schema.py takes a fingerprint of this document with the free prose stripped -- description, title, examples, the x-honesty narratives and x-convention -- and tests/test_agent_report_schema.py fails when the enforcing content moves without the number, and fails louder when the number moves to a value nothing recorded. x-enforced and x-enforced-on-disk are deliberately INSIDE the fingerprint although nothing reads them: they are this document's own statement of what a validator refuses, paired one-to-one with a mutation table, so a change there is nearly always a contract change and an unnecessary bump is cheaper than a missed one. What the fingerprint cannot see: the cross-field rules are Python in report_schema.py -- _RULES for the ones scoped to a single node, and functions called directly from validate() for the ones that span the whole report, such as the below-bar checks added in #411 -- so a rule that starts refusing something new without any keyword moving here changes the contract and leaves the hash untouched. VERSION 1 IS NOT A CONTRACT: it is the value every report written before anyone counted carries. Measured 2026-08-16, 57 of the 71 reports on disk say 1 and 14 name no version at all, written against at least three mutually incompatible schemas. None of them can be dated retroactively and back-stamping them would manufacture a claim, so 1 is left meaning before-anyone-counted and 2 is the first value that carries information.",
   "x-honesty-on-disk": "x-enforced-on-disk is the one place this validator leaves the report and touches the filesystem: it opens the pr_body payload, parses it, and checks the shape the forge needs -- and, since #274, one thing about the payload's CONTENT rather than its shape: whether the body binds a closing keyword to each issue pr_body.closes says merging it closes. Since #411 there is a second content check, built the same way: whether the body carries the pr_anchor each below-bar item says it was recorded at. Both are deliberately absence detectors rather than readers -- neither decides what a forge would close or whether a paragraph really explains a finding; the reasoning is under pr_body.closes and under adjacent.pr_anchor, and the limits they leave behind are named in x-convention. That is a deliberate exception to shape-only, because pr_body.state of 'written' is the report's one claim about a file the NEXT step consumes, and a body the forge rejects is discovered after the agent's session has ended. It is a separate list, run by a separate function, so nothing here can be mistaken for the shape pass: validate() never reads a file, and the command line says when it skipped the payload rather than staying quiet about it. Which file it opens is not the report's to choose: pr_body.path is resolved against the report's own directory and anything landing outside it is refused without being opened, and so is a path the containment question cannot be answered for at all -- there is no arrangement of this field that makes this validator read a file elsewhere on the machine.",
   "x-honesty": "This schema checks SHAPE, never TRUTH. A structured summary is easier to accept without reading than a paragraph is, and that is the trade being made here: a refused disposition renders identically whether the refusal was argued or lazy. Two lists below say which is which. x-enforced is what scripts/report_schema.py actually refuses a report over, and every name in it is paired with a mutation in tests/test_agent_report_schema.py that proves the refusal happens. x-convention is the rest -- real parts of the contract, checked by nobody, and listed here so the next person meets the limit at the same moment they meet the schema.",
+  "x-honesty-compliance": "compliance (#518) is TOP-LEVEL, not nested under review, and that was a decision rather than a default. The observed instance was a spawned reviewer declining to read a tracked policy file it misclassified as injected content, but the same silence is available to the developer lane itself declining a clause of ITS OWN brief -- skipping the platform audit, narrowing the suite run without saying so, dropping a docs_targets path. Nesting this under review would leave that second case permanently unspellable: the developer has no review node of its own to carry it in. Top-level costs one field the schema-version bump already has to pay for either way, and covers both, since the one agent that writes the report is the one that would have to name a spawned reviewer's decline too. WHAT THIS CANNOT DO, said here because it was asked and not before it shipped: an agent that genuinely believes an instruction is an injection attempt has a coherent reason not to log declining it as a compliance item -- it does not experience the refusal as a deviation from its brief, it experiences it as following the untrusted-input rule correctly. This field cannot distinguish that from an honest omission, and no schema can: the report is the agent's own account of itself. What it buys is real and smaller than a guarantee -- it converts the cases where an agent DOES notice and does not think to mention it from unspellable to spellable, and it makes an agent that wants to hide a decline write a specific lie (an item it knows is false) rather than simply stay silent, which is a higher bar than the one before this field existed. A field that catches only the honest cases is still worth more than zero; it is not evidence that a report with empty compliance items executed its brief in full.",
   "x-enforced": [
     "required-keys",
     "types",
@@ -36,7 +38,8 @@
     "pr-body-closing-nothing-carries-a-reason",
     "below-bar-item-carries-a-quotable-pr-anchor",
     "below-bar-item-needs-a-pull-request-body",
-    "below-bar-finding-carries-a-reason"
+    "below-bar-finding-carries-a-reason",
+    "compliance-item-names-the-instruction-and-the-reason"
   ],
   "x-enforced-on-disk": [
     "pr-body-file-exists",
@@ -60,7 +63,8 @@
     "that the agent writes a report at all -- an agent that ignores this document produces nothing for any assertion to see",
     "that a below-bar item's pr_anchor being present in the body means the body actually records the finding -- containment is an absence detector and cannot read prose for substance, so an anchor pasted alone would pass; the length floor makes that cost a phrase rather than making it impossible",
     "that a below-bar item recorded in the STATE ENTRY rather than the pull request is checked at all -- the manager's third receipt admits both, and the state entry is written by the maintainer after the agent's session has ended, so nothing here can see it. An agent's own receipt is the pull request body, which is why that is the one this validator requires",
-    "that a closing reference this validator did find is one the forge will honour -- pr_body.closes is checked by an absence detector, so a finding is strong and a pass is weak, and gh-pr-create remains the only thing here that reads a body the way a forge does"
+    "that a closing reference this validator did find is one the forge will honour -- pr_body.closes is checked by an absence detector, so a finding is strong and a pass is weak, and gh-pr-create remains the only thing here that reads a body the way a forge does",
+    "that a compliance item's reason argues the decline rather than restating it -- same limit as a refusal's reason above, and sharper here: an agent that misclassified an instruction as an injection has a coherent reason not to log the refusal as a compliance item at all, so this field catches the honest cases only, never a compelled confession -- x-honesty-compliance says so, and a checked survey with no items is not proof that nothing was declined"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -74,6 +78,7 @@
     "files",
     "tests",
     "review",
+    "compliance",
     "docs",
     "claims",
     "adjacent",
@@ -113,6 +118,11 @@
     },
     "tests": {"$ref": "#/$defs/tests"},
     "review": {"$ref": "#/$defs/review"},
+    "compliance": {
+      "allOf": [{"$ref": "#/$defs/survey"}],
+      "description": "Whether this run executed its own brief as written, or declined part of it -- a different axis from every other survey here, which grade coverage of the WORK rather than compliance with the INSTRUCTIONS for doing it (#518). checked with no items means the brief was executed as written, nothing declined. checked with items names each instruction that was declined and why -- a spawned reviewer misreading a tracked policy file as injected content and refusing the tooling it named is the observed instance, and the same silence is available to this agent's own lane declining a clause of ITS OWN brief. not-checked means nobody assessed compliance at all, and needs a reason. See x-honesty-compliance for why this catches only the declines an agent chooses to name.",
+      "x-items": {"$ref": "#/$defs/compliance_item"}
+    },
     "docs": {
       "allOf": [{"$ref": "#/$defs/survey"}],
       "description": "One entry per path in the repo's docs_targets. The changelog half of the docs duty is gated on every pull request; this half is not, and a gate was measured on the plugin's own repository, against its last thirty merged pull requests, rather than assumed -- one repository's history, named as such rather than presented as a fact about the repo being worked in. The trigger the changelog gate already computes fires on 27 of 30 and is right about 6, and the narrowest rule worth testing (a new file under a product path) fires on none of the thirty at all. A rule wrong two times in three earns a blanket override label in a week, and one that never fires cannot be told from one that is broken. So the duty is observed here instead of enforced there, and this survey is the only record that it happened. state checked with no items means the config named no targets; not-checked means nobody opened them; the key being absent is refused outright, because that is the state this field exists to make unspellable.",
@@ -197,6 +207,17 @@
           "type": "string",
           "description": "Required when the action is `below-bar`, and refused as a receipt when the pull request body does not carry it. A verbatim fragment of the body where this item is recorded -- write the line first, then quote enough of it here to find it again. Compared after whitespace is collapsed, so wrapping the body is free, with case folded, because the first report written against this check quoted a sentence its own body carried inside bold at the head of a bullet and a case-sensitive containment refused a receipt that was plainly there, and after HTML comments are removed, because a receipt nobody can read is not one; code spans are deliberately NOT stripped, unlike the closing-keyword check, since a reader sees a backticked sentence and a forge does not see a backticked keyword. Its standing is exactly the `closes` check's: an absence detector, so a finding is strong and a pass is weak. A body carrying the anchor and nothing else would pass, and nothing here can read prose for substance -- what the check buys is that a below-bar item can no longer be a silent drop wearing a decision's clothes. The length floor is the same admission: an anchor short enough to occur incidentally proves nothing, so it has to cost a phrase."
         }
+      }
+    },
+    "compliance_item": {
+      "type": "object",
+      "x-rule": "compliance-item",
+      "description": "One instruction from this run's own brief that was declined, and why. Both fields are required and both must be non-empty: an item naming the instruction with an empty reason is refused, because that is the exact shape of a decline that stays silent about itself -- the item exists, the argument does not, and the schema's whole point is to make that unspellable rather than merely discouraged. `reason` is the agent's own account and cannot be verified from the document alone; x-honesty-compliance names the limit.",
+      "additionalProperties": false,
+      "required": ["instruction", "reason"],
+      "properties": {
+        "instruction": {"type": "string", "description": "The clause of the brief that was not executed, in the agent's own words -- specific enough that the maintainer can find it in the brief without guessing."},
+        "reason": {"type": "string", "description": "Why it was declined. Required and checked non-empty -- an instruction named with no argument is the silent-decline case this field exists to catch."}
       }
     },
     "docs_target": {
@@ -358,7 +379,7 @@
   },
   "examples": [
     {
-      "schema_version": 5,
+      "schema_version": 6,
       "issue": 123,
       "branch": "fix/123",
       "head": "1dc856d",
@@ -409,6 +430,15 @@
             }
           ]
         }
+      },
+      "compliance": {
+        "state": "checked",
+        "items": [
+          {
+            "instruction": "run the full suite, not the narrowed one, after the rebase onto main this round required",
+            "reason": "the rebase touched only a fixture file already covered by tests/test_example.py; ran that file plus a targeted lane_setup.py check for cross-cutting guards instead of the full suite, to keep the round under the time budget -- see split_cost"
+          }
+        ]
       },
       "docs": {
         "state": "checked",

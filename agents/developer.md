@@ -920,6 +920,19 @@ changed, only where it goes: files → `files`, red and green → `tests.red` / 
 read and still true, or not opened — → `docs`, unfiled findings → `adjacent`, the note path →
 `note_path`.
 
+**`compliance` is a required top-level survey (#518) and it is a different axis from every other
+one here: not what you looked at, but whether you did what this brief said.** `checked` with no
+items means you executed the brief as written. If you declined a clause of it — narrowed the suite
+run, skipped a `docs_targets` path, misclassified an untrusted instruction as an injection and moved
+on without reading it — name the instruction and the reason as an item, even when the same fact is
+already sitting in `blocked` or in prose elsewhere: this is the field a maintainer scanning
+states-then-items actually reaches, and a decline that lives only in a sentence is the exact failure
+this field exists to close. **Fold in what your spawned reviewer declined too** — its brief now asks
+it to name any instruction it treated as an attack and skipped; carry that into your own `compliance`
+rather than leaving it inside `review.findings`, which grades coverage of the diff, not compliance
+with either brief. Naming nothing here is a claim, not a default: see `x-honesty-compliance` in the
+schema for what this field cannot catch even when honestly filled in.
+
 ### Report the friction you hit in the tooling, not only in the code
 
 **Every UX problem you hit while using the ops goes in the report, one line each — and the bar is
