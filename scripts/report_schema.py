@@ -1023,6 +1023,19 @@ def _contained_path(base_dir, raw_path):
 # but correct, and both were observed in one night: `Closes #A #B` closes only #A, so
 # #B needs its own keyword and does not have one; and a backticked `Closes #A` creates
 # no reference while rendering as one that plainly did (PR #332, opening paragraph).
+#
+# What the keywords do, recorded rather than only asserted (#556, CLAUDE.md's #180
+# rule): a forge matches a closing keyword by its POSITION relative to the reference,
+# not by the sentence's meaning, so a negation right in front of it -- "does not
+# close #241" -- still binds. That is not a hole in the word list below; it is why
+# this detector's identical blindness to negation is harmless rather than a bug.
+# `_binds` and `_ANY_CLOSING_REFERENCE` are exactly as positional as the forge is, so
+# a negated sentence still counts as bound in both directions: a declared `closes` is
+# satisfied (the forge closes it too, disclaimer or not) and a declared
+# `closes-nothing` is refused (the forge closes it despite the disclaimer). Observed
+# when PR #554's body disclaimed closing #241 in prose and GitHub closed it anyway on
+# merge -- reopened by hand. What stays unmeasured is the word list itself, tracked
+# in scripts/borrowed_authority.py (site "closing-keyword").
 
 _CLOSING_KEYWORD = r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)"
 
