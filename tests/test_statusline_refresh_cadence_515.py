@@ -69,7 +69,9 @@ def _refresh(tmp_path, monkeypatch, answers, cache=None):
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: answers["rollups"])
     monkeypatch.setattr(
         statusline, "installed_plugins",
-        lambda: {"oss": {"version": "0.1.0", "repository": "https://github.com/owner/repo"}},
+        lambda project_root, plugins_root=None: {
+            "oss": {"version": "0.1.0", "repository": "https://github.com/owner/repo"}
+        },
     )
     asked = []
 

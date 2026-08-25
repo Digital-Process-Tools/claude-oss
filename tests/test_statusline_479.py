@@ -10,6 +10,7 @@ Every assertion below pairs a must-not-fire with a must-fire, because an asserti
 """
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -170,7 +171,7 @@ def test_the_newest_recorded_install_wins_over_dict_order(tmp_path):
         ),
         encoding="utf-8",
     )
-    assert statusline.installed_plugins(tmp_path)["oss"]["version"] == "0.10.0"
+    assert statusline.installed_plugins(None, tmp_path)["oss"]["version"] == "0.10.0"
 
 
 def test_an_unparseable_version_does_not_erase_a_readable_one(tmp_path):
@@ -188,7 +189,89 @@ def test_an_unparseable_version_does_not_erase_a_readable_one(tmp_path):
         ),
         encoding="utf-8",
     )
-    assert statusline.installed_plugins(tmp_path)["oss"]["version"] == "0.10.0"
+    assert statusline.installed_plugins(None, tmp_path)["oss"]["version"] == "0.10.0"
+
+
+def test_installed_plugins_is_resolved_per_project_not_the_newest_anywhere_521(tmp_path):
+    """#521: two projects, two entries, two different versions. The pre-fix behaviour
+    (`max()` over the whole table) reported the higher one for both projects; resolved
+    per project, each sees its own pin."""
+    behind = tmp_path / "behind-project"
+    ahead = tmp_path / "ahead-project"
+    behind.mkdir()
+    ahead.mkdir()
+    (tmp_path / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.8", "scope": "project", "projectPath": str(behind)},
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(ahead)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert statusline.installed_plugins(behind, tmp_path)["oss"]["version"] == "9.9.8"
+    assert statusline.installed_plugins(ahead, tmp_path)["oss"]["version"] == "9.9.9"
+
+
+def test_a_project_current_on_its_own_entry_still_reports_current_521(tmp_path):
+    """The must-not-fire control: a project whose own entry already carries the newest
+    version keeps reporting it, not `?` and not another project's number."""
+    here = tmp_path / "here"
+    here.mkdir()
+    (tmp_path / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(here)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert statusline.installed_plugins(here, tmp_path)["oss"]["version"] == "9.9.9"
+
+
+def test_a_project_with_no_matching_entry_has_no_version_521(tmp_path):
+    """No entry names this project -- the plugin is absent from the result entirely,
+    which `version_status` upstream renders as `unknown` (`?`), never as the newest
+    version recorded for some other project."""
+    here = tmp_path / "here"
+    elsewhere = tmp_path / "elsewhere"
+    here.mkdir()
+    (tmp_path / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(elsewhere)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert "oss" not in statusline.installed_plugins(here, tmp_path)
+
+
+def test_normalized_path_folds_case_on_windows_521():
+    """Self-review finding on #521: an installed-plugin `projectPath` and the path this
+    session resolves can differ only in case on a case-insensitive filesystem, which
+    `Path.resolve()` alone does not fold. `os.path.normcase` folds case on Windows
+    (`ntpath`) and is a no-op on POSIX (`posixpath`), so this is real on Windows and
+    intentionally unobserved here -- this test runs on every platform and only asserts
+    the Windows-observable half."""
+    if os.name == "nt":
+        assert statusline._normalized_path("C:\\Users\\Me\\Proj") == statusline._normalized_path(
+            "c:\\users\\me\\proj"
+        )
+    else:
+        assert statusline._normalized_path("/tmp/Proj") != statusline._normalized_path("/tmp/proj")
 
 
 # --------------------------------------------------------------------- gather

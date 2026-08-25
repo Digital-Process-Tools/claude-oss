@@ -23,10 +23,14 @@ import doctor
 def check_auto_update(project_dir):
     """Did the SessionStart updater run, and what did it do (#480)?
 
-    Four states, and the fourth is the one this whole feature turns on:
+    Five states, and the fifth is the one #492 added:
 
     * **off** -- switched off by the environment or by a config key. Reported at OK with
       the switch named, because a user who turned it off is not carrying a gap.
+    * **opt-out status unknown** (#492) -- a config file exists but could not be read or
+      parsed, so whether it declares an opt-out cannot be told. Reported at WARN, never
+      folded into "off" (a guess that consent was withheld) or into "on" (a guess that it
+      was not) -- `opt_out`'s own docstring is the source of that split.
     * **updated** -- with the versions it moved between, and the fact that this session
       is still running the old code until Claude Code restarts.
     * **current** / **could-not-check** -- the updater's own two answers, relayed. A run
@@ -39,14 +43,31 @@ def check_auto_update(project_dir):
       `plugin_update.read_receipt` actually caught, never by asking the filesystem a
       second question; folding it into "no receipt" would report a broken receipt as
       the ordinary pre-first-run state.
+
+    A `updated`/`current` receipt additionally carries `partial_failure` (#521): one
+    scope succeeding is enough for either verdict to stand on its own terms (a
+    deliberate decision this row does not second-guess), but a scope that was silently
+    left behind must still reach the one surface a maintainer actually reads -- #521's
+    own measured instance was `OK auto-update: oss already current` for a run where one
+    of two scopes failed on a transient SSH error, with the failure named only in the
+    receipt's `detail`, which this row never looked at. Both arms below WARN and quote
+    `detail` when `partial_failure` is true, rather than rendering the same OK a clean
+    run gets.
     """
     if doctor.plugin_update is None:
         doctor.unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
         return
-    off, where = doctor.plugin_update.opt_out(project_dir)
+    status, where = doctor.plugin_update.opt_out(project_dir)
     receipt = doctor.plugin_update.read_receipt()
-    if off:
+    if status == "off":
         doctor.report("OK", "auto-update: off -- {}".format(where))
+        return
+    if status == "unknown":
+        doctor.report(
+            "WARN",
+            "auto-update: opt-out status unknown -- {} -- neither on nor off could be "
+            "established, so nothing was touched until this is resolved.".format(where),
+        )
         return
     if isinstance(receipt, doctor.plugin_update.ReceiptUnreadable):
         # A receipt that exists and is broken is not a receipt that was never written
@@ -78,16 +99,26 @@ def check_auto_update(project_dir):
     if isinstance(when, (int, float)):
         stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
     state = receipt.get("state")
+    partial = bool(receipt.get("partial_failure"))
     if state == "updated":
-        doctor.report(
-            "WARN",
+        message = (
             "auto-update: updated {} from {} to {}{} -- this session is still running "
             "the old copy; restart Claude Code.".format(
                 receipt.get("plugin"), receipt.get("from"), receipt.get("to"), stamp
-            ),
+            )
         )
+        if partial:
+            message += " But not every scope: {}".format(receipt.get("detail"))
+        doctor.report("WARN", message)
         return
     if state == "current":
+        if partial:
+            doctor.report(
+                "WARN",
+                "auto-update: {} reports current{} -- but not every scope updated "
+                "cleanly: {}".format(receipt.get("plugin"), stamp, receipt.get("detail")),
+            )
+            return
         doctor.report(
             "OK", "auto-update: {} already current{}".format(receipt.get("plugin"), stamp)
         )

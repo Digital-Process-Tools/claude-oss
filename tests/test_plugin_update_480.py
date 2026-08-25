@@ -12,8 +12,11 @@ where nothing checked.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -56,20 +59,134 @@ class _Runner:
 
 
 def test_the_environment_switches_it_off_and_says_so(tmp_path):
-    off, where = plugin_update.opt_out(tmp_path, env={"OSS_NO_AUTO_UPDATE": "1"})
-    assert off and "OSS_NO_AUTO_UPDATE" in where
+    status, where = plugin_update.opt_out(tmp_path, env={"OSS_NO_AUTO_UPDATE": "1"})
+    assert status == "off" and "OSS_NO_AUTO_UPDATE" in where
 
 
 def test_a_config_key_switches_it_off_and_names_the_file(tmp_path):
+    (tmp_path / ".oss.json").write_text(json.dumps({"repo": "x"}), encoding="utf-8")
     (tmp_path / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
-    off, where = plugin_update.opt_out(tmp_path, env={})
-    assert off and ".oss.local.json" in where
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "off" and ".oss.local.json" in where
 
 
 def test_it_is_on_by_default(tmp_path):
     """The must-fire control: without this, every opt-out test above passes vacuously."""
-    off, where = plugin_update.opt_out(tmp_path, env={})
-    assert not off and where is None
+    (tmp_path / ".oss.json").write_text(json.dumps({"repo": "x"}), encoding="utf-8")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "on" and where is None
+
+
+def test_opt_out_walks_upward_from_a_subdirectory_492(tmp_path):
+    """The second defect in #492: an opt-out declared at the repo root must still be
+    found when `opt_out` is called from a subdirectory, the way the SessionStart hook
+    is -- not only when called with the root itself."""
+    (tmp_path / ".oss.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    sub = tmp_path / "a" / "b" / "c"
+    sub.mkdir(parents=True)
+    status, where = plugin_update.opt_out(sub, env={})
+    assert status == "off" and ".oss.json" in where
+
+
+def test_unreadable_config_is_unknown_not_on_or_off_492(tmp_path):
+    """The first defect in #492: a config that exists but fails to parse must answer a
+    third state, distinct from both "on" (checked, no opt-out) and "off" (checked, opt-out
+    found) -- collapsing it into either is exactly what let an opt-out silently not take."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert status not in ("on", "off")
+    assert where and ".oss.json" in where
+
+
+def test_unreadable_config_status_is_not_merely_falsy_492(tmp_path):
+    """Guards the exact shape #492 named: "assertable as neither on nor off, not a
+    falsy value that happens to differ" -- a bool-shaped return could make "unknown" a
+    third falsy value indistinguishable from "on" under a plain truthiness check."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    status, _ = plugin_update.opt_out(tmp_path, env={})
+    assert isinstance(status, str)
+    assert not isinstance(status, bool)
+
+
+def test_oss_local_json_only_is_still_found_492(tmp_path):
+    """Self-review finding on this fix: the first version delegated the upward walk to
+    `statusline.repo_root`, which decides a directory is the repo root by `.oss.json`
+    alone -- so a directory carrying only `.oss.local.json` (a real, documented opt-out
+    location, per this module's own top docstring) was walked straight past and silently
+    answered "on", reintroducing the exact class #492 was filed over."""
+    (tmp_path / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "off" and ".oss.local.json" in where
+
+
+def test_invalid_utf8_config_is_unknown_not_a_crash_492(tmp_path):
+    """Self-review finding: the first version's read-step except clause dropped the
+    `ValueError` arm (only `FileNotFoundError`/`OSError` were caught around
+    `read_text`), so `UnicodeDecodeError` -- a `ValueError` subclass -- went uncaught and
+    crashed `opt_out`, `update`, and `doctor.check_auto_update` outright instead of
+    reporting "unknown"."""
+    (tmp_path / ".oss.json").write_bytes(b"\xff\xfe\x00invalid utf8 \x80\x81")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert ".oss.json" in where
+
+
+def test_resolve_failing_on_root_is_unknown_not_a_crash_492(tmp_path, monkeypatch):
+    """Self-review finding: `opt_out`'s own `Path(root).resolve()` was unguarded, unlike
+    the identical call in `statusline._normalized_path` -- which carries a fallback
+    specifically because `resolve()` can raise on some platforms for a path with a
+    permission problem partway up it. Forced directly (rather than relying on a real
+    locked directory, whose triggering shape is itself platform-dependent) so this test
+    is not platform-conditional."""
+
+    class _Boom(Path().__class__):
+        def resolve(self, *a, **k):
+            raise OSError(13, "permission denied")
+
+    monkeypatch.setattr(plugin_update, "Path", _Boom)
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert "could not resolve" in where
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod 0o000 does not deny traversal on Windows")
+def test_a_locked_ancestor_directory_is_unknown_not_a_crash_492(tmp_path):
+    """Self-review finding: `Path.is_file()` (used by `statusline.repo_root`, which the
+    first version of this fix delegated to) swallows most `OSError`s but not
+    `PermissionError` -- so a locked ancestor directory anywhere between the caller's
+    root and the filesystem root crashed the walk instead of reporting "unknown"."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    deep = locked / "deep"
+    deep.mkdir()
+    os.chmod(str(locked), 0o000)
+    try:
+        status, where = plugin_update.opt_out(deep, env={})
+    finally:
+        os.chmod(str(locked), 0o755)
+    assert status == "unknown"
+    assert "could not list" in where
+
+
+def test_an_unreadable_opt_out_config_reports_could_not_check_and_calls_nothing_492(tmp_path):
+    """The `update`-path half of #492: `opt_out` returning "unknown" must not be read as
+    "on" (which would run the update against an install nobody could show consented to
+    it) or as "off" (which would hide that anything is wrong). It must stop short, the
+    same as the marketplace-refresh-failed and install-record-unreadable arms already
+    do, and say so in the receipt."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    runner = _Runner([])
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=_plugins_root(tmp_path, "0.9.0"),
+        env={},
+        runner=runner,
+    )
+    assert document["state"] == "could-not-check", document
+    assert runner.calls == [], runner.calls
+    assert ".oss.json" in document["detail"]
 
 
 def test_an_opted_out_run_calls_nothing(tmp_path):
@@ -149,15 +266,15 @@ def test_the_scope_comes_off_the_install_record_not_a_default(tmp_path):
             {
                 "plugins": {
                     "oss@dpt-plugins": [
-                        {"version": "0.9.0", "scope": "project"},
-                        {"version": "0.9.0", "scope": "local"},
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(tmp_path)},
+                        {"version": "0.9.0", "scope": "local", "projectPath": str(tmp_path)},
                     ]
                 }
             }
         ),
         encoding="utf-8",
     )
-    assert plugin_update.installed_scopes("oss", root) == ["project", "local"]
+    assert plugin_update.installed_scopes("oss", tmp_path, root) == ["project", "local"]
     assert plugin_update.qualified_name("oss", root) == "oss@dpt-plugins"
 
     runner = _Runner([(True, ""), (True, ""), (True, "")])
@@ -169,6 +286,35 @@ def test_the_scope_comes_off_the_install_record_not_a_default(tmp_path):
     assert all(call[3] == "oss@dpt-plugins" for call in updates), updates
 
 
+def test_installed_scopes_ignores_a_sibling_projects_entry_521(tmp_path):
+    """Self-review finding on #521: `installed_scopes` fed `update()`'s per-scope
+    `claude plugin update --scope <scope>` calls without ever filtering by project, so a
+    `project`/`local`-scope entry belonging to a DIFFERENT project on the machine could
+    be attempted and fail against THIS project (which has no such scope), incorrectly
+    marking `partial_failure=True` for a run that was actually clean here."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    sibling = tmp_path / "sibling"
+    here.mkdir()
+    sibling.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(here)},
+                        {"version": "0.9.0", "scope": "local", "projectPath": str(sibling)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_scopes("oss", here, root) == ["project"]
+    assert plugin_update.installed_scopes("oss", sibling, root) == ["local"]
+
+
 def test_one_scope_succeeding_is_not_a_failed_run(tmp_path):
     """The must-not-fire half: a plugin at two scopes, one of which no longer resolves."""
     root = tmp_path / "plugins"
@@ -178,7 +324,7 @@ def test_one_scope_succeeding_is_not_a_failed_run(tmp_path):
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "0.9.0", "scope": "project"},
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(tmp_path)},
                         {"version": "0.9.0", "scope": "user"},
                     ]
                 }
@@ -245,10 +391,10 @@ def test_before_readable_after_not_is_still_could_not_check(tmp_path, monkeypatc
     calls = {"n": 0}
     real_installed_version = plugin_update.installed_version
 
-    def flaky_installed_version(name, plugins_root=None):
+    def flaky_installed_version(name, project_root=None, plugins_root=None):
         calls["n"] += 1
         if calls["n"] == 1:
-            return real_installed_version(name, plugins_root)
+            return real_installed_version(name, project_root, plugins_root)
         return None  # the second read -- "after" -- comes back unreadable
 
     monkeypatch.setattr(plugin_update, "installed_version", flaky_installed_version)
@@ -274,7 +420,7 @@ def test_a_partial_failure_reaches_the_receipt_detail(tmp_path):
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "0.9.0", "scope": "project"},
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(tmp_path)},
                         {"version": "0.9.0", "scope": "user"},
                     ]
                 }
@@ -291,6 +437,7 @@ def test_a_partial_failure_reaches_the_receipt_detail(tmp_path):
     )
     assert document["state"] == "current", document
     assert "user" in document["detail"] and "not found at user scope" in document["detail"]
+    assert document["partial_failure"] is True, document
 
 
 def test_the_plugin_names_itself_from_its_own_manifest(tmp_path):
@@ -298,7 +445,10 @@ def test_the_plugin_names_itself_from_its_own_manifest(tmp_path):
     assert plugin_update.plugin_name(_plugin_root(tmp_path, "renamed-tomorrow")) == "renamed-tomorrow"
 
 
-def test_the_newest_recorded_install_is_the_one_reported(tmp_path):
+def test_the_newest_matching_install_is_the_one_reported(tmp_path):
+    """No `scope` on any entry -- the shape most fixtures in this file use -- means each
+    one applies everywhere, so the newest readable version among them wins regardless of
+    which project is asked (`project_root=None` here is deliberately uninformative)."""
     root = tmp_path / "plugins"
     root.mkdir()
     (root / "installed_plugins.json").write_text(
@@ -315,7 +465,94 @@ def test_the_newest_recorded_install_is_the_one_reported(tmp_path):
         ),
         encoding="utf-8",
     )
-    assert plugin_update.installed_version("oss", root) == "9.9.9"
+    assert plugin_update.installed_version("oss", None, root) == "9.9.9"
+
+
+def test_installed_version_is_resolved_per_project_not_the_newest_anywhere_521(tmp_path):
+    """#521's own fixture: two projects, two entries, two different versions, asked from
+    the lower one. The pre-fix behaviour (`max()` over the whole table) answered `9.9.9`
+    -- another project's pin -- for both. Resolved per project, the answer for the lower
+    project is its own `9.9.8`."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    behind = tmp_path / "behind-project"
+    ahead = tmp_path / "ahead-project"
+    behind.mkdir()
+    ahead.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.8", "scope": "project", "projectPath": str(behind)},
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(ahead)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", behind, root) == "9.9.8"
+    assert plugin_update.installed_version("oss", ahead, root) == "9.9.9"
+
+
+def test_a_project_current_on_its_own_entry_is_not_disturbed_521(tmp_path):
+    """The must-not-fire control: a project whose own entry already carries the newest
+    version must keep reporting it as the newest -- not `?`, not another project's pin."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    here.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(here)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", here, root) == "9.9.9"
+
+
+def test_a_project_with_no_matching_entry_is_none_not_the_newest_anywhere_521(tmp_path):
+    """No entry names this project at all -- must answer `None` (a `?` upstream), never
+    fall back to whatever the newest recorded version happens to be elsewhere."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    elsewhere = tmp_path / "elsewhere"
+    here.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(elsewhere)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", here, root) is None
+
+
+def test_a_user_scope_entry_applies_to_every_project_521(tmp_path):
+    """`scope: "user"` has no `projectPath` and applies everywhere -- it must still be
+    found for a project that has no `project`/`local` entry of its own."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    here.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"oss@dpt": [{"version": "9.9.9", "scope": "user"}]}}),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", here, root) == "9.9.9"
 
 
 # ------------------------------------------------------------------------- receipt
@@ -380,7 +617,7 @@ def test_the_guards_fire_against_a_mutated_module(tmp_path, monkeypatch):
     assert document["state"] == "could-not-check", document
 
     # Mutation 2: an opt-out that is read and then ignored.
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: (False, None))
+    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
     ran = _Runner([(True, ""), (True, "")])
     plugin_update.update(
         root=tmp_path,
