@@ -705,6 +705,12 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(doctor.PLUGIN_ROOT))
     monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
+    # #386: `check_gh_binary` probes THIS machine's real `gh`, independent of the
+    # `check_tool` stub above -- and this repo's own dev machine is exactly the
+    # Rosetta-gh case #386 was filed from, which would turn a "fully configured,
+    # everything clean" fixture into a real WARN about a fact this test is not
+    # about. Stubbed the same way `check_tool` is.
+    monkeypatch.setattr(doctor, "check_gh_binary", lambda: doctor.report("OK", "gh binary"))
     doctor.main()
     out = capsys.readouterr().out
     if os.name == "nt":
