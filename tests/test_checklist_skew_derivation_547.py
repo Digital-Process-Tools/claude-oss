@@ -116,3 +116,39 @@ def test_a_reference_found_only_in_the_installed_copy_is_still_derived(tmp_path)
     assert "agents/developer.md" in rows, rows
     # repo has no copy -> could-not-tell, not silently dropped
     assert rows["agents/developer.md"] == "could-not-tell", rows
+
+
+def test_a_reference_named_only_in_the_other_copy_is_still_derived(tmp_path):
+    """Self-review finding on the auditor round: when BOTH trees carry a base
+    file and they DIFFER -- exactly the `differs` state this function only
+    runs under -- a reference named only in one copy's text must still be
+    picked up, not just whichever tree happened to resolve first. The first
+    version of this derivation broke out of the per-file loop on the first
+    successful read, so a stale `repo` copy that had not yet grown a
+    delegation silently hid a reference the newer `plugin_root` copy already
+    carried -- the identical "coverage set narrower than what it depends on"
+    shape #547 exists to close, reproduced one level down inside its own fix.
+    """
+    plugin_root = tmp_path / "plugin"
+    repo = tmp_path / "repo"
+    _manifest(plugin_root, "9.9.8")
+    _manifest(repo, "9.9.9")
+
+    (plugin_root / "agents").mkdir(parents=True)
+    (repo / "agents").mkdir(parents=True)
+
+    # repo's copy is stale: no delegation yet.
+    (repo / "agents" / "auditor.md").write_text("no references here yet", encoding="utf-8")
+    # plugin_root's copy already grew the delegation this issue is about.
+    (plugin_root / "agents" / "auditor.md").write_text(
+        "Read `agents/developer.md`.", encoding="utf-8"
+    )
+    (plugin_root / "agents" / "developer.md").write_text("installed copy", encoding="utf-8")
+    (repo / "agents" / "developer.md").write_text("repo copy", encoding="utf-8")
+
+    payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
+
+    assert payload["state"] == "differs"
+    rows = {row["path"]: row["state"] for row in payload["definitions"]}
+    assert "agents/developer.md" in rows, rows
+    assert rows["agents/developer.md"] == "differs", rows

@@ -153,24 +153,24 @@ def _derive_definition_files(plugin_root, repo):
     it is written rather than waiting for someone to notice the list beside it
     went stale.
 
-    Reads whichever tree has each base file (repo first, since a repo missing
-    a file entirely is the ordinary case for most managed repositories, then
-    the installed copy) -- a base file unreadable on BOTH sides adds nothing
-    from it, same as before this derivation existed; that file's own row is
-    still `could-not-tell` via `_compare_definitions`, so nothing is silently
-    dropped, only not derived from.
+    Reads BOTH trees for each base file and unions what each one references --
+    not just whichever resolves first (self-review finding: when the two
+    copies differ, which is exactly the `differs` state this function only
+    runs under, a reference the OTHER copy names would otherwise be silently
+    unseen -- the same "coverage set narrower than what it depends on" shape
+    this function exists to close, one level up). A base file unreadable on
+    BOTH sides contributes nothing, same as before this derivation existed;
+    that file's own row is still `could-not-tell` via `_compare_definitions`,
+    so nothing is silently dropped, only not derived from.
     """
     found = set()
     for rel in DEFINITION_FILES:
-        text = None
         for root in (repo, plugin_root):
             path = root.joinpath(*rel.split("/"))
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            break
-        if text is not None:
             found.update(_referenced_agent_files(text))
     ordered = list(DEFINITION_FILES)
     for rel in sorted(found):
