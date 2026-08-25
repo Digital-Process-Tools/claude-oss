@@ -38,7 +38,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 THRESHOLD = 3
@@ -61,37 +63,131 @@ _SUPERTOOL_CALL = re.compile(
 )
 _QUOTED_ARG = re.compile(r"'([^']*)'")
 
-# Derived from `supertool 'ops:roster'` (2026-08-22), which is the single
-# authority for which ops write or reach outside this tree ("*"/"!") versus
-# read ("unmarked") -- see that op's own text, quoted in CLAUDE.md, on why a
-# second copy of this classification drifts. This module needs the answer to
-# a different question than a permission grant does (batchable vs not, not
-# read vs write access), so it keeps its own copy rather than shelling out to
-# supertool on every single Bash call -- but it is a copy of a published
-# classification, not a guess, and it is dated so staleness is visible.
-# Re-derive with: supertool 'ops:roster'
-_WRITE_OP_PREFIXES = frozenset({
-    "append", "batch", "edit", "format", "format_staged", "gc",
-    "git-checkout", "git-commit", "git-merge", "git-resolve", "paste",
-    "rename", "replace", "replace_lines", "vim",
-})
-_EXTERNAL_OP_PREFIXES = frozenset({
-    "channel", "gh-batch-follow", "gh-batch-star", "gh-follow",
-    "gh-issue-create", "gh-pr-create", "gh-pr-edit", "gh-pr-merge",
-    "gh-star", "git-push", "radar", "unwatch", "watch",
-})
-_READ_OP_PREFIXES = frozenset({
-    "around", "around_line", "between", "check", "cwd", "diag", "diff",
-    "gh-branch", "gh-check", "gh-find-followable", "gh-find-starable",
-    "gh-following", "gh-issue", "gh-issues", "gh-job", "gh-labels",
-    "gh-pr", "gh-prs", "gh-run", "gh-starred", "git-blame", "git-conflicts",
-    "git-diff", "git-diverge", "git-investigate", "git-status", "git-trail",
-    "git-worktrees", "glob", "grep", "grep_around", "guard", "head", "help",
-    "hover", "introduction", "ls", "map", "ops", "ops-compact",
-    "output-format", "read", "registry", "replace_dry", "repo", "resolve",
-    "stat", "tail", "tree", "validate", "validate_staged", "version",
-    "watches", "wc", "workspace",
-})
+# Derived from `supertool 'ops:roster'` itself, not a hand-copied snapshot
+# of it (#537: a second copy of a published classification is exactly what
+# CLAUDE.md's governing rule forbids -- the copy is the one that goes
+# stale, and it goes stale in only one direction: an op whose class moves
+# from read-only to write upstream stays misclassified read-only here
+# forever, since nothing re-derives or checks a static copy). Measured at
+# well under a tenth of a second (#537), so this module calls it once per
+# process and caches the answer to disk for the many separate invocations
+# one session makes -- the two options `_op_verdict`'s previous version
+# never considered were "every call" (rejected, correctly, as too
+# expensive) and "cache the derived answer" (never weighed at all).
+_ROSTER_CACHE_NAME = "oss-batch-hint-roster.json"
+_ROSTER_CACHE_TTL = 6 * 60 * 60  # seconds; the roster only moves with a supertool release
+_ROSTER_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*[*!]?$")
+
+_UNSET = object()  # in-process memo: distinct from "derived, and the answer is None"
+_ROSTER_CACHE = _UNSET
+
+
+def _parse_roster_text(text: str):
+    """Parse `supertool 'ops:roster'`'s own printed answer into three name lists.
+
+    Returns ``None`` when the text does not carry a recognisable roster block --
+    this repo's own defect class applied to its own parser: a parse failure must
+    fail toward "could not derive" (handled by the caller), never toward a
+    confidently empty roster that would make every op look genuinely unclassified
+    rather than "the derivation itself did not work".
+    """
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith(">"):
+            start = i + 1
+            break
+    if start is None:
+        return None
+    tokens = " ".join(lines[start:]).split()
+    if not tokens:
+        return None
+    write, external, read = set(), set(), set()
+    for tok in tokens:
+        if not _ROSTER_LINE_RE.match(tok):
+            return None
+        if tok.endswith("*"):
+            write.add(tok[:-1])
+        elif tok.endswith("!"):
+            external.add(tok[:-1])
+        else:
+            read.add(tok)
+    if not (write or external or read):
+        return None
+    return {"write": sorted(write), "external": sorted(external), "read": sorted(read)}
+
+
+def _derive_roster(timeout: float = 5.0):
+    """Call `supertool 'ops:roster'` once and parse its answer, or ``None``.
+
+    ``None`` covers every way this can fail to settle the question: the
+    binary is not on PATH (`FileNotFoundError`), it errors out, it times out,
+    or its output does not parse. All of those are the third state, not a
+    guess in either direction -- see `_op_verdict`'s handling of it.
+    """
+    try:
+        proc = subprocess.run(
+            ["supertool", "ops:roster"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return _parse_roster_text(proc.stdout)
+
+
+def _roster_cache_path() -> Path:
+    return _state_dir() / _ROSTER_CACHE_NAME
+
+
+def _load_cached_roster(max_age: float = _ROSTER_CACHE_TTL):
+    path = _roster_cache_path()
+    try:
+        age = time.time() - path.stat().st_mtime
+    except OSError:
+        return None
+    if age > max_age:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not all(k in data for k in ("write", "external", "read")):
+        return None
+    return data
+
+
+def _save_roster_cache(roster_data: dict) -> None:
+    try:
+        _roster_cache_path().write_text(json.dumps(roster_data), encoding="utf-8")
+    except OSError:
+        pass  # best-effort; worst case the next call derives it again
+
+
+def roster():
+    """The op classification: memoized in-process, then cached to disk, then derived.
+
+    Returns the ``{"write": [...], "external": [...], "read": [...]}`` dict, or
+    ``None`` when it could not be derived at all -- never a partial or a guessed
+    one. A failed derivation is never written to the disk cache: caching ``None``
+    would turn one transient failure (PATH not yet set up, a network hiccup) into
+    a permanent one for the rest of the cache's TTL.
+    """
+    global _ROSTER_CACHE
+    if _ROSTER_CACHE is not _UNSET:
+        return _ROSTER_CACHE
+    cached = _load_cached_roster()
+    if cached is not None:
+        _ROSTER_CACHE = cached
+        return cached
+    derived = _derive_roster()
+    if derived is not None:
+        _save_roster_cache(derived)
+    _ROSTER_CACHE = derived
+    return derived
 
 
 def _op_verdict(op: str) -> str:
@@ -106,15 +202,19 @@ def _op_verdict(op: str) -> str:
     published roster gets both right.
     """
     prefix = op.split(":", 1)[0]
-    if prefix in _WRITE_OP_PREFIXES or prefix in _EXTERNAL_OP_PREFIXES:
-        return "not_offender"
-    if prefix in _READ_OP_PREFIXES:
-        return "single_readonly"
-    # An op name this module does not recognise -- the roster grew since the
-    # comment above was dated, or this is not really an op call at all. A
-    # trailing payload marker is still a strong, self-contained signal that
-    # this consumes stdin and mutates; anything else is genuinely unknown
-    # rather than guessed at.
+    classes = roster()
+    if classes is not None:
+        if prefix in classes["write"] or prefix in classes["external"]:
+            return "not_offender"
+        if prefix in classes["read"]:
+            return "single_readonly"
+    # An op name not in the roster -- either the roster could not be derived
+    # at all (third state: degrade to "no confident answer", never guess), or
+    # this genuinely is not a recognised op. A trailing payload marker is
+    # still a strong, self-contained signal that this consumes stdin and
+    # mutates -- that heuristic does not depend on the roster and still
+    # applies either way; anything else is genuinely unknown rather than
+    # guessed at.
     if op.endswith(_MUTATION_MARKER):
         return "not_offender"
     return "unknown"
