@@ -584,7 +584,10 @@ def _duration(seconds):
 def _tick_field(tick):
     state = (tick or {}).get("state")
     if state == "armed":
-        return "tick " + _duration(tick.get("seconds") or 0)
+        seconds = tick.get("seconds")
+        if not isinstance(seconds, (int, float)):
+            seconds = 0
+        return "tick " + _duration(seconds)
     if state == "due":
         return "tick due"
     if state == "stopped":
@@ -638,10 +641,10 @@ def _board_field(board, symbols, color=False):
     else:
         groups = symbols["unk"]
     return "{}pr {}{}{}is".format(
-        "?" if prs is None else prs,
+        "?" if not isinstance(prs, int) else prs,
         groups,
         symbols["dot"],
-        "?" if issues is None else issues,
+        "?" if not isinstance(issues, int) else issues,
     )
 
 
@@ -791,7 +794,7 @@ def render(facts, ascii_only=False, color=False):
     """
     symbols = _symbols(ascii_only)
     percent = facts.get("percent")
-    if percent is None:
+    if not isinstance(percent, (int, float)):
         context = "ctx ?"
     else:
         context = "{}%".format(int(percent))
@@ -1265,6 +1268,18 @@ def gather(payload, root, now=None):
     }
 
 
+def _console_sample():
+    """Every symbol `render` can put on the line, concatenated once.
+
+    Built from `_symbols(False)` rather than written out here (#535): the probe used to
+    hardcode four of the seven symbols that set renders, so a symbol added to `_symbols`
+    later -- as #508's two CI-group glyphs were -- was never probed at all. A codepage
+    that encodes the old four but not the new ones would reach `sys.stdout.write` and
+    raise `UnicodeEncodeError` after the line's work was already done.
+    """
+    return "".join(_symbols(False).values())
+
+
 def _ascii_only(stream):
     """Does this console's encoding survive the symbols? Measured, not assumed.
 
@@ -1274,7 +1289,7 @@ def _ascii_only(stream):
     """
     encoding = getattr(stream, "encoding", None) or "ascii"
     try:
-        "·✓⇡↑".encode(encoding)
+        _console_sample().encode(encoding)
     except (UnicodeEncodeError, LookupError):
         return True
     return False

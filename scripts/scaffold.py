@@ -1341,6 +1341,9 @@ def settings_plan(repo_root):
         "action": "extend",
         "reason": "present with no statusLine; the key would be added, everything else "
         "left as it is",
+        # Carried so a preview can render the extend without asking the filesystem the
+        # same question a second time (#536) -- see `_settings_preview`.
+        "document": document,
     }
 
 
@@ -1353,7 +1356,18 @@ def _settings_preview(repo_root):
     never happens, the same defect this function exists to close, pointed the other
     way. The body is produced by re-deriving exactly what `apply_settings` would write,
     without writing it: a create is the bare `{"statusLine": ...}` document, an extend
-    reads the existing document and adds the key, the same order `apply_settings` uses.
+    adds the key to the document `settings_plan` already read and parsed, the same
+    order `apply_settings` uses.
+
+    `settings_plan` has already read the file and classified it by the time this
+    function runs, so an `extend` entry carries the parsed document -- this function
+    reuses it rather than reading the file again (#536). It used to re-read
+    `.claude/settings.json` itself, unguarded, which meant a file that errored or
+    changed between the two reads escaped as a raw `OSError`/`ValueError`, contrary to
+    the promise below. Per CLAUDE.md's trap against asking the filesystem a second
+    question to explain why the first one failed: the fix is not to guard a second
+    read, it is to not perform one. `create` and the `present`/`decline` fallthrough
+    were already read-free and are unchanged.
 
     Returns `None` rather than raising on a document `settings_plan` already decided is
     unreadable or malformed -- that is what `decline` means, and this function does not
@@ -1363,8 +1377,7 @@ def _settings_preview(repo_root):
     if entry["action"] == "create":
         return "create", json.dumps({"statusLine": dict(STATUSLINE_SETTING)}, indent=2) + "\n"
     if entry["action"] == "extend":
-        path = Path(repo_root) / SETTINGS_PATH
-        document = json.loads(path.read_text(encoding="utf-8"))
+        document = dict(entry["document"])
         document["statusLine"] = dict(STATUSLINE_SETTING)
         return "extend", json.dumps(document, indent=2) + "\n"
     return None
@@ -1385,7 +1398,10 @@ def apply_settings(repo_root):
             encoding="utf-8",
         )
     elif entry["action"] == "extend":
-        document = json.loads(path.read_text(encoding="utf-8"))
+        # Reuses the document `settings_plan` already parsed and carried on the entry
+        # (#536), rather than reading the file a second time -- the same class of
+        # unguarded second read that was fixed in `_settings_preview`, one call away.
+        document = dict(entry["document"])
         document["statusLine"] = dict(STATUSLINE_SETTING)
         path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     return entry
