@@ -624,6 +624,18 @@ import importlib.util, json, os, sys
 
 name = sys.argv[1]
 
+
+def cannot_ask(why):
+    # The name is quoted with %r, which escapes a newline or anything a terminal
+    # would act on -- and this arm is reachable with an UNVALIDATED name, because an
+    # already-exported SUPERTOOL_WATCH_NAME wins and never goes through the gate.
+    sys.stderr.write(
+        "oss-workspace: could not ask the installed supertool whether it will accept "
+        "the watch channel name %r (%d characters) -- %s. So this session is on a "
+        "private socket or on the shared default one and nothing here can tell you "
+        "which. supertool 'channel:health'\n" % (name, len(name), why))
+
+
 # The registry, not a glob of the cache: the cache keeps every version ever
 # installed and a glob answers with whichever sorts last, which is a version this
 # session is not running. Same resolution and same order as FIND_CONSUMER below.
@@ -635,26 +647,44 @@ except (OSError, ValueError):
     # Reported by the consumer block below, with the remedy. Not restated here.
     raise SystemExit(0)
 
-installs = [
-    entry.get("installPath")
-    for key, entries in (doc.get("plugins") or {}).items()
-    if key.split("@")[0] == "supertool"
-    for entry in entries or []
-    if entry.get("installPath")
-]
-if not installs:
+# Guarded the way scripts/doctor.py's _consumer_watch_name_verdict guards the
+# identical read (#546): a shape that cannot be understood must reach
+# `cannot_ask()`, not an unhandled AttributeError that `|| true` used to swallow
+# whole. Unlike doctor.py's mirror, a MALFORMED plugins/entries/entry is tracked
+# separately from a genuinely ABSENT one -- "no supertool key at all" stays silent
+# here (the FIND_CONSUMER block below reports that with its own remedy), while
+# "there is something here and it could not be read" is loud, because those are
+# different states and only one of them is actionable via `cannot_ask()`.
+if not isinstance(doc, dict):
+    cannot_ask("%s is not a JSON object" % registry)
     raise SystemExit(0)
 
+plugins = doc.get("plugins")
+if plugins and not isinstance(plugins, dict):
+    cannot_ask("%s's \"plugins\" entry is not a JSON object" % registry)
+    raise SystemExit(0)
+if not isinstance(plugins, dict):
+    plugins = {}
 
-def cannot_ask(why):
-    # The name is quoted with %r, which escapes a newline or anything a terminal
-    # would act on -- and this arm is reachable with an UNVALIDATED name, because an
-    # already-exported SUPERTOOL_WATCH_NAME wins and never goes through the gate.
-    sys.stderr.write(
-        "oss-workspace: could not ask the installed supertool whether it will accept "
-        "the watch channel name %r (%d characters) -- %s. So this session is on a "
-        "private socket or on the shared default one and nothing here can tell you "
-        "which. supertool 'channel:health'\n" % (name, len(name), why))
+installs = []
+malformed = ""
+for key, entries in plugins.items():
+    if key.split("@")[0] != "supertool":
+        continue
+    if entries and not isinstance(entries, list):
+        malformed = "%s's supertool entry is not a JSON array" % registry
+        continue
+    for entry in (entries if isinstance(entries, list) else []):
+        if not isinstance(entry, dict):
+            malformed = "%s lists a supertool install entry that is not a JSON object" % registry
+            continue
+        if entry.get("installPath"):
+            installs.append(entry.get("installPath"))
+
+if not installs:
+    if malformed:
+        cannot_ask(malformed)
+    raise SystemExit(0)
 
 
 rule_path = ""
@@ -726,17 +756,43 @@ except (OSError, ValueError) as err:
     sys.stderr.write("oss-workspace: %s could not be read (%s)\n" % (registry, type(err).__name__))
     raise SystemExit(0)
 
-installs = [
-    entry.get("installPath")
-    for key, entries in (doc.get("plugins") or {}).items()
-    if key.split("@")[0] == "supertool"
-    for entry in entries or []
-    if entry.get("installPath")
-]
+# Same guard as ASK_CONSUMER above (#546): a malformed registry must not reach an
+# unhandled AttributeError -- this block's own comment already argues against a
+# confident wrong answer, and a raw traceback is worse than that.
+if not isinstance(doc, dict):
+    sys.stderr.write("oss-workspace: %s is not a JSON object\n" % registry)
+    raise SystemExit(0)
+
+plugins = doc.get("plugins")
+if plugins and not isinstance(plugins, dict):
+    sys.stderr.write("oss-workspace: %s's \"plugins\" entry is not a JSON object\n" % registry)
+    raise SystemExit(0)
+if not isinstance(plugins, dict):
+    plugins = {}
+
+installs = []
+malformed = ""
+for key, entries in plugins.items():
+    if key.split("@")[0] != "supertool":
+        continue
+    if entries and not isinstance(entries, list):
+        malformed = "%s's supertool entry is not a JSON array" % registry
+        continue
+    for entry in (entries if isinstance(entries, list) else []):
+        if not isinstance(entry, dict):
+            malformed = "%s lists a supertool install entry that is not a JSON object" % registry
+            continue
+        if entry.get("installPath"):
+            installs.append(entry.get("installPath"))
+
 if not installs:
     sys.stderr.write(
-        "oss-workspace: %s lists no supertool install, so the channel consumer it "
-        "ships has nowhere to be read from\n" % registry)
+        "oss-workspace: %s\n" % (
+            malformed
+            if malformed
+            else "%s lists no supertool install, so the channel consumer it "
+                 "ships has nowhere to be read from" % registry
+        ))
     raise SystemExit(0)
 
 for path in installs:
