@@ -32,6 +32,8 @@ judged correct is a result worth reporting as loudly as a site that needed
 a fix.
 """
 
+import errno
+import os
 import sys
 from pathlib import Path
 
@@ -41,6 +43,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import assemble_changelog  # noqa: E402
+import doctor  # noqa: E402
+import lane_setup  # noqa: E402
 
 
 def _raise_stat_for(monkeypatch, target, exc):
@@ -172,3 +176,93 @@ def test_unreadable_fragment_dir_real_chmod(tmp_path):
         assert "does not exist" not in str(exc_info.value)
     finally:
         os.chmod(str(parent), 0o755)
+
+
+# ---------------------------------------------------------------------------
+# Sibling parity. A self-review round of this fix found a third, standalone
+# copy of `doctor._dir_state`/`lane_setup.worktree_occupancy`'s classifier
+# added here with nothing pinning it against the other two -- the mechanism
+# `doctor._dir_state`'s own docstring names as what actually prevents drift
+# ("what holds them together is `tests/test_unlookable_absence_380.py`... and
+# `tests/test_lane_setup_373.py`, not this paragraph") does not cover this
+# third copy. This closes that gap from this file's own side, without
+# editing `tests/test_unlookable_absence_380.py` itself -- that file and
+# `doctor.py` may be held by another lane at the time this is written, and a
+# parity check belongs wherever it can be added without touching either
+# sibling's own files.
+# ---------------------------------------------------------------------------
+
+
+def _fold(monkeypatch, target):
+    """Emulate the Windows fold on `target` only: `stat` answers ordinary
+    absence for a name that is really there. Same construction as
+    `tests/test_unlookable_absence_380.py::_fold`, reproduced here rather
+    than imported so this file has no test-to-test dependency on a file
+    this lane does not own; deliberately patches both `os.stat` and
+    `Path.stat`, since `assemble_changelog._absence_confirmed` calls the
+    former and `_fragment_dir_state` calls the latter.
+    """
+    wanted = os.path.normcase(os.path.abspath(str(target)))
+    real_os_stat = os.stat
+    real_path_stat = Path.stat
+
+    def fake_os_stat(value, *args, **kwargs):
+        try:
+            key = os.path.normcase(os.path.abspath(os.fspath(value)))
+        except (OSError, ValueError, TypeError):
+            key = None
+        if key == wanted:
+            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(value))
+        return real_os_stat(value, *args, **kwargs)
+
+    def fake_path_stat(self, *args, **kwargs):
+        try:
+            key = os.path.normcase(os.path.abspath(str(self)))
+        except (OSError, ValueError, TypeError):
+            key = None
+        if key == wanted:
+            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(self))
+        return real_path_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", fake_os_stat)
+    monkeypatch.setattr(Path, "stat", fake_path_stat)
+
+
+def test_all_three_classifiers_agree_on_a_folded_name(monkeypatch, tmp_path):
+    """`assemble_changelog`'s copy answers the same third state
+    (unreadable/unknown, never a confident absence) as its two siblings on
+    the identical folded-name fixture #380 already established the other
+    two on. If a future change to one of the three drifts, this fails --
+    which is the whole reason the other two have this test and this one
+    did not, until now.
+    """
+    parent = tmp_path / "root"
+    parent.mkdir()
+    target = parent / "383"
+    target.mkdir()
+    _fold(monkeypatch, target)
+
+    try:
+        os.stat(str(target))
+    except FileNotFoundError:
+        pass
+    else:
+        pytest.skip(
+            "the injected fold did not take: os.stat succeeded against the "
+            "patched target. UNTESTED here: whether the three classifiers "
+            "agree on a folded name. platform={} python={}".format(
+                sys.platform, sys.version.split()[0]
+            )
+        )
+
+    doctor_state, _ = doctor._dir_state(target)
+    lane_setup_verdict = lane_setup.worktree_occupancy(str(target))
+    ac_state, _ = assemble_changelog._fragment_dir_state(target)
+
+    assert doctor_state == "unreadable", doctor_state
+    assert lane_setup_verdict is None, lane_setup_verdict
+    assert ac_state == "unreadable", (
+        "assemble_changelog._fragment_dir_state disagreed with its two "
+        "siblings on the identical folded-name fixture: {!r} where both "
+        "answered 'could not determine'".format(ac_state)
+    )
