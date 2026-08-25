@@ -1227,7 +1227,7 @@ def refresh(root, now=None):
     return document
 
 
-def invalidate_latest_cache(repo):
+def invalidate_latest_cache(repo, now=None):
     """Clear the cached `latest` reading for `repo`, because something just made it
     false (#549). `/oss:release` calls this immediately after the Release it just
     created makes the cached manifest-version reading stale -- the falsifying
@@ -1239,8 +1239,8 @@ def invalidate_latest_cache(repo):
     clear must not render alike:
 
     * ``invalidated`` -- a `latest` (or `latest_fetched_at`) entry existed and is
-      now gone. The next render or refresh starts from "nobody has asked yet"
-      rather than from the value that was just falsified.
+      now `{}` / `0`. The next render or refresh starts from "nobody has asked
+      yet" rather than from the value that was just falsified.
     * ``nothing-to-invalidate`` -- no cache file at this path, or one that carries
       no `latest` reading at all. There was nothing to falsify.
     * ``could-not-invalidate`` -- the file exists and could not be read, could not
@@ -1249,12 +1249,35 @@ def invalidate_latest_cache(repo):
       rendering session uses all land here rather than passing as either state
       above.
 
+    **`latest`/`latest_fetched_at` are set to `{}`/well in the past, never
+    deleted** -- this was a bare `pop()` of both keys and it was wrong (self-review
+    finding on this same issue): `latest_is_due` reads a document with no
+    `latest_fetched_at` at all as a legacy, pre-#515 cache and falls back to
+    comparing `now` against `fetched_at` -- the BOARD's own stamp, refreshed on
+    nearly every render. A document with both keys simply gone therefore reads as
+    "recently fetched" the instant the next board refresh runs, and `refresh()`
+    carries the (empty) `latest` forward under that fresh-looking stamp instead of
+    re-asking, in an active session effectively forever.
+
+    `latest_fetched_at` is stamped `now - LATEST_REFRESH_AFTER - 1` -- one second
+    past due, relative to the moment of invalidation, rather than a fixed absolute
+    sentinel like `0`. Anchoring to an absolute epoch would only be reliably "due"
+    against a real wall clock (`now` several billion seconds past `0`), and this
+    module's own test suite drives `now` with small synthetic values throughout
+    (e.g. `1_000.0`); an absolute sentinel would be correct in production and
+    silently wrong under exactly the convention this repository tests with. The
+    relative stamp is due under `latest_is_due` regardless of what `now` means.
+
+    ``now`` defaults to `time.time()`, matching `refresh()`'s own parameter, so a
+    test can drive it without a real clock.
+
     Read-modify-write on the same file `refresh()` writes, with the same
     write-to-temp-then-`os.replace` -- a concurrent renderer's own read either sees
-    the old document or the new one, never a half-written one. This never deletes
+    the old document or the new one, never a half-written one. This never touches
     the `prs`/`issues`/`pr_checks` board half of the document; only the two
     `latest*` keys are the concern here.
     """
+    now = time.time() if now is None else now
     path = cache_path(repo)
     try:
         raw = path.read_text(encoding="utf-8")
@@ -1290,8 +1313,36 @@ def invalidate_latest_cache(repo):
             "state": "nothing-to-invalidate",
             "detail": "{0} carries no `latest` reading".format(path),
         }
-    document.pop("latest", None)
-    document.pop("latest_fetched_at", None)
+    # NOT a bare delete of both keys (self-review finding on this issue's own
+    # implementation): `latest_is_due` reads a document with no `latest_fetched_at`
+    # as a legacy, pre-#515 cache and falls back to comparing `now` against
+    # `fetched_at` -- the BOARD's own stamp, refreshed on nearly every render. A
+    # document produced by simply popping both keys therefore reads as "recently
+    # fetched" the moment the next board refresh runs, and `refresh()` then carries
+    # the (now-empty) `latest` forward under that fresh-looking stamp instead of
+    # re-asking -- invalidation silently undoing its own purpose for up to another
+    # full `LATEST_REFRESH_AFTER`, and in an active session (board refreshing
+    # continuously) effectively indefinitely. Measured directly: with
+    # `fetched_at` re-bumped every few hundred seconds and `latest_fetched_at`
+    # deleted, `latest_is_due` returned `False` from ten seconds after invalidation
+    # onward.
+    #
+    # Setting `latest_fetched_at` to `now - LATEST_REFRESH_AFTER - 1` -- one
+    # second past due, relative to this call's own `now` -- rather than deleting
+    # it keeps `isinstance(..., (int, float))` true, so `latest_is_due` takes its
+    # ordinary (non-legacy) branch and compares against a stamp that is due by
+    # construction, regardless of what the board's own `fetched_at` says. A fixed
+    # absolute sentinel (`0`) was tried and rejected: it is due against a real
+    # wall clock but not against the small synthetic `now` values this module's
+    # own tests use throughout, which would make the fix correct in production and
+    # silently untested (and untestable in the small-`now` convention) at once.
+    # `latest` is set to `{}` rather than removed for the same reason: presence,
+    # not absence, is what a reader (this module's own `gather()`, and #551's
+    # `check_latest_skew`) should see as "nothing here yet", so the state is
+    # explicit rather than inferred from a missing key two different callers
+    # could read two different ways.
+    document["latest"] = {}
+    document["latest_fetched_at"] = now - LATEST_REFRESH_AFTER - 1
     try:
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(document), encoding="utf-8")

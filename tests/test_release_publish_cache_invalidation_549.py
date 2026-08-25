@@ -16,6 +16,7 @@ import json
 import os
 import stat
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -104,8 +105,19 @@ def test_a_created_release_invalidates_an_existing_cache(tmp_path, monkeypatch):
     result = release_publish._invalidate_cache_after_publish("owner/name")
     assert result["state"] == "invalidated"
     document = json.loads(statusline.cache_path("owner/name").read_text(encoding="utf-8"))
-    assert "latest" not in document
-    assert "latest_fetched_at" not in document
+    # Emptied/re-stamped, not deleted -- a bare delete left the document reading
+    # as a legacy pre-#515 cache, whose `latest_is_due` fallback compares against
+    # the unrelated `fetched_at` board stamp and can read "recently fetched"
+    # almost immediately, silently undoing the invalidation (self-review finding,
+    # see statusline.invalidate_latest_cache's own docstring and
+    # test_invalidating_leaves_the_cache_immediately_due_again in
+    # test_statusline_stale_latest_550.py for the full reproduction).
+    assert document["latest"] == {}
+    # `_invalidate_cache_after_publish` used the real clock (no `now` override on
+    # this path), so due-ness is checked against the real clock too, immediately
+    # after -- the two calls are close enough in wall-clock time that "one second
+    # past due, relative to when invalidation happened" still holds.
+    assert statusline.latest_is_due(document, now=time.time())
 
 
 def test_the_must_not_fire_control_no_cache_is_nothing_to_invalidate(tmp_path, monkeypatch):

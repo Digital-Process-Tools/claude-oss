@@ -141,3 +141,56 @@ def test_the_ascii_markers_stay_unambiguous():
     symbols = statusline._symbols(True)
     assert symbols["behind"] == ">"
     assert symbols["ahead"] == "+"
+
+
+# ---------------------------------------------------- invalidate_latest_cache and latest_is_due
+
+
+def test_invalidating_leaves_the_cache_immediately_due_again(tmp_path, monkeypatch):
+    """A self-review finding on #549/#550: `invalidate_latest_cache` used to DELETE
+    both `latest` and `latest_fetched_at`. `latest_is_due`'s own pre-#515-cache
+    fallback then read that as a legacy document with no split clocks and compared
+    `now` against `fetched_at` instead -- the BOARD's stamp, which a live session
+    refreshes roughly every `REFRESH_AFTER` (300s) seconds, so it reads as "recent"
+    almost immediately after invalidation. The result: invalidation appeared to
+    clear the cache but silently un-did its own purpose, leaving the version
+    unrefetched for up to another full `LATEST_REFRESH_AFTER` regardless.
+
+    Reproduces the exact shape: invalidate, then let the board keep refreshing
+    `fetched_at` (as it does on every render) while `now` barely moves -- the must-
+    fire half is that `latest_is_due` is STILL true, so the very next `refresh()`
+    call actually re-asks rather than silently carrying forward nothing under a
+    fresh-looking stamp.
+    """
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    statusline.cache_path("owner/name").parent.mkdir(parents=True, exist_ok=True)
+    statusline.cache_path("owner/name").write_text(
+        json.dumps(
+            {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.12.0"}}
+        ),
+        encoding="utf-8",
+    )
+    result = statusline.invalidate_latest_cache("owner/name", now=1000.0)
+    assert result["state"] == "invalidated"
+    document = json.loads(statusline.cache_path("owner/name").read_text(encoding="utf-8"))
+    # Board refresh keeps bumping `fetched_at` on every render, close to `now` --
+    # the exact condition that hid the bug: a stale-looking key set is read as
+    # "recently fetched" through the legacy fallback if the age check keys on the
+    # wrong stamp.
+    document["fetched_at"] = 1010.0
+    assert statusline.latest_is_due(document, now=1010.0), (
+        "immediately after invalidation the cache must still read as due, or the "
+        "invalidation silently un-does its own purpose"
+    )
+    assert statusline.latest_is_due(document, now=1000.0 + statusline.REFRESH_AFTER * 5), (
+        "still due many board-refresh cycles later, with fetched_at kept fresh the "
+        "whole time -- the failure mode this pins is permanent, not merely delayed"
+    )
+
+
+def test_the_must_not_fire_control_an_uninvalidated_cache_is_not_due_early():
+    """Positive control: a cache that was never invalidated, freshly fetched, is
+    NOT due -- so the assertion above is testing invalidation's effect and not
+    `latest_is_due` being permanently true."""
+    cache = {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.12.0"}}
+    assert not statusline.latest_is_due(cache, now=1010.0)
