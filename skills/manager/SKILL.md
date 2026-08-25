@@ -1533,6 +1533,20 @@ formatted, at exit 0. Collect the pages into one array before the filter (`--slu
 rows yourself. The same trap in its other spelling — a full page read as a complete list — is in the
 triager's duties, and both are one shape: a partial read rendering as a total.
 
+**Never derive a commit count or a commit identity by parsing rendered `git log` text.** The
+maintainer's own shell rewrites every `git …` invocation through an rtk proxy, and that rewrite
+corrupts exactly the values this loop most depends on: an empty range piped into a row count reads
+as one row, not zero, because the proxy's own output for nothing at all is a single trailing
+newline. Zero is the load-bearing value here — *nothing merged since the tag*, *reach did not move
+this cycle*, *no fragments pending* — and every one of those reads as one instead of the absence it
+is (#236). A merge commit, separately, is filtered out of plain `git log` entirely, so a receipt
+built by scanning that output names the pre-merge tip as the tip and the merge itself never appears
+(#310). Neither failure is visible locally: a count derived this way is well-formed, exits `0`, and
+is wrong. Type the count instead of rendering and re-parsing it — `git rev-list --count <range>`
+for how many, `git rev-parse` for which commit — so git answers with one value and there is no row
+for a proxy to corrupt in between. `scripts/release_delta.py` is the one place in this repo that
+already computes a release delta this way; hold every new count to the same rule.
+
 ## Loop mechanics
 
 Arm the loop at the end of the first tick, every time, including when this skill was invoked
