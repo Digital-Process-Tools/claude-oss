@@ -1108,6 +1108,15 @@ is not on this list is just a way of not fixing things.
 
 - **"Not failing" is not "green" — count the checks.** The state counts must sum to the number of
   legs, and any leg not `SUCCESS` gets named before merging.
+- **A rerun does not re-resolve a moved base, so it replays the same red.** `gh run rerun <id>
+  --failed` re-runs the check suite against the merge ref it already had; it does not re-resolve
+  that ref against a `main` that has since moved. A fix landed on the default branch after the run
+  started is therefore invisible to the rerun, and the second failure looks exactly like a fix that
+  did not work rather than a fix that was never tested. **The tell is the run id**: a rerun that
+  reports the same run id as before has told you it re-ran the old resolution, not a new one — read
+  it before trusting the second red. When the base has moved under a red PR, use `gh api -X PUT
+  repos/OWNER/REPO/pulls/N/update-branch` instead, which merges the new base into the head
+  server-side, needs no local worktree and no force-push (#389).
 - **Cleanup is gated on the verified merge result — use the op's own `|cleanup` token rather than a
   second, separate call.** Chaining merge and cleanup by hand once deleted a branch after a failed
   merge and auto-closed the PR; recovery was possible only because the forge keeps the PR ref. That
