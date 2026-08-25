@@ -116,9 +116,17 @@ def opt_out(root=None, env=None):
     The environment wins over config, because it is the switch somebody reaches for when
     a plugin is misbehaving right now, and it needs no file they may not be able to edit.
 
-    Walks upward from ``root`` looking for the nearest directory holding either config
-    file -- called from a subdirectory, a read of ``root`` alone found nothing below the
-    repo's own `.oss.json` and answered "on" about a repo that had opted out at its root.
+    Walks upward from ``root`` all the way to the filesystem root, because a machine-wide
+    opt-out in a config above every managed repository is a supported spelling (the class
+    of location this module's own top docstring names -- "`.oss.json` or `.oss.local.json`"
+    -- without scoping it to the project root). A directory that holds a config file which
+    does not itself declare the key does **not** stop the search (#534): the nearest
+    ancestor is, in an ordinary managed repository, that repo's own `.oss.json`, which
+    declares `repo` and nothing about `auto_update` -- stopping there the moment *a* config
+    is found, rather than at *a declaration*, made a machine-wide opt-out unreachable in
+    exactly the population this walk exists for. Only a declaration ("off" or an explicit
+    "on"), an unreadable config ("unknown"), or the filesystem root stops it.
+
     This deliberately does not delegate to `statusline.repo_root`: that helper decides a
     directory is the repo root by `.oss.json` alone, so a directory carrying only
     `.oss.local.json` (a real, documented opt-out location) would be walked straight past
@@ -155,6 +163,7 @@ def opt_out(root=None, env=None):
         if not present:
             continue
         unreadable = []
+        declared = False
         for name in (".oss.json", ".oss.local.json"):
             if name not in present:
                 continue
@@ -169,11 +178,27 @@ def opt_out(root=None, env=None):
             except ValueError as exc:
                 unreadable.append("{} ({})".format(path, exc))
                 continue
-            if isinstance(document, dict) and document.get(OPT_OUT_KEY) is False:
-                return "off", '"{}": false in {}'.format(OPT_OUT_KEY, path)
+            if isinstance(document, dict) and OPT_OUT_KEY in document:
+                if document.get(OPT_OUT_KEY) is False:
+                    return "off", '"{}": false in {}'.format(OPT_OUT_KEY, path)
+                # An explicit non-``False`` declaration (typically ``true``) is itself a
+                # declaration and stops the walk here, same as an explicit "off" -- #534's
+                # fix is "keep walking past a config that declares nothing", not "keep
+                # walking past a config, period". Only the *absence* of the key continues
+                # the search.
+                declared = True
         if unreadable:
             return "unknown", "; ".join(unreadable)
-        return "on", None
+        if declared:
+            return "on", None
+        # #534: a config directory that declares nothing about the key does not stop the
+        # walk. The nearest ancestor is, in every managed repository, that repo's own
+        # `.oss.json` -- it declares `repo` and says nothing about `auto_update` -- so
+        # stopping here the moment *a* config is found (rather than *a declaration*) made
+        # a machine-wide opt-out unreachable in the one population the upward walk was
+        # added for. Only a declaration (handled above), an unreadable config (handled
+        # above), or the filesystem root (below) stops the search.
+        continue
     return "on", None
 
 
