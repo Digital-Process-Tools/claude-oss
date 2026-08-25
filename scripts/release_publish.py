@@ -14,8 +14,10 @@ maintainer believing something shipped that did not:
   skipped                  policy says this repo tags without publishing. A
                            decision, named out loud, never silence
   could-not-run            the notes could not be extracted, `gh` is not on PATH,
-  could-not-create         the call failed, or `.oss.json` is not a JSON object at
-                           all and so states no policy. Not a release and not a skip
+  could-not-create         the notes are over GitHub's release-body length limit
+                           (#483), the call failed, or `.oss.json` is not a JSON
+                           object at all and so states no policy. Not a release and
+                           not a skip
 
 Exit codes, because a shell reads those and never reads prose:
 
@@ -78,6 +80,16 @@ EXIT_COULD_NOT_RUN = 3
 EXIT_SKIPPED = 4
 
 CHANGELOG_NAME = "CHANGELOG.md"
+
+# GitHub's own limit on a release body, as `gh release create` reports it (#483):
+#   HTTP 422: Validation Failed body is too long (maximum is 125000 characters)
+# Observed cutting claude-supertool v0.49.0 on 2026-08-22 -- 60 folded fragments made a
+# 128,124-character section against this limit, and the tag was already on the remote
+# by the time the call failed. A named constant with this citation, not a value read
+# off a live 422: the number is a fact about GitHub's API today, not about any one
+# repository's changelog, and a constant is the only place both a comment and a test
+# can point at when the API changes it.
+GITHUB_NOTES_LIMIT = 125000
 
 # `## [0.3.0] - 2026-08-14`, and the label is captured whole. Whole rather than a
 # prefix on purpose: `0.3` must not match `## [0.3.0]`, and `0.3.0` must not match
@@ -196,7 +208,7 @@ def _could_not_run(reason):
     return {"state": STATE_COULD_NOT_RUN, "command": None, "reason": reason}
 
 
-def plan(config, tag, notes_path, gh):
+def plan(config, tag, notes_path, gh, notes_len=None):
     """The command that would run, or the state that says why none will.
 
     Policy is checked before anything else, so a repo that deliberately tags without
@@ -215,6 +227,24 @@ def plan(config, tag, notes_path, gh):
     `repo` check below already applies `isinstance(config, dict)` for the same reason;
     this is the same guard, one step earlier, where it settles the question for every
     caller instead of for one field.
+
+    `notes_len` is the character count of the notes body, measured by the caller who
+    holds the text -- `plan` never reads `notes_path` itself, so a caller that does not
+    know the length (most of the unit tests below) may pass `None` and skip the check
+    entirely, unchanged from before this parameter existed. `main` always passes it, on
+    every dry run as well as every `--execute`, which is the point (#483): `gh release
+    create` refuses a body over 125,000 characters with a 422, and by the time that
+    call used to run, the tag was already pushed. Refused here, not truncated -- an
+    over-limit body is close kin to the empty-body case a few lines below, where this
+    module already refuses to publish content it did not write rather than send
+    something the changelog's own author never declared. Truncating at a bullet
+    boundary would avoid the refusal, but it substitutes an edited set of notes for the
+    one the fold actually produced, silently declaring which bullets did not matter --
+    the plugin's own defect class in miniature, and worse than a tag that waits one
+    extra step for `--notes-out`/`--execute` to be re-run by hand against a trimmed
+    changelog. Whichever way this call is made, the receipt says the measured length
+    and the limit, so the size of the overage is never left for the maintainer to infer
+    from a bare refusal.
     """
     if not isinstance(config, dict):
         return _could_not_run(
@@ -247,6 +277,14 @@ def plan(config, tag, notes_path, gh):
         return _could_not_run(
             "no release notes were extracted, so no GitHub Release was created. A "
             "release announced with blank notes is worse than one announced late."
+        )
+
+    if notes_len is not None and notes_len > GITHUB_NOTES_LIMIT:
+        return _could_not_run(
+            "the release notes are {0} characters, over GitHub's {1}-character limit "
+            "by {2} -- not sent to gh, so the call this would have made never runs. "
+            "Trim changelog.d fragments for this version (or split the release) and "
+            "re-run.".format(notes_len, GITHUB_NOTES_LIMIT, notes_len - GITHUB_NOTES_LIMIT)
         )
 
     slug = config.get("repo") if isinstance(config, dict) else None
@@ -478,8 +516,15 @@ def main(argv=None):
         handle, name = tempfile.mkstemp(prefix="oss-release-notes-", suffix=".md")
         os.close(handle)
         notes_path = Path(name)
+    # The exact string handed to `gh --notes-file` -- one character longer than
+    # `section["body"]` itself, for the trailing newline. Measured here, after the
+    # newline is appended and before the write, so the length check below sees what
+    # the file actually holds rather than the bare extracted body: a body of exactly
+    # `GITHUB_NOTES_LIMIT` characters would otherwise pass a check against `len(body)`
+    # while the file on disk -- and the request `gh` sends -- is one character over.
+    notes_text = section["body"] + "\n"
     try:
-        notes_path.write_text(section["body"] + "\n", encoding="utf-8")
+        notes_path.write_text(notes_text, encoding="utf-8")
     except OSError as exc:
         return _emit(
             _could_not_run(
@@ -495,7 +540,13 @@ def main(argv=None):
     # rather than a command that fails as something else later.
     gh = args.gh if args.gh else shutil.which("gh")
 
-    planned = plan(config=config, tag=args.tag, notes_path=str(notes_path), gh=gh)
+    planned = plan(
+        config=config,
+        tag=args.tag,
+        notes_path=str(notes_path),
+        gh=gh,
+        notes_len=len(notes_text),
+    )
     if planned["state"] != STATE_CREATE or not args.execute:
         return _emit(planned, args.as_json)
 
