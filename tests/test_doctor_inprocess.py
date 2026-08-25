@@ -703,7 +703,23 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # could not establish which copy answered. A clean verdict therefore needs the
     # invocation to name one, which is exactly what `/oss:doctor` now passes (#262).
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(doctor.PLUGIN_ROOT))
-    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
+    # `name != "sh"` self-review finding (CI failure on windows-latest, 3.10-3.12,
+    # after #495): this blanket stub used to fake EVERY tool name as found, which was
+    # harmless before #495 -- nothing this fixture exercises consulted `shutil.which`
+    # for a name this test cared about measuring. #495 gave `check_auto_update` and
+    # `_statusline_windows_gap` a real `shutil.which("sh")` call each, and this same
+    # stub (patching the shared `shutil` module object, not a `doctor`-local copy)
+    # silently answered "sh is on PATH" for both regardless of the real machine --
+    # so on Windows CI the POSIX-syntax WARN this test hardcoded as "1 warning(s)"
+    # was suppressed by the fixture's own stub, and the count went stale. Excluding
+    # "sh" leaves it answering for real, which is exactly what #495 asks a caller to
+    # measure rather than infer.
+    real_which = shutil.which
+    monkeypatch.setattr(
+        doctor.shutil,
+        "which",
+        lambda name, **kwargs: real_which(name, **kwargs) if name == "sh" else sys.executable,
+    )
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
     # #386: `check_gh_binary` probes THIS machine's real `gh`, independent of the
     # `check_tool` stub above -- and this repo's own dev machine is exactly the
@@ -713,17 +729,32 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(doctor, "check_gh_binary", lambda: doctor.report("OK", "gh binary"))
     doctor.main()
     out = capsys.readouterr().out
-    if os.name == "nt":
-        # #487, real rather than simulated: on the actual platform this leg runs, the
-        # command scaffold.apply just wrote for this repo uses POSIX `$VAR` syntax that
-        # cmd.exe does not expand, and check_statusline's own job is to say so rather
-        # than pass it as OK. A fully-scaffolded repo is not exempt from that -- it is
-        # the case the check exists for -- so "clean" on Windows is one named warning,
-        # not zero, and asserting `VERDICT: ok` here would be the older, wrong answer
-        # this file is not supposed to hold any more.
-        assert "VERDICT: usable with gaps -- 1 warning(s)" in out, out
-        assert "WARN statusline:" in out and "%CLAUDE_PROJECT_DIR%" in out, out
+    # #495 self-review: whether either of the two Windows gaps below is real is a
+    # question about THIS machine, never a table keyed on `os.name` alone -- a
+    # `windows-latest` runner ships Git Bash, and whether that puts `sh` on PATH for
+    # the process this test runs in is exactly what went unmeasured in the CI
+    # failure this replaces. Both checks (`_statusline_windows_gap`,
+    # `check_auto_update`'s no-receipt arm) key on the identical `shutil.which("sh")`
+    # signal in production, so the expected warning count is built from measuring it
+    # once here too, rather than asserting either count as a given.
+    sh_here = shutil.which("sh") is not None
+    expected = []
+    if not sh_here:
+        expected.append("WARN auto-update:")
+    if os.name == "nt" and not sh_here:
+        expected.append("WARN statusline:")
+    if expected:
+        assert "VERDICT: usable with gaps -- {} warning(s)".format(len(expected)) in out, out
+        for prefix in expected:
+            assert prefix in out, out
+        if "WARN statusline:" in expected:
+            assert "%CLAUDE_PROJECT_DIR%" in out, out
+        if "WARN auto-update:" in expected:
+            assert "not resolvable" in out, out
     else:
+        # The must-not-fire control: `sh` resolvable (every machine observed so far,
+        # including `windows-latest`'s Git Bash) means neither gap applies, and the
+        # fully-scaffolded fixture is genuinely clean.
         assert "VERDICT: ok" in out, out
 
 
