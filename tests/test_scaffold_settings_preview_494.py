@@ -129,6 +129,60 @@ def test_apply_receipt_prints_the_extended_bucket(tmp_path, capsys):
     )
 
 
+def test_show_cli_labels_an_extend_as_extend_not_replace(tmp_path, capsys):
+    """Caught in review: `_main`'s `--show` loop used to fall through to the OWNED
+    trio's "would replace (rewritten every run)" wording for any action that was not
+    literally "create" -- which silently included "extend" the moment settings.json
+    became reachable there. An extend is a key merged into an existing file, not a
+    file rewritten every run, and the wrong label misdescribes the pending write to
+    the maintainer deciding whether to run --apply (#494 follow-up)."""
+    config = _write_config(tmp_path)
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}),
+                        encoding="utf-8")
+    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    out = capsys.readouterr().out
+    assert "would extend" in out, (
+        "an extend action printed something other than an extend label: {!r}".format(out)
+    )
+    assert "would replace (rewritten every run)" not in out.split(
+        scaffold.SETTINGS_PATH
+    )[1].split("-----")[0], "the settings.json entry itself was still labelled 'replace'"
+
+
+def test_show_a_single_named_settings_path_still_answers_when_already_present(tmp_path):
+    """The docstring's promise -- "worth knowing even for a [file] already present" --
+    applies to settings.json too: a maintainer naming the path directly gets the
+    `present` state and its reason, not the collapse into "nothing to show" the bulk
+    listing uses for the same state (#494 follow-up)."""
+    config = _write_config(tmp_path)
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8")
+    shown = scaffold.show(
+        str(tmp_path), oss_config.load_from(str(config))[0], path=scaffold.SETTINGS_PATH
+    )
+    assert len(shown) == 1
+    path, action, body = shown[0]
+    assert action == "present"
+    assert "statusLine" in body
+
+
+def test_show_a_single_named_settings_path_states_a_decline_reason(tmp_path):
+    config = _write_config(tmp_path)
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{not json", encoding="utf-8")
+    shown = scaffold.show(
+        str(tmp_path), oss_config.load_from(str(config))[0], path=scaffold.SETTINGS_PATH
+    )
+    assert len(shown) == 1
+    path, action, body = shown[0]
+    assert action == "decline"
+    assert "could not be read" in body
+
+
 def test_extended_is_read_somewhere_other_than_where_it_is_defined():
     """The issue's second question: `grep -rn extended scripts commands skills agents`
     used to return only the three lines inside `apply()` that build the bucket. This
