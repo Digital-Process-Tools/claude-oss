@@ -23,10 +23,14 @@ import doctor
 def check_auto_update(project_dir):
     """Did the SessionStart updater run, and what did it do (#480)?
 
-    Four states, and the fourth is the one this whole feature turns on:
+    Five states, and the fifth is the one #492 added:
 
     * **off** -- switched off by the environment or by a config key. Reported at OK with
       the switch named, because a user who turned it off is not carrying a gap.
+    * **opt-out status unknown** (#492) -- a config file exists but could not be read or
+      parsed, so whether it declares an opt-out cannot be told. Reported at WARN, never
+      folded into "off" (a guess that consent was withheld) or into "on" (a guess that it
+      was not) -- `opt_out`'s own docstring is the source of that split.
     * **updated** -- with the versions it moved between, and the fact that this session
       is still running the old code until Claude Code restarts.
     * **current** / **could-not-check** -- the updater's own two answers, relayed. A run
@@ -43,10 +47,17 @@ def check_auto_update(project_dir):
     if doctor.plugin_update is None:
         doctor.unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
         return
-    off, where = doctor.plugin_update.opt_out(project_dir)
+    status, where = doctor.plugin_update.opt_out(project_dir)
     receipt = doctor.plugin_update.read_receipt()
-    if off:
+    if status == "off":
         doctor.report("OK", "auto-update: off -- {}".format(where))
+        return
+    if status == "unknown":
+        doctor.report(
+            "WARN",
+            "auto-update: opt-out status unknown -- {} -- neither on nor off could be "
+            "established, so nothing was touched until this is resolved.".format(where),
+        )
         return
     if isinstance(receipt, doctor.plugin_update.ReceiptUnreadable):
         # A receipt that exists and is broken is not a receipt that was never written

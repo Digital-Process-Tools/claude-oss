@@ -102,24 +102,54 @@ def read_receipt(path=None):
 
 
 def opt_out(root=None, env=None):
-    """Is auto-update switched off, and by what? ``(bool, where)``.
+    """Is auto-update switched off, and by what? ``(status, where)``.
+
+    ``status`` is one of three strings -- never a bool, and never a value that is merely
+    falsy where it should be a genuine "I do not know" (#492). ``"off"`` means an opt-out
+    was found (environment or config). ``"on"`` means the search completed and found
+    none. ``"unknown"`` means a config file exists but could not be read or parsed, so
+    whether it declares an opt-out cannot be told -- and the caller must not treat that
+    the same as either "on" or "off": see `update`'s own handling of this return for why
+    the unresolved case fails toward not touching the install.
 
     The environment wins over config, because it is the switch somebody reaches for when
     a plugin is misbehaving right now, and it needs no file they may not be able to edit.
+
+    Walks upward from ``root`` the same way `statusline.repo_root` does, rather than
+    reading only ``root`` itself -- called from a subdirectory, the un-walked read found
+    nothing below the repo's own `.oss.json` and answered "on" about a repo that opted
+    out at its root.
     """
     env = os.environ if env is None else env
     if env.get(OPT_OUT_ENV):
-        return True, "{} in the environment".format(OPT_OUT_ENV)
+        return "off", "{} in the environment".format(OPT_OUT_ENV)
+    if root is None:
+        return "on", None
+    import statusline
+
+    found_root = statusline.repo_root(root)
+    if found_root is None:
+        return "on", None
+    unreadable = []
     for name in (".oss.json", ".oss.local.json"):
-        if root is None:
-            break
+        path = Path(found_root) / name
         try:
-            document = json.loads((Path(root) / name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            unreadable.append("{} ({})".format(name, exc))
+            continue
+        try:
+            document = json.loads(text)
+        except ValueError as exc:
+            unreadable.append("{} ({})".format(name, exc))
             continue
         if isinstance(document, dict) and document.get(OPT_OUT_KEY) is False:
-            return True, '"{}": false in {}'.format(OPT_OUT_KEY, name)
-    return False, None
+            return "off", '"{}": false in {}'.format(OPT_OUT_KEY, name)
+    if unreadable:
+        return "unknown", "; ".join(unreadable)
+    return "on", None
 
 
 def plugin_name(plugin_root=None):
@@ -241,9 +271,22 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
     """
     runner = _run if runner is None else runner
     stamp = time.time()
-    off, where = opt_out(root, env)
-    if off:
+    status, where = opt_out(root, env)
+    if status == "off":
         return {"state": "off", "at": stamp, "detail": "switched off by {}".format(where)}
+    if status == "unknown":
+        # Whether an opt-out was declared could not be told, and the docstring's
+        # reversibility promise is the one that must not be risked by a guess: modifying
+        # an install nobody can prove consented to it is worse than not modifying one
+        # that would have been fine to touch. Reported as `could-not-check`, not `off`
+        # and not `current` -- the receipt says nothing was decided, not that it was on
+        # or off (#492).
+        return {
+            "state": "could-not-check",
+            "at": stamp,
+            "detail": "auto-update opt-out status could not be determined -- {} -- so "
+            "nothing was touched until this is resolved".format(where),
+        }
 
     name = plugin_name(plugin_root)
     if not name:

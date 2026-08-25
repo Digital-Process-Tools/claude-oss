@@ -56,20 +56,74 @@ class _Runner:
 
 
 def test_the_environment_switches_it_off_and_says_so(tmp_path):
-    off, where = plugin_update.opt_out(tmp_path, env={"OSS_NO_AUTO_UPDATE": "1"})
-    assert off and "OSS_NO_AUTO_UPDATE" in where
+    status, where = plugin_update.opt_out(tmp_path, env={"OSS_NO_AUTO_UPDATE": "1"})
+    assert status == "off" and "OSS_NO_AUTO_UPDATE" in where
 
 
 def test_a_config_key_switches_it_off_and_names_the_file(tmp_path):
+    (tmp_path / ".oss.json").write_text(json.dumps({"repo": "x"}), encoding="utf-8")
     (tmp_path / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
-    off, where = plugin_update.opt_out(tmp_path, env={})
-    assert off and ".oss.local.json" in where
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "off" and ".oss.local.json" in where
 
 
 def test_it_is_on_by_default(tmp_path):
     """The must-fire control: without this, every opt-out test above passes vacuously."""
-    off, where = plugin_update.opt_out(tmp_path, env={})
-    assert not off and where is None
+    (tmp_path / ".oss.json").write_text(json.dumps({"repo": "x"}), encoding="utf-8")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "on" and where is None
+
+
+def test_opt_out_walks_upward_from_a_subdirectory_492(tmp_path):
+    """The second defect in #492: an opt-out declared at the repo root must still be
+    found when `opt_out` is called from a subdirectory, the way the SessionStart hook
+    is -- not only when called with the root itself."""
+    (tmp_path / ".oss.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    sub = tmp_path / "a" / "b" / "c"
+    sub.mkdir(parents=True)
+    status, where = plugin_update.opt_out(sub, env={})
+    assert status == "off" and ".oss.json" in where
+
+
+def test_unreadable_config_is_unknown_not_on_or_off_492(tmp_path):
+    """The first defect in #492: a config that exists but fails to parse must answer a
+    third state, distinct from both "on" (checked, no opt-out) and "off" (checked, opt-out
+    found) -- collapsing it into either is exactly what let an opt-out silently not take."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert status not in ("on", "off")
+    assert where and ".oss.json" in where
+
+
+def test_unreadable_config_status_is_not_merely_falsy_492(tmp_path):
+    """Guards the exact shape #492 named: "assertable as neither on nor off, not a
+    falsy value that happens to differ" -- a bool-shaped return could make "unknown" a
+    third falsy value indistinguishable from "on" under a plain truthiness check."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    status, _ = plugin_update.opt_out(tmp_path, env={})
+    assert isinstance(status, str)
+    assert not isinstance(status, bool)
+
+
+def test_an_unreadable_opt_out_config_reports_could_not_check_and_calls_nothing_492(tmp_path):
+    """The `update`-path half of #492: `opt_out` returning "unknown" must not be read as
+    "on" (which would run the update against an install nobody could show consented to
+    it) or as "off" (which would hide that anything is wrong). It must stop short, the
+    same as the marketplace-refresh-failed and install-record-unreadable arms already
+    do, and say so in the receipt."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    runner = _Runner([])
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=_plugins_root(tmp_path, "0.9.0"),
+        env={},
+        runner=runner,
+    )
+    assert document["state"] == "could-not-check", document
+    assert runner.calls == [], runner.calls
+    assert ".oss.json" in document["detail"]
 
 
 def test_an_opted_out_run_calls_nothing(tmp_path):
@@ -380,7 +434,7 @@ def test_the_guards_fire_against_a_mutated_module(tmp_path, monkeypatch):
     assert document["state"] == "could-not-check", document
 
     # Mutation 2: an opt-out that is read and then ignored.
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: (False, None))
+    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
     ran = _Runner([(True, ""), (True, "")])
     plugin_update.update(
         root=tmp_path,
