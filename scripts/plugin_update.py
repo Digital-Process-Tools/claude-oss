@@ -164,6 +164,7 @@ def opt_out(root=None, env=None):
             continue
         unreadable = []
         declared = False
+        off_reason = None
         for name in (".oss.json", ".oss.local.json"):
             if name not in present:
                 continue
@@ -180,15 +181,29 @@ def opt_out(root=None, env=None):
                 continue
             if isinstance(document, dict) and OPT_OUT_KEY in document:
                 if document.get(OPT_OUT_KEY) is False:
-                    return "off", '"{}": false in {}'.format(OPT_OUT_KEY, path)
-                # An explicit non-``False`` declaration (typically ``true``) is itself a
-                # declaration and stops the walk here, same as an explicit "off" -- #534's
-                # fix is "keep walking past a config that declares nothing", not "keep
-                # walking past a config, period". Only the *absence* of the key continues
-                # the search.
-                declared = True
+                    # Self-review finding on #534: this used to `return "off"` right
+                    # here, before the sibling file in the SAME directory was even
+                    # looked at -- so an unreadable `.oss.json` sitting next to a
+                    # readable `.oss.local.json` that declares `false` silently lost
+                    # the "unreadable" finding, while the symmetric case (an explicit
+                    # `true` alongside a broken sibling) already fell through to the
+                    # `unreadable` check below correctly. Recording the reason and
+                    # continuing the inner loop makes both files in this directory
+                    # get read before any verdict is returned, so `unreadable` is
+                    # checked first and consistently either way.
+                    if off_reason is None:
+                        off_reason = '"{}": false in {}'.format(OPT_OUT_KEY, path)
+                else:
+                    # An explicit non-``False`` declaration (typically ``true``) is
+                    # itself a declaration and stops the walk here, same as an
+                    # explicit "off" -- #534's fix is "keep walking past a config
+                    # that declares nothing", not "keep walking past a config,
+                    # period". Only the *absence* of the key continues the search.
+                    declared = True
         if unreadable:
             return "unknown", "; ".join(unreadable)
+        if off_reason is not None:
+            return "off", off_reason
         if declared:
             return "on", None
         # #534: a config directory that declares nothing about the key does not stop the

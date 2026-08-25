@@ -60,6 +60,24 @@ def test_must_fire_control_no_opt_out_anywhere_in_the_chain_is_still_on(tmp_path
     assert where is None
 
 
+def test_an_unreadable_sibling_config_is_not_masked_by_an_explicit_off(tmp_path):
+    """Self-review finding on #534 (raised by the Explore review spawn): the
+    inner loop used to return "off" the moment it hit `auto_update: false`,
+    *before* the post-loop `if unreadable: return "unknown"` check ever ran --
+    so a genuinely broken sibling config in the SAME directory was silently
+    dropped whenever the other file in that directory happened to declare
+    `false`. The symmetric case (an explicit `true` alongside a broken
+    sibling) already returned "unknown" correctly, because that path does not
+    return early inside the loop -- this is the must-fire half closing the gap
+    between the two."""
+    (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
+    (tmp_path / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert ".oss.json" in where
+
+
 def test_a_declaration_still_stops_the_walk_at_the_nearest_config(tmp_path):
     """When the nearest config genuinely declares the key, that remains authoritative --
     the walk must not skip past a real "on"-declaring or "off"-declaring config looking for
