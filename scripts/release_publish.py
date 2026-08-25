@@ -19,6 +19,16 @@ maintainer believing something shipped that did not:
                            object at all and so states no policy. Not a release and
                            not a skip
 
+A `created` release also invalidates the status line's cached `latest` for this
+repo (#549): the publish IS the event that falsifies that cache, and this is the
+only actor that knows it happened at the moment it does, rather than waiting out
+a refresh interval that cannot see it. Reported under its own key,
+`cache_invalidation`, in the same three-state shape rather than folded into
+`state` above -- these are two different vocabularies about two different
+things, and #134 is the bill for merging vocabularies like that once already:
+`invalidated` / `nothing-to-invalidate` / `could-not-invalidate`. Only present
+when a release was actually created; a dry run or a skip touches nothing.
+
 Exit codes, because a shell reads those and never reads prose:
 
   0   the release was created, or the command is buildable (dry run)
@@ -54,6 +64,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import oss_config  # noqa: E402
+
+try:
+    import statusline
+except ImportError:  # pragma: no cover - the module sits beside this file
+    statusline = None
 
 STATE_CREATE = "create"
 STATE_SKIPPED = "skipped"
@@ -371,6 +386,27 @@ def execute(planned):
     return result
 
 
+def _invalidate_cache_after_publish(repo):
+    """Clear the status line's cached `latest` for `repo` immediately after a
+    Release is confirmed created (#549).
+
+    Delegates entirely to `statusline.invalidate_latest_cache`, which reads
+    `cache_path`/`cache_dir` from `statusline` itself -- this module never
+    re-derives that path, so the two never drift apart.
+
+    A missing `statusline` module (an install where it sits beside this file but
+    could not be imported for some other reason) is `could-not-invalidate` rather
+    than a crash on a release path that has already shipped -- the Release itself
+    is not undone by a cache this could not reach.
+    """
+    if statusline is None:
+        return {
+            "state": "could-not-invalidate",
+            "detail": "scripts/statusline.py could not be imported",
+        }
+    return statusline.invalidate_latest_cache(repo)
+
+
 def receipt(payload):
     """One block, fixed width, and nothing from inside the changelog in it."""
     lines = ["release publish"]
@@ -400,6 +436,9 @@ def receipt(payload):
     row("notes", payload.get("notes_path") or "-")
     command = payload.get("command")
     row("command", " ".join(command) if command else "-")
+    cache = payload.get("cache_invalidation")
+    if isinstance(cache, dict) and cache.get("state"):
+        row("cache", str(cache["state"]))
     if payload.get("reason"):
         row("reason", _one_line(payload["reason"], 320))
     if payload.get("detail"):
@@ -550,7 +589,13 @@ def main(argv=None):
     if planned["state"] != STATE_CREATE or not args.execute:
         return _emit(planned, args.as_json)
 
-    return _emit(execute(planned), args.as_json)
+    result = execute(planned)
+    if result.get("state") == STATE_CREATED:
+        # The publish just made the cached `latest` reading false. Invalidated
+        # here, immediately, rather than left for a refresh interval that has no
+        # way to know this happened (#549).
+        result["cache_invalidation"] = _invalidate_cache_after_publish(config.get("repo"))
+    return _emit(result, args.as_json)
 
 
 if __name__ == "__main__":

@@ -140,7 +140,10 @@ def test_the_glyphs_are_used_where_the_console_encodes_them():
         [("oss", _status("current")), ("claude-supertool", _status("behind", "0.48.0", "0.49.0"))],
         statusline._symbols(False),
     )
-    assert field == "plug 1✓ supe⇡0.49.0"
+    # #550: distinct shape, not just distinct colour -- `↥` (arrow from bar) rather
+    # than `⇡`, which was one codepoint from `ahead`'s `↑` and told apart reliably
+    # only by colour.
+    assert field == "plug 1✓ supe↥0.49.0"
 
 
 def test_the_whole_line_carries_the_collapsed_block():

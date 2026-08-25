@@ -734,6 +734,15 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # everything clean" fixture into a real WARN about a fact this test is not
     # about. Stubbed the same way `check_tool` is.
     monkeypatch.setattr(doctor, "check_gh_binary", lambda: doctor.report("OK", "gh binary"))
+    # #551: reads the status line's real cache directory and makes a real `gh` call
+    # to compare against it -- neither of which this fixture's "fully configured"
+    # tree can fake, and both are already covered on their own terms by
+    # tests/test_doctor_latest_skew_551.py. Stubbed the same way check_tool/
+    # check_gh_binary are: the message selection for THIS check is not what this
+    # test is about, only whether its OK reaches the aggregated verdict.
+    monkeypatch.setattr(
+        doctor, "check_latest_skew", lambda project_dir, config: doctor.report("OK", "latest skew")
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether either of the two Windows gaps below is real is a

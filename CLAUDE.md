@@ -266,6 +266,34 @@ separately rather than one list.
   the assertion, a normalized string test for the product code -- so neither has a live stdlib
   fact left under it to change again on 3.14.
 
+- **A cached reading that was correct when it was taken, and false before its interval expires, is
+  indistinguishable from a fresh one at the render.** `scripts/statusline.py`'s cached `latest` for
+  this repo was stamped 17:54 holding `0.12.0`; `v0.13.0` published at 18:06, 12 minutes later, with
+  48 minutes still left on the cache's own `LATEST_REFRESH_AFTER`. Read at 18:46 -- 52 minutes
+  against a 60 minute interval, so `latest_is_due` correctly said `False` -- the render showed a
+  green `ahead` marker printing the *installed* version, and a maintainer read it as "we are not on
+  0.13.0" and spent a session establishing otherwise. The interval was not the bug and shortening it
+  is not the fix: the falsifying event can land one minute after a poll just as easily as fifty-two.
+  What closes it is having the actor that *causes* the change invalidate the cache at the moment it
+  causes it -- `/oss:release` now calls `statusline.invalidate_latest_cache()` immediately after
+  `execute()` reports a Release `created` (#549). What makes it *readable* in the window before that
+  closes is carrying the reading's own age to the render rather than discarding it: `refresh()`
+  already stores `latest_fetched_at` and warns in its own docstring that stamping a carried value
+  `now` "would make an hour-old reading indistinguishable from one just taken, which is the same
+  defect this module spends the rest of its length avoiding" -- and `gather()` then discarded that
+  stamp one function later, making them indistinguishable anyway. `plugin_facts`/`version_status`
+  now take a `stale` flag so a comparison older than its own refresh interval folds into the existing
+  `?` bucket instead of a false `behind`/`ahead` (#550) -- worth naming as a shape: a guard that
+  survives all the way into the cache and dies at the one function that renders it. Neither fix alone
+  would have caught the 52-minute incident (fresh-by-its-own-rule and simply wrong is exactly what
+  #550 cannot catch), which is why both tests must run: cover the stale case *and* the fresh-but-wrong
+  case in the same fixture, or the pairing proves nothing about what was actually observed. And until
+  #551, nothing compared the two mechanisms this plugin has for "am I current" at all: the status
+  line's cache and `plugin_update`'s receipt answer from different sources on different clocks, and
+  `doctor` ran twice during this incident reporting the second ("already current") while saying
+  nothing about the first being stale-but-wrong -- a true answer to a different question, standing in
+  for the one being asked.
+
 ## Layout
 
 ```
@@ -344,7 +372,7 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `990d0da`, the commit this release's own release commit sits directly on top of** — the
+**Measured at `990d0da`, the commit `v0.13.0`'s own release commit sits directly on top of** — the
 tag lands one commit later, on the commit that folds this changelog and bumps these version sites, and
 every number below was taken before that commit existed. The delta this release carries is **26
 commits and 23 merged pull requests**, `git rev-list --count v0.12.0..HEAD` returning `26`. Every
