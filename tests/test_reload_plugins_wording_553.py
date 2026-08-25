@@ -1,6 +1,9 @@
 """#553: the two "restart Claude Code" messages never mention `/reload-plugins`, the
-cheaper remedy `doctor.py` already names in three other places (`:3726-3727`,
-`:3734-3735`, `:5166-5168`). #81's whole cost traces to a stale agent registry in an
+cheaper remedy `doctor.py` already names in three other places (around lines 3980,
+3988 and 5421 in this tree -- the issue cited 3726-3727, 3734-3735 and 5166-5168,
+which had already drifted by the time this landed; `doctor.py` is not in this issue's
+scope so the citation is not pinned to line numbers anywhere the code enforces it).
+#81's whole cost traces to a stale agent registry in an
 unreloaded session, and the fix there was a restart -- but the message that told the
 maintainer to restart never offered the cheap path first.
 

@@ -25,8 +25,9 @@ this plugin does.** Three things follow from that and are not optional:
   on a network call at session start.
 
 Three states in the receipt, and the third is the one that must not be rounded up:
-``updated`` (with `from`/`to`, and the fact that a restart is needed before the new code
-runs), ``current``, and ``could-not-check`` -- offline, `claude` not on PATH, a
+``updated`` (with `from`/`to`, and both remedies: /reload-plugins moves the registry
+now, and a restart is still needed before the new code fully runs), ``current``, and
+``could-not-check`` -- offline, `claude` not on PATH, a
 marketplace that did not resolve. Rendering the third as ``current`` would be this
 repository's own defect class pointed at its own updater.
 
