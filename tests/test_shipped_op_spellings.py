@@ -123,15 +123,15 @@ def shipped_documents():
     """
     documents = []
     for path in sorted((REPO_ROOT / "skills").rglob("SKILL.md")):
-        documents.append((str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")))
+        documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
     for pattern in ("agents/*.md", "commands/*.md", ".claude/jit-context/*/*/*.md"):
         for path in sorted(REPO_ROOT.glob(pattern)):
-            documents.append((str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")))
+            documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
     entry_points = [REPO_ROOT / "bin" / "oss-workspace"]
     entry_points.extend(sorted((REPO_ROOT / "scripts").glob("doctor*.py")))
     for path in entry_points:
         if path.is_file():
-            documents.append((str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")))
+            documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
     for dimension, bodies in oss_rules.rules(repo_root=REPO_ROOT).items():
         for filename, body in sorted(bodies.items()):
             documents.append(("oss_rules.rules()[{}][{}]".format(dimension, filename), body))
