@@ -58,6 +58,24 @@ Skill(manager)
    field exists to close. Only record a fresh wait (`--wait-dispatch`/`--wait-observable` on step
    6's `--decision` call) when this tick itself becomes blocked on something new.
 
+   **Compare this tick's plugin identity against the last one recorded (#477).** A version change
+   under a working loop invalidates every environmental fact the previous tick established, and
+   nothing notices it unless this is asked directly. Read doctor's own version line, then compare:
+
+   ```bash
+   IDENTITY="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py" --root . 2>&1 \
+     | sed -n 's/^OK oss plugin version //p')"
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --check-plugin-identity "$IDENTITY"
+   ```
+
+   Three answers, not two. `unchanged` — proceed, say nothing further. `changed` — report it
+   prominently before anything else this tick; whether to re-run the rest of doctor's diagnostic
+   over it is a judgement call for this tick to make and name, not an automatic re-run. `could-not-
+   tell` — no prior tick ever recorded one (a first tick after this shipped, commonly) — say so once
+   rather than letting it read as `unchanged`. Record this tick's own identity on step 6's
+   `--decision` call regardless of which of the three it found (`--plugin-identity "$IDENTITY"`), so
+   the next tick has a prior to compare against.
+
 2. **Read the board**, batched into one call:
 
    ```bash
@@ -254,9 +272,13 @@ Skill(manager)
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
      --decision "…" --at "<ISO timestamp>" \
      --filings <issues the loop filed> --merged-prs <PRs merged> \
-     --window "since the last tick"
+     --window "since the last tick" \
+     --plugin-identity "$IDENTITY"
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --trend
    ```
+
+   `--plugin-identity "$IDENTITY"` is step 1's own reading (#477), carried onto this entry so the
+   next tick has a prior to compare against — see step 1 for what the three-state comparison means.
 
    Pass `unknown` for a count you could not take, with `--intake-why` — **`could-not-count` is not
    zero**, and a metric that renders the two alike is worse than none. The denominator, the

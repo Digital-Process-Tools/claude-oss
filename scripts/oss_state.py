@@ -142,6 +142,36 @@ WAIT_HOLDS = "holds"
 WAIT_CLEARED = "cleared"
 WAIT_COULD_NOT_EVALUATE = "could-not-evaluate"
 
+# A plugin identity comparison (#477): what a tick recorded about the install
+# it ran under, read back against what THIS tick reads, so "has the version
+# changed since last tick" is a question this system can answer at all --
+# before this, one of its two operands was never written down.
+#
+# The compared value is the WHOLE string `doctor.plugin_identity()` returns --
+# a manifest version folded with a content digest over the tracked files --
+# never the version alone. #418 measured two installs that both read "0.9.0"
+# sixteen commits apart: a manifest version is stable across exactly the
+# window this check exists to catch, so a version-only comparison would ship
+# a check that cannot fire for the most common real skew.
+#
+# Three states, same shape as `cohort_freeze`'s and `wait`'s own thirds:
+#
+#   changed          this tick's identity string differs from the prior
+#                     tick's. Could be the version, the content digest, or
+#                     both -- the whole string is the operand, so this does
+#                     not say which half moved.
+#   unchanged         the two strings are identical.
+#   could-not-tell    no prior tick ever recorded an identity (a first tick
+#                      after this ships, or every earlier entry predates it),
+#                      or the prior recorded was blank. This must never
+#                      render as `unchanged` -- a loop that has never
+#                      recorded a version would otherwise look exactly like
+#                      one whose version has not moved, which is the absence
+#                      this issue is named after.
+PLUGIN_UNCHANGED = "unchanged"
+PLUGIN_CHANGED = "changed"
+PLUGIN_COULD_NOT_TELL = "could-not-tell"
+
 
 class StateError(Exception):
     """The state file could not be read, or an entry was refused."""
@@ -1336,6 +1366,96 @@ def _wait_sentence(record):
     return head + "unrecognised wait state {!r}, so nothing is claimed".format(state)
 
 
+def plugin_identity_check(current, prior):
+    """Compare this tick's plugin identity against the prior tick's recorded one (#477).
+
+    ``current`` is this tick's own reading -- ``doctor.plugin_identity(PLUGIN_ROOT)``,
+    which never raises and always returns a non-empty string, so a falsy value here is
+    a caller error rather than a real reading and is refused. ``prior`` is whatever the
+    previous entry that recorded one carried in ``detail["plugin_identity"]`` --
+    ``_last_plugin_identity`` finds it -- or ``None`` when no earlier entry ever did.
+
+    Returns a record with ``current``, ``prior`` and ``state``; ``state`` is
+    ``PLUGIN_CHANGED``, ``PLUGIN_UNCHANGED`` or ``PLUGIN_COULD_NOT_TELL``, with a
+    ``why`` filled in only for the third. See the module-level comment beside the
+    three constants for what each means and why the comparison is over the whole
+    string rather than a version alone.
+    """
+    if not current or not str(current).strip():
+        raise StateError(
+            "plugin_identity_check needs the current tick's identity; the caller "
+            "always has one (doctor.plugin_identity() never raises), so an empty "
+            "value here is a caller error rather than a real reading"
+        )
+    current = str(current).strip()
+    if prior is None or not str(prior).strip():
+        return {
+            "current": current,
+            "prior": None,
+            "state": PLUGIN_COULD_NOT_TELL,
+            "why": (
+                "no earlier tick recorded a plugin identity -- this must not "
+                "render as unchanged, since a loop that has never recorded a "
+                "version would otherwise look exactly like one whose version "
+                "has not moved"
+            ),
+        }
+    prior = str(prior).strip()
+    if current == prior:
+        return {"current": current, "prior": prior, "state": PLUGIN_UNCHANGED, "why": None}
+    return {"current": current, "prior": prior, "state": PLUGIN_CHANGED, "why": None}
+
+
+def plugin_identity_line(record):
+    """One line a tick report can print. The state decides the sentence, not the caller."""
+    return _receipt_line(_plugin_identity_sentence(record))
+
+
+def _plugin_identity_sentence(record):
+    """`plugin_identity_line`'s branches. Unfolded on purpose -- it has one caller."""
+    if not isinstance(record, dict):
+        raise StateError(
+            "plugin_identity_line takes a plugin identity record, not {!r}".format(record)
+        )
+    state = record.get("state")
+    head = "plugin identity: "
+    if state == PLUGIN_UNCHANGED:
+        return head + "unchanged ({})".format(record.get("current"))
+    if state == PLUGIN_CHANGED:
+        return head + "changed -- was {}, now {}".format(
+            record.get("prior"), record.get("current")
+        )
+    if state == PLUGIN_COULD_NOT_TELL:
+        return head + "could not tell -- {}".format(
+            record.get("why") or "no reason recorded"
+        )
+    return head + "unrecognised plugin identity state {!r}, so nothing is claimed".format(
+        state
+    )
+
+
+def _last_plugin_identity(path):
+    """The most recent entry that recorded a plugin identity, scanning back past any
+    entry that recorded something else -- an intake, a lane record, a cohort freeze,
+    a wait -- rather than only looking at the last entry. Same shape as `_last_wait`
+    and for the same reason (#436): a plugin identity recorded two ticks ago must
+    still be found behind whatever landed after it.
+
+    Returns ``(entry, identity)`` for the most recent entry whose ``detail`` carries
+    a ``plugin_identity`` key -- even a falsy one, since the freshest statement is
+    what a reader must see -- or ``(None, None)`` if no entry ever recorded one.
+    """
+    for entry in reversed(read(path)):
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        if "plugin_identity" in detail:
+            return entry, detail["plugin_identity"]
+    return None, None
+
+
 def _count_argument(text):
     """A CLI count: a whole number, or the literal ``unknown``.
 
@@ -1504,6 +1624,13 @@ def _main(argv=None):
         "-- holds or could-not-evaluate (#337, #436, #443) -- or 'no pending "
         "wait' if it was cleared or none was ever recorded",
     )
+    group.add_argument(
+        "--check-plugin-identity",
+        metavar="IDENTITY",
+        help="compare this tick's plugin identity (doctor.plugin_identity(PLUGIN_ROOT)) "
+        "against the most recently recorded one (#477): changed, unchanged, or "
+        "could-not-tell if no prior tick ever recorded one",
+    )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
     parser.add_argument(
@@ -1580,6 +1707,11 @@ def _main(argv=None):
         help="why the wait could not be evaluated; required with --check-wait "
         "could-not-evaluate",
     )
+    parser.add_argument(
+        "--plugin-identity",
+        help="attach this tick's plugin identity to the entry made by --decision "
+        "(#477); use with --decision only",
+    )
     args = parser.parse_args(argv)
 
     intake_flags = [
@@ -1620,6 +1752,11 @@ def _main(argv=None):
             ("--wait-cleared-by", args.wait_cleared_by),
             ("--wait-why", args.wait_why),
         )
+        if value is not None
+    ]
+    plugin_identity_flags = [
+        name
+        for name, value in (("--plugin-identity", args.plugin_identity),)
         if value is not None
     ]
 
@@ -1671,6 +1808,7 @@ def _main(argv=None):
             or args.migrate
             or args.model_trend
             or args.pending_wait
+            or args.check_plugin_identity
         )
         if reading_mode and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
@@ -1703,6 +1841,23 @@ def _main(argv=None):
                 "accept them and drop them".format(", ".join(wait_flags))
             )
             return 1
+        if reading_mode and plugin_identity_flags:
+            # --plugin-identity is only ever recorded with --decision, same rule as
+            # every other X_flags list -- including against --check-plugin-identity
+            # itself, which is a reading mode too (a value, not store_true, so it
+            # needed adding to `reading_mode` above rather than being caught for
+            # free by the generic check).
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(plugin_identity_flags))
+            )
+            return 1
+        if args.check_plugin_identity:
+            found_entry, prior = _last_plugin_identity(args.path)
+            record = plugin_identity_check(args.check_plugin_identity, prior)
+            _say(plugin_identity_line(record), sys.stderr)
+            print(json.dumps(record, indent=2))
+            return 0
         if args.pending_wait:
             found_entry, record = _last_wait(args.path)
             if found_entry is None:
@@ -1973,6 +2128,20 @@ def _main(argv=None):
                     "--detail already carries a 'wait' key; pass one or the other"
                 )
             detail["wait"] = pending_wait_record
+        if args.plugin_identity is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a plugin identity is "
+                    "attached"
+                )
+            if "plugin_identity" in detail:
+                return refuse(
+                    "--detail already carries a 'plugin_identity' key; pass one "
+                    "or the other"
+                )
+            detail["plugin_identity"] = args.plugin_identity
         entry = append(args.path, args.at, args.decision, detail=detail)
         # After the write, never before. The line is a receipt for an entry that is on
         # disk, and a receipt printed ahead of the write it receipts is one that a
@@ -1985,6 +2154,8 @@ def _main(argv=None):
             _say("RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
         if pending_wait_record is not None:
             _say("RECORDED " + wait_line(pending_wait_record), sys.stderr)
+        if args.plugin_identity is not None:
+            _say("RECORDED plugin identity: {}".format(args.plugin_identity), sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
