@@ -6483,10 +6483,33 @@ def check_dependency_resolution(record=None, repos=None):
     """Not a hardcoded dependency list: `declared_dependencies()` reads this
     plugin's own manifest, the same accessor `check_freshness` already uses, so a
     dependency added or removed there reaches this check with no edit here.
+
+    `declared_dependencies()` itself folds "the manifest lists no dependencies"
+    and "the manifest could not be read at all" into the same empty list
+    (`except (OSError, ValueError): return []`) -- correct for its existing
+    caller, `check_freshness`, which already reports the manifest unreadable
+    elsewhere on the same run. This is this check's only look at the manifest,
+    so an empty list is disambiguated here rather than assumed clean: a self-
+    review round found a corrupt or absent manifest would otherwise print the
+    same `OK ... none named` line as a plugin that genuinely declares none --
+    an absence produced by the tool, read as an absence in the world.
     """
     names = declared_dependencies()
     if not names:
-        report("OK", "declared dependencies: none named in this plugin's own manifest")
+        manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
+        try:
+            readable = isinstance(json.loads(manifest.read_text(encoding="utf-8")), dict)
+        except (OSError, ValueError):
+            readable = False
+        if readable:
+            report("OK", "declared dependencies: none named in this plugin's own manifest")
+        else:
+            report(
+                "WARN",
+                "declared dependencies: could not tell -- this plugin's own manifest "
+                "at {} could not be read, so whether any dependencies are declared is "
+                "unknown, not zero".format(manifest),
+            )
         return
     computed_repos = dependency_repositories(names) if repos is None else repos
     for finding in dependency_resolution_state(names, record=record, repos=computed_repos):
@@ -6555,6 +6578,13 @@ def label_vocabulary_state(project_dir, config=None, run=None):
     """
     run = subprocess.run if run is None else run
     slug = (config or {}).get("repo") if config else None
+    # `.oss.json`'s `repo` key is only VALIDATED as a string by oss_config --
+    # `check_oss_json_presence` still returns the config, problems and all, so a
+    # non-string value here (an int, a list -- any JSON value is legal input to
+    # this function) must not reach `subprocess.run`'s argv, where it raises
+    # `TypeError` rather than one of the exceptions this function catches.
+    if slug is not None and not isinstance(slug, str):
+        return "could-not-tell", "the repo value in .oss.json is not a string"
     if not slug:
         slug, reason = _origin_slug(project_dir, run=run)
         if slug is None:

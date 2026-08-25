@@ -138,13 +138,18 @@ def test_a_missing_config_is_warn_not_fail(tmp_path):
 # ------------------------------------------------------- dependency resolution
 
 
-def test_a_resolving_dependency_reports_ok():
+def test_dependency_resolution_state_shape_is_stable_across_machines(tmp_path):
+    """`record=None` reads the real install record, which this machine's own
+    state decides -- so this asserts the SHAPE (name present, state one of the
+    three) rather than a specific value, which would be a statement about this
+    developer's machine rather than about the function. The fixed-record
+    variants below (`test_an_active_dependency_...`, `test_a_missing_dependency
+    _...`, `test_a_resolving_dependency_with_a_readable_manifest_is_resolves`)
+    pin the actual values.
+    """
     findings = doctor.dependency_resolution_state(
         ["supertool"], record=None, repos={"supertool": "owner/supertool"}
     )
-    assert findings == [{"name": "supertool", "state": "resolves", "version": None}] or True
-    # active_versions(record=None) reads the real install record; assert the
-    # shape instead of the value so this is not a statement about this machine.
     assert findings[0]["name"] == "supertool"
     assert findings[0]["state"] in ("resolves", "missing", "contract-unknown")
 
@@ -199,6 +204,22 @@ def test_no_declared_dependencies_reports_ok(monkeypatch):
     )
 
 
+def test_an_unreadable_manifest_is_could_not_tell_not_zero(tmp_path, monkeypatch):
+    """The negative control for the test above: `declared_dependencies()` folds
+    "genuinely none" and "manifest could not be read" into the same empty list
+    (`except (OSError, ValueError): return []`), and this check must not repeat
+    that collapse -- a corrupt manifest must not read as a clean board.
+    """
+    monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
+    monkeypatch.setattr(doctor, "PLUGIN_ROOT", tmp_path)  # no .claude-plugin/plugin.json here
+    doctor.check_dependency_resolution()
+    assert any(
+        state == "WARN" and "could not tell" in msg and "manifest" in msg
+        for state, msg in doctor.FINDINGS
+    )
+    assert not any("none named" in msg for _, msg in doctor.FINDINGS)
+
+
 # ------------------------------------------------------------ label vocabulary
 
 
@@ -235,6 +256,21 @@ def test_gh_unavailable_is_could_not_tell_not_missing(tmp_path, monkeypatch):
 def test_no_repo_and_no_origin_is_could_not_tell(tmp_path):
     state, payload = doctor.label_vocabulary_state(tmp_path, config=None, run=_fake_run())
     assert state == "could-not-tell"
+
+
+def test_a_non_string_repo_value_is_could_not_tell_not_a_crash(tmp_path):
+    """`.oss.json`'s `repo` key is only VALIDATED as a string by oss_config --
+    `check_oss_json_presence` still returns the config, problems and all, and
+    label_vocabulary_state is hand-fed exactly that dict. `subprocess.run` raises
+    `TypeError` on a non-str/bytes/PathLike argv entry, which is not one of the
+    exceptions this function catches -- a malformed committed .oss.json must not
+    take out doctor's own exit-0-always contract.
+    """
+    state, payload = doctor.label_vocabulary_state(
+        tmp_path, config={"repo": 123}, run=_fake_run()
+    )
+    assert state == "could-not-tell"
+    assert "repo" in payload
 
 
 def test_check_label_vocabulary_reports_all_three_states(tmp_path):

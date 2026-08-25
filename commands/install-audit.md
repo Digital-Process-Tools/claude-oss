@@ -26,11 +26,12 @@ Every line is one of the same three states doctor uses:
   render as `WARN`; the text says which. **`could not tell` is not a pass.** A line reading
   `label vocabulary: could not tell -- gh is not on PATH` means the question was never answered —
   relay it as a gap in the measurement, not as a clean board.
-- `FAIL` — reserved for an argument or environment problem this run itself hit (a bad flag,
-  `scripts/oss_config.py` failing to import). Nothing about the *state* of a fresh install is ever
-  a `FAIL` here: a repo with no `.oss.json`, no dependencies active and no labels yet is exactly
-  the case this command exists for, and reporting that as broken would make the single most
-  expected outcome read as one.
+- `FAIL` — reserved for a bad flag or an unresolvable project directory, exactly like the normal
+  `/oss:doctor` run. Even a broken environment reports as `WARN`, not `FAIL`, here: an unimportable
+  `scripts/oss_config.py` degrades every config-dependent question below to `could not tell` rather
+  than stopping the audit. Nothing about the *state* of a fresh install is ever a `FAIL`: a repo
+  with no `.oss.json`, no dependencies active and no labels yet is exactly the case this command
+  exists for, and reporting that as broken would make the single most expected outcome read as one.
 
 ## What it checks
 
