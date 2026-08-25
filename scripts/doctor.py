@@ -2257,6 +2257,12 @@ def check_state_file(project_dir, config):
 # the check and its docstring, unchanged; this is a pure relocation.
 from doctor_check_auto_update import check_auto_update
 
+# #551: cross-references the status line's cached `latest` against the newest
+# published version read live -- a new check, not a relocation, but wired the
+# same way (#497's convention) for the same reason: a test that monkeypatches
+# `doctor.<name>` must reach code this module calls.
+from doctor_check_latest_skew import check_latest_skew
+
 
 # Moved to scripts/doctor_check_statusline.py (#497) -- see that module for
 # the check, its private helper and their docstrings, unchanged; this is a
@@ -6313,6 +6319,11 @@ def main(argv=None):
     check_release_authority(project_dir, config)
     check_statusline(project_dir)
     check_auto_update(project_dir)
+    # The weakest of the two "am I current" checks, deliberately last of the pair:
+    # it runs on demand while the status line renders on every message, so it
+    # turns a silent disagreement into one line rather than preventing anything
+    # (#551).
+    check_latest_skew(project_dir, config)
     check_ci_enforcement(project_dir, config)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
