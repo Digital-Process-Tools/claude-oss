@@ -92,6 +92,26 @@ def fleet_label(primary_issue, issues, phrase):
     return "Lane {} x{}  {}".format(primary, count, phrase)
 
 
+def _print(text, stream=None):
+    """Print ``text`` without dying on the console's own codepage.
+
+    ``print`` encodes with the stream's encoding, not the source file's, and on
+    Windows that is typically cp1252 -- a phrase carrying a character cp1252 cannot
+    represent (an arrow, for instance; an em dash is representable and would not
+    have caught this) raises ``UnicodeEncodeError`` and kills the process at this
+    call, after every validation in ``fleet_label`` already passed. Round-tripped
+    through the stream's own encoding first, with ``backslashreplace`` on the way
+    out, so an unrepresentable character survives as an escape somebody can read
+    instead of ending the process -- the same shape ``oss_state._say`` already uses
+    for the same reason.
+    """
+    stream = sys.stdout if stream is None else stream
+    encoding = getattr(stream, "encoding", None)
+    if encoding:
+        text = text.encode(encoding, "backslashreplace").decode(encoding, "replace")
+    print(text, file=stream)
+
+
 def _main(argv=None):
     """CLI: ``fleet_label.py PRIMARY ISSUE1,ISSUE2,... "phrase"``.
 
@@ -115,7 +135,7 @@ def _main(argv=None):
         sys.stderr.write(str(exc) + "\n")
         return 1
 
-    print(label)
+    _print(label)
     return 0
 
 

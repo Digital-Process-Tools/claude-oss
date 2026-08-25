@@ -86,3 +86,40 @@ def test_cli_refuses_without_full_bundle():
     )
     assert result.returncode != 0
     assert "534" in result.stdout
+
+
+def test_cli_survives_a_console_that_cannot_encode_the_phrase(monkeypatch):
+    # Windows' cp1252 console cannot represent an arrow; printing straight to it used
+    # to die at the print call itself, after every validation already passed
+    # (agents/developer.md's own platform trap: "the console's codepage, not the
+    # source file's"). An em dash is representable in cp1252 and would not have
+    # reproduced this -- an arrow is the positive control that actually triggers the
+    # encode failure. A text stream opened strict/cp1252 is the same failure mode
+    # without needing a Windows runner to prove it.
+    import io
+
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", stream)
+
+    exit_code = fl._main(["534", "534", "auto-update path → continued"])
+    stream.flush()
+
+    assert exit_code == 0
+    written = stream.buffer.getvalue().decode("cp1252", "replace")
+    assert "Lane 534" in written
+
+
+def test_cli_still_prints_a_representable_phrase_verbatim(monkeypatch):
+    # Positive control for the case above: a phrase every console can already
+    # encode is not silently mangled by the fallback.
+    import io
+
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", stream)
+
+    exit_code = fl._main(["534", "534", "auto-update path"])
+    stream.flush()
+
+    assert exit_code == 0
+    written = stream.buffer.getvalue().decode("cp1252", "replace")
+    assert written.strip() == "Lane 534  auto-update path"
