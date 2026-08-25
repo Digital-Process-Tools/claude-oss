@@ -95,19 +95,42 @@ def op_spellings(text):
 
 
 def shipped_documents():
-    """(label, text) for everything this plugin ships that a reader executes.
+    """(label, text) for shipped prose plus the doctor entry point's own execution
+    surface -- the set of things a reader is meant to paste a remedy out of.
 
     The rule layer is in here twice on purpose, and they are two different things: the
     bodies in `scripts/oss_rules.py` are what `/oss:scaffold` installs into every
     managed repository, and the files under `.claude/jit-context/` are this repository
     own installed copy. Fixing one and not the other is how a fix reaches nobody, or
     reaches everybody except here.
+
+    #224: this used to claim a population wider than its globs -- "everything this
+    plugin ships that a reader executes" -- while never reading `bin/oss-workspace`
+    or `scripts/doctor.py`, 15 `supertool 'OP...'` remedies printed to a user's
+    stderr at runtime. Widened to `bin/oss-workspace` and to `scripts/doctor*.py`,
+    which is `doctor.py` plus every `doctor_check_*.py` module #497 split its checks
+    into -- the message text moved with them, so the population has to follow.
+
+    Deliberately **not** `scripts/*.py` as a whole: `scripts/batch_hint.py` writes
+    `supertool 'op1' 'op2'` as an ILLUSTRATIVE example inside its own docstring,
+    syntactically identical to a real invocation. A blind sweep would report
+    `op1`/`op2` as undeclared spellings for text nobody is meant to paste, or force
+    declaring placeholders that bless a spelling nobody ships -- the opposite
+    mistake. So the docstring above is narrowed to match what is actually covered,
+    rather than left claiming everything: the named entry points a reader runs
+    directly (`bin/oss-workspace`, `python3 scripts/doctor.py`), not every module
+    this plugin happens to ship.
     """
     documents = []
     for path in sorted((REPO_ROOT / "skills").rglob("SKILL.md")):
         documents.append((str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")))
     for pattern in ("agents/*.md", "commands/*.md", ".claude/jit-context/*/*/*.md"):
         for path in sorted(REPO_ROOT.glob(pattern)):
+            documents.append((str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")))
+    entry_points = [REPO_ROOT / "bin" / "oss-workspace"]
+    entry_points.extend(sorted((REPO_ROOT / "scripts").glob("doctor*.py")))
+    for path in entry_points:
+        if path.is_file():
             documents.append((str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")))
     for dimension, bodies in oss_rules.rules(repo_root=REPO_ROOT).items():
         for filename, body in sorted(bodies.items()):
@@ -162,6 +185,35 @@ def loaded_ops():
     if not ops:
         return None, "supertool ops:roster named no ops (exit {})".format(completed.returncode)
     return ops, None
+
+
+def test_bin_and_doctor_entry_points_are_swept():
+    """#224: the sweep's docstring claimed to cover "everything this plugin ships
+    that a reader executes" while its four globs never looked at `bin/oss-workspace`
+    or `scripts/doctor.py` -- 15 `supertool 'OP...'` remedies printed to a user's
+    stderr at runtime, uncovered. This is the positive half: the population must
+    include the doctor entry point's own execution surface (`doctor.py` plus the
+    `doctor_check_*.py` modules #497 split its checks into -- the message text
+    moved with them) and the workspace launcher.
+    """
+    labels = {label for label, _ in shipped_documents()}
+    assert "bin/oss-workspace" in labels, sorted(labels)
+    assert "scripts/doctor.py" in labels, sorted(labels)
+    assert any(label.startswith("scripts/doctor_check_") for label in labels), sorted(labels)
+
+
+def test_an_illustrative_example_is_not_swept():
+    """The negative control for the same fix. `scripts/batch_hint.py` writes
+    `supertool 'op1' 'op2'` as an ILLUSTRATIVE example in its own docstring --
+    syntactically identical to a real invocation, and not one. A blind
+    `scripts/*.py` glob was rejected for exactly this: it would report `op1`/
+    `op2` as undeclared spellings for text nobody is meant to paste, or force
+    declaring placeholders that bless a spelling nobody ships. The population
+    stays the named doctor entry point plus the launcher, not the whole
+    directory.
+    """
+    labels = {label for label, _ in shipped_documents()}
+    assert "scripts/batch_hint.py" not in labels, sorted(labels)
 
 
 def test_the_extractor_finds_something():
