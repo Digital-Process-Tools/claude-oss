@@ -483,6 +483,24 @@ over that form for the candidate lanes you name, not an enumeration the script p
 an issue's files are not derivable from its body (#267), so naming candidate lanes stays the
 maintainer's job and the script answers only which of them are mutually disjoint.
 
+**Lane count is not the only axis, and a fleet can be `filled` on it while under-filled on work.**
+The fixed cost of a lane — the worktree, the agent, the two self-review spawns, the push, the pull
+request, the CI wait, the merge round — is paid once whether that lane carries one issue or four. A
+further issue whose files fall entirely inside a lane's already-claimed set adds a commit and a
+changelog fragment and none of that fixed cost, so leaving it undispatched while calling the tick
+`filled` measures the cheap axis and reports it as the whole answer (#520). `filled` therefore reads
+on **both**: one developer per available file-disjoint lane, **and** each lane's brief carrying
+every further open issue whose files land inside its already-claimed set. Checking that second axis
+is the same mechanism run in reverse — `lane_setup.py <lane-issue> --lane <already-claimed paths>
+--against <candidate-issue paths>` for every other open, dispatchable issue — and it stays a
+maintainer judgement the script supports rather than performs, for the same reason named above: an
+issue's files are not derivable from its body (#267), so naming the candidate issue to check is
+yours, not the script's. **`under-filled` on this axis names the shared, already-claimed file that
+blocked a further issue from joining a lane, and the issues queued behind that file** — not only a
+smaller count. When every remaining dispatchable issue routes through files a running lane already
+holds, that is itself the receipt: say which file, and which issues are queued behind it, rather
+than reporting the tick as `filled` because the lane count matched.
+
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
 correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
