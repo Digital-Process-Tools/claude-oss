@@ -1239,8 +1239,9 @@ def invalidate_latest_cache(repo, now=None):
     clear must not render alike:
 
     * ``invalidated`` -- a `latest` (or `latest_fetched_at`) entry existed and is
-      now `{}` / `0`. The next render or refresh starts from "nobody has asked
-      yet" rather than from the value that was just falsified.
+      now `{}` / a stamp one second past due, rather than absent. The next
+      render or refresh starts from "nobody has asked yet" rather than from the
+      value that was just falsified.
     * ``nothing-to-invalidate`` -- no cache file at this path, or one that carries
       no `latest` reading at all. There was nothing to falsify.
     * ``could-not-invalidate`` -- the file exists and could not be read, could not
