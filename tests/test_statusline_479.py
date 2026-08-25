@@ -323,7 +323,13 @@ def _facts(**overrides):
         "repo_name": "claude-oss",
         "branch": "main",
         "version": "0.10.0",
-        "board": {"state": "measured", "prs": 2, "issues": 18, "age": 30},
+        "board": {
+            "state": "measured",
+            "prs": 2,
+            "issues": 18,
+            "age": 30,
+            "checks": {"green": 1, "red": 0, "running": 0, "unknown": 0},
+        },
         "tick": {"state": "armed", "seconds": 480},
         "last": "23:47",
         "plugins": [
@@ -333,6 +339,49 @@ def _facts(**overrides):
     }
     facts.update(overrides)
     return facts
+
+
+def _leaf_paths(value, path=()):
+    """Every position in a nested dict/list/tuple structure holding a leaf value.
+
+    Recurses through everything `_facts()` is built from -- dicts, lists, tuples -- so a
+    value nested inside `board` or `plugins` is visited exactly like a top-level one, and a
+    structure that grows a new nested field costs this walker nothing (#535).
+    """
+    if isinstance(value, dict):
+        for key, sub in value.items():
+            yield from _leaf_paths(sub, path + (key,))
+    elif isinstance(value, (list, tuple)):
+        for index, sub in enumerate(value):
+            yield from _leaf_paths(sub, path + (index,))
+    else:
+        yield path
+
+
+def _with_leaf(value, path, replacement):
+    """A deep copy of `value` with the leaf at `path` replaced by `replacement`."""
+    if not path:
+        return replacement
+    key, rest = path[0], path[1:]
+    if isinstance(value, dict):
+        result = dict(value)
+        result[key] = _with_leaf(value[key], rest, replacement)
+        return result
+    if isinstance(value, list):
+        result = list(value)
+        result[key] = _with_leaf(value[key], rest, replacement)
+        return result
+    if isinstance(value, tuple):
+        result = list(value)
+        result[key] = _with_leaf(value[key], rest, replacement)
+        return tuple(result)
+    raise TypeError("cannot set a leaf inside {!r}".format(value))
+
+
+def _leaf_value(value, path):
+    for key in path:
+        value = value[key]
+    return value
 
 
 def test_render_states_the_measured_board():
@@ -411,6 +460,44 @@ def test_ascii_only_render_survives_a_codepage_that_cannot_encode_the_symbols():
     line.encode("cp1252")
 
 
+def test_console_sample_is_derived_from_the_guarded_symbol_set():
+    """The probe is the guarded set, not a copy of it (#535).
+
+    The previous probe hardcoded four of the seven symbols `_symbols(False)` renders --
+    a fixture mirroring the guard exactly, the shape #535 is about. This asserts the
+    sample equals the guarded set by construction rather than by a literal string typed
+    out beside it, so a symbol added to `_symbols` later is in the sample the day it
+    starts rendering, with nothing here to edit.
+    """
+    assert statusline._console_sample() == "".join(statusline._symbols(False).values())
+
+
+def test_console_sample_grows_when_symbols_does_without_editing_the_probe():
+    """The must-fire control for the probe above.
+
+    Proves the derivation rather than assuming it: inject a symbol nobody wrote into
+    any probe and confirm the sample -- and `_ascii_only` itself -- notice, with
+    nothing here or in `scripts/statusline.py` touched to make it so.
+    """
+    original = statusline._symbols
+
+    def with_extra(ascii_only):
+        symbols = dict(original(ascii_only))
+        symbols["future"] = "⓪"  # a symbol nobody wrote into any probe
+        return symbols
+
+    statusline._symbols = with_extra
+    try:
+        assert "⓪" in statusline._console_sample()
+
+        class _AsciiStream:
+            encoding = "ascii"
+
+        assert statusline._ascii_only(_AsciiStream()) is True
+    finally:
+        statusline._symbols = original
+
+
 def test_the_unicode_render_is_still_the_default_where_it_encodes():
     line = statusline.render(_facts(), ascii_only=False)
     line.encode("utf-8")
@@ -462,41 +549,67 @@ def test_the_must_fire_control_an_ordinary_latest_still_renders():
     assert line != statusline.render(_facts(), ascii_only=True)
 
 
-def test_no_string_valued_fact_reaches_the_line_unfolded():
-    """A property over `render`'s inputs (#493), not a fourth enumerated case.
+def test_the_walker_finds_a_field_nobody_enumerated():
+    """The must-fire control for the walker itself (#535).
 
-    `_one_line` was applied at three entry points while `render()` interpolated
-    four more values that passed through nothing. Rather than name the two live
-    ones (`repo_name`, `model`), this walks every string-valued key `_facts()`
-    carries and hostiles it in turn, so a fifth field added later without an
-    explicit fold is caught the same way.
+    A fixture that names every path by hand reproduces the class the day a new
+    sub-field is added and nobody remembers to add its path too -- exactly what
+    happened between the `v0.12.0` and `v0.13.0` audits, when `board` grew a
+    `checks` sub-field the old flat, string-only walk below could not have seen
+    even if it had looked inside `board` at all. This proves `_leaf_paths` and
+    `_with_leaf` need no such list: a synthetic field, invented here and never
+    named in either helper, is still discovered and still replaceable.
+    """
+    synthetic = _facts(board=dict(_facts()["board"], future_subfield="ordinary"))
+    paths = list(_leaf_paths(synthetic))
+    assert ("board", "future_subfield") in paths
+    hostile = _with_leaf(synthetic, ("board", "future_subfield"), "\nHOSTILE")
+    assert hostile["board"]["future_subfield"] == "\nHOSTILE"
+    assert synthetic["board"]["future_subfield"] == "ordinary"  # original untouched
+
+
+def test_no_hostile_leaf_anywhere_in_facts_reaches_the_line_unfolded():
+    """A property over every leaf `_facts()` carries, nested or not (#535).
+
+    The previous version of this test walked only the top level and `continue`d
+    on anything that was not already a string, so `board`, `tick`, `release` and
+    `plugins` -- every fact that is itself a dict or a list -- was never hostiled
+    at all: the set covered was exactly the set already folded. This walks every
+    leaf `_leaf_paths` finds, string-valued or not, and drops the hostile string
+    in its place regardless of what was there before -- the crash this test
+    exists to catch (`_tick_field`'s `abs()` on a hostile `seconds`) was a *type*
+    confusion, a string landing where an int was expected, not only a string
+    carrying control characters.
 
     `branch` is excluded -- not because the fold protects it, but because git
     itself refuses a ref name containing these characters, confirmed by the
     control test right below rather than assumed.
     """
     hostile = "\nFAKE STATUS LINE\x1b[31mX"
-    unreachable = {"branch"}
+    unreachable = {("branch",)}
     base = _facts()
-    for key, value in base.items():
-        if key in unreachable or not isinstance(value, str):
+    for path in _leaf_paths(base):
+        if path in unreachable:
             continue
-        facts = _facts(**{key: hostile})
+        facts = _with_leaf(base, path, hostile)
         line = statusline.render(facts, ascii_only=True)
-        assert "\n" not in line, key
-        assert "\x1b" not in line, key
+        assert "\n" not in line, path
+        assert "\x1b" not in line, path
 
 
-def test_the_must_fire_control_for_the_property_above():
-    """Paired with the property test: an ordinary value in every folded field
-    still renders, so a renderer that prints nothing could not pass either.
+def test_the_must_fire_control_for_the_leaf_property_above():
+    """Paired with the property test above.
+
+    Substituting a leaf back to its own original value reconstructs `_facts()`
+    exactly, so a walker that silently dropped structure -- and would trivially
+    "pass" every hostile case above by rendering nothing distinctive -- is itself
+    caught. And the baseline still renders the values a reader actually needs.
     """
     base = _facts()
-    for key, value in base.items():
-        if key == "branch" or not isinstance(value, str):
-            continue
-        line = statusline.render(_facts(**{key: value}), ascii_only=True)
-        assert value in line or "?" not in line, key
+    for path in _leaf_paths(base):
+        assert _with_leaf(base, path, _leaf_value(base, path)) == base, path
+    line = statusline.render(base, ascii_only=True)
+    assert "2pr" in line and "Opus" in line and "23:47" in line
 
 
 def test_a_branch_name_with_hostile_control_characters_is_refused_by_git():
