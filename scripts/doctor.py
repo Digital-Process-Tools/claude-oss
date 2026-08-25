@@ -6329,6 +6329,345 @@ def check_plugin_copy(project_dir, script_root=None, attested=None, attested_sou
         report(level, message)
 
 
+# --- install audit (#287) --------------------------------------------------------
+#
+# Everything above answers "is THIS repo's oss setup healthy", and degrades
+# correctly on a repo that has never run /oss:setup: five checks report
+# "not checked -- .oss.json was not found" rather than guessing. That is honest,
+# and it is also the exact state a fresh install is in -- so the report a new
+# installer reads back is mostly the report declining to answer.
+#
+# This is the other subject named in #287's own body: the PLUGIN, its declared
+# dependencies, and what the human still has to do -- not this repository. It is
+# a separate command (commands/install-audit.md) rather than a mode of the prose
+# above, because doctor's five checks above already exist and already carry a lot,
+# and reusing this module's own functions -- `check_supertool_entry_point`,
+# `check_oss_workspace_launcher`, `check_memory`, `check_jit_layer_readers`,
+# `declared_dependencies`, `dependency_repositories` -- rather than re-deriving any
+# of them is what keeps the two commands from drifting apart, which is the
+# argument #287 makes against a new command in the first place. What is new here
+# is only the four questions those checks do not already answer: is .oss.json
+# committed (not merely present), do declared dependencies resolve at a version
+# whose contract this plugin's scripts can read, does the label vocabulary the
+# triager needs exist, and would re-scaffolding change the owned files -- each
+# gated on whether a config was found rather than assuming one.
+
+
+def _git_ls_files_tracked(repo_root, relpath, run=None):
+    """Is `relpath` tracked by git in `repo_root`? Three states, not two.
+
+    Returns ``(state, detail)``: ``"tracked"``, ``"untracked"`` (present on disk,
+    outside git's index -- ignored, or never added), or ``"could-not-tell"`` (no
+    git on PATH, not a git repository, or the command could not be run), with
+    `detail` naming why in the last case.
+    """
+    run = subprocess.run if run is None else run
+    if shutil.which("git") is None:
+        return "could-not-tell", "git is not on PATH"
+    try:
+        done = run(
+            ["git", "-C", str(repo_root), "ls-files", "--error-unmatch", "--", relpath],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "could-not-tell", "git ls-files did not run ({})".format(exc)
+    if done.returncode == 0:
+        return "tracked", ""
+    stderr = (done.stderr or "").strip()
+    if "not a git repository" in stderr.lower():
+        return "could-not-tell", "{} is not a git repository".format(repo_root)
+    return "untracked", stderr
+
+
+def check_oss_json_committed(project_dir, run=None):
+    """Present and valid say nothing about whether a clone of this repo would ever
+    see the file: only git does. #287's own body names the mechanism this exists
+    to catch -- `scripts/scaffold.py`'s scaffolded `.gitignore` template ignores
+    `.oss.json` under a comment ("machine-specific paths live in it") that predates
+    the `.oss.local.json` split, so a repo can load a config the loop treats as
+    authoritative and never have committed it at all.
+    """
+    name = oss_config.CONFIG_NAME if oss_config is not None else ".oss.json"
+    target = Path(project_dir) / name
+    state, detail = _git_ls_files_tracked(project_dir, name, run=run)
+    if state == "tracked":
+        report("OK", "{} committed: tracked by git".format(name))
+    elif state == "could-not-tell":
+        report("WARN", "{} committed: could not tell -- {}".format(name, detail))
+    elif target.exists():
+        report(
+            "WARN",
+            "{} committed: present on disk and NOT tracked by git, so a fresh clone "
+            "of this repo will not have it -- and the loop treats this file as "
+            "authoritative. Check whether .gitignore names it, then `git add {} && "
+            "git commit`.".format(name, name),
+        )
+    else:
+        report(
+            "WARN",
+            "{} committed: not checked -- {} does not exist here. Run "
+            "/oss:setup.".format(name, name),
+        )
+
+
+def check_oss_json_presence(project_dir, run=None):
+    """.oss.json present, valid, and committed -- three separate facts.
+
+    Deliberately not `check_config`: that function's absent-config line is a FAIL,
+    correct there because every other one of doctor's checks depends on the file.
+    Missing here is the state this whole audit is FOR, and reporting the single
+    most expected case for a fresh install as `FAIL` would make an install with
+    nothing else wrong at all read as broken. Both arms below are `WARN`, each
+    with a named remedy -- the third state (#287) rather than a guess.
+    """
+    if oss_config is None:
+        report(
+            "WARN",
+            ".oss.json present: not checked -- scripts/oss_config.py could not be "
+            "imported, and the parser lives there",
+        )
+        check_oss_json_committed(project_dir, run=run)
+        return None
+    search, _widened = config_search_path(project_dir)
+    config, problems, _origin, _resolved = oss_config.load_from(search)
+    name = oss_config.CONFIG_NAME
+    if config is None:
+        report(
+            "WARN",
+            "{} present: missing or unreadable. Run /oss:setup.".format(name),
+        )
+    elif problems:
+        report(
+            "WARN",
+            "{} present: found and does not validate -- {}. Fix the listed keys, "
+            "or re-run /oss:setup.".format(name, "; ".join(problems)),
+        )
+    else:
+        report("OK", "{} present and valid ({} keys)".format(name, len(config)))
+    check_oss_json_committed(project_dir, run=run)
+    return config
+
+
+def dependency_resolution_state(names, record=None, repos=None):
+    """Per declared dependency: resolves / contract-unknown / missing.
+
+    ``repos`` is ``dependency_repositories(names)``, passed in rather than called
+    here so a caller that already computed it (or a test standing one up) is not
+    charged the plugin-cache glob twice.
+
+    * ``resolves``         -- an active version, and this plugin's own scripts
+      could read where that dependency's own contract lives (its manifest was
+      found in the plugin cache).
+    * ``contract-unknown``  -- active, but its own manifest could not be read.
+      This is #286's own instance: a cache-versus-tree skew answering silently.
+    * ``missing``           -- no active version in the install record at all.
+    """
+    active = active_versions(names, record=record)
+    repos = {} if repos is None else repos
+    findings = []
+    for name in names:
+        version = active.get(name)
+        if version is None:
+            findings.append({"name": name, "state": "missing", "version": None})
+        elif repos.get(name):
+            findings.append({"name": name, "state": "resolves", "version": version})
+        else:
+            findings.append({"name": name, "state": "contract-unknown", "version": version})
+    return findings
+
+
+def check_dependency_resolution(record=None, repos=None):
+    """Not a hardcoded dependency list: `declared_dependencies()` reads this
+    plugin's own manifest, the same accessor `check_freshness` already uses, so a
+    dependency added or removed there reaches this check with no edit here.
+    """
+    names = declared_dependencies()
+    if not names:
+        report("OK", "declared dependencies: none named in this plugin's own manifest")
+        return
+    computed_repos = dependency_repositories(names) if repos is None else repos
+    for finding in dependency_resolution_state(names, record=record, repos=computed_repos):
+        name = finding["name"]
+        if finding["state"] == "resolves":
+            report(
+                "OK",
+                "dependency {}: active at {}, manifest readable".format(
+                    name, finding["version"]
+                ),
+            )
+        elif finding["state"] == "contract-unknown":
+            report(
+                "WARN",
+                "dependency {}: active at {}, but its own manifest could not be read "
+                "from the plugin cache -- whether the version it declares is one this "
+                "plugin's scripts can read is unknown, not confirmed either way "
+                "(#286).".format(name, finding["version"]),
+            )
+        else:
+            report(
+                "WARN",
+                "dependency {}: not active in the install record -- missing, not "
+                "stale. Run `claude plugin install {}@<marketplace>`.".format(name, name),
+            )
+
+
+def _origin_slug(project_dir, run=None):
+    """``(owner/repo, None)`` from `origin`'s URL, or ``(None, reason)``.
+
+    github.com only -- the forge every `gh` call in this file already assumes.
+    Both https and ssh remotes resolve; anything else is `unrecognised` rather
+    than guessed at.
+    """
+    run = subprocess.run if run is None else run
+    if shutil.which("git") is None:
+        return None, "git is not on PATH"
+    try:
+        done = run(
+            ["git", "-C", str(project_dir), "remote", "get-url", "origin"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "git remote get-url origin did not run ({})".format(exc)
+    if done.returncode != 0:
+        return None, "no readable origin remote here"
+    url = done.stdout.strip()
+    match = re.search(r"github\.com[:/]+([^/]+/[^/]+?)(?:\.git)?/?$", url)
+    if not match:
+        return None, "origin's URL is not a recognised github.com remote"
+    return match.group(1), None
+
+
+def label_vocabulary_state(project_dir, config=None, run=None):
+    """Does the label vocabulary the triager needs exist on this repo's forge?
+
+    Not a fixed spelling: `oss_config.classify_labels` is the identical pattern
+    match `/oss:setup` and `agents/triager.md` both read labels through, so this
+    asks exactly the question they will. `config['repo']` is preferred when a
+    config is already loaded; without one -- the state this check exists for --
+    the slug is read off `origin` directly, which is what makes it answerable
+    before `/oss:setup` has ever run.
+    """
+    run = subprocess.run if run is None else run
+    slug = (config or {}).get("repo") if config else None
+    if not slug:
+        slug, reason = _origin_slug(project_dir, run=run)
+        if slug is None:
+            return "could-not-tell", reason
+    if shutil.which("gh") is None:
+        return "could-not-tell", "gh is not on PATH"
+    try:
+        done = run(
+            ["gh", "label", "list", "--repo", slug, "--json", "name", "--limit", "200"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=25,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "could-not-tell", "gh label list did not run ({})".format(exc)
+    if done.returncode != 0:
+        return "could-not-tell", "gh label list failed for {}".format(slug)
+    try:
+        rows = json.loads(done.stdout or "[]")
+    except ValueError:
+        return "could-not-tell", "gh label list returned output that did not parse as JSON"
+    names = [row.get("name") for row in rows if isinstance(row, dict) and row.get("name")]
+    classified = oss_config.classify_labels(names)
+    if classified["priority"]:
+        return "satisfied", (slug, classified["priority"], classified["lanes"])
+    return "missing", slug
+
+
+def check_label_vocabulary(project_dir, config=None, run=None):
+    if oss_config is None:
+        report(
+            "WARN",
+            "label vocabulary: not checked -- scripts/oss_config.py could not be "
+            "imported, and the classification lives there",
+        )
+        return
+    state, payload = label_vocabulary_state(project_dir, config=config, run=run)
+    if state == "satisfied":
+        slug, priority, lanes = payload
+        report(
+            "OK",
+            "label vocabulary on {}: {} priority label(s) ({}); {} lane label(s). "
+            "The triager can tag from this today.".format(
+                slug, len(priority), ", ".join(priority[:3]), len(lanes)
+            ),
+        )
+    elif state == "missing":
+        report(
+            "WARN",
+            "label vocabulary on {}: no priority-* labels exist, so the triager "
+            "correctly refuses to invent one rather than guessing. Create at least "
+            "priority-high/-medium/-low, e.g. `gh label create priority-high --repo "
+            "{} --color d93f0b`.".format(payload, payload),
+        )
+    else:
+        report("WARN", "label vocabulary: could not tell -- {}".format(payload))
+
+
+def run_install_audit(project_dir, plugin_root=None, record=None, run=None):
+    """#287: is this install complete -- over the plugin, its declared
+    dependencies and what the human still has to do, not over this repository.
+
+    Answerable before `/oss:setup` has ever run: nothing here is gated on a
+    config that a fresh install does not have yet, and every question that would
+    otherwise be silently skipped says so instead, in one of the same three
+    states this whole diagnostic uses, under the same exit-0-always,
+    one-VERDICT-line contract.
+    """
+    plugin_root = Path(plugin_root) if plugin_root is not None else PLUGIN_ROOT
+    project_dir = Path(project_dir)
+
+    own_tree = plugin_tree_digest(plugin_root)
+    report("OK", "oss plugin version {}".format(plugin_identity(plugin_root, tree=own_tree)))
+
+    config = check_oss_json_presence(project_dir, run=run)
+
+    check_dependency_resolution(record=record)
+
+    check_supertool_entry_point(project_dir)
+    check_oss_workspace_launcher(plugin_root=plugin_root)
+
+    check_memory(project_dir)
+
+    check_label_vocabulary(project_dir, config=config, run=run)
+
+    if config is None:
+        report(
+            "WARN",
+            "owned files: not checked -- .oss.json was not found, so the plugin "
+            "cannot render what it would write here. Run /oss:setup, then re-run "
+            "this audit.",
+        )
+    else:
+        for level, message in owned_drift_summary(
+            owned_drift(project_dir, config, plugin_root=plugin_root)
+        ):
+            report(level, message)
+
+    check_jit_layer_readers(project_dir)
+
+    fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
+    warns = sum(1 for state, _ in FINDINGS if state == "WARN")
+    if fails:
+        verdict = "install incomplete -- {} failure(s), {} warning(s)".format(fails, warns)
+    elif warns:
+        verdict = "install usable with gaps -- {} warning(s)".format(warns)
+    else:
+        verdict = "install complete"
+    print("VERDICT: {}".format(verdict))
+    return 0
+
+
 class _Parser(argparse.ArgumentParser):
     """argparse exits 2 on a bad flag. This one refuses to, because a mistyped argument
     must still produce a report -- exit 0 and one VERDICT line is the contract, and a
@@ -6340,7 +6679,7 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parse_args(argv):
-    """``(root, plugin_root, problems)``. Never exits and never raises."""
+    """``(root, plugin_root, install_audit, problems)``. Never exits and never raises."""
     parser = _Parser(
         prog="doctor.py",
         description="Diagnose an oss-managed repo. Always exits 0.",
@@ -6360,11 +6699,18 @@ def parse_args(argv):
         "answered, rather than assuming this script's own location speaks for the "
         "harness.",
     )
+    parser.add_argument(
+        "--install-audit",
+        action="store_true",
+        help="#287: run the install audit instead of the normal diagnosis -- is this "
+        "install complete, over the plugin and its declared dependencies rather than "
+        "over the repo named by --root. Answerable before /oss:setup has ever run.",
+    )
     try:
         parsed = parser.parse_args(list(argv))
-        return parsed.root, parsed.plugin_root, []
+        return parsed.root, parsed.plugin_root, parsed.install_audit, []
     except ValueError as exc:
-        return None, None, [
+        return None, None, False, [
             "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
             "directory, so the tree below may not be the one you meant.".format(exc)
         ]
@@ -6494,10 +6840,22 @@ def main(argv=None):
     path as an unrecognised argument. A library entry point does not get to read the
     process's arguments; the script entry point at the bottom passes them in.
     """
-    root, plugin_root, arg_problems = parse_args([] if argv is None else argv)
+    root, plugin_root, install_audit, arg_problems = parse_args([] if argv is None else argv)
     project_dir, resolution = resolve_project_dir(
         root, os.environ.get("CLAUDE_PROJECT_DIR"), os.getcwd()
     )
+
+    if install_audit:
+        # #287: a different subject (the plugin and its declared dependencies,
+        # not this repo), so it reports project-dir resolution and any argument
+        # problems the same way the normal run does, then diverges entirely
+        # rather than running the 25-odd checks below that assume this repo IS
+        # the subject.
+        for problem in arg_problems:
+            report("FAIL", problem)
+        for state, message in resolution:
+            report(state, message)
+        return run_install_audit(project_dir, plugin_root=plugin_root)
 
     # #418: the version alone cannot tell two installs apart -- it stays at the
     # last RELEASED number for the whole cycle that follows a release, so a copy

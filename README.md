@@ -98,6 +98,7 @@ per-dependency network check bounded at 25 s.
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
 | `/oss:release` | Gates, version sites, tag, and — where `.oss.json` says so — the GitHub Release, notes and all. |
 | `/oss:doctor` | Config, dependencies, clone, worktree root, state file, which watch channel and radar board this repo resolves to, whether a `pre-push` hook's push budget was ever raised above supertool's 300s default, and whether the merge call can skip supertool's publish-confirm gate. Also reports which copy of this plugin answered the invocation (compared by content and by declared schema version, not by manifest version alone), where a defect in this plugin itself would get filed, whether `./supertool` points at this plugin's own checkout, and three lines about the machine itself — interpreter architecture, CPU topology, worker sizing. Exits 0 always; see `commands/doctor.md` for what each line means. |
+| `/oss:install-audit` | Is this install complete — the plugin, its declared dependencies, and what the human still has to do, answerable with no `.oss.json` in hand: is it present, valid, *and committed*; do declared dependencies resolve at a version this plugin's scripts can read; does the label vocabulary the triager needs exist; would re-scaffolding change the owned files. Exits 0 always; see `commands/install-audit.md`. |
 
 ## Status
 

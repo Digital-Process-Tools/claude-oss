@@ -558,10 +558,12 @@ def test_the_flag_wins_over_the_environment():
 
 
 def test_parse_args_carries_plugin_root_and_never_raises():
-    root, plugin_root, problems = doctor.parse_args(["--root", "x", "--plugin-root", "y"])
-    assert (root, plugin_root, problems) == ("x", "y", [])
-    root, plugin_root, problems = doctor.parse_args(["--nonsense"])
-    assert (root, plugin_root) == (None, None)
+    root, plugin_root, install_audit, problems = doctor.parse_args(
+        ["--root", "x", "--plugin-root", "y"]
+    )
+    assert (root, plugin_root, install_audit, problems) == ("x", "y", False, [])
+    root, plugin_root, install_audit, problems = doctor.parse_args(["--nonsense"])
+    assert (root, plugin_root, install_audit) == (None, None, False)
     assert problems
 
 
