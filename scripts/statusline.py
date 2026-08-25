@@ -108,7 +108,7 @@ def _version_tuple(text):
     return tuple(parts) if parts else None
 
 
-def version_status(installed, latest):
+def version_status(installed, latest, stale=False):
     """Compare an installed version against the latest published one.
 
     Four states, and two of them are not findings: ``current``, ``behind``, ``ahead``
@@ -116,10 +116,20 @@ def version_status(installed, latest):
     checkout) and ``unknown``. ``unknown`` covers either half of the comparison being
     missing, and it must never render as ``current`` -- nobody asked the forge is not the
     same answer as the forge saying yes.
+
+    ``stale`` marks the comparison itself untrustworthy rather than either side of it
+    (#550): a `latest` reading correct when it was taken and false before its own
+    refresh interval expires renders identically to a fresh one unless its age
+    travels with it to this call. Folded into ``unknown`` -- the same bucket a
+    comparison nobody could make already uses -- rather than inventing new
+    vocabulary, per the issue's own suggested direction. This does NOT catch a
+    reading that is fresh by its own rule and simply wrong, which is what the
+    incident this was filed from actually was; that gap belongs to #549, which
+    invalidates the cache at the moment a publish falsifies it.
     """
     mine = _version_tuple(installed)
     theirs = _version_tuple(latest)
-    if mine is None or theirs is None:
+    if stale or mine is None or theirs is None:
         state = "unknown"
     elif mine == theirs:
         state = "current"
@@ -562,7 +572,17 @@ def _symbols(ascii_only):
         "sep": " | ",
         "dot": " · ",
         "current": " ✓",
-        "behind": " ⇡",
+        # Distinct shapes, not just distinct colour (#550): these two markers print
+        # different fields -- `behind` names the latest published version, `ahead`
+        # names what is installed -- and `⇡`/`↑`, one codepoint apart, were told
+        # apart reliably only by colour. Measured: this was the proximate cause of
+        # a maintainer reading a correct 0.13.0 install as "not on 0.13.0" (#549).
+        # `↥` (arrow from bar) and `↑` differ in silhouette at terminal size even in
+        # monochrome. Both still fail to encode under cp1252 exactly as the pair
+        # they replace did, so the ASCII fallback below (already unambiguous, `>`
+        # vs `+`) is unaffected and this changes nothing about which platforms take
+        # that branch.
+        "behind": " ↥",
         "ahead": " ↑",
         "ok": "✓",
         "bad": "✗",
@@ -1009,7 +1029,7 @@ def repo_from_url(url):
     return "/".join(parts[-2:])
 
 
-def plugin_facts(loop_name, installed, latest_by_repo):
+def plugin_facts(loop_name, installed, latest_by_repo, stale=False):
     """The loop's own plugin and every dependency it declares, rendered alike.
 
     All of them, always, in one shape -- the set comes from the loop plugin's own
@@ -1020,13 +1040,19 @@ def plugin_facts(loop_name, installed, latest_by_repo):
     identically, and only the second is a problem. Shown uniformly, the marker carries
     the difference -- current, behind (in the colour that means *update this*), ahead,
     or `?` for a comparison nobody could make.
+
+    ``stale`` is one fact about the whole cached `latest_by_repo` reading -- it was
+    fetched in one pass and carries one stamp (#550) -- so it applies uniformly to
+    every plugin compared here rather than being asked per name.
     """
     mine = installed.get(loop_name) or {}
 
     def status_for(name):
         record = installed.get(name) or {}
         return version_status(
-            record.get("version"), latest_by_repo.get(repo_from_url(record.get("repository")))
+            record.get("version"),
+            latest_by_repo.get(repo_from_url(record.get("repository"))),
+            stale=stale,
         )
 
     facts = [(loop_name, status_for(loop_name))]
@@ -1201,6 +1227,83 @@ def refresh(root, now=None):
     return document
 
 
+def invalidate_latest_cache(repo):
+    """Clear the cached `latest` reading for `repo`, because something just made it
+    false (#549). `/oss:release` calls this immediately after the Release it just
+    created makes the cached manifest-version reading stale -- the falsifying
+    event, known at the moment it happens, rather than waited out on a clock that
+    cannot see it (#550 covers the render side of the same incident; neither
+    substitutes for the other).
+
+    Three states, because a cache this could not reach and a cache with nothing to
+    clear must not render alike:
+
+    * ``invalidated`` -- a `latest` (or `latest_fetched_at`) entry existed and is
+      now gone. The next render or refresh starts from "nobody has asked yet"
+      rather than from the value that was just falsified.
+    * ``nothing-to-invalidate`` -- no cache file at this path, or one that carries
+      no `latest` reading at all. There was nothing to falsify.
+    * ``could-not-invalidate`` -- the file exists and could not be read, could not
+      be parsed, is not a JSON object, or could not be written back. An absent
+      directory, an unreadable file, or a different `XDG_CACHE_HOME` than the
+      rendering session uses all land here rather than passing as either state
+      above.
+
+    Read-modify-write on the same file `refresh()` writes, with the same
+    write-to-temp-then-`os.replace` -- a concurrent renderer's own read either sees
+    the old document or the new one, never a half-written one. This never deletes
+    the `prs`/`issues`/`pr_checks` board half of the document; only the two
+    `latest*` keys are the concern here.
+    """
+    path = cache_path(repo)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # The ordinary case: no cache has been written for this repo yet, or the
+        # rendering session uses a different `XDG_CACHE_HOME` and this process
+        # cannot see what it wrote. `read_text` is asked directly rather than
+        # `path.exists()` first -- `Path.exists()` swallows a version-dependent
+        # set of `OSError` subclasses (this repo's own CLAUDE.md), so a genuine
+        # miss and an unreadable path could otherwise fold into the same branch.
+        # `FileNotFoundError` is the one exception this call can raise that means
+        # "absent", unambiguously, on every supported version.
+        return {"state": "nothing-to-invalidate", "detail": "no cache file at {0}".format(path)}
+    except OSError as exc:
+        return {
+            "state": "could-not-invalidate",
+            "detail": "{0} could not be read -- {1}: {2}".format(path, type(exc).__name__, exc),
+        }
+    try:
+        document = json.loads(raw)
+    except ValueError as exc:
+        return {
+            "state": "could-not-invalidate",
+            "detail": "{0} did not parse -- {1}: {2}".format(path, type(exc).__name__, exc),
+        }
+    if not isinstance(document, dict):
+        return {
+            "state": "could-not-invalidate",
+            "detail": "{0} is not a JSON object".format(path),
+        }
+    if "latest" not in document and "latest_fetched_at" not in document:
+        return {
+            "state": "nothing-to-invalidate",
+            "detail": "{0} carries no `latest` reading".format(path),
+        }
+    document.pop("latest", None)
+    document.pop("latest_fetched_at", None)
+    try:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(document), encoding="utf-8")
+        os.replace(str(tmp), str(path))
+    except OSError as exc:
+        return {
+            "state": "could-not-invalidate",
+            "detail": "{0} could not be written -- {1}: {2}".format(path, type(exc).__name__, exc),
+        }
+    return {"state": "invalidated", "detail": "cleared cached `latest` at {0}".format(path)}
+
+
 def _lock_path(repo):
     return cache_path(repo).with_suffix(".lock")
 
@@ -1242,6 +1345,15 @@ def gather(payload, root, now=None):
     if board_is_due(cache, now):
         _fork_refresh(root, config.get("repo"))
     latest = (cache or {}).get("latest") or {}
+    # `latest_fetched_at` used to be read here and dropped, so `plugin_facts` decided
+    # `current`/`behind`/`ahead` with no knowledge of the reading's own age -- the
+    # same defect `refresh()`'s docstring warns against, one function later (#550).
+    # `latest_is_due` is the same threshold `refresh()` itself uses to decide whether
+    # a reading needs asking again; a comparison this old is folded into `unknown`
+    # rather than rendered as a real answer. It does NOT catch a reading that is
+    # fresh by that same rule and simply wrong -- #549 closes that gap by
+    # invalidating the cache at the moment a publish falsifies it.
+    stale_latest = latest_is_due(cache, now)
     loop_name = os.environ.get("OSS_STATUSLINE_PLUGIN", "oss")
 
     # One tail read shared by both transcript-derived facts (#504) -- a render
@@ -1264,7 +1376,7 @@ def gather(payload, root, now=None):
         "release": git_release_progress(root),
         "tick": tick,
         "last": _render_stamp(now),
-        "plugins": plugin_facts(loop_name, installed_plugins(root), latest),
+        "plugins": plugin_facts(loop_name, installed_plugins(root), latest, stale=stale_latest),
     }
 
 
