@@ -2540,18 +2540,83 @@ GIT_PUSH_DEFAULT_BUDGET = 300
 GIT_PUSH_DEFAULT_TIMEOUT = 1920
 
 
+def _resolved_git_common_dir(project_dir):
+    """Where hooks for this checkout actually live -- ``(common_dir, detail)``.
+
+    ``.git`` is a DIRECTORY in a plain clone and a FILE in a worktree, containing
+    a single ``gitdir: <clone>/.git/worktrees/<name>`` line -- and hooks are not
+    duplicated per worktree, they live once at the shared common git directory
+    (`<clone>/.git`, found via that gitdir's own ``commondir`` file, which holds a
+    path relative to it -- ordinarily ``../..``). A naive ``project_dir/.git/hooks``
+    read from inside a worktree looks at a path that does not exist there at all
+    and used to silently report `not-applicable` for a repo whose real hook was
+    misconfigured (found by audit; #295's own sibling finding).
+
+    Resolved from git's own bookkeeping files rather than by shelling out to
+    ``git rev-parse --git-common-dir``, so this still answers when git itself is
+    not on PATH -- consistent with this function's own contract of never having a
+    process-spawning side effect. ``common_dir`` is ``None`` when nothing here
+    could be established; ``detail`` then says why, and is empty only for the
+    ordinary "no .git at all" case, which is `not-applicable`'s own state rather
+    than `unknown`'s.
+    """
+    dot_git = Path(project_dir) / ".git"
+    try:
+        if dot_git.is_dir():
+            return dot_git, ""
+        if not dot_git.is_file():
+            return None, ""
+        text = dot_git.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, "{} could not be examined ({})".format(dot_git, _os_error_detail(exc))
+    except UnicodeDecodeError as exc:
+        return None, "{} could not be decoded as UTF-8 ({})".format(dot_git, exc)
+    lines = text.strip().splitlines()
+    line = lines[0] if lines else ""
+    if not line.startswith("gitdir:"):
+        return None, "{} is a file but its first line is not 'gitdir: ...'".format(dot_git)
+    gitdir = Path(line[len("gitdir:"):].strip())
+    if not gitdir.is_absolute():
+        gitdir = Path(project_dir) / gitdir
+    try:
+        commondir_text = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        # No commondir file beside the gitdir -- this gitdir IS the common dir
+        # (a layout git has not always written one for).
+        try:
+            return gitdir.resolve(), ""
+        except OSError as exc:
+            return None, "{} could not be resolved ({})".format(gitdir, _os_error_detail(exc))
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, "{} could not be read ({})".format(gitdir / "commondir", exc)
+    common = Path(commondir_text)
+    if not common.is_absolute():
+        common = gitdir / common
+    try:
+        return common.resolve(), ""
+    except OSError as exc:
+        return None, "{} could not be resolved ({})".format(common, _os_error_detail(exc))
+
+
 def _pre_push_hook_present(project_dir):
     """Does this repo have a real `pre-push` hook? ``(state, detail)``.
 
     ``"yes"`` / ``"no"`` / ``"unknown"``. A git-shipped sample hook is named
     ``pre-push.sample`` and never runs, so only the exact name counts -- and
-    the exact name is checked with ``os.path.isfile`` rather than
-    ``Path.is_dir``'s sibling ``Path.exists``, whose swallow of some
-    ``OSError`` values is the trap `release_delta.py` was bitten by. Nothing
-    here inspects the hook's contents or runs it: that is a side effect a
-    diagnostic must not have, and the issue says so directly.
+    the exact name is checked with ``Path.is_file`` rather than a broader
+    ``Path.exists``, whose swallow of some ``OSError`` values is the trap
+    `release_delta.py` was bitten by. Nothing here inspects the hook's
+    contents or runs it: that is a side effect a diagnostic must not have,
+    and the issue says so directly. The common git directory is resolved by
+    `_resolved_git_common_dir` first, so this answers the same way whether
+    ``project_dir`` is a plain clone or one of its worktrees.
     """
-    hook = Path(project_dir) / ".git" / "hooks" / "pre-push"
+    common, problem = _resolved_git_common_dir(project_dir)
+    if common is None:
+        if problem:
+            return "unknown", problem
+        return "no", ""
+    hook = common / "hooks" / "pre-push"
     try:
         return ("yes" if hook.is_file() else "no"), ""
     except OSError as exc:

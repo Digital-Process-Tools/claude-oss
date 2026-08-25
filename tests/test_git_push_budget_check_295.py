@@ -175,6 +175,70 @@ def test_check_git_push_budget_never_measures_the_hook_by_running_it(tmp_path):
     assert state == doctor.GIT_PUSH_BUDGET_ACTIONABLE
 
 
+def _worktree_git_file(worktree_root, gitdir):
+    """The `.git` FILE a real `git worktree add` writes -- a single
+    `gitdir: <path>` line, no trailing directory."""
+    (worktree_root / ".git").write_text(
+        "gitdir: {}\n".format(gitdir), encoding="utf-8"
+    )
+
+
+def _worktree_gitdir(clone_root, name):
+    """A `<clone>/.git/worktrees/<name>/` holding the `commondir` file real git
+    writes, pointing back at the shared `.git` two levels up -- the exact shape
+    read off this test suite's own worktree (#295's own sibling finding)."""
+    gitdir = clone_root / ".git" / "worktrees" / name
+    gitdir.mkdir(parents=True)
+    (gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+    return gitdir
+
+
+def test_worktree_git_file_finds_the_shared_hook_must_fire(tmp_path):
+    """MUST FIRE: a hook configured in the CLONE's real .git/hooks must still be
+    found when `git_push_budget_state` is asked from inside one of its
+    worktrees -- hooks are not duplicated per worktree, and a naive
+    `<worktree>/.git/hooks` read finds nothing there at all (found by audit)."""
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _hook(clone)
+    _supertool_config(clone, {"ops": {"git-push": {"budget": 1500}}})
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    gitdir = _worktree_gitdir(clone, "wt")
+    _worktree_git_file(worktree, gitdir)
+    # The worktree's own copy of .supertool.json is what a real checkout would
+    # read from -- each worktree has its own working tree contents.
+    _supertool_config(worktree, {"ops": {"git-push": {"budget": 1500}}})
+
+    state, _detail = doctor.git_push_budget_state(worktree)
+    assert state == doctor.GIT_PUSH_BUDGET_CONFIGURED
+
+
+def test_worktree_with_no_hook_in_the_clone_is_still_not_applicable_must_not_fire(tmp_path):
+    """MUST NOT FIRE: the paired negative control -- a worktree whose CLONE
+    genuinely has no pre-push hook must still read not-applicable, not
+    actionable and not could-not-tell."""
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    (clone / ".git").mkdir()
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    gitdir = _worktree_gitdir(clone, "wt")
+    _worktree_git_file(worktree, gitdir)
+
+    state, _detail = doctor.git_push_budget_state(worktree)
+    assert state == doctor.GIT_PUSH_BUDGET_NOT_APPLICABLE
+
+
+def test_a_dot_git_file_with_no_gitdir_line_is_could_not_tell(tmp_path):
+    (tmp_path / ".git").write_text("not a gitdir line\n", encoding="utf-8")
+    state, detail = doctor.git_push_budget_state(tmp_path)
+    assert state == doctor.GIT_PUSH_BUDGET_COULD_NOT_TELL
+    assert detail
+
+
 def test_check_git_push_budget_prints_ascii_only(tmp_path):
     _hook(tmp_path)
     for doc in (
