@@ -90,22 +90,37 @@ def _parse_roster_text(text: str):
     fail toward "could not derive" (handled by the caller), never toward a
     confidently empty roster that would make every op look genuinely unclassified
     rather than "the derivation itself did not work".
+
+    Locates the op-token block from the BOTTOM of the output, not by anchoring on
+    the `>` preset-disclosure line the first version of this parser keyed on
+    (self-review finding on #537): that line is `_preset_disclosure`'s own output
+    upstream, printed only when a `.supertool.json` fails to list every shipped
+    preset -- so on a fully-configured repo (the well-configured population this
+    fix exists to serve) `ops:roster`'s real stdout carries no `>` line at all, and
+    the first version returned ``None`` for a completely successful, fully
+    parseable call. Scanning from the end for the trailing run of lines whose
+    every whitespace-separated token matches an op-name shape does not depend on
+    any particular line preceding the block -- disclosure line present or not.
     """
     lines = text.splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if line.startswith(">"):
-            start = i + 1
+    block = []
+    for line in reversed(lines):
+        if not line.strip():
+            if block:
+                break  # a blank line above collected block lines ends the block
+            continue  # trailing blank lines after the block are not part of it
+        candidate_tokens = line.split()
+        if not all(_ROSTER_LINE_RE.match(tok) for tok in candidate_tokens):
             break
-    if start is None:
+        block.append(line)
+    if not block:
         return None
-    tokens = " ".join(lines[start:]).split()
+    block.reverse()
+    tokens = " ".join(block).split()
     if not tokens:
         return None
     write, external, read = set(), set(), set()
     for tok in tokens:
-        if not _ROSTER_LINE_RE.match(tok):
-            return None
         if tok.endswith("*"):
             write.add(tok[:-1])
         elif tok.endswith("!"):

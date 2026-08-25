@@ -72,6 +72,36 @@ def test_unparseable_text_is_none_not_an_empty_confident_roster():
     assert batch_hint._parse_roster_text("") is None
 
 
+SAMPLE_ROSTER_TEXT_NO_DISCLOSURE = """## Ops
+
+Every op loaded here, and nothing else.
+
+- unmarked -- read-only.
+- `*` -- writes files in this tree.
+- `!` -- changes something outside this tree.
+
+  append* around between edit* gh-issue git-push! read wc
+"""
+
+
+def test_parses_a_roster_block_with_no_preset_disclosure_line():
+    """Self-review finding on #537: the first version of this parser located the
+    block by anchoring on the `>` preset-disclosure line printed by supertool's
+    own `_preset_disclosure` -- which is only emitted when a `.supertool.json`
+    fails to list every shipped preset. On a fully-configured repo (the
+    well-configured population this fix exists to serve), `ops:roster`'s real
+    stdout carries no `>` line at all, and the first version returned `None` for
+    a completely successful, fully parseable call -- silently degrading every op
+    to "unknown" forever with no visible symptom. The parser must locate the
+    block from its own shape (a trailing run of lines that are entirely op
+    tokens), not from an optional line that may not be there."""
+    parsed = batch_hint._parse_roster_text(SAMPLE_ROSTER_TEXT_NO_DISCLOSURE)
+    assert parsed is not None
+    assert parsed["write"] == ["append", "edit"]
+    assert parsed["external"] == ["git-push"]
+    assert parsed["read"] == ["around", "between", "gh-issue", "read", "wc"]
+
+
 # --------------------------------------------------------------- _derive_roster
 
 
