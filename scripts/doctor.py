@@ -1727,11 +1727,15 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     * ``matched-elsewhere`` (#519) -- bytes are identical today, but the resolved
       target recognisably belongs to a DIFFERENT version-scoped plugin cache
       directory than `plugin_root`'s own: `_oss_workspace_version_segment` parses a
-      version out of it, and that version disagrees with this running install's own
-      manifest version. A stale pin with correct bytes behaves exactly like a
+      version out of it, AND this running install's own manifest version parses too,
+      AND the two disagree. A stale pin with correct bytes behaves exactly like a
       current one -- until the next release that touches this file, which is
       exactly the occurrence that cost #324 its security fix -- so this is reported
       even though nothing differs today. `detail` is `(resolved, their_version)`.
+      **This running install's own version being unreadable (`our_version is None`)
+      is not the same fact as the two versions disagreeing, and must not read as
+      one** -- that would be this repository's own defect class landing on the
+      check written to fix its first occurrence, so that case stays `matched`.
     * ``mismatched`` -- the resolved target's bytes differ. `detail` is
       ``(resolved, their_version, our_version)``; `their_version` is
       `_oss_workspace_version_segment(resolved)` and may be `None`.
@@ -1804,7 +1808,13 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
         # A version that fails to parse, or one that matches this running install's
         # own, carries no such claim and stays plain `matched` -- an ordinary
         # hand-copied path, or two paths onto the same install, is not stale.
-        if their_version is not None and their_version != our_version:
+        # `our_version is None` -- this running install's own manifest could not be
+        # read, or carries no version field -- must ALSO stay `matched`: `their_version
+        # != None` is vacuously true for any cache-shaped path, and reporting a
+        # CONFIRMED different install on the strength of an absence in our own
+        # reading is this repository's own defect class, one input over from the one
+        # `matched-elsewhere` exists to fix.
+        if their_version is not None and our_version is not None and their_version != our_version:
             return "matched-elsewhere", (resolved, their_version)
         return "matched", resolved
 

@@ -1599,7 +1599,15 @@ def _validate_release(release):
     # because a typo that silently read as not-declared would look identical to one that
     # parsed, and the difference is exactly what a maintainer needs to fix it.
     authority = release.get("authority")
-    if authority is not None and authority not in RELEASE_AUTHORITIES:
+    # `not in RELEASE_AUTHORITIES` alone raises TypeError on an unhashable value
+    # (`{}`, `[]`) -- checked here rather than left to Python, because this is a
+    # tracked, maintainer-editable file and a crash here takes down `doctor.py`'s
+    # own "exit 0 always, one VERDICT line" contract along with every other caller
+    # of `oss_config.load()`. Not a string is exactly as much "unrecognised" as a
+    # string this rule does not know.
+    if authority is not None and (
+        not isinstance(authority, str) or authority not in RELEASE_AUTHORITIES
+    ):
         problems.append(
             "release.authority: expected one of {}, got {!r}. An unrecognised value is "
             "read as not-declared and stops tagging and publishing -- it must not default "
@@ -1716,7 +1724,11 @@ def release_authority(config):
     if not isinstance(release, dict):
         return AUTHORITY_NOT_DECLARED
     value = release.get("authority")
-    if value in RELEASE_AUTHORITIES:
+    # `isinstance` first: `value in RELEASE_AUTHORITIES` alone raises TypeError on an
+    # unhashable value (`{}`, `[]`), and this accessor's whole contract is to never
+    # raise on a config it did not write -- an unhashable value is exactly as
+    # not-declared as a string this rule does not recognise.
+    if isinstance(value, str) and value in RELEASE_AUTHORITIES:
         return value
     return AUTHORITY_NOT_DECLARED
 
