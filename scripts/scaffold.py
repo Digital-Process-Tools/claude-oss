@@ -1244,6 +1244,21 @@ def plan(repo_root, config, force_owned=False):
 
 SETTINGS_PATH = ".claude/settings.json"
 
+#: The label `--show` prints beside each pending write, per action. `replace` is what
+#: the OWNED trio and the rule layer always are; `create` is a template written once;
+#: `extend` is the settings.json case (#494) and must not read as `replace` -- a key
+#: merged into an existing file is neither a rewrite of that file nor something the
+#: next run repeats, and the old code fell through to the `replace` wording for any
+#: action that was not literally `"create"`, silently including `extend` the moment
+#: `_settings_preview` made it reachable here.
+_SHOW_LABELS = {
+    "create": "would create",
+    "extend": "would extend (a key added; the rest of the file is kept as it is)",
+    "replace": "would replace (rewritten every run)",
+    "present": "already set; nothing pending",
+    "decline": "would NOT be written -- see reason below",
+}
+
 #: What gets written under `statusLine` when nothing is there. `$CLAUDE_PROJECT_DIR` is
 #: what Claude Code exports for the project root, so the command resolves from whatever
 #: directory the status line happens to be invoked in.
@@ -1327,6 +1342,32 @@ def settings_plan(repo_root):
         "reason": "present with no statusLine; the key would be added, everything else "
         "left as it is",
     }
+
+
+def _settings_preview(repo_root):
+    """`(action, body)` for `.claude/settings.json` if `--apply` would write something,
+    else `None` (#494).
+
+    `settings_plan` answers in four states and only two of them write anything --
+    `create` and `extend`. Rendering `present` or `decline` would preview a write that
+    never happens, the same defect this function exists to close, pointed the other
+    way. The body is produced by re-deriving exactly what `apply_settings` would write,
+    without writing it: a create is the bare `{"statusLine": ...}` document, an extend
+    reads the existing document and adds the key, the same order `apply_settings` uses.
+
+    Returns `None` rather than raising on a document `settings_plan` already decided is
+    unreadable or malformed -- that is what `decline` means, and this function does not
+    re-diagnose it. A caller wanting the reason reads `settings_plan` directly.
+    """
+    entry = settings_plan(repo_root)
+    if entry["action"] == "create":
+        return "create", json.dumps({"statusLine": dict(STATUSLINE_SETTING)}, indent=2) + "\n"
+    if entry["action"] == "extend":
+        path = Path(repo_root) / SETTINGS_PATH
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["statusLine"] = dict(STATUSLINE_SETTING)
+        return "extend", json.dumps(document, indent=2) + "\n"
+    return None
 
 
 def apply_settings(repo_root):
@@ -1459,6 +1500,19 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rule
             return [(path, "create", render(path, config))]
         if path in OWNED:
             return [(path, "replace", render_owned(path, config, plugin_root))]
+        if path == SETTINGS_PATH:
+            # Renders regardless of state, the same promise the templates and OWNED
+            # branches above make -- "worth knowing even for a [file] already present"
+            # (see the docstring). The bulk case a few lines down deliberately omits
+            # `present`/`decline` (nothing pending there); a single named path is a
+            # direct question about that one file and both states are real answers to
+            # it, not the "there is nothing to show" the bulk case would give (#494).
+            entry = settings_plan(repo_root)
+            settings_body = _settings_preview(repo_root)
+            if settings_body is not None:
+                settings_action, body = settings_body
+                return [(path, settings_action, body)]
+            return [(path, entry["action"], entry["reason"])]
         if path in rule_layer_paths():
             # Rendered against this repository, so it needs the plan rather than the
             # module-level shape `rule_layer_paths()` answered the membership test from.
@@ -1490,6 +1544,10 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rule
             shown.append(
                 (entry["path"], "replace", render_owned(entry["path"], config, plugin_root))
             )
+    settings_body = _settings_preview(repo_root)
+    if settings_body is not None:
+        settings_action, body = settings_body
+        shown.append((SETTINGS_PATH, settings_action, body))
     layer = rules_plan or plan_rules(repo_root, config, force_owned=force_owned)
     for entry in layer["entries"]:
         if entry["action"] == "replace":
@@ -3040,7 +3098,7 @@ def _main(argv=None):
             print("FAIL {}".format(exc))
             return 1
         for shown_path, action, body in shown:
-            label = "would create" if action == "create" else "would replace (rewritten every run)"
+            label = _SHOW_LABELS.get(action, "would replace (rewritten every run)")
             print("----- {} ({}) -----".format(shown_path, label))
             print(body)
         if not shown:
@@ -3053,6 +3111,15 @@ def _main(argv=None):
         )
         for entry in entries:
             print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
+        # A key inside a file whose other keys are not ours, so it is printed here
+        # rather than folded into `entries` -- `entries` is a claim about whole paths,
+        # and this is a claim about one key inside one of them (#494).
+        settings_entry = settings_plan(args.root)
+        print(
+            "{:<8} {}  ({})".format(
+                settings_entry["action"], settings_entry["path"], settings_entry["reason"]
+            )
+        )
         # After the templates and the owned trio, because that is the order --apply
         # writes in: the layer is installed last, against the tree the rest just made.
         for entry in rules_plan["entries"]:
@@ -3076,6 +3143,8 @@ def _main(argv=None):
         print("created  {}".format(path))
     for path in result["replaced"]:
         print("ours     {}  (replaced)".format(path))
+    for path in result["extended"]:
+        print("extended {}  (a key was added; the rest of the file was left as it is)".format(path))
     for path in result["declined"]:
         print(
             "declined {}  (a changelog gate is already detected under a different "

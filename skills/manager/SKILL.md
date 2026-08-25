@@ -475,13 +475,32 @@ file-disjoint lane the board offers.** Running fewer is permitted only when it i
 every other third state in this loop is stated — `dispatched 3 of 6 available, because …` — with a
 real reason such as review bandwidth, an unmerged pull request holding the files, or a brief that is
 not yet writable. Three states, computed rather than felt: **`filled`** — one developer per available
-lane; **`under-filled`** — with the count and the reason; and **`could-not-tell`** — when the
-available count itself could not be computed, **which must never render as `filled`**. The count
-comes from the same mechanism as the intersection check above — `scripts/lane_setup.py`'s
-`resolve_lane`/`lane_overlap` renders a lane as resolved paths, and the floor is a set intersection
-over that form for the candidate lanes you name, not an enumeration the script performs on its own:
-an issue's files are not derivable from its body (#267), so naming candidate lanes stays the
-maintainer's job and the script answers only which of them are mutually disjoint.
+lane **and every further issue the two-axis check below finds**; **`under-filled`** — with the count
+and the reason; and **`could-not-tell`** — when the available count itself could not be computed,
+**which must never render as `filled`**. The lane count comes from the same mechanism as the
+intersection check above — `scripts/lane_setup.py`'s `resolve_lane`/`lane_overlap` renders a lane as
+resolved paths, and the floor is a set intersection over that form for the candidate lanes you name,
+not an enumeration the script performs on its own: an issue's files are not derivable from its body
+(#267), so naming candidate lanes stays the maintainer's job and the script answers only which of
+them are mutually disjoint.
+
+**Lane count is not the only axis, and a fleet can be `filled` on it while under-filled on work.**
+The fixed cost of a lane — the worktree, the agent, the two self-review spawns, the push, the pull
+request, the CI wait, the merge round — is paid once whether that lane carries one issue or four. A
+further issue whose files fall entirely inside a lane's already-claimed set adds a commit and a
+changelog fragment and none of that fixed cost, so leaving it undispatched while calling the tick
+`filled` measures the cheap axis and reports it as the whole answer (#520). `filled` therefore reads
+on **both**: one developer per available file-disjoint lane, **and** each lane's brief carrying
+every further open issue whose files land inside its already-claimed set. Checking that second axis
+is the same mechanism run in reverse — `lane_setup.py <lane-issue> --lane <already-claimed paths>
+--against <candidate-issue paths>` for every other open, dispatchable issue — and it stays a
+maintainer judgement the script supports rather than performs, for the same reason named above: an
+issue's files are not derivable from its body (#267), so naming the candidate issue to check is
+yours, not the script's. **`under-filled` on this axis names the shared, already-claimed file that
+blocked a further issue from joining a lane, and the issues queued behind that file** — not only a
+smaller count. When every remaining dispatchable issue routes through files a running lane already
+holds, that is itself the receipt: say which file, and which issues are queued behind it, rather
+than reporting the tick as `filled` because the lane count matched.
 
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
@@ -1090,6 +1109,15 @@ is not on this list is just a way of not fixing things.
 
 - **"Not failing" is not "green" — count the checks.** The state counts must sum to the number of
   legs, and any leg not `SUCCESS` gets named before merging.
+- **A rerun does not re-resolve a moved base, so it replays the same red.** `gh run rerun <id>
+  --failed` re-runs the check suite against the merge ref it already had; it does not re-resolve
+  that ref against a `main` that has since moved. A fix landed on the default branch after the run
+  started is therefore invisible to the rerun, and the second failure looks exactly like a fix that
+  did not work rather than a fix that was never tested. **The tell is the run id**: a rerun that
+  reports the same run id as before has told you it re-ran the old resolution, not a new one — read
+  it before trusting the second red. When the base has moved under a red PR, use `gh api -X PUT
+  repos/OWNER/REPO/pulls/N/update-branch` instead, which merges the new base into the head
+  server-side, needs no local worktree and no force-push (#389).
 - **Cleanup is gated on the verified merge result — use the op's own `|cleanup` token rather than a
   second, separate call.** Chaining merge and cleanup by hand once deleted a branch after a failed
   merge and auto-closed the PR; recovery was possible only because the forge keeps the PR ref. That
@@ -1505,6 +1533,23 @@ total of `111`. Whoever reads the first line gets a number smaller than the trut
 formatted, at exit 0. Collect the pages into one array before the filter (`--slurp`), or count the
 rows yourself. The same trap in its other spelling — a full page read as a complete list — is in the
 triager's duties, and both are one shape: a partial read rendering as a total.
+
+**Never derive a commit count or a commit identity by parsing rendered `git log` text.** The
+maintainer's own shell rewrites every `git …` invocation through an rtk proxy, and that rewrite
+corrupts exactly the values this loop most depends on: an empty range piped into a row count reads
+as one row, not zero, because the proxy's own output for nothing at all is a single trailing
+newline. Zero is the load-bearing value here — *nothing merged since the tag*, *reach did not move
+this cycle*, *no fragments pending* — and every one of those reads as one instead of the absence it
+is (#236). Through the same rtk proxy, separately, a `git log` naming a merge commit explicitly
+drops it and slides the window down by one — measured against `rtk 0.35.0`, where `git log -1`
+immediately after a merge named the pre-merge tip instead, and `git rev-parse HEAD` disagreed with
+it (#310). This is the proxy's rewrite, not plain git's own traversal, which by default does list
+merge commits; the two issues are the same mechanism reaching two different values through it.
+Neither failure is visible locally: a count or identity derived this way is well-formed, exits `0`,
+and is wrong. Type the count instead of rendering and re-parsing it — `git rev-list --count <range>`
+for how many, `git rev-parse` for which commit — so git answers with one value and there is no row
+for a proxy to corrupt in between. `scripts/release_delta.py` is the one place in this repo that
+already computes a release delta this way; hold every new count to the same rule.
 
 ## Loop mechanics
 

@@ -4,6 +4,7 @@ description: "supertool has an op for every one of these; the call is refused an
 tool: Read|Edit|Write|Glob|Grep
 match: ~.*
 mode: block
+requires: supertool
 ---
 
 There is no read, edit, write, glob or grep that cannot go through `supertool`. Use the op that
@@ -48,3 +49,31 @@ supertool 'ops'
 and travels to every clone, including yours. It is enforced only where `claude-jit-context` is
 also installed -- that plugin is what reads this layer and issues the refusal -- so a clone with
 neither plugin is unaffected by it.
+
+## The `requires: supertool` line above, and what it does today
+
+**Nothing.** No shipped `claude-jit-context` release reads a `requires:` field -- it is not
+`require:` (below-frontmatter, pipe-separated, already read) but a different key entirely, one
+that would probe the named binary on `PATH` at fire time and degrade `mode: block` to a named,
+visible `warn` when it does not resolve. That degrade is being built at
+`claude-jit-context#203`, in response to the same report that opened this issue, and is not
+released as of this writing.
+
+So this rule still blocks unconditionally, for every reader, whether or not `supertool` is on
+their `PATH` -- exactly as before. The field is written now so that the day the upstream reader
+ships, this rule needs no further edit to benefit from it: an unrecognised frontmatter key is
+inert rather than a parse error, so shipping it early costs nothing and back-fills the day the
+other half lands. **Read `#524` (this repository) and `#203` (`claude-jit-context`) before
+trusting either half as done.**
+
+## Why `match: ~.*` and `mode: block` are not narrowed here
+
+The same issue asked, separately, whether blocking all five tools outright is too large a
+hammer even where `supertool` **is** installed -- proposing `mode: warn` for some of them,
+`block` reserved for calls that would genuinely bypass a validator. That was weighed and
+declined for this rule, not overlooked: the absent-binary failure mode above is the one that
+turns a guard into an outage, and `requires:` answers exactly that, without touching what this
+rule says to a reader who has the dependency. Weakening `block` to `warn` for a reader who
+already has `supertool` would trade a working guard for a softer one to hedge against a case
+`requires:` already covers once it ships -- the shape this project itself argues against
+elsewhere in this repository: a `remind` on an absolute rule teaches the reader to dismiss it.

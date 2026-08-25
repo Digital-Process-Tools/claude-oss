@@ -141,6 +141,12 @@ there, whatever it points at — the default contract applied at the key rather 
 because the rest of that file is somebody else's configuration. A settings file that does not parse
 is **declined**, not rewritten: "could not read it" is not "it has no statusLine".
 
+**`--show` previews it too, when it would write something** (#494) — as `create` for an absent
+file and `extend` for one with no `statusLine`, alongside the templates and the owned trio. A repo
+that already sets `statusLine`, or whose settings file cannot be read, gets no preview line for it:
+there is nothing pending to show. `--apply`'s own receipt names it the same way, `extended` beside
+`created` and `ours`.
+
 `.oss/statusline.py` is the one owned file **not** gated on the changelog-gate detection. That gate
 answers one question — does a changelog gate already run here under another name — and it is not an
 answer about a status line.
