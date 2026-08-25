@@ -107,48 +107,65 @@ def opt_out(root=None, env=None):
     ``status`` is one of three strings -- never a bool, and never a value that is merely
     falsy where it should be a genuine "I do not know" (#492). ``"off"`` means an opt-out
     was found (environment or config). ``"on"`` means the search completed and found
-    none. ``"unknown"`` means a config file exists but could not be read or parsed, so
-    whether it declares an opt-out cannot be told -- and the caller must not treat that
-    the same as either "on" or "off": see `update`'s own handling of this return for why
-    the unresolved case fails toward not touching the install.
+    none. ``"unknown"`` means a config file exists but could not be read or parsed -- or
+    the directory holding it could not even be listed -- so whether it declares an
+    opt-out cannot be told, and the caller must not treat that the same as either "on" or
+    "off": see `update`'s own handling of this return for why the unresolved case fails
+    toward not touching the install.
 
     The environment wins over config, because it is the switch somebody reaches for when
     a plugin is misbehaving right now, and it needs no file they may not be able to edit.
 
-    Walks upward from ``root`` the same way `statusline.repo_root` does, rather than
-    reading only ``root`` itself -- called from a subdirectory, the un-walked read found
-    nothing below the repo's own `.oss.json` and answered "on" about a repo that opted
-    out at its root.
+    Walks upward from ``root`` looking for the nearest directory holding either config
+    file -- called from a subdirectory, a read of ``root`` alone found nothing below the
+    repo's own `.oss.json` and answered "on" about a repo that had opted out at its root.
+    This deliberately does not delegate to `statusline.repo_root`: that helper decides a
+    directory is the repo root by `.oss.json` alone, so a directory carrying only
+    `.oss.local.json` (a real, documented opt-out location) would be walked straight past
+    and silently answer "on" -- measured on #492's own review round. `Path.is_file()`
+    also swallows most `OSError`s but not `PermissionError`, so a locked ancestor
+    directory would otherwise crash this walk outright rather than reporting "unknown";
+    `iterdir()` is caught explicitly here for that reason.
     """
     env = os.environ if env is None else env
     if env.get(OPT_OUT_ENV):
         return "off", "{} in the environment".format(OPT_OUT_ENV)
     if root is None:
         return "on", None
-    import statusline
-
-    found_root = statusline.repo_root(root)
-    if found_root is None:
-        return "on", None
-    unreadable = []
-    for name in (".oss.json", ".oss.local.json"):
-        path = Path(found_root) / name
+    start = Path(root).resolve()
+    for candidate in [start] + list(start.parents):
         try:
-            text = path.read_text(encoding="utf-8")
+            present = {
+                entry.name
+                for entry in candidate.iterdir()
+                if entry.name in (".oss.json", ".oss.local.json")
+            }
         except FileNotFoundError:
             continue
         except OSError as exc:
-            unreadable.append("{} ({})".format(name, exc))
+            return "unknown", "could not list {}: {}".format(candidate, exc)
+        if not present:
             continue
-        try:
-            document = json.loads(text)
-        except ValueError as exc:
-            unreadable.append("{} ({})".format(name, exc))
-            continue
-        if isinstance(document, dict) and document.get(OPT_OUT_KEY) is False:
-            return "off", '"{}": false in {}'.format(OPT_OUT_KEY, name)
-    if unreadable:
-        return "unknown", "; ".join(unreadable)
+        unreadable = []
+        for name in (".oss.json", ".oss.local.json"):
+            if name not in present:
+                continue
+            path = candidate / name
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, ValueError) as exc:
+                unreadable.append("{} ({})".format(path, exc))
+                continue
+            try:
+                document = json.loads(text)
+            except ValueError as exc:
+                unreadable.append("{} ({})".format(path, exc))
+                continue
+            if isinstance(document, dict) and document.get(OPT_OUT_KEY) is False:
+                return "off", '"{}": false in {}'.format(OPT_OUT_KEY, path)
+        if unreadable:
+            return "unknown", "; ".join(unreadable)
+        return "on", None
     return "on", None
 
 
@@ -207,18 +224,34 @@ def qualified_name(name, plugins_root=None):
     return name
 
 
-def installed_version(name, plugins_root=None):
-    """The newest version recorded for ``name``, or ``None``.
+def installed_version(name, project_root, plugins_root=None):
+    """The version recorded for ``name`` against THIS project, or ``None`` (#521).
 
-    Newest rather than first: one plugin has an entry per scope and per project, and
-    those entries hold different versions -- reading whichever came first reports a
-    version chosen by dict order (#479).
+    `installed_plugins.json` is one file shared by every project on the machine, and an
+    old project's entry is never rewritten when a newer copy is installed elsewhere
+    (#479, which fixed reading whichever entry came first -- a version chosen by dict
+    order -- by taking the newest recorded *anywhere*). That answers a question nobody
+    asks here: it can only ever report a version at or above the one actually installed
+    for THIS project, so a project pinned behind a sibling project's newer pin silently
+    reported as current (#521). Resolved per project instead, via the same
+    `scope`/`projectPath` match `statusline.installed_plugins` uses -- imported rather
+    than duplicated, so the two cannot drift apart on what "applies to this project"
+    means.
+
+    Two situations both return ``None`` and neither is a version to compare: no entry
+    applies to this project, and the install record could not be read. `update`'s
+    before/after comparison already treats a `None` on either end as "unknown" rather
+    than as a version, which is the correct behaviour for both.
     """
     root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
     try:
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+    import statusline
+
+    project = statusline._normalized_path(project_root) if project_root is not None else None
 
     def key(text):
         parts = []
@@ -238,6 +271,8 @@ def installed_version(name, plugins_root=None):
         if plugin_key.split("@", 1)[0] != name:
             continue
         for entry in entries or []:
+            if not statusline._entry_applies(entry, project):
+                continue
             version = entry.get("version")
             if not version or version == "unknown":
                 continue
@@ -296,7 +331,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "detail": "this plugin's own manifest could not be read, so there is nothing to name",
         }
 
-    before = installed_version(name, plugins_root)
+    before = installed_version(name, root, plugins_root)
     ok, output = runner(["claude", "plugin", "marketplace", "update"])
     if not ok:
         return {
@@ -325,13 +360,17 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "detail": "every update call failed -- {}".format("; ".join(failures)),
         }
 
-    after = installed_version(name, plugins_root)
+    after = installed_version(name, root, plugins_root)
 
     # A partial failure must reach the receipt without becoming a failed run: one
     # scope succeeding is enough for `updated`/`current` to stand (that is what
     # `test_one_scope_succeeding_is_not_a_failed_run` fixes), but a scope that was
     # silently left behind is the whole thing `installed_scopes`' own docstring warns
-    # about, and the receipt is the only record anybody reads.
+    # about, and the receipt is the only record anybody reads. `partial_failure` is a
+    # structured field precisely so a reader downstream (`doctor.check_auto_update`)
+    # does not have to parse it back out of the free-text `detail` -- #521's own
+    # receipt showed `state: current` with the failed scope named only in prose, and
+    # the row that prints `state` never looked at `detail` at all (#521).
     partial = ""
     if failures:
         partial = " -- but {} of {} scope(s) failed: {}".format(
@@ -363,6 +402,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "plugin": name,
             "from": before,
             "to": after,
+            "partial_failure": bool(failures),
             "detail": "restart Claude Code before the new version runs -- this session "
             "is still on {}{}".format(before, partial),
         }
@@ -372,6 +412,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
         "plugin": name,
         "from": before,
         "to": after,
+        "partial_failure": bool(failures),
         "detail": "already at the newest published version{}".format(partial),
     }
 

@@ -43,6 +43,16 @@ def check_auto_update(project_dir):
       `plugin_update.read_receipt` actually caught, never by asking the filesystem a
       second question; folding it into "no receipt" would report a broken receipt as
       the ordinary pre-first-run state.
+
+    A `updated`/`current` receipt additionally carries `partial_failure` (#521): one
+    scope succeeding is enough for either verdict to stand on its own terms (a
+    deliberate decision this row does not second-guess), but a scope that was silently
+    left behind must still reach the one surface a maintainer actually reads -- #521's
+    own measured instance was `OK auto-update: oss already current` for a run where one
+    of two scopes failed on a transient SSH error, with the failure named only in the
+    receipt's `detail`, which this row never looked at. Both arms below WARN and quote
+    `detail` when `partial_failure` is true, rather than rendering the same OK a clean
+    run gets.
     """
     if doctor.plugin_update is None:
         doctor.unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
@@ -89,16 +99,26 @@ def check_auto_update(project_dir):
     if isinstance(when, (int, float)):
         stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
     state = receipt.get("state")
+    partial = bool(receipt.get("partial_failure"))
     if state == "updated":
-        doctor.report(
-            "WARN",
+        message = (
             "auto-update: updated {} from {} to {}{} -- this session is still running "
             "the old copy; restart Claude Code.".format(
                 receipt.get("plugin"), receipt.get("from"), receipt.get("to"), stamp
-            ),
+            )
         )
+        if partial:
+            message += " But not every scope: {}".format(receipt.get("detail"))
+        doctor.report("WARN", message)
         return
     if state == "current":
+        if partial:
+            doctor.report(
+                "WARN",
+                "auto-update: {} reports current{} -- but not every scope updated "
+                "cleanly: {}".format(receipt.get("plugin"), stamp, receipt.get("detail")),
+            )
+            return
         doctor.report(
             "OK", "auto-update: {} already current{}".format(receipt.get("plugin"), stamp)
         )

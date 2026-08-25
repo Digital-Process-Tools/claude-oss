@@ -893,35 +893,74 @@ def _run(command, timeout=5):
     return result.stdout.decode("utf-8", "replace").strip()
 
 
-def plugins_root():
+def plugins_root_default():
     return Path(os.path.expanduser("~")) / ".claude" / "plugins"
 
 
-def installed_plugins(root=None):
-    """``{plugin name: {"version": ..., "repository": ...}}`` from the installed set.
+def _normalized_path(path):
+    """Best-effort canonical form for comparing an installed-plugin ``projectPath``
+    against the project actually being reported on. ``resolve()`` can raise on some
+    platforms for a path with a permission problem partway up it -- fall back to a
+    plain normalisation rather than letting a project-match check crash the caller."""
+    try:
+        return str(Path(path).resolve())
+    except OSError:
+        return os.path.normpath(str(path))
+
+
+def _entry_applies(entry, project):
+    """Does this ``installed_plugins.json`` entry govern ``project`` (#521)?
+
+    ``scope`` of ``user`` (or, defensively, absent) applies everywhere this machine
+    runs Claude Code. Anything else -- ``project``, ``local`` -- is restricted to the
+    ``projectPath`` it names; with no ``project`` to compare against, or no
+    ``projectPath`` on a restrictively-scoped entry, it matches nothing rather than
+    being assumed to apply broadly, which is the collapse this fix exists to remove.
+    """
+    scope = entry.get("scope")
+    if scope in (None, "user"):
+        return True
+    if project is None:
+        return False
+    entry_project = entry.get("projectPath")
+    if not entry_project:
+        return False
+    return _normalized_path(entry_project) == project
+
+
+def installed_plugins(project_root, plugins_root=None):
+    """``{plugin name: {"version": ..., "repository": ...}}`` from the installed set,
+    resolved for THIS project (#521).
 
     Derived from each plugin's own installed manifest rather than from a name-to-repo
     table here: a hardcoded map is a per-repo fact in shared code and is wrong the first
     time a plugin moves. Same derivation ``doctor.dependency_repositories`` uses.
+
+    ``installed_plugins.json`` is one file shared by every project on this machine. One
+    plugin has many entries -- one per scope and one per project that ever installed it
+    -- and they carry different versions, because an old project's entry is never
+    rewritten when a newer copy is installed elsewhere. The version this function used
+    to report was the newest recorded *anywhere*, across every project -- which answers
+    a question nobody asked: `max()` over the whole table can only ever report a version
+    at or above the one actually resolved for this project, so a project pinned behind a
+    sibling project's newer pin silently read as current (#521). Only entries that apply
+    to ``project_root`` -- see `_entry_applies` -- are considered now; a project with no
+    matching entry reports no version for that plugin, never the newest one lying
+    around on the machine.
     """
-    root = plugins_root() if root is None else Path(root)
+    root = Path(plugins_root) if plugins_root is not None else plugins_root_default()
     try:
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    project = _normalized_path(project_root) if project_root is not None else None
     found = {}
     for key, entries in (doc.get("plugins") or {}).items():
         name = key.split("@", 1)[0]
         for entry in entries or []:
+            if not _entry_applies(entry, project):
+                continue
             record = found.setdefault(name, {"version": None, "repository": None})
-            # One plugin has many entries -- one per scope and one per project that
-            # ever installed it -- and they carry different versions, because an old
-            # project entry is never rewritten when a newer copy is installed
-            # elsewhere. Measured on this machine: `oss` had 0.1.0, 0.5.0, 0.9.0 and
-            # 0.10.0 all recorded at once. Taking whichever came last reports a version
-            # chosen by dict order, which read as "a release behind" against a machine
-            # that had the current one. The newest recorded version is the one this
-            # session can actually resolve, so that is the answer.
             version = entry.get("version")
             if version and version != "unknown":
                 current = _version_tuple(record["version"])
@@ -1123,7 +1162,7 @@ def refresh(root, now=None):
     else:
         latest = {}
         answered = False
-        for record in installed_plugins().values():
+        for record in installed_plugins(root).values():
             slug = repo_from_url(record.get("repository"))
             if slug and slug not in latest:
                 tag = _latest_release(slug)
@@ -1210,7 +1249,7 @@ def gather(payload, root, now=None):
         "release": git_release_progress(root),
         "tick": tick,
         "last": _render_stamp(now),
-        "plugins": plugin_facts(loop_name, installed_plugins(), latest),
+        "plugins": plugin_facts(loop_name, installed_plugins(root), latest),
     }
 
 

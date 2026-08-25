@@ -12,8 +12,11 @@ where nothing checked.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -104,6 +107,48 @@ def test_unreadable_config_status_is_not_merely_falsy_492(tmp_path):
     status, _ = plugin_update.opt_out(tmp_path, env={})
     assert isinstance(status, str)
     assert not isinstance(status, bool)
+
+
+def test_oss_local_json_only_is_still_found_492(tmp_path):
+    """Self-review finding on this fix: the first version delegated the upward walk to
+    `statusline.repo_root`, which decides a directory is the repo root by `.oss.json`
+    alone -- so a directory carrying only `.oss.local.json` (a real, documented opt-out
+    location, per this module's own top docstring) was walked straight past and silently
+    answered "on", reintroducing the exact class #492 was filed over."""
+    (tmp_path / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "off" and ".oss.local.json" in where
+
+
+def test_invalid_utf8_config_is_unknown_not_a_crash_492(tmp_path):
+    """Self-review finding: the first version's read-step except clause dropped the
+    `ValueError` arm (only `FileNotFoundError`/`OSError` were caught around
+    `read_text`), so `UnicodeDecodeError` -- a `ValueError` subclass -- went uncaught and
+    crashed `opt_out`, `update`, and `doctor.check_auto_update` outright instead of
+    reporting "unknown"."""
+    (tmp_path / ".oss.json").write_bytes(b"\xff\xfe\x00invalid utf8 \x80\x81")
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert ".oss.json" in where
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod 0o000 does not deny traversal on Windows")
+def test_a_locked_ancestor_directory_is_unknown_not_a_crash_492(tmp_path):
+    """Self-review finding: `Path.is_file()` (used by `statusline.repo_root`, which the
+    first version of this fix delegated to) swallows most `OSError`s but not
+    `PermissionError` -- so a locked ancestor directory anywhere between the caller's
+    root and the filesystem root crashed the walk instead of reporting "unknown"."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    deep = locked / "deep"
+    deep.mkdir()
+    os.chmod(str(locked), 0o000)
+    try:
+        status, where = plugin_update.opt_out(deep, env={})
+    finally:
+        os.chmod(str(locked), 0o755)
+    assert status == "unknown"
+    assert "could not list" in where
 
 
 def test_an_unreadable_opt_out_config_reports_could_not_check_and_calls_nothing_492(tmp_path):
@@ -299,10 +344,10 @@ def test_before_readable_after_not_is_still_could_not_check(tmp_path, monkeypatc
     calls = {"n": 0}
     real_installed_version = plugin_update.installed_version
 
-    def flaky_installed_version(name, plugins_root=None):
+    def flaky_installed_version(name, project_root=None, plugins_root=None):
         calls["n"] += 1
         if calls["n"] == 1:
-            return real_installed_version(name, plugins_root)
+            return real_installed_version(name, project_root, plugins_root)
         return None  # the second read -- "after" -- comes back unreadable
 
     monkeypatch.setattr(plugin_update, "installed_version", flaky_installed_version)
@@ -352,7 +397,10 @@ def test_the_plugin_names_itself_from_its_own_manifest(tmp_path):
     assert plugin_update.plugin_name(_plugin_root(tmp_path, "renamed-tomorrow")) == "renamed-tomorrow"
 
 
-def test_the_newest_recorded_install_is_the_one_reported(tmp_path):
+def test_the_newest_matching_install_is_the_one_reported(tmp_path):
+    """No `scope` on any entry -- the shape most fixtures in this file use -- means each
+    one applies everywhere, so the newest readable version among them wins regardless of
+    which project is asked (`project_root=None` here is deliberately uninformative)."""
     root = tmp_path / "plugins"
     root.mkdir()
     (root / "installed_plugins.json").write_text(
@@ -369,7 +417,94 @@ def test_the_newest_recorded_install_is_the_one_reported(tmp_path):
         ),
         encoding="utf-8",
     )
-    assert plugin_update.installed_version("oss", root) == "9.9.9"
+    assert plugin_update.installed_version("oss", None, root) == "9.9.9"
+
+
+def test_installed_version_is_resolved_per_project_not_the_newest_anywhere_521(tmp_path):
+    """#521's own fixture: two projects, two entries, two different versions, asked from
+    the lower one. The pre-fix behaviour (`max()` over the whole table) answered `9.9.9`
+    -- another project's pin -- for both. Resolved per project, the answer for the lower
+    project is its own `9.9.8`."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    behind = tmp_path / "behind-project"
+    ahead = tmp_path / "ahead-project"
+    behind.mkdir()
+    ahead.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.8", "scope": "project", "projectPath": str(behind)},
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(ahead)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", behind, root) == "9.9.8"
+    assert plugin_update.installed_version("oss", ahead, root) == "9.9.9"
+
+
+def test_a_project_current_on_its_own_entry_is_not_disturbed_521(tmp_path):
+    """The must-not-fire control: a project whose own entry already carries the newest
+    version must keep reporting it as the newest -- not `?`, not another project's pin."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    here.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(here)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", here, root) == "9.9.9"
+
+
+def test_a_project_with_no_matching_entry_is_none_not_the_newest_anywhere_521(tmp_path):
+    """No entry names this project at all -- must answer `None` (a `?` upstream), never
+    fall back to whatever the newest recorded version happens to be elsewhere."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    elsewhere = tmp_path / "elsewhere"
+    here.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "9.9.9", "scope": "project", "projectPath": str(elsewhere)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", here, root) is None
+
+
+def test_a_user_scope_entry_applies_to_every_project_521(tmp_path):
+    """`scope: "user"` has no `projectPath` and applies everywhere -- it must still be
+    found for a project that has no `project`/`local` entry of its own."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    here.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"oss@dpt": [{"version": "9.9.9", "scope": "user"}]}}),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_version("oss", here, root) == "9.9.9"
 
 
 # ------------------------------------------------------------------------- receipt
