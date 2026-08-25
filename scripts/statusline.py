@@ -901,11 +901,23 @@ def _normalized_path(path):
     """Best-effort canonical form for comparing an installed-plugin ``projectPath``
     against the project actually being reported on. ``resolve()`` can raise on some
     platforms for a path with a permission problem partway up it -- fall back to a
-    plain normalisation rather than letting a project-match check crash the caller."""
+    plain normalisation rather than letting a project-match check crash the caller.
+
+    Passed through ``os.path.normcase`` on the way out: on Windows, whose filesystem is
+    case-insensitive, the same directory can be named with two different cases -- an
+    installed-plugin record and the path this session resolves are not guaranteed to
+    agree on which -- and comparing case-sensitively would silently answer "no entry
+    applies here" about a project whose entry is sitting right there. `normcase` folds
+    case only on Windows (`ntpath`); on POSIX (`posixpath`, including macOS, whose
+    default filesystem is also case-insensitive-but-preserving) it is the identity
+    function, so this closes the gap measured on Windows and leaves the macOS one open
+    -- worth a second pass, not claimed fixed here.
+    """
     try:
-        return str(Path(path).resolve())
+        text = str(Path(path).resolve())
     except OSError:
-        return os.path.normpath(str(path))
+        text = os.path.normpath(str(path))
+    return os.path.normcase(text)
 
 
 def _entry_applies(entry, project):

@@ -10,6 +10,7 @@ Every assertion below pairs a must-not-fire with a must-fire, because an asserti
 """
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -256,6 +257,21 @@ def test_a_project_with_no_matching_entry_has_no_version_521(tmp_path):
         encoding="utf-8",
     )
     assert "oss" not in statusline.installed_plugins(here, tmp_path)
+
+
+def test_normalized_path_folds_case_on_windows_521():
+    """Self-review finding on #521: an installed-plugin `projectPath` and the path this
+    session resolves can differ only in case on a case-insensitive filesystem, which
+    `Path.resolve()` alone does not fold. `os.path.normcase` folds case on Windows
+    (`ntpath`) and is a no-op on POSIX (`posixpath`), so this is real on Windows and
+    intentionally unobserved here -- this test runs on every platform and only asserts
+    the Windows-observable half."""
+    if os.name == "nt":
+        assert statusline._normalized_path("C:\\Users\\Me\\Proj") == statusline._normalized_path(
+            "c:\\users\\me\\proj"
+        )
+    else:
+        assert statusline._normalized_path("/tmp/Proj") != statusline._normalized_path("/tmp/proj")
 
 
 # --------------------------------------------------------------------- gather

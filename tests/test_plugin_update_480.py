@@ -132,6 +132,24 @@ def test_invalid_utf8_config_is_unknown_not_a_crash_492(tmp_path):
     assert ".oss.json" in where
 
 
+def test_resolve_failing_on_root_is_unknown_not_a_crash_492(tmp_path, monkeypatch):
+    """Self-review finding: `opt_out`'s own `Path(root).resolve()` was unguarded, unlike
+    the identical call in `statusline._normalized_path` -- which carries a fallback
+    specifically because `resolve()` can raise on some platforms for a path with a
+    permission problem partway up it. Forced directly (rather than relying on a real
+    locked directory, whose triggering shape is itself platform-dependent) so this test
+    is not platform-conditional."""
+
+    class _Boom(Path().__class__):
+        def resolve(self, *a, **k):
+            raise OSError(13, "permission denied")
+
+    monkeypatch.setattr(plugin_update, "Path", _Boom)
+    status, where = plugin_update.opt_out(tmp_path, env={})
+    assert status == "unknown"
+    assert "could not resolve" in where
+
+
 @pytest.mark.skipif(os.name == "nt", reason="chmod 0o000 does not deny traversal on Windows")
 def test_a_locked_ancestor_directory_is_unknown_not_a_crash_492(tmp_path):
     """Self-review finding: `Path.is_file()` (used by `statusline.repo_root`, which the
@@ -248,15 +266,15 @@ def test_the_scope_comes_off_the_install_record_not_a_default(tmp_path):
             {
                 "plugins": {
                     "oss@dpt-plugins": [
-                        {"version": "0.9.0", "scope": "project"},
-                        {"version": "0.9.0", "scope": "local"},
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(tmp_path)},
+                        {"version": "0.9.0", "scope": "local", "projectPath": str(tmp_path)},
                     ]
                 }
             }
         ),
         encoding="utf-8",
     )
-    assert plugin_update.installed_scopes("oss", root) == ["project", "local"]
+    assert plugin_update.installed_scopes("oss", tmp_path, root) == ["project", "local"]
     assert plugin_update.qualified_name("oss", root) == "oss@dpt-plugins"
 
     runner = _Runner([(True, ""), (True, ""), (True, "")])
@@ -268,6 +286,35 @@ def test_the_scope_comes_off_the_install_record_not_a_default(tmp_path):
     assert all(call[3] == "oss@dpt-plugins" for call in updates), updates
 
 
+def test_installed_scopes_ignores_a_sibling_projects_entry_521(tmp_path):
+    """Self-review finding on #521: `installed_scopes` fed `update()`'s per-scope
+    `claude plugin update --scope <scope>` calls without ever filtering by project, so a
+    `project`/`local`-scope entry belonging to a DIFFERENT project on the machine could
+    be attempted and fail against THIS project (which has no such scope), incorrectly
+    marking `partial_failure=True` for a run that was actually clean here."""
+    root = tmp_path / "plugins"
+    root.mkdir()
+    here = tmp_path / "here"
+    sibling = tmp_path / "sibling"
+    here.mkdir()
+    sibling.mkdir()
+    (root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt": [
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(here)},
+                        {"version": "0.9.0", "scope": "local", "projectPath": str(sibling)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.installed_scopes("oss", here, root) == ["project"]
+    assert plugin_update.installed_scopes("oss", sibling, root) == ["local"]
+
+
 def test_one_scope_succeeding_is_not_a_failed_run(tmp_path):
     """The must-not-fire half: a plugin at two scopes, one of which no longer resolves."""
     root = tmp_path / "plugins"
@@ -277,7 +324,7 @@ def test_one_scope_succeeding_is_not_a_failed_run(tmp_path):
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "0.9.0", "scope": "project"},
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(tmp_path)},
                         {"version": "0.9.0", "scope": "user"},
                     ]
                 }
@@ -373,7 +420,7 @@ def test_a_partial_failure_reaches_the_receipt_detail(tmp_path):
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "0.9.0", "scope": "project"},
+                        {"version": "0.9.0", "scope": "project", "projectPath": str(tmp_path)},
                         {"version": "0.9.0", "scope": "user"},
                     ]
                 }
@@ -390,6 +437,7 @@ def test_a_partial_failure_reaches_the_receipt_detail(tmp_path):
     )
     assert document["state"] == "current", document
     assert "user" in document["detail"] and "not found at user scope" in document["detail"]
+    assert document["partial_failure"] is True, document
 
 
 def test_the_plugin_names_itself_from_its_own_manifest(tmp_path):

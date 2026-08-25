@@ -132,7 +132,15 @@ def opt_out(root=None, env=None):
         return "off", "{} in the environment".format(OPT_OUT_ENV)
     if root is None:
         return "on", None
-    start = Path(root).resolve()
+    try:
+        start = Path(root).resolve()
+    except OSError as exc:
+        # Self-review finding on #492: `statusline._normalized_path` guards this exact
+        # call with a fallback because `resolve()` can raise on some platforms for a
+        # path with a permission problem partway up it -- this walk had the identical
+        # call unguarded, so the one situation the rest of this function exists to
+        # report as "unknown" could instead crash the caller outright.
+        return "unknown", "could not resolve {}: {}".format(root, exc)
     for candidate in [start] + list(start.parents):
         try:
             present = {
@@ -180,14 +188,21 @@ def plugin_name(plugin_root=None):
         return None
 
 
-def installed_scopes(name, plugins_root=None):
-    """Which scopes this plugin is installed at, newest-version first.
+def installed_scopes(name, project_root, plugins_root=None):
+    """Which scopes this plugin is installed at, FOR THIS PROJECT (#521).
 
     `claude plugin update <name> --scope user` fails outright with `Plugin "<name>" not
     found` when the plugin lives at another scope -- measured on the author's machine,
     where every `oss` entry is `project`. So the scope is read off the install record
     rather than assumed, and each recorded scope is updated: an install at two scopes is
     two installs, and updating one of them silently leaves the other behind.
+
+    Filtered to entries that apply to `project_root`, the same way `installed_version`
+    is (#521's own review round): an un-filtered scan can find a `project`- or
+    `local`-scope entry belonging to a *different* project on the machine, attempt
+    `claude plugin update <name> --scope <that scope>` against THIS project (where no
+    such install exists), and record the resulting failure as `partial_failure` -- a
+    scope this project never had, reported as one it silently lost.
 
     Order matters only for the receipt, which names the newest.
     """
@@ -196,11 +211,17 @@ def installed_scopes(name, plugins_root=None):
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
+
+    import statusline
+
+    project = statusline._normalized_path(project_root) if project_root is not None else None
     scopes = []
     for plugin_key, entries in (doc.get("plugins") or {}).items():
         if plugin_key.split("@", 1)[0] != name:
             continue
         for entry in entries or []:
+            if not statusline._entry_applies(entry, project):
+                continue
             scope = entry.get("scope")
             if scope and scope not in scopes:
                 scopes.append(scope)
@@ -343,7 +364,7 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "meant last time and no update was attempted: {}".format(output[-400:]),
         }
 
-    scopes = installed_scopes(name, plugins_root) or ["user"]
+    scopes = installed_scopes(name, root, plugins_root) or ["user"]
     target = qualified_name(name, plugins_root)
     failures = []
     for scope in scopes:
