@@ -32,8 +32,9 @@ def check_auto_update(project_dir, sh_available=None):
       parsed, so whether it declares an opt-out cannot be told. Reported at WARN, never
       folded into "off" (a guess that consent was withheld) or into "on" (a guess that it
       was not) -- `opt_out`'s own docstring is the source of that split.
-    * **updated** -- with the versions it moved between, and the fact that this session
-      is still running the old code until Claude Code restarts.
+    * **updated** -- with the versions it moved between, and both remedies: run
+      /reload-plugins to move the registry now, and restart Claude Code for the rest --
+      this session is still running the old code until it does.
     * **current** / **could-not-check** -- the updater's own two answers, relayed. A run
       that could not reach the marketplace must never read as `current`, so the row does
       not collapse them.
@@ -134,7 +135,9 @@ def check_auto_update(project_dir, sh_available=None):
     if state == "updated":
         message = (
             "auto-update: updated {} from {} to {}{} -- this session is still running "
-            "the old copy; restart Claude Code.".format(
+            "the old copy. Run /reload-plugins to move the registry now (which agents, "
+            "skills and commands resolve); a restart is still needed for command text "
+            "already injected into this turn.".format(
                 receipt.get("plugin"), receipt.get("from"), receipt.get("to"), stamp
             )
         )
