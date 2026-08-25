@@ -1595,6 +1595,36 @@ def test_consumer_watch_name_verdict_unknown_when_registry_is_absent(
     assert why
 
 
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {"plugins": ["not", "a", "dict"]},
+        {"plugins": {"supertool@marketplace": {"installPath": "/x"}}},
+        {"plugins": {"supertool@marketplace": ["not-a-dict-entry"]}},
+        ["not", "an", "object", "at", "all"],
+    ],
+)
+def test_consumer_watch_name_verdict_survives_a_malformed_registry(
+    tmp_path, monkeypatch, doc
+):
+    """Valid JSON in a shape this reader cannot use must answer `unknown`, not
+    raise. Before this diff `check_watch_channel` never read this file at all,
+    so an odd `installed_plugins.json` could not abort a doctor run -- the
+    review round on #533 found exactly this: `.items()` on a list, `.get()` on
+    a string, both AttributeError, both propagating out of every one of the
+    four modified watch-channel states with no VERDICT line printed."""
+    registry = tmp_path / "installed_plugins.json"
+    registry.write_text(json.dumps(doc), encoding="utf-8")
+    monkeypatch.setattr(
+        doctor.os.path,
+        "expanduser",
+        lambda p: str(registry) if p.endswith("installed_plugins.json") else p,
+    )
+    verdict, why = _REAL_CONSUMER_WATCH_NAME_VERDICT("oss")
+    assert verdict == "unknown"
+    assert why
+
+
 # --- does anything publish to this repo's board? (#191) -----------------------
 #
 # The channel being open and the board being empty are different facts, and from

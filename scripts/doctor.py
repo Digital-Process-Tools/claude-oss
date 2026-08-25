@@ -2871,13 +2871,22 @@ def _consumer_watch_name_verdict(name):
         return "unknown", "{} could not be read ({})".format(
             registry, type(err).__name__
         )
+    if not isinstance(doc, dict):
+        # Valid JSON, wrong shape -- an AttributeError out of `.items()` below
+        # would abort the whole doctor run over a file this check never used
+        # to depend on (#533's own review round). `unknown` is the answer a
+        # shape this reader cannot use earns, same as an unreadable file.
+        return "unknown", "{} is not a JSON object".format(registry)
 
+    plugins = doc.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
     installs = [
         entry.get("installPath")
-        for key, entries in (doc.get("plugins") or {}).items()
+        for key, entries in plugins.items()
         if key.split("@")[0] == "supertool"
-        for entry in entries or []
-        if entry.get("installPath")
+        for entry in (entries if isinstance(entries, list) else [])
+        if isinstance(entry, dict) and entry.get("installPath")
     ]
     if not installs:
         return "unknown", "{} lists no supertool install".format(registry)
