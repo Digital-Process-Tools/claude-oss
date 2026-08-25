@@ -1540,10 +1540,13 @@ corrupts exactly the values this loop most depends on: an empty range piped into
 as one row, not zero, because the proxy's own output for nothing at all is a single trailing
 newline. Zero is the load-bearing value here — *nothing merged since the tag*, *reach did not move
 this cycle*, *no fragments pending* — and every one of those reads as one instead of the absence it
-is (#236). A merge commit, separately, is filtered out of plain `git log` entirely, so a receipt
-built by scanning that output names the pre-merge tip as the tip and the merge itself never appears
-(#310). Neither failure is visible locally: a count derived this way is well-formed, exits `0`, and
-is wrong. Type the count instead of rendering and re-parsing it — `git rev-list --count <range>`
+is (#236). Through the same rtk proxy, separately, a `git log` naming a merge commit explicitly
+drops it and slides the window down by one — measured against `rtk 0.35.0`, where `git log -1`
+immediately after a merge named the pre-merge tip instead, and `git rev-parse HEAD` disagreed with
+it (#310). This is the proxy's rewrite, not plain git's own traversal, which by default does list
+merge commits; the two issues are the same mechanism reaching two different values through it.
+Neither failure is visible locally: a count or identity derived this way is well-formed, exits `0`,
+and is wrong. Type the count instead of rendering and re-parsing it — `git rev-list --count <range>`
 for how many, `git rev-parse` for which commit — so git answers with one value and there is no row
 for a proxy to corrupt in between. `scripts/release_delta.py` is the one place in this repo that
 already computes a release delta this way; hold every new count to the same rule.
