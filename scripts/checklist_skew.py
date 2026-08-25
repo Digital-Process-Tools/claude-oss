@@ -102,8 +102,11 @@ def _read_version(manifest_path):
     ``version`` is ``None`` and ``reason`` says why, in one printable line.
     """
     try:
+        # UnicodeDecodeError is a ValueError, not an OSError -- a manifest that is
+        # not valid UTF-8 would otherwise raise out of this function and crash a
+        # gate whose whole contract is "never blocks, always could-not-tell".
         raw = manifest_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         return None, "{0} could not be read: {1}".format(
             manifest_path, _one_line(exc)
         )
@@ -116,7 +119,12 @@ def _read_version(manifest_path):
     version = data.get("version") if isinstance(data, dict) else None
     if not isinstance(version, str) or not version:
         return None, "{0} has no string 'version' field".format(manifest_path)
-    return version, None
+    # A manifest is written by whoever controls that plugin copy, and its
+    # 'version' field reaches receipt() and a release report unchanged. Flatten
+    # it the same way _one_line already flattens every other foreign string in
+    # this file, so a newline in a version cannot forge a receipt line the way a
+    # commit subject forging release_delta.py's output was already flagged for.
+    return _one_line(version, limit=80), None
 
 
 def _compare_definitions(plugin_root, repo):
