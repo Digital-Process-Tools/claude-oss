@@ -328,6 +328,62 @@ def test_the_publish_keys_must_be_booleans():
         assert any(key in p and "unknown key" not in p for p in problems), (key, problems)
 
 
+# ------------------------------------------------------- the notes size limit (#483)
+
+
+def test_notes_over_the_limit_are_refused_at_plan_time_not_sent():
+    """The load-bearing half of #483: a body over GitHub's limit is caught in `plan`,
+    which runs on every dry run, before `--execute` ever reaches `gh`. `state: create`
+    used to mean only "the command is well-formed"; this is the case that used to slip
+    through it and land as a 422 after the tag was already on the remote.
+    """
+    over = release_publish.plan(
+        config=_config(create_release=True, draft=False, latest=True),
+        tag="v0.3.0",
+        notes_path="/tmp/notes.md",
+        gh="gh",
+        notes_len=release_publish.GITHUB_NOTES_LIMIT + 1,
+    )
+    assert over["state"] == release_publish.STATE_COULD_NOT_RUN
+    assert over["command"] is None
+    assert str(release_publish.GITHUB_NOTES_LIMIT) in over["reason"]
+    assert str(release_publish.GITHUB_NOTES_LIMIT + 1) in over["reason"]
+    # By how much, named -- the receipt has to say the size, not just "too long".
+    assert "by 1" in over["reason"]
+
+
+def test_notes_under_the_limit_plan_exactly_as_before_a_positive_control():
+    """The must-fire case above needs a must-not-fire partner in the same fixture, or
+    an assertion that "over the limit is refused" could pass because `plan` refuses
+    everything. A body under the limit plans the same buildable command it always did.
+    """
+    under = release_publish.plan(
+        config=_config(create_release=True, draft=False, latest=True),
+        tag="v0.3.0",
+        notes_path="/tmp/notes.md",
+        gh="gh",
+        notes_len=release_publish.GITHUB_NOTES_LIMIT - 1,
+    )
+    assert under["state"] == release_publish.STATE_CREATE
+    assert under["command"] is not None
+    assert "--verify-tag" in under["command"]
+
+
+def test_notes_exactly_at_the_limit_are_not_refused():
+    """GitHub's own message names the limit as a maximum, so a body of exactly that
+    many characters is not "over" it. An off-by-one here is the difference between
+    refusing a release that would have gone through and passing one that would not.
+    """
+    at_limit = release_publish.plan(
+        config=_config(create_release=True, draft=False, latest=True),
+        tag="v0.3.0",
+        notes_path="/tmp/notes.md",
+        gh="gh",
+        notes_len=release_publish.GITHUB_NOTES_LIMIT,
+    )
+    assert at_limit["state"] == release_publish.STATE_CREATE
+
+
 def test_a_draft_marked_latest_is_refused_because_it_cannot_be_both():
     """gh will not mark a draft as Latest. Accepting the pair means the config
     states an outcome the release path can never produce, and the maintainer finds
@@ -658,6 +714,63 @@ def test_execute_end_to_end_creates_the_release_and_ran_verify_tag(tmp_path):
     assert "--notes-file" in argv
     notes = Path(argv[argv.index("--notes-file") + 1]).read_text(encoding="utf-8")
     assert "The thing that was fixed (#58)." in notes
+
+
+@posix_only
+def test_execute_never_reaches_gh_with_a_body_over_the_limit(tmp_path):
+    """The control pair the issue names, at the CLI, end to end: a section over the
+    limit must not reach the API with a body it will refuse. The 422 in production
+    came from `gh` itself; this proves the call is never even made.
+    """
+    over_body = "\n".join(
+        "- fragment {0} of a release nobody should ship this large.".format(i)
+        for i in range(3000)
+    )
+    assert len(over_body) > release_publish.GITHUB_NOTES_LIMIT
+    changelog = "# Changelog\n\n## [9.9.9] - 2026-08-22\n\n" + over_body + "\n"
+    repo = _repo(tmp_path / "repo", changelog=changelog, create_release=True, draft=False, latest=True)
+    script, record = _fake_gh(tmp_path / "bin", exit_code=0)
+    code = release_publish.main(
+        [
+            "--repo",
+            str(repo),
+            "--version",
+            "9.9.9",
+            "--tag",
+            "v9.9.9",
+            "--notes-out",
+            str(tmp_path / "notes.md"),
+            "--gh",
+            str(script),
+            "--execute",
+            "--json",
+        ]
+    )
+    assert code == release_publish.EXIT_COULD_NOT_RUN
+    assert not record.exists()
+
+
+def test_a_body_under_the_limit_still_publishes_exactly_as_before(tmp_path):
+    """The must-fire case above needs its must-not-fire partner at the CLI level too:
+    an ordinary changelog section is unaffected by this change.
+    """
+    repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
+    code = release_publish.main(
+        [
+            "--repo",
+            str(repo),
+            "--version",
+            "0.3.0",
+            "--tag",
+            "v0.3.0",
+            "--notes-out",
+            str(tmp_path / "notes.md"),
+            "--gh",
+            "gh",
+            "--json",
+        ]
+    )
+    assert code == 0
 
 
 @posix_only
