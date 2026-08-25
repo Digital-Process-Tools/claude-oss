@@ -88,6 +88,23 @@ def test_hook_present_and_budget_equal_to_explicit_timeout_is_actionable(tmp_pat
     assert state == doctor.GIT_PUSH_BUDGET_ACTIONABLE
 
 
+def test_non_positive_budget_is_actionable_not_configured(tmp_path):
+    """MUST NOT FIRE as configured: `budget < timeout` alone is satisfied by any
+    non-positive number, so a corrupted or badly-templated 0/negative budget
+    must not read as OK -- supertool's own git-push op would refuse it outright
+    (found by review)."""
+    _hook(tmp_path)
+    _supertool_config(tmp_path, {"ops": {"git-push": {"budget": 0}}})
+    state, detail = doctor.git_push_budget_state(tmp_path)
+    assert state == doctor.GIT_PUSH_BUDGET_ACTIONABLE
+    assert "0" in detail
+
+    _supertool_config(tmp_path, {"ops": {"git-push": {"budget": -50}}})
+    state, detail = doctor.git_push_budget_state(tmp_path)
+    assert state == doctor.GIT_PUSH_BUDGET_ACTIONABLE
+    assert "-50" in detail
+
+
 def test_unreadable_supertool_config_is_could_not_tell(tmp_path):
     _hook(tmp_path)
     (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")

@@ -191,3 +191,17 @@ def test_cli_plugin_identity_in_a_reading_mode_is_refused_not_silently_dropped(t
     rc = oss_state._main([str(path), "--last", "--plugin-identity", IDENTITY_A])
     assert rc == 1
     assert "FAIL" in capsys.readouterr().out
+
+
+def test_cli_check_plugin_identity_with_an_empty_value_is_refused_not_dropped(tmp_path, capsys):
+    """MUST NOT FIRE as --decision: an empty string is still a value somebody
+    passed (a broken $IDENTITY capture upstream, say), and it used to be
+    treated as absent -- falling all the way through to --decision's own
+    "--at is required" refusal, which names the wrong flag entirely (found
+    by review)."""
+    path = tmp_path / "state.json"
+    rc = oss_state._main([str(path), "--check-plugin-identity", ""])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert "--at is required" not in out

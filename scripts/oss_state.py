@@ -1808,7 +1808,12 @@ def _main(argv=None):
             or args.migrate
             or args.model_trend
             or args.pending_wait
-            or args.check_plugin_identity
+            # `is not None`, not plain truthiness: an empty string is still a
+            # value somebody passed (`--check-plugin-identity ""`), and treating
+            # it as absent used to fall all the way through to the --decision
+            # path with a misleading "--at is required" refusal (found by
+            # review) instead of naming the flag that was actually wrong.
+            or args.check_plugin_identity is not None
         )
         if reading_mode and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
@@ -1852,7 +1857,7 @@ def _main(argv=None):
                 "accept them and drop them".format(", ".join(plugin_identity_flags))
             )
             return 1
-        if args.check_plugin_identity:
+        if args.check_plugin_identity is not None:
             found_entry, prior = _last_plugin_identity(args.path)
             record = plugin_identity_check(args.check_plugin_identity, prior)
             _say(plugin_identity_line(record), sys.stderr)

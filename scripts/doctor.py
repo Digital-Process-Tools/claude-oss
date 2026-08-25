@@ -2626,6 +2626,17 @@ def git_push_budget_state(project_dir):
             "a pre-push hook exists and ops.git-push.budget is not set in {} "
             "-- the {}s default applies".format(WATCH_CONFIG, GIT_PUSH_DEFAULT_BUDGET)
         )
+    if budget <= 0:
+        # `budget < timeout` alone is satisfied by any non-positive number, so a
+        # corrupted or badly-templated config (0, or a negative value) would
+        # otherwise read as CONFIGURED -- OK -- while supertool's own git-push op
+        # refuses a non-positive budget outright before anything is pushed (found
+        # by review, #295's own sibling issue).
+        return GIT_PUSH_BUDGET_ACTIONABLE, (
+            "ops.git-push.budget is {} in {}, which is not a positive number of "
+            "seconds -- supertool's own git-push op would refuse this rather "
+            "than push with it".format(budget, WATCH_CONFIG)
+        )
 
     timeout, timeout_problem = _number(block.get("timeout"), "ops.git-push.timeout")
     if timeout_problem:
