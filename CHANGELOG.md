@@ -7,6 +7,503 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-25
+
+### Added
+
+- `doctor` now checks `.remember/core-memories.md` on its own -- what the loop
+  has LEARNED, distinct from `identity.md`'s who-it-is check and never folded
+  into it. Four states: a wholly absent store reads OK (already covered by
+  `check_memory`'s own warning, not doubled here); a store present with no
+  core-memories.md is OK, since that is correct on a repo's first day; present
+  and empty is a WARN distinct from absent; present with content is OK,
+  reporting the entry count and newest entry's date structurally, never the
+  entries' own words. An unreadable store or file reads as unknown, never as
+  "nothing recorded" (#210).
+
+- `.oss.json`'s `release` block gains `authority`, a per-repository grant for the two
+  release Stops the loop otherwise always asks about: tagging and publishing. `"loop"`
+  means the loop tags and publishes without stopping and names the grant in the release
+  report; `"maintainer"` is an explicit, unconditional stop; and absent, unreadable, or an
+  unrecognised value reads as `"not-declared"`, which stops the same as `"maintainer"` --
+  it must never default to autonomy. `scripts/oss_config.release_authority()` is the
+  single reader; `skills/manager/SKILL.md`'s Stops table and `commands/release.md` both
+  read it rather than asserting the answer, and `/oss:doctor` reports which state a repo
+  is in before the tag step rather than at it (#478).
+
+- Added a `PostToolUse` hook (`scripts/batch_hint.py`) that flags a run of 3 or more
+  consecutive single-op read-only supertool calls with one line naming the collapsed form.
+  Measured over 612 transcripts, 21.5% of tool turns sat in exactly this kind of collapsible
+  run, and a paragraph in `agents/developer.md` asking agents to batch measured at zero
+  effect -- including a controlled A/B where the treatment brief made the single-op rate
+  worse, not better. The hook replaces that paragraph: it costs nothing on a clean run and
+  only ever emits one advisory line, never blocking (#490).
+
+- Added a size budget for each `agents/*.md` definition (`scripts/agent_budgets.py`,
+  `tests/test_agent_definition_budget_491.py`), with the current sizes recorded in
+  `CLAUDE.md` so a crossing is visible instead of gradual. Turn-1 context is a median 44%
+  of a whole agent's cache-read consumption and every byte there is re-read on every
+  remaining turn; deduplication was measured and ruled out (1.2%-6.5% shingle overlap
+  between the largest files), so the budget is paired with a replace-don't-append rule
+  rather than a request to cut. The budget cannot and does not judge whether a paragraph
+  earns its size -- that stays a human call (#491).
+
+- `scripts/transcript_refusals.py` now measures the two costs #498 found in 612 agent
+  transcripts: `turns_over_threshold_count`/`_share` against a 140-turn threshold (the
+  measured p90 -- five of the longest lanes alone accounted for around 7% of all
+  consumption), and `decile_bytes`/`first_fifth_byte_share`, the bytes-and-calls-by-decile
+  split showing bytes concentrate in the first fifth of a lane while call counts stay flat.
+  Both are measured after a lane completes, never surfaced to the agent mid-run -- this
+  repository has measured twice already (`developer.md`'s batching paragraph, #490's A/B)
+  that a judgement-shaped instruction in a brief does not change behaviour, and a metric an
+  agent can see is a metric it will optimise by the cheapest route, which here means fewer
+  files read or a positive control skipped (#498).
+
+- The status line now shows two time facts instead of none: a wall-clock stamp of when the
+  line was last rendered (`last 23:47`), and the age of the user's own last message (`you 4m`).
+  A naive "last message age" cannot work here -- the line only re-renders on an event (a new
+  assistant message, `/compact`, a permission-mode change), so that value would be computed at
+  the exact instant it reads zero and then freeze there for however long the loop actually
+  stalls, confirmed against Claude Code's own "When it updates" documentation rather than
+  inherited from this module's docstring. The user-message age is genuinely non-zero at render
+  time instead, because a render only happens after the assistant has answered it. Both fields
+  carry the same three states as everything else on this line -- a scan that never reached a
+  timestamped record prints `?`, never a stale zero (#504).
+
+- The status line reports where the next release stands (#507). A `rel 4/17` field: commits landed
+  since the newest version tag, over the median size of the recent releases -- both halves derived
+  from this clone's own log and tags, so they are in the same unit and cannot describe different
+  things. Local git rather than the forge, because the cached board counts beside it are up to five
+  minutes old and a commit that just landed has to move this number now.
+- Each half of that field carries its own `?`. A clone with no version tag has no boundary to count
+  from and renders `rel ?/?`; one with a single tag knows exactly how much is banked and nothing
+  about the usual size, and renders `rel 4/?` rather than throwing away the half that was measured.
+  Zero commits since the tag stays a `0`. The log window is bounded at 500 commits because this
+  renders once per message, and a window that does not reach the previous tag reports the missing
+  half rather than a smaller history. A tag `_version_tuple` cannot parse is not a release boundary
+  -- `wip/274-preserved` is a real tag here and shipped nothing.
+
+- The session tells the status line when it has just changed the board (#516). A `PostToolUse` hook on
+  `Bash` marks the cached board stale after a command that merges a pull request, opens one, or
+  creates, closes or reopens an issue -- so the line is right in the seconds after a merge, which is
+  when it is most watched, rather than at the end of the refresh interval.
+- The hook never fetches. It runs after every `Bash` call and a network call there would put `gh`
+  latency in front of all of them; marking the cache stale is enough, because the render path already
+  forks a detached refresh when it sees one.
+- The mark carries a ten-second settle delay, and the reason is the forge rather than this code:
+  `search/issues` is served from an index that trails the merge that changed it, so a refresh fired
+  the instant a merge returns can record the pre-merge counts under a fresh stamp -- staler than
+  having done nothing.
+- The classifier anchors at command position rather than matching a substring: `git commit -m 'gh pr
+  merge closed it'` names a merge and runs none, and `grep -r 'gh-issue-create' docs/` is a read. A
+  command wrongly matched costs one refresh and a missed one costs a stale board, so the matching is
+  generous inside that anchor.
+- Every failure path in the hook is silent and exits 0, including unreadable input, a directory this
+  loop does not manage, and an unwritable cache. A hook that raises reaches the user as a broken tool
+  call on every command they run.
+
+- Every agent report now carries a required top-level `compliance` survey (schema version 6,
+  breaking), so a lane that declines part of its own brief has a field to say so in rather than a
+  sentence that only surfaces if a maintainer happens to read the transcript. The observed gap: a
+  spawned reviewer misread a repository's own tracked policy file as an injected instruction,
+  declined the tooling it named, and kept going -- its findings were sound, so nothing about the
+  report looked degraded, and the refusal was visible only because the agent happened to mention it
+  in prose. `checked` with no items means the brief was executed as written; an item naming an
+  instruction with no reason is refused (`scripts/report_schema.py`, `_rule_compliance_item`), the
+  same way an argued refusal is required elsewhere in this contract. Placed at the top level rather
+  than nested under `review`, because the same silence is available to a developer lane declining a
+  clause of its own brief, not only to a reviewer it spawns. The schema's own `x-honesty-compliance`
+  names the limit this does not close: an agent that genuinely believes it is refusing an injection
+  has a coherent reason not to log the refusal as a decline, so this field catches the honest cases
+  only -- worth more than zero, not a guarantee (#518).
+
+- Release gate 3's "record the checklist in effect before you spawn" step is computed rather than
+  performed by hand: `scripts/checklist_skew.py` reads the installed plugin's
+  `.claude-plugin/plugin.json` and this repository's own, and reports `matches` / `differs` /
+  `could-not-tell`. Before this, the honest answer was always `could-not-tell` and the rendered
+  answer was usually nothing, because nothing computed it and a human had to type it into the audit
+  payload by hand -- which is how the `v0.13.0` release audit ran a 0.11.0 checklist against a
+  0.12.0+21 tree and only knew because the dispatch payload said so (#538). `differs` also carries a
+  byte-for-byte comparison of the files gate 3's spawn actually reads --
+  `agents/release-auditor.md`, `agents/auditor.md`, `skills/manager/SKILL.md` -- as evidence, never
+  as a verdict: a byte-identical row is not proof that nothing relevant moved elsewhere in the two
+  trees. This annotates only; it never blocks the release, the same way an unscoped delta already
+  does not.
+
+### Changed
+
+- Gate 4 of `## Releasing` in `skills/manager/SKILL.md` no longer stops on a `proposed`
+  version number: it accepts the fragments' proposal and records it by default, the same
+  way deriving the number was already listed as the loop's under `## Who decides`.
+  Override stays available. A major bump (`1.0.0` or later) keeps its own stop, because
+  that promise to users is a different promise. This is deliberately decoupled from
+  `release.authority` (#478) -- the version-number decision reads no key at all, so a
+  single grant cannot silently widen into a second one (#467).
+
+- Compatibility: compatible - the receipt shape, exit codes and the `no state but
+  proposed names a number` rule are unchanged; only who accepts the proposal moved, and
+  overriding still works exactly as before.
+
+- `scripts/doctor.py` was 318 KB in one file, and an agent working on one check
+  paid for reading past every other check's own prose to find it -- roughly 12
+  narrow probes per lane, measured across 612 transcripts. This lane moves five
+  self-contained checks (`check_auto_update`, `check_statusline`,
+  `check_fragments_readme`, `check_memory`, `check_merge_permission`) into their
+  own modules under `scripts/`, each carrying its private helpers and its prose
+  unchanged. `doctor.py` keeps `main()`, the check registry and the shared
+  contract (exit 0 always, one VERDICT line) and re-exports every moved name, so
+  `doctor.check_memory` and friends answer exactly as they did before. This is a
+  pure move: no check's logic changed, and doctor.py's own CLI output is
+  byte-identical before and after except for the plugin's own content-digest
+  line, which necessarily moves when five files are added to the tree it
+  digests. The remaining 17 checks are left for later lanes (#497).
+
+- The dispatch step now looks for one or two companion issues touching the same file or module
+  before naming a single-issue lane, and bundles them into one lane, capped at three and never
+  four -- measured across 237 lanes in this repository's own transcripts, three issues in one lane
+  cost 16% less per issue than one, while four or more is a 68%-worse cliff. A bundle of two or
+  three stays two or three fixes, never one: each issue keeps its own test story and its own
+  changelog fragment (#499).
+
+- The pull-request field says what CI thinks, and stops shouting (#508). `1PR . 23IS` is now
+  `4pr 2ok 1x 1... 0? . 23is` -- lowercase like the fields either side of it, and broken down by
+  check-rollup state: passed, failed, still running, and unknown. One number could not tell one
+  green pull request from one red one, which is the question the field exists to answer.
+- Every group renders, including the ones at zero: `0x` -- nothing red -- and `0...` -- nothing on
+  the way -- are two of the more useful things this line can say, and a group that vanished when
+  empty would make the reader subtract to find it. What does collapse is a reading that never
+  happened: rollups the forge did not answer render as a single `?`, never as four zeros.
+- The rollup is computed here from each pull request's own legs rather than read off GitHub's
+  precomputed `statusCheckRollupState`. Dogfooding settled it: `gh 2.50.0` answers `Unknown JSON
+  field` for that one and the whole column rendered `?`. The legs are carried by both versions --
+  and the mapping is a decision about what a maintainer needs to see, so computing it here is what
+  puts it under test rather than in the forge.
+- A rollup that is neither a pass nor a pending is counted unknown rather than green. Cancelled,
+  neutral, skipped, timed out and a pull request carrying no checks at all are none of them
+  successes, and folding them into the green group is how a status line comes to report a board
+  that is fine. The rollups are read one page at a time and the count beside them is exact, so any
+  pull request past that page lands in the unknown group -- the four groups always sum to the total.
+
+- The status line renders the branch only when it is not the declared default (#509). In the clone
+  that field read `main` on every message, and this loop does its work in worktrees, so it spent
+  width in the one place it carried nothing and looked identical in the place it carries news.
+- Silence there means "measured, and it is the default", and nothing else: a branch git could not
+  report still renders `?`, and a repo whose `.oss.json` declares no default branch has nothing to
+  compare against and renders the branch as before. The comparison is to the declared default, never
+  to the word `main`.
+- The branch name is folded through `_one_line` on its way to the line, like every other value the
+  renderer did not produce itself. A worktree can be checked out on a ref whose name came from a
+  fork's pull request, and an ESC in it rewrites what the terminal has already printed.
+
+- The plugin block collapses to a count while everything is current (#512).
+  `oss 0.12.0 ✓ · supe 0.49.0 ✓ · reme 0.21.0 ✓ · jit 0.5.0 ✓` -- 45 characters to say there is
+  nothing to do -- is now `plug 4✓`, and anything not current is named beside it:
+  `plug 3✓ supe⇡0.49.0`.
+- The count is what makes the collapse safe rather than an absence. `plugin_facts` already argues the
+  case: a plugin absent because it is fine and a plugin absent because nothing looked at it render
+  identically, and only the second is a problem. `4✓` says four were looked at and four answered,
+  `plug ?` says nobody looked, and a plugin whose versions could not be compared is neither -- it
+  gets its own group rather than being counted current.
+
+- The status line's cache has two clocks instead of one (#515). The board -- open pull requests, open
+  issues, their check rollups -- refreshes every 60 seconds; the version each installed plugin's
+  source repository publishes refreshes hourly and is carried forward in between. Four of a refresh's
+  seven forge calls were the second kind, answering a question that moves on the order of weeks, and
+  one shared interval meant the half a maintainer watches during a merge waited on them. Observed at
+  `1pr 1✓ … 23is` against a tracker holding `0pr · 20is`, with the cache 372 seconds old.
+- A carried-forward version keeps its own stamp. Stamping it at the time of the board refresh would
+  make an hour-old reading indistinguishable from one just taken, and a lookup that fails now keeps
+  the previous answer under the previous stamp rather than erasing a plugin's published version
+  because the network was down for one call.
+- A cache written before the split carries one stamp and no `latest_fetched_at`; that stamp is when
+  those versions were fetched, so it is what their age is measured from. Treating the missing field
+  as "just now" would freeze the version column for a full interval on every upgrade.
+
+### Removed
+
+- The `you` field is removed (#513). It reported how long since the user last spoke, and it counted
+  tool results as the user speaking: Claude Code records a tool result as a user-role record, and
+  this repository's own transcript is 103 user-type records of which 90 are tool results, so the age
+  read seconds during exactly the long turns the number was worth having.
+- Filtering those out was implemented, tested and then thrown away, because it fixed the wrong half.
+  A message typed while a turn is running is not written to the transcript until the turn ends, so
+  the honest version of this field still lags the conversation by the length of the turn -- it read
+  `you 15m` against a message sent seconds earlier. A number that is wrong in a way the reader cannot
+  see is worse than no number.
+- `last` covers what it was for. A clock reading of when the line was last rendered says how stale
+  everything on it is, in one field, without a second one to be wrong about.
+
+- Compatibility: compatible - a status line field that nothing else reads. `.oss/statusline.py` is
+  an owned file and is replaced wholesale on the next `/oss:scaffold`, so no repository carries a
+  configuration naming this field.
+
+### Fixed
+
+- The shipped-op sweep (`tests/test_shipped_op_spellings.py`) claimed to cover
+  "everything this plugin ships that a reader executes" while its four globs never
+  read `bin/oss-workspace` or `scripts/doctor.py` -- 15 `supertool 'OP...'` remedies
+  printed to a user's stderr at runtime, uncovered since #218. Widened to the doctor
+  entry point's own execution surface (`doctor.py` and every `doctor_check_*.py`
+  module) and to the workspace launcher, and narrowed the docstring's claim to match
+  what is actually swept -- not `scripts/*.py` as a whole, which would misreport the
+  illustrative `supertool 'op1' 'op2'` example in `scripts/batch_hint.py` as an
+  undeclared spelling (#224).
+
+- The maintainer skill now names the trap directly: never derive a commit count or a commit
+  identity by parsing rendered `git log` text. The maintainer's own shell rewrites `git …` through
+  an rtk proxy that renders a bare newline for an empty range, so a piped `git log … | wc -l` count
+  read zero commits as one -- and zero was the load-bearing value, the difference between "nothing
+  merged since the tag" and one thing having merged. A merge commit, separately, is filtered out of
+  plain `git log` entirely and never appears in a scan built that way (#310, folded in as the same
+  class). `scripts/release_delta.py`'s own derivation already used `git rev-list --count` and `git
+  rev-parse`; the fix here is writing that rule into the shared prose so it holds everywhere this
+  loop counts a range, and a guard test sweeps the governing prose and scripts for the broken form,
+  with a positive control proving the sweep can actually catch it (#236).
+
+- `doctor` now probes `gh` itself, not just the Python interpreter running it
+  (#367 answers only the second). `check_gh_binary` reads the resolved binary's
+  architecture with `file` and compares it against the host, and reports `gh`'s
+  own version beside the `gh-pr-edit` workaround's documented bound
+  (cli/cli#13069) -- both go unmeasured on non-Darwin platforms and when `file`
+  is absent, and both say so rather than rendering as a clean match (#386).
+
+- The merge gates now cover a PR that went red because its base moved: `gh run rerun <id> --failed`
+  replays the check suite against the merge ref it already resolved and does not re-resolve it
+  against a `main` that has since moved, so a fix landed after the run started stays invisible and
+  the second red reads as a fix that did not work. The tell is the run id -- an unchanged run id
+  after a rerun means the old resolution ran again, not a new one -- and the route that actually
+  re-resolves the ref is `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch`, which needs no
+  local worktree and no force-push (#389).
+
+- Pre-flight now checks the code, not only the issue. A dispatched lane can be work already
+  shipped -- the issue and every comment can be read correctly and still describe a fix that
+  landed after the last comment was written, which cost one full agent run on part 3 of #81.
+  `scripts/preflight_check.py` runs a maintainer-chosen pattern against the code path an
+  issue names before a brief is written, in three states never two -- `matched`,
+  `not-matched`, `could-not-search` -- and `could-not-search` must never render as
+  `not-matched`, the same way `could-not-tell` must never render as `still-open` at the
+  dispatch decision. Checked once per part for a multi-part issue, and once per candidate
+  before it joins a bundle -- a whole-issue or whole-bundle verdict hides exactly the case
+  that fired here (#457).
+
+- A pull request closed without merging now releases its linked issue's assignment the same way
+  a lane that never committed already does, so a scope change or a superseded approach no longer
+  leaves the issue locked to the loop's own account with no lane behind it. The read failing must
+  never render as released -- the same rule the claim step already applies in the other direction
+  (#465).
+
+- `scripts/doctor.py`'s `_rglob_md` now matches `.md` case-insensitively (`.MD`,
+  `.Md`, ...), restoring what the two `Path.rglob("*.md")` walks it replaced already did
+  on Windows. A jit rules directory holding only uppercase-extension files no longer
+  reports as holding none (#469).
+
+- `lane_count`'s absence receipt claimed a confirmed zero for a lane registry that existed but
+  sat under a parent this process could not traverse: `os.path.isdir` swallows `(OSError,
+  ValueError)` unconditionally, so it answered `False` and the printed `detail` said "either
+  nothing has ever recorded itself here, or nothing is live" for a registry holding a live record.
+  `lane_count` now asks `os.stat` directly and reports `could-not-run` -- a registry may exist here
+  and was not examined -- rather than `unknown`, the same distinction `worktree_occupancy` already
+  draws for the identical swallow (#472). The review round on this fix found the first version had
+  not carried over `worktree_occupancy`'s `except ValueError` arm, so a `worktree_root` with an
+  embedded null byte crashed instead of reporting `could-not-run`; that guard is now in place too.
+
+- Two defects caught by this branch's own self-review, both fixed before landing:
+  `oss_config.release_authority()` and its validator raised an uncaught `TypeError` on
+  an unhashable `release.authority` value (`{}`, `[]`) instead of reporting it, which
+  took `/oss:doctor`'s "exit 0 always" contract down with it; and `matched-elsewhere`
+  (#519, above) could fire when this running install's own manifest version could not
+  be read, rendering an unknown own-version as a CONFIRMED different install (#478).
+
+- `release_publish.py --execute` no longer reports `could-not-create` at the API
+  boundary for a release notes body over GitHub's 125,000-character limit, after the
+  tag is already pushed to the remote. The dry run now measures the notes and refuses
+  early, with the measured length, the limit, and the overage in the reason -- on every
+  `--execute` as well, so an over-limit body never reaches `gh` at all (#483).
+
+- `plugin_update.opt_out` collapsed three materially different situations into one
+  `(bool, where)` answer: a declared opt-out, no opt-out found, and a config that exists but
+  could not be read or parsed -- the last one silently fell in with "no opt-out found", so a
+  user who wrote `"auto_update": false` into a config that later failed to parse had their
+  installation modified anyway, with `/oss:doctor` unable to say so. `opt_out` now returns one
+  of three strings -- `"off"`, `"on"`, `"unknown"` -- never a bool, and `update()` treats
+  `"unknown"` the way it already treats a failed marketplace refresh or an unreadable install
+  record: it stops short and reports `could-not-check`, because modifying an install nobody
+  can show consented to it is the greater harm. `doctor.check_auto_update` renders the third
+  state as its own WARN row rather than folding it into "off" or "current". Fixed together
+  with the second defect in the same function: `opt_out` read only `Path(root)`, with no
+  upward walk, so called from a subdirectory it found nothing and answered "on" about a repo
+  that had opted out at its root -- it now walks upward through ancestor directories, checking
+  both `.oss.json` and `.oss.local.json` at each level, before it decides there is nothing to
+  read (#492).
+
+- The status line's foreign-text fold was applied at three entry points while `render()`
+  interpolated four more values that passed through nothing -- `repo_name` and `model` could
+  reach the rendered line carrying a newline or an ANSI escape, forging terminal output.
+  `branch` and `board` were measured unreachable (git refuses control characters in a ref name;
+  the board is coerced to `int` before it is ever formatted) and are not folded for that reason.
+  Fixed as a property over `render`'s own inputs -- every string-valued fact is folded, not a
+  fourth enumerated case, so a field added later without its own fold is caught the same way
+  rather than going stale like the first three (#493).
+
+- `/oss:scaffold --show` never named `.claude/settings.json`, even though `--apply` writes a
+  `statusLine` key into it -- found by the `v0.12.0` release audit (#494). `show()` now previews
+  the pending `create`/`extend` write, both with no path given and with `.claude/settings.json`
+  named directly, rendering the exact body `apply_settings` would write; a repo that already sets
+  `statusLine`, or whose settings file could not be read, gets no preview line, because nothing
+  would be written there. `settings.json` is still not a path-level entry in `plan()` or `OWNED` --
+  it is a key inside a file whose other keys are not ours, and the fix does not change that. The
+  `--apply` receipt also silently dropped the `extended` bucket `apply()` already returns; it is
+  now printed alongside `created` and `ours` (replaced).
+
+- `doctor.check_auto_update`'s "no receipt" arm read as the ordinary pre-first-run gap on every
+  machine, including one that structurally can never produce one: `hooks/hooks.json` runs the
+  updater via `sh "$CLAUDE_PLUGIN_ROOT"/hooks/session-start-update.sh`, so on a machine with no
+  POSIX-capable shell resolvable (a Windows install without Git for Windows or WSL) that OK is
+  the permanent state, not the transient one before the next session. The row now measures
+  `shutil.which("sh")` on the machine `doctor` is actually running on and WARNs instead when it
+  is absent. The same band's second instance -- `_statusline_windows_gap` keyed on `os.name ==
+  "nt"` alone, so a Windows user whose `statusLine` runs under Git Bash (where the written
+  `$VAR` syntax works) was warned about a status line that runs correctly -- is fixed the same
+  way: `sh_available` is measured, never inferred from the platform name alone, so the WARN no
+  longer fires on a Windows machine that does have a POSIX-capable shell on PATH (#495, found by
+  the v0.12.0 release audit, round 2; graded reasoned rather than observed, since neither this
+  fix nor its own test suite runs on a real Windows machine).
+
+- This repository's own `.claude/settings.json` pointed `statusLine` at `.oss/statusline.py`,
+  a path this same repository's `.gitignore` excludes (deliberately, to avoid a second tracked
+  copy of `scripts/statusline.py` that would drift). `git ls-files .oss/` returns nothing, so a
+  fresh clone of this repository got a status line whose target was never checked in, and the
+  failure was silent. Re-pointed at `scripts/statusline.py`, which this repository does track.
+  This is a fact about this repository's own checked-in settings, not about what `/oss:scaffold`
+  writes into a managed repo it scaffolds -- there `.oss/` is tracked, so the same command is
+  correct as it stands (#496).
+
+- The `last` field renders the machine's local zone, not UTC (#511). Measured at `last 10:11` against
+  a wall clock reading 12:15. The field renders a clock time rather than an age precisely so the
+  reader can subtract it from their own clock and recover how stale the line is, and a UTC stamp made
+  that subtraction silently wrong in every zone but one. The reason it shipped as UTC -- that the
+  transcript's ISO stamps carry no zone -- was about parsing: `parse_timestamp` hands back epoch
+  seconds, and the stamp is produced and read on one machine in the same second.
+- An instant the platform cannot convert renders `?` rather than falling back to UTC under a label
+  that means local, which would be the same defect one layer quieter.
+
+- `/oss:doctor`'s `oss-workspace launcher` check gains a third `matched` state,
+  `matched-elsewhere`: a resolved target whose bytes are identical to this running
+  install's own `bin/oss-workspace` but that recognisably belongs to a DIFFERENT
+  version-scoped plugin-cache directory now reports `WARN "PINNED ELSEWHERE"` instead of
+  `OK`. Byte-identical content is a fact about today; a stale symlink kept that way
+  behaves exactly like a current one until the next release that touches this file,
+  which is what cost an earlier release its own security fix (#324). An ordinary
+  hand-copied path that carries no plugin-cache shape, or one whose parsed version
+  agrees with this running install's own, is unaffected and still reports plain
+  `matched` (#519).
+
+- The fleet floor bounded lanes and said nothing about issues per lane, so a fleet of single-issue
+  lanes computed `filled` while related work sat unstarted on files those lanes already claimed.
+  `filled` now reads on both axes: one developer per available file-disjoint lane, and each lane's
+  brief carrying every further open issue whose files land inside its already-claimed set. Checking
+  the second axis reuses `lane_setup.py`'s own intersection mechanism in reverse rather than adding
+  a new one, and stays a maintainer judgement the script supports -- an issue's files are not
+  derivable from its body (#267). An `under-filled` receipt on this axis now names the shared,
+  already-claimed file that blocked a further issue from joining a lane and the issues queued
+  behind it, not only a smaller count (#520).
+
+- Two instruments read a plugin's newest recorded version *anywhere* on the machine,
+  rather than the version resolved for the project being reported on: `installed_plugins.json`
+  is one file shared by every project, and an old project's entry is never rewritten when a
+  newer copy is installed elsewhere. `plugin_update.installed_version` and
+  `statusline.installed_plugins` both took the newest version recorded across every entry, so a
+  project pinned behind a sibling project's newer pin silently read as current -- and the
+  updater's own `before`/`after` comparison, computed on the same collapsed value, reported a
+  version that this session could not resolve. Both now resolve the entry that actually applies
+  to the project being reported on (`scope: "user"`, or a `projectPath` matching the project),
+  and report no version at all -- never the newest one lying around -- when nothing matches.
+  Fixed alongside two further defects the receipt for the measured instance carried: `update()`
+  reported a bare `current`/`updated` verdict even when one of several install scopes had
+  failed, with the failure named only in free-text `detail`; and `doctor.check_auto_update`'s
+  `current`/`updated` rows never read `detail` at all, so a run that half-failed printed a plain
+  `OK`. The receipt now carries a structured `partial_failure` flag, and both rows render it as
+  a WARN naming the failed scope rather than the same OK a clean run gets (#521).
+
+- The `supertool-required.md` rule this plugin ships into every managed repo blocked every
+  native `Read`/`Edit`/`Write`/`Glob`/`Grep` call unconditionally, with no way to tell a reader
+  without `supertool` installed anything but "use a binary you do not have" -- reported from a
+  downstream contributor's real installation (#524). The rule now carries `requires: supertool`
+  in its frontmatter, so the day `claude-jit-context` ships the presence-probing degrade it has
+  agreed to build (its own #203), this rule needs no further edit to benefit from it. That degrade
+  is **not released yet** -- no shipped `claude-jit-context` version reads a `requires:` field, so
+  the rule still blocks unconditionally today, exactly as before, and its own text now says so in
+  as many words rather than leaving that silently implied. `match: ~.*` and `mode: block` are kept
+  as they were: narrowing them was weighed and declined, because the absent-binary failure mode is
+  what `requires:` exists to answer, without weakening the guard for a reader who already has the
+  dependency.
+
+- `/oss:doctor`'s watch channel check cleared a repo whose derived or declared name the
+  installed supertool actually discards, because it compared a declaration against a
+  derivation and never asked whether the name they agreed on was one supertool would
+  accept as a path component. Measured against this organisation's own slugs:
+  `Digital-Process-Tools/claude-jit-context` derives a 40-character name, supertool's
+  cap is 32, and the repo landed on the shared default socket under a green `OK` line
+  (#533). `bin/oss-workspace` already asked the installed consumer at run time rather
+  than transcribing its `NAME_RE` (#231); `check_watch_channel` now asks the same way,
+  through the same registry and `presets/watch/naming.py` lookup, for every state that
+  used to clear on the comparison alone — `agree`, `declared-only`, `derived-export`,
+  `derived`. A name the consumer discards now WARNs with the shared-socket wording
+  instead of clearing, and a name that cannot be classified (no registry, no supertool
+  install, no `naming.py`, an unreadable module) is its own state and never renders as
+  OK — the absence this plugin is named after, reached here by the one check that used
+  to skip it. `oss_config.watch_name_problem`'s docstring no longer claims to be the
+  single statement of what a watch channel name may be; it is the single statement of
+  what one may be as a path component, and now names both places — `bin/oss-workspace`
+  and `doctor.check_watch_channel` — that ask the installed consumer whether a name
+  that clears here is actually usable.
+
+- `plugin_update.opt_out`'s upward walk (added for #492) stopped at the **first** ancestor
+  directory holding either config file and answered "on" if that directory did not itself
+  declare `auto_update` -- in every managed repository the nearest such directory is the repo's
+  own `.oss.json`, which declares `repo` and nothing about `auto_update`, so a machine-wide
+  opt-out one or more directories above it was never reached. `hooks/session-start-update.sh`
+  passes the project root, which holds `.oss.json` by definition, so this defeated the opt-out
+  in the entire population the upward walk exists for. `opt_out` now continues past a config
+  directory that declares nothing about the key, and stops only at an explicit declaration
+  (`true` or `false`), an unreadable config, or the filesystem root (#534, found by the v0.13.0
+  release audit, round 1).
+
+- The status line's own guards were each covered by exactly the values they already
+  covered: the fold property test skipped every non-string fact (`board`, `tick`,
+  `release`, `plugins`), and the console-encoding probe hardcoded four of the seven
+  symbols the line can render. A hostile value nested inside `board` or `tick` could
+  reach the line unfolded or crash `_tick_field`'s `abs()`, and a fifth or sixth
+  rendered symbol could reach a console that could not encode it. Neither was reachable
+  by foreign text today -- `board_from_cache` and `_next_tick_from_lines` already coerce
+  before `render()` sees them -- so this closes a guard-coverage gap, not a live leak.
+  The property test now walks every leaf `_facts()` carries, nested or not, and the
+  console probe is built from the guarded symbol set instead of typed out beside it, so
+  a new sub-field or symbol is covered the day it is added rather than the release after
+  (#535).
+
+- `/oss:scaffold --show` could exit with a raw `OSError`/`ValueError` traceback instead of a
+  preview, when `.claude/settings.json` changed or errored between two reads -- `_settings_preview`
+  re-read the file itself in its `extend` arm, unguarded, after `settings_plan` had already read and
+  classified it (#536, found by the `v0.13.0` release audit). Fixed by reusing the document
+  `settings_plan` already parsed rather than reading the file a second time, per `CLAUDE.md`'s trap
+  against asking the filesystem a second question to explain why the first one failed: the second
+  read is gone, not guarded. `apply_settings`'s `extend` arm did the identical unguarded second
+  read, three lines below the same `settings_plan` call -- caught in review and fixed the same way,
+  since the document is now carried on the entry for free.
+
+- `scripts/batch_hint.py` hardcoded a dated, hand-copied snapshot of `supertool 'ops:roster'`'s
+  own read/write classification -- exactly the second copy this repo's own `CLAUDE.md` forbids,
+  and one that drifts in a single direction: an op whose class moves from read-only to write
+  upstream stayed misclassified read-only here forever, since nothing re-derived or checked the
+  copy. Measured at well under a tenth of a second, so the module now calls `supertool
+  'ops:roster'` once per process, caches the parsed answer to disk (a few-hour TTL; the roster
+  only moves with a `supertool` release) for the many separate hook invocations one session
+  makes, and deletes the static lists. A roster that cannot be derived at all -- no `supertool`
+  on PATH, a non-zero exit, unparseable output -- degrades every op to "no confident answer"
+  rather than guessing in either direction; the `@-` payload-marker fallback still catches an
+  unrecognised mutating op exactly as before (#537, found by the v0.13.0 release audit, round 1).
+
 ## [0.12.0] - 2026-08-22
 
 ### Added
@@ -4540,7 +5037,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.10.0
