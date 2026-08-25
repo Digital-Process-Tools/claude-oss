@@ -510,8 +510,9 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             "from": before,
             "to": after,
             "partial_failure": bool(failures),
-            "detail": "restart Claude Code before the new version runs -- this session "
-            "is still on {}{}".format(before, partial),
+            "detail": "run /reload-plugins to move the registry now; a restart is still "
+            "needed before the new version fully runs -- this session is still on "
+            "{}{}".format(before, partial),
         }
     return {
         "state": "current",
