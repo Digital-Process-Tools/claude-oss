@@ -944,7 +944,7 @@ _ARCH_TOKEN_RE = re.compile(r"\b(x86_64|arm64|aarch64|i386)\b")
 
 
 def tool_binary_architecture(path, run=None, which=None):
-    """(arch, reason) for the architecture of the binary at `path`, via `file`.
+    """(archs, reason) for the architecture(s) of the binary at `path`, via `file`.
 
     #386: the interpreter probe above (`translation_state`) reads
     `sysctl.proc_translated`, which answers for *this process*, not for a binary
@@ -955,6 +955,18 @@ def tool_binary_architecture(path, run=None, which=None):
     at the cost of needing `file` on PATH itself -- present on macOS and
     virtually every Linux install, absent by default on Windows, which is why
     this returns a reason rather than a value there.
+
+    `archs` is a tuple of every architecture token `file` named, in the order it
+    named them, deduplicated and with `aarch64` normalised to `arm64` -- never
+    just the first. A universal/fat Mach-O carries several slices
+    (`file /usr/bin/file` on this machine: "Mach-O universal binary with 3
+    architectures: [x86_64:...] [arm64:...] [arm64e:...]"), and the OS executes
+    whichever slice matches the host, not necessarily the one `file` prints
+    first -- a self-review finding from #386's own review round: the first
+    version of this function used `.search()` and would have called a fat
+    binary carrying a native `arm64` slice "an x86_64 build ... every call runs
+    under binary translation", which is exactly this repository's own defect
+    class, produced by the check meant to avoid it.
 
     `run` and `which` are injected so every branch is assertable without
     shelling out; `check_gh_binary` supplies the real `subprocess.run` and
@@ -973,22 +985,32 @@ def tool_binary_architecture(path, run=None, which=None):
         return None, "`file {}` did not run ({})".format(path, exc)
     stdout = completed.stdout
     text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
-    match = _ARCH_TOKEN_RE.search(text)
-    if not match:
+    tokens = _ARCH_TOKEN_RE.findall(text)
+    if not tokens:
         return None, "`file` output did not name a recognisable architecture: {}".format(
             _one_line(text, limit=200)
         )
-    token = match.group(1)
-    return ("arm64" if token == "aarch64" else token), None
+    archs = []
+    for token in tokens:
+        normalised = "arm64" if token == "aarch64" else token
+        if normalised not in archs:
+            archs.append(normalised)
+    return tuple(archs), None
 
 
-def gh_binary_findings(system, resolved, gh_version, host=None, arch=None, arch_reason=None):
+def gh_binary_findings(system, resolved, gh_version, host=None, archs=None, arch_reason=None):
     """[(level, message)] for the `gh` binary -- architecture against this host,
     then version -- pure given its inputs so every branch is testable without a
     Rosetta machine to reproduce it on. The probing lives in `check_gh_binary`.
 
+    `archs` is `tool_binary_architecture`'s tuple, every slice `file` named. A
+    universal/fat binary carrying the host's own architecture among several
+    slices is a MATCH, not a mismatch against whichever slice happened to be
+    listed first -- see that function's docstring for the self-review finding
+    this fixes.
+
     Never claims a match or a mismatch from a gap state (`host is None` or
-    `arch is None`): both render as a WARN naming what could not be read,
+    `archs is None`): both render as a WARN naming what could not be read,
     the same rule `interpreter_architecture` follows one layer up.
     """
     if resolved is None:
@@ -1012,7 +1034,7 @@ def gh_binary_findings(system, resolved, gh_version, host=None, arch=None, arch_
                 "translation is unknown, not clean".format(resolved),
             )
         )
-    elif arch is None:
+    elif archs is None:
         lines.append(
             (
                 "WARN",
@@ -1021,19 +1043,26 @@ def gh_binary_findings(system, resolved, gh_version, host=None, arch=None, arch_
                 ),
             )
         )
-    elif arch != host:
+    elif host not in archs:
         prefix = os.path.dirname(os.path.dirname(resolved)) or resolved
+        shape = archs[0] if len(archs) == 1 else "/".join(archs) + " (universal)"
         lines.append(
             (
                 "WARN",
                 "gh resolved to a {} build at {} (prefix {}) while this host is {} -- "
                 "every gh call runs under binary translation, and a tick spawns gh "
-                "dozens of times per run.".format(arch, resolved, prefix, host),
+                "dozens of times per run.".format(shape, resolved, prefix, host),
             )
         )
     else:
+        note = "" if len(archs) == 1 else " (universal binary, {} slice)".format(host)
         lines.append(
-            ("OK", "gh architecture: {} build at {}, matches this host".format(arch, resolved))
+            (
+                "OK",
+                "gh architecture: {} build at {}, matches this host{}".format(
+                    host, resolved, note
+                ),
+            )
         )
     if gh_version is None:
         lines.append(
@@ -1080,14 +1109,14 @@ def check_gh_binary():
     resolved = shutil.which("gh")
     system = platform.system()
     host = None
-    arch = None
+    archs = None
     arch_reason = None
     if resolved is not None and system == "Darwin":
         _, host, _ = translation_state(system)
-        arch, arch_reason = tool_binary_architecture(resolved)
+        archs, arch_reason = tool_binary_architecture(resolved)
     gh_version = _gh_version_text(resolved) if resolved is not None else None
     for level, message in gh_binary_findings(
-        system, resolved, gh_version, host=host, arch=arch, arch_reason=arch_reason
+        system, resolved, gh_version, host=host, archs=archs, arch_reason=arch_reason
     ):
         report(level, message)
 

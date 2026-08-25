@@ -5,7 +5,7 @@ question for the Python interpreter and `gh` is a binary it spawns, not the
 interpreter running it.
 
 Two lines, both pure given their inputs so every branch is assertable without
-shelling out or owning a Rosetta machine: which architecture `gh` resolved to
+shelling out or owning a Rosetta machine: which architecture(s) `gh` resolved to
 against the host's own, and `gh`'s own version beside the pointer to the
 documented `gh-pr-edit` workaround (skills/manager/SKILL.md, cli/cli#13069) that
 is bounded by a `gh` version and has nothing today comparing against it.
@@ -14,9 +14,15 @@ Three states throughout, and the third is the point: `gh` not on PATH is nothing
 to check (OK, no invented finding); a platform or a probe that could not answer
 is a WARN carrying why, never a silent `native`-shaped line; and a real mismatch
 is the WARN this issue exists for.
+
+`archs` is a TUPLE, never a single string -- this repository's own review round
+caught the first version treating a universal/fat Mach-O's first-listed slice as
+THE architecture, which would call a binary carrying a native `arm64` slice
+"an x86_64 build ... every call runs under binary translation" whenever `file`
+happened to list x86_64 first. `test_a_fat_binary_carrying_the_host_arch_is_a_match`
+is that fixture, reproduced from this machine's own `/usr/bin/file`.
 """
 
-import platform
 import sys
 from pathlib import Path
 
@@ -64,7 +70,7 @@ def test_a_mismatched_architecture_is_the_warn_this_issue_exists_for():
         "/usr/local/bin/gh",
         "gh version 2.50.0 (2024-06-01)",
         host="arm64",
-        arch="x86_64",
+        archs=("x86_64",),
     )
     levels = _levels(lines)
     assert levels[0] == "WARN", lines
@@ -77,10 +83,39 @@ def test_a_mismatched_architecture_is_the_warn_this_issue_exists_for():
 def test_a_matching_architecture_is_ok_and_names_the_host():
     lines = doctor.gh_binary_findings(
         "Darwin", "/opt/homebrew/bin/gh", "gh version 2.60.0 (2024-08-01)",
-        host="arm64", arch="arm64",
+        host="arm64", archs=("arm64",),
     )
     assert _levels(lines)[0] == "OK", lines
     assert "arm64" in _text(lines), lines
+
+
+def test_a_fat_binary_carrying_the_host_arch_is_a_match():
+    """The self-review finding: `file` on a universal Mach-O lists more than one
+    slice (this machine's own `/usr/bin/file`: "Mach-O universal binary with 3
+    architectures: [x86_64:...] [arm64:...] [arm64e:...]"). x86_64 listed FIRST
+    must not read as a mismatch when the host's own arm64 slice is also there --
+    the OS runs the native slice, not necessarily the first one `file` names.
+    """
+    lines = doctor.gh_binary_findings(
+        "Darwin", "/usr/bin/file", "gh version 2.60.0 (2024-08-01)",
+        host="arm64", archs=("x86_64", "arm64", "arm64"),
+    )
+    assert _levels(lines)[0] == "OK", lines
+    text = _text(lines)
+    assert "matches this host" in text, text
+    assert "universal" in text.lower(), text
+
+
+def test_a_fat_binary_missing_the_host_arch_is_still_a_mismatch():
+    """The must-fire pair for the test above: a universal binary that does NOT
+    carry the host's own slice is a real mismatch, several architectures or not.
+    """
+    lines = doctor.gh_binary_findings(
+        "Darwin", "/usr/local/bin/gh", "gh version 2.50.0 (2024-06-01)",
+        host="arm64", archs=("x86_64", "i386"),
+    )
+    assert _levels(lines)[0] == "WARN", lines
+    assert "translation" in _text(lines).lower(), lines
 
 
 def test_an_unreadable_host_is_a_warn_naming_the_gap_not_a_false_match():
@@ -100,7 +135,7 @@ def test_an_unreadable_architecture_probe_is_a_warn_carrying_the_reason():
         "/usr/local/bin/gh",
         "gh version 2.50.0 (2024-06-01)",
         host="arm64",
-        arch=None,
+        archs=None,
         arch_reason="the `file` command is not on PATH here",
     )
     assert lines[0][0] == "WARN", lines
@@ -112,21 +147,23 @@ def test_neither_gap_state_ever_claims_a_match():
     finding must not appear for either gap state, and a match finding must not
     either -- both would be a confident claim about an architecture nobody read.
     """
-    for host, arch, reason in (
+    for host, archs, reason in (
         (None, None, "not probed"),
         ("arm64", None, "the `file` command is not on PATH here"),
     ):
         lines = doctor.gh_binary_findings(
             "Darwin", "/usr/local/bin/gh", "gh version 2.50.0 (2024-06-01)",
-            host=host, arch=arch, arch_reason=reason,
+            host=host, archs=archs, arch_reason=reason,
         )
         text = _text(lines).lower()
-        assert "matches this host" not in text, (host, arch, lines)
-        assert "every gh call runs under binary translation" not in text, (host, arch, lines)
+        assert "matches this host" not in text, (host, archs, lines)
+        assert "every gh call runs under binary translation" not in text, (host, archs, lines)
 
 
 def test_an_unreadable_version_is_a_warn_rather_than_a_silent_omission():
-    lines = doctor.gh_binary_findings("Darwin", "/usr/local/bin/gh", None, host="arm64", arch="arm64")
+    lines = doctor.gh_binary_findings(
+        "Darwin", "/usr/local/bin/gh", None, host="arm64", archs=("arm64",)
+    )
     assert lines[-1][0] == "WARN", lines
     assert "could not be read" in _text(lines), lines
 
@@ -134,7 +171,7 @@ def test_an_unreadable_version_is_a_warn_rather_than_a_silent_omission():
 def test_a_known_version_points_at_the_documented_workaround():
     lines = doctor.gh_binary_findings(
         "Darwin", "/usr/local/bin/gh", "gh version 2.50.0 (2024-06-01)",
-        host="arm64", arch="arm64",
+        host="arm64", archs=("arm64",),
     )
     text = _text(lines)
     assert "2.50.0" in text, text
@@ -158,11 +195,11 @@ def test_tool_binary_architecture_reads_an_x86_64_mach_o():
     def fake_which(name):
         return "/usr/bin/file" if name == "file" else None
 
-    arch, reason = doctor.tool_binary_architecture(
+    archs, reason = doctor.tool_binary_architecture(
         "/usr/local/bin/gh", run=fake_run, which=fake_which
     )
-    assert arch == "x86_64", (arch, reason)
-    assert reason is None, (arch, reason)
+    assert archs == ("x86_64",), (archs, reason)
+    assert reason is None, (archs, reason)
 
 
 def test_tool_binary_architecture_normalises_aarch64():
@@ -172,17 +209,44 @@ def test_tool_binary_architecture_normalises_aarch64():
     def fake_which(name):
         return "/usr/bin/file" if name == "file" else None
 
-    arch, reason = doctor.tool_binary_architecture(
+    archs, reason = doctor.tool_binary_architecture(
         "/opt/homebrew/bin/gh", run=fake_run, which=fake_which
     )
-    assert arch == "arm64", (arch, reason)
+    assert archs == ("arm64",), (archs, reason)
+
+
+def test_tool_binary_architecture_reads_every_slice_of_a_universal_binary():
+    """Reproduced from this machine's own `/usr/bin/file` -- `file` on itself:
+    "Mach-O universal binary with 3 architectures: [x86_64:...] [arm64:...]
+    [arm64e:...]". Every slice must come back, in the order `file` named them,
+    with `arm64e` folded into `arm64` (it is not one of the four tokens this
+    probe recognises, so a real run of this fixture would only find two -- the
+    dedup here is exercised with an explicit duplicate `arm64` token instead so
+    the ordering and dedup logic is tested without depending on that fold).
+    """
+    def fake_run(cmd, **kwargs):
+        return _FakeCompleted(
+            b"/usr/bin/file: Mach-O universal binary with 3 architectures: "
+            b"[x86_64:Mach-O 64-bit executable x86_64] "
+            b"[arm64:Mach-O 64-bit executable arm64] "
+            b"[arm64:Mach-O 64-bit executable arm64]\n"
+        )
+
+    def fake_which(name):
+        return "/usr/bin/file" if name == "file" else None
+
+    archs, reason = doctor.tool_binary_architecture(
+        "/usr/bin/file", run=fake_run, which=fake_which
+    )
+    assert archs == ("x86_64", "arm64"), (archs, reason)
+    assert reason is None, (archs, reason)
 
 
 def test_tool_binary_architecture_without_file_on_path_says_so():
-    arch, reason = doctor.tool_binary_architecture(
+    archs, reason = doctor.tool_binary_architecture(
         "/usr/local/bin/gh", run=None, which=lambda name: None
     )
-    assert arch is None, (arch, reason)
+    assert archs is None, (archs, reason)
     assert "not on PATH" in reason, reason
 
 
@@ -193,10 +257,10 @@ def test_tool_binary_architecture_an_unparseable_file_output_says_so_rather_than
     def fake_which(name):
         return "/usr/bin/file" if name == "file" else None
 
-    arch, reason = doctor.tool_binary_architecture(
+    archs, reason = doctor.tool_binary_architecture(
         "/usr/local/bin/gh", run=fake_run, which=fake_which
     )
-    assert arch is None, (arch, reason)
+    assert archs is None, (archs, reason)
     assert reason, reason
 
 
@@ -207,10 +271,10 @@ def test_tool_binary_architecture_a_dead_probe_says_so_rather_than_raising():
     def fake_which(name):
         return "/usr/bin/file" if name == "file" else None
 
-    arch, reason = doctor.tool_binary_architecture(
+    archs, reason = doctor.tool_binary_architecture(
         "/usr/local/bin/gh", run=fake_run, which=fake_which
     )
-    assert arch is None, (arch, reason)
+    assert archs is None, (archs, reason)
     assert "boom" in reason, reason
 
 
@@ -237,8 +301,8 @@ def test_a_real_probe_of_this_machines_gh_never_claims_a_match_on_a_read_failure
     resolved = shutil.which("gh")
     if resolved is None:
         pytest.skip("gh is not on PATH on this machine -- nothing to probe")
-    arch, reason = doctor.tool_binary_architecture(resolved)
-    if arch is None:
+    archs, reason = doctor.tool_binary_architecture(resolved)
+    if archs is None:
         # Either `file` is absent or its output was unparseable -- both real,
         # both must not silently read as a match anywhere downstream.
         assert reason, "no architecture and no reason -- the third state broke"
