@@ -17,10 +17,52 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import batch_hint  # noqa: E402
+
+
+# The classification these tests exercise now derives from `supertool
+# 'ops:roster'` rather than a hardcoded copy (#537) -- a real subprocess call
+# out to that binary is neither necessary nor safe inside a unit test (a CI
+# runner is not guaranteed to have it on PATH, and a test that silently
+# depended on it would pass here and fail there for a reason with nothing to
+# do with the code under test). Fix the roster every test in this file sees
+# to a snapshot equivalent to the one #537 deleted, so these assertions keep
+# meaning what they always meant.
+_FIXED_ROSTER = {
+    "write": [
+        "append", "batch", "edit", "format", "format_staged", "gc",
+        "git-checkout", "git-commit", "git-merge", "git-resolve", "paste",
+        "rename", "replace", "replace_lines", "vim",
+    ],
+    "external": [
+        "channel", "gh-batch-follow", "gh-batch-star", "gh-follow",
+        "gh-issue-create", "gh-pr-create", "gh-pr-edit", "gh-pr-merge",
+        "gh-star", "git-push", "radar", "unwatch", "watch",
+    ],
+    "read": [
+        "around", "around_line", "between", "check", "cwd", "diag", "diff",
+        "gh-branch", "gh-check", "gh-find-followable", "gh-find-starable",
+        "gh-following", "gh-issue", "gh-issues", "gh-job", "gh-labels",
+        "gh-pr", "gh-prs", "gh-run", "gh-starred", "git-blame",
+        "git-conflicts", "git-diff", "git-diverge", "git-investigate",
+        "git-status", "git-trail", "git-worktrees", "glob", "grep",
+        "grep_around", "guard", "head", "help", "hover", "introduction",
+        "ls", "map", "ops", "ops-compact", "output-format", "read",
+        "registry", "replace_dry", "repo", "resolve", "stat", "tail",
+        "tree", "validate", "validate_staged", "version", "watches", "wc",
+        "workspace",
+    ],
+}
+
+
+@pytest.fixture(autouse=True)
+def _fixed_roster(monkeypatch):
+    monkeypatch.setattr(batch_hint, "_ROSTER_CACHE", dict(_FIXED_ROSTER))
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +216,15 @@ def test_all_unknown_run_is_distinguishable_from_all_clean_run():
 # ---------------------------------------------------------------------------
 
 def _run_hook(tmp_path, session_id, command):
+    # A fresh subprocess invocation of the hook script would otherwise derive
+    # the roster itself, which means shelling out to the real `supertool`
+    # binary (#537) -- not guaranteed to be on PATH in CI. Seed the disk
+    # cache `roster()` reads before deriving, so these end-to-end tests never
+    # depend on it being installed.
+    roster_cache = Path(tmp_path) / "oss-batch-hint-roster.json"
+    if not roster_cache.exists():
+        roster_cache.write_text(json.dumps(_FIXED_ROSTER), encoding="utf-8")
+
     payload = json.dumps({
         "session_id": session_id,
         "hook_event_name": "PostToolUse",

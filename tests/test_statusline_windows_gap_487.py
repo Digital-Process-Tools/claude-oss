@@ -44,8 +44,11 @@ def _settings(tmp_path, command):
 
 def test_the_posix_var_in_our_own_written_command_is_found_on_windows():
     """The must-fire half: the exact command scaffold writes contains `$VAR` syntax,
-    and asking with `windows=True` must name it."""
-    found = doctor._statusline_windows_gap(scaffold.STATUSLINE_COMMAND, windows=True)
+    and asking with `windows=True` and no POSIX-capable shell resolvable (#495's own
+    `sh_available` control) must name it."""
+    found = doctor._statusline_windows_gap(
+        scaffold.STATUSLINE_COMMAND, windows=True, sh_available=False
+    )
     assert found, "expected the POSIX $VAR syntax in scaffold.STATUSLINE_COMMAND to be found"
     assert found.startswith("$")
 
@@ -64,12 +67,17 @@ def test_a_command_with_no_posix_syntax_is_clean_even_on_windows():
 
 def test_defaults_to_the_real_os_name_when_windows_is_not_given():
     """The parameter has a default so production code (`check_statusline`) does not
-    have to pass it -- confirmed against the real, unpatched `os.name`."""
+    have to pass it -- confirmed against the real, unpatched `os.name` AND the real,
+    unpatched `shutil.which("sh")` (#495): the gap only fires when this real machine
+    is Windows AND has no POSIX-capable shell resolvable on it."""
     import os
+    import shutil
 
-    expected = "$" if os.name == "nt" else ""
+    windows_here = os.name == "nt"
+    sh_here = shutil.which("sh") is not None
+    expected_gap = windows_here and not sh_here
     result = doctor._statusline_windows_gap("echo $HOME")
-    assert (result != "") == (expected != "")
+    assert (result != "") == expected_gap
 
 
 # --------------------------------------------------------- wired through check_statusline
