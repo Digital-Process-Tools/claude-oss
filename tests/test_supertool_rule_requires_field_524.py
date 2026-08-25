@@ -57,7 +57,11 @@ def test_the_rule_says_the_field_is_not_yet_honoured_by_anything_shipped():
         "half of this fix -- without it there is no way to tell whether the degrade "
         "this field promises is live"
     )
-    assert "not" in body and ("honour" in body or "read" in body), (
+    # Anchored on a phrase from the new paragraph itself, not on words ("not", "read")
+    # that the pre-#524 body already contained in unrelated sentences ("This rule
+    # cannot tell...", "the reader is told") -- an earlier version of this assertion
+    # passed against the OLD body verbatim and pinned nothing, caught in review.
+    assert "No shipped `claude-jit-context` release reads a `requires:` field" in body, (
         "the rule does not say in as many words that no shipped claude-jit-context "
         "version reads requires: yet -- writing the field silently would read as done"
     )
