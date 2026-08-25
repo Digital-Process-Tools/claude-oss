@@ -626,6 +626,71 @@ def self_reference_finding(name: str, text: str) -> Optional[str]:
         .format(name, at, number, lines[at - 1] if at <= len(lines) else ""))
 
 
+# How far up the tree `_absence_confirmed` will walk. Sibling constant to
+# `doctor._ANCESTOR_LIMIT` / `lane_setup._ANCESTOR_LIMIT`: a belt on a walk
+# that already stops at the anchor.
+_ANCESTOR_LIMIT = 512
+
+
+def _absence_confirmed(path: Path) -> Optional[bool]:
+    """Confirm positively that nothing is at `path`, after `stat` already
+    raised one of the two absence exceptions. True / False / None -- and
+    the third is the point.
+
+    A first-pass reviewer of this same fix found the gap this closes:
+    `FileNotFoundError` / `NotADirectoryError` alone is not evidence of
+    genuine absence. CLAUDE.md's own measurement is that an over-`MAX_PATH`
+    name on Windows arrives as `FileNotFoundError, errno 2, winerror None`
+    -- indistinguishable from a name that is truly not there -- and
+    `scripts/doctor.py`'s `_dir_state` and `scripts/lane_setup.py`'s
+    `worktree_occupancy` both exist to see through exactly that fold, by
+    walking up to the subject's own deepest lookable ancestor and asking
+    that ancestor's directory listing directly, rather than trusting the
+    exception type alone.
+
+    True  -- confirmed absent: an ancestor this platform *can* look at was
+             listed and the next component down was not in it (or that
+             ancestor is not a directory at all, so nothing can be under it).
+    False -- the name is right there in its parent's listing and `stat`
+             could not reach it. That is the unlookable case wearing
+             absence's clothes.
+    None  -- nothing here could confirm either way, so the caller must not
+             claim.
+
+    This is a third copy of the identical function in `doctor.py` and
+    `lane_setup.py`, not an import of either: this file ships standalone
+    into every scaffolded repo as `.oss/assemble_changelog.py`, without
+    `doctor.py` or `lane_setup.py` alongside it, so it cannot depend on
+    them. `doctor._dir_state`'s own docstring makes the same call for the
+    same reason, one file over: lifting the three into a shared module is a
+    refactor with a blast radius past any one of the fixes that wrote them.
+    """
+    try:
+        current = os.path.abspath(os.fspath(path))
+    except (OSError, ValueError, TypeError):
+        return None
+    for _ in range(_ANCESTOR_LIMIT):
+        parent = os.path.dirname(current)
+        name = os.path.basename(current)
+        if not name or parent == current or not parent:
+            return None
+        try:
+            found = os.stat(parent)
+        except (FileNotFoundError, NotADirectoryError):
+            current = parent
+            continue
+        except (OSError, ValueError):
+            return None
+        if not stat.S_ISDIR(found.st_mode):
+            return True
+        try:
+            entries = os.listdir(parent)
+        except (OSError, ValueError):
+            return None
+        return name not in entries
+    return None
+
+
 def _fragment_dir_state(directory: Path) -> Tuple[str, str]:
     """Three answers for "is `directory` there", not `Path.is_dir()`'s two.
 
@@ -641,10 +706,15 @@ def _fragment_dir_state(directory: Path) -> Tuple[str, str]:
     a third answer instead of a swallowed boolean.
 
     ``"dir"``        -- confirmed a directory.
-    ``"absent"``     -- `stat` raised `FileNotFoundError` / `NotADirectoryError`:
-                        genuinely not there, or a path segment above it is a file.
-    ``"unreadable"`` -- `stat` raised something else. Could not determine --
-                        never folded into "absent".
+    ``"absent"``     -- `stat` raised `FileNotFoundError` / `NotADirectoryError`
+                        *and* `_absence_confirmed` positively confirmed it:
+                        genuinely not there, or a path segment above it is a
+                        file.
+    ``"unreadable"`` -- `stat` raised something else, or raised an absence
+                        exception `_absence_confirmed` could not confirm (or
+                        actively contradicted -- the name is right there in
+                        its parent's listing). Could not determine -- never
+                        folded into "absent".
 
     Deliberately `directory.stat()`, not `directory.is_dir()`: `is_dir()`
     wraps its own `stat()` call in that same version-dependent swallow, so
@@ -653,8 +723,17 @@ def _fragment_dir_state(directory: Path) -> Tuple[str, str]:
     """
     try:
         st = directory.stat()
-    except (FileNotFoundError, NotADirectoryError):
-        return "absent", ""
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        confirmed = _absence_confirmed(directory)
+        if confirmed is True:
+            return "absent", ""
+        if confirmed is False:
+            return "unreadable", (
+                "the name is present in its parent's listing but stat "
+                "could not reach it: {0}".format(exc))
+        return "unreadable", (
+            "stat reported absence and nothing could confirm it: "
+            "{0}".format(exc))
     except OSError as exc:
         return "unreadable", str(exc)
     except ValueError as exc:

@@ -103,6 +103,39 @@ def test_readable_fragment_dir_still_collects_normally_control(tmp_path):
     assert [f.issue for f in fragments] == [1]
 
 
+def test_unlookable_fragment_dir_is_cannot_validate_not_absent_windows_fold(
+    monkeypatch, tmp_path
+):
+    """Must-fire half, the case a first-pass reviewer of this same fix
+    found missing: `FileNotFoundError` alone is not evidence of genuine
+    absence. CLAUDE.md's own measurement is that an over-`MAX_PATH` name on
+    Windows arrives as `FileNotFoundError, errno 2, winerror None` -- no
+    distinguishing signal from a name that is truly not there -- which is
+    the exact fold `doctor._dir_state` and `lane_setup._absence_confirmed`
+    exist to see through, by confirming absence positively against the
+    subject's own deepest lookable ancestor rather than trusting the
+    exception type alone. Reproduced here the same way those two do: the
+    entry is present in its parent's own listing, and `stat` still raised
+    `FileNotFoundError` -- the unlookable case wearing absence's clothes.
+    """
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+
+    real_stat = Path.stat
+    target_str = str(directory)
+
+    def fake(self, *a, **kw):
+        if str(self) == target_str:
+            raise FileNotFoundError(2, "folded")
+        return real_stat(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "stat", fake)
+
+    with pytest.raises(assemble_changelog.CannotValidate) as exc_info:
+        assemble_changelog.collect(directory)
+    assert "does not exist" not in str(exc_info.value)
+
+
 def test_unreadable_fragment_dir_real_chmod(tmp_path):
     """Same must-fire case, reproduced against a real filesystem rather than
     an injected raise -- a permission fixture is a measurement, not a

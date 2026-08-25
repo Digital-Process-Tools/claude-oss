@@ -278,6 +278,37 @@ def _is_lane_glob(pattern):
     return any(ch in pattern for ch in _LANE_WILDCARD_CHARS)
 
 
+def _match_is_regular_file(p):
+    """`p.is_file()`, but through `stat()` directly rather than the
+    convenience wrapper.
+
+    `Path.is_file()` wraps its own `stat()` call in a version-dependent
+    swallow (CLAUDE.md's own `Path.exists()`/`Path.is_dir()` trap; also
+    `doctor._dir_state`'s docstring, which measured the swallow directly on
+    a local 3.14 install and found `path.stat()` itself does not swallow
+    there -- only the convenience method does). A glob match this process
+    cannot `stat()` -- an entry-level failure independent of the
+    directory-traversal permission `glob()` already needed to find it --
+    used to disappear from `resolve_lane`'s `matches` silently instead of
+    reaching the `except (OSError, ValueError)` that already wraps the
+    comprehension calling this and turns an unresolvable pattern into a
+    `"refused"` state with a detail (#383): the census's second finding,
+    that `glob-no-match` is itself a printed verdict `lane_overlap`
+    consumes for #267's disjointness check, not a filter with nowhere for
+    a swallowed entry to do harm.
+
+    `FileNotFoundError` is not re-raised: `glob()` found the entry and it
+    is gone by the time this runs is a race, not a permission problem, and
+    is excluded the same as any other non-match rather than refusing the
+    whole pattern over it.
+    """
+    try:
+        st = p.stat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISREG(st.st_mode)
+
+
 def _lane_pattern_problem(pattern):
     """Why `pattern` cannot be rendered as part of a lane, or None when it can.
 
@@ -363,7 +394,7 @@ def resolve_lane(repo, patterns):
                 matches = sorted(
                     p.relative_to(repo).as_posix()
                     for p in repo.glob(normalized)
-                    if p.is_file()
+                    if _match_is_regular_file(p)
                 )
             except (OSError, ValueError) as exc:
                 entries.append(
