@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Whether the auditor's checklist matches the tree it is about to audit.
+
+`commands/release.md` gate 3 already requires the checklist version to be
+*recorded before the release-auditor spawn*, in three states -- matches /
+differs / could not tell -- and its own text says exactly what happens without
+a measurement: the honest answer is always "could not tell", and the rendered
+answer is usually nothing at all, because reading two manifests was a step a
+human performed by hand and typed into a payload. This is that read, done
+mechanically, so the honest answer is the one that actually gets printed.
+
+The two numbers:
+
+  installed   ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json -- the plugin
+              copy the harness will actually load the auditor definition from.
+  repo        <repo>/.claude-plugin/plugin.json -- this repository's own
+              copy, when this repository is the one that ships the
+              definitions being audited (this repo, claude-oss, is that
+              repository; most repos this plugin manages are not, and do not
+              carry this file at all).
+
+Three states, matching the gate's own vocabulary exactly:
+
+  matches         both manifests read and their versions are equal.
+  differs         both manifests read and their versions disagree. Both
+                  numbers are named. Never a verdict about whether the skew
+                  mattered -- see `definitions` below.
+  could-not-tell  either manifest is absent, unreadable, not JSON, or carries
+                  no string 'version' -- including the ordinary case of a repo
+                  that only installed the plugin and never shipped its own
+                  .claude-plugin/plugin.json at all. It never renders as a
+                  match: a manifest this script could not read is not
+                  evidence that the two are the same.
+
+This gate **annotates, it does not block** (`commands/release.md` says so in
+as many words, and blocking on a skew nobody chose would trade a reporting gap
+for a release nobody can cut) -- so every state exits 0. The state itself,
+never the exit code, is what a caller reads.
+
+## `definitions`: evidence, not a verdict
+
+A version skew answers "an old checklist ran". It does not answer whether
+that checklist would have said anything different -- and #538 was filed
+because, once, a human answered that second question by hand: diffing the
+auditor's own definition, `agents/auditor.md`, and the ranking table
+`skills/manager/SKILL.md` owns, and finding the ranking rows byte-identical.
+
+So when the state is `differs`, this module compares the same three files --
+the ones gate 3's own spawn actually reads or cross-references, fixed to what
+*this gate* depends on rather than to what one release happened to change --
+byte-for-byte between the two trees, and reports each as `identical`,
+`differs`, or `could-not-tell` (a file present on one side only, or an
+unreadable one, is not silently skipped).
+
+**This is not a semantic verdict, and callers must not read it as one.** A
+byte-identical ranking table is evidence that nothing in it moved; it is not
+proof that nothing *relevant* moved elsewhere in the two trees -- prose above
+or below the table, a file this gate does not name, a change to how the
+auditor is dispatched. The set of three files is stable because it is tied to
+what gate 3 itself consumes, not because it is guaranteed to be the complete
+set of files a given skew could have touched.
+"""
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+STATE_MATCHES = "matches"
+STATE_DIFFERS = "differs"
+STATE_COULD_NOT_TELL = "could-not-tell"
+
+EXIT_OK = 0
+
+MANIFEST_REL = (".claude-plugin", "plugin.json")
+
+#: The files gate 3's own release-auditor spawn actually reads or
+#: cross-references: its own definition, the per-PR auditor definition it may
+#: reference, and the ranking table the manager skill owns. Fixed to what
+#: *this gate* depends on -- not a copy of any one release's diff.
+DEFINITION_FILES = (
+    "agents/release-auditor.md",
+    "agents/auditor.md",
+    "skills/manager/SKILL.md",
+)
+
+DEF_IDENTICAL = "identical"
+DEF_DIFFERS = "differs"
+DEF_COULD_NOT_TELL = "could-not-tell"
+
+
+def _one_line(text, limit=200):
+    """Text from outside this script (an OS error, a path), one printable line."""
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
+
+def _read_version(manifest_path):
+    """``(version, reason)``. On success ``reason`` is ``None``; on failure
+    ``version`` is ``None`` and ``reason`` says why, in one printable line.
+    """
+    try:
+        raw = manifest_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, "{0} could not be read: {1}".format(
+            manifest_path, _one_line(exc)
+        )
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        return None, "{0} is not valid JSON: {1}".format(
+            manifest_path, _one_line(exc)
+        )
+    version = data.get("version") if isinstance(data, dict) else None
+    if not isinstance(version, str) or not version:
+        return None, "{0} has no string 'version' field".format(manifest_path)
+    return version, None
+
+
+def _compare_definitions(plugin_root, repo):
+    """Per-file receipt over `DEFINITION_FILES`. Never a relevance verdict --
+    see the module docstring's `## definitions` section for what this is and
+    is not evidence of.
+    """
+    rows = []
+    for rel in DEFINITION_FILES:
+        installed_path = plugin_root.joinpath(*rel.split("/"))
+        repo_path_ = repo.joinpath(*rel.split("/"))
+        try:
+            installed_bytes = installed_path.read_bytes()
+        except OSError as exc:
+            rows.append(
+                {
+                    "path": rel,
+                    "state": DEF_COULD_NOT_TELL,
+                    "detail": "installed copy: {0}".format(_one_line(exc)),
+                }
+            )
+            continue
+        try:
+            repo_bytes = repo_path_.read_bytes()
+        except OSError as exc:
+            rows.append(
+                {
+                    "path": rel,
+                    "state": DEF_COULD_NOT_TELL,
+                    "detail": "repo copy: {0}".format(_one_line(exc)),
+                }
+            )
+            continue
+        rows.append(
+            {
+                "path": rel,
+                "state": DEF_IDENTICAL if installed_bytes == repo_bytes else DEF_DIFFERS,
+                "detail": "",
+            }
+        )
+    return rows
+
+
+def compute(repo=".", plugin_root=None):
+    """The three-state skew payload. Never raises; a failure to read either
+    manifest is `could-not-tell`, not an exception a caller has to guard.
+    """
+    repo_path = Path(repo)
+
+    root_value = plugin_root
+    source = "--plugin-root" if plugin_root else None
+    if not root_value:
+        env_value = os.environ.get("CLAUDE_PLUGIN_ROOT")
+        if env_value:
+            root_value = env_value
+            source = "CLAUDE_PLUGIN_ROOT"
+
+    base = {
+        "plugin_root": root_value,
+        "plugin_root_source": source,
+        "installed_version": None,
+        "installed_manifest": None,
+        "repo_version": None,
+        "repo_manifest": None,
+        "definitions": None,
+    }
+
+    if not root_value:
+        return dict(
+            base,
+            state=STATE_COULD_NOT_TELL,
+            reason=(
+                "CLAUDE_PLUGIN_ROOT is unset and no --plugin-root was given, so "
+                "which checklist is running is unknown"
+            ),
+            detail="",
+        )
+
+    plugin_root_path = Path(os.path.expanduser(str(root_value)))
+    installed_manifest = plugin_root_path.joinpath(*MANIFEST_REL)
+    base["installed_manifest"] = str(installed_manifest)
+    installed_version, installed_err = _read_version(installed_manifest)
+    if installed_version is None:
+        return dict(
+            base,
+            state=STATE_COULD_NOT_TELL,
+            reason=(
+                "the installed plugin's manifest could not be read, so its "
+                "checklist version is unknown"
+            ),
+            detail=installed_err or "",
+        )
+    base["installed_version"] = installed_version
+
+    repo_manifest = repo_path.joinpath(*MANIFEST_REL)
+    base["repo_manifest"] = str(repo_manifest)
+    repo_version, repo_err = _read_version(repo_manifest)
+    if repo_version is None:
+        return dict(
+            base,
+            state=STATE_COULD_NOT_TELL,
+            reason=(
+                "this repository's own .claude-plugin/plugin.json could not be "
+                "read, so either it does not ship these definitions or its "
+                "version is unknown"
+            ),
+            detail=repo_err or "",
+        )
+    base["repo_version"] = repo_version
+
+    if installed_version == repo_version:
+        return dict(
+            base,
+            state=STATE_MATCHES,
+            reason=(
+                "the installed checklist ({0}) matches this repository's own "
+                "version".format(installed_version)
+            ),
+            detail="",
+        )
+
+    definitions = _compare_definitions(plugin_root_path, repo_path)
+    return dict(
+        base,
+        state=STATE_DIFFERS,
+        reason=(
+            "the installed checklist ({0}) differs from this repository's own "
+            "version ({1})".format(installed_version, repo_version)
+        ),
+        detail="",
+        definitions=definitions,
+    )
+
+
+HEADINGS = {
+    STATE_MATCHES: "matches",
+    STATE_DIFFERS: "differs",
+    STATE_COULD_NOT_TELL: "could not tell",
+}
+
+
+def receipt(payload):
+    """One block a human reads. Annotates only -- see the module docstring."""
+    lines = ["checklist-skew: {0}".format(HEADINGS[payload["state"]])]
+
+    def row(label, value):
+        if value not in (None, ""):
+            lines.append("{0:<19}: {1}".format(label, value))
+
+    row("reason", payload["reason"])
+    row("detail", payload["detail"])
+    row("plugin root", payload.get("plugin_root") or "UNSET")
+    row("plugin root from", payload.get("plugin_root_source"))
+    row("installed manifest", payload.get("installed_manifest"))
+    row("installed version", payload.get("installed_version"))
+    row("repo manifest", payload.get("repo_manifest"))
+    row("repo version", payload.get("repo_version"))
+
+    definitions = payload.get("definitions")
+    if definitions:
+        lines.append(
+            "definitions        : evidence only -- identical is not proof "
+            "nothing relevant moved"
+        )
+        for d in definitions:
+            lines.append("  {0:<28}: {1}".format(d["path"], d["state"]))
+
+    lines.append(
+        "gate                : ANNOTATES -- this never stops the release. "
+        "could-not-tell never renders as a match."
+    )
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=(
+            "Compare the installed auditing plugin's version to this "
+            "repository's own, in three states: matches, differs, "
+            "could-not-tell. Annotates; never blocks."
+        ),
+    )
+    parser.add_argument("--repo", default=".", help="repository to read (default: .)")
+    parser.add_argument(
+        "--plugin-root",
+        default=None,
+        help=(
+            "the installed plugin root to read (default: $CLAUDE_PLUGIN_ROOT). "
+            "Neither present is could-not-tell, never a match."
+        ),
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="emit the payload instead of the receipt"
+    )
+    args = parser.parse_args(argv)
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
+
+    payload = compute(args.repo, args.plugin_root)
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(receipt(payload))
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

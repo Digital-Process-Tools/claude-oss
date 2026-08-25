@@ -154,22 +154,41 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    **Record the checklist in effect before you spawn.** The auditor is loaded from the installed
    plugin, and the installed plugin is updated *by* releases — so an improvement to the checklist
    cannot audit the release that ships it, and will not audit the next one either unless the install
-   is refreshed. That is a read, and both numbers are cheap: the version in
-   `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`, and this repository's own
-   `.claude-plugin/plugin.json` when this repository is the one that ships the definitions. Pass the
-   answer to the auditor with the payload and repeat it in the release report. Three states:
+   is refreshed. That used to be a read a human performed by hand and typed into the payload — which
+   meant the honest answer was always "could not tell" and the rendered answer was usually nothing at
+   all (#538). It is computed instead:
 
-   - **it matches** — name the version, once.
-   - **it differs** — name both. This **annotates, it does not stop the release.** For a repo that
-     merely installed the plugin the installed version is legitimately whatever they installed, and
-     blocking on a skew nobody chose trades a reporting gap for a release nobody can cut — the same
-     trade `scope: null` above already refuses. For the repository that *ships* the definitions both
-     numbers are on its own disk, and a gate older than the rules it is gating is a **config
-     finding** in the release report.
-   - **could not tell** — a manifest was absent or would not read, or `${CLAUDE_PLUGIN_ROOT}` is
-     unset. Say it in those words: *I could not tell which checklist I am running.* It annotates
-     rather than stopping, for the reason above, but **it never renders as a match** and a `clean`
-     underneath it is a clean audit of unknown vintage, reported as one.
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --json
+   ```
+
+   It reads the version out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and out of this
+   repository's own `.claude-plugin/plugin.json`, when this repository is the one that ships the
+   definitions being audited — most repos this plugin manages are not that repository and carry no
+   such file, which is itself one of the three states below rather than an error. Pass the payload
+   to the auditor and repeat it in the release report. Three states, exit 0 on all of them — this
+   gate **annotates the checklist skew, it never blocks**:
+
+   - **`matches`** — name the version, once.
+   - **`differs`** — name both. For a repo that merely installed the plugin the installed version is
+     legitimately whatever they installed, and blocking on a skew nobody chose trades a reporting gap
+     for a release nobody can cut — the same trade `scope: null` above already refuses. For the
+     repository that *ships* the definitions both numbers are on its own disk, and a gate older than
+     the rules it is gating is a **config finding** in the release report.
+
+     **A version skew answers "an old checklist ran"; it does not answer whether that checklist would
+     have said anything different.** `differs` therefore also carries `definitions`: a byte-for-byte
+     comparison, between the installed tree and this repository's own, of the files gate 3's own
+     spawn actually reads or cross-references — its own definition, `agents/auditor.md`, and the
+     ranking table `skills/manager/SKILL.md` owns. Quote every row in the release report. **This is
+     evidence, not a verdict** — a byte-identical row is not proof that nothing relevant moved
+     elsewhere in the two trees, only that nothing moved in that one file. Say what was compared and
+     say plainly that it is not the whole answer.
+   - **`could-not-tell`** — a manifest was absent, unreadable, not JSON, or carried no string
+     `version` — including `${CLAUDE_PLUGIN_ROOT}` being unset, and including the ordinary case of a
+     repo that never shipped its own `.claude-plugin/plugin.json`. Quote the `reason` the receipt
+     gives. **It never renders as a match**, and a `clean` underneath it is a clean audit of an
+     unknown checklist vintage, reported as one.
 
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.
