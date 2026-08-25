@@ -17,10 +17,12 @@ refuses stops a release over a correctly-named file (#297).
 
 ## It proposes. It does not decide.
 
-The output is a recommendation carrying its evidence, and the maintainer accepts it or
-overrides it. A release number is a promise to users and a project may reasonably want a
-person to make it -- but the thing this replaces is an *unsourced* human guess, not a
-human decision. Nothing here writes to a file, bumps a site, or tags.
+The output is a recommendation carrying its evidence. `## Releasing` gate 4 in
+`skills/manager/SKILL.md` accepts the proposal by default and records which -- a major
+bump is the one arm of that gate that still stops, because that promise to users is a
+different promise. Who accepts the result is that gate's decision and belongs in one
+place; this module's job is the derivation and its three states. Nothing here writes to
+a file, bumps a site, or tags.
 
 ## Three states, and the third one is why this exists
 
@@ -715,8 +717,8 @@ HEADINGS = {
 }
 
 PROPOSAL_NOTE = (
-    "a proposal, not a decision. Accept it or override it and record which -- the "
-    "number is a promise to users and it stays yours to make."
+    "a proposal. skills/manager/SKILL.md gate 4 accepts it by default and records the "
+    "acceptance -- override remains available, and a major bump keeps its own stop."
 )
 
 NO_NUMBER_NOTE = (
