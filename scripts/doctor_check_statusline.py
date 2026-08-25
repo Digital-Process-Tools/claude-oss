@@ -26,6 +26,7 @@ exactly as they did before the move -- a pure relocation, not a rewrite; see
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 
 import doctor
@@ -40,7 +41,7 @@ import doctor
 _POSIX_VAR_RE = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?")
 
 
-def _statusline_windows_gap(command, windows=None):
+def _statusline_windows_gap(command, windows=None, sh_available=None):
     """The POSIX-only syntax found in `command`, or `""` if none, on THIS platform.
 
     Only fires when `windows` is true, which defaults to `os.name == "nt"` -- the
@@ -49,10 +50,27 @@ def _statusline_windows_gap(command, windows=None):
     `windows` is a parameter rather than read from `os.name` unconditionally so a test
     can drive both branches without monkeypatching `os.name` itself, which `pathlib`
     also reads and which breaks `Path()` construction the moment it is patched.
+
+    `os.name == "nt"` alone found this repository's own second instance of its own
+    defect class (#495): a Windows user whose `statusLine` runs under Git Bash --
+    where `$VAR` syntax works exactly as written -- was warned about a status line
+    that runs correctly, contradicting this function's own principle that a
+    diagnostic must not warn about a working status line. `os.name` cannot tell those
+    two Windows machines apart; `sh_available` can, and is a real measurement rather
+    than another inference: `shutil.which("sh")` asks THIS machine, right now,
+    whether a POSIX-capable shell is even resolvable. It is not a proof that
+    `statusLine` itself runs under it -- that remains reasoned, not observed, exactly
+    as #487 already says -- but a machine with no `sh` on PATH at all is one where the
+    POSIX-syntax gap is real, and a machine that does have one is exactly the "Git
+    Bash on PATH" case this WARN must not fire on.
     """
     if windows is None:
         windows = os.name == "nt"
     if not windows or not command:
+        return ""
+    if sh_available is None:
+        sh_available = shutil.which("sh") is not None
+    if sh_available:
         return ""
     match = _POSIX_VAR_RE.search(command)
     return match.group(0) if match else ""

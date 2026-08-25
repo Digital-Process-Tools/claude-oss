@@ -15,12 +15,13 @@ keeps answering exactly as it did before the move -- a pure relocation, not a
 rewrite; see #497.
 """
 
+import shutil
 import time
 
 import doctor
 
 
-def check_auto_update(project_dir):
+def check_auto_update(project_dir, sh_available=None):
     """Did the SessionStart updater run, and what did it do (#480)?
 
     Five states, and the fifth is the one #492 added:
@@ -37,7 +38,16 @@ def check_auto_update(project_dir):
       that could not reach the marketplace must never read as `current`, so the row does
       not collapse them.
     * **no receipt at all** -- the hook has not run in this install, or could not write.
-      That is not "up to date": nothing has been established, and the row says so.
+      That is not "up to date": nothing has been established, and the row says so --
+      UNLESS `sh` is not resolvable on PATH on this machine (#495): `hooks/hooks.json`
+      runs the updater via `sh "$CLAUDE_PLUGIN_ROOT"/hooks/session-start-update.sh`,
+      so on a machine with no POSIX-capable shell the hook can never have produced a
+      receipt. That is not "nothing established yet before the next session" -- it is
+      the state every session on that machine reports, and the row WARNs instead of
+      reading it as the ordinary pre-first-run gap. Measured, not reasoned from a
+      platform name: `shutil.which("sh")` is asked of THIS machine, so it answers
+      correctly on a Windows machine that does have Git for Windows or WSL on PATH,
+      not only on the population it was filed about.
     * **a receipt that exists and is broken** (#484) -- corrupt JSON, or a permission
       that changed underneath it. Told apart from "no receipt at all" by the exception
       `plugin_update.read_receipt` actually caught, never by asking the filesystem a
@@ -81,6 +91,27 @@ def check_auto_update(project_dir):
         )
         return
     if not isinstance(receipt, dict):
+        # #495: on a machine with no POSIX-capable shell resolvable, `hooks/hooks.json`'s
+        # `sh "$CLAUDE_PLUGIN_ROOT"/hooks/session-start-update.sh` can never have run, so
+        # "no receipt yet" is not the ordinary pre-first-run gap on that machine -- it is
+        # the permanent state. Measured against THIS machine, not reasoned from a
+        # platform name, so a Windows machine that does have Git for Windows or WSL on
+        # PATH still reads the ordinary OK below.
+        if sh_available is None:
+            sh_available = shutil.which("sh") is not None
+        if not sh_available:
+            doctor.report(
+                "WARN",
+                "auto-update: no receipt at {} -- and `sh` is not resolvable on PATH on "
+                "this machine. hooks/hooks.json runs the SessionStart updater via "
+                'sh "$CLAUDE_PLUGIN_ROOT"/hooks/session-start-update.sh, so without a '
+                "POSIX-capable shell the hook can never have produced a receipt here -- "
+                "this is not the ordinary state before the next session starts, it is "
+                "the state every session on this machine will report.".format(
+                    doctor.plugin_update.receipt_path()
+                ),
+            )
+            return
         # The ordinary state of a fresh install: the hook runs at the NEXT session
         # start, so every repo would carry this warning on the day it was set up. It
         # reports at OK and says in the text that nothing was established -- the same
