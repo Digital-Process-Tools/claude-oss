@@ -383,27 +383,38 @@ _WATCH_NAME_FORBIDDEN = (
 
 
 def watch_name_problem(value):
-    """Why this watch channel name cannot be used, or None when it is fine.
+    """Why this watch channel name cannot be used AS A PATH COMPONENT, or None.
 
-    The single statement of what a watch channel name may be, for BOTH routes that
-    produce one. `bin/oss-workspace` reads a name declared in a managed repository's
+    The single statement of that narrower question, for BOTH routes that produce
+    a name. `bin/oss-workspace` reads a name declared in a managed repository's
     tracked `.supertool.json` and derives one from `repo` when nothing declares it;
     #207 guarded the second and left the first exporting whatever it read, so the
     guard and its bypass sat a few lines apart in one file (#230). The launcher now
     calls this once, after the two routes converge, which is what makes "no bypass" a
     property of the code rather than a promise: there is nowhere else a name is made.
 
-    What it deliberately does NOT do is decide whether the consumer will ACCEPT the
-    name. supertool has its own `NAME_RE`, which caps the length at 32 and constrains
-    the first character. Transcribing that here would put a second spelling of
-    somebody else's rule in this repository to drift -- the thing #207 declined to do
-    and this repo's own rules forbid -- and it would take a working private channel
-    away from any repository whose consumer accepts a name this copy does not, which
-    is exactly what a raised cap in a later supertool would produce. That question is
-    asked of the installed consumer at run time and REPORTED, not refused (#231).
+    It is NOT the single statement of what a watch channel name may be, full stop --
+    that was #533's own reading of an earlier draft of this docstring, and it is
+    exactly the false authority that let doctor's watch-channel check clear a name
+    this function accepts and supertool discards. This function does not decide
+    whether the CONSUMER will accept the name. supertool has its own `NAME_RE`,
+    which caps the length at 32 and constrains the first character, and it is the
+    one that decides delivery. Transcribing that pattern here would put a second
+    spelling of somebody else's rule in this repository to drift -- the thing #207
+    declined to do and this repo's own rules forbid -- and it would take a working
+    private channel away from any repository whose consumer accepts a name this
+    copy does not, which is exactly what a raised cap in a later supertool would
+    produce. That question is asked of the installed consumer AT RUN TIME and
+    REPORTED, never refused, in the two places a name is put in front of a human:
+    `bin/oss-workspace`'s ASK_CONSUMER block (#231) and `doctor.check_watch_channel`
+    via `_consumer_watch_name_verdict` (#533). Neither asks here, because this
+    function runs whether or not supertool is installed at all.
 
     So the floor is narrow on purpose: what is refused here is refused because this
-    plugin can argue the harm on its own, knowing nothing about the dependency.
+    plugin can argue the harm on its own, knowing nothing about the dependency. A
+    name this function clears is a name that is SAFE TO EXPORT, not a name that
+    is USABLE -- the two questions have different authorities and only the second
+    one decides whether the channel is private or shared.
 
     A bare `str` return rather than the `(name, problem)` pair `watch_channel_name`
     hands back: this validates and never derives, so there is no second value.

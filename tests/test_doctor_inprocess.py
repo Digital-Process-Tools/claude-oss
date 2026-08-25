@@ -26,6 +26,13 @@ import doctor  # noqa: E402
 import oss_config  # noqa: E402
 import scaffold  # noqa: E402
 
+# Captured before any test's autouse fixture can monkeypatch the module
+# attribute -- `_watch_name_accepted_by_default` below replaces
+# `doctor._consumer_watch_name_verdict` for every test in this file, and the
+# two tests that exercise the real mechanism need the real function under
+# that stub, not the stub itself.
+_REAL_CONSUMER_WATCH_NAME_VERDICT = doctor._consumer_watch_name_verdict
+
 
 @pytest.fixture(autouse=True)
 def clean_findings():
@@ -1177,6 +1184,22 @@ def _supertool_config(root, doc):
     (root / doctor.WATCH_CONFIG).write_text(json.dumps(doc), encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def _watch_name_accepted_by_default(monkeypatch):
+    """#533 taught `check_watch_channel` to ask the installed supertool whether
+    it will accept the name a state agreed on, and every test above this line
+    was written before that existed -- it built a name and asserted OK with
+    no opinion on whether some consumer would take it. Patching the ask keeps
+    those assertions about the DECLARATION comparison, isolated from whatever
+    supertool happens to be installed on the machine running the suite (there
+    may be none at all, which is the CI case and would otherwise turn every
+    OK above into a WARN). The tests that exercise the asking mechanism
+    itself override this explicitly, per fixture-shadowing rules."""
+    monkeypatch.setattr(
+        doctor, "_consumer_watch_name_verdict", lambda name: ("accepted", "")
+    )
+
+
 def test_watch_channel_agrees_when_the_export_matches_the_declaration(tmp_path):
     """The must-not-fire arm. Its control is the test directly below, which uses
     the same fixture and changes only the exported value."""
@@ -1448,6 +1471,129 @@ def test_main_reports_the_watch_channel(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert doctor.WATCH_NAME_ENV in out
     assert out.strip().splitlines()[-1].startswith("VERDICT:")
+
+
+# --- #533: doctor compared two declarations and never asked whether the ------
+# name they agreed on was one the consumer would actually accept. The control
+# pair below is the reported ceiling exactly: a derived/declared name of 32
+# characters is supertool's own cap and must still clear; one of 33 must WARN
+# with the shared-default-socket wording; and a name doctor cannot classify
+# (no registry, no install, no naming.py, an unreadable module) must be a
+# third state that never renders as OK -- the absence this plugin is named
+# after, reached here by the check that used to skip it.
+
+
+def test_check_watch_channel_clears_a_32_character_name_the_consumer_accepts(
+    tmp_path, monkeypatch, capsys
+):
+    """The must-not-fire arm: exactly at the reported cap, still OK."""
+    name = "a" * 32
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": name}}})
+    monkeypatch.setattr(
+        doctor,
+        "_consumer_watch_name_verdict",
+        lambda got: ("accepted", "") if got == name else ("unknown", "wrong name"),
+    )
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env={})
+    capsys.readouterr()
+    assert [state for state, _ in doctor.FINDINGS] == ["OK"]
+
+
+def test_check_watch_channel_warns_a_33_character_name_the_consumer_discards(
+    tmp_path, monkeypatch, capsys
+):
+    """The must-fire control for the test above: one character over the cap,
+    and #533's own reported symptom -- this used to clear silently."""
+    name = "a" * 33
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": name}}})
+    monkeypatch.setattr(
+        doctor,
+        "_consumer_watch_name_verdict",
+        lambda got: (
+            ("rejected", "does not match ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}\\Z")
+            if got == name
+            else ("unknown", "wrong name")
+        ),
+    )
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env={})
+    capsys.readouterr()
+    findings = list(doctor.FINDINGS)
+    assert [state for state, _ in findings] == ["WARN"]
+    assert "SHARED" in findings[0][1]
+    assert "533" in findings[0][1]
+
+
+def test_check_watch_channel_never_renders_ok_when_the_consumer_cannot_be_asked(
+    tmp_path, monkeypatch, capsys
+):
+    """The third state: `unknown` must not be indistinguishable from `accepted`
+    -- that silence is exactly what let a name over the cap clear here."""
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    monkeypatch.setattr(
+        doctor,
+        "_consumer_watch_name_verdict",
+        lambda got: (
+            "unknown",
+            "~/.claude/plugins/installed_plugins.json could not be read (FileNotFoundError)",
+        ),
+    )
+    doctor.FINDINGS.clear()
+    doctor.check_watch_channel(tmp_path, env={})
+    capsys.readouterr()
+    findings = list(doctor.FINDINGS)
+    assert [state for state, _ in findings] == ["WARN"]
+    assert "OK" not in [state for state, _ in findings]
+
+
+def test_consumer_watch_name_verdict_reads_the_installed_naming_rule(
+    tmp_path, monkeypatch
+):
+    """Mirrors bin/oss-workspace's ASK_CONSUMER block (#231): same registry
+    shape, same presets/watch/naming.py lookup, same NAME_RE match -- read
+    from the version actually installed rather than a copy kept here to
+    drift."""
+    install_dir = tmp_path / "supertool-0.49.0"
+    naming_dir = install_dir / "presets" / "watch"
+    naming_dir.mkdir(parents=True)
+    (naming_dir / "naming.py").write_text(
+        "import re\n"
+        "NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}\\Z')\n",
+        encoding="utf-8",
+    )
+    registry = tmp_path / "installed_plugins.json"
+    registry.write_text(
+        json.dumps(
+            {"plugins": {"supertool@marketplace": [{"installPath": str(install_dir)}]}}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        doctor.os.path,
+        "expanduser",
+        lambda p: str(registry) if p.endswith("installed_plugins.json") else p,
+    )
+    accepted = _REAL_CONSUMER_WATCH_NAME_VERDICT("a" * 32)
+    rejected = _REAL_CONSUMER_WATCH_NAME_VERDICT("a" * 33)
+    assert accepted == ("accepted", "")
+    assert rejected[0] == "rejected"
+    assert "naming.py" in rejected[1]
+
+
+def test_consumer_watch_name_verdict_unknown_when_registry_is_absent(
+    tmp_path, monkeypatch
+):
+    """No registry is `unknown`, never `accepted` -- silence here is #533."""
+    monkeypatch.setattr(
+        doctor.os.path,
+        "expanduser",
+        lambda p: str(tmp_path / "nope.json") if p.endswith("installed_plugins.json") else p,
+    )
+    verdict, why = _REAL_CONSUMER_WATCH_NAME_VERDICT("oss")
+    assert verdict == "unknown"
+    assert why
+
 
 # --- does anything publish to this repo's board? (#191) -----------------------
 #

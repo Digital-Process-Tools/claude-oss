@@ -2845,6 +2845,99 @@ def _derivable_watch_name(project_dir):
     return "yes", name, ""
 
 
+def _consumer_watch_name_verdict(name):
+    """Would the installed supertool consumer accept `name` as a watch channel?
+
+    Mirrors bin/oss-workspace's ASK_CONSUMER block (#231): the same registry,
+    the same lookup for presets/watch/naming.py, and the same NAME_RE match --
+    read out of the version actually installed on this machine rather than a
+    copy of its rule kept here to drift (this repo's own governing rule, and
+    the reason `oss_config.watch_name_problem` declines to transcribe the
+    cap in its own docstring).
+
+    Returns `(state, detail)`, state one of `accepted` / `rejected` /
+    `unknown`. `unknown` covers every reason the question could not be put to
+    the consumer -- no registry, no supertool install, no naming.py there, a
+    module that failed to import -- because silence here renders exactly like
+    `accepted`, which is #533: doctor cleared a repo on the shared default
+    socket because nothing asked whether the agreed name was one the consumer
+    would use.
+    """
+    registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+    try:
+        with open(registry, encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except (OSError, ValueError) as err:
+        return "unknown", "{} could not be read ({})".format(
+            registry, type(err).__name__
+        )
+
+    installs = [
+        entry.get("installPath")
+        for key, entries in (doc.get("plugins") or {}).items()
+        if key.split("@")[0] == "supertool"
+        for entry in entries or []
+        if entry.get("installPath")
+    ]
+    if not installs:
+        return "unknown", "{} lists no supertool install".format(registry)
+
+    rule_path = ""
+    for path in installs:
+        candidate = os.path.join(path, "presets", "watch", "naming.py")
+        if os.path.isfile(candidate):
+            rule_path = candidate
+            break
+    if not rule_path:
+        return "unknown", (
+            "none of {} holds presets/watch/naming.py, so that version either "
+            "predates the watch preset or keeps its rule somewhere else".format(
+                ", ".join(installs)
+            )
+        )
+
+    try:
+        spec = importlib.util.spec_from_file_location("_oss_watch_naming", rule_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        rule = module.NAME_RE
+        pattern = rule.pattern
+        accepted = bool(rule.match(name))
+    except (Exception, SystemExit) as err:
+        return "unknown", "{} could not be read ({})".format(
+            rule_path, type(err).__name__
+        )
+
+    if accepted:
+        return "accepted", ""
+    return "rejected", "does not match {}, read from {}".format(pattern, rule_path)
+
+
+def _current_watch_name(project_dir, env, state):
+    """Which name is actually in play for one of the four OK-clearing states.
+
+    `check_watch_channel` needs to hand the name to
+    `_consumer_watch_name_verdict`, but `watch_channel_state` returns only
+    `(state, detail)` and 40-odd call sites, tests included, already unpack
+    it as a pair -- widening it would touch every one of them for a fact
+    only these four branches need. This re-reads the same cheap sources
+    `watch_channel_state` already reads, in the branch matching the state it
+    settled on, and returns None for every state that is not one of the four.
+    """
+    environ = os.environ if env is None else env
+    if state in ("agree", "declared-only"):
+        names, problem, _detail = _declared_watch_names(project_dir)
+        if problem or len(names) != 1:
+            return None
+        return next(iter(names))
+    if state == "derived-export":
+        return environ.get(WATCH_NAME_ENV) or None
+    if state == "derived":
+        derivable, derived, _why = _derivable_watch_name(project_dir)
+        return derived if derivable == "yes" else None
+    return None
+
+
 def watch_channel_state(project_dir, env=None):
     """Which watch channel does this repo actually resolve to? Twelve answers.
 
@@ -3042,14 +3135,42 @@ def check_watch_channel(project_dir, env=None):
         )
         return
     if state == "derived-export":
+        name = _current_watch_name(project_dir, env, state)
+        verdict, why = (
+            _consumer_watch_name_verdict(name)
+            if name is not None
+            else ("unknown", "the name could not be re-read for this check")
+        )
+        if verdict == "rejected":
+            report(
+                "WARN",
+                "watch channel: {} and {} declares no watch_name -- but the installed "
+                "supertool will DISCARD that name: {}. This repo binds the SHARED "
+                "default socket, the exact state this arm used to clear silently "
+                "(#533). Shorten it by declaring a different watch_name in an op "
+                "block of {}.".format(detail, WATCH_CONFIG, why, WATCH_CONFIG),
+            )
+            return
+        if verdict == "unknown":
+            report(
+                "WARN",
+                "watch channel: {} and {} declares no watch_name, and whether the "
+                "installed supertool will accept that name is unknown ({}) -- not "
+                "answered as accepted, which is what let an unusable name clear here "
+                "silently (#533). supertool 'channel:health'".format(
+                    detail, WATCH_CONFIG, why
+                ),
+            )
+            return
         report(
             "OK",
             "watch channel: {} and {} declares no watch_name -- so this is the export "
             "bin/oss-workspace makes for this repo, not a channel it never named. The "
-            "repo did name it, in {}, which is tracked and authoritative. This "
-            "compares two declarations against a derivation; it does not enumerate "
-            "the pollers on that channel, and WHICH server holds the socket is not "
-            "established, here or by supertool 'channel:health'.".format(
+            "repo did name it, in {}, which is tracked and authoritative, and the "
+            "installed supertool accepts it as a path component. This compares two "
+            "declarations against a derivation; it does not enumerate the pollers on "
+            "that channel, and WHICH server holds the socket is not established, "
+            "here or by supertool 'channel:health'.".format(
                 detail, WATCH_CONFIG, OSS_CONFIG
             ),
         )
@@ -3076,31 +3197,109 @@ def check_watch_channel(project_dir, env=None):
         )
         return
     if state == "agree":
+        name = _current_watch_name(project_dir, env, state)
+        verdict, why = (
+            _consumer_watch_name_verdict(name)
+            if name is not None
+            else ("unknown", "the name could not be re-read for this check")
+        )
+        if verdict == "rejected":
+            report(
+                "WARN",
+                "watch channel: {}, and they match -- but the installed supertool "
+                "will DISCARD that name: {}. This repo binds the SHARED default "
+                "socket, the exact state a matching pair used to clear silently "
+                "(#533).".format(detail, why),
+            )
+            return
+        if verdict == "unknown":
+            report(
+                "WARN",
+                "watch channel: {}, and they match -- but whether the installed "
+                "supertool will accept that name is unknown ({}). Not answered as "
+                "accepted, which is what let an unusable name clear here silently "
+                "(#533). supertool 'channel:health'".format(detail, why),
+            )
+            return
         report(
             "OK",
-            "watch channel: {}, and they match. This compares two declarations; it "
-            "does not enumerate the pollers on that channel.".format(detail),
+            "watch channel: {}, and they match, and the installed supertool accepts "
+            "that name as a path component. This compares two declarations; it does "
+            "not enumerate the pollers on that channel.".format(detail),
         )
         return
     if state == "declared-only":
+        name = _current_watch_name(project_dir, env, state)
+        verdict, why = (
+            _consumer_watch_name_verdict(name)
+            if name is not None
+            else ("unknown", "the name could not be re-read for this check")
+        )
+        if verdict == "rejected":
+            report(
+                "WARN",
+                "watch channel: {} and nothing is exported over it -- but the "
+                "installed supertool will DISCARD that name: {}. This repo binds "
+                "the SHARED default socket, the exact state a lone declaration used "
+                "to clear silently (#533). Shorten it in {}.".format(
+                    detail, why, WATCH_CONFIG
+                ),
+            )
+            return
+        if verdict == "unknown":
+            report(
+                "WARN",
+                "watch channel: {} and nothing is exported over it, and whether the "
+                "installed supertool will accept that name is unknown ({}). Not "
+                "answered as accepted, which is what let an unusable name clear here "
+                "silently (#533). supertool 'channel:health'".format(detail, why),
+            )
+            return
         report(
             "OK",
-            "watch channel: {} and nothing is exported over it. That reaches supertool's "
-            "own ops; the claude-channel consumer is spawned by the harness and does not "
-            "read this file, so check delivery with supertool 'channel:health'.".format(
-                detail
-            ),
+            "watch channel: {} and nothing is exported over it, and the installed "
+            "supertool accepts that name as a path component. That reaches "
+            "supertool's own ops; the claude-channel consumer is spawned by the "
+            "harness and does not read this file, so check delivery with "
+            "supertool 'channel:health'.".format(detail),
         )
         return
     if state == "derived":
+        name = _current_watch_name(project_dir, env, state)
+        verdict, why = (
+            _consumer_watch_name_verdict(name)
+            if name is not None
+            else ("unknown", "the name could not be re-read for this check")
+        )
+        if verdict == "rejected":
+            report(
+                "WARN",
+                "watch channel: {}, so bin/oss-workspace would export a name derived "
+                "from it -- but the installed supertool will DISCARD that name: {}. "
+                "This repo binds the SHARED default socket, the exact state this arm "
+                "used to clear silently (#533). Shorten it by declaring watch_name in "
+                "an op block of {}.".format(detail, why, WATCH_CONFIG),
+            )
+            return
+        if verdict == "unknown":
+            report(
+                "WARN",
+                "watch channel: {}, so bin/oss-workspace would export a name derived "
+                "from it, and whether the installed supertool will accept that name "
+                "is unknown ({}). Not answered as accepted, which is what let an "
+                "unusable derived name clear here silently (#533). "
+                "supertool 'channel:health'".format(detail, why),
+            )
+            return
         report(
             "OK",
-            "watch channel: {}, so bin/oss-workspace exports a name derived from it "
-            "and a session it opens gets this repo's own socket. That covers sessions "
-            "this launcher opens: a `claude` started by hand here exports nothing and "
-            "lands on the shared default. WHICH server holds that socket is not "
-            "established, here or by supertool 'channel:health' -- its own report says "
-            "so, and it is the half that decides delivery.".format(detail),
+            "watch channel: {}, so bin/oss-workspace exports a name derived from it, "
+            "the installed supertool accepts it as a path component, and a session it "
+            "opens gets this repo's own socket. That covers sessions this launcher "
+            "opens: a `claude` started by hand here exports nothing and lands on the "
+            "shared default. WHICH server holds that socket is not established, here "
+            "or by supertool 'channel:health' -- its own report says so, and it is "
+            "the half that decides delivery.".format(detail),
         )
         return
     # WARN, not OK. #191 measured this repository in exactly this state, with five
