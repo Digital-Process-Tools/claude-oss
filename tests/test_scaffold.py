@@ -338,8 +338,17 @@ def test_a_null_config_value_never_reaches_a_rendered_file_as_None():
 
 
 def test_show_covers_every_file_that_would_be_created(tmp_path):
+    """`.claude/settings.json` is excluded on purpose (#494): it is a "create" entry
+    too, once settings_plan() is folded into show(), but it is not a template -- it is
+    a key-level write into a file that is not ours, and templates_for() only ever
+    named whole files this plugin writes. See test_scaffold_settings_preview_494.py
+    for that half.
+    """
     shown = scaffold.show(tmp_path, _config())
-    created = {path for path, action, _ in shown if action == "create"}
+    created = {
+        path for path, action, _ in shown
+        if action == "create" and path != scaffold.SETTINGS_PATH
+    }
     assert created == set(scaffold.templates_for(_config()))
 
 
