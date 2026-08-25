@@ -18,12 +18,18 @@ rewrite; see #497.
 
 import json
 import os
+import re
 from pathlib import Path
 
 import doctor
 
 MEMORY_DIR = ".remember"
 MEMORY_CONFIG_DIR = ".claude/remember"
+
+#: #210. Separate from identity.md on purpose -- see `check_core_memories` below.
+CORE_MEMORIES_NAME = "core-memories.md"
+
+_ENTRY_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\b", re.MULTILINE)
 
 
 def memory_layout(project_dir):
@@ -235,5 +241,110 @@ def check_memory(project_dir):
             _display(project_dir, config_dir),
             store_state,
             _display(project_dir, store),
+        ),
+    )
+
+
+def _core_memory_summary(text):
+    """(entry_count, newest_date) from `core-memories.md`'s own structure -- the
+    `## YYYY-MM-DD` headers it is written in -- and never the entries' own words.
+    `(0, None)` for no dated headers, including an empty file.
+    """
+    dates = _ENTRY_HEADER_RE.findall(text)
+    return len(dates), (max(dates) if dates else None)
+
+
+def check_core_memories(project_dir):
+    """Has anything ever been recorded to `core-memories.md`? A different
+    question from `check_memory`'s identity.md, on purpose -- #210 is explicit
+    that folding the two together (accepting one as evidence for the other) is
+    the mistake `_identity_names` was already fixed not to make, and reverting
+    that here would be repeating it one check over.
+
+    `identity.md` says who the agent is; `core-memories.md` says what it has
+    been WRONG about -- the corrections that changed how it works in this
+    repo. Nothing else checks that the second file exists, is non-empty, or has
+    ever been touched.
+
+    Four states:
+
+    - no memory store at all -- `check_memory` already warns about this, so
+      this reports OK rather than a second warning about the same absence.
+      Doubling it has a real cost in signal: this repo prints "not usable" on
+      a green tree once warnings pile up (see `check_memory`'s own docstring).
+    - store present, no `core-memories.md` -- OK. Nothing has ever been
+      recorded, which is correct and unremarkable for a repo on day one.
+      Telling that apart from a repo that has been running for months and has
+      simply stopped learning needs a second signal (tick history) this check
+      does not have -- named in #210 as "a judgement, not an obvious yes", and
+      declined here rather than coupling this check to the state file's own
+      shape.
+    - present and empty, or header only -- WARN. Something created the file
+      and nothing has filled it since.
+    - present with content -- OK, reporting the entry count and the newest
+      entry's date, never the entries' own words: this is a diagnostic run on
+      a maintainer's own machine, not a receipt anyone else reads.
+
+    And the state that is this repository's own defect class pointed at
+    itself: a store that cannot be listed, or a `core-memories.md` that exists
+    and cannot be read, must render as unknown -- never as "nothing recorded",
+    which is the finding this same argument produced for `check_memory`'s
+    `_listdir` (see its docstring) and is reused here rather than re-derived.
+
+    Scaffolding is out, for the same reason `check_memory` refuses to seed
+    identity.md: core memories are somebody else's agent's corrections. This
+    check reports, and never writes.
+    """
+    _, store = memory_layout(project_dir)
+    entries, problem = _listdir(store)
+    if problem == "absent":
+        doctor.report(
+            "OK",
+            "{} does not exist yet, so there are no core memories to check (see "
+            "memory: above)".format(_display(project_dir, store)),
+        )
+        return
+    if problem is not None:
+        doctor.report(
+            "WARN",
+            "{} {} -- so whether any core memories exist is unknown, not absent. "
+            "Nothing else in this check can answer while that listing "
+            "fails.".format(_display(project_dir, store), problem),
+        )
+        return
+    if CORE_MEMORIES_NAME not in entries:
+        doctor.report(
+            "OK",
+            "no {} in {} yet -- nothing recorded so far. Correct and unremarkable "
+            "for a repo on day one; worth a second look if this repo has a long "
+            "tick history, which this check has no way to tell.".format(
+                CORE_MEMORIES_NAME, _display(project_dir, store)
+            ),
+        )
+        return
+    path = store / CORE_MEMORIES_NAME
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        doctor.report(
+            "WARN",
+            "{} exists but could not be read ({}) -- so whether it holds anything "
+            "is unknown, not empty.".format(
+                _display(project_dir, path), exc.strerror or exc.__class__.__name__
+            ),
+        )
+        return
+    count, newest = _core_memory_summary(text)
+    if count == 0:
+        doctor.report(
+            "WARN",
+            "{} exists and holds no dated entries -- created and never "
+            "filled.".format(_display(project_dir, path)),
+        )
+        return
+    doctor.report(
+        "OK",
+        "core memories: {} entr{} in {}, newest {}".format(
+            count, "y" if count == 1 else "ies", _display(project_dir, path), newest
         ),
     )

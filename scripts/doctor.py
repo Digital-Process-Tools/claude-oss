@@ -2103,11 +2103,14 @@ JIT_INDEX = "00-index.tsv"
 from doctor_check_memory import (
     MEMORY_DIR,
     MEMORY_CONFIG_DIR,
+    CORE_MEMORIES_NAME,
     memory_layout,
     _display,
     _listdir,
     _identity_names,
+    _core_memory_summary,
     check_memory,
+    check_core_memories,
 )
 
 
@@ -5925,6 +5928,10 @@ def main(argv=None):
     # Declared dependencies install automatically; they do not configure themselves,
     # and the unconfigured state is the one that still appears to work.
     check_memory(project_dir)
+    # #210: identity.md and core-memories.md answer different questions --
+    # who the agent is, versus what it has learned -- and folding one into the
+    # other is the mistake #210 was filed to stop from happening again.
+    check_core_memories(project_dir)
     check_jit_rules(project_dir)
     # Rules indexed is not rules read. The check above answers "will the matcher find
     # these rows"; this one answers "does anything look in this directory at all", and
