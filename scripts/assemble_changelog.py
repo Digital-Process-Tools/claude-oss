@@ -59,6 +59,7 @@ import argparse
 import datetime
 import os
 import re
+import stat
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -625,18 +626,67 @@ def self_reference_finding(name: str, text: str) -> Optional[str]:
         .format(name, at, number, lines[at - 1] if at <= len(lines) else ""))
 
 
+def _fragment_dir_state(directory: Path) -> Tuple[str, str]:
+    """Three answers for "is `directory` there", not `Path.is_dir()`'s two.
+
+    `Path.is_dir()` / `Path.exists()` swallow `OSError` to `False` on some
+    interpreter versions (CLAUDE.md's own `Path.exists()`/`Path.is_dir()`
+    trap; also `scripts/doctor.py`'s `_dir_state`, which measured the same
+    swallow directly on a local 3.14 install) -- so a permission-denied
+    `changelog.d/` would be reported by a bare `not directory.is_dir()` as
+    "does not exist", a confident absence for a directory that is right
+    there and simply could not be probed. `collect()`'s check is a printed
+    verdict, not a filter -- a call that only filters a list may swallow, a
+    call that prints a verdict must classify in three states -- so it gets
+    a third answer instead of a swallowed boolean.
+
+    ``"dir"``        -- confirmed a directory.
+    ``"absent"``     -- `stat` raised `FileNotFoundError` / `NotADirectoryError`:
+                        genuinely not there, or a path segment above it is a file.
+    ``"unreadable"`` -- `stat` raised something else. Could not determine --
+                        never folded into "absent".
+
+    Deliberately `directory.stat()`, not `directory.is_dir()`: `is_dir()`
+    wraps its own `stat()` call in that same version-dependent swallow, so
+    an `except OSError` around `is_dir()` itself would be unreachable on
+    exactly the interpreter this exists for.
+    """
+    try:
+        st = directory.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent", ""
+    except OSError as exc:
+        return "unreadable", str(exc)
+    except ValueError as exc:
+        # `stat` raises `ValueError`, not `OSError`, for a path carrying an
+        # embedded null byte -- not the same fact as ENOENT.
+        return "unreadable", str(exc)
+    return ("dir" if stat.S_ISDIR(st.st_mode) else "absent"), ""
+
+
 def collect(directory: Path) -> List[Fragment]:
     """Every fragment in `directory`, sorted deterministically.
 
     All findings are gathered before raising: a release cut is a one-shot
     operation and reporting one bad name per run turns it into a queue.
     """
-    if not directory.is_dir():
+    state, detail = _fragment_dir_state(directory)
+    if state == "unreadable":
+        raise CannotValidate(
+            f"{directory}: could not determine whether the fragment "
+            f"directory exists — {detail}")
+    if state == "absent":
         raise BadFragment(f"{directory}: fragment directory does not exist")
 
     fragments: List[Fragment] = []
     findings: List[str] = []
     for path in sorted(directory.iterdir()):
+        # `path.is_dir()` here only filters this loop's own list -- it does
+        # not print a verdict, so it may swallow. Even swallowed to `False`
+        # on a permission-denied entry, the worst case is trying to read it
+        # as a fragment file, which raises loudly out of `path.read_text()`
+        # a few lines below rather than silently dropping the entry. Left as
+        # a bare call by design.
         if path.is_dir() or path.name in _IGNORED or path.name.startswith("."):
             continue
         try:
