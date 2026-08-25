@@ -475,13 +475,14 @@ file-disjoint lane the board offers.** Running fewer is permitted only when it i
 every other third state in this loop is stated — `dispatched 3 of 6 available, because …` — with a
 real reason such as review bandwidth, an unmerged pull request holding the files, or a brief that is
 not yet writable. Three states, computed rather than felt: **`filled`** — one developer per available
-lane; **`under-filled`** — with the count and the reason; and **`could-not-tell`** — when the
-available count itself could not be computed, **which must never render as `filled`**. The count
-comes from the same mechanism as the intersection check above — `scripts/lane_setup.py`'s
-`resolve_lane`/`lane_overlap` renders a lane as resolved paths, and the floor is a set intersection
-over that form for the candidate lanes you name, not an enumeration the script performs on its own:
-an issue's files are not derivable from its body (#267), so naming candidate lanes stays the
-maintainer's job and the script answers only which of them are mutually disjoint.
+lane **and every further issue the two-axis check below finds**; **`under-filled`** — with the count
+and the reason; and **`could-not-tell`** — when the available count itself could not be computed,
+**which must never render as `filled`**. The lane count comes from the same mechanism as the
+intersection check above — `scripts/lane_setup.py`'s `resolve_lane`/`lane_overlap` renders a lane as
+resolved paths, and the floor is a set intersection over that form for the candidate lanes you name,
+not an enumeration the script performs on its own: an issue's files are not derivable from its body
+(#267), so naming candidate lanes stays the maintainer's job and the script answers only which of
+them are mutually disjoint.
 
 **Lane count is not the only axis, and a fleet can be `filled` on it while under-filled on work.**
 The fixed cost of a lane — the worktree, the agent, the two self-review spawns, the push, the pull
