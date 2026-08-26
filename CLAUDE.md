@@ -87,6 +87,18 @@ separately rather than one list.
   legs while every POSIX leg was green.
 - **Tests must pin `PATH`.** With the stub absent, the launcher found the real `claude` and executed
   it — a suite starting live agent sessions in temp directories.
+- **A trailing `|| true` on a shell command can be doing two jobs, and replacing it with a captured
+  status only removes one.** Under `set -eu`, `|| true` on a bare simple command inside an `if` body
+  both swallows the exit status AND suppresses errexit for that command. #573 replaced
+  `bin/oss-workspace`'s `ASK_CONSUMER` heredoc opener's `|| true` with `ask_consumer_status=$?`
+  captured on the line after the heredoc closed — which restored the first job and left the second
+  undone, since a crashed probe now killed the whole script via errexit before that capture line, or
+  the 34-line reporting arm past it, ever ran (#588). The fix is to attach the status capture to the
+  command itself — `<<'HEREDOC' && status=0 || status=$?` on the opener line, the idiom
+  `bin/oss-workspace`'s doctor-diagnostic call already used before this fix — not to a line after
+  it, which errexit never lets execution reach. The harness that shipped alongside #573's fix could not see this: it ran the extracted block
+  under a bare `sh`, never turning `set -eu` on, so a script that dies from errexit and a script that
+  runs to completion look identical to it.
 - **`assemble_changelog.py` derives its root from its own location** by walking up for a `.git`.
   Under a plugin that walk finds **the plugin's own repository**, so a fold given neither `--dir`
   nor `--changelog` rewrites this repo's `CHANGELOG.md` and deletes this repo's fragments, and says

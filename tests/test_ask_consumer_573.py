@@ -129,6 +129,15 @@ def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-n
     )
     script = tmp_path / "run_block.sh"
     script.write_text(
+        # `set -eu`: bin/oss-workspace itself runs under it (:31), and that is
+        # the whole of what #588 was about -- a bare simple command in an `if`
+        # BODY is exactly where errexit applies, and a harness that never turns
+        # errexit on cannot observe a script that dies from it. Without this
+        # line, this fixture would stay green on the #588 regression forever:
+        # the extracted block would simply run to completion under a shell
+        # that never kills it on a nonzero status, which is a different shell
+        # than the one bin/oss-workspace is actually invoked with.
+        "set -eu\n"
         "python_bin=%s\n"
         "SUPERTOOL_WATCH_NAME=%s\n"
         "export SUPERTOOL_WATCH_NAME\n"
@@ -181,6 +190,21 @@ def test_a_recursion_error_reaches_a_could_not_ask_message_not_silence(tmp_path)
     assert "could not ask the installed supertool" in done.stderr, done.stderr
 
 
+def test_a_crashed_probe_does_not_kill_the_script_under_set_eu(tmp_path):
+    """#588: bin/oss-workspace runs under `set -eu` (:31). The ASK_CONSUMER
+    heredoc opener is a bare simple command in an `if` BODY -- exactly
+    where errexit applies -- so a probe that crashes must not take the whole
+    script down with it. This is the assertion #573's own fixture could not
+    make, because it never turned `set -eu` on: the crash message could be
+    present on stderr (asserted above) while the *shell process itself* had
+    already died with a nonzero exit, which is indistinguishable from success
+    to an assertion that only ever reads stderr.
+    """
+    done = _run_ask_consumer_block(tmp_path, _deeply_nested_registry())
+    assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
+    assert "could not ask the installed supertool" in done.stderr, done.stderr
+
+
 def test_a_well_formed_registry_still_answers_ordinarily(tmp_path):
     """The negative control's own control, in the same fixture: a well-formed
     registry that declares no supertool install must still produce the ordinary,
@@ -189,6 +213,7 @@ def test_a_well_formed_registry_still_answers_ordinarily(tmp_path):
     registry as a crash.
     """
     done = _run_ask_consumer_block(tmp_path, json.dumps({"plugins": {}}))
+    assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
     assert "Traceback" not in done.stderr, done.stderr
     assert "could not ask the installed supertool" not in done.stderr, done.stderr
 
