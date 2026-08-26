@@ -619,7 +619,7 @@ fi
 # block below already says so with its own remedy, and a second line would be
 # furniture on a path where it is never actionable.
 if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then
-"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER' || true
+"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER'
 import importlib.util, json, os, sys
 
 name = sys.argv[1]
@@ -731,6 +731,40 @@ sys.stderr.write(
     ".supertool.json. supertool 'channel:health'\n"
     % (name, len(name), pattern, rule_path))
 ASK_CONSUMER
+ask_consumer_status=$?
+if [ "$ask_consumer_status" -ne 0 ]; then
+    # The block above crashed before reaching cannot_ask() itself -- an uncaught
+    # RecursionError out of json.load on a deeply nested registry, say, which is
+    # neither OSError nor ValueError and so escapes both guards inside the block.
+    # The `|| true` this heredoc invocation used to end in swallowed exactly that:
+    # a traceback already reached stderr, loud, but nothing then told this launcher
+    # -- or anything reading its stderr -- that the probe had failed to ANSWER at
+    # all, rather than having answered accepted or rejected. That is the third
+    # state cannot_ask() exists to report, so route a crashed probe there too: the
+    # crashed interpreter cannot name cannot_ask()'s own "why", only that it did
+    # not finish, so this says that instead (#573).
+    #
+    # The name is rendered the same way cannot_ask() itself renders it -- via
+    # Python's repr(), not interpolated raw -- for the same reason: this arm is
+    # reachable with an UNVALIDATED name, because an already-exported
+    # SUPERTOOL_WATCH_NAME wins and never goes through the gate (see the identical
+    # comment on cannot_ask() a few dozen lines up). A raw `echo` here would let a
+    # newline or a terminal escape sequence in that name reach this receipt
+    # unescaped -- a forged line at column 0, or worse, exactly the harm the
+    # sibling comment names. A second `$python_bin` call is a smaller exposure
+    # than the crashed probe already took: this one only reprs an argv string, it
+    # imports nothing.
+    ask_consumer_name_repr=$("$python_bin" -c \
+        'import sys; sys.stdout.write(repr(sys.argv[1]))' \
+        "$SUPERTOOL_WATCH_NAME" 2>/dev/null) || ask_consumer_name_repr="<could not render>"
+    # printf, not echo: this /bin/sh's echo builtin interprets backslash escapes
+    # (XSI behaviour) even with no -e given, so an `echo` here would silently
+    # UN-escape the very \n / \xNN sequences repr() just produced -- turning the
+    # escaping above into a no-op and reproducing the exact forged-line risk it
+    # exists to close. printf '%s\n' never reinterprets its %s argument.
+    ask_consumer_message="oss-workspace: could not ask the installed supertool whether it will accept the watch channel name $ask_consumer_name_repr (${#SUPERTOOL_WATCH_NAME} characters) -- the probe crashed (exit status $ask_consumer_status) before it could answer. So this session is on a private socket or on the shared default one and nothing here can tell you which. supertool 'channel:health'"
+    printf '%s\n' "$ask_consumer_message" >&2
+fi
 fi
 
 # The consumer ships with the SUPERTOOL plugin, not with this one, and its path
