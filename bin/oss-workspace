@@ -619,7 +619,17 @@ fi
 # block below already says so with its own remedy, and a second line would be
 # furniture on a path where it is never actionable.
 if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then
-"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER'
+# `&& ask_consumer_status=0 || ask_consumer_status=$?` on the opener itself --
+# not a trailing `|| true` after the heredoc closes -- because a bare simple
+# command in an `if` BODY is exactly where `set -eu` (:31) applies, and the
+# ORIGINAL `|| true` this heredoc used to end in was doing two jobs at once:
+# swallowing the status AND suppressing errexit. #573 replaced only the first
+# job, leaving `set -eu` free to kill the whole script the instant this probe
+# crashes -- before `ask_consumer_status=$?` two lines below it could ever run,
+# and before the 34-line "could not ask" arm that exists to report exactly that
+# state got a chance to (#588). This idiom is the one the doctor-diagnostic call
+# below already uses for the identical reason.
+"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER' && ask_consumer_status=0 || ask_consumer_status=$?
 import importlib.util, json, os, sys
 
 name = sys.argv[1]
@@ -731,7 +741,9 @@ sys.stderr.write(
     ".supertool.json. supertool 'channel:health'\n"
     % (name, len(name), pattern, rule_path))
 ASK_CONSUMER
-ask_consumer_status=$?
+# ask_consumer_status was already captured by the `&&`/`||` on the heredoc
+# opener above (#588) -- a second `=$?` here would capture the status of the
+# ASSIGNMENT that just ran, which is always 0, and silently overwrite it.
 if [ "$ask_consumer_status" -ne 0 ]; then
     # The block above crashed before reaching cannot_ask() itself -- an uncaught
     # RecursionError out of json.load on a deeply nested registry, say, which is
