@@ -52,19 +52,23 @@ neither plugin is unaffected by it.
 
 ## The `requires: supertool` line above, and what it does today
 
-**Nothing.** No shipped `claude-jit-context` release reads a `requires:` field -- it is not
-`require:` (below-frontmatter, pipe-separated, already read) but a different key entirely, one
-that would probe the named binary on `PATH` at fire time and degrade `mode: block` to a named,
-visible `warn` when it does not resolve. That degrade is being built at
-`claude-jit-context#203`, in response to the same report that opened this issue, and is not
-released as of this writing.
+**It is honoured.** `claude-jit-context` 0.6.0 shipped the reader `claude-jit-context#203` asked
+for: `jit_missing_requires()` in `common.sh` probes every `requires:` value on `PATH` once per
+hook invocation, and `pre-tool-hook.sh` folds the result into `requires_missing` per row --
+`can_refuse = would_refuse && !requires_missing`, so a `mode: block` row naming a binary that did
+not resolve cannot enforce its own block. It falls through to the advisory branch instead, and the
+degrade is said out loud rather than happening silently: the injected `degrade_note` reads *"This
+rule would normally refuse this call, but `<bin>` was not found on PATH, so it has degraded to
+advisory instead of blocking. Install `<bin>` to restore enforcement."*
 
-So this rule still blocks unconditionally, for every reader, whether or not `supertool` is on
-their `PATH` -- exactly as before. The field is written now so that the day the upstream reader
-ships, this rule needs no further edit to benefit from it: an unrecognised frontmatter key is
-inert rather than a parse error, so shipping it early costs nothing and back-fills the day the
-other half lands. **Read `#524` (this repository) and `#203` (`claude-jit-context`) before
-trusting either half as done.**
+So on a reader's machine running `claude-jit-context` 0.6.0 or later with no `supertool` on
+`PATH`, this rule no longer blocks -- it warns, by name, with the remedy in the message. On a
+machine with `supertool` on `PATH`, or running an older `claude-jit-context`, nothing changes:
+this rule is exactly as effective as it was before the field existed. **Measured against the
+installed cache (`~/.claude/plugins/cache/dpt-plugins/claude-jit-context/0.6.0/scripts/`), not
+asserted.** Re-measure before trusting this paragraph -- `#524` and `#570` (this repository) and
+`claude-jit-context#203` are the history, and the field's meaning can move again the same way it
+just did.
 
 ## Why `match: ~.*` and `mode: block` are not narrowed here
 
@@ -77,3 +81,10 @@ rule says to a reader who has the dependency. Weakening `block` to `warn` for a 
 already has `supertool` would trade a working guard for a softer one to hedge against a case
 `requires:` already covers once it ships -- the shape this project itself argues against
 elsewhere in this repository: a `remind` on an absolute rule teaches the reader to dismiss it.
+
+**That argument's own precondition has now been met, and the conclusion does not move.** #524
+declined narrowing on the grounds that the absent-binary case would be answered "once
+`requires:` ships" -- it has (#570), and the degrade described above is what answers it: a
+reader without `supertool` is no longer blocked, without this rule's `block` weakening for the
+reader who has it. Revisiting `block` again now would be re-litigating a question `requires:`
+was written to close.
