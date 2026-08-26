@@ -155,13 +155,30 @@ def _undeclared_rows(root):
 
     A tree with no phases directory contributes nothing rather than raising:
     that is the `missing` rows' answer to give, and giving it twice would say
-    the same absence in two vocabularies.
+    the same absence in two vocabularies. An *unreadable* phases directory
+    (#571) is different from a missing one and is reported as its own row --
+    `state: unreadable` -- rather than silently folded into "no undeclared
+    files found", which is what an empty `on_disk` would otherwise look like.
     """
     try:
-        on_disk = documents(root)[1:]
+        on_disk, unreadable = documents(root)
+        on_disk = on_disk[1:]
     except (RuntimeError, OSError):
         return []
     rows = []
+    for message in unreadable:
+        rows.append(
+            {
+                "path": "skills/manager/phases",
+                "state": "unreadable",
+                "size": None,
+                "budget": None,
+                "baseline": None,
+                "governs": None,
+                "referenced": None,
+                "detail": message,
+            }
+        )
     for path in on_disk:
         rel = path.relative_to(root).as_posix()
         if rel in DOCUMENTS:

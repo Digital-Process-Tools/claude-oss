@@ -199,7 +199,8 @@ def test_documents_finds_the_whole_set_positive_control():
     first -- the order the guards' section extractors rely on."""
     import manager_docs
 
-    found = manager_docs.documents(ROOT)
+    found, unreadable = manager_docs.documents(ROOT)
+    assert unreadable == [], unreadable
     assert found[0].name == "SKILL.md", found
     assert len(found) == len(skill_phases.DOCUMENTS), (found, skill_phases.DOCUMENTS)
 
@@ -213,7 +214,9 @@ def test_the_join_cannot_invent_a_line_at_a_file_boundary():
     import manager_docs
 
     joined = manager_docs.text(ROOT)
-    for path in manager_docs.documents(ROOT)[1:]:
+    paths, unreadable = manager_docs.documents(ROOT)
+    assert unreadable == [], unreadable
+    for path in paths[1:]:
         first = path.read_text(encoding="utf-8").split(chr(10))[0]
         assert (chr(10) + first) in joined, first
 

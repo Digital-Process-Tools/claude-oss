@@ -40,21 +40,61 @@ def repo_root():
 
 
 def documents(root=None):
-    """Every file the manager loop's prose is spread across, spine first.
+    """``(paths, unreadable)``: every file the manager loop's prose is spread
+    across, spine first, plus one message per reason the phases directory
+    could not be listed.
 
-    Raises rather than returning an empty list -- see the module docstring.
+    Raises rather than returning an empty list for a missing spine -- see the
+    module docstring. The phases half is different: `Path.glob` swallows
+    `PermissionError` while it walks and silently yields nothing for a
+    subtree it could not enter (CLAUDE.md's own `Path.rglob`/`Path.is_dir`
+    bullet, #124/#383) -- so a denied `skills/manager/phases/` used to narrow
+    `documents()` to `[spine]` with no raise and no signal, which is the
+    coverage-narrowed-without-saying-so shape #547 records one file over
+    (#571). `iterdir()` is used instead because it is the operation that can
+    actually report a deny -- `doctor._workflow_scan`/`_rglob_md` solve the
+    identical swallow the same way, one directory level down, with
+    `os.walk(onerror=...)`; this directory has no subdirectories of its own,
+    so a single `iterdir()` call is the whole of the walk needed here.
     """
     root = repo_root() if root is None else Path(root)
     spine = root.joinpath(*SPINE_REL)
     if not spine.is_file():
         raise RuntimeError("manager_docs: no spine at {0}".format(spine))
-    phases = sorted(root.joinpath(*PHASES_REL).glob("*.md"))
-    return [spine] + phases
+    phases_dir = root.joinpath(*PHASES_REL)
+    unreadable = []
+    try:
+        entries = list(phases_dir.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        # Not there, or not a directory -- "nothing found", not "unreadable":
+        # a phases directory that plainly does not exist is not the same fact
+        # as one this process could not read.
+        entries = []
+    except OSError as exc:
+        entries = []
+        unreadable.append(str(exc))
+    phases = sorted(p for p in entries if p.suffix.lower() == ".md")
+    return [spine] + phases, unreadable
 
 
 def text(root=None, sep=JOINER):
-    """Every document's text, concatenated in `documents()` order."""
-    return sep.join(p.read_text(encoding="utf-8") for p in documents(root))
+    """Every document's text, concatenated in `documents()` order.
+
+    Raises rather than silently concatenating a narrowed set: discarding
+    `unreadable` here would reopen the exact defect `documents()` closes
+    (#571) one call further down -- every `ManagerLoop`-based content check
+    reads through this function, and a denied phases directory would
+    otherwise still narrow their coverage to the spine alone with no signal.
+    A caller that wants the partial set anyway calls `documents()` directly
+    and handles `unreadable` itself.
+    """
+    paths, unreadable = documents(root)
+    if unreadable:
+        raise RuntimeError(
+            "manager_docs: phases directory could not be listed, so its text "
+            "cannot be included: {0}".format(unreadable)
+        )
+    return sep.join(p.read_text(encoding="utf-8") for p in paths)
 
 
 class ManagerLoop:
@@ -71,7 +111,20 @@ class ManagerLoop:
 
     @property
     def paths(self):
-        return documents(self._root)
+        """Raises when the phases directory could not be listed (#571) --
+        `is_file()` below relies on this being the *whole* set, not a
+        narrowed one: `all(p.is_file() for p in [spine])` would answer `True`
+        for a loop six files short of complete, which is exactly the
+        one-present-file-out-of-seven-is-not-a-yes shape its own docstring
+        warns against.
+        """
+        paths, unreadable = documents(self._root)
+        if unreadable:
+            raise RuntimeError(
+                "manager_docs: phases directory could not be listed: "
+                "{0}".format(unreadable)
+            )
+        return paths
 
     @property
     def spine(self):

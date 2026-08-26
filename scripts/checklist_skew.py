@@ -30,7 +30,14 @@ Three states, matching the gate's own vocabulary exactly:
                   that only installed the plugin and never shipped its own
                   .claude-plugin/plugin.json at all. It never renders as a
                   match: a manifest this script could not read is not
-                  evidence that the two are the same.
+                  evidence that the two are the same. #580: also
+                  could-not-tell when a repo manifest *was* read but none of
+                  the checklist's own definition files exist in that repo --
+                  a readable .claude-plugin/plugin.json can belong to a
+                  different, unrelated plugin entirely (this is the ordinary
+                  shape for most managed repos that happen to ship their own
+                  plugin manifest), and a version comparison between two
+                  unrelated plugins' numbers has no subject.
 
 This gate **annotates, it does not block** (`commands/release.md` says so in
 as many words, and blocking on a skew nobody chose would trade a reporting gap
@@ -45,12 +52,23 @@ because, once, a human answered that second question by hand: diffing the
 auditor's own definition, `agents/auditor.md`, and the ranking table
 `skills/manager/SKILL.md` owns, and finding the ranking rows byte-identical.
 
-So when the state is `differs`, this module compares those three files, PLUS
-every `agents/*.md` path one of the three names in its own text -- e.g.
-`agents/auditor.md` delegating its platform band to `agents/developer.md`
-rather than reading it (#547) -- byte-for-byte between the two trees, and
-reports each as `identical`, `differs`, or `could-not-tell` (a file present on
-one side only, or an unreadable one, is not silently skipped).
+So whenever both manifests could be read -- `matches` and `differs` alike --
+this module compares those three files, PLUS every `agents/*.md` path one of
+the three names in its own text -- e.g. `agents/auditor.md` delegating its
+platform band to `agents/developer.md` rather than reading it (#547) --
+byte-for-byte between the two trees, and reports each as `identical`,
+`differs`, or `could-not-tell` (a file present on one side only, or an
+unreadable one, is not silently skipped).
+
+#572: the comparison used to run only under `differs`, on the reasoning that
+an equal version number meant nothing to check. That left the byte comparison
+skipped in the one state this repository is always in at release time -- an
+equal version number is not a promise the two trees are otherwise identical,
+and `matches` now carries `definitions` too, so a config drift under an
+unmoved version number is not silently unreported. The state name still
+answers the version question alone; a `matches` payload carrying a `differs`
+row is a config finding the release report must quote, exactly as it already
+does under `differs`.
 
 **This is not a semantic verdict, and callers must not read it as one.** A
 byte-identical ranking table is evidence that nothing in it moved; it is not
@@ -171,13 +189,14 @@ def _derive_definition_files(plugin_root, repo):
 
     Reads BOTH trees for each base file and unions what each one references --
     not just whichever resolves first (self-review finding: when the two
-    copies differ, which is exactly the `differs` state this function only
-    runs under, a reference the OTHER copy names would otherwise be silently
-    unseen -- the same "coverage set narrower than what it depends on" shape
-    this function exists to close, one level up). A base file unreadable on
-    BOTH sides contributes nothing, same as before this derivation existed;
-    that file's own row is still `could-not-tell` via `_compare_definitions`,
-    so nothing is silently dropped, only not derived from.
+    copies differ, a reference the OTHER copy names would otherwise be
+    silently unseen -- the same "coverage set narrower than what it depends
+    on" shape this function exists to close, one level up). This function now
+    runs whether the manifest versions agree or not (#572) -- a base file
+    unreadable on BOTH sides contributes nothing, same as before this
+    derivation existed; that file's own row is still `could-not-tell` via
+    `_compare_definitions`, so nothing is silently dropped, only not derived
+    from.
     """
     found = set()
     for rel in DEFINITION_FILES:
@@ -193,6 +212,24 @@ def _derive_definition_files(plugin_root, repo):
         if rel not in ordered:
             ordered.append(rel)
     return tuple(ordered)
+
+
+def _repo_definition_presence(plugin_root, repo):
+    """``(present, total)`` over `_derive_definition_files(plugin_root, repo)`:
+    how many of the derived definition files exist in the repo tree.
+
+    #580: a manifest read succeeding is not proof this repository ships the
+    checklist being audited -- a managed repository can carry its own,
+    unrelated `.claude-plugin/plugin.json` (a different plugin entirely,
+    with its own version number that has nothing to do with `oss`'s). Zero
+    present is that repository saying, in the only vocabulary it has, that it
+    does not ship these definitions at all -- the version comparison then has
+    no subject. `total` is always >= `len(DEFINITION_FILES)` (3), so a caller
+    never has to guard against a division-by-nothing case that cannot occur.
+    """
+    rels = _derive_definition_files(plugin_root, repo)
+    present = sum(1 for rel in rels if repo.joinpath(*rel.split("/")).is_file())
+    return present, len(rels)
 
 
 def _compare_definitions(plugin_root, repo):
@@ -303,6 +340,31 @@ def compute(repo=".", plugin_root=None):
         )
     base["repo_version"] = repo_version
 
+    definitions = _compare_definitions(plugin_root_path, repo_path)
+    present, total = _repo_definition_presence(plugin_root_path, repo_path)
+
+    if present == 0:
+        # #580: a readable repo manifest is not proof this repo ships the
+        # checklist -- it may be a different plugin's own manifest entirely.
+        # Zero of the derived definition files existing in the repo tree
+        # means the version comparison has no subject: replace the false
+        # "known and stale/matching" claim with the true "unknown" one.
+        return dict(
+            base,
+            state=STATE_COULD_NOT_TELL,
+            reason=(
+                "this repository's own .claude-plugin/plugin.json could be read "
+                "({0}), but none of the checklist's {1} definition file(s) are "
+                "present in this repository -- it does not ship these "
+                "definitions, so its version and the installed checklist's "
+                "version ({2}) are not a comparison of the same thing".format(
+                    repo_version, total, installed_version
+                )
+            ),
+            detail="",
+            definitions=definitions,
+        )
+
     if installed_version == repo_version:
         return dict(
             base,
@@ -312,9 +374,9 @@ def compute(repo=".", plugin_root=None):
                 "version".format(installed_version)
             ),
             detail="",
+            definitions=definitions,
         )
 
-    definitions = _compare_definitions(plugin_root_path, repo_path)
     return dict(
         base,
         state=STATE_DIFFERS,
