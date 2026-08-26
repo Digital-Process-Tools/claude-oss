@@ -391,8 +391,8 @@ for: `jit_missing_requires()` in `common.sh` probes every `requires:` value on `
 hook invocation, and `pre-tool-hook.sh` folds the result into `requires_missing` per row --
 `can_refuse = would_refuse && !requires_missing`, so a `mode: block` row naming a binary that did
 not resolve cannot enforce its own block. It falls through to the advisory branch instead, and the
-degrade is said out loud rather than happening silently: the injected `degrade_note` reads *"This
-rule would normally refuse this call, but `<bin>` was not found on PATH, so it has degraded to
+degrade is said out loud rather than happening silently: the injected `degrade_note` reads *"[jit]
+This rule would normally refuse this call, but `<bin>` was not found on PATH, so it has degraded to
 advisory instead of blocking. Install `<bin>` to restore enforcement."*
 
 So on a reader's machine running `claude-jit-context` 0.6.0 or later with no `supertool` on

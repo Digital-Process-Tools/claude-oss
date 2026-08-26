@@ -121,8 +121,16 @@ def test_newest_installed_claude_jit_context_reads_requires():
         pytest.skip("no claude-jit-context cache on this machine -- untested here")
 
     def _version_key(path):
+        # Every element is tagged (0, int) or (1, str) so a comparison never mixes
+        # types within a position -- a bare `int(p) if p.isdigit() else p` mixes
+        # int and str across directories with different naming shapes (a stable
+        # "0.6.0" beside a prerelease "0.6.0-rc1", or any non-numeric segment) and
+        # Python 3's tuple comparison raises TypeError rather than sorting. Numeric
+        # segments still compare arithmetically against each other; a non-numeric
+        # segment at the same position sorts after any numeric one, which is a
+        # reasonable "unknown scheme comes last" default rather than a crash.
         parts = os.path.basename(path).split(".")
-        return tuple(int(p) if p.isdigit() else p for p in parts)
+        return tuple((0, int(p)) if p.isdigit() else (1, p) for p in parts)
 
     newest = max(version_dirs, key=_version_key)
     scripts = glob.glob(os.path.join(newest, "scripts", "*.sh"))
