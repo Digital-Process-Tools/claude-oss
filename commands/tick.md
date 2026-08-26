@@ -256,14 +256,15 @@ Skill(manager)
    **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
    suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the
    op makes still applies. Settle this before the first tick rather than at the merge step, where
-   the review is already spent — see *Before the first tick* in the manager skill.
+   the review is already spent — see *Before the first tick* in `skills/manager/phases/merge.md`.
 
    **Compose each spawn's `description` with `scripts/fleet_label.py`, not by hand (#539).** A lane
    carrying three issues and a lane carrying one used to render identically in the fleet view — the
    label named only the first issue. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" <primary>
    <every issue this lane carries, comma-separated> "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
-   and refuses to print anything when the bundle is incomplete — *Run a fleet, not a queue* in the
-   manager skill has the full convention. Paste its stdout as the `Agent` call's `description`.
+   and refuses to print anything when the bundle is incomplete — *Run a fleet, not a queue* in
+   `skills/manager/phases/dispatch.md` has the full convention. Paste its stdout as the `Agent`
+   call's `description`.
 
 6. **Write one state entry, and record the intake ratio with it.** The decision and the one reason
    for it. Reasoning that only matters to a pull request belongs in that pull request.

@@ -45,7 +45,7 @@ collapsing them by accident:
 
 `git rev-parse` on a full ref, never abbreviated: a short sha returns `[]` from
 `gh run list --commit` and exits 0, which has cost this loop a round already
-(CLAUDE.md, skills/manager/SKILL.md).
+(CLAUDE.md, skills/manager/phases/release.md).
 
 Python 3.9 compatible: no match statements, no `X | Y` annotations.
 """

@@ -753,7 +753,15 @@ def test_every_payload_carries_every_key(tmp_path):
 
 
 RELEASE_COMMAND = REPO_ROOT / "commands" / "release.md"
-MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from manager_docs import ManagerLoop  # noqa: E402
+
+#: The manager loop's whole prose -- SKILL.md plus every phase file it defers
+#: to. The checks below ask "does the loop say X", never "does one file say
+#: X"; pinned to the spine alone they would have gone quietly narrower than
+#: their own subject the moment a paragraph moved into a phase file.
+MANAGER_SKILL = ManagerLoop(REPO_ROOT)
 FRAGMENT_README = REPO_ROOT / "changelog.d" / "README.md"
 
 VERSION_RULE_ANCHORS = [

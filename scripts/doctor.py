@@ -1069,7 +1069,7 @@ def gh_binary_findings(system, resolved, gh_version, host=None, archs=None, arch
             (
                 "WARN",
                 "gh version could not be read from {} -- the `gh-pr-edit` workaround in "
-                "skills/manager/SKILL.md is bounded by a gh version (cli/cli#13069) and "
+                "skills/manager/phases/handback.md is bounded by a gh version (cli/cli#13069) and "
                 "there is nothing to compare it against.".format(resolved),
             )
         )
@@ -1077,7 +1077,7 @@ def gh_binary_findings(system, resolved, gh_version, host=None, archs=None, arch
         lines.append(
             (
                 "OK",
-                "gh version: {} at {} -- skills/manager/SKILL.md's `gh-pr-edit` workaround "
+                "gh version: {} at {} -- the manager loop's `gh-pr-edit` workaround "
                 "exists for a gh predating cli/cli#13069; compare there if `gh pr edit` "
                 "ever behaves oddly.".format(gh_version, resolved),
             )
@@ -2983,7 +2983,7 @@ def publish_confirm_state(project_dir, env=None):
 
 def check_publish_confirm(project_dir, env=None):
     """Report supertool's publish-confirm gate before the merge step is where a
-    maintainer meets it -- `skills/manager/SKILL.md`'s "before the first tick"
+    maintainer meets it -- `skills/manager/phases/merge.md`'s "before the first tick"
     section names this arrangement and nothing performs or checks it (#421).
 
     `needs-force` renders as OK, deliberately: it is the shipped default and
