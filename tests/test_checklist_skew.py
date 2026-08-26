@@ -285,8 +285,10 @@ def test_could_not_tell_when_repo_ships_no_definitions_at_all(tmp_path):
     """
     plugin_root = tmp_path / "plugin"
     repo = tmp_path / "repo"
-    _manifest(plugin_root, "0.13.0")
-    _manifest(repo, "0.50.0")  # a different, unrelated plugin's own manifest
+    # 9.9.x is this repo's own convention for a version it will never reach --
+    # see tests/test_no_test_pins_the_current_version_350.py.
+    _manifest(plugin_root, "9.9.3")
+    _manifest(repo, "9.9.5")  # a different, unrelated plugin's own manifest
     # repo intentionally has no agents/ or skills/ directory at all -- it does
     # not ship any of the oss checklist's definition files.
 
@@ -295,8 +297,8 @@ def test_could_not_tell_when_repo_ships_no_definitions_at_all(tmp_path):
 
     assert payload["state"] == COULD_NOT_TELL
     assert payload["state"] != DIFFERS
-    assert payload["installed_version"] == "0.13.0"
-    assert payload["repo_version"] == "0.50.0"
+    assert payload["installed_version"] == "9.9.3"
+    assert payload["repo_version"] == "9.9.5"
 
 
 def test_differs_positive_control_when_repo_ships_some_definitions(tmp_path):
@@ -308,8 +310,8 @@ def test_differs_positive_control_when_repo_ships_some_definitions(tmp_path):
     """
     plugin_root = tmp_path / "plugin"
     repo = tmp_path / "repo"
-    _manifest(plugin_root, "0.13.0")
-    _manifest(repo, "0.50.0")
+    _manifest(plugin_root, "9.9.3")
+    _manifest(repo, "9.9.5")
 
     (plugin_root / "agents").mkdir(parents=True)
     (repo / "agents").mkdir(parents=True)
