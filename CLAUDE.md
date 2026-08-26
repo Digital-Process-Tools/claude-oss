@@ -95,8 +95,8 @@ separately rather than one list.
   undone, since a crashed probe now killed the whole script via errexit before that capture line, or
   the 34-line reporting arm past it, ever ran (#588). The fix is to attach the status capture to the
   command itself — `<<'HEREDOC' && status=0 || status=$?` on the opener line, the idiom
-  `bin/oss-workspace:1002` already used — not to a line after it, which errexit never lets execution
-  reach. The harness that shipped alongside #573's fix could not see this: it ran the extracted block
+  `bin/oss-workspace`'s doctor-diagnostic call already used before this fix — not to a line after
+  it, which errexit never lets execution reach. The harness that shipped alongside #573's fix could not see this: it ran the extracted block
   under a bare `sh`, never turning `set -eu` on, so a script that dies from errexit and a script that
   runs to completion look identical to it.
 - **`assemble_changelog.py` derives its root from its own location** by walking up for a `.git`.

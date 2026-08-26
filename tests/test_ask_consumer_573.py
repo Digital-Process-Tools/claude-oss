@@ -192,7 +192,7 @@ def test_a_recursion_error_reaches_a_could_not_ask_message_not_silence(tmp_path)
 
 def test_a_crashed_probe_does_not_kill_the_script_under_set_eu(tmp_path):
     """#588: bin/oss-workspace runs under `set -eu` (:31). The ASK_CONSUMER
-    heredoc opener at :622 is a bare simple command in an `if` BODY -- exactly
+    heredoc opener is a bare simple command in an `if` BODY -- exactly
     where errexit applies -- so a probe that crashes must not take the whole
     script down with it. This is the assertion #573's own fixture could not
     make, because it never turned `set -eu` on: the crash message could be
