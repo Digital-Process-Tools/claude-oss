@@ -1,29 +1,29 @@
-"""#524: the rule blocks unconditionally, and the presence check it lacks is not ours
-to add unilaterally.
+"""#524 wrote `requires: supertool` into the frontmatter on the reasoning that an
+unrecognised key is inert, so shipping it early would cost nothing and back-fill the day
+the upstream reader landed. #570 is that day: `claude-jit-context` 0.6.0 ships the reader
+(`common.sh`'s `jit_missing_requires()`, `pre-tool-hook.sh`'s `requires_missing` /
+`can_refuse` and the injected `degrade_note`), so the rule's own prose describing the field
+as inert had gone stale on every machine carrying that release -- and this file's own
+measurement is what caught it: `test_no_shipped_claude_jit_context_script_reads_requires_yet`
+asserted no cached script mentioned `requires` and failed the moment 0.6.0 was cached here.
 
-`supertool-required.md` ships `mode: block` with no way to say "block, unless the binary
-cannot be found" -- frontmatter has no field for that. `claude-jit-context`'s own tracker
-(#203 there) has agreed to build one, spelled `requires: <tool>`, probed with `command -v`
-at fire time and named in the injected context when it degrades a block to a warn. As of
-`claude-jit-context` 0.5.0 -- the newest cached release -- no script under `scripts/`
-mentions the word `requires` at all: the field has not shipped (measured, not assumed;
-see the note in `oss_rules.py` beside `TOOLS_SUPERTOOL`).
+That old assertion is retired rather than loosened -- reversing which side of "does a
+cached release read requires:" is the expected answer would make the test pass against
+either state, which pins nothing. What replaces it measures the SAME fact in the direction
+that is now expected to hold: the newest cached release DOES read the field. If a future
+release regresses that (or if the newest cached copy is older than 0.6.0 on some machine),
+this file is expected to go red again the same way it did for #570, which is the signal
+that the rule's prose needs re-reading rather than re-trusting.
 
-So this repository's half is narrower than "wire up the degrade": write the field now, so
-that the day the upstream hook starts reading it, this rule needs no further edit, and say
-in the rule's own text that writing it today changes nothing yet. `jit_frontmatter()` in
-`claude-jit-context/scripts/common.sh` reads a frontmatter field by matching `<name>: ` at
-line start and returns nothing for a name it was not asked for -- an unrecognised key is
-inert, never a parse error, which is what makes shipping the field before its reader exists
-safe rather than merely optimistic. That claim is asserted here as a fact about the current
-constant (the field is present, the mode is unchanged), not driven through the installed
-hook -- driving it would only show the field being ignored, which is the state already
-described in prose above.
+The other three tests here pin what the rule now SAYS about that behaviour -- the replacement
+sentence, not the retired one -- and the care #524's own review already applied once still
+applies: the new assertions must not also pass against the pre-#570 body.
 
 `test_the_rule_still_blocks_rather_than_reminding` in
 `test_supertool_rule_states_the_absent_case_294.py` is the control this file must not
-disturb: `mode: block` stays exactly as effective today as it was before this field
-existed, because nothing yet reads `requires:` to soften it.
+disturb: `mode: block` is unchanged by any of this -- the degrade is upstream's `pre-tool-hook.sh`
+softening its OWN enforcement of a block row when the binary is missing, not a change to what
+this repository's frontmatter declares.
 """
 
 import sys
@@ -50,20 +50,33 @@ def test_the_rule_declares_requires_supertool():
     )
 
 
-def test_the_rule_says_the_field_is_not_yet_honoured_by_anything_shipped():
+def test_the_rule_says_the_field_is_now_honoured():
     body = _body()
     assert "203" in body, (
-        "the rule does not point a reader at the upstream issue tracking the reader "
-        "half of this fix -- without it there is no way to tell whether the degrade "
-        "this field promises is live"
+        "the rule does not point a reader at the upstream issue that shipped the "
+        "reader half of this fix -- without it there is no way to tell whether the "
+        "degrade this field promises is live"
     )
-    # Anchored on a phrase from the new paragraph itself, not on words ("not", "read")
-    # that the pre-#524 body already contained in unrelated sentences ("This rule
-    # cannot tell...", "the reader is told") -- an earlier version of this assertion
-    # passed against the OLD body verbatim and pinned nothing, caught in review.
-    assert "No shipped `claude-jit-context` release reads a `requires:` field" in body, (
-        "the rule does not say in as many words that no shipped claude-jit-context "
-        "version reads requires: yet -- writing the field silently would read as done"
+    assert "570" in body, (
+        "the rule does not point a reader at the issue that caught the prose going "
+        "stale (#570) -- the same class can recur and needs the same trail"
+    )
+    # Anchored on a phrase from the NEW paragraph itself, not on words ("not", "read")
+    # that either the pre-#524 or the pre-#570 body already contained in unrelated
+    # sentences -- an earlier version of this exact mistake passed against the OLD
+    # body verbatim and pinned nothing, caught in review (#524).
+    assert "**It is honoured.**" in body, (
+        "the rule no longer says in as many words that the requires: field is read "
+        "by a shipped claude-jit-context release -- it shipped in 0.6.0 (#570), and "
+        "prose still describing it as inert would read as done what is not, or as "
+        "undone what is now live"
+    )
+    assert (
+        "No shipped `claude-jit-context` release reads a `requires:` field"
+        not in body
+    ), (
+        "the rule still carries the retired #524 sentence claiming nothing reads "
+        "requires: -- that became false the moment 0.6.0 shipped the reader (#570)"
     )
 
 
@@ -74,10 +87,22 @@ def test_the_block_mode_is_unchanged_by_adding_the_field():
     assert oss_rules._field(_body(), "mode") == "block"
 
 
-def test_no_shipped_claude_jit_context_script_reads_requires_yet():
-    """A measurement, not a belief -- and the reason half 1 has to stay documentation
-    rather than working code. If this ever finds a hit, the prose above is stale and
-    the rule can start claiming the degrade for real.
+def test_newest_installed_claude_jit_context_reads_requires():
+    """A measurement, not a belief (#570, the inverse of #524's own).
+
+    #524's version of this test asserted no cached release read `requires:` yet, and
+    it was written to go red the day that stopped being true -- which is exactly what
+    happened here when `claude-jit-context` 0.6.0 landed in the cache. That old
+    assertion is retired rather than flipped in place: reversing which side of the
+    fact is expected would make the test pass against either state, pinning nothing.
+
+    This measures the SAME fact -- does an installed release read the field -- in the
+    direction the rule's rewritten prose now claims: the NEWEST cached release does.
+    Three states, not two: no cache at all is the skip this already was under #524;
+    the newest cached release reading `requires` is the pass this now asserts; the
+    newest cached release NOT reading it would mean the rule's "It is honoured" prose
+    is itself stale (an upstream regression, or a stale cache on this machine) and
+    this test is meant to go red exactly the way its predecessor did for #570.
     """
     import glob
     import os
@@ -85,18 +110,38 @@ def test_no_shipped_claude_jit_context_script_reads_requires_yet():
     cache_root = os.path.expanduser(
         "~/.claude/plugins/cache/dpt-plugins/claude-jit-context"
     )
-    scripts = glob.glob(os.path.join(cache_root, "*", "scripts", "*.sh"))
-    if not scripts:
+    version_dirs = [
+        d
+        for d in glob.glob(os.path.join(cache_root, "*"))
+        if os.path.isdir(os.path.join(d, "scripts"))
+    ]
+    if not version_dirs:
         import pytest
 
         pytest.skip("no claude-jit-context cache on this machine -- untested here")
+
+    def _version_key(path):
+        # Every element is tagged (0, int) or (1, str) so a comparison never mixes
+        # types within a position -- a bare `int(p) if p.isdigit() else p` mixes
+        # int and str across directories with different naming shapes (a stable
+        # "0.6.0" beside a prerelease "0.6.0-rc1", or any non-numeric segment) and
+        # Python 3's tuple comparison raises TypeError rather than sorting. Numeric
+        # segments still compare arithmetically against each other; a non-numeric
+        # segment at the same position sorts after any numeric one, which is a
+        # reasonable "unknown scheme comes last" default rather than a crash.
+        parts = os.path.basename(path).split(".")
+        return tuple((0, int(p)) if p.isdigit() else (1, p) for p in parts)
+
+    newest = max(version_dirs, key=_version_key)
+    scripts = glob.glob(os.path.join(newest, "scripts", "*.sh"))
     hits = []
     for path in scripts:
         with open(path, encoding="utf-8", errors="replace") as fh:
             if "requires" in fh.read():
                 hits.append(path)
-    assert not hits, (
-        "a shipped claude-jit-context script now mentions `requires` -- the field may "
-        "be live; re-read it and update this rule and this test rather than trusting "
-        "this comment (#524): {}".format(hits)
+    assert hits, (
+        "the newest cached claude-jit-context release ({}) does not mention "
+        "`requires` anywhere under scripts/ -- the rule's rewritten prose claims "
+        "the field is honoured as of 0.6.0; re-measure before trusting either "
+        "(#570): {}".format(os.path.basename(newest), newest)
     )
