@@ -502,6 +502,50 @@ def check_config(project_dir):
     return config
 
 
+def check_gitignore_hides_config(project_dir):
+    """Is `.oss.json` ignored by this repo's own `.gitignore`? Three states, never two.
+
+    `.gitignore` is a DEFAULTS file (CLAUDE.md's ownership table): scaffolded once
+    when absent, then the managed repo's forever. A stale line in it -- #564, the
+    pre-#34 template naming `.oss.json` as machine-specific rather than
+    `.oss.local.json` -- can never be corrected by a later `/oss:scaffold` run. This
+    is the only place that can ever turn that permanent silent defect into something
+    visible: it observes the field rather than fixing it, because it cannot.
+
+    Reuses `oss_config._ignore_rule`, the exact three-state `git check-ignore`
+    classifier `--split` already reports through -- clear / ignored / unknown -- so
+    this check and that one can never disagree about what git actually says.
+
+    A `.gitignore` that could not be read (no git repo here, git not on PATH, a
+    filename git's argv could not carry) must never render as clean: that is
+    `unknown` below, reported as WARN naming why, never folded into OK.
+    """
+    if oss_config is None:
+        report(
+            "WARN",
+            ".gitignore: not checked (scripts/oss_config.py could not be imported)",
+        )
+        return
+    state, detail = oss_config._ignore_rule(project_dir, oss_config.CONFIG_NAME)
+    if state == "clear":
+        report("OK", ".oss.json: not ignored by .gitignore (trackable)")
+    elif state == "ignored":
+        report(
+            "FAIL",
+            ".oss.json is ignored by {} -- this loop calls .oss.json the tracked, "
+            "authoritative project config (the machine-specific half is "
+            ".oss.local.json). A repository scaffolded before #564 keeps this line "
+            "forever unless a human removes it by hand; nothing else corrects a "
+            "defaults file.".format(detail),
+        )
+    else:
+        report(
+            "WARN",
+            ".gitignore: could not ask git whether it ignores .oss.json ({}). "
+            "Unchecked is not unignored.".format(detail),
+        )
+
+
 # ENOENT. Apple's own documented reading of `sysctl.proc_translated` is that the
 # sysctl being ABSENT means this system has no translation layer at all -- so it is
 # the third valid answer to the probe, not a failed probe.
@@ -6915,6 +6959,11 @@ def main(argv=None):
     )
 
     config = check_config(project_dir)
+    # #564: a defaults file (`.gitignore`) is scaffolded once and never corrected
+    # after -- this is the only place a stale rule hiding the tracked, authoritative
+    # config can ever become visible again. Runs even when config is None: a repo
+    # whose .oss.json is invisible to git might be exactly why it failed to load.
+    check_gitignore_hides_config(project_dir)
 
     # #367. Above the three `check_tool` probes deliberately: each of those spawns a
     # subprocess, and the interpreter line is the one that explains what a subprocess

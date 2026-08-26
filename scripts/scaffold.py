@@ -225,8 +225,10 @@ __pycache__/
 # developer's absolute path into every other clone.
 /supertool
 
-# Written by /oss:setup. Config, not truth -- and machine-specific paths live in it.
-.oss.json
+# The machine-specific half of the config split (#34): local paths, never shared.
+# .oss.json itself is the PROJECT half -- tracked and reviewed like any other repo
+# fact -- and must never be named here (#564).
+.oss.local.json
 """
 
 # Radar on by default: a managed repo should have a board the first time someone
