@@ -2160,7 +2160,10 @@ def _main(argv=None):
         if pending_wait_record is not None:
             _say("RECORDED " + wait_line(pending_wait_record), sys.stderr)
         if args.plugin_identity is not None:
-            _say("RECORDED plugin identity: {}".format(args.plugin_identity), sys.stderr)
+            _say(
+                "RECORDED plugin identity: " + _receipt_line(args.plugin_identity),
+                sys.stderr,
+            )
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
