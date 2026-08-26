@@ -94,6 +94,29 @@ def test_record_lane_files_empty_list_is_stored_as_given(tmp_path):
         assert json.load(fh)["files"] == []
 
 
+def test_record_lane_degrades_to_could_not_derive_when_the_prior_record_is_corrupt(tmp_path):
+    """The preserve is best-effort: a corrupt previous record cannot be read back,
+    so a plain call after it stores `files=None` rather than raising or claiming a
+    file list it cannot verify. That is a real, if rare, loss -- but the very next
+    reader (`held_from_live_lanes`) must see the same `files=None` as "recorded
+    without --lane" and report `could-not-derive`, never a silently narrower
+    `resolved`. This is the control that pins the read-modify-write's failure
+    direction rather than merely asserting it in prose."""
+    root = lane_setup.lane_registry_dir(tmp_path)
+    os.makedirs(root, exist_ok=True)
+    record_path = os.path.join(root, "558.json")
+    with open(record_path, "w") as fh:
+        fh.write("{not valid json")
+
+    result = lane_setup.record_lane(tmp_path, 558, "fix/558", str(tmp_path / "558"))
+    assert result["state"] == "recorded"
+    with open(result["path"]) as fh:
+        assert json.load(fh)["files"] is None
+
+    held = lane_setup.held_from_live_lanes(tmp_path)
+    assert held["state"] == "could-not-derive"
+
+
 # --- held_from_live_lanes: control pair -----------------------------------------
 
 
@@ -195,6 +218,32 @@ def test_held_from_open_prs_could_not_derive_on_unparseable_output(monkeypatch):
     monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "not json", ""))
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "could-not-derive"
+
+
+def test_held_from_open_prs_could_not_derive_when_the_page_limit_is_hit(monkeypatch):
+    """Must not silently fire the truncation case as a confident `resolved`: a
+    result that reaches `_PR_LIST_LIMIT` is indistinguishable from a page that was
+    cut off mid-list, so it must be reported the same way a failed call is -- never
+    folded into `resolved` with whatever partial `held` it managed to build."""
+    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    limit = lane_setup._PR_LIST_LIMIT
+    payload = json.dumps(
+        [{"number": n, "files": [{"path": "scripts/f{0}.py".format(n)}]} for n in range(limit)]
+    )
+    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, payload, ""))
+    result = lane_setup.held_from_open_prs("owner/repo")
+    assert result["state"] == "could-not-derive"
+
+
+def test_held_from_open_prs_resolved_when_under_the_page_limit(monkeypatch):
+    """Positive control for the truncation case above: a result comfortably under
+    the limit is still `resolved`, or the limit itself would be indistinguishable
+    from a broken derivation."""
+    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    payload = json.dumps([{"number": 1, "files": [{"path": "scripts/f.py"}]}])
+    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, payload, ""))
+    result = lane_setup.held_from_open_prs("owner/repo")
+    assert result["state"] == "resolved"
 
 
 # --- derive_held_set: combined states -------------------------------------------
@@ -320,6 +369,17 @@ def test_receipt_says_could_not_derive_never_available_or_blocked(tmp_path):
     assert "verdict : COULD NOT DERIVE THE HELD SET" in text
     assert "verdict : available" not in text
     assert "verdict : BLOCKED" not in text
+
+
+def test_receipt_does_not_reuse_the_only_one_side_given_wording_when_no_lane_given(tmp_path):
+    """#558 review round: `--derive-held` with no `--lane` is "nothing to check",
+    not "only the against side is missing" -- the pre-#558 sentence, reused
+    unchanged, would misdescribe a call that never named a candidate at all."""
+    derived = {"state": "resolved", "held": {"scripts/other.py": ["PR #1"]}, "detail": ""}
+    payload = _minimal_payload(tmp_path, derived, None)
+    text = lane_setup.receipt(payload)
+    assert "only one side given" not in text
+    assert "no --lane given" in text
 
 
 # --- CLI: --derive-held / --against mutual exclusion, and the offline default ---

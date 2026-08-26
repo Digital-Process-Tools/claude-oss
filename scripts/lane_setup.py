@@ -727,13 +727,25 @@ def record_lane(worktree_root, issue, branch, path, files=None):
     `files` (#558) is the lane's own resolved file list -- `resolve_lane`'s `files`,
     when `--lane` was given -- so a later `derive_held_set` call, run from a sibling
     lane checking availability, can read what this lane actually holds instead of
-    the maintainer retyping it. `None` (no `--lane` on this call) does not overwrite
-    a file list a previous call already recorded for this same issue: the registry is
-    refreshed on every call by design, and a plain `lane_setup.py <issue>` call made
-    after the `--lane`-carrying one (the ordinary sequence -- SKILL.md's dispatch
-    table runs the overlap check first, then a bare setup call to write the brief)
-    would otherwise blank out the one payload #558 depends on. `files=[]` (a `--lane`
-    that resolved to zero files) is a real, distinct state and is stored as given.
+    the maintainer retyping it. `None` (no `--lane` on this call) tries not to
+    overwrite a file list a previous call already recorded for this same issue: the
+    registry is refreshed on every call by design, and a plain `lane_setup.py <issue>`
+    call made after the `--lane`-carrying one (the ordinary sequence -- SKILL.md's
+    dispatch table runs the overlap check first, then a bare setup call to write the
+    brief) would otherwise blank out the one payload #558 depends on. `files=[]` (a
+    `--lane` that resolved to zero files) is a real, distinct state and is stored as
+    given.
+
+    **The preserve is best-effort, not guaranteed** -- #558 review round: if the
+    previous record cannot be *read* (corrupt JSON, a permission blip, a concurrent
+    writer mid-write), the preserve silently falls through to `None` rather than
+    raising, and this call still succeeds and refreshes the TTL. That is a real,
+    if rare, loss of this lane's own file list -- but it degrades in the direction
+    this whole module insists on: the *next* reader of this record
+    (`held_from_live_lanes`) sees `files=None` and reports `could-not-derive` for
+    the held set rather than a wrong, silently narrower `resolved` one. A read
+    failure here becomes a loud "cannot be trusted complete" one call later, never
+    a quiet one.
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
@@ -948,6 +960,16 @@ def lanes_snapshot(worktree_root, issue, branch, path, files=None):
     return {"record": record, "count": count}
 
 
+# #558 review round: `gh pr list --json` caps a single page at some server limit,
+# and a repository with more open PRs than that would otherwise report `resolved`
+# on a silently truncated list -- exactly the "empty, confident held set" #558
+# says a forge call must never produce, one step removed (a *partial* one is the
+# same failure). Chosen low enough that hitting it is a strong truncation signal
+# (a repo actually running 150 simultaneously open PRs is not this loop's
+# design case) rather than raised to paper over the same risk at a higher count.
+_PR_LIST_LIMIT = 150
+
+
 def held_from_open_prs(repo_slug):
     """Every open pull request's own file list against `repo_slug` (`owner/name`,
     `.oss.json`'s own `repo` key) -- #558, the first of the two held-set sources the
@@ -956,17 +978,34 @@ def held_from_open_prs(repo_slug):
     second call either way, and `--json files` returns each PR's paths as data,
     never text this module would have to parse a diff header to recover.
 
+    **`--repo`'s value is `repo_slug`, straight from config, unrefused -- measured,
+    not reasoned.** `oss_config.repo_problem` places no restriction on a leading
+    dash the way `remote_problem` above restricts `remote` (`git fetch`'s own argv
+    parsing, #368/#381). `gh` was measured directly rather than assumed safe by
+    analogy: `gh pr list --repo '--upload-pack=touch pwned' ...` fails with a GraphQL
+    hostname-parse error (`gh` version 2.98.0) rather than running anything --
+    `--repo`'s value is consumed as a single token by `gh`'s own flag parser and
+    never re-scanned as another flag, unlike git's `--upload-pack=<cmd>` hole this
+    file's own `remote_problem` exists to close. No refusal is added here because
+    there is nothing measured for it to refuse.
+
     Two states, not the lane registry's three: there is no "nothing has ever
     recorded here" case for an open-PR list the way there is for a registry that
     may never have been written to -- zero open PRs is a confirmed zero, not an
     absence to be suspicious of.
 
-      resolved          `gh` ran and returned a well-formed list (possibly empty).
-      could-not-derive  `gh` is not on PATH, the call failed or timed out, or its
-                         output could not be parsed as the JSON it promises. #558
-                         is explicit that a forge call that fails must never render
-                         as an empty, confident held set -- so this is reported
-                         rather than folded into `resolved` with `held={}`.
+      resolved          `gh` ran and returned a well-formed list (possibly empty)
+                         under `_PR_LIST_LIMIT`.
+      could-not-derive  `gh` is not on PATH, the call failed or timed out, its
+                         output could not be parsed as the JSON it promises, or the
+                         result hit `_PR_LIST_LIMIT` exactly -- indistinguishable
+                         from "there happen to be exactly that many open PRs" and
+                         "the real count is higher and this is a truncated page",
+                         so it is not trusted as complete either way. #558 is
+                         explicit that a forge call that fails must never render
+                         as an empty, confident held set -- a *silently truncated*
+                         one is the same failure at one remove, so it is reported
+                         the same way rather than folded into `resolved`.
     """
     if not repo_slug:
         return {"state": "could-not-derive", "held": {}, "detail": "no repo configured"}
@@ -977,7 +1016,7 @@ def held_from_open_prs(repo_slug):
         done = subprocess.run(
             [
                 gh, "pr", "list", "--repo", str(repo_slug), "--state", "open",
-                "--json", "number,files", "--limit", "200",
+                "--json", "number,files", "--limit", str(_PR_LIST_LIMIT),
             ],
             capture_output=True,
             text=True,
@@ -1011,6 +1050,13 @@ def held_from_open_prs(repo_slug):
         }
     if not isinstance(prs, list):
         return {"state": "could-not-derive", "held": {}, "detail": "gh pr list did not return a list"}
+    if len(prs) >= _PR_LIST_LIMIT:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "gh pr list returned {0} open PR(s), at or past the {1}-PR page "
+            "limit -- the held set cannot be trusted complete.".format(len(prs), _PR_LIST_LIMIT),
+        }
     held = {}
     for pr in prs:
         if not isinstance(pr, dict):
@@ -1649,7 +1695,15 @@ def receipt(payload):
                     "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(held_source["detail"])
                 )
         if lane["overlap"] is None:
-            lines.append("  overlap : n/a -- only one side given")
+            # #558 review round: the pre-#558 "only one side given" wording is
+            # wrong when `held_source` is present and no --lane was given -- that
+            # is "no candidate to check", not "only the against side is missing",
+            # and printing the old sentence there would misdescribe a derived-held
+            # call that never named a lane at all.
+            if held_source is not None and lane["lane"] is None:
+                lines.append("  overlap : n/a -- no --lane given to compare against the held set")
+            else:
+                lines.append("  overlap : n/a -- only one side given")
         elif lane["overlap"]:
             lines.append("  overlap : " + ", ".join(lane["overlap"]))
         else:
