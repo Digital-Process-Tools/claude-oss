@@ -486,19 +486,71 @@ CROSS_CUTTING_GUARDS = (
 )
 
 
-def known_guards():
+def _guard_test_existence(repo, test_path):
+    """Whether `test_path` (one of `CROSS_CUTTING_GUARDS`'s own entries) exists as a
+    regular file under `repo`. Three states, not two -- #566:
+
+      exists          the guard test is present in this repository. Run it.
+      absent          confirmed not present -- this class of guard does not exist
+                       here, and a lane must be told that rather than handed a
+                       path that collects nothing.
+      could-not-tell  the repository could not be examined at this path -- an
+                       ancestor this process cannot traverse, an unreadable
+                       parent. Never folded into `absent`: an unlookable name
+                       and a genuine miss render identically as
+                       `FileNotFoundError` on a platform that folds Win32 codes
+                       onto `ENOENT` (CLAUDE.md), so `_absence_confirmed` --
+                       already used by `worktree_occupancy` and `lane_count` for
+                       the identical swallow -- decides which of the two this is
+                       rather than trusting the exception type alone.
+
+    `CROSS_CUTTING_GUARDS` is a fact about *this* repository (claude-oss) living
+    in shared code that runs against every managed repository (#566) -- a
+    managed repo carries none of these test files by construction. This
+    function is what turns "the table names a guard" into "the guard applies
+    here", the same way `resolve_lane`'s `glob-no-match` turns "the pattern is
+    well-formed" into "the pattern matched something": a fact asserted and a
+    fact confirmed are not the same claim, and only a check can tell them apart.
+    """
+    p = Path(repo) / test_path
+    try:
+        st = p.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent" if _absence_confirmed(p) is True else "could-not-tell"
+    except (OSError, ValueError):
+        return "could-not-tell"
+    return "exists" if stat.S_ISREG(st.st_mode) else "absent"
+
+
+def known_guards(repo=None):
     """The full enumeration, grouped by guard test with every trigger reason that
     maps to it. Answers #432's own sizing question -- how many of these exist --
     as a derived count rather than a pasted one, so a sixth guard added later
     changes this return value instead of needing a second list updated by hand.
+
+    `repo` is optional and, when given, adds each entry's `status`
+    (`_guard_test_existence`) against that repository -- #566/#567: the sizing
+    answer this exists to give is about the repository a lane is dispatched
+    into, not about claude-oss's own tree, so a caller counting "how many
+    guards apply" in a managed repo must count entries whose `status` is
+    `exists`, not the declared length of `CROSS_CUTTING_GUARDS`. Omitted
+    (`repo=None`) keeps the declared enumeration only -- the shape this
+    function has always had, and what `claude-oss`'s own sizing test still
+    checks against its own tree.
     """
     grouped = {}
     for prefix, test_path, why in CROSS_CUTTING_GUARDS:
         grouped.setdefault(test_path, []).append({"prefix": prefix, "why": why})
-    return [{"test": test_path, "triggers": grouped[test_path]} for test_path in sorted(grouped)]
+    result = []
+    for test_path in sorted(grouped):
+        entry = {"test": test_path, "triggers": grouped[test_path]}
+        if repo is not None:
+            entry["status"] = _guard_test_existence(repo, test_path)
+        result.append(entry)
+    return result
 
 
-def guards_for_files(files):
+def guards_for_files(files, repo=None):
     """Which guard tests a lane's resolved files (`resolve_lane`'s `files` list --
     repo-relative POSIX paths, never a module-name guess) trip, deduplicated to one
     entry per guard even when several files or several reasons point at it.
@@ -507,6 +559,16 @@ def guards_for_files(files):
     produces, not by trusting a caller's own idea of which area a change belongs
     to -- the seam #432 exists to close was exactly a human's idea of "these three
     files are about doctor" being wrong about a fourth, unrelated-by-name file.
+
+    `repo` is optional and, when given, adds each entry's `status`
+    (`_guard_test_existence`) against that repository -- #566: `CROSS_CUTTING_GUARDS`
+    is a fact about claude-oss, and a lane dispatched into a managed repository
+    that does not carry a named guard test must be told so rather than handed a
+    path that collects nothing when it runs the guard. The entry is never
+    dropped for `absent` or `could-not-tell` -- the class still applies to the
+    files touched, and dropping it would silently undo the trigger this
+    function exists to report; only the disposition changes, from "run this"
+    to "this class applies and cannot be run here".
     """
     hits = {}
     for f in files or []:
@@ -515,11 +577,17 @@ def guards_for_files(files):
                 reasons = hits.setdefault(test_path, [])
                 if why not in reasons:
                     reasons.append(why)
-    return [{"test": test_path, "why": hits[test_path]} for test_path in sorted(hits)]
+    result = []
+    for test_path in sorted(hits):
+        entry = {"test": test_path, "why": hits[test_path]}
+        if repo is not None:
+            entry["status"] = _guard_test_existence(repo, test_path)
+        result.append(entry)
+    return result
 
 
-def lane_report(repo, lane_patterns, against_patterns):
-    """The `lane` section of a lane-setup payload, or None when neither side
+def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
+    """The `lane` section of a lane-setup payload, or None when nothing at all
     was asked for. Two lanes given: also the overlap between them, so a
     developer brief's setup call can carry the collision check the maintainer
     would otherwise have to run by eye.
@@ -529,14 +597,75 @@ def lane_report(repo, lane_patterns, against_patterns):
     `against`, which names a sibling lane's off-limits files. Reporting a
     guard triggered by the sibling's files would tell a developer to run a
     test for a change it must not make.
+
+    `derived_held` (#558) is `derive_held_set`'s own return value, or None. When
+    given, it replaces `against_patterns` as the source of the "against" side --
+    combining `--against` with it is refused earlier, in `main`, because a hand-typed
+    exclusion beside a derived one is exactly the ambiguity #558 exists to close (was
+    this file excluded because the derivation found it, or because someone typed it?).
+    Its `held` files become literal patterns through the same `resolve_lane` every
+    other side of this call already goes through, so the rendering and the overlap
+    check are the one mechanism, not two. When `derived_held["state"]` is
+    `could-not-derive`, no "against" side is resolved at all and `availability`
+    carries `could-not-derive-the-held-set` -- #558's own words, never `available`
+    and never `blocked`.
+
+    `availability` (#558) is a *per-candidate* verdict -- available / blocked /
+    could-not-derive-the-held-set -- computed only when `derived_held` was given, and
+    only for the `lane` side against the derived set: a mechanical question this
+    function can answer on its own. The tick-level *fill* verdict (filled /
+    under-filled / could-not-tell) that #558 also names is deliberately NOT computed
+    here: it needs the full list of candidate issues under consideration this tick,
+    which is a judgement about which issues are even being weighed, not a fact this
+    script can derive from one `--lane` argument. That verdict stays prose in the
+    tick, per the issue's own framing of the two halves as separable.
     """
-    if not lane_patterns and not against_patterns:
+    if not lane_patterns and not against_patterns and derived_held is None:
         return None
     a = resolve_lane(repo, lane_patterns) if lane_patterns else None
-    b = resolve_lane(repo, against_patterns) if against_patterns else None
-    overlap = lane_overlap(a["files"], b["files"]) if a and b else None
-    guards = guards_for_files(a["files"]) if a else []
-    return {"lane": a, "against": b, "overlap": overlap, "guards": guards}
+    availability = None
+    if derived_held is not None:
+        if derived_held["state"] != "resolved":
+            b = None
+            overlap = None
+            if a is not None:
+                availability = {
+                    "state": "could-not-derive-the-held-set",
+                    "files": [],
+                    "holders": [],
+                    "detail": derived_held["detail"],
+                }
+        else:
+            held_files = sorted(derived_held["held"])
+            b = resolve_lane(repo, held_files) if held_files else {"patterns": [], "files": []}
+            overlap = lane_overlap(a["files"], b["files"]) if a is not None else None
+            if a is not None:
+                if overlap:
+                    holders = []
+                    for f in overlap:
+                        for h in derived_held["held"].get(f, []):
+                            if h not in holders:
+                                holders.append(h)
+                    availability = {
+                        "state": "blocked",
+                        "files": overlap,
+                        "holders": holders,
+                        "detail": "",
+                    }
+                else:
+                    availability = {"state": "available", "files": [], "holders": [], "detail": ""}
+    else:
+        b = resolve_lane(repo, against_patterns) if against_patterns else None
+        overlap = lane_overlap(a["files"], b["files"]) if a and b else None
+    # #566: `repo` is threaded through so each guard's `status` is answered against
+    # the repository the lane is actually dispatched into, never against claude-oss's
+    # own tree by default -- the whole defect this issue is about.
+    guards = guards_for_files(a["files"], repo) if a else []
+    result = {"lane": a, "against": b, "overlap": overlap, "guards": guards}
+    if derived_held is not None:
+        result["held_source"] = {"state": derived_held["state"], "detail": derived_held["detail"]}
+        result["availability"] = availability
+    return result
 
 
 def derive_worktree(config, issue):
@@ -578,7 +707,7 @@ def lane_registry_dir(worktree_root):
     return os.path.join(str(worktree_root), LANE_REGISTRY_DIRNAME)
 
 
-def record_lane(worktree_root, issue, branch, path):
+def record_lane(worktree_root, issue, branch, path, files=None):
     """Write (or refresh) this lane's own record. Three states, not two:
 
       recorded         the record is on disk, current as of this call.
@@ -594,6 +723,29 @@ def record_lane(worktree_root, issue, branch, path):
     module's own docstring expects facts to be re-derived, not hand-carried) refreshes
     the TTL instead of leaving a duplicate. Written via a temp file and `os.replace`
     so a reader never observes a partially-written record.
+
+    `files` (#558) is the lane's own resolved file list -- `resolve_lane`'s `files`,
+    when `--lane` was given -- so a later `derive_held_set` call, run from a sibling
+    lane checking availability, can read what this lane actually holds instead of
+    the maintainer retyping it. `None` (no `--lane` on this call) tries not to
+    overwrite a file list a previous call already recorded for this same issue: the
+    registry is refreshed on every call by design, and a plain `lane_setup.py <issue>`
+    call made after the `--lane`-carrying one (the ordinary sequence -- SKILL.md's
+    dispatch table runs the overlap check first, then a bare setup call to write the
+    brief) would otherwise blank out the one payload #558 depends on. `files=[]` (a
+    `--lane` that resolved to zero files) is a real, distinct state and is stored as
+    given.
+
+    **The preserve is best-effort, not guaranteed** -- #558 review round: if the
+    previous record cannot be *read* (corrupt JSON, a permission blip, a concurrent
+    writer mid-write), the preserve silently falls through to `None` rather than
+    raising, and this call still succeeds and refreshes the TTL. That is a real,
+    if rare, loss of this lane's own file list -- but it degrades in the direction
+    this whole module insists on: the *next* reader of this record
+    (`held_from_live_lanes`) sees `files=None` and reports `could-not-derive` for
+    the held set rather than a wrong, silently narrower `resolved` one. A read
+    failure here becomes a loud "cannot be trusted complete" one call later, never
+    a quiet one.
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
@@ -613,12 +765,23 @@ def record_lane(worktree_root, issue, branch, path):
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     record_path = os.path.join(root, "{0}.json".format(issue))
+    files_to_store = sorted(files) if files is not None else None
+    if files_to_store is None:
+        try:
+            with open(record_path) as fh:
+                previous = json.load(fh)
+            prev_files = previous.get("files")
+            if isinstance(prev_files, list):
+                files_to_store = prev_files
+        except (OSError, ValueError, AttributeError):
+            files_to_store = None
     payload = {
         "issue": issue,
         "branch": branch,
         "path": str(path) if path else None,
         "recorded_at": time.time(),
         "pid": os.getpid(),
+        "files": files_to_store,
     }
     tmp_path = record_path + ".tmp"
     try:
@@ -782,15 +945,281 @@ def lane_count(worktree_root):
     return {"state": "resolved", "count": live, "detail": ""}
 
 
-def lanes_snapshot(worktree_root, issue, branch, path):
+def lanes_snapshot(worktree_root, issue, branch, path, files=None):
     """Record this lane's own presence, then report the live picture -- including
     itself. Called from `compute` at the one moment #385 says the count is useful:
     setup time, before a lane sizes itself against the machine and before `doctor`
     typically runs.
+
+    `files` (#558) passes straight through to `record_lane`: when this call's own
+    `--lane` resolved a file list, it is what a later `derive_held_set` call reads
+    back for this issue.
     """
-    record = record_lane(worktree_root, issue, branch, path)
+    record = record_lane(worktree_root, issue, branch, path, files=files)
     count = lane_count(worktree_root)
     return {"record": record, "count": count}
+
+
+# #558 review round: `gh pr list --json` caps a single page at some server limit,
+# and a repository with more open PRs than that would otherwise report `resolved`
+# on a silently truncated list -- exactly the "empty, confident held set" #558
+# says a forge call must never produce, one step removed (a *partial* one is the
+# same failure). Chosen low enough that hitting it is a strong truncation signal
+# (a repo actually running 150 simultaneously open PRs is not this loop's
+# design case) rather than raised to paper over the same risk at a higher count.
+_PR_LIST_LIMIT = 150
+
+
+def held_from_open_prs(repo_slug):
+    """Every open pull request's own file list against `repo_slug` (`owner/name`,
+    `.oss.json`'s own `repo` key) -- #558, the first of the two held-set sources the
+    issue names. Uses `gh` directly (`gh pr list --json number,files`) rather than
+    `supertool gh-pr:N:diff`: this needs the *set* of open PRs first, which is a
+    second call either way, and `--json files` returns each PR's paths as data,
+    never text this module would have to parse a diff header to recover.
+
+    **`--repo`'s value is `repo_slug`, straight from config, unrefused -- measured,
+    not reasoned.** `oss_config.repo_problem` places no restriction on a leading
+    dash the way `remote_problem` above restricts `remote` (`git fetch`'s own argv
+    parsing, #368/#381). `gh` was measured directly rather than assumed safe by
+    analogy: `gh pr list --repo '--upload-pack=touch pwned' ...` fails with a GraphQL
+    hostname-parse error (`gh` version 2.98.0) rather than running anything --
+    `--repo`'s value is consumed as a single token by `gh`'s own flag parser and
+    never re-scanned as another flag, unlike git's `--upload-pack=<cmd>` hole this
+    file's own `remote_problem` exists to close. No refusal is added here because
+    there is nothing measured for it to refuse.
+
+    Two states, not the lane registry's three: there is no "nothing has ever
+    recorded here" case for an open-PR list the way there is for a registry that
+    may never have been written to -- zero open PRs is a confirmed zero, not an
+    absence to be suspicious of.
+
+      resolved          `gh` ran and returned a well-formed list (possibly empty)
+                         under `_PR_LIST_LIMIT`.
+      could-not-derive  `gh` is not on PATH, the call failed or timed out, its
+                         output could not be parsed as the JSON it promises, or the
+                         result hit `_PR_LIST_LIMIT` exactly -- indistinguishable
+                         from "there happen to be exactly that many open PRs" and
+                         "the real count is higher and this is a truncated page",
+                         so it is not trusted as complete either way. #558 is
+                         explicit that a forge call that fails must never render
+                         as an empty, confident held set -- a *silently truncated*
+                         one is the same failure at one remove, so it is reported
+                         the same way rather than folded into `resolved`.
+    """
+    if not repo_slug:
+        return {"state": "could-not-derive", "held": {}, "detail": "no repo configured"}
+    gh = shutil.which("gh")
+    if gh is None:
+        return {"state": "could-not-derive", "held": {}, "detail": "gh is not on PATH"}
+    try:
+        done = subprocess.run(
+            [
+                gh, "pr", "list", "--repo", str(repo_slug), "--state", "open",
+                "--json", "number,files", "--limit", str(_PR_LIST_LIMIT),
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=120,
+        )
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    if done.returncode != 0:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": _one_line(
+                "gh pr list exit {0}: {1}".format(
+                    done.returncode, done.stderr or done.stdout or "no output"
+                ),
+                300,
+            ),
+        }
+    try:
+        prs = json.loads(done.stdout)
+    except (ValueError, TypeError) as exc:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "could not parse gh pr list output: {0}".format(exc),
+        }
+    if not isinstance(prs, list):
+        return {"state": "could-not-derive", "held": {}, "detail": "gh pr list did not return a list"}
+    if len(prs) >= _PR_LIST_LIMIT:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "gh pr list returned {0} open PR(s), at or past the {1}-PR page "
+            "limit -- the held set cannot be trusted complete.".format(len(prs), _PR_LIST_LIMIT),
+        }
+    held = {}
+    for pr in prs:
+        if not isinstance(pr, dict):
+            continue
+        number = pr.get("number")
+        for f in pr.get("files") or []:
+            path = f.get("path") if isinstance(f, dict) else None
+            if not path:
+                continue
+            holders = held.setdefault(path, [])
+            label = "PR #{0}".format(number)
+            if label not in holders:
+                holders.append(label)
+    return {"state": "resolved", "held": held, "detail": ""}
+
+
+def held_from_live_lanes(worktree_root, exclude_issue=None):
+    """Every live lane record's own file list -- #558, the second held-set source.
+    Reads the same registry `lane_count` reads, for the full file lists rather than
+    a count, and applies the identical TTL/absence handling rather than a second
+    idea of what "live" means.
+
+      resolved          at least one live record (other than `exclude_issue`) was
+                         read and every one of them carries a `files` list --
+                         `held` maps each file to the `lane #N` label(s) claiming it.
+      unknown            the registry could not be located, does not exist yet, or
+                         holds no live records besides the excluded one -- nothing
+                         to hold, not a failure.
+      could-not-derive  the registry's own existence could not be examined, a
+                         record could not be read, or a live record carries no
+                         `files` at all (recorded without `--lane`, or by a version
+                         of this script that predates #558) -- the held set would
+                         be incomplete, and #558 is explicit that this must never
+                         render as a confident (even if partial) `resolved`.
+    """
+    root = lane_registry_dir(worktree_root)
+    if root is None:
+        return {"state": "unknown", "held": {}, "detail": "worktree_root is not known."}
+    try:
+        found = os.stat(root)
+    except (FileNotFoundError, NotADirectoryError):
+        if _absence_confirmed(root) is not True:
+            return {
+                "state": "could-not-derive",
+                "held": {},
+                "detail": "a lane registry may exist at {0} but could not be examined "
+                "-- an ancestor could not be looked at, which is not a confirmed "
+                "absence.".format(root),
+            }
+        return {"state": "unknown", "held": {}, "detail": "no lane registry at {0}.".format(root)}
+    except OSError as exc:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    except ValueError as exc:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    if not stat.S_ISDIR(found.st_mode):
+        return {"state": "unknown", "held": {}, "detail": "no lane registry at {0}.".format(root)}
+    try:
+        names = os.listdir(root)
+    except OSError as exc:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+
+    now = time.time()
+    held = {}
+    live_count = 0
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        entry_path = os.path.join(root, name)
+        try:
+            with open(entry_path) as fh:
+                data = json.load(fh)
+            recorded_at = float(data["recorded_at"])
+            issue = data["issue"]
+        except FileNotFoundError:
+            # A sibling reader pruned this same stale record between our
+            # `listdir` and our `open` -- the record is gone either way (see
+            # `lane_count`'s identical race), so it is simply not counted.
+            continue
+        except (OSError, ValueError, KeyError, TypeError):
+            return {
+                "state": "could-not-derive",
+                "held": {},
+                "detail": "lane record {0} under {1} could not be read.".format(name, root),
+            }
+        if exclude_issue is not None and str(issue) == str(exclude_issue):
+            continue
+        age = now - recorded_at
+        if age >= 0 and age > LANE_RECORD_TTL_SECONDS:
+            continue  # expired; `lane_count` is what prunes it from disk
+        files = data.get("files")
+        if files is None:
+            return {
+                "state": "could-not-derive",
+                "held": {},
+                "detail": "live lane record for issue {0} carries no files -- recorded "
+                "without --lane, or by a version of this script that predates #558 -- "
+                "so the held set cannot be trusted complete while that lane is "
+                "live.".format(issue),
+            }
+        live_count += 1
+        for f in files:
+            holders = held.setdefault(f, [])
+            label = "lane #{0}".format(issue)
+            if label not in holders:
+                holders.append(label)
+    if live_count == 0:
+        return {
+            "state": "unknown",
+            "held": {},
+            "detail": "no live lane records under {0} besides the excluded issue.".format(root),
+        }
+    return {"state": "resolved", "held": held, "detail": ""}
+
+
+def derive_held_set(repo_slug, worktree_root, exclude_issue=None):
+    """The file set a new lane is not free to touch, mechanically -- #558: the
+    exclusion a maintainer used to retype from memory (CLAUDE.md's own defect
+    class -- a check that never ran and a check that found nothing render
+    identically) becomes a measurement instead, from the two sources the issue
+    names: open pull requests and live lane records.
+
+    `state` is `resolved` only when **both** sources resolved (an `unknown` source
+    -- no open PRs, no live lanes besides the one excluded -- contributes nothing
+    and does not block the other). If either source is `could-not-derive`, the
+    combined state is `could-not-derive` too, with both problems named in
+    `detail` -- #558's own words: this "must never render as `available`, and it
+    must not render as `blocked` either."
+    """
+    prs = held_from_open_prs(repo_slug)
+    lanes = held_from_live_lanes(worktree_root, exclude_issue=exclude_issue)
+    problems = []
+    if prs["state"] == "could-not-derive":
+        problems.append("open pull requests: " + prs["detail"])
+    if lanes["state"] == "could-not-derive":
+        problems.append("live lanes: " + lanes["detail"])
+    if problems:
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "prs": prs,
+            "lanes": lanes,
+            "detail": "; ".join(problems),
+        }
+    held = {}
+    for source in (prs["held"], lanes["held"]):
+        for f, holders in source.items():
+            existing = held.setdefault(f, [])
+            for h in holders:
+                if h not in existing:
+                    existing.append(h)
+    return {"state": "resolved", "held": held, "prs": prs, "lanes": lanes, "detail": ""}
 
 
 # How far up the tree `_absence_confirmed` will walk looking for an ancestor this
@@ -1000,21 +1429,48 @@ def read_board(repo):
     return {"state": "ok", "lines": _condense_board(done.stdout), "detail": ""}
 
 
-def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=None):
+def compute(
+    repo,
+    issue,
+    remote="origin",
+    lane_patterns=None,
+    against_patterns=None,
+    derive_held=False,
+):
     """Everything a lane brief needs, in one payload. `config.state` gates the exit.
 
     `lane_patterns` / `against_patterns` are optional (#267): when neither is
-    given, `payload["lane"]` is None -- an absent ask must not read as a
-    checked, empty lane. When either is given, both sides are rendered
-    through `resolve_lane` and, when both sides are present, compared with
-    `lane_overlap` -- the disjointness check the manager skill currently runs
+    given and `derive_held` is False, `payload["lane"]` is None -- an absent ask
+    must not read as a checked, empty lane. When either is given, both sides are
+    rendered through `resolve_lane` and, when both sides are present, compared
+    with `lane_overlap` -- the disjointness check the manager skill currently runs
     by eye.
+
+    `derive_held` (#558) is opt-in, not the default: the local, offline path this
+    module has always offered (`--lane`/`--against`, both hand-typed) keeps working
+    unchanged when it is False, which is the ordinary case for the "writing each
+    brief" call SKILL.md's own table names -- that call has no reason to pay for a
+    `gh pr list` round trip. When True, the "against" side is derived instead of
+    accepted (`derive_held_set`, from open pull requests and live lane records) --
+    a forge call that fails must never render as an empty, confident held set, so
+    a failed derivation flows into `lane_report` as `could-not-derive`, not as
+    `against=None` (which would silently read as "nothing to check against").
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
     config, problems = oss_config.load(config_path)
 
     if config is None:
+        derived_held = (
+            {
+                "state": "could-not-derive",
+                "held": {},
+                "detail": "config could not be loaded, so neither repo nor "
+                "worktree_root is known to derive a held set from.",
+            }
+            if derive_held
+            else None
+        )
         return {
             "issue": issue,
             "repo": str(repo),
@@ -1024,7 +1480,7 @@ def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=N
             "worktree": None,
             "board": None,
             "lanes": None,
-            "lane": lane_report(repo, lane_patterns, against_patterns),
+            "lane": lane_report(repo, lane_patterns, against_patterns, derived_held),
         }
 
     default_branch = config.get("default_branch")
@@ -1050,8 +1506,20 @@ def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=N
 
     board = read_board(repo)
 
+    derived_held = (
+        derive_held_set(config.get("repo"), config.get("worktree_root"), exclude_issue=issue)
+        if derive_held
+        else None
+    )
+    lane = lane_report(repo, lane_patterns, against_patterns, derived_held)
+
+    # #558: this lane's own resolved files are recorded so a *later* candidate's
+    # `derive_held_set` call can read them back -- computed here, after `lane_report`,
+    # rather than calling `resolve_lane` a second time for the same patterns.
+    lane_files = lane["lane"]["files"] if lane and lane.get("lane") is not None else None
     lanes = lanes_snapshot(
-        config.get("worktree_root"), issue, branch.get("name"), worktree.get("path")
+        config.get("worktree_root"), issue, branch.get("name"), worktree.get("path"),
+        files=lane_files,
     )
 
     return {
@@ -1063,7 +1531,7 @@ def compute(repo, issue, remote="origin", lane_patterns=None, against_patterns=N
         "worktree": worktree,
         "board": board,
         "lanes": lanes,
-        "lane": lane_report(repo, lane_patterns, against_patterns),
+        "lane": lane,
     }
 
 
@@ -1195,28 +1663,95 @@ def receipt(payload):
     lane = payload.get("lane")
     if lane is not None:
         lines.append("lane      :")
-        for side_label, side in (("lane", lane["lane"]), ("against", lane["against"])):
-            if side is None:
-                continue
-            for entry in side["patterns"]:
+        held_source = lane.get("held_source")
+        if held_source is None:
+            for side_label, side in (("lane", lane["lane"]), ("against", lane["against"])):
+                if side is None:
+                    continue
+                for entry in side["patterns"]:
+                    lines.append(
+                        "  [{0}] {1} ({2}): {3}".format(
+                            side_label, entry["pattern"], entry["state"],
+                            ", ".join(entry["files"]) or "-",
+                        )
+                    )
+        else:
+            # #558: the "against" side was derived (open PRs + live lanes), not
+            # hand-typed -- printing every held file as an individual pattern line,
+            # the way the hand-typed side does, would run to hundreds of lines on a
+            # busy tracker. The files themselves still appear, in `overlap` and
+            # `verdict` below; this line only says where "against" came from.
+            for entry in lane["lane"]["patterns"] if lane["lane"] else []:
                 lines.append(
-                    "  [{0}] {1} ({2}): {3}".format(
-                        side_label, entry["pattern"], entry["state"], ", ".join(entry["files"]) or "-"
+                    "  [lane] {0} ({1}): {2}".format(
+                        entry["pattern"], entry["state"], ", ".join(entry["files"]) or "-"
                     )
                 )
+            if held_source["state"] == "resolved":
+                held_count = len(lane["against"]["files"]) if lane["against"] else 0
+                lines.append("  against : derived held set, {0} file(s)".format(held_count))
+            else:
+                lines.append(
+                    "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(held_source["detail"])
+                )
         if lane["overlap"] is None:
-            lines.append("  overlap : n/a -- only one side given")
+            # #558 review round: the pre-#558 "only one side given" wording is
+            # wrong when `held_source` is present and no --lane was given -- that
+            # is "no candidate to check", not "only the against side is missing",
+            # and printing the old sentence there would misdescribe a derived-held
+            # call that never named a lane at all.
+            if held_source is not None and lane["lane"] is None:
+                lines.append("  overlap : n/a -- no --lane given to compare against the held set")
+            else:
+                lines.append("  overlap : n/a -- only one side given")
         elif lane["overlap"]:
             lines.append("  overlap : " + ", ".join(lane["overlap"]))
         else:
             lines.append("  overlap : none")
+        availability = lane.get("availability")
+        if availability is not None:
+            # #558: the per-candidate verdict the issue asks for -- available /
+            # blocked / could-not-derive-the-held-set -- never rendered as
+            # `available` or `blocked` when the held set itself could not be
+            # derived.
+            if availability["state"] == "available":
+                lines.append("  verdict : available")
+            elif availability["state"] == "blocked":
+                lines.append(
+                    "  verdict : BLOCKED -- {0} (held by {1})".format(
+                        ", ".join(availability["files"]), ", ".join(availability["holders"])
+                    )
+                )
+            else:
+                lines.append(
+                    "  verdict : COULD NOT DERIVE THE HELD SET -- {0}".format(
+                        availability["detail"]
+                    )
+                )
         # #432: guards the lane side's own files trip -- a narrowed local test
         # command that omits these will look green and CI will not.
         if lane["lane"] is None:
             pass
         elif lane["guards"]:
+            # #566: a guard entry always carries a `status` now that `lane_report`
+            # threads `repo` through -- `exists` reads exactly as it always has,
+            # `absent` and `could-not-tell` are said in as many words rather than
+            # handing a lane a path that would collect nothing.
             for entry in lane["guards"]:
-                lines.append("  guard   : {0} ({1})".format(entry["test"], "; ".join(entry["why"])))
+                status = entry.get("status")
+                why = "; ".join(entry["why"])
+                if status == "absent":
+                    lines.append(
+                        "  guard   : {0} -- NOT IN THIS REPO, treat as uncovered "
+                        "({1})".format(entry["test"], why)
+                    )
+                elif status == "could-not-tell":
+                    lines.append(
+                        "  guard   : {0} -- COULD NOT TELL whether this repo has it "
+                        "({1})".format(entry["test"], why)
+                    )
+                else:
+                    lines.append("  guard   : {0} ({1})".format(entry["test"], why))
         else:
             lines.append("  guard   : none of the lane's files match a known cross-cutting guard")
 
@@ -1249,7 +1784,18 @@ def main(argv=None):
         metavar="PATTERN",
         help="a file or glob to check --lane against for overlap; repeatable (#267)",
     )
+    parser.add_argument(
+        "--derive-held",
+        action="store_true",
+        help="derive the against side instead of accepting it -- from every open "
+        "pull request's file list and every live lane record's own files (#558); "
+        "refused together with --against, since a derived exclusion and a "
+        "hand-typed one beside it is exactly the ambiguity this exists to close",
+    )
     args = parser.parse_args(argv)
+
+    if args.derive_held and args.against:
+        parser.error("--derive-held and --against are mutually exclusive (#558)")
 
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -1257,7 +1803,10 @@ def main(argv=None):
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
 
-    payload = compute(args.repo, args.issue, args.remote, args.lane, args.against)
+    payload = compute(
+        args.repo, args.issue, args.remote, args.lane, args.against,
+        derive_held=args.derive_held,
+    )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
