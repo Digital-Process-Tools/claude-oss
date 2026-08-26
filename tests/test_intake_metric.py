@@ -38,6 +38,20 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from manager_docs import ManagerLoop  # noqa: E402
+
+#: The manager loop's whole prose -- SKILL.md plus every phase file it defers
+#: to. This check asks "does the loop say X", never "does one file say X".
+MANAGER_LOOP = ManagerLoop(REPO_ROOT)
+
+
+def _manager_loop_text():
+    """SKILL.md plus every phase file it defers to. The intake metric's rules
+    moved into `skills/manager/phases/accounting.md`; a check pinned to the
+    spine alone would have gone quiet on its own subject."""
+    return MANAGER_LOOP.read_text(encoding="utf-8")
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
 import oss_state  # noqa: E402
 
 WINDOW = "since the last tick"
@@ -581,7 +595,7 @@ def _read(relative):
 
 def test_the_manager_skill_names_the_metric_its_window_and_its_third_state():
     missing = _missing(
-        _read("skills/manager/SKILL.md"),
+        _manager_loop_text(),
         [
             "filings per merged pull request",
             "since the last tick",
@@ -596,14 +610,14 @@ def test_the_manager_skill_names_the_metric_its_window_and_its_third_state():
 def test_the_manager_skill_states_that_no_target_ratio_is_claimed():
     """The one number this must not carry. A threshold off one sample is the hardcoded
     repository fact this codebase forbids."""
-    assert _missing(_read("skills/manager/SKILL.md"), ["no target ratio"]) == []
+    assert _missing(_manager_loop_text(), ["no target ratio"]) == []
 
 
 def test_the_manager_skill_carries_the_per_page_aggregation_trap():
     """It lived only in the triager, and the manager is what computes the tick metric."""
     assert (
         _missing(
-            _read("skills/manager/SKILL.md"), ["--paginate", "one number per page"]
+            _manager_loop_text(), ["--paginate", "one number per page"]
         )
         == []
     )

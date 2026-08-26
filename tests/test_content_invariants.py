@@ -15,11 +15,28 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import manager_docs  # noqa: E402
+
 SKILLS = sorted((REPO_ROOT / "skills").rglob("SKILL.md"))
 AGENTS = sorted((REPO_ROOT / "agents").glob("*.md"))
 COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md"))
+
+#: The manager loop's prose is a spine plus one file per phase. Every check
+#: below asks "does the loop say X", never "does one file say X" -- pinned to
+#: the spine alone they would have gone quietly narrower than their own
+#: subject the moment a paragraph moved into a phase file, which is #547's
+#: coverage-narrowing shape one document over.
+MANAGER_DOC_PATHS = manager_docs.documents(REPO_ROOT)
+MANAGER_SKILL = manager_docs.ManagerLoop(REPO_ROOT)
+SKILL_PHASES = MANAGER_DOC_PATHS[1:]
+
 PROSE = SKILLS + AGENTS
-EXECUTABLE_PROSE = SKILLS + AGENTS + COMMANDS
+#: The phase files are prose the loop executes, so the sweeps below have to
+#: reach them. They are deliberately NOT in `PROSE`: that list is also what
+#: the frontmatter check iterates, and a phase file is not a skill.
+EXECUTABLE_PROSE = SKILLS + SKILL_PHASES + AGENTS + COMMANDS
 
 # Spellings that would make a document true of exactly one repository.
 HARDCODED = [
@@ -35,6 +52,16 @@ def _documents():
     return [(path, path.read_text(encoding="utf-8")) for path in PROSE]
 
 
+def _fact_bearing_documents():
+    """Everything a repo-specific fact must not reach: the skills, the agent
+    definitions, and the manager loop's phase files. A phase file is prose the
+    loop reads and acts on, so a repo slug in one arrives with exactly the
+    authority the top of CLAUDE.md forbids."""
+    return [
+        (path, path.read_text(encoding="utf-8")) for path in PROSE + SKILL_PHASES
+    ]
+
+
 def test_prose_files_exist():
     """A suite that silently found no documents would pass every check below."""
     assert SKILLS, "no skills/**/SKILL.md found -- the checks below would vacuously pass"
@@ -43,7 +70,7 @@ def test_prose_files_exist():
 
 def test_no_repo_specific_spellings_in_prose():
     offenders = []
-    for path, text in _documents():
+    for path, text in _fact_bearing_documents():
         for pattern, what in HARDCODED:
             for match in re.finditer(pattern, text):
                 line = text[: match.start()].count("\n") + 1
@@ -295,7 +322,7 @@ def test_manager_names_the_fragment_rename_tool():
     manager skill has to name the tool that does both, not just describe the
     failure, or a maintainer reading it still has no runnable step.
     """
-    text = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+    text = MANAGER_SKILL.read_text(encoding="utf-8")
     assert "rename_changelog_fragment.py" in text, (
         "skills/manager/SKILL.md never names scripts/rename_changelog_fragment.py -- "
         "the fragment-rename procedure has no locally-runnable command"
@@ -381,7 +408,14 @@ def test_documents_that_enumerate_the_config_keys_name_both_files():
     oss_config = _oss_config()
     named = []
     for path, text in _executable_documents():
-        if "worktree_root" not in text:
+        # Enumerating the keys, not using the words. A bare substring search
+        # fires on `cd <worktree_root>` -- a placeholder for a directory -- and
+        # on "from the clone", an ordinary English noun; neither sends anybody
+        # to the wrong config file, which is what this check is named for. The
+        # trigger is two or more of the local keys written as keys, in a code
+        # span, which is how every real enumeration in this repository spells
+        # them and how none of the incidental mentions do.
+        if sum("`{}`".format(key) in text for key in oss_config.LOCAL_KEYS) < 2:
             continue
         rel = path.relative_to(REPO_ROOT)
         named.append(rel)
@@ -792,7 +826,7 @@ def test_the_skill_and_the_command_agree_that_the_gate_is_performed():
     """Two documents stated the same gate and neither named a performer. If only
     one gains the wiring, the other keeps sending its reader to a judgement call.
     """
-    skill = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+    skill = MANAGER_SKILL.read_text(encoding="utf-8")
     unmet = _release_wiring_unmet(skill)
     assert not unmet, (
         "skills/manager/SKILL.md states the audit gate but does not carry what "
@@ -858,7 +892,7 @@ CONSOLE_ENCODING_ANCHORS = [
 
 CONSOLE_ENCODING_SOURCES = [
     REPO_ROOT / "agents" / "developer.md",
-    REPO_ROOT / "skills" / "manager" / "SKILL.md",
+    MANAGER_SKILL,
 ]
 
 
@@ -1050,7 +1084,6 @@ def test_the_reviewer_return_check_fires_on_a_brief_that_never_states_it():
 #     fits) from `could not rank` (the table never reached me);
 #   - the two-round cap does not quietly outrank the table.
 
-MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
 AUDIT_AGENTS = [REPO_ROOT / "agents" / "auditor.md", REPO_ROOT / "agents" / "release-auditor.md"]
 
 RANKING_BLOCKS = "yes, unconditionally"
@@ -1225,7 +1258,7 @@ def test_no_other_document_recopies_the_ranking_rows():
     assert not missing, "rows unfindable in their own source: {!r}".format(missing)
     swept = 0
     for path in EXECUTABLE_PROSE:
-        if path == MANAGER_SKILL:
+        if path in MANAGER_DOC_PATHS:
             continue
         swept += 1
         text = path.read_text(encoding="utf-8")
@@ -2097,7 +2130,7 @@ def test_an_issue_body_has_a_stated_form():
     body that needs the story to be usable is paid on every read.
     """
     unmet = _unmet(
-        (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8"),
+        MANAGER_SKILL.read_text(encoding="utf-8"),
         ISSUE_BODY_ANCHORS,
     )
     assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
@@ -2117,7 +2150,7 @@ def test_the_intake_meter_is_not_disarmed():
     was attached to -- do not throttle discovery -- survived.
     """
     unmet = _meter_unmet(
-        (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+        MANAGER_SKILL.read_text(encoding="utf-8")
     )
     assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
 
@@ -2293,13 +2326,20 @@ def _payload_consumer_section():
     therefore checks the section still reaches its last bullet, so a truncation
     fails loudly there instead of silently emptying the anchors.
     """
-    text = MANAGER_SKILL.read_text(encoding="utf-8")
-    at = text.find(PR_PAYLOAD_CONSUMER_HEADING)
-    if at < 0:
-        return None
-    tail = text[at + len(PR_PAYLOAD_CONSUMER_HEADING):]
-    stop = re.search(r"^## ", tail, re.M)
-    return tail if stop is None else tail[:stop.start()]
+    # Per document, never over the concatenation. A section sliced out of the
+    # joined text can run past the end of its own file and into the next one's
+    # heading, which is a longer section than the document actually has -- and
+    # a check reading a superset of its subject reports on prose its subject
+    # never carried.
+    for path in MANAGER_DOC_PATHS:
+        text = path.read_text(encoding="utf-8")
+        at = text.find(PR_PAYLOAD_CONSUMER_HEADING)
+        if at < 0:
+            continue
+        tail = text[at + len(PR_PAYLOAD_CONSUMER_HEADING):]
+        stop = re.search(r"^## ", tail, re.M)
+        return tail if stop is None else tail[:stop.start()]
+    return None
 
 
 def _payload_join_mismatch(fields, section):
@@ -2795,7 +2835,7 @@ from test_shipped_op_spellings import op_spellings  # noqa: E402
 
 WRITE_ROUTE_DOCUMENTS = (
     REPO_ROOT / "agents" / "developer.md",
-    REPO_ROOT / "skills" / "manager" / "SKILL.md",
+    MANAGER_SKILL,
 )
 
 #: Ops that can bring a file into existence. `paste` is the one supertool ships;
@@ -2971,7 +3011,6 @@ def test_a_document_naming_neither_op_is_still_reported():
 # miss -- and `test_the_op_table_rows_are_found_at_all` fails if the row parser
 # stops seeing the table, which is the way this check could go quiet.
 
-MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
 
 # `\r` is in both trailing classes, and it is not decoration. These are the
 # suite's only `$`-anchored multiline patterns, and there is no `.gitattributes`
@@ -3319,7 +3358,7 @@ def test_a_table_under_a_heading_that_claims_nothing_is_clean():
 #: a maintainer invokes. #244 was observed against the skill; the command
 #: carried the same sentence, so fixing one would have reached half the callers.
 TICK_ENDING_DOCUMENTS = (
-    (REPO_ROOT / "skills" / "manager" / "SKILL.md", r"loop mechanics"),
+    (MANAGER_SKILL, r"loop mechanics"),
     (REPO_ROOT / "commands" / "tick.md", r"what ends a tick"),
 )
 
@@ -3915,7 +3954,7 @@ def test_a_wrapped_blockquoted_doctrine_is_not_read_as_an_omission():
 #: Both gate-3 paragraphs. `commands/release.md` is the single source and the
 #: skill's is a restatement of it (#331); both stop tags, so both need the
 #: continuation, and neither may grow its own copy of the stop rule.
-GATE_THREE_REGIONS = ("commands/release.md", "skills/manager/SKILL.md")
+GATE_THREE_REGIONS = ("commands/release.md", "skills/manager/phases/release.md")
 
 _GATE_THREE_OPENER = r"(?m)^3\. \*\*A security audit of the delta"
 
@@ -4047,7 +4086,7 @@ def test_a_gate_that_restates_the_doctrine_is_reported():
 # `gh-pr-create` is a finding; `report` plus the exit status is what a true
 # sentence has to carry.
 
-GUARANTEE_DOCUMENT = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+GUARANTEE_DOCUMENT = MANAGER_SKILL
 
 #: The op, and the subject that makes a mention of it a claim about the check.
 #: Naming the op while talking about something else entirely -- the payload
@@ -4455,7 +4494,7 @@ def test_a_second_unlabelled_mention_of_a_scoped_anchor_is_still_caught():
 # document instructs *naming the live worktrees*, it also names the script,
 # in the same shape as the #266 and #250 pairs above.
 
-LANE_SETUP_DOCUMENTS = (REPO_ROOT / "skills" / "manager" / "SKILL.md",)
+LANE_SETUP_DOCUMENTS = (MANAGER_SKILL,)
 
 #: The sentence that puts a document under the obligation to name the script.
 #: Deliberately the phrase both the pre-fix hand-copy instruction and the

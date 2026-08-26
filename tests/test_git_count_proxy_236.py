@@ -19,9 +19,17 @@ that is the positive control below.
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from manager_docs import ManagerLoop  # noqa: E402
+
+#: The manager loop's whole prose -- SKILL.md plus every phase file it defers
+#: to. This check asks "does the loop say X", never "does one file say X".
+MANAGER_LOOP = ManagerLoop(REPO_ROOT)
 
 # A shell pipe from `git log` into `wc -l` (or `wc -c`) used to count rows/bytes --
 # the exact shape that reads a bare trailing newline as one row. Requires a literal
@@ -112,7 +120,7 @@ def test_release_delta_uses_rev_list_count():
 
 def test_manager_skill_states_the_rule():
     """The written rule this class needs: never derive a count or identity from piped git log."""
-    text = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-8")
+    text = MANAGER_LOOP.read_text(encoding="utf-8")
     assert "rev-list" in text, (
         "skills/manager/SKILL.md must name `git rev-list --count` as the way to count a "
         "commit range, so the rule travels with the loop rather than living only in "

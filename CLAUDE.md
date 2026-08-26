@@ -297,7 +297,8 @@ separately rather than one list.
 ## Layout
 
 ```
-skills/manager/SKILL.md     the loop: process only, no repo facts
+skills/manager/SKILL.md     the loop's spine: process only, no repo facts; loaded whole every tick
+skills/manager/phases/*.md  one file per phase, read when the loop enters it: dispatch handback review merge release accounting
 agents/developer.md         one issue, worktree, TDD, stops at a commit
 agents/triager.md           labels only; Bash and TodoWrite, nothing else
 agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
@@ -340,6 +341,53 @@ The counter-argument stands and must survive whatever gets cut to stay under bud
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
 a still-live trap costs a whole extra review round — a cost that will not show up next to the token
 count it saved. The budget is a visible number, not a mandate to shrink.
+
+## The manager skill is a spine plus one file per phase
+
+`skills/manager/SKILL.md` is not an agent definition, and #491 said so — so nothing counted it, and
+it grew to 122,423 B, the largest file here and 1.6x `agents/developer.md`. It is loaded whole by
+`Skill(manager)`, which `commands/tick.md` and `commands/release.md` both open with: ~31k tokens
+standing in a session's context for the whole of every tick and every release, whether or not that
+session ever reached the phase a given paragraph governs.
+
+So the loop's prose is split. The **spine** carries what is decided every tick — authority, the
+config read, the op table, the ranking table, untrusted input, the hazards, loop mechanics, state —
+plus one directive block per phase. Each **phase file** under `skills/manager/phases/` carries that
+phase's argument: the incident behind a rule, the measurement, the approach tried and rejected. A
+`/oss:release` session no longer loads the dispatch, handback and review material at all.
+
+| file | measured (baseline) | budget |
+| --- | --- | --- |
+| `skills/manager/SKILL.md` | 58,377 B | 64,600 B |
+| `skills/manager/phases/dispatch.md` | 23,729 B | 26,100 B |
+| `skills/manager/phases/handback.md` | 18,864 B | 20,700 B |
+| `skills/manager/phases/accounting.md` | 10,663 B | 11,700 B |
+| `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
+| `skills/manager/phases/review.md` | 10,348 B | 11,400 B |
+| `skills/manager/phases/merge.md` | 10,012 B | 11,000 B |
+
+`scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
+on the same replace-don't-append terms as the agent budgets above.
+
+**The total grew: 122,423 B became 142,188 B, +16%.** The spine's directive blocks and each phase
+file's own header are a second, shorter statement of what the phase file then argues at length, and
+that is a real cost paid on every read of the phase file. It buys the number that actually matters
+here — what a session loads before it knows which phase it will reach — which fell 52%. Quote both,
+or the saving reads as free.
+
+**The split's own defect is that an unread phase file is a rule that did not run, and that renders
+exactly like a rule with nothing to say.** Nothing in this repository can observe whether a reader
+opened one — so the spine asks each phase to state `read` / `not-read` with a reason /
+`could-not-read` beside its own result, and the enforceable half is narrower and named as such:
+`skill_phases.check()` reports `unreferenced` for a phase file the spine has stopped naming, because
+a file the spine never names is one the loop can never reach.
+
+**A content check over the loop reads the set, never the spine.** `scripts/manager_docs.py` is the
+one place that derives it, from disk rather than from a list, and every guard that used to open
+`skills/manager/SKILL.md` goes through it — `checklist_skew.py`'s coverage derivation included, which
+now matches `skills/manager/phases/*.md` alongside `agents/*.md` for exactly the reason #547 records.
+A guard left pinned to the spine would have gone quietly narrower than its own subject at the moment
+of the split, which is the shape this whole file is about.
 
 No agent is granted `Read`, `Grep` or `Glob`. Reads go through supertool via `Bash`, which is
 what makes the batching instruction binding rather than advisory. The triager is additionally denied

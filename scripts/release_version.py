@@ -17,8 +17,8 @@ refuses stops a release over a correctly-named file (#297).
 
 ## It proposes. It does not decide.
 
-The output is a recommendation carrying its evidence. `## Releasing` gate 4 in
-`skills/manager/SKILL.md` accepts the proposal by default and records which -- a major
+The output is a recommendation carrying its evidence. Gate 4 in
+`skills/manager/phases/release.md` accepts the proposal by default and records which -- a major
 bump is the one arm of that gate that still stops, because that promise to users is a
 different promise. Who accepts the result is that gate's decision and belongs in one
 place; this module's job is the derivation and its three states. Nothing here writes to
@@ -717,7 +717,7 @@ HEADINGS = {
 }
 
 PROPOSAL_NOTE = (
-    "a proposal. skills/manager/SKILL.md gate 4 accepts it by default and records the "
+    "a proposal. skills/manager/phases/release.md gate 4 accepts it by default and records the "
     "acceptance -- override remains available, and a major bump keeps its own stop."
 )
 

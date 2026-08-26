@@ -52,7 +52,15 @@ from test_release_gate_unmeasured_clean_280 import (  # noqa: E402
 RELEASE_COMMAND = REPO_ROOT / "commands" / "release.md"
 RELEASE_AUDITOR = REPO_ROOT / "agents" / "release-auditor.md"
 AUDITOR = REPO_ROOT / "agents" / "auditor.md"
-MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from manager_docs import ManagerLoop  # noqa: E402
+
+#: The manager loop's whole prose -- SKILL.md plus every phase file it defers
+#: to. The checks below ask "does the loop say X", never "does one file say
+#: X"; pinned to the spine alone they would have gone quietly narrower than
+#: their own subject the moment a paragraph moved into a phase file.
+MANAGER_SKILL = ManagerLoop(REPO_ROOT)
 
 # Both documents that decide what the gate does with a finding. The skill is in
 # this list because it always carried the rule and the command did not, which

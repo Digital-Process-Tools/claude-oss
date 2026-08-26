@@ -98,6 +98,15 @@ DEFINITION_FILES = (
 #: of narrow match a later rewording slips past.
 _AGENT_FILE_RE = re.compile(r"agents/[A-Za-z0-9_.-]+\.md")
 
+#: The same mechanism one directory over. `skills/manager/SKILL.md` is a base
+#: file above, and it defers each phase of the loop -- the ranking table's own
+#: consumers among them -- to `skills/manager/phases/*.md`, naming each path in
+#: its own index. A fixed list here would have gone stale at the moment of that
+#: split for exactly the reason #547 records: the coverage set narrowed and
+#: nothing said so. Derived, so a phase file added later is compared the moment
+#: the spine names it.
+_SKILL_FILE_RE = re.compile(r"skills/[A-Za-z0-9_.-]+/(?:phases/)?[A-Za-z0-9_.-]+\.md")
+
 DEF_IDENTICAL = "identical"
 DEF_DIFFERS = "differs"
 DEF_COULD_NOT_TELL = "could-not-tell"
@@ -141,7 +150,14 @@ def _read_version(manifest_path):
 
 
 def _referenced_agent_files(text):
-    return sorted(set(_AGENT_FILE_RE.findall(text)))
+    """Every definition-shaped path this text names -- agent definitions and
+    the manager skill's own phase files alike. One function rather than two,
+    because the question is the same one in both directories: which files does
+    the thing gate 3 reads depend on?
+    """
+    found = set(_AGENT_FILE_RE.findall(text))
+    found.update(_SKILL_FILE_RE.findall(text))
+    return sorted(found)
 
 
 def _derive_definition_files(plugin_root, repo):
