@@ -486,19 +486,71 @@ CROSS_CUTTING_GUARDS = (
 )
 
 
-def known_guards():
+def _guard_test_existence(repo, test_path):
+    """Whether `test_path` (one of `CROSS_CUTTING_GUARDS`'s own entries) exists as a
+    regular file under `repo`. Three states, not two -- #566:
+
+      exists          the guard test is present in this repository. Run it.
+      absent          confirmed not present -- this class of guard does not exist
+                       here, and a lane must be told that rather than handed a
+                       path that collects nothing.
+      could-not-tell  the repository could not be examined at this path -- an
+                       ancestor this process cannot traverse, an unreadable
+                       parent. Never folded into `absent`: an unlookable name
+                       and a genuine miss render identically as
+                       `FileNotFoundError` on a platform that folds Win32 codes
+                       onto `ENOENT` (CLAUDE.md), so `_absence_confirmed` --
+                       already used by `worktree_occupancy` and `lane_count` for
+                       the identical swallow -- decides which of the two this is
+                       rather than trusting the exception type alone.
+
+    `CROSS_CUTTING_GUARDS` is a fact about *this* repository (claude-oss) living
+    in shared code that runs against every managed repository (#566) -- a
+    managed repo carries none of these test files by construction. This
+    function is what turns "the table names a guard" into "the guard applies
+    here", the same way `resolve_lane`'s `glob-no-match` turns "the pattern is
+    well-formed" into "the pattern matched something": a fact asserted and a
+    fact confirmed are not the same claim, and only a check can tell them apart.
+    """
+    p = Path(repo) / test_path
+    try:
+        st = p.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent" if _absence_confirmed(p) is True else "could-not-tell"
+    except (OSError, ValueError):
+        return "could-not-tell"
+    return "exists" if stat.S_ISREG(st.st_mode) else "absent"
+
+
+def known_guards(repo=None):
     """The full enumeration, grouped by guard test with every trigger reason that
     maps to it. Answers #432's own sizing question -- how many of these exist --
     as a derived count rather than a pasted one, so a sixth guard added later
     changes this return value instead of needing a second list updated by hand.
+
+    `repo` is optional and, when given, adds each entry's `status`
+    (`_guard_test_existence`) against that repository -- #566/#567: the sizing
+    answer this exists to give is about the repository a lane is dispatched
+    into, not about claude-oss's own tree, so a caller counting "how many
+    guards apply" in a managed repo must count entries whose `status` is
+    `exists`, not the declared length of `CROSS_CUTTING_GUARDS`. Omitted
+    (`repo=None`) keeps the declared enumeration only -- the shape this
+    function has always had, and what `claude-oss`'s own sizing test still
+    checks against its own tree.
     """
     grouped = {}
     for prefix, test_path, why in CROSS_CUTTING_GUARDS:
         grouped.setdefault(test_path, []).append({"prefix": prefix, "why": why})
-    return [{"test": test_path, "triggers": grouped[test_path]} for test_path in sorted(grouped)]
+    result = []
+    for test_path in sorted(grouped):
+        entry = {"test": test_path, "triggers": grouped[test_path]}
+        if repo is not None:
+            entry["status"] = _guard_test_existence(repo, test_path)
+        result.append(entry)
+    return result
 
 
-def guards_for_files(files):
+def guards_for_files(files, repo=None):
     """Which guard tests a lane's resolved files (`resolve_lane`'s `files` list --
     repo-relative POSIX paths, never a module-name guess) trip, deduplicated to one
     entry per guard even when several files or several reasons point at it.
@@ -507,6 +559,16 @@ def guards_for_files(files):
     produces, not by trusting a caller's own idea of which area a change belongs
     to -- the seam #432 exists to close was exactly a human's idea of "these three
     files are about doctor" being wrong about a fourth, unrelated-by-name file.
+
+    `repo` is optional and, when given, adds each entry's `status`
+    (`_guard_test_existence`) against that repository -- #566: `CROSS_CUTTING_GUARDS`
+    is a fact about claude-oss, and a lane dispatched into a managed repository
+    that does not carry a named guard test must be told so rather than handed a
+    path that collects nothing when it runs the guard. The entry is never
+    dropped for `absent` or `could-not-tell` -- the class still applies to the
+    files touched, and dropping it would silently undo the trigger this
+    function exists to report; only the disposition changes, from "run this"
+    to "this class applies and cannot be run here".
     """
     hits = {}
     for f in files or []:
@@ -515,7 +577,13 @@ def guards_for_files(files):
                 reasons = hits.setdefault(test_path, [])
                 if why not in reasons:
                     reasons.append(why)
-    return [{"test": test_path, "why": hits[test_path]} for test_path in sorted(hits)]
+    result = []
+    for test_path in sorted(hits):
+        entry = {"test": test_path, "why": hits[test_path]}
+        if repo is not None:
+            entry["status"] = _guard_test_existence(repo, test_path)
+        result.append(entry)
+    return result
 
 
 def lane_report(repo, lane_patterns, against_patterns):
@@ -535,7 +603,10 @@ def lane_report(repo, lane_patterns, against_patterns):
     a = resolve_lane(repo, lane_patterns) if lane_patterns else None
     b = resolve_lane(repo, against_patterns) if against_patterns else None
     overlap = lane_overlap(a["files"], b["files"]) if a and b else None
-    guards = guards_for_files(a["files"]) if a else []
+    # #566: `repo` is threaded through so each guard's `status` is answered against
+    # the repository the lane is actually dispatched into, never against claude-oss's
+    # own tree by default -- the whole defect this issue is about.
+    guards = guards_for_files(a["files"], repo) if a else []
     return {"lane": a, "against": b, "overlap": overlap, "guards": guards}
 
 
@@ -1215,8 +1286,25 @@ def receipt(payload):
         if lane["lane"] is None:
             pass
         elif lane["guards"]:
+            # #566: a guard entry always carries a `status` now that `lane_report`
+            # threads `repo` through -- `exists` reads exactly as it always has,
+            # `absent` and `could-not-tell` are said in as many words rather than
+            # handing a lane a path that would collect nothing.
             for entry in lane["guards"]:
-                lines.append("  guard   : {0} ({1})".format(entry["test"], "; ".join(entry["why"])))
+                status = entry.get("status")
+                why = "; ".join(entry["why"])
+                if status == "absent":
+                    lines.append(
+                        "  guard   : {0} -- NOT IN THIS REPO, treat as uncovered "
+                        "({1})".format(entry["test"], why)
+                    )
+                elif status == "could-not-tell":
+                    lines.append(
+                        "  guard   : {0} -- COULD NOT TELL whether this repo has it "
+                        "({1})".format(entry["test"], why)
+                    )
+                else:
+                    lines.append("  guard   : {0} ({1})".format(entry["test"], why))
         else:
             lines.append("  guard   : none of the lane's files match a known cross-cutting guard")
 
