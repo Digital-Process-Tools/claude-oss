@@ -95,7 +95,7 @@ def _sh_single_quote(value):
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-name"):
+def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-name", python_bin=None):
     """Run the extracted shell block under `sh`, with a real python and a fake
     HOME carrying the given consumer registry -- the same resolution order
     `bin/oss-workspace` itself uses (`~/.claude/plugins/installed_plugins.json`).
@@ -105,7 +105,23 @@ def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-n
     naive interpolation would corrupt -- an already-exported
     `SUPERTOOL_WATCH_NAME` is exactly the unvalidated case `cannot_ask()`'s own
     comment names.
+
+    `python_bin` (default `sys.executable`) is ALSO written as a single-quoted
+    `sh` literal, for the same reason and one this fixture got wrong once
+    already (#573 round 3): on Windows, `sys.executable` is a backslash-separated
+    path (`C:\\hostedtoolcache\\...\\python.exe`). Interpolated bare into a
+    generated shell script, `sh` treats each backslash as an escape character at
+    PARSE time and strips it -- `C:hostedtoolcachewindowsPython3.9.13x64
+    python.exe` on the four Windows CI legs, `command not found`, exit 127. The
+    probe then genuinely crashed, for a reason with nothing to do with
+    `RecursionError`, and the fix correctly reported a crashed probe -- this was
+    the harness rendering an environment limit as a product verdict, not a
+    defect in `bin/oss-workspace` itself. Single-quoting at assignment time is
+    what `SUPERTOOL_WATCH_NAME` already does two lines below; `python_bin` gets
+    the identical treatment now.
     """
+    if python_bin is None:
+        python_bin = sys.executable
     home = tmp_path / "home"
     (home / ".claude" / "plugins").mkdir(parents=True)
     (home / ".claude" / "plugins" / "installed_plugins.json").write_text(
@@ -117,7 +133,7 @@ def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-n
         "SUPERTOOL_WATCH_NAME=%s\n"
         "export SUPERTOOL_WATCH_NAME\n"
         "%s"
-        % (sys.executable, _sh_single_quote(watch_name), _extract_ask_consumer_block()),
+        % (_sh_single_quote(python_bin), _sh_single_quote(watch_name), _extract_ask_consumer_block()),
         encoding="utf-8",
     )
     env = dict(os.environ)
@@ -245,3 +261,56 @@ def test_an_ordinary_watch_name_still_appears_in_the_crash_message(tmp_path):
     lines = _oss_workspace_lines(done.stderr)
     assert len(lines) == 1, (lines, done.stderr)
     assert _ONE_LINE_NAME in lines[0], lines[0]
+
+
+# --- python_bin must survive shell escaping too (Windows CI, round 3) -----------
+#
+# CI's own report: all four windows-latest legs red, eight POSIX legs and
+# shellcheck green. sys.executable on Windows is a backslash-separated path
+# (C:\hostedtoolcache\...\python.exe); the fixture wrote it BARE into the
+# generated script ("python_bin=%s\n" % sys.executable), so sh's own parser --
+# not bin/oss-workspace, not the fix -- stripped every backslash at parse time
+# before the assignment ever ran, producing "C:hostedtoolcachewindows...", exit
+# 127, "command not found". The probe crashed for a reason with nothing to do
+# with RecursionError, and reported a crashed probe exactly as designed -- this
+# is the harness rendering an environment limit as a product verdict, not a
+# defect in the fix under test.
+#
+# Reproduced here without a Windows machine: POSIX filesystems allow a literal
+# backslash in a path component (Windows does not), so a wrapper placed at such
+# a path and used as `python_bin` triggers the identical sh parse-time mangling
+# on any POSIX runner.
+
+def test_a_backslash_laden_python_bin_path_is_not_mangled_by_shell_escaping(tmp_path):
+    """The positive control: a `python_bin` path containing a literal backslash
+    (standing in for a Windows sys.executable path this fixture cannot produce
+    on a POSIX runner) must reach the shell script intact, not stripped down to
+    something `sh` reports as "command not found".
+    """
+    wrapper_dir = tmp_path / "weird\\dir"
+    wrapper_dir.mkdir()
+    wrapper = wrapper_dir / "py3"
+    wrapper.write_text(
+        "#!/bin/sh\nexec %s \"$@\"\n" % _sh_single_quote(sys.executable),
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    done = _run_ask_consumer_block(
+        tmp_path, json.dumps({"plugins": {}}), python_bin=str(wrapper)
+    )
+    assert "command not found" not in done.stderr, done.stderr
+    assert "Traceback" not in done.stderr, done.stderr
+    assert "could not ask the installed supertool" not in done.stderr, done.stderr
+
+
+def test_an_ordinary_python_bin_path_still_runs_the_block(tmp_path):
+    """The must-fire control's own control: an ordinary (backslash-free)
+    `python_bin` -- the normal case on every platform this ISN'T Windows -- must
+    still run the block and reach the expected crash message on a deeply nested
+    registry. A fixture that stopped running the block for every python_bin
+    would pass the test above for the wrong reason.
+    """
+    done = _run_ask_consumer_block(
+        tmp_path, _deeply_nested_registry(), python_bin=sys.executable
+    )
+    assert "could not ask the installed supertool" in done.stderr, done.stderr
