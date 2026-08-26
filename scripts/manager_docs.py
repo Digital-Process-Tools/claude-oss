@@ -80,10 +80,20 @@ def documents(root=None):
 def text(root=None, sep=JOINER):
     """Every document's text, concatenated in `documents()` order.
 
-    Silent about `unreadable` -- a caller that needs to know whether the
-    phases directory could be listed calls `documents()` directly.
+    Raises rather than silently concatenating a narrowed set: discarding
+    `unreadable` here would reopen the exact defect `documents()` closes
+    (#571) one call further down -- every `ManagerLoop`-based content check
+    reads through this function, and a denied phases directory would
+    otherwise still narrow their coverage to the spine alone with no signal.
+    A caller that wants the partial set anyway calls `documents()` directly
+    and handles `unreadable` itself.
     """
-    paths, _unreadable = documents(root)
+    paths, unreadable = documents(root)
+    if unreadable:
+        raise RuntimeError(
+            "manager_docs: phases directory could not be listed, so its text "
+            "cannot be included: {0}".format(unreadable)
+        )
     return sep.join(p.read_text(encoding="utf-8") for p in paths)
 
 
@@ -101,7 +111,19 @@ class ManagerLoop:
 
     @property
     def paths(self):
-        paths, _unreadable = documents(self._root)
+        """Raises when the phases directory could not be listed (#571) --
+        `is_file()` below relies on this being the *whole* set, not a
+        narrowed one: `all(p.is_file() for p in [spine])` would answer `True`
+        for a loop six files short of complete, which is exactly the
+        one-present-file-out-of-seven-is-not-a-yes shape its own docstring
+        warns against.
+        """
+        paths, unreadable = documents(self._root)
+        if unreadable:
+            raise RuntimeError(
+                "manager_docs: phases directory could not be listed: "
+                "{0}".format(unreadable)
+            )
         return paths
 
     @property

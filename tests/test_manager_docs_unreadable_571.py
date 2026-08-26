@@ -89,3 +89,49 @@ def test_unreadable_phases_directory_is_reported_not_silently_narrowed(tmp_path)
         )
     finally:
         os.chmod(phases_dir, original_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod does not deny a directory listing the way this fixture needs")
+def test_text_raises_rather_than_silently_narrowing(tmp_path):
+    """Self-review finding on the #571 round: `text()` and `ManagerLoop`
+    used to discard `unreadable` and concatenate the narrowed set anyway --
+    reopening the identical defect one call further down, for every content
+    check that reads through `ManagerLoop` instead of calling `documents()`
+    directly. Paired with the positive control below.
+    """
+    root, phases_dir = _fixture_tree(tmp_path)
+    original_mode = phases_dir.stat().st_mode
+    os.chmod(phases_dir, 0)
+    try:
+        try:
+            list(phases_dir.iterdir())
+        except PermissionError:
+            pass
+        else:
+            pytest.skip(
+                "chmod 000 did not deny iterdir() on this filesystem/user -- "
+                "the deny path went untested here"
+            )
+
+        with pytest.raises(RuntimeError):
+            manager_docs.text(root)
+
+        loop = manager_docs.ManagerLoop(root)
+        with pytest.raises(RuntimeError):
+            loop.read_text()
+        with pytest.raises(RuntimeError):
+            loop.paths
+    finally:
+        os.chmod(phases_dir, original_mode)
+
+
+def test_text_and_manager_loop_succeed_on_a_readable_tree_positive_control(tmp_path):
+    """Positive control for the case above: a healthy tree must not raise."""
+    root, _phases_dir = _fixture_tree(tmp_path)
+
+    joined = manager_docs.text(root)
+    assert "dispatch phase" in joined and "review phase" in joined
+
+    loop = manager_docs.ManagerLoop(root)
+    assert "dispatch phase" in loop.read_text()
+    assert len(loop.paths) == 3
