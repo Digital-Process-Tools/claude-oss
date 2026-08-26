@@ -694,6 +694,19 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # `ci` block. Both are states the doctor warns about -- tests configured with
     # nothing in CI running them, and the key #113 deleted still on disk -- so a clean
     # verdict has to be built on a repo where neither is true.
+    #
+    # #564: `check_gitignore_hides_config` needs a real `git check-ignore` to answer
+    # "clear" rather than "could not ask" -- and "could not ask" is a WARN, correctly,
+    # so a fixture claiming to be genuinely clean has to be a real git repo for that
+    # check to have anything to say OK about.
+    done = subprocess.run(
+        ["git", "init", "--quiet", str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {}".format(done.stderr.strip() or done.returncode))
     config = _config(tmp_path)
     _fully_configured(tmp_path)
     scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
