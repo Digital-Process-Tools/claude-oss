@@ -45,12 +45,23 @@ because, once, a human answered that second question by hand: diffing the
 auditor's own definition, `agents/auditor.md`, and the ranking table
 `skills/manager/SKILL.md` owns, and finding the ranking rows byte-identical.
 
-So when the state is `differs`, this module compares those three files, PLUS
-every `agents/*.md` path one of the three names in its own text -- e.g.
-`agents/auditor.md` delegating its platform band to `agents/developer.md`
-rather than reading it (#547) -- byte-for-byte between the two trees, and
-reports each as `identical`, `differs`, or `could-not-tell` (a file present on
-one side only, or an unreadable one, is not silently skipped).
+So whenever both manifests could be read -- `matches` and `differs` alike --
+this module compares those three files, PLUS every `agents/*.md` path one of
+the three names in its own text -- e.g. `agents/auditor.md` delegating its
+platform band to `agents/developer.md` rather than reading it (#547) --
+byte-for-byte between the two trees, and reports each as `identical`,
+`differs`, or `could-not-tell` (a file present on one side only, or an
+unreadable one, is not silently skipped).
+
+#572: the comparison used to run only under `differs`, on the reasoning that
+an equal version number meant nothing to check. That left the byte comparison
+skipped in the one state this repository is always in at release time -- an
+equal version number is not a promise the two trees are otherwise identical,
+and `matches` now carries `definitions` too, so a config drift under an
+unmoved version number is not silently unreported. The state name still
+answers the version question alone; a `matches` payload carrying a `differs`
+row is a config finding the release report must quote, exactly as it already
+does under `differs`.
 
 **This is not a semantic verdict, and callers must not read it as one.** A
 byte-identical ranking table is evidence that nothing in it moved; it is not
@@ -171,13 +182,14 @@ def _derive_definition_files(plugin_root, repo):
 
     Reads BOTH trees for each base file and unions what each one references --
     not just whichever resolves first (self-review finding: when the two
-    copies differ, which is exactly the `differs` state this function only
-    runs under, a reference the OTHER copy names would otherwise be silently
-    unseen -- the same "coverage set narrower than what it depends on" shape
-    this function exists to close, one level up). A base file unreadable on
-    BOTH sides contributes nothing, same as before this derivation existed;
-    that file's own row is still `could-not-tell` via `_compare_definitions`,
-    so nothing is silently dropped, only not derived from.
+    copies differ, a reference the OTHER copy names would otherwise be
+    silently unseen -- the same "coverage set narrower than what it depends
+    on" shape this function exists to close, one level up). This function now
+    runs whether the manifest versions agree or not (#572) -- a base file
+    unreadable on BOTH sides contributes nothing, same as before this
+    derivation existed; that file's own row is still `could-not-tell` via
+    `_compare_definitions`, so nothing is silently dropped, only not derived
+    from.
     """
     found = set()
     for rel in DEFINITION_FILES:
@@ -303,6 +315,8 @@ def compute(repo=".", plugin_root=None):
         )
     base["repo_version"] = repo_version
 
+    definitions = _compare_definitions(plugin_root_path, repo_path)
+
     if installed_version == repo_version:
         return dict(
             base,
@@ -312,9 +326,9 @@ def compute(repo=".", plugin_root=None):
                 "version".format(installed_version)
             ),
             detail="",
+            definitions=definitions,
         )
 
-    definitions = _compare_definitions(plugin_root_path, repo_path)
     return dict(
         base,
         state=STATE_DIFFERS,

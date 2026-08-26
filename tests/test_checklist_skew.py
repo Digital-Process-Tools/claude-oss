@@ -60,7 +60,6 @@ def test_matches_when_versions_agree(tmp_path):
     assert payload["state"] == MATCHES
     assert payload["installed_version"] == "9.9.9"
     assert payload["repo_version"] == "9.9.9"
-    assert payload["definitions"] is None
 
 
 # ------------------------------------------------------------------------- differs
@@ -207,16 +206,52 @@ def test_differs_reports_per_definition_identical_and_differs(tmp_path):
     assert rows["skills/manager/SKILL.md"] == COULD_NOT_TELL
 
 
-def test_matches_never_computes_definitions(tmp_path):
+def test_matches_reports_definitions_when_bytes_differ(tmp_path):
+    """#572: an equal manifest version is the state this repository is always
+    in at release time, and it is also the state the byte comparison used to
+    skip entirely. A `matches` payload must carry `definitions` the same way
+    `differs` does, so a config drift under an equal version number is not
+    silently unreported.
+    """
     plugin_root = tmp_path / "plugin"
     repo = tmp_path / "repo"
     _manifest(plugin_root, "9.9.9")
     _manifest(repo, "9.9.9")
 
+    (plugin_root / "agents").mkdir(parents=True)
+    (repo / "agents").mkdir(parents=True)
+    (plugin_root / "agents" / "auditor.md").write_text("old text", encoding="utf-8")
+    (repo / "agents" / "auditor.md").write_text("new text", encoding="utf-8")
+
     checklist_skew = _module()
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
 
-    assert payload["definitions"] is None
+    assert payload["state"] == MATCHES
+    rows = {row["path"]: row["state"] for row in payload["definitions"]}
+    assert rows["agents/auditor.md"] == "differs", rows
+
+
+def test_matches_reports_definitions_identical_when_bytes_agree(tmp_path):
+    """Positive control beside the case above, in the same shape: when the
+    definition files really are byte-identical, the row says so rather than
+    the field going back to None or silently omitting the file.
+    """
+    plugin_root = tmp_path / "plugin"
+    repo = tmp_path / "repo"
+    _manifest(plugin_root, "9.9.9")
+    _manifest(repo, "9.9.9")
+
+    (plugin_root / "agents").mkdir(parents=True)
+    (repo / "agents").mkdir(parents=True)
+    (plugin_root / "agents" / "auditor.md").write_text("same text", encoding="utf-8")
+    (repo / "agents" / "auditor.md").write_text("same text", encoding="utf-8")
+
+    checklist_skew = _module()
+    payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
+
+    assert payload["state"] == MATCHES
+    rows = {row["path"]: row["state"] for row in payload["definitions"]}
+    assert rows["agents/auditor.md"] == "identical", rows
 
 
 # --------------------------------------------------------------------------- CLI

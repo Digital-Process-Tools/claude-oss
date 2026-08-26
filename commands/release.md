@@ -169,7 +169,10 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    to the auditor and repeat it in the release report. Three states, exit 0 on all of them — this
    gate **annotates the checklist skew, it never blocks**:
 
-   - **`matches`** — name the version, once.
+   - **`matches`** — name the version, once. **Also carries `definitions`** (#572): an equal manifest
+     version is not a promise the two trees are otherwise identical, so the byte comparison below runs
+     here too. A `matches` payload carrying a `differs` row is a **config finding** the release report
+     must quote — the state name answers the version question alone.
    - **`differs`** — name both. For a repo that merely installed the plugin the installed version is
      legitimately whatever they installed, and blocking on a skew nobody chose trades a reporting gap
      for a release nobody can cut — the same trade `scope: null` above already refuses. For the
@@ -177,13 +180,13 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      the rules it is gating is a **config finding** in the release report.
 
      **A version skew answers "an old checklist ran"; it does not answer whether that checklist would
-     have said anything different.** `differs` therefore also carries `definitions`: a byte-for-byte
-     comparison, between the installed tree and this repository's own, of the files gate 3's own
-     spawn actually reads or cross-references — its own definition, `agents/auditor.md`, and the
-     ranking table `skills/manager/SKILL.md` owns. Quote every row in the release report. **This is
-     evidence, not a verdict** — a byte-identical row is not proof that nothing relevant moved
-     elsewhere in the two trees, only that nothing moved in that one file. Say what was compared and
-     say plainly that it is not the whole answer.
+     have said anything different.** `differs` (and `matches`, per above) therefore also carries
+     `definitions`: a byte-for-byte comparison, between the installed tree and this repository's own,
+     of the files gate 3's own spawn actually reads or cross-references — its own definition,
+     `agents/auditor.md`, and the ranking table `skills/manager/SKILL.md` owns. Quote every row in the
+     release report. **This is evidence, not a verdict** — a byte-identical row is not proof that
+     nothing relevant moved elsewhere in the two trees, only that nothing moved in that one file. Say
+     what was compared and say plainly that it is not the whole answer.
    - **`could-not-tell`** — a manifest was absent, unreadable, not JSON, or carried no string
      `version` — including `${CLAUDE_PLUGIN_ROOT}` being unset, and including the ordinary case of a
      repo that never shipped its own `.claude-plugin/plugin.json`. Quote the `reason` the receipt
