@@ -432,140 +432,129 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `990d0da`, the commit `v0.13.0`'s own release commit sits directly on top of** — the
+**Measured at `48bb420`, the commit `v0.14.0`'s own release commit sits directly on top of** — the
 tag lands one commit later, on the commit that folds this changelog and bumps these version sites, and
-every number below was taken before that commit existed. The delta this release carries is **26
-commits and 23 merged pull requests**, `git rev-list --count v0.12.0..HEAD` returning `26`. Every
+every number below was taken before that commit existed. The delta this release carries is **17
+commits and 17 merged pull requests**, `git rev-list --count v0.13.0..HEAD` returning `17`. Every
 claim below is graded **observed** (a named command produced it) or **reasoned** (argued from code
 that was read, not run). **Re-derive this at each release rather than editing it.** The version it
-replaces was measured at `bce0362`; before that at `53e2d0c`, `805debb`, `c570977`, `d4c12c1`,
-`7690fd0`, `01212b0` and `e8e75b2`.
+replaces was measured at `990d0da`; before that at `bce0362`, `53e2d0c`, `805debb`, `c570977`,
+`d4c12c1`, `7690fd0`, `01212b0` and `e8e75b2`.
 
-**The two counts disagree here and the gap is the interesting half.** 26 commits against 23 merged
-pull requests, taken by intersecting `git rev-list` with the merge commit of every merged pull request
-the forge lists. The three-commit difference is work that reached `main` without a pull request of its
-own. Neither number is wrong; a range where they agree is a property of that range, not of the method,
-and this one does not.
+**The two counts agree this round, and last round they did not.** 26 commits against 23 merged pull
+requests at `v0.13.0`; 17 against 17 here, taken the same way — intersecting `git rev-list` with the
+merge commit of every merged pull request the forge lists. Agreement is a property of this range, not
+of the method: it means every commit that reached `main` this cycle arrived through a pull request.
+Do not read it as the method having improved.
 
-### Two release-gate rounds, seven merged fixes, and the gate found a defect in its own fix
+### Half this release is the release gate's own output, and that half has one review round behind it
 
-`v0.13.0` was gated twice, and **both rounds returned findings with none in a blocking row**.
+`v0.14.0` was gated twice and **both rounds returned findings with none in a blocking row**.
 
-**Round one** (`rel-0130-c340b9b8d7`) returned 6. By the gate's own contract that stops the tag: five
-issues were filed (`#534`–`#538`), four file-disjoint lanes were dispatched, and all four merged
-before the tag moved — `a6175b0`, `e174553`, `3d647b5`, `82b8143`. A sixth issue (`#533`) was filed
-mid-round from a live misreport and merged as `990d0da` at the maintainer's decision to include it.
-So **roughly a quarter of this release is work the release gate itself produced**, and it is the part
-with the least review behind it, which round two was told in as many words.
+**Round one** (`rel-0140-9f4c1b73ae`) returned 4, all `misreports`. Four issues were filed (`#571`–`#574`)
+and all four merged before the tag moved. **Round two** (`rel-0140-r2-6d21ef58c4`) returned 2, also
+`misreports`, and the cap was reached.
 
-**Round two** (`rel-0130-r2-3834eb5734`) returned 4, all `misreports`, all filed as `#546`–`#548`
-against the next milestone. The cap is two rounds and it was reached; the release ships over them.
+**Of the 17 merged pull requests, 7 were produced by this release's own gate** — `#571`, `#572`, `#573`,
+`#574` from round one, `#588` from round two, plus `#580` filed mid-release from a `/oss:release` run
+against a *different* repository. That work has one review round and no soak, and round two was told so
+in as many words.
 
-Four things from that round worth recording, because they are what the gate is *for*:
+Four things from those two rounds worth recording:
 
-- **It measured its own instrument rather than trusting the payload.** Told the checklist differed
-  (0.11.0 against a 0.12.0 tree), it diffed down to the parts it relies on: the ranking table rows
-  **byte-identical**, the four class definitions **byte-identical**. So nothing moved under it — and
-  that measurement is what turned up the next item.
-- **It found the file its own skew tool does not watch.** `agents/auditor.md` delegates the entire
-  platform band to `agents/developer.md`, which `checklist_skew.py`'s `DEFINITION_FILES` omits. The
-  file *is* skewed; the section it depends on happens not to be — established by hand, which is the
-  manual step `#538` was filed to remove. The guard's coverage set is narrower than the set it
-  guards, one level up from where round one found it.
-- **It found the bypass in round one's fix.** `#535` made the statusline walker derive its input set —
-  from `_facts()`, the fixture, rather than from what `render()` reads. 23 leaves walked, 26 reachable;
-  `default_branch` and `release` are whole top-level keys the walker never sees. Then it **exercised
-  both and reported the lower number**: they are folded and coerced today, so this is coverage, not a
-  leak, at exactly the weight the fix's own commit message claims.
-- **It judged a shipped below-bar item and overturned it.** `bin/oss-workspace`'s `|| true` on the
-  consumer probe: four of seven registry shapes crash before reaching the `cannot_ask()` function
-  written for that state, and the block's own comment says silence here "would be indistinguishable
-  from acceptance, which is the absence this plugin is named after". The identical code in
-  `doctor.py` was hardened in this very delta and calls itself a mirror of it. `#546`.
+- **The gate found a defect in its own instrument, and the instrument was the skew check.** Round one
+  established by hand that `checklist_skew.py` reported `matches` while `skills/manager/SKILL.md`
+  differed by 64 KB and six phase files did not exist in the installed copy at all — because the
+  `matches` arm returned before `_compare_definitions` ran. `#572` fixed it. The composition was
+  assembled from two individually clean commits in this same delta: `#547` widened the coverage set
+  correctly but under the `differs` branch, and `#568`'s split then diverged the trees without moving
+  the version number.
+- **`#573` took four rounds and only the first touched the product.** The other three were the *test
+  harness* correcting itself: a `/bin/sh` `echo` re-interpreting `repr()`'s own escapes, a Windows path
+  interpolated into generated shell text losing its backslashes to Git Bash, and a reproduction test
+  constructing a directory named `weird\dir` that cannot exist on Windows. Each round was green on
+  POSIX and red on all four Windows legs.
+- **Round two then found that `#573`'s own fix broke the launcher.** The removed `|| true` was doing
+  two jobs — swallowing the status *and* suppressing `set -e` — and only one was replaced, so under
+  `set -eu` the launcher exited 1 and opened no session, with the 34-line arm written to report exactly
+  that state never running. `shellcheck` exits 0 on it and the test fixture generated a script with no
+  `set -eu`, so nothing in 13 legs could see it. `#588`.
+- **The tag was held for `#588` over the cap, by decision rather than by the table.** Round two ranked
+  it `misreports`, non-blocking, and round two is the hard cap — the documented answer was *file it and
+  ship*. It was held because the regression was introduced by this delta, the fix was one line, the
+  reproduction was in hand, and a tag cannot be reversed. That is a maintainer decision on the record,
+  not a gate, and it is the one place this release departed from its own written contract.
 
-### Two checks added this release fired on this machine, on their first run
-
-`python3 scripts/doctor.py --root .` at `990d0da`: **7 warnings**, up from 6. Two of them are this
-release's own new checks reporting on the machine that wrote them:
-
-- `WARN gh resolved to a x86_64 build at /usr/local/bin/gh (prefix /usr/local) while this host is
-  arm64` — `#386`'s probe, which asks about the binaries the loop spawns rather than the interpreter.
-  Two years of this being true and invisible.
-- `WARN oss-workspace launcher: PINNED ELSEWHERE` — `#519`'s new state, on a symlink into the `0.12.0`
-  cache while the tree reads `0.13.0`. Byte-identical today; the whole point of the state is that this
-  is a fact about every future release rather than about today.
-
-The other five are carried: the plugin-copy scope `not established`, `./supertool` pointing at a local
-checkout, `changelog.d/README.md` missing the Compatibility bullet (#260), the jit layer `unknown`,
-and `.oss/statusline.py` drifted in this clone's own vendored copy.
-
-### The reach moved for the first time in seven rounds
+### The reach moved again, and one field copy is current for the first time
 
 Population selected on the thing being measured: `gh repo list Digital-Process-Tools --limit 100`
 returns **eleven** repositories, and each of five artifacts was probed in every one — **55 probes**, no
 filtered subset, re-run at this commit.
 
 - **`.oss.json` on four** — this one, `claude-supertool`, `claude-jit-context`, `claude-remember`.
+  Unchanged.
 - **The owned changelog trio on three besides this one** — `claude-jit-context`, `claude-remember`,
-  `claude-5h-window-spread`. Unchanged for the seventh consecutive round.
-- **`.oss/statusline.py` on one** — `claude-jit-context`. **This is the movement.** It shipped in
-  `v0.12.0` and reached nobody; it has now reached one repository, which is the first change in the
-  reach numbers in seven rounds.
+  `claude-5h-window-spread`. Unchanged for the eighth consecutive round.
+- **`.oss/statusline.py` on two** — `claude-jit-context` and now **`claude-supertool`**. Second
+  consecutive round in which this row moved, and the only row that has ever moved.
 - **The remaining seven carry none of the five.** `claude-marketplace`, `.github` and the four
   `mcp-*-warm` servers answered `no` to every file. Reported as loudly as the hits.
 
-What has *still* not been observed, across eleven rounds: any repository scaffolded **by a maintainer
+What has **still** not been observed, across twelve rounds: any repository scaffolded **by a maintainer
 who is not the author of this plugin**.
 
-### Owned files in the field, including the one that just arrived
+### Owned files in the field, and the first identical cell outside this repository
 
-Rendering each at `990d0da` with `scaffold.render_owned(name, config, ".")`, encoding to UTF-8 before
+Rendering each at `48bb420` with `scaffold.render_owned(name, config, ".")`, encoding to UTF-8 before
 counting, and comparing `sha256` against what each repo carries:
 
-| owned file | would write today | `claude-jit-context` | `claude-5h-window-spread` | `claude-remember` |
-| --- | --- | --- | --- | --- |
-| `.oss/assemble_changelog.py` | 118,107 B (`f1a4e22f`) | 102,079 `b16cc044` — **drifted** | 55,261 `dc1f11f8` — **drifted** | 102,079 `b16cc044` — **drifted** |
-| `.oss/README.md` | 1,753 B (`c380cfe0`) | 1,753 `c380cfe0` — **identical** | 1,325 `68de5d32` — **drifted** | 1,753 `c380cfe0` — **identical** |
-| `.github/workflows/oss-changelog.yml` | 12,639 B (`c820d2dc`) | 9,954 `dae31dc9` — **drifted** | 2,159 `032184b4` — **drifted** | 8,943 `8108fede` — **drifted** |
-| `.oss/statusline.py` | 55,661 B (`e914b9ce`) | 52,373 `d60ecb75` — **drifted** | **absent** | **absent** |
+| owned file | would write today | `claude-jit-context` | `claude-5h-window-spread` | `claude-remember` | `claude-supertool` |
+| --- | --- | --- | --- | --- | --- |
+| `.oss/assemble_changelog.py` | 124,329 B (`28ef77c7`) | 102,079 `b16cc044` — **drifted** | 55,261 `dc1f11f8` — **drifted** | 102,079 `b16cc044` — **drifted** | **absent** |
+| `.oss/README.md` | 1,753 B (`c380cfe0`) | 1,753 `c380cfe0` — **identical** | 1,325 `68de5d32` — **drifted** | 1,753 `c380cfe0` — **identical** | **absent** |
+| `.github/workflows/oss-changelog.yml` | 12,639 B (`c820d2dc`) | 9,954 `dae31dc9` — **drifted** | 2,159 `032184b4` — **drifted** | 8,943 `8108fede` — **drifted** | **absent** |
+| `.oss/statusline.py` | 65,637 B (`ef3ed46b`) | 52,373 `d60ecb75` — **drifted** | **absent** | **absent** | 65,637 `ef3ed46b` — **identical** |
 
-- **The nine cells of the original trio are byte-identical to the previous round's, for the seventh
+- **The nine cells of the original trio are byte-identical to the previous round's, for the eighth
   round running.** Seven drifted, two identical, no movement in either direction.
-- **The fourth row has a value where it had only absences.** `claude-jit-context` carries
-  `.oss/statusline.py` and it is **already drifted** — it arrived and went stale in one release, which
-  is the trio's whole history compressed into a single cycle.
-- **The `would write today` column moved in three of four rows**, because `.oss/statusline.py` grew
-  from 28,417 B to 55,661 B and the trio's own hashes did not move at all. A gate on that column
-  would still have been silent about every file that actually drifted in the field.
+- **`claude-supertool`'s `.oss/statusline.py` is the first cell outside this repository that is current
+  with what this tree would write.** Every other non-trio cell in this table's history has been either
+  absent or drifted. One repository, one file, and it arrived this cycle.
+- **`.oss/assemble_changelog.py` grew from 118,107 B to 124,329 B and `.oss/statusline.py` from 55,661 B
+  to 65,637 B**, so the `would write today` column moved in two of four rows while **every file that
+  actually drifted in the field stayed exactly where it was**. That is the same shape as last round and
+  it is still the argument against gating on that column.
 
-### The two installs are now two releases apart
+### The two installs are two releases apart, and the installed one is not the tag
 
 ```
-installed: 0.11.0, no git HEAD here, content cc62d5f38446 over 30 file(s)
-clone    : 0.13.0, git HEAD 990d0da, content c079d2a9a6dd over 46 file(s)
+installed: 0.13.0, git HEAD 41cbb99, content 77f23b1aed18 over 50 file(s)
+clone    : 0.14.0, git HEAD 48bb420, content 0e728690e041 over 58 file(s)
 ```
 
-`#418` separates them by content rather than by version, which is what makes the second line readable:
-the installed copy reports **no git HEAD** — an unpacked cache directory, not a checkout — and carries
-30 files against the clone's 46. **The pin was moved by hand to `0.12.0` during this session** and the
-session continued to resolve `0.11.0`, because `claude plugin update` says *restart required to apply*.
-So a session can be two versions behind the tree it is editing, and that one-session lag is inherent to
-the mechanism rather than a defect in it.
+`#418` separates them by content rather than by version, and this round that read the interesting half:
+**the installed `0.13.0` resolves to git HEAD `41cbb99`, which is commit 9 of this delta — not the
+`v0.13.0` tag.** So the checklist that gated this release was neither the tag's nor the tree's. Round
+one found that by hand and it is what `#572` now computes.
 
-### The launcher went stale a tenth time, and this time something reported it
+### The launcher went stale an eleventh time, and this time the bytes differ
 
-`~/.local/bin/oss-workspace` resolves to `…/oss/0.12.0/bin/oss-workspace` while the tree's manifest
-now reads `0.13.0`. **Tenth consecutive instance of #289** — and the first one a check caught by
-itself, rather than a person reading a path out of a report: `#519`'s `PINNED ELSEWHERE` state fires
-on it above. The bytes still match, so the consequence remains nil for the seventh consecutive
-release; what changed is that the class is now observable before the release that breaks it.
+`~/.local/bin/oss-workspace` resolves to `…/oss/0.13.0/bin/oss-workspace` while the tree reads `0.14.0`.
+**Eleventh consecutive instance of #289** — and the first one where the consequence is not nil: `#588`
+changed exactly that file, so the pinned launcher is running the version that exits without opening a
+session on a crashed probe. Ten rounds of "the bytes still match, so the consequence is nil" ended here,
+which is what `#519`'s `SKEW` state was added to make visible before it cost anything.
 
-### `gh` is emulated, and this release is the one that noticed
+### `gh` is no longer emulated
 
-`gh` is an x86_64 build under Rosetta 2 out of `/usr/local`, two years old. `#367`'s probe asked about
-the interpreter rather than the binaries the loop spawns; `#386` closed that and now warns on every
-run. Filed 2026-08-21, fixed 2026-08-25, invisible for the whole interval — and every `gh` call this
-loop makes ran under translation the entire time.
+`v0.13.0` recorded `gh` as a two-year-old x86_64 build running under Rosetta 2. It now reports
+`Mach-O 64-bit executable arm64`, `gh version 2.98.0 (2026-08-20)`, and `#386`'s probe no longer warns.
+`python3 scripts/doctor.py --root .` at `48bb420`: **6 warnings**, down from 7, and that is the one that
+went away.
+
+The other six are carried: the plugin-copy scope `not established`, `./supertool` pointing at a local
+checkout, the launcher `SKEW` above, `changelog.d/README.md` missing the Compatibility bullet (#260),
+the jit layer `unknown`, and `.oss/statusline.py` drifted in this clone's own vendored copy.
 
 ### Still the most important sentence here
 
@@ -574,21 +563,24 @@ than on a repo somebody maintains through it. That stood at `v0.3.0` and at ever
 is re-earned rather than inherited here. **The surface is thin because it has barely been run, not
 because it is sound.**
 
-What changed since the previous round: the reach moved by one file into one repository, for the first
-time in seven rounds; two checks added in this delta fired on their first run against this machine; and
-a release gate stopped a tag, produced seven merged fixes, and then found a bypass in one of its own.
+What changed since the previous round: a field copy of an owned file is current for the first time; the
+`gh` emulation finding closed; the launcher skew became consequential rather than cosmetic; and a
+release gate produced seven of this delta's seventeen merged pull requests, then found a regression in
+one of its own fixes.
 
 `tests/test_claude_md_currency.py` still cannot check that a claim above is true, and still does not
 try. The mechanism to add more of is a **second measurement** contradicting the prose beside it. This
-round produced four: the `gh` warning, the `PINNED ELSEWHERE` warning, round two's diff of the ranking
-table against the payload it was handed, and the statusline walker's 23-of-26 leaf count.
+round produced four: round one's hand comparison of the two trees against `checklist_skew.py`'s
+`matches`; `#573`'s three consecutive Windows reds against three consecutive local greens; round two's
+`set -eu` reproduction against a green 13-leg board; and the `plugin_identity` read showing the
+installed copy sitting on a commit inside the delta rather than on the tag.
 
 One claim stays deliberately unguarded, and the decision is re-taken rather than inherited: the
 "would write today" column is computed entirely from this tree and a three-line test could hold it.
-**Declined again**, and this round is the strongest evidence for declining: the column moved in three
-of four rows while **every file that actually drifted in the field stayed exactly where it was**. A
-gate on it would have fired on our own additions and been silent on the seven drifted cells. The
-reason not to add it is unchanged: it would redden unrelated pull requests until somebody edited
-`CLAUDE.md` to make CI green, training the reflex of editing the section instead of re-deriving it.
+**Declined again**, on the same evidence as last round and one round more of it: the column moved in
+two of four rows while every field cell that was drifting kept drifting unchanged. A gate on it would
+have fired on our own additions and been silent on the seven drifted cells. The reason not to add it is
+unchanged: it would redden unrelated pull requests until somebody edited `CLAUDE.md` to make CI green,
+training the reflex of editing the section instead of re-deriving it.
 
 Treat this as tested, not proven.

@@ -7,6 +7,334 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-26
+
+### Added
+
+- A new `/oss:install-audit` command (`--install-audit` on `scripts/doctor.py`) answers *is this
+  install complete* for a repo with no issue, no pull request and no history to read -- the state
+  `/oss:doctor` correctly degrades on, five checks declining with `.oss.json was not found`. This
+  is a different subject -- the plugin, its declared dependencies, and what the human still has to
+  do, not this repository -- so nothing here is gated on a config a fresh install has not written
+  yet. Checks `.oss.json` present, valid, *and committed* (not merely present -- `git ls-files`
+  answers whether a clone of this repo would ever see it); every declared dependency resolves at a
+  version whose contract this plugin's own scripts can read; the `./supertool` entry point and the
+  `oss-workspace` launcher; `identity.md`, wherever the install layout actually reads it; the label
+  vocabulary the triager needs; and the owned files, when a config was found to render them
+  against. Every question is `satisfied` / `missing-with-a-named-remedy` / `could not tell`, and
+  none of the three is ever a `FAIL`: a fresh install with nothing configured yet is exactly the
+  case this command is for, not a broken one (#287).
+- Folds in #286's own finding as evidence this remedy is checked against, independent of the
+  remedy itself: the label-taxonomy gap on a fresh repo is one of the checks above, and whether
+  `${CLAUDE_PLUGIN_ROOT}` goes stale across a tick is reported to the maintainer as left open --
+  it is a fact about a running session, not about a repo on disk, and nothing this command reads
+  can answer it from outside one.
+
+- `/oss:doctor` now checks whether a `pre-push` hook's push budget was ever raised above
+  supertool's 300s default (#295). Four states: `not-applicable` when there is no
+  `.git/hooks/pre-push` at all -- reported OK, not as a gap, since the default is correct there
+  and a checker that warns on every correctly configured repo is worthless; `configured` when a
+  hook exists and `.supertool.json`'s `ops.git-push.budget` is set strictly under
+  `ops.git-push.timeout` from the same merged entry -- the same arithmetic supertool's own
+  `git-push` op would otherwise refuse at push time, done here instead; `actionable` when a hook
+  exists and either no budget was set or the arithmetic does not clear; and `could-not-tell` when
+  `.supertool.json` could not be read or the block is malformed. Structural only -- the hook is
+  never executed, so its actual duration is never measured, and the report says so rather than
+  implying a number was checked.
+
+- A tick now records its own plugin identity and compares it against the last one recorded
+  (#477). Before this, nothing remembered which plugin version or content a tick ran under, so
+  "has the version changed since last tick" was not a question the loop could answer -- one of
+  its two operands was never written down. `scripts/oss_state.py` gained `--plugin-identity`
+  (attach `doctor.plugin_identity()`'s reading -- version folded with a content digest, never the
+  version alone, since a manifest version stays at the last released number for a whole release
+  cycle -- to a `--decision` entry) and `--check-plugin-identity` (compare this tick's reading
+  against the most recently recorded one, scanning back past intervening entries the same way
+  `--pending-wait` already does). Three states, not two: `changed`, `unchanged`, and
+  `could-not-tell` when no prior tick ever recorded one -- which must never render as
+  `unchanged`. `commands/tick.md` step 1 wires the comparison; step 6 records this tick's own
+  reading for the next one. Whether to auto-re-run the rest of the diagnostic on a `changed`
+  verdict is left as a per-tick judgement call rather than built in.
+
+- A dispatched lane's fleet-view label now carries the count of issues it bundles,
+  not just the first one: `Lane 534 x3  auto-update path` instead of `Lane 534  auto-update
+  path` for a lane that also carries #537 and #495. `scripts/fleet_label.py` composes it
+  and refuses to print anything when the caller has not named every issue the lane
+  carries, so a lane briefed from a script that never ran cannot fall back to the thin
+  label (#539).
+
+- A census of the places this repository states a fact whose authority is somewhere
+  else -- another tool's accepted-input pattern, a forge's documented limit, a
+  command's own rules -- so a new site is compared against the #180 rule instead of
+  being invisible to it. `scripts/borrowed_authority.py` lists six sites, three
+  already resolved (derived or measured) and three unmeasured, two of them newly
+  found by this census: GitHub's Checks API vocabulary in `statusline.py` and its
+  closing-keyword syntax in `report_schema.py`. A test guards against a censused site
+  silently drifting -- its symbol renamed or removed with the entry left behind (#544).
+
+- `/oss:doctor` (`scripts/doctor_check_latest_skew.py`) now cross-references the
+  status line's cached `latest` for this repo against the newest published
+  version read live, so the two mechanisms this plugin has for "am I current"
+  are compared by something rather than by a maintainer doing it by hand. `OK`
+  when they agree (with the cache's own age reported anyway -- a fresh
+  agreement and an hour-old one are not the same evidence), `WARN` when they
+  differ (naming both values -- a report about the cache, not a fault in the
+  repo), and `WARN ... could not be determined` for a missing cache, an
+  unreadable one, one that parses to the wrong shape, or a live read that did
+  not answer. Never repairs the cache: doctor's contract is diagnose, exit 0,
+  one VERDICT line, and clearing the cache here would destroy the evidence of
+  the skew it reports (#551).
+
+- Added a jit-context vocabulary entry, `plugin-currency.md` in the `01-oss` layer, covering the
+  three readings routinely called "the plugin version" — the clone's manifest, the copy a session's
+  command text resolved from, and the unpacked cache — plus what `/reload-plugins` moves that a
+  restart also moves, which field each status-line currency marker prints, and how the cached
+  `latest` reading is sourced and invalidated (#554).
+
+- `lane_setup.py` can now derive the held-file set instead of accepting it retyped by hand: a new
+  opt-in `--derive-held` mode (`derive_held_set`) reads every open pull request's own file list
+  (`gh pr list --json number,files`) and every live lane record's own files (the lane registry
+  extended to carry them, `record_lane`'s `files`), and reports a per-candidate verdict --
+  `available`, `blocked` (naming the file and its holder, e.g. `PR #9` or `lane #12`), or
+  `could-not-derive-the-held-set` when the forge call or the registry could not be read, which
+  is never rendered as `available` or `blocked`. The local, offline `--lane`/`--against` path is
+  unchanged and remains the default. The tick-level fill verdict (filled / under-filled /
+  could-not-tell) is deliberately not computed here -- it needs the full candidate list a tick is
+  weighing, which is a judgement this script has no way to derive from one `--lane` argument, and
+  stays prose in the tick (#558).
+
+### Changed
+
+- The manager skill is split into a spine and one file per phase. `skills/manager/SKILL.md` is
+  loaded whole by every `Skill(manager)` invocation -- `/oss:tick` and `/oss:release` both open with
+  one -- and at 122,423 B it was the largest file in this repository, 1.6x `agents/developer.md`,
+  standing in a session's context for the whole of every tick whether or not that session reached
+  the phase a given paragraph governed. #491's budget deliberately did not cover it, so nothing
+  counted it at all. The spine is now 58,377 B and carries what is decided every tick plus one
+  directive block per phase; the argument behind each phase's rules moved to
+  `skills/manager/phases/{dispatch,handback,review,merge,release,accounting}.md`, read when the loop
+  enters that phase. A `/oss:release` session no longer loads the dispatch, handback and review
+  material at all. The total prose grew 122,423 B to 142,188 B, +16%, because the spine's directive
+  blocks restate each phase in short before the phase file argues it at length: what fell 52% is
+  what a session loads before it knows which phase it will reach, and both numbers are recorded in
+  `CLAUDE.md` so the saving is not read as free (#568).
+- `scripts/skill_phases.py` declares a budget for the spine and for each phase file, on the same
+  replace-don't-append terms as `scripts/agent_budgets.py`, and reports `unreferenced` for a phase
+  file the spine has stopped naming -- a file the spine never names is one the loop can never reach,
+  and it renders exactly like a phase whose rules were deleted. Whether a reader actually opened a
+  phase file is not observable here and is not claimed to be: the spine asks each phase to state
+  `read` / `not-read` / `could-not-read` beside its own result. It also reports `undeclared` -- a
+  phase file on disk that no budget names, the mirror of `missing`, because reporting only the
+  declared paths answers "every file I know about is fine", which is true of an empty declaration
+  too (#568).
+- `scripts/manager_docs.py` derives the manager loop's document set from disk and is now what every
+  content guard reads, in place of opening `skills/manager/SKILL.md` directly. Left unchanged, 66
+  checks across twelve modules would have gone on passing over a document that no longer held their
+  subject -- the coverage-narrowed-without-saying-so shape #547 records, one directory over.
+  `checklist_skew.py`'s definition derivation now matches `skills/manager/phases/*.md` alongside
+  `agents/*.md` for the same reason. Two guards fired on the wider set and were fixed rather than
+  waived: a config-key check triggering on `cd <worktree_root>` in a shell line, and a section
+  extractor that ran past the end of its own file into the next one's heading (#568).
+
+### Fixed
+
+- `scripts/assemble_changelog.py`'s `collect()` no longer reports a permission-denied
+  `changelog.d/` as a confident "does not exist" — `Path.is_dir()`/`Path.exists()`
+  swallow `OSError` to `False` on some interpreter versions, so a directory that was
+  right there but could not be probed used to raise `BadFragment` with the same
+  message a genuinely absent directory earns. `collect()` now asks `os.stat()`
+  directly through a three-state `_fragment_dir_state()` and raises `CannotValidate`
+  (skipped, not a finding) when it cannot determine the answer. A self-review round
+  found the first version of this fix trusted a bare `FileNotFoundError` as absence
+  on its own, which is exactly the fold CLAUDE.md records for an over-`MAX_PATH` name
+  on Windows (`FileNotFoundError, errno 2, winerror None`, indistinguishable from a
+  genuine miss) — `_fragment_dir_state` now confirms absence positively via a third,
+  standalone copy of `doctor._dir_state`/`lane_setup.worktree_occupancy`'s own
+  ancestor-walk classifier before ever returning "absent". The sibling filter one
+  loop-iteration below (`path.is_dir()`, skipping subdirectories while collecting
+  fragment files) was swept and judged correct as-is: it only filters a list rather
+  than printing a verdict, and even swallowed to `False` its worst case is a loud
+  `read_text()` failure a few lines later rather than a silent drop.
+
+  `scripts/lane_setup.py` was also swept — the coverage gap the previous pass on
+  this issue (#463) named by name, since it was mid-review at the time. The same
+  self-review round found `resolve_lane`'s glob-match filter (`p.is_file()`) was
+  not the safe filter site it first looked like: `Path.is_file()` wraps the same
+  version-dependent swallow, and unlike the sibling site above, a silently dropped
+  match here can empty the whole `matches` list and flip the pattern's own state to
+  `glob-no-match` — a printed verdict `lane_overlap` consumes for its lane-collision
+  check, not a harmless filter. Fixed the same way, through `stat()` directly rather
+  than the convenience wrapper. Everything else in the file was already hardened by
+  #373 and #380 (`worktree_occupancy`, `lane_count`, `_absence_confirmed`).
+
+  Also surfaced and left unfixed, for filing rather than folding into this pass:
+  `repo.glob()` itself silently drops an unreadable subdirectory while walking a
+  recursive (`**`) lane pattern — the same swallow class this issue is about, one
+  level up, in `Path.glob`'s own traversal rather than in a bare `.is_dir()`/
+  `.exists()` call beside it. Reimplementing glob-pattern matching over `os.walk`
+  to close it is a design decision past this pass's blast radius.
+
+  `scripts/oss_config.py` remains unswept — it was held by an open pull request at
+  the time of this pass, same as it was at the time of #463's own pass. That is a
+  gap in coverage, not a clean result, and this fragment says so rather than
+  inheriting the silence (Part of #383).
+
+- `bin/oss-workspace`'s consumer probe no longer masks a crashing registry read with
+  `|| true`: a malformed `installed_plugins.json` (not a JSON object, or a plugins
+  entry that is not a JSON object/array) now reaches `cannot_ask()` loudly instead of
+  producing a silently-discarded `AttributeError`, matching the guards
+  `scripts/doctor.py`'s `_consumer_watch_name_verdict` already carries (#546).
+
+- `checklist_skew.py`'s definition-file comparison and `tests/test_statusline_479.py`'s
+  hostile-leaf walker both derive their coverage set from what is actually consumed
+  instead of a fixed list kept beside it. `checklist_skew` now compares every
+  `agents/*.md` path one of its three base files names in its own prose, which was
+  short by `agents/developer.md` -- the file `agents/auditor.md` delegates its
+  platform band to. The statusline fixture now carries `default_branch` and
+  `release`, the two top-level keys `render()` reads that its walker could never
+  reach (#547).
+
+- `plugin_update.opt_out`'s ancestor walk no longer reads `FileNotFoundError` out
+  of a candidate directory's listing as "nothing declared here, keep walking" --
+  Windows folds an over-`MAX_PATH` name onto that same exception, indistinguishable
+  from a directory that genuinely does not exist, so a repository that opted out of
+  auto-update could be silently skipped and reported as `"on"`. The walk now
+  confirms genuine absence against the candidate's own parent listing before
+  continuing past it, the same idea `scripts/doctor.py`'s `_dir_state` already
+  applies to a different question (#548).
+
+- `/oss:release` (`scripts/release_publish.py`) now invalidates the status line's
+  cached `latest` for this repo immediately after the Release it just created --
+  the publish is the event that falsifies that cache, and this is the only actor
+  that knows it happened at the moment it does, rather than waiting out a refresh
+  interval that cannot see it. Reported under a new `cache_invalidation` key --
+  `invalidated` / `nothing-to-invalidate` / `could-not-invalidate` -- separate from
+  the publish's own `state`, so an absent directory, an unreadable cache, or a
+  different `XDG_CACHE_HOME` than the rendering session never renders as
+  agreement. Measured: a cache stamped 17:54 holding `0.12.0` was still cached 40
+  minutes after `v0.13.0` published at 18:06, read at 18:46 -- 52 minutes against
+  a 60 minute refresh interval, so the reading was not stale by its own rule and a
+  shorter interval would not have caught it either (#549).
+
+- `scripts/statusline.py`: the plugin-currency comparison now carries the cached
+  `latest` reading's own age to the render, so a comparison older than its own
+  refresh interval folds into the existing `?` bucket instead of rendering a false
+  `behind`/`ahead`. The `behind`/`ahead` unicode markers -- one codepoint apart and
+  told apart reliably only by colour, while printing different fields -- now differ
+  in shape (`↥` vs `↑`). This is the render-readability half of the incident fixed
+  by #549; it does not by itself catch a reading that is fresh by its own rule and
+  simply wrong (#550).
+
+- The two messages that told a maintainer to `restart Claude Code` after an
+  auto-update -- `doctor.check_auto_update`'s WARN and `plugin_update.update`'s own
+  receipt `detail` -- now also name `/reload-plugins` as the cheap first step, matching
+  the wording `scripts/doctor.py` already used in three other places. Neither message
+  presents it as a full substitute: `/reload-plugins` moves the registry (which agents,
+  skills and commands resolve), and both messages still say a restart is needed for
+  command text already injected into the running turn. #81's whole cost traced to a
+  stale registry in an unreloaded session; the message that told the maintainer to
+  restart never offered the cheaper remedy first (#553).
+
+- The census entry for `report_schema._CLOSING_KEYWORD` now records what the keyword
+  list is used for -- an absence detector, never a decision about what a body will
+  close -- and why a negated closing sentence ("does not close #241") is harmless
+  under it: GitHub matches a closing keyword by its position relative to the
+  reference, not by sentence meaning, and this checker is exactly as positional as
+  the forge is. That fact is now stated beside `_CLOSING_KEYWORD` itself and pinned
+  by tests, rather than left implicit in a comment that addressed a different
+  question (#556).
+
+- The `.gitignore` template `/oss:scaffold` writes into every repository ignored `.oss.json` --
+  the file this loop calls tracked and authoritative -- while leaving the comment beside it
+  describing the machine-specific half in name only. A second maintainer cloning a repository
+  scaffolded from that template got no config at all: `git add .oss.json` silently refused. The
+  template now names `.oss.local.json`, the file that actually is machine-specific, instead.
+  `.gitignore` is a *defaults* file -- created once, then the managed repo's forever -- so this
+  fix reaches only repositories scaffolded after it ships; every already-scaffolded repository
+  keeps the stale line unless a maintainer removes it by hand. `/oss:doctor` now reports that
+  case as a FAIL naming the exact `.gitignore:line` rule, so it is at least visible rather than
+  permanently silent (#564).
+
+- `lane_setup.py`'s cross-cutting guard table (`CROSS_CUTTING_GUARDS`) names test files that exist
+  only in `claude-oss`'s own tree, so a lane dispatched into a managed repository was told to run a
+  guard whose test file was never there -- a guard that could not run read exactly like a guard that
+  passed. `guards_for_files` and `known_guards` now take an optional `repo` and report each guard's
+  `status` -- `exists`, `absent`, or `could-not-tell` when the repository could not be examined -- and
+  the receipt names an absent guard as "NOT IN THIS REPO, treat as uncovered" instead of a bare test
+  path a lane would run and get nothing back from (#566).
+
+- `.claude/jit-context/tools/01-oss/supertool-required.md` (and its mirror in
+  `scripts/oss_rules.py`'s `TOOLS_SUPERTOOL`) claimed "Nothing. No shipped `claude-jit-context`
+  release reads a `requires:` field" -- true when #524 wrote it, false since `claude-jit-context`
+  0.6.0 shipped the reader. That release does honour `requires: supertool`: an installed
+  `claude-jit-context` 0.6.0+ with no `supertool` on `PATH` now degrades this rule's `mode: block`
+  to a named, visible advisory (`degrade_note`) instead of blocking outright, which is what left
+  `tests/test_supertool_rule_requires_field_524.py` red on any developer machine with the plugin
+  installed while CI, which caches nothing, stayed green. The rule body is rewritten to describe
+  the shipped behaviour, measured against the installed 0.6.0 cache rather than asserted, in both
+  copies. `mode: block` itself is unchanged -- the rule's own argument for keeping it declined to
+  narrow only "until requires: ships"; it has, and the degrade is what answers the case that
+  argument was hedging against, so the conclusion holds rather than needing revisiting (#570).
+
+- `manager_docs.documents()` used `Path.glob("*.md")` to list
+  `skills/manager/phases/`, which swallows `PermissionError` while it walks and
+  silently yields nothing for a subtree it could not enter -- so a denied phases
+  directory narrowed the manager loop's document set to the spine alone, with no
+  raise and no signal, turning every content guard built on it (thirteen test
+  modules, `MANAGER_DOC_PATHS` chief among them) into a vacuous pass over one file
+  instead of seven. `documents()` now returns `(paths, unreadable)`, using
+  `iterdir()` instead of `glob` so a deny can actually be reported -- the same fix
+  `doctor._workflow_scan`/`_rglob_md` already apply to the identical `rglob`
+  swallow one directory level down (#571).
+
+- `checklist_skew.py`'s `matches` state used to return before the byte-for-byte
+  definition comparison ran, so a repo whose installed and shipped manifest versions
+  agree -- the state this repository is always in at release time -- never had its
+  checklist definitions compared at all. `compute()` now runs `_compare_definitions`
+  on every state where both manifests could be read, and `matches` carries
+  `definitions` the same way `differs` already does: a `matches` payload carrying a
+  `differs` row is a config finding the release report must quote (#572).
+
+- `bin/oss-workspace`'s `ASK_CONSUMER` probe no longer masks a crashing consumer
+  read with an unguarded `|| true`: a validly-formed but pathologically deep
+  `installed_plugins.json` that raises `RecursionError` out of `json.load` (neither
+  `OSError` nor `ValueError`, so uncaught by the block's own guards) now reaches the
+  same "could not ask the installed supertool" message the block's `cannot_ask()`
+  gives every other unreadable-registry case, instead of a traceback that a swallowed
+  exit status let the launcher silently continue past. That message renders the
+  (unvalidated, possibly attacker-exported) watch channel name the same way
+  `cannot_ask()` itself does -- via a repr(), never interpolated raw -- and via
+  `printf`, not `echo`, since this platform's `echo` builtin re-interprets the
+  very backslash escapes `repr()` relies on to keep a newline or a terminal
+  escape sequence in that name from reaching the receipt unescaped (#573).
+
+- `oss_state.py`'s write-side `RECORDED plugin identity:` receipt now routes through
+  `_receipt_line` like every sibling receipt in the module. A newline in `--plugin-identity`
+  used to print a second `RECORDED plugin identity:` line at column 0 while only one record
+  was made -- a reader, or anything parsing the receipt, saw two entries for one write.
+  Found by the `v0.14.0` release gate, round 1 (#574).
+
+- `checklist_skew.py` reported `differs` (or `matches`, by coincidence) for a
+  managed repository that ships its own, unrelated `.claude-plugin/plugin.json` --
+  reading the manifest was treated as proof the repo ships the `oss` checklist,
+  when it can belong to an entirely different plugin. `compute()` now checks how
+  many of the derived definition files actually exist in the repo tree: zero means
+  the repo does not ship these definitions at all, and the version comparison has
+  no subject, so the state is `could-not-tell` rather than a stale-or-matching
+  claim about two unrelated numbers (#580).
+
+- `bin/oss-workspace` no longer exits 1 and opens no session when the consumer
+  probe crashes. #573 replaced the `ASK_CONSUMER` heredoc's trailing `|| true`
+  with a captured `ask_consumer_status=$?`, but the `|| true` had been doing
+  two jobs -- swallowing the status *and* suppressing errexit -- and only the
+  first was replaced. Under `set -eu`, a crashed probe killed the whole script
+  before the 34-line "could not ask" arm written to report exactly that state
+  ever ran. The fix moves the status capture onto the heredoc opener itself
+  (`... <<'ASK_CONSUMER' && ask_consumer_status=0 || ask_consumer_status=$?`),
+  the same idiom the launcher already uses for its doctor-diagnostic call.
+  Found by the `v0.14.0` release gate's round-2 audit, on this delta's own fix
+  for #573 (#588).
+
 ## [0.13.0] - 2026-08-25
 
 ### Added
@@ -5037,7 +5365,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.11.0
