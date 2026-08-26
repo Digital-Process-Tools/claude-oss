@@ -28,7 +28,13 @@ COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md"))
 #: the spine alone they would have gone quietly narrower than their own
 #: subject the moment a paragraph moved into a phase file, which is #547's
 #: coverage-narrowing shape one document over.
-MANAGER_DOC_PATHS = manager_docs.documents(REPO_ROOT)
+MANAGER_DOC_PATHS, _MANAGER_DOC_UNREADABLE = manager_docs.documents(REPO_ROOT)
+assert not _MANAGER_DOC_UNREADABLE, (
+    "manager_docs.documents() could not read part of "
+    "skills/manager/phases -- every content check built on MANAGER_DOC_PATHS "
+    "would silently narrow its coverage rather than fail loudly: "
+    "{0}".format(_MANAGER_DOC_UNREADABLE)
+)
 MANAGER_SKILL = manager_docs.ManagerLoop(REPO_ROOT)
 SKILL_PHASES = MANAGER_DOC_PATHS[1:]
 

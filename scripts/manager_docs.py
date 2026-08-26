@@ -40,21 +40,51 @@ def repo_root():
 
 
 def documents(root=None):
-    """Every file the manager loop's prose is spread across, spine first.
+    """``(paths, unreadable)``: every file the manager loop's prose is spread
+    across, spine first, plus one message per reason the phases directory
+    could not be listed.
 
-    Raises rather than returning an empty list -- see the module docstring.
+    Raises rather than returning an empty list for a missing spine -- see the
+    module docstring. The phases half is different: `Path.glob` swallows
+    `PermissionError` while it walks and silently yields nothing for a
+    subtree it could not enter (CLAUDE.md's own `Path.rglob`/`Path.is_dir`
+    bullet, #124/#383) -- so a denied `skills/manager/phases/` used to narrow
+    `documents()` to `[spine]` with no raise and no signal, which is the
+    coverage-narrowed-without-saying-so shape #547 records one file over
+    (#571). `iterdir()` is used instead because it is the operation that can
+    actually report a deny -- `doctor._workflow_scan`/`_rglob_md` solve the
+    identical swallow the same way, one directory level down, with
+    `os.walk(onerror=...)`; this directory has no subdirectories of its own,
+    so a single `iterdir()` call is the whole of the walk needed here.
     """
     root = repo_root() if root is None else Path(root)
     spine = root.joinpath(*SPINE_REL)
     if not spine.is_file():
         raise RuntimeError("manager_docs: no spine at {0}".format(spine))
-    phases = sorted(root.joinpath(*PHASES_REL).glob("*.md"))
-    return [spine] + phases
+    phases_dir = root.joinpath(*PHASES_REL)
+    unreadable = []
+    try:
+        entries = list(phases_dir.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        # Not there, or not a directory -- "nothing found", not "unreadable":
+        # a phases directory that plainly does not exist is not the same fact
+        # as one this process could not read.
+        entries = []
+    except OSError as exc:
+        entries = []
+        unreadable.append(str(exc))
+    phases = sorted(p for p in entries if p.suffix.lower() == ".md")
+    return [spine] + phases, unreadable
 
 
 def text(root=None, sep=JOINER):
-    """Every document's text, concatenated in `documents()` order."""
-    return sep.join(p.read_text(encoding="utf-8") for p in documents(root))
+    """Every document's text, concatenated in `documents()` order.
+
+    Silent about `unreadable` -- a caller that needs to know whether the
+    phases directory could be listed calls `documents()` directly.
+    """
+    paths, _unreadable = documents(root)
+    return sep.join(p.read_text(encoding="utf-8") for p in paths)
 
 
 class ManagerLoop:
@@ -71,7 +101,8 @@ class ManagerLoop:
 
     @property
     def paths(self):
-        return documents(self._root)
+        paths, _unreadable = documents(self._root)
+        return paths
 
     @property
     def spine(self):
