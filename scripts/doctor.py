@@ -519,6 +519,18 @@ def check_gitignore_hides_config(project_dir):
     A `.gitignore` that could not be read (no git repo here, git not on PATH, a
     filename git's argv could not carry) must never render as clean: that is
     `unknown` below, reported as WARN naming why, never folded into OK.
+
+    **Self-review, before this shipped: asking `project_dir` is the wrong directory
+    from inside a git worktree (#53).** `check_config` above already solves exactly
+    this -- `.oss.json` lives in the enclosing CLONE, one directory away from the
+    worktree this process is standing in, and `config_search_path` is what widens
+    the search there. Asking `git -C <worktree> check-ignore` would answer about the
+    worktree's own checked-out `.gitignore`, which can be on a different branch and
+    carry different content than the clone's -- a false OK if the worktree happens
+    to be on a branch that already carries this very fix, or an irrelevant FAIL if
+    it is on one that predates it, either way answering a question about the wrong
+    directory in exactly the topology this repo treats as first-class. So the same
+    widening is repeated here rather than trusted from `project_dir` alone.
     """
     if oss_config is None:
         report(
@@ -526,7 +538,10 @@ def check_gitignore_hides_config(project_dir):
             ".gitignore: not checked (scripts/oss_config.py could not be imported)",
         )
         return
-    state, detail = oss_config._ignore_rule(project_dir, oss_config.CONFIG_NAME)
+    search, _widened = config_search_path(project_dir)
+    _config, _problems, origin, resolved = oss_config.load_from(search)
+    check_dir = resolved.parent if origin == "clone" and resolved is not None else project_dir
+    state, detail = oss_config._ignore_rule(check_dir, oss_config.CONFIG_NAME)
     if state == "clear":
         report("OK", ".oss.json: not ignored by .gitignore (trackable)")
     elif state == "ignored":

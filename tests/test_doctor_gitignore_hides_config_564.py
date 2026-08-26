@@ -12,6 +12,7 @@ never as a silent OK. The `unknown` case is the positive control here: without i
 a broken git invocation and a genuinely clean `.gitignore` would both print nothing.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -103,3 +104,72 @@ def test_oss_config_import_failure_is_reported_not_silently_skipped(tmp_path, mo
 
     assert _states() == ["WARN"], _messages()
     assert "could not be imported" in _messages()[0]
+
+
+def _git(args, cwd, check=True):
+    done = subprocess.run(
+        ["git"] + args,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    if check and done.returncode != 0:
+        pytest.skip("git {} failed here: {}".format(" ".join(args), done.stderr.strip()))
+    return done
+
+
+def test_a_worktree_checks_the_enclosing_clones_gitignore_not_its_own(tmp_path):
+    """Self-review finding (reviewer, #564): a real `git worktree` checks out its OWN
+    `.gitignore` content, which can diverge from the CLONE's -- so asking
+    `project_dir` alone answers about the wrong directory, exactly the #53 topology
+    `check_config` already widens for.
+
+    Built as a REAL divergent worktree: the clone's checked-out branch still carries
+    the OLD (buggy, `.oss.json`-ignoring) `.gitignore`, while a second branch --
+    checked out into a separate worktree -- carries the FIXED one. `.oss.json` itself
+    lives only in the clone (never committed, exactly like the real file), so the
+    worktree has nothing of its own to answer about -- the correct answer can only
+    come from asking the clone.
+    """
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _git(["init", "--quiet", "-b", "main", "."], clone)
+    _git(["config", "user.email", "t@example.com"], clone)
+    _git(["config", "user.name", "Test"], clone)
+
+    (clone / ".gitignore").write_text("__pycache__/\n.oss.json\n", encoding="utf-8")
+    _git(["add", ".gitignore"], clone)
+    _git(["commit", "--quiet", "-m", "old, buggy .gitignore"], clone)
+
+    # A side branch carries the FIX -- what a worktree checked out post-#564 would
+    # have -- while `main`, and the clone's own checkout, stays on the buggy commit.
+    _git(["checkout", "--quiet", "-b", "fixed-branch"], clone)
+    (clone / ".gitignore").write_text("__pycache__/\n.oss.local.json\n", encoding="utf-8")
+    _git(["add", ".gitignore"], clone)
+    _git(["commit", "--quiet", "-m", "fixed .gitignore"], clone)
+    _git(["checkout", "--quiet", "main"], clone)
+    assert (clone / ".gitignore").read_text(encoding="utf-8") == "__pycache__/\n.oss.json\n"
+
+    # The real, authoritative config -- present only in the clone, exactly like a
+    # real .oss.json, and never committed (git-excluded or not is irrelevant to
+    # `resolve_config_path`, which checks the filesystem).
+    (clone / ".oss.json").write_text("{}", encoding="utf-8")
+
+    worktree = tmp_path / "worktree"
+    _git(["worktree", "add", "--quiet", str(worktree), "fixed-branch"], clone)
+    assert (worktree / ".gitignore").read_text(encoding="utf-8") == "__pycache__/\n.oss.local.json\n"
+    # No .oss.json of its own -- the worktree case #34/#53 describe.
+    assert not (worktree / ".oss.json").is_file()
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(worktree)
+        doctor.check_gitignore_hides_config(worktree)
+    finally:
+        os.chdir(old_cwd)
+
+    # The clone's .oss.json IS genuinely ignored by the clone's own (buggy) rule --
+    # asking the worktree's own (already-fixed) .gitignore must not paper over that.
+    assert "FAIL" in _states(), _messages()
+    assert any(".gitignore:2" in m for m in _messages()), _messages()
