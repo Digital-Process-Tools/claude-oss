@@ -279,7 +279,54 @@ def test_an_ordinary_watch_name_still_appears_in_the_crash_message(tmp_path):
 # Reproduced here without a Windows machine: POSIX filesystems allow a literal
 # backslash in a path component (Windows does not), so a wrapper placed at such
 # a path and used as `python_bin` triggers the identical sh parse-time mangling
-# on any POSIX runner.
+# on any POSIX runner -- BUT that construction is itself a measurement, not a
+# given (round 4): Windows CI took this exact test down with
+# `FileNotFoundError: [WinError 3]` at `mkdir()`, because a backslash IS that
+# platform's path separator, so "weird\\dir" names two components ("weird",
+# then "dir") and `mkdir()` (no parents) fails on the absent first one before a
+# line of the thing under test runs. The backslash is load-bearing to the
+# reproduction -- the whole point is a byte the SHELL treats as an escape,
+# which is exactly the byte a path SEPARATOR cannot also be on the platform
+# where this failure actually occurs -- so there is no single name that
+# reproduces the bug on every platform; the construction is attempted and, on
+# a platform that cannot produce it, skipped loudly rather than asserted on.
+# Same shape as tests/test_scaffold.py's `_workflow_named_that_will_not_stat`
+# (`:1076`, `:1177`): attempt the exact construction the reproduction needs,
+# and when it does not take, skip carrying the platform, the errno and the
+# sentence naming what went untested -- never a `sys.platform` table, which
+# would assert instead of skip for a filesystem that refuses the name for some
+# OTHER reason on some OTHER platform.
+
+def _backslash_laden_wrapper(tmp_path):
+    """A `python_bin`-style executable at a path whose FINAL COMPONENT carries a
+    literal backslash -- the condition the reproduction below needs, measured
+    by attempting it rather than assumed from `sys.platform`.
+
+    Returns the wrapper `Path`, or skips (never asserts) when this filesystem
+    cannot produce the condition -- Windows chief among the reasons, since a
+    backslash IS its path separator, but not the only conceivable one, which
+    is exactly why this is an attempt-and-skip rather than a platform table.
+    """
+    wrapper_dir = tmp_path / "weird\\dir"
+    try:
+        wrapper_dir.mkdir()
+    except OSError as exc:
+        pytest.skip(
+            "this filesystem would not create a directory named with a literal "
+            "backslash in its final component (errno {}, {}, platform {}): "
+            "untested here is whether a python_bin path containing a backslash "
+            "survives unquoted interpolation into a generated sh script".format(
+                exc.errno, type(exc).__name__, sys.platform
+            )
+        )
+    wrapper = wrapper_dir / "py3"
+    wrapper.write_text(
+        "#!/bin/sh\nexec %s \"$@\"\n" % _sh_single_quote(sys.executable),
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    return wrapper
+
 
 def test_a_backslash_laden_python_bin_path_is_not_mangled_by_shell_escaping(tmp_path):
     """The positive control: a `python_bin` path containing a literal backslash
@@ -287,14 +334,7 @@ def test_a_backslash_laden_python_bin_path_is_not_mangled_by_shell_escaping(tmp_
     on a POSIX runner) must reach the shell script intact, not stripped down to
     something `sh` reports as "command not found".
     """
-    wrapper_dir = tmp_path / "weird\\dir"
-    wrapper_dir.mkdir()
-    wrapper = wrapper_dir / "py3"
-    wrapper.write_text(
-        "#!/bin/sh\nexec %s \"$@\"\n" % _sh_single_quote(sys.executable),
-        encoding="utf-8",
-    )
-    wrapper.chmod(0o755)
+    wrapper = _backslash_laden_wrapper(tmp_path)
     done = _run_ask_consumer_block(
         tmp_path, json.dumps({"plugins": {}}), python_bin=str(wrapper)
     )
