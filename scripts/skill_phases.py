@@ -41,6 +41,14 @@ Three questions, one row each:
 - **what it governs** -- declared here beside the budget, so the index in
   the spine and the set on disk have a third party they both answer to.
 
+And one question about the set rather than about a file: **is there a phase
+file on disk that this module does not declare?** `scripts/manager_docs.py`
+derives the loop's documents from disk, so the two views can be compared, and
+an `undeclared` row is the mirror of `missing` -- a phase file nobody budgeted,
+which is how the whole measurement quietly stops covering its subject again.
+Reporting only the declared paths would answer "every file I know about is
+fine", which is true of an empty declaration too.
+
 Budgets are the measured size plus ~10% headroom, exactly as #491 sets them:
 enough to land one justified paragraph without reddening the diff that adds
 it, not enough to make growth free. Crossing one means replacing something
@@ -57,6 +65,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_budgets import repo_root  # noqa: E402
+from manager_docs import documents  # noqa: E402
 
 #: The always-loaded half.
 SPINE = "skills/manager/SKILL.md"
@@ -130,6 +139,43 @@ def check():
                 "baseline": baseline,
                 "governs": governs,
                 "referenced": referenced,
+            }
+        )
+    rows.extend(_undeclared_rows(root))
+    return rows
+
+
+def _undeclared_rows(root):
+    """A row per phase file on disk that `DOCUMENTS` does not declare.
+
+    `state` is `undeclared`: it is on disk, so it is not `missing`, and it has
+    no budget to be `over`. `referenced` is still answered, because a phase
+    file the spine names and nobody budgeted and one nothing names at all are
+    different problems.
+
+    A tree with no phases directory contributes nothing rather than raising:
+    that is the `missing` rows' answer to give, and giving it twice would say
+    the same absence in two vocabularies.
+    """
+    try:
+        on_disk = documents(root)[1:]
+    except (RuntimeError, OSError):
+        return []
+    rows = []
+    for path in on_disk:
+        rel = path.relative_to(root).as_posix()
+        if rel in DOCUMENTS:
+            continue
+        spine = _spine_text(root)
+        rows.append(
+            {
+                "path": rel,
+                "state": "undeclared",
+                "size": len(path.read_bytes()),
+                "budget": None,
+                "baseline": None,
+                "governs": None,
+                "referenced": None if spine is None else rel in spine,
             }
         )
     return rows

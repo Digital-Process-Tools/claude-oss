@@ -58,10 +58,17 @@ def test_check_reports_missing_rather_than_silently_passing():
         "skills/manager/phases/does-not-exist.md": (10, 20, "a fabricated phase")
     }
     try:
-        states = [r["state"] for r in skill_phases.check()]
+        rows = skill_phases.check()
     finally:
         skill_phases.DOCUMENTS = orig
-    assert states == ["missing"], states
+    declared = [r for r in rows if r["path"].endswith("does-not-exist.md")]
+    assert [r["state"] for r in declared] == ["missing"], rows
+    # The real phase files are still on disk and are no longer declared, so
+    # they come back as `undeclared` rather than not at all. That is the
+    # mirror state and it must not be silent either.
+    assert all(
+        r["state"] == "undeclared" for r in rows if r not in declared
+    ), rows
 
 
 def test_every_document_is_at_or_under_its_budget():
@@ -105,6 +112,36 @@ def test_unreferenced_is_reported_rather_than_assumed():
         fake.unlink()
     assert rows[0]["state"] == "ok", rows
     assert rows[0]["referenced"] is False, rows
+
+
+def test_a_phase_file_on_disk_that_nobody_budgeted_is_reported():
+    """`undeclared` is the mirror of `missing`. A phase file that exists,
+    is loaded by the loop, and appears in no budget is how the measurement
+    quietly stops covering its own subject -- the same absence one level up
+    from the phase files themselves. Reporting only the declared paths would
+    answer "every file I know about is fine", which is true of an empty
+    declaration too.
+    """
+    fake = ROOT / "skills" / "manager" / "phases" / "undeclared-control.md"
+    fake.parent.mkdir(parents=True, exist_ok=True)
+    fake.write_text("nobody budgeted this\n", encoding="utf-8")
+    try:
+        rows = {r["path"]: r for r in skill_phases.check()}
+    finally:
+        fake.unlink()
+    row = rows.get("skills/manager/phases/undeclared-control.md")
+    assert row is not None, sorted(rows)
+    assert row["state"] == "undeclared", row
+    assert row["budget"] is None and row["baseline"] is None, row
+
+
+def test_the_real_tree_has_no_undeclared_phase_file():
+    """The positive control's counterpart: with nothing planted, every phase
+    file on disk is one this repository budgeted."""
+    undeclared = [r for r in skill_phases.check() if r["state"] == "undeclared"]
+    assert not undeclared, "on disk and in no budget: " + ", ".join(
+        r["path"] for r in undeclared
+    )
 
 
 def test_the_spine_is_smaller_than_the_prose_it_defers():
