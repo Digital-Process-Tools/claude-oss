@@ -189,9 +189,13 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      what was compared and say plainly that it is not the whole answer.
    - **`could-not-tell`** — a manifest was absent, unreadable, not JSON, or carried no string
      `version` — including `${CLAUDE_PLUGIN_ROOT}` being unset, and including the ordinary case of a
-     repo that never shipped its own `.claude-plugin/plugin.json`. Quote the `reason` the receipt
-     gives. **It never renders as a match**, and a `clean` underneath it is a clean audit of an
-     unknown checklist vintage, reported as one.
+     repo that never shipped its own `.claude-plugin/plugin.json`. **Also `could-not-tell` when a
+     repo manifest was read but none of the checklist's own definition files exist in that repo**
+     (#580) — a readable `.claude-plugin/plugin.json` can belong to a different, unrelated plugin
+     entirely, and a version comparison between two unrelated plugins' numbers is not a skew, it is
+     a category error the gate used to report as one. Quote the `reason` the receipt gives. **It
+     never renders as a match**, and a `clean` underneath it is a clean audit of an unknown checklist
+     vintage, reported as one.
 
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.

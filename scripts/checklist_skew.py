@@ -30,7 +30,14 @@ Three states, matching the gate's own vocabulary exactly:
                   that only installed the plugin and never shipped its own
                   .claude-plugin/plugin.json at all. It never renders as a
                   match: a manifest this script could not read is not
-                  evidence that the two are the same.
+                  evidence that the two are the same. #580: also
+                  could-not-tell when a repo manifest *was* read but none of
+                  the checklist's own definition files exist in that repo --
+                  a readable .claude-plugin/plugin.json can belong to a
+                  different, unrelated plugin entirely (this is the ordinary
+                  shape for most managed repos that happen to ship their own
+                  plugin manifest), and a version comparison between two
+                  unrelated plugins' numbers has no subject.
 
 This gate **annotates, it does not block** (`commands/release.md` says so in
 as many words, and blocking on a skew nobody chose would trade a reporting gap
@@ -207,6 +214,24 @@ def _derive_definition_files(plugin_root, repo):
     return tuple(ordered)
 
 
+def _repo_definition_presence(plugin_root, repo):
+    """``(present, total)`` over `_derive_definition_files(plugin_root, repo)`:
+    how many of the derived definition files exist in the repo tree.
+
+    #580: a manifest read succeeding is not proof this repository ships the
+    checklist being audited -- a managed repository can carry its own,
+    unrelated `.claude-plugin/plugin.json` (a different plugin entirely,
+    with its own version number that has nothing to do with `oss`'s). Zero
+    present is that repository saying, in the only vocabulary it has, that it
+    does not ship these definitions at all -- the version comparison then has
+    no subject. `total` is always >= `len(DEFINITION_FILES)` (3), so a caller
+    never has to guard against a division-by-nothing case that cannot occur.
+    """
+    rels = _derive_definition_files(plugin_root, repo)
+    present = sum(1 for rel in rels if repo.joinpath(*rel.split("/")).is_file())
+    return present, len(rels)
+
+
 def _compare_definitions(plugin_root, repo):
     """Per-file receipt over `_derive_definition_files(plugin_root, repo)`.
     Never a relevance verdict -- see the module docstring's `## definitions`
@@ -316,6 +341,29 @@ def compute(repo=".", plugin_root=None):
     base["repo_version"] = repo_version
 
     definitions = _compare_definitions(plugin_root_path, repo_path)
+    present, total = _repo_definition_presence(plugin_root_path, repo_path)
+
+    if present == 0:
+        # #580: a readable repo manifest is not proof this repo ships the
+        # checklist -- it may be a different plugin's own manifest entirely.
+        # Zero of the derived definition files existing in the repo tree
+        # means the version comparison has no subject: replace the false
+        # "known and stale/matching" claim with the true "unknown" one.
+        return dict(
+            base,
+            state=STATE_COULD_NOT_TELL,
+            reason=(
+                "this repository's own .claude-plugin/plugin.json could be read "
+                "({0}), but none of the checklist's {1} definition file(s) are "
+                "present in this repository -- it does not ship these "
+                "definitions, so its version and the installed checklist's "
+                "version ({2}) are not a comparison of the same thing".format(
+                    repo_version, total, installed_version
+                )
+            ),
+            detail="",
+            definitions=definitions,
+        )
 
     if installed_version == repo_version:
         return dict(
