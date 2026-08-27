@@ -71,7 +71,7 @@ def test_dispatch_still_leaves_the_candidate_side_to_the_maintainer():
 
 def test_spine_table_row_also_names_derive_held():
     text = _read(SPINE)
-    idx = text.index("naming a lane, or bundling a second issue into one")
+    idx = text.index("naming a lane, against everything already running")
     row_end = text.index("\n", idx)
     row = text[idx:row_end]
     assert "--derive-held" in row, (
@@ -83,9 +83,47 @@ def test_spine_table_row_also_names_derive_held():
     )
 
 
+def test_spine_table_keeps_the_bundling_row_on_plain_against():
+    text = _read(SPINE)
+    idx = text.index("bundling a second issue into a lane already claimed")
+    row_end = text.index("\n", idx)
+    row = text[idx:row_end]
+    assert "--against PATTERN" in row, (
+        "the bundling check compares a candidate's declared lane against one "
+        "named running lane, not the --derive-held aggregate every other "
+        "lane and open pull request contributes to -- conflating the two "
+        "rows would route the bundling case to a call that answers a "
+        "different question"
+    )
+
+
 def test_dispatch_mutual_exclusion_is_still_documented():
     text = _read(DISPATCH)
     assert "mutually exclusive" in text or "mutual" in text.lower(), (
         "--derive-held and --against are refused together by the script "
         "(#558) -- the runbook should not imply both can be combined"
+    )
+
+
+def test_dispatch_bundling_paragraph_does_not_claim_the_same_call():
+    """The bundling-check paragraph used to cross-reference the disjointness
+
+    paragraph above it as "the same ... call ... already runs" -- true while
+    both used plain --against, and false the moment the paragraph above it
+    was rewritten to lead with --derive-held instead. The bundling check
+    needs overlap against one named running lane, not the --derive-held
+    aggregate, so it still uses plain --against and must say so without
+    claiming to be the same call as the one that no longer is.
+    """
+    text = _read(DISPATCH)
+    idx = text.index("Never bundle an issue a running lane already touches")
+    end = text.index("The two-issue row must not become a rule", idx)
+    paragraph = text[idx:end]
+    assert "--against PATTERN" in paragraph, (
+        "the bundling check must still name --against PATTERN explicitly"
+    )
+    assert "the same" not in paragraph.lower() or "not the same" in paragraph.lower(), (
+        "the bundling paragraph must not claim to reuse 'the same call' as "
+        "the disjointness paragraph above it now that that paragraph leads "
+        "with --derive-held instead of --against"
     )

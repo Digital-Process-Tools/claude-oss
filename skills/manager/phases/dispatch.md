@@ -189,10 +189,14 @@ of two or three stays two or three fixes, never one: **each issue keeps its own 
 own changelog fragment**, and the pull request closes every issue it carries.
 
 **Never bundle an issue a running lane already touches** —
-check with the same `scripts/lane_setup.py --lane PATTERN --against PATTERN` call the disjointness
-rule above already runs, read the other way: overlap there means conflict, and overlap here, at
-selection time, against a *candidate's* declared lane rather than a running one, means the two are
-worth bundling. **The two-issue row must not become a rule.** It is n=58 and is worse per issue than
+check with `scripts/lane_setup.py --lane PATTERN --against PATTERN`, read the other way from the
+disjointness rule above: overlap there means conflict, and overlap here, at selection time, against a
+*candidate's* declared lane rather than a running one, means the two are worth bundling. This is a
+different call from the one above, not the same one restated: it needs the overlap against one named
+running lane, not the aggregate `--derive-held` set every other lane and open pull request contributes
+to, so `--against` stays the mechanism here.
+
+**The two-issue row must not become a rule.** It is n=58 and is worse per issue than
 a single-issue lane, which is exactly the shape of a result that reverses on more data — a blanket
 refusal to pair up two issues would pin that noise as a fact, the same mistake #435 records about a
 test that froze one interpreter's answer into a hardcoded platform one. Carry the caveat with the
