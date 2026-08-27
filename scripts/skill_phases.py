@@ -163,8 +163,28 @@ def _undeclared_rows(root):
     try:
         on_disk, unreadable = documents(root)
         on_disk = on_disk[1:]
-    except (RuntimeError, OSError):
+    except RuntimeError:
+        # No spine at `root` -- already reported by that document's own
+        # `missing` row in `check()`'s main loop; nothing further to say
+        # about the undeclared set here.
         return []
+    except OSError as exc:
+        # `documents()` itself could not be asked, rather than answering
+        # with an `unreadable` message in its own return value (#571's own
+        # shape, handled below) -- this must still surface as `unreadable`,
+        # not fold into "no undeclared files found" (#589).
+        return [
+            {
+                "path": "skills/manager/phases",
+                "state": "unreadable",
+                "size": None,
+                "budget": None,
+                "baseline": None,
+                "governs": None,
+                "referenced": None,
+                "detail": str(exc),
+            }
+        ]
     rows = []
     for message in unreadable:
         rows.append(
