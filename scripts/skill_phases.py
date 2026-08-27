@@ -163,8 +163,35 @@ def _undeclared_rows(root):
     try:
         on_disk, unreadable = documents(root)
         on_disk = on_disk[1:]
-    except (RuntimeError, OSError):
+    except RuntimeError:
+        # `documents()` raises this when `spine.is_file()` says the spine
+        # is not a file -- the ordinary case is a genuinely absent spine,
+        # already reported by that document's own `missing` row in
+        # `check()`'s main loop. `is_file()` also folds a stat failure
+        # (e.g. `PermissionError` on a parent directory) into the same
+        # `False`, and `check()`'s own spine `read_bytes()` call only
+        # catches `FileNotFoundError` -- so that narrower case reaches
+        # here after `check()` has already raised uncaught, rather than
+        # after a `missing` row was emitted. Out of scope for #589: it
+        # predates this fix and is not the fold this issue is about.
         return []
+    except OSError as exc:
+        # `documents()` itself could not be asked, rather than answering
+        # with an `unreadable` message in its own return value (#571's own
+        # shape, handled below) -- this must still surface as `unreadable`,
+        # not fold into "no undeclared files found" (#589).
+        return [
+            {
+                "path": "skills/manager/phases",
+                "state": "unreadable",
+                "size": None,
+                "budget": None,
+                "baseline": None,
+                "governs": None,
+                "referenced": None,
+                "detail": str(exc),
+            }
+        ]
     rows = []
     for message in unreadable:
         rows.append(
