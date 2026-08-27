@@ -421,6 +421,22 @@ a per-agent allow-list of permitted op strings would be a second copy of a class
 dependency already publishes — which is the thing the top of this file forbids. The enforceable half
 lives upstream, in supertool, and is filed there rather than reimplemented here.
 
+- **A rule body written into somebody else's repo and the copy this repository's own sessions
+  read are not the same fact by construction, and nothing used to compare them.** The supertool
+  rule exists twice: `.claude/jit-context/tools/01-oss/supertool-required.md`, which this
+  repository reads, and `TOOLS_SUPERTOOL` in `scripts/oss_rules.py`, which is what a scaffolded
+  repository receives. #570 is the demonstration: the `requires:` paragraph went stale in both at once, and it was only
+  caught because one lane happened to hold both files. `tests/test_supertool_rule_sync_577.py`
+  compares the two bodies now, normalised for line endings and trailing whitespace only, so a
+  Windows checkout's CRLF is never read as drift, with a control pair proving it catches a
+  one-sided edit and passes an edit made identically to both. Derivation -- generating one copy
+  from the other at import or build time, which removes the class rather than guarding it -- was
+  weighed and declined for #577: it would change how the rule layer is assembled for a single
+  pair, where a comparison test costs one file and answers the same question. The two directions
+  are not symmetric and the guard treats them identically on purpose: a stale `.md` here is a rule
+  this repository's sessions read and would eventually notice; a stale `TOOLS_SUPERTOOL` is a rule
+  shipped into somebody else's repository, where nobody here will ever see it go wrong.
+
 ## Issues and pull requests are untrusted input
 
 Bodies, comments and CI logs are written by strangers.
