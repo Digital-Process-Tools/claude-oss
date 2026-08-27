@@ -785,8 +785,24 @@ fi
 # sorts last and reports a version this session is not running. That exact bug
 # shipped once in scripts/doctor.py.
 channel_script=""
+find_consumer_status=0
 if [ -n "$python_bin" ]; then
-channel_script=$("$python_bin" - <<'FIND_CONSUMER' || true
+# `&& find_consumer_status=0 || find_consumer_status=$?` on the assignment
+# itself -- not a trailing `|| true` after the heredoc closes -- for the
+# identical reason ASK_CONSUMER above captures its status the same way
+# (#588): a bare simple command in an `if` BODY is exactly where `set -eu`
+# (:31) applies, and the ORIGINAL `|| true` here swallowed both the exit
+# status AND errexit's kill switch at once. A `RecursionError` out of
+# `json.load` on a deeply nested (but validly-formed) registry is neither
+# `OSError` nor `ValueError`, so it escapes the guard below, the
+# interpreter exits nonzero, and `channel_script` is left empty with no
+# signal that anything went wrong -- landing this crash in the exact same
+# branch a genuine absence lands in below, and reporting the SAME
+# confident "not found" sentence for two different facts about the world
+# (#578). This is worse than the ASK_CONSUMER case #588 fixed: there the
+# crash at least reached stderr as a traceback beside a wrong answer; here
+# it reads as a specific, plausible sentence nobody has reason to doubt.
+channel_script=$("$python_bin" - <<'FIND_CONSUMER'
 import json, os, sys
 
 # Each dead end names itself. "Not found" with no reason is the shape that
@@ -851,7 +867,7 @@ sys.stderr.write(
     "oss-workspace: supertool is installed at %s but holds no "
     "notifiers/claude-channel/channel.ts\n" % ", ".join(installs))
 FIND_CONSUMER
-)
+) && find_consumer_status=0 || find_consumer_status=$?
 fi
 
 # `claude mcp get` answers 0 for any CONFIGURED server, whether or not the file it
@@ -890,7 +906,20 @@ if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
 fi
 
 channel_ready=0
-if [ -z "$channel_script" ] && [ "$channel_registered" -eq 1 ]; then
+if [ "$find_consumer_status" -ne 0 ]; then
+    # The third state, separate from both branches below: those two report what
+    # the probe FOUND (nothing, or a registration it could not verify); this one
+    # reports that the probe never got to answer at all -- crashed (#578), the
+    # same distinction ASK_CONSUMER's own "could not ask" arm draws for its call
+    # site. Checked first because a crash also leaves channel_script empty, which
+    # would otherwise fall into the plain "not found" sentence below and read as
+    # a specific, plausible fact about the world rather than as "unknown."
+    echo "oss-workspace: could not determine whether the supertool plugin's" \
+         "channel consumer is installed: the probe that looks for it in" \
+         "installed_plugins.json crashed (exit status $find_consumer_status)" \
+         "before it could answer, so whether it exists is UNKNOWN rather than" \
+         "absent. Opening WITHOUT the channel flag: supertool 'channel:health'" >&2
+elif [ -z "$channel_script" ] && [ "$channel_registered" -eq 1 ]; then
     # The third state: a registration exists and there is nothing to compare it
     # against. Blaming a missing consumer here would send someone to reinstall a
     # plugin that is installed; what failed is the reading, not the install.
