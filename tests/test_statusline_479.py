@@ -32,7 +32,6 @@ import scaffold  # noqa: E402
 def test_absent_cache_renders_unknown_and_never_zero():
     """A count nobody took is not a count that came back zero."""
     board = statusline.board_from_cache(None)
-    assert board["state"] == "unknown"
     assert board["prs"] is None and board["issues"] is None
 
 
@@ -41,7 +40,6 @@ def test_a_cache_that_answered_zero_is_a_measurement():
     board = statusline.board_from_cache(
         {"prs": 0, "issues": 0, "issues_external": 0, "fetched_at": 0}
     )
-    assert board["state"] == "measured"
     assert board["prs"] == 0 and board["issues"] == 0 and board["issues_external"] == 0
 
 
@@ -334,7 +332,6 @@ def _facts(**overrides):
         "default_branch": "main-upstream",
         "version": "0.10.0",
         "board": {
-            "state": "measured",
             "prs": 2,
             "issues": 18,
             "age": 30,
@@ -402,16 +399,16 @@ def test_render_states_the_measured_board():
 
 def test_render_never_prints_a_zero_for_an_unknown_board():
     """The must-not-fire half. Paired with the test above, which proves it can print."""
-    line = statusline.render(_facts(board={"state": "unknown", "prs": None, "issues": None}),
+    line = statusline.render(_facts(board={"prs": None, "issues": None}),
                              ascii_only=True)
     assert "?pr" in line and "?is" in line
     assert "0pr" not in line and "0is" not in line
 
 
 def test_render_distinguishes_a_zero_board_from_an_unknown_one():
-    zero = statusline.render(_facts(board={"state": "measured", "prs": 0, "issues": 0, "age": 1}),
+    zero = statusline.render(_facts(board={"prs": 0, "issues": 0, "age": 1}),
                              ascii_only=True)
-    unknown = statusline.render(_facts(board={"state": "unknown", "prs": None, "issues": None}),
+    unknown = statusline.render(_facts(board={"prs": None, "issues": None}),
                                 ascii_only=True)
     assert zero != unknown
     assert "0pr" in zero
