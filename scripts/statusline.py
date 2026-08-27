@@ -144,18 +144,29 @@ def version_status(installed, latest, stale=False):
 
 
 def board_from_cache(cache, now=None):
-    """Read the two forge counts back out of a cache document.
+    """Read the forge counts back out of a cache document.
 
     Each count is read on its own. A cache written by a refresh where one call answered
-    and the other did not is a real state, and collapsing it to "unknown board" throws
-    away the half that was measured.
+    and another did not is a real state, and collapsing it to "unknown board" throws away
+    the half that was measured.
+
+    `issues_external` (#595) is one of those counts too: a cache carrying `issues` but no
+    `issues_external` -- written before this field existed, or by a refresh whose
+    membership walk did not answer -- is `partial`, the same as one missing `prs` or
+    `issues` outright. A `0` for it is a real reading and is folded into `measured` exactly
+    like a `0` for the older two counts already was.
     """
     if not isinstance(cache, dict):
-        return {"state": "unknown", "prs": None, "issues": None, "age": None}
+        return {
+            "state": "unknown", "prs": None, "issues": None, "issues_external": None,
+            "age": None,
+        }
     prs = cache.get("prs")
     issues = cache.get("issues")
+    issues_external = cache.get("issues_external")
     prs = prs if isinstance(prs, int) else None
     issues = issues if isinstance(issues, int) else None
+    issues_external = issues_external if isinstance(issues_external, int) else None
     checks = cache.get("pr_checks")
     if not (
         isinstance(checks, dict)
@@ -170,11 +181,14 @@ def board_from_cache(cache, now=None):
         age = max(0.0, (time.time() if now is None else now) - fetched)
     if prs is None and issues is None:
         state = "unknown"
-    elif prs is None or issues is None:
+    elif prs is None or issues is None or issues_external is None:
         state = "partial"
     else:
         state = "measured"
-    return {"state": state, "prs": prs, "issues": issues, "checks": checks, "age": age}
+    return {
+        "state": state, "prs": prs, "issues": issues, "issues_external": issues_external,
+        "checks": checks, "age": age,
+    }
 
 
 # ------------------------------------------------------------------ release progress
@@ -634,7 +648,8 @@ def _last_field(stamp):
 
 
 def _board_field(board, symbols, color=False):
-    """`4pr 2ok 1x 1... 0? . 23is` -- how many are open, and what CI says about each.
+    """`4pr 2ok 1x 1... 0? . 23is / 2eis` -- how many are open, what CI says about each,
+    and how many of the issues arrived from outside repository membership (#595).
 
     Lowercase because the fields either side of it are, and a status line that shouts one
     field trains the eye to read that one first regardless of what it says.
@@ -643,10 +658,14 @@ def _board_field(board, symbols, color=False):
     makes the reader subtract to find what is missing, and `0x` -- nothing red -- and `0...`
     -- nothing on the way -- are two of the more useful things this line can say. The one
     thing that does collapse is a reading that never happened: rollups nobody could fetch
-    render as a single `?`, never as four zeros.
+    render as a single `?`, never as four zeros. `eis` follows the same rule: `0eis` is a
+    real reading -- nobody outside has filed anything -- and it must stay visibly different
+    from `?eis`, a count nobody could take, because zero external issues is both a common
+    true answer and exactly what a failed call looks like.
     """
     prs = board.get("prs")
     issues = board.get("issues")
+    issues_external = board.get("issues_external")
     checks = board.get("checks")
     if isinstance(checks, dict):
         groups = " ".join(
@@ -660,11 +679,12 @@ def _board_field(board, symbols, color=False):
         )
     else:
         groups = symbols["unk"]
-    return "{}pr {}{}{}is".format(
+    return "{}pr {}{}{}is / {}eis".format(
         "?" if not isinstance(prs, int) else prs,
         groups,
         symbols["dot"],
         "?" if not isinstance(issues, int) else issues,
+        "?" if not isinstance(issues_external, int) else issues_external,
     )
 
 
@@ -1095,6 +1115,71 @@ def _gh_count(repo, kind):
         return None
 
 
+#: GitHub's own membership tiers -- `authorAssociation` values that mean "one of us".
+_INSIDE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def _gh_external_issue_count(repo, total):
+    """How many of the `total` open issues (`_gh_count`'s own answer) were filed by
+    someone outside repository membership, per GitHub's `authorAssociation` (#595).
+
+    Not `-author:@me`: that resolves to whoever is authenticated on this machine, so
+    the count would be a fact about a laptop rather than about the repository, and a
+    second maintainer running this same loop would see a different number for the
+    same tracker. `authorAssociation` is repo-relative and identical for everyone --
+    and it is already what supertool's own `gh-issues` op uses for its external-filer
+    marker, so the two boards agree instead of answering differently.
+
+    `search/issues` cannot filter on it, so this walks `gh issue list` instead of the
+    search API. That is a different call from `_gh_count`'s own paging trap: `gh api
+    --paginate --jq` runs its filter once per fetched page and prints one number per
+    page with no total, so the first line is a number smaller than the truth at exit
+    0. `gh issue list --json` is not that call -- it assembles the whole page set into
+    one JSON array itself before this function ever sees it -- but it is still bounded
+    by `--limit`, so the row count it returns is cross-checked against `total`: fewer
+    rows than the count `_gh_count` already took means this call did not cover every
+    open issue (a rate limit, a truncated page, the tracker growing between the two
+    calls), and the number is not reliable enough to report. `None`, never a count
+    smaller than the truth -- the same convention `_gh_count`'s own docstring names.
+    """
+    if not isinstance(total, int):
+        return None
+    out = _run(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "authorAssociation",
+            "--limit",
+            str(max(total, 1)),
+        ],
+        timeout=25,
+    )
+    if not out:
+        return None
+    try:
+        rows = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(rows, list) or len(rows) != total:
+        return None
+    external = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        assoc = row.get("authorAssociation")
+        if not isinstance(assoc, str) or not assoc.strip():
+            return None
+        if assoc.strip().upper() not in _INSIDE_ASSOCIATIONS:
+            external += 1
+    return external
+
+
 #: How many open pull requests one rollup page carries. Anything past it is counted as
 #: unknown rather than dropped, so the groups still sum to the exact count beside them.
 ROLLUP_PAGE = 100
@@ -1172,11 +1257,12 @@ def _latest_release(repo):
 def refresh(root, now=None):
     """Fill the cache for one managed repository. Runs detached, never on the render path.
 
-    Two clocks (#515). The board -- open pull requests, open issues, their check rollups --
-    is re-read every time; the version each plugin's source repository publishes is re-read
-    only when its own longer interval has passed, and carried forward from the previous
-    cache in between. Four of the seven forge calls were the second kind, which is why the
-    board's own interval could not be shortened while they shared one.
+    Two clocks (#515). The board -- open pull requests, open issues, who filed each,
+    their check rollups -- is re-read every time; the version each plugin's source
+    repository publishes is re-read only when its own longer interval has passed, and
+    carried forward from the previous cache in between. Four of the eight forge calls
+    are the second kind (#595 added a fourth board call), which is why the board's own
+    interval could not be shortened while they shared one.
 
     A carried-forward value carries its own stamp with it. Stamping it `now` would make an
     hour-old reading indistinguishable from one just taken, which is the same defect this
@@ -1191,6 +1277,7 @@ def refresh(root, now=None):
     if repo:
         document["prs"] = _gh_count(repo, "pr")
         document["issues"] = _gh_count(repo, "issue")
+        document["issues_external"] = _gh_external_issue_count(repo, document["issues"])
         document["pr_checks"] = check_rollup_counts(_gh_rollups(repo), document["prs"])
     carried = previous.get("latest")
     carried = dict(carried) if isinstance(carried, dict) else {}
