@@ -124,11 +124,26 @@ than reporting the tick as `filled` because the lane count matched.
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
 correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
 not intersect visibly (#267).** `scripts/lane_setup.py <issue> --lane PATTERN [--lane PATTERN ...]
---against PATTERN [--against PATTERN ...]` renders both sides in one canonical form -- a sorted,
-deduplicated list of repo-relative paths, each glob expanded against what is actually on disk -- and
-reports the overlap in the payload (`--json`) or the receipt. Run it with the new brief's lane as
-`--lane` and every already-dispatched, still-running lane's as `--against` before that brief is
-written, not after.
+--derive-held` is the route: it renders the new lane in canonical form -- a sorted, deduplicated
+list of repo-relative paths, each glob expanded against what is actually on disk -- and derives the
+held side itself, from every open pull request's own files and every live lane record's own files
+(#558), rather than asking you to retype what every other running lane already claimed. Run it with
+the new brief's lane as `--lane` before that brief is written, not after; the overlap and its holder
+come back in the payload (`--json`) or the receipt.
+
+**Derivation can fail to derive, and that is a third state, not a blocked one.** `gh` unreachable,
+the call timing out, a live lane record missing its own file list -- any of those and the payload's
+`availability` reads `could-not-derive-the-held-set`, #558's own words, never folded into `available`
+and never into `blocked`. Only there does the hand-typed side come back: `--against PATTERN
+[--against PATTERN ...]` still exists for that one case, spelling out every already-dispatched,
+still-running lane's files by hand -- the fallback for when the derivation cannot answer, not the
+default route it used to be. `--derive-held` and `--against` are mutually exclusive and the script
+refuses both together, because a derived exclusion and a hand-typed one beside it is exactly the
+ambiguity #558 exists to close.
+
+None of this touches the other side of the check -- naming which further open issues could join an
+already-claimed lane (above). An issue's own files are still not derivable from its body (#267), so
+naming the candidate issue to check stays yours, not the script's.
 
 When the disjoint areas run out, say so rather than inventing another lane. **Bundling related
 issues into one brief is better than splitting one file across two agents** — the fuller rule for
@@ -174,10 +189,14 @@ of two or three stays two or three fixes, never one: **each issue keeps its own 
 own changelog fragment**, and the pull request closes every issue it carries.
 
 **Never bundle an issue a running lane already touches** —
-check with the same `scripts/lane_setup.py --lane PATTERN --against PATTERN` call the disjointness
-rule above already runs, read the other way: overlap there means conflict, and overlap here, at
-selection time, against a *candidate's* declared lane rather than a running one, means the two are
-worth bundling. **The two-issue row must not become a rule.** It is n=58 and is worse per issue than
+check with `scripts/lane_setup.py --lane PATTERN --against PATTERN`, read the other way from the
+disjointness rule above: overlap there means conflict, and overlap here, at selection time, against a
+*candidate's* declared lane rather than a running one, means the two are worth bundling. This is a
+different call from the one above, not the same one restated: it needs the overlap against one named
+running lane, not the aggregate `--derive-held` set every other lane and open pull request contributes
+to, so `--against` stays the mechanism here.
+
+**The two-issue row must not become a rule.** It is n=58 and is worse per issue than
 a single-issue lane, which is exactly the shape of a result that reverses on more data — a blanket
 refusal to pair up two issues would pin that noise as a fact, the same mistake #435 records about a
 test that froze one interpreter's answer into a hardcoded platform one. Carry the caveat with the
