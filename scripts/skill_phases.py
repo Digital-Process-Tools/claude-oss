@@ -164,9 +164,16 @@ def _undeclared_rows(root):
         on_disk, unreadable = documents(root)
         on_disk = on_disk[1:]
     except RuntimeError:
-        # No spine at `root` -- already reported by that document's own
-        # `missing` row in `check()`'s main loop; nothing further to say
-        # about the undeclared set here.
+        # `documents()` raises this when `spine.is_file()` says the spine
+        # is not a file -- the ordinary case is a genuinely absent spine,
+        # already reported by that document's own `missing` row in
+        # `check()`'s main loop. `is_file()` also folds a stat failure
+        # (e.g. `PermissionError` on a parent directory) into the same
+        # `False`, and `check()`'s own spine `read_bytes()` call only
+        # catches `FileNotFoundError` -- so that narrower case reaches
+        # here after `check()` has already raised uncaught, rather than
+        # after a `missing` row was emitted. Out of scope for #589: it
+        # predates this fix and is not the fold this issue is about.
         return []
     except OSError as exc:
         # `documents()` itself could not be asked, rather than answering
