@@ -38,9 +38,11 @@ def test_absent_cache_renders_unknown_and_never_zero():
 
 def test_a_cache_that_answered_zero_is_a_measurement():
     """The must-fire control: zero is a real answer and must survive as one."""
-    board = statusline.board_from_cache({"prs": 0, "issues": 0, "fetched_at": 0})
+    board = statusline.board_from_cache(
+        {"prs": 0, "issues": 0, "issues_external": 0, "fetched_at": 0}
+    )
     assert board["state"] == "measured"
-    assert board["prs"] == 0 and board["issues"] == 0
+    assert board["prs"] == 0 and board["issues"] == 0 and board["issues_external"] == 0
 
 
 def test_a_cache_missing_a_count_is_unknown_for_that_count_alone():

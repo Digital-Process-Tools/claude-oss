@@ -180,7 +180,7 @@ def test_every_group_renders_including_the_ones_at_zero():
          "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0}},
         _symbols(),
     )
-    assert field == "4pr 2ok 1x 1... 0? . 23is"
+    assert field == "4pr 2ok 1x 1... 0? . 23is / ?eis"
 
 
 def test_the_glyphs_are_used_where_the_console_encodes_them():
@@ -189,18 +189,18 @@ def test_the_glyphs_are_used_where_the_console_encodes_them():
          "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0}},
         _symbols(ascii_only=False),
     )
-    assert field == "4pr 2✓ 1✗ 1⋯ 0? · 23is"
+    assert field == "4pr 2✓ 1✗ 1⋯ 0? · 23is / ?eis"
 
 
 def test_rollups_nobody_read_render_as_one_unknown_not_as_four_zeros():
     field = statusline._board_field({"prs": 4, "issues": 23, "checks": None}, _symbols())
-    assert field == "4pr ? . 23is"
+    assert field == "4pr ? . 23is / ?eis"
     assert "0ok" not in field
 
 
 def test_a_count_nobody_took_is_unknown_on_the_count_itself():
     field = statusline._board_field({"prs": None, "issues": None, "checks": None}, _symbols())
-    assert field == "?pr ? . ?is"
+    assert field == "?pr ? . ?is / ?eis"
 
 
 def test_the_whole_line_carries_the_groups():

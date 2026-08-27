@@ -66,6 +66,9 @@ def _refresh(tmp_path, monkeypatch, answers, cache=None):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": "owner/repo"})
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: answers["counts"][kind])
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total: answers.get("external", 0)
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: answers["rollups"])
     monkeypatch.setattr(
         statusline, "installed_plugins",
