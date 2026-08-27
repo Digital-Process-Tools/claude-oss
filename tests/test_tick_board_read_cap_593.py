@@ -23,9 +23,12 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 TICK_MD = REPO_ROOT / "commands" / "tick.md"
 
-#: The board-read code block itself -- the literal a reader copies.
+#: The board-read code block itself -- the literal a reader copies. Each op's
+#: filter suffix is its own capture group, including gh-prs and gh-branch, so a
+#: regression that widens the WRONG op (or widens all four) is distinguishable
+#: from one that widens gh-issues -- see test_the_other_three_ops_in_the_block_are_untouched.
 BOARD_READ_RE = re.compile(
-    r"```bash\s*\n\s*supertool\s+'gh-prs'\s+'gh-issues([^']*)'\s+'gh-branch'\s+'git-worktrees'\s*\n\s*```"
+    r"```bash\s*\n\s*supertool\s+'gh-prs([^']*)'\s+'gh-issues([^']*)'\s+'gh-branch([^']*)'\s+'git-worktrees([^']*)'\s*\n\s*```"
 )
 
 
@@ -50,7 +53,7 @@ def test_gh_issues_is_widened_past_the_silent_default():
     """The literal a reader copies must not be the bare, 50-capped spelling."""
     match = BOARD_READ_RE.search(_text())
     assert match, "board-read block not found (see test above)"
-    gh_issues_suffix = match.group(1)
+    gh_issues_suffix = match.group(2)
     assert "per=" in gh_issues_suffix, (
         "commands/tick.md step 2 still prescribes bare `gh-issues` with no `per=`, "
         "which caps at 50 (claude-supertool's DEFAULT_PER_PAGE) -- a repo with more "
@@ -66,16 +69,23 @@ def test_gh_issues_is_widened_past_the_silent_default():
 def test_the_other_three_ops_in_the_block_are_untouched():
     """Negative control: this fix is about `gh-issues`, not a blanket `per=` habit.
 
-    If the block were rewritten to add `per=` everywhere the assertion above would
-    pass for the wrong reason -- widening a cap on `gh-branch` or `git-worktrees`
-    changes nothing, since neither op has one.
+    A genuine control, not one guaranteed by the regex's own literals: gh-prs and
+    gh-branch each carry their own optional filter-suffix capture group (see
+    BOARD_READ_RE), so this fails for real if a future edit widens the wrong op --
+    it would still MATCH (unlike relying on the earlier test), and then fail HERE
+    with a message that names the actual regression.
     """
     match = BOARD_READ_RE.search(_text())
     assert match, "board-read block not found (see first test)"
-    whole = match.group(0)
-    assert "'gh-prs'" in whole and "'gh-branch'" in whole, (
-        "gh-prs and gh-branch must stay bare in the board-read literal -- this fix "
-        "targets gh-issues's own silent cap, not every op in the call."
+    gh_prs_suffix, gh_branch_suffix, worktrees_suffix = (
+        match.group(1), match.group(3), match.group(4)
+    )
+    assert gh_prs_suffix == "" and gh_branch_suffix == "" and worktrees_suffix == "", (
+        "gh-prs, gh-branch and git-worktrees must stay bare in the board-read "
+        "literal (got suffixes {!r}, {!r}, {!r}) -- this fix targets gh-issues's "
+        "own silent cap, not every op in the call.".format(
+            gh_prs_suffix, gh_branch_suffix, worktrees_suffix
+        )
     )
 
 
@@ -100,17 +110,32 @@ def test_the_step_teaches_the_cap_is_still_a_cap():
 
 
 def test_a_step_silent_about_the_cap_would_fail():
-    """Negative control, pointed at the assertion rather than the document.
+    """Negative control, pointed at BOTH assertions in the test above, separately.
 
-    Simulates the pre-fix step -- `per=100` present, but no cap-disclosure habit
-    taught beside it -- and confirms the check above would have caught it.
+    `test_the_step_teaches_the_cap_is_still_a_cap` makes two independent claims --
+    the cap-disclosure wording is cited, AND the reader is told to raise `per=`
+    again. A control that only tries a string missing both proves nothing about
+    whether either assertion would catch losing just the other, so this checks
+    each half on a step shaped to be missing only that half.
     """
-    pre_fix_step = (
+    missing_cap_wording = (
         "2. Read the board, batched into one call:\n\n"
         "   ```bash\n"
         "   supertool 'gh-prs' 'gh-issues:per=100' 'gh-branch' 'git-worktrees'\n"
         "   ```\n"
-        "   This widens the cap from 50 to 100.\n"
+        "   This widens the cap from 50 to 100; raise per= again if it is still capped.\n"
     )
-    flowed = re.sub(r"\s+", " ", pre_fix_step)
+    flowed = re.sub(r"\s+", " ", missing_cap_wording)
     assert "capped at --limit" not in flowed
+    assert re.search(r"raise\s+`?per=", flowed) or "raise with per=" in flowed
+
+    missing_raise_instruction = (
+        "2. Read the board, batched into one call:\n\n"
+        "   ```bash\n"
+        "   supertool 'gh-prs' 'gh-issues:per=100' 'gh-branch' 'git-worktrees'\n"
+        "   ```\n"
+        "   gh-issues names its population as capped at --limit N when it stopped short.\n"
+    )
+    flowed = re.sub(r"\s+", " ", missing_raise_instruction)
+    assert "capped at --limit" in flowed
+    assert not (re.search(r"raise\s+`?per=", flowed) or "raise with per=" in flowed)
