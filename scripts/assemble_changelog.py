@@ -2343,9 +2343,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   "CHANGELOG.md".format(args.version),
                   "why       the fold derives no default, in this copy or the "
                   "one vendored into a managed repo. This file finds a "
-                  "repository root by walking up from itself, which names the "
-                  "repository it is stored in and not the one you are "
-                  "releasing; nothing on disk says whether those are the same",
+                  "repository root by walking up from your current working "
+                  "directory, which names wherever you happen to be standing "
+                  "and not necessarily the one you are releasing; nothing on "
+                  "disk says whether those are the same",
                   "untouched CHANGELOG.md was not read or written, and no "
                   "fragment was consumed"])
         return None

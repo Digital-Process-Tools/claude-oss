@@ -88,16 +88,19 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check --dir "$FR
 ```
 
 **Always pass `--dir` and `--changelog` — on every mode, including the fold below.** With
-neither, the script derives its root by walking up from its own location for a `.git`. It
-lives in the plugin, so that walk lands in **the plugin's own repository**, not the one you
-are standing in — and it answers confidently rather than refusing, because it did find a
-repo. That is harmless for `--check`, which only reads the wrong tree. It is not harmless
-for the fold, which writes to it.
+neither, the script derives its root by walking up from the *caller's current working
+directory* for a `.git` (#590). It used to walk up from its own install location instead,
+which for the plugin's bundled copy always landed in **the plugin's own repository**
+regardless of where the caller stood — and answered confidently rather than refusing,
+because it did find a repo, just never the caller's. Deriving from cwd fixes that for the
+ordinary case (cwd inside the repo you mean), but a caller `cd`'d somewhere unexpected can
+still get an answer about the wrong tree, or a refusal if nothing is above it — and it is
+not harmless for the fold, which writes.
 
 The fold no longer accepts that guess (#67): with either flag missing it exits `2` and
 prints the invocation to run instead. `--check`, `--check-links` and `--count` keep the
-derived default, because a scaffolded repo's CI calls the vendored `.oss/` copy bare and
-that copy's derivation is correct — so passing the flags there is discipline, not a
+cwd-derived default, because a scaffolded repo's CI calls the vendored `.oss/` copy bare
+from inside that repo's own checkout — so passing the flags there is discipline, not a
 requirement, and a wrong tree costs a read rather than a write.
 
 **An empty `$FRAGMENTS_DIR` is refused the same way a missing one is (#349).** The resolver
