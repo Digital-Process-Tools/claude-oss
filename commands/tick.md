@@ -79,8 +79,19 @@ Skill(manager)
 2. **Read the board**, batched into one call:
 
    ```bash
-   supertool 'gh-prs' 'gh-issues' 'gh-branch' 'git-worktrees'
+   supertool 'gh-prs' 'gh-issues:per=100' 'gh-branch' 'git-worktrees'
    ```
+
+   `gh-issues` bare caps at `--limit 50`, silently — a repo with 88 open issues reads as
+   50, and the tick proceeds on a board that is short by 38 without anything saying so
+   (#593). `per=100` raises the cap; it does not remove it, and a bigger repo hits the
+   new ceiling the same way. **Read the footer, not just the rows**: `gh-issues` names
+   its own population in three states — uncapped (every open issue is on screen),
+   `capped at --limit N — more may exist, raise with per=N` (the fetch stopped short;
+   read the count as "at least N", never as "the whole backlog"), or genuinely empty. A
+   capped footer this tick is a fact to report and act on — raise `per=` again, or say
+   in plain terms that the board was partial — never a silent floor for what "nothing
+   left" means in step 7.
 
    The fourth op is the one this step used to be missing, and it is not conditional:
    `git-worktrees` is available wherever supertool is, and it boards every tree of this repo
