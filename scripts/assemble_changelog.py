@@ -100,6 +100,23 @@ def _find_repo_root(start: Path) -> Optional[Path]:
     return None
 
 
+def _safe_cwd() -> Optional[Path]:
+    """`Path.cwd()`, without letting a vanished working directory take the
+    whole module down. `os.getcwd()` (which `Path.cwd()` wraps) raises
+    `FileNotFoundError` when the process's own current directory has been
+    removed out from under it -- a live race in this loop's own worktree
+    lifecycle, not a hypothetical one, and unlike the derivation this
+    replaced, a bare module-scope `Path.cwd()` runs on *every* invocation,
+    fold included, before `argparse` has even parsed `--dir`/`--changelog`.
+    `None` here reads exactly like "no `.git` above cwd" to every caller of
+    `REPO` below -- a refusal with a stated reason, never an import crash
+    with none."""
+    try:
+        return Path.cwd()
+    except OSError:
+        return None
+
+
 #: Derived from the *caller's* current working directory, not from
 #: this file's own install location. Walking up from `__file__` used to
 #: answer "which repository is this script stored in" -- correct for the
@@ -109,9 +126,11 @@ def _find_repo_root(start: Path) -> Optional[Path]:
 #: succeeded, always on the plugin's own tree, so a bare `--check` run from
 #: anywhere reported a clean verdict about fragments nobody asked about.
 #: Walking from `Path.cwd()` instead can still miss -- a caller `cd`'d
-#: somewhere with no `.git` above it -- and the read-only modes report that
-#: rather than falling back to the script's own tree; see `_resolve` below.
-REPO = _find_repo_root(Path.cwd())
+#: somewhere with no `.git` above it, or standing nowhere at all -- and the
+#: read-only modes report that rather than falling back to the script's own
+#: tree; see `_resolve` below.
+_CWD = _safe_cwd()
+REPO = _find_repo_root(_CWD) if _CWD is not None else None
 
 #: Keep a Changelog 1.1.0, in the order the spec lists them. The order is data,
 #: not a sort: "Added" before "Fixed" is a convention readers rely on, and
@@ -2286,11 +2305,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if value:
             return Path(value)
         if derived is None:
-            _receipt("skipped",
-                     "could not find the repository root above {0} "
-                     "(no .git there or in any parent) to derive a default "
-                     "for {1}; pass it explicitly"
-                     .format(Path.cwd(), flag))
+            if _CWD is None:
+                # The rarer of the two `derived is None` causes: the process's
+                # own current directory no longer exists to walk up from at
+                # all (see `_safe_cwd`), not merely "no .git found above it".
+                _receipt("skipped",
+                         "could not read the current working directory to "
+                         "derive a default for {0}; pass it explicitly"
+                         .format(flag))
+            else:
+                _receipt("skipped",
+                         "could not find the repository root above {0} "
+                         "(no .git there or in any parent) to derive a default "
+                         "for {1}; pass it explicitly"
+                         .format(_CWD, flag))
             return None
         if value == "":
             # Distinct from `value is None` -- the caller said *something*,
