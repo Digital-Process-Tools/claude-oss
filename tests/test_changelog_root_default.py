@@ -7,10 +7,17 @@ wrong again at whatever depth it lands when vendored into a scaffolded repo
 as `.oss/assemble_changelog.py`.
 
 These tests copy the real script to a synthetic location and run it as a
-subprocess, so the default is computed fresh from *that* copy's `__file__`
--- pinning behaviour from a location that is not this repo's root, which a
-plain `import` of the already-loaded module could not exercise (the module
-is already imported once, from the real location).
+subprocess, so `_find_repo_root` is invoked fresh against a `.git` that is
+not this repo's own root, which a plain `import` of the already-loaded
+module could not exercise (the module is already imported once, from the
+real location).
+
+Since #590, the walk starts from the *caller's cwd*, not from the copy's own
+`__file__` -- so most of these pin the ordinary case where cwd and the
+script's install location coincide (an in-repo `--check`), and one pins the
+case where they do not (a caller standing in a different repository from
+the one the script happens to be installed in), which is the composition
+#590 fixed.
 """
 
 import shutil
@@ -70,13 +77,33 @@ def test_bare_check_from_a_worktree_does_not_concatenate_paths(tmp_path):
     assert "does not exist" not in result.stdout
 
 
-def test_bare_check_run_from_a_subdirectory_still_uses_the_scripts_own_location(tmp_path):
-    """The default must come from where the script *lives*, not from the
-    caller's current working directory."""
+def test_bare_check_run_from_a_subdirectory_still_finds_the_enclosing_repo(tmp_path):
+    """cwd nested a level below the repo root the script also lives in --
+    the walk from `Path.cwd()` (#590) still finds that same `.git`, one
+    level up from where it started."""
     root, script_path = _vendor(tmp_path, "scripts")
     (root / "sub").mkdir()
     result = _run(script_path, root / "sub", "--check")
     assert "does not exist" not in result.stdout
+
+
+def test_bare_check_derives_from_the_callers_cwd_not_the_scripts_own_location(tmp_path):
+    """The composition #590 fixes: the script is copied into one tree and
+    run with cwd inside a second, unrelated one. The default must come from
+    where the *caller* is standing, not from where the script happens to
+    live -- the reverse of what this file used to require."""
+    vendor_root, script_path = _vendor(tmp_path, "scripts", name="vendor")
+    (vendor_root / "changelog.d" / "1.added.md").write_text(
+        "- vendor-only fragment (#1)\n", encoding="utf-8")
+
+    caller_root, _ = _vendor(tmp_path, "scripts", name="caller")
+    (caller_root / "changelog.d" / "2.fixed.md").write_text(
+        "- caller-owned fragment (#2)\n", encoding="utf-8")
+
+    result = _run(script_path, caller_root, "--check")
+    combined = result.stdout + result.stderr
+    assert "1.added.md" not in combined
+    assert "2.fixed.md" in combined
 
 
 def test_vendored_at_a_different_depth_still_resolves_its_own_root(tmp_path):

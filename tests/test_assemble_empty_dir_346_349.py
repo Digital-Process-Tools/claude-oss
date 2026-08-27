@@ -16,14 +16,15 @@ past the refusal carries an empty `FRAGMENTS_DIR` into the fold below as
 explicit empty value as a *declared but unusable* directory, distinct from
 "nothing was said" -- this is the same distinction applied at the one point
 that still collapsed it: the assembler's own flag parsing. This is deliberately
-not a REPO-rooted containment check (#346's other question): the module's own
-docstring already establishes that `REPO`, derived by walking up from this
-file for a `.git`, names the wrong repository when this copy runs from inside
-the plugin, and #346 itself names this repository's own test suite as a
-legitimate out-of-tree caller. A containment rule keyed to "inside REPO" would
-refuse exactly the callers #346 says must keep working. Closing the empty-value
-gap protects every caller, in-tree or out, without assuming anything about
-where a legitimately-named directory lives.
+not a REPO-rooted containment check (#346's other question): `REPO` names
+wherever the caller's cwd happens to sit (#590, derived from `Path.cwd()`
+since then and from this file's own location before it) -- either way, not
+necessarily the repository being released, and #346 itself names this
+repository's own test suite as a legitimate out-of-tree caller. A containment
+rule keyed to "inside REPO" would refuse exactly the callers #346 says must
+keep working. Closing the empty-value gap protects every caller, in-tree or
+out, without assuming anything about where a legitimately-named directory
+lives.
 """
 
 import shutil
