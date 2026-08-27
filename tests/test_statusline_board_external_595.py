@@ -72,28 +72,29 @@ def test_a_board_dict_with_no_key_at_all_is_the_absent_case():
 
 # ------------------------------------------------------------------------- the cache
 
-def test_a_cache_with_issues_but_no_external_count_is_partial_not_measured():
+def test_a_cache_with_issues_but_no_external_count_leaves_it_none():
+    """No `state` field to distinguish this any more (#597) -- `issues_external`
+    being `None` while `prs`/`issues` are ints is the whole answer, and it is what
+    `_board_field` renders `?eis` from directly."""
     board = statusline.board_from_cache({"prs": 2, "issues": 14, "fetched_at": 0})
-    assert board["state"] == "partial"
     assert board["issues"] == 14
     assert board["issues_external"] is None
 
 
-def test_a_cache_with_both_counts_is_measured():
+def test_a_cache_with_both_counts_is_fully_read():
     board = statusline.board_from_cache(
         {"prs": 2, "issues": 14, "issues_external": 2, "fetched_at": 0}
     )
-    assert board["state"] == "measured"
     assert board["issues_external"] == 2
 
 
-def test_a_cache_with_a_genuine_zero_external_count_is_still_measured():
-    """The must-fire control for the state test above: zero is a real reading."""
+def test_a_cache_with_a_genuine_zero_external_count_is_not_none():
+    """The must-fire control for the test above: zero is a real reading."""
     board = statusline.board_from_cache(
         {"prs": 2, "issues": 14, "issues_external": 0, "fetched_at": 0}
     )
-    assert board["state"] == "measured"
     assert board["issues_external"] == 0
+    assert board["issues_external"] is not None
 
 
 # ---------------------------------------------------------------- _gh_external_issue_count

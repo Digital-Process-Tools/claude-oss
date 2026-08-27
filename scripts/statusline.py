@@ -148,19 +148,21 @@ def board_from_cache(cache, now=None):
 
     Each count is read on its own. A cache written by a refresh where one call answered
     and another did not is a real state, and collapsing it to "unknown board" throws away
-    the half that was measured.
-
-    `issues_external` (#595) is one of those counts too: a cache carrying `issues` but no
-    `issues_external` -- written before this field existed, or by a refresh whose
-    membership walk did not answer -- is `partial`, the same as one missing `prs` or
-    `issues` outright. A `0` for it is a real reading and is folded into `measured` exactly
-    like a `0` for the older two counts already was.
+    the half that was measured -- which is why there is no summary `state` field here.
+    An earlier version computed one (`unknown`/`partial`/`measured`) from exactly these
+    same values, but nothing ever read it: `_board_field` renders `?` per missing value
+    directly off `prs`/`issues`/`issues_external`/`checks`, regardless of what a summary
+    said. #595 added a rule to that summary -- a cache carrying `issues` but no
+    `issues_external` is `partial` -- and the rule could not affect anything a maintainer
+    sees, because the field it was added to had no caller. That is the same shape as a
+    check that never runs (#597): a guard nobody reads. Deleted rather than wired to a
+    reader, because each of the three counts below already carries its own missing/present
+    distinction, and a summary that can disagree with the values it summarizes is a second
+    copy of the same fact -- one that was, in fact, never even complete: it never accounted
+    for `checks` at all.
     """
     if not isinstance(cache, dict):
-        return {
-            "state": "unknown", "prs": None, "issues": None, "issues_external": None,
-            "age": None,
-        }
+        return {"prs": None, "issues": None, "issues_external": None, "age": None}
     prs = cache.get("prs")
     issues = cache.get("issues")
     issues_external = cache.get("issues_external")
@@ -179,14 +181,8 @@ def board_from_cache(cache, now=None):
     age = None
     if isinstance(fetched, (int, float)):
         age = max(0.0, (time.time() if now is None else now) - fetched)
-    if prs is None and issues is None:
-        state = "unknown"
-    elif prs is None or issues is None or issues_external is None:
-        state = "partial"
-    else:
-        state = "measured"
     return {
-        "state": state, "prs": prs, "issues": issues, "issues_external": issues_external,
+        "prs": prs, "issues": issues, "issues_external": issues_external,
         "checks": checks, "age": age,
     }
 
