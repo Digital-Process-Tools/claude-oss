@@ -446,7 +446,7 @@ Three calls stand in for judgement here, and none of them is optional:
 
 | Before | Call |
 | --- | --- |
-| naming a lane, or bundling a second issue into one | `scripts/lane_setup.py <issue> --lane PATTERN --against PATTERN` |
+| naming a lane, or bundling a second issue into one | `scripts/lane_setup.py <issue> --lane PATTERN --derive-held` (fallback: `--against PATTERN`, only on `could-not-derive-the-held-set`) |
 | writing each brief | `scripts/lane_setup.py <issue>`, from the clone |
 | dispatching | `scripts/fleet_label.py <primary> <issue1,issue2,...> "<phrase>"` |
 
