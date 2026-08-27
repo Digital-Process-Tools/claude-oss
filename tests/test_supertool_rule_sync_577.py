@@ -2,10 +2,14 @@
 
 `.claude/jit-context/tools/01-oss/supertool-required.md`, which this repository's own
 sessions read, and `TOOLS_SUPERTOOL` in `scripts/oss_rules.py`, which is what gets
-*written into every scaffolded repository*. Nothing used to compare them (#577):
-`tests/test_content_invariants.py` holds one narrow fact about the pair (#250 -- both
-copies must name an op that can create a file) out of a rule body several screens long,
-so it reads like a drift guard and is not one.
+*written into every scaffolded repository*. Nothing used to compare them (#577).
+The issue that reported this gap cited `tests/test_content_invariants.py`'s #250
+check as covering the pair narrowly; it does not cover it at all -- that check is
+about a different pair entirely (`agents/developer.md` and `skills/manager/SKILL.md`)
+and never mentions either file here (`grep -n TOOLS_SUPERTOOL tests/test_content_invariants.py`
+and `grep -n supertool-required tests/test_content_invariants.py` both return nothing).
+So this pair had zero coverage,
+not narrow coverage.
 
 #570 is the demonstration this issue was filed over: the `requires:` paragraph went
 stale in both copies at once and was corrected in both by hand, which only worked
