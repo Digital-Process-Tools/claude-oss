@@ -252,6 +252,22 @@ def test_a_directory_glob_in_the_hook_set_is_named_not_only_the_absence_of_a_lis
     assert "glob" not in finding["detail"], finding["detail"]
 
 
+def test_the_glob_shape_does_not_require_a_same_line_semicolon(tmp_path):
+    """Review caught this before #616 shipped: `do` on its own line is ordinary shell.
+
+    The first cut of `JIT_LAYER_DIR_GLOB` anchored on a same-line `;`, so a hook
+    written with `do` on the following line -- as common as the semicolon form --
+    matched nothing, and the ambiguity #616 asked to be resolved would have silently
+    reappeared for this equally ordinary formatting.
+    """
+    cache, record = _cache(
+        tmp_path, {"pre-tool-hook.sh": 'for d in "$base"/*/\ndo\n  echo "$d"\ndone\n'}
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "glob" in finding["detail"], finding["detail"]
+
+
 def test_a_test_fixture_naming_the_layer_is_not_a_hook_reading_it(tmp_path):
     """#241, and it is the measurement this whole file exists to make honestly.
 

@@ -5008,8 +5008,16 @@ JIT_LAYER_ENUMERATION = re.compile(
 #: existing `could-not-determine` names the glob, so a maintainer reading the line can
 #: tell a stale unknown (a hook already enumerates by glob) from one with no evidence
 #: in it at all.
+#:
+#: Deliberately narrow, and the narrowness is a choice rather than an oversight: it
+#: requires a trailing slash before the star (`*/`, not bare `*`), because a bare-star
+#: glob also matches files and would be weaker evidence than what "enumerates
+#: directories" claims. It does NOT require the `for`/`in` line to also carry `do` or a
+#: trailing `;` -- shell allows `do` on the following line, and the first cut of this
+#: pattern required a same-line `;`, missing that ordinary formatting entirely (caught
+#: in review before #616 shipped).
 JIT_LAYER_DIR_GLOB = re.compile(
-    r"""\bfor\s+[A-Za-z_]\w*\s+in\s+\S*\*/["']?\s*;"""
+    r"""\bfor\s+[A-Za-z_]\w*\s+in\s+\S*\*/["']?\s*(?:;|$)"""
 )
 
 #: Where a Claude Code plugin declares the scripts the runtime executes. The manifest is
