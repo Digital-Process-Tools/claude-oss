@@ -35,7 +35,7 @@ REQUIRED_KEYS = {
     "state_file",
 }
 
-OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged"}
+OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged", "watch_channel"}
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
 # can record *why* a value is what it is has always been a key -- and every key not
@@ -243,6 +243,45 @@ def repo_problem(value):
 # `tests/test_watch_name.py`, which folds every accepted slug in its fixture and puts
 # the result through `watch_name_problem`, rather than prose nobody re-checks.
 WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+#: Whether the loop's own status line spends a detached refresh cycle asking
+#: `channel:health` about this repository's watch channel (#613). On by
+#: default -- the field exists to surface a dead consumer between ticks, and a
+#: repository that opts out is the exception, not the rule. `False` is the only
+#: value that turns it off; anything else (absent, `True`) leaves it on, the
+#: same "declared-or-not" shape `release_publish_policy`'s `stated` uses for a
+#: key whose absence must not read as a decision nobody made.
+WATCH_CHANNEL_KEY = "watch_channel"
+
+
+def watch_channel_enabled(config):
+    """Does this repository's status line probe the watch channel at all (#613)?
+
+    `False` only -- anything else, including absence, is "on" by the issue's own
+    stated default. A `str`/`int`/`None` spelled like a decision must not read as
+    one either way; `validate()` is what tells the maintainer their value will be
+    ignored, this accessor just picks the one value that turns the check off.
+
+    Not called from `scripts/statusline.py` itself -- that module has NO
+    imports of its own siblings, this repository's own included, because it is
+    vendored standalone into `.oss/statusline.py` (its own module docstring
+    says so, and `_expected_watch_name`'s docstring in that file says the same
+    of the name derivation it copies from `watch_channel_name` below).
+    `statusline.py` therefore carries the identical `config.get("watch_channel")
+    is not False` check inline, twice, rather than calling this. This accessor
+    exists for every OTHER reader of `.oss.json` that is not under that
+    constraint -- `doctor.py`, `scaffold.py`, a future one -- so the decision
+    has one written home instead of a fresh `is not False` at each call site.
+    Self-review finding on this issue: the first draft of this function had no
+    caller anywhere in this repository, and its own unit test exercised it in
+    complete isolation from `statusline.py`'s inline copies, which could have
+    drifted from it silently.
+    `tests/test_statusline_channel_613.py::test_statusline_gate_matches_this_accessor`
+    now pins the two together across every value this repo's own tests
+    exercise for the config key.
+    """
+    return config.get(WATCH_CHANNEL_KEY) is not False
 
 
 def watch_channel_name(value):
@@ -1564,6 +1603,15 @@ def validate(config):
 
     if "release" in config:
         problems.extend(_validate_release(config["release"]))
+
+    if "watch_channel" in config and not isinstance(config["watch_channel"], bool):
+        problems.append(
+            "watch_channel: expected true or false, got {!r}. Every non-empty "
+            "value here is not necessarily off, and only `false` is (#613) -- a "
+            "value spelled like a decision must not silently no-op.".format(
+                config["watch_channel"]
+            )
+        )
 
     return problems
 

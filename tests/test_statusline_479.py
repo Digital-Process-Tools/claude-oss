@@ -344,6 +344,12 @@ def _facts(**overrides):
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),
             ("supertool", {"state": "behind", "installed": "0.48.0", "latest": "0.49.0"}),
         ],
+        # #613: `render()` reads `facts.get("channel")`, so it must be a key here
+        # too, or `test_facts_fixture_carries_every_top_level_key_render_reads`
+        # (below) fails and the hostile-leaf property test silently narrows by
+        # one more field, exactly the gap #547 instance 2 fixed for
+        # `default_branch`/`release`.
+        "channel": {"state": "forwarding", "reason": None},
     }
     facts.update(overrides)
     return facts
