@@ -122,6 +122,14 @@ it a second way — grep the new content back — before saying it.
    Not worth it when the change is confined to one module whose own tests are green and nothing
    moved underneath it.
 
+   **Whatever you decide, say so in `tests.full` on the report (#632) — three states, the same
+   could-not-look-is-not-clean shape as everything else here.** `ran` carries the result, the
+   wall-clock, the platform and the interpreter; `not-run` carries which criterion above applied;
+   `could-not-run` is the harness itself failing, never folded into `not-run`. This is not a request
+   to run it more often — the manager never reproduces the suite itself and reads CI as the source of
+   truth for the whole matrix — it is the field that lets the manager learn whether your own local run
+   happened at all, and on what one platform, without re-running anything to find out.
+
    **A narrowed run can be green while a guard it never touched fails on CI (#432).** Some tests are
    keyed to *what your diff does* rather than to a module it renames — a new call site of
    `oss_config.scaffolded_changelog_gate`, a line added under `agents/` or `skills/`, a script moved
@@ -927,7 +935,9 @@ or not.
 The fields, their enumerations and a worked example are in
 `${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
 this section would otherwise duplicate and drift from. What the old prose report asked for has not
-changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, review →
+changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, whether the
+full suite ran → `tests.full` (optional; absent is fine on an older schema copy but not on a run that
+made a decision about it and did not record it), review →
 `review`, platform claims → `claims`, every `docs_targets` path with what happened to it — updated,
 read and still true, or not opened — → `docs`, unfiled findings → `adjacent`, the note path →
 `note_path`.
