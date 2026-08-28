@@ -3016,7 +3016,7 @@ CHANNEL_SERVER = "oss-channel"
 _MCP_ARGS_RE = re.compile(r"^[ \t]*Args:[ \t]*(.*?)[ \t\r]*$", re.MULTILINE)
 
 
-def mcp_channel_registration_state(server=None, run=None, which=None):
+def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     """Is the channel MCP server registered, and does the path it stores exist?
 
     `watch_channel_state` above answers which channel NAME this repo resolves to;
@@ -3065,25 +3065,58 @@ def mcp_channel_registration_state(server=None, run=None, which=None):
     injects them: every branch is assertable without shelling out. This performs no
     registration and no removal -- `bin/oss-workspace` owns that, and this reads
     only, the same division `CLAUDE.md` draws for #610/#618's `.mcp.json`.
+
+    #629: `bin/oss-workspace` already runs `claude mcp get {server}` at session-open,
+    a few lines before it shells out to this diagnostic -- so a launcher-opened
+    session paid for the identical subprocess call twice, and `claude` is not a
+    cheap binary to start (~1.3s measured on this machine). When the launcher has
+    already asked, it exports the raw answer (`OSS_WORKSPACE_MCP_CHECKED`,
+    `_STATUS`, `_OUTPUT`) and this reads that instead of shelling out again.
+
+    This is a relay, not a cache: the two calls happen seconds apart inside one
+    session-open sequence, never across the kind of interval this repo's own
+    `statusline.py` cache history warns about (a reading taken once and read as
+    fresh much later). `env` defaults to `os.environ` and is injected for the same
+    reason `run`/`which` are. The handoff is trusted only for `CHANNEL_SERVER`
+    itself: `bin/oss-workspace` only ever pre-asks about its own hardcoded server,
+    so a caller asking about a different `server` -- every test in this file, and
+    any future caller -- always falls through to a real ask, never to a stale
+    handoff answering the wrong question. A malformed `_STATUS` (not an integer)
+    falls through the same way rather than guessing.
     """
     server = server or CHANNEL_SERVER
+    env = os.environ if env is None else env
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
-    if which("claude") is None:
-        return "could-not-ask", "claude is not on PATH"
-    try:
-        completed = run(
-            ["claude", "mcp", "get", server],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
-    if completed.returncode != 0:
+
+    precomputed = server == CHANNEL_SERVER and env.get("OSS_WORKSPACE_MCP_CHECKED") == "1"
+    returncode = None
+    if precomputed:
+        try:
+            returncode = int(env.get("OSS_WORKSPACE_MCP_STATUS", ""))
+        except ValueError:
+            precomputed = False
+
+    if precomputed:
+        text = env.get("OSS_WORKSPACE_MCP_OUTPUT", "")
+    else:
+        if which("claude") is None:
+            return "could-not-ask", "claude is not on PATH"
+        try:
+            completed = run(
+                ["claude", "mcp", "get", server],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
+        returncode = completed.returncode
+        stdout = completed.stdout
+        text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+
+    if returncode != 0:
         return "not-registered", ""
-    stdout = completed.stdout
-    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
     match = _MCP_ARGS_RE.search(text)
     if match is None or not match.group(1).strip():
         return "unreadable-entry", _one_line(text, limit=200)
@@ -3111,7 +3144,7 @@ def mcp_channel_registration_state(server=None, run=None, which=None):
     return "registered", target
 
 
-def check_mcp_channel_registration(server=None, run=None, which=None):
+def check_mcp_channel_registration(server=None, run=None, which=None, env=None):
     """One line, in every state -- see `mcp_channel_registration_state`.
 
     OK here never means "the board is live". This reads a registration and, when
@@ -3122,7 +3155,7 @@ def check_mcp_channel_registration(server=None, run=None, which=None):
     reads. Together the three now cover name, declaration and transport; before
     this, the third was silent on both sides of it (#621).
     """
-    state, detail = mcp_channel_registration_state(server=server, run=run, which=which)
+    state, detail = mcp_channel_registration_state(server=server, run=run, which=which, env=env)
     label = server or CHANNEL_SERVER
     if state == "could-not-ask":
         report(
@@ -3383,6 +3416,102 @@ def _derivable_watch_name(project_dir):
     return "yes", name, ""
 
 
+def _supertool_installs():
+    """``(installs, problem)`` -- every ``installPath`` for an installed supertool.
+
+    Shared by `_consumer_watch_name_verdict` and `_watch_declaration_split`: both
+    need the same scan of `installed_plugins.json` for the same dependency, and a
+    second copy of that scan inside one file is the drift #577's supertool-rule
+    comparison argues against, one level narrower.
+
+    ``installs`` is ``None`` when ``problem`` names why -- the registry could not
+    be read, is not a JSON object, or names no supertool install at all. Valid
+    JSON in a shape this cannot use (`plugins` not an object, an entry not a
+    dict) is folded into "no supertool install" rather than raising, the same
+    tolerance `_consumer_watch_name_verdict`'s own review round (#533) added
+    after an `AttributeError` out of `.items()` on a list took the whole doctor
+    run down.
+    """
+    registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+    try:
+        with open(registry, encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except (OSError, ValueError) as err:
+        return None, "{} could not be read ({})".format(registry, type(err).__name__)
+    if not isinstance(doc, dict):
+        return None, "{} is not a JSON object".format(registry)
+
+    plugins = doc.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
+    installs = [
+        entry.get("installPath")
+        for key, entries in plugins.items()
+        if key.split("@")[0] == "supertool"
+        for entry in (entries if isinstance(entries, list) else [])
+        if isinstance(entry, dict) and entry.get("installPath")
+    ]
+    if not installs:
+        return None, "{} lists no supertool install".format(registry)
+    return installs, None
+
+
+def _watch_declaration_split(project_dir):
+    """``(state, declaring_ops, silent_ops, why)`` -- which watch ops declare a
+    name and which stay silent, read off the installed supertool's own
+    `presets/watch/naming.py:declared_names()` rather than re-derived here.
+
+    #623: `_declared_watch_names` above answers "is a name declared anywhere in
+    `.supertool.json`", which is `True` the moment ONE op block carries
+    `watch_name` -- so a repo that declared it on `radar` alone and left
+    `channel`/`unwatch`/`watch`/`watches` silent read as fully configured. Only
+    those four ops actually spawn or reach a poller; a name reaching `radar`
+    alone reads a private board over a fleet the other four ops still resolve
+    to the shared default, which renders identically to a healthy empty board.
+
+    `declared_names()` already computes exactly this split and already names
+    which ops are silent (`Declared.silent_ops`) -- `WATCH_OPS`, the five-op
+    list this compares against, is the dependency's own fact and is read from
+    its installed copy, never hardcoded here, for the same reason
+    `_consumer_watch_name_verdict` reads `NAME_RE` from the same file instead
+    of keeping its own copy of the cap.
+
+    `state` is one of the module's own four (`found` / `silent` / `no-config` /
+    `unreadable`), plus a fifth this function adds -- `unknown` -- for "could
+    not even ask": no registry, no supertool install, no `naming.py` there, or
+    a module that failed to import. `declared_names()` itself has no
+    vocabulary for that, since it always assumes its own module already
+    imported successfully.
+    """
+    installs, problem = _supertool_installs()
+    if problem:
+        return "unknown", (), (), problem
+
+    rule_path = ""
+    for path in installs:
+        candidate = os.path.join(path, "presets", "watch", "naming.py")
+        if os.path.isfile(candidate):
+            rule_path = candidate
+            break
+    if not rule_path:
+        return "unknown", (), (), (
+            "none of {} holds presets/watch/naming.py".format(", ".join(installs))
+        )
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_oss_watch_naming_declared", rule_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        declared = module.declared_names(str(project_dir))
+    except (Exception, SystemExit) as err:
+        return "unknown", (), (), "{} could not be read ({})".format(
+            rule_path, type(err).__name__
+        )
+    return declared.state, declared.declaring_ops, declared.silent_ops, declared.why
+
+
 def _consumer_watch_name_verdict(name):
     """Would the installed supertool consumer accept `name` as a watch channel?
 
@@ -3401,33 +3530,9 @@ def _consumer_watch_name_verdict(name):
     socket because nothing asked whether the agreed name was one the consumer
     would use.
     """
-    registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
-    try:
-        with open(registry, encoding="utf-8") as handle:
-            doc = json.load(handle)
-    except (OSError, ValueError) as err:
-        return "unknown", "{} could not be read ({})".format(
-            registry, type(err).__name__
-        )
-    if not isinstance(doc, dict):
-        # Valid JSON, wrong shape -- an AttributeError out of `.items()` below
-        # would abort the whole doctor run over a file this check never used
-        # to depend on (#533's own review round). `unknown` is the answer a
-        # shape this reader cannot use earns, same as an unreadable file.
-        return "unknown", "{} is not a JSON object".format(registry)
-
-    plugins = doc.get("plugins")
-    if not isinstance(plugins, dict):
-        plugins = {}
-    installs = [
-        entry.get("installPath")
-        for key, entries in plugins.items()
-        if key.split("@")[0] == "supertool"
-        for entry in (entries if isinstance(entries, list) else [])
-        if isinstance(entry, dict) and entry.get("installPath")
-    ]
-    if not installs:
-        return "unknown", "{} lists no supertool install".format(registry)
+    installs, problem = _supertool_installs()
+    if problem:
+        return "unknown", problem
 
     rule_path = ""
     for path in installs:
@@ -3486,17 +3591,31 @@ def _current_watch_name(project_dir, env, state):
 
 
 def watch_channel_state(project_dir, env=None):
-    """Which watch channel does this repo actually resolve to? Twelve answers.
+    """Which watch channel does this repo actually resolve to? Fourteen answers.
 
-    `unreadable` / `malformed` / `conflict` / `overridden` / `mismatch` /
-    `undeclared-export` / `undeclared-export-unknown` / `derived-export` /
-    `agree` / `declared-only` / `derived` / `default`, and the count is the point. The filed
-    symptom -- four repos on one poller slot -- was NOT a repo whose declaration
-    disagreed with its environment. It was four repos declaring nothing at all with
-    one hand-copied export between them, so a check that only compared a
+    `unreadable` / `malformed` / `conflict` / `overridden` / `partial` /
+    `split-unknown` / `mismatch` / `undeclared-export` /
+    `undeclared-export-unknown` / `derived-export` / `agree` / `declared-only` /
+    `derived` / `default`, and the count is the point. The filed symptom -- four
+    repos on one poller slot -- was NOT a repo whose declaration disagreed with
+    its environment. It was four repos declaring nothing at all with one
+    hand-copied export between them, so a check that only compared a
     declaration against an export would have rendered the reported case and a clean
     one the same way. `undeclared-export` is that case and it is separate from
     `default`, which is the same absence with nothing exported over it.
+
+    `partial` and `split-unknown` are #623: `declared` above goes true the
+    moment ONE op block in `.supertool.json` carries `watch_name`, and only
+    four of the five watch ops (`channel`/`unwatch`/`watch`/`watches`) ever
+    spawn or reach a poller -- a name reaching `radar` alone leaves those four
+    silently resolving to the shared default, which reads as a healthy empty
+    board rather than as the private one it is. `_watch_declaration_split`
+    answers the finer question off the installed supertool's own
+    `declared_names()`; `partial` is that answer coming back with some watch
+    ops silent, `split-unknown` is the answer not being obtainable at all
+    (checked before `agree`/`declared-only`/`derived-export`/`derived`, so a
+    single-op declaration and a fully-declared one no longer converge on the
+    same OK).
 
     `unreadable` is separate from every state above for the same reason: a file
     that could not be parsed yields no names, which looks exactly like a file that
@@ -3542,6 +3661,37 @@ def watch_channel_state(project_dir, env=None):
         return "overridden", ", ".join(overrides)
 
     declared = next(iter(names)) if names else ""
+    if declared:
+        # #623: a name declared on one op block already made `declared` truthy
+        # above -- this is the finer question, whether it reached every watch
+        # op or only some of them. `found`-with-nothing-silent and every other
+        # state (`no-config`, `silent`, a mismatch against this repo's own
+        # read that should not normally happen since both read the same file)
+        # fall through unchanged below; only the two states below are new.
+        split_state, declaring_ops, silent_ops, split_why = _watch_declaration_split(
+            project_dir
+        )
+        if split_state == "found" and silent_ops:
+            return "partial", (
+                "{} declares {} in {} ({}), and {} of the watch ops declare "
+                "none ({}) -- so those ops' own subprocesses fall back to "
+                "whatever SUPERTOOL_WATCH_NAME (or nothing) is in the "
+                "environment when they run. That splits the fleet without "
+                "erroring anywhere: it reads a private board over a "
+                "default-channel one, identically to a healthy empty "
+                "board.".format(
+                    WATCH_CONFIG, declared, WATCH_CONFIG, ", ".join(declaring_ops),
+                    len(silent_ops), ", ".join(silent_ops),
+                )
+            )
+        if split_state in ("unknown", "unreadable"):
+            return "split-unknown", (
+                "{} declares {} once, and whether it reaches every watch op "
+                "or only some of them could not be determined ({}) -- not "
+                "answered as fully declared, which is what let a "
+                "declared-on-one-op-alone repo clear here silently "
+                "(#623).".format(WATCH_CONFIG, declared, split_why)
+            )
     if declared and exported:
         if declared == exported:
             return "agree", "declared in {} and exported as {}".format(
@@ -3637,6 +3787,12 @@ def check_watch_channel(project_dir, env=None):
     OK nobody measured, which is the shape it exists to report.
     """
     state, detail = watch_channel_state(project_dir, env=env)
+    if state == "partial":
+        report("WARN", "watch channel: {}".format(detail))
+        return
+    if state == "split-unknown":
+        report("WARN", "watch channel: {}".format(detail))
+        return
     if state == "unreadable":
         report(
             "WARN",
@@ -4994,6 +5150,32 @@ JIT_LAYER_ENUMERATION = re.compile(
     r"""(["'])(\d\d-[A-Za-z0-9][A-Za-z0-9-]*(?:[ \t]+\d\d-[A-Za-z0-9][A-Za-z0-9-]*)+)\1"""
 )
 
+#: A directory-glob enumeration loop -- `for d in "$base"/*/; do` -- the shape the
+#: upstream fix (`claude-jit-context#176`) is expected to take, and the shape #616
+#: reported shipping in 0.6.0's `common.sh`. Matched by shape, same reasoning as
+#: `JIT_LAYER_ENUMERATION` above: a `for VAR in TOKEN; do` whose `TOKEN` ends the glob
+#: `*/`, quote optional, tolerant of what precedes it.
+#:
+#: This is evidence to *report*, never evidence to *promote a verdict on*. Finding the
+#: loop says the dependency visits every directory under the dimension; it says nothing
+#: about what the loop's body then does with what it visits, and #616's own filing says
+#: so -- "a second string search... wrong for the same reason the first one is fragile".
+#: So a match here never changes `state`; it only changes whether the `detail` for an
+#: existing `could-not-determine` names the glob, so a maintainer reading the line can
+#: tell a stale unknown (a hook already enumerates by glob) from one with no evidence
+#: in it at all.
+#:
+#: Deliberately narrow, and the narrowness is a choice rather than an oversight: it
+#: requires a trailing slash before the star (`*/`, not bare `*`), because a bare-star
+#: glob also matches files and would be weaker evidence than what "enumerates
+#: directories" claims. It does NOT require the `for`/`in` line to also carry `do` or a
+#: trailing `;` -- shell allows `do` on the following line, and the first cut of this
+#: pattern required a same-line `;`, missing that ordinary formatting entirely (caught
+#: in review before #616 shipped).
+JIT_LAYER_DIR_GLOB = re.compile(
+    r"""\bfor\s+[A-Za-z_]\w*\s+in\s+\S*\*/["']?\s*(?:;|$)"""
+)
+
 #: Where a Claude Code plugin declares the scripts the runtime executes. The manifest is
 #: what separates a hook from a file that merely sits in the same tree (#241): the
 #: installed 0.4.0 answered this check off `tests/test-layer-enumeration.sh`, the
@@ -5414,7 +5596,7 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         )
 
     unreadable = []
-    naming, omitting = [], []
+    naming, omitting, globbing = [], [], []
     for path in scripts:
         try:
             text = path.read_text(encoding="utf-8")
@@ -5434,6 +5616,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             for _, listed in JIT_LAYER_ENUMERATION.findall(line):
                 site = _one_line("{}:{}".format(path.name, number))
                 (naming if layer in listed.split() else omitting).append(site)
+            if JIT_LAYER_DIR_GLOB.search(line):
+                globbing.append(_one_line("{}:{}".format(path.name, number)))
 
     if naming:
         # A positive answer stands on its own evidence: one enumeration naming the layer
@@ -5485,6 +5669,17 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         if unwalkable
         else ""
     )
+    # #616: naming the glob never promotes the verdict -- it only tells `unknown` apart
+    # from `unknown`. See JIT_LAYER_DIR_GLOB's own comment for why a match here is not
+    # itself proof anything is read.
+    glob_note = (
+        " {} hook line(s) enumerate a directory by glob rather than by naming a layer "
+        "({}) -- consistent with the upstream fix (claude-jit-context#176), but not by "
+        "itself proof {} is read, since this cannot see what the loop's body does with "
+        "what it visits.".format(len(globbing), ", ".join(globbing[:3]), layer)
+        if globbing
+        else ""
+    )
     if outside:
         # The judgement call in #241, taken the honest way: a layer list in a file the
         # runtime never executes is *reported as the reason this is unknown*, not
@@ -5497,8 +5692,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "only layer list(s) found are outside the hook set ({}) -- files the runtime "
             "never executes, typically that plugin's own test fixtures, which name {} "
             "whether or not anything enumerates it. So this is unknown, not a pass: a "
-            "fixture answered this check for a whole release (#241).{}".format(
-                len(scripts), named, ", ".join(outside[:3]), layer, partial
+            "fixture answered this check for a whole release (#241).{}{}".format(
+                len(scripts), named, ", ".join(outside[:3]), layer, partial, glob_note
             ),
         )
 
@@ -5507,8 +5702,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         "{} hook script(s) of {} were read and none carries a fixed layer list, so "
         "whether {} is read could not be determined from the hooks on disk. That is "
         "what an enumerate-the-directory implementation looks like -- the shape the "
-        "upstream fix takes -- which is why this is unknown rather than a gap.{}".format(
-            len(scripts), named, layer, partial
+        "upstream fix takes -- which is why this is unknown rather than a gap.{}{}".format(
+            len(scripts), named, layer, partial, glob_note
         ),
     )
 

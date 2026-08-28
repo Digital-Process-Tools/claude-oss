@@ -80,6 +80,9 @@ ENUMERATED = 'for d in "$JIT_BASE/$dim"/*/; do echo "$d"; done\n'
 FIXTURE = 'assert_layers "00-manual 01-oss" "$out"\n'
 #: A hook entry point whose own text carries no layer list, reaching one by sourcing.
 SOURCES_COMMON = 'SCRIPT_DIR="$(dirname "$0")"\nsource "$SCRIPT_DIR/common.sh"\n'
+#: Neither a fixed list nor a directory-glob enumeration -- the genuinely uninformative
+#: hook body, used as the negative control for #616's glob-shape detection below.
+NEITHER = 'echo "hello"\n'
 
 
 def _write(target, body):
@@ -222,6 +225,49 @@ def test_hooks_that_enumerate_at_runtime_are_unknown_not_unread(tmp_path):
     assert "none carries a fixed layer list" in finding["detail"]
 
 
+def test_a_directory_glob_in_the_hook_set_is_named_not_only_the_absence_of_a_list(tmp_path):
+    """#616: a stale `unknown` and a genuinely open one must not read identically.
+
+    `ENUMERATED` is a hook that enumerates its dimension directory with a shell glob
+    (`for d in "..."/*/; do`) rather than naming a fixed list -- the shape the upstream
+    fix (`claude-jit-context#176`) is expected to take, and the shape a real report
+    (#616) showed shipping in 0.6.0's `common.sh`. The state stays `could-not-determine`
+    -- this file does not prove the loop's body actually reads what it visits -- but the
+    detail must say the glob was seen, which is the one thing that tells a maintainer
+    this `unknown` is not the same as one with no evidence in it at all.
+
+    Paired with the negative control in the same fixture shape: a hook carrying neither
+    a fixed list nor a glob must not claim to have seen one.
+    """
+    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": ENUMERATED})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "glob" in finding["detail"], finding["detail"]
+    assert "pre-tool-hook.sh" in finding["detail"], finding["detail"]
+
+    # Must-not-fire half: a hook with no enumeration of any shape names no glob.
+    cache, record = _cache(tmp_path / "control", {"pre-tool-hook.sh": NEITHER})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "glob" not in finding["detail"], finding["detail"]
+
+
+def test_the_glob_shape_does_not_require_a_same_line_semicolon(tmp_path):
+    """Review caught this before #616 shipped: `do` on its own line is ordinary shell.
+
+    The first cut of `JIT_LAYER_DIR_GLOB` anchored on a same-line `;`, so a hook
+    written with `do` on the following line -- as common as the semicolon form --
+    matched nothing, and the ambiguity #616 asked to be resolved would have silently
+    reappeared for this equally ordinary formatting.
+    """
+    cache, record = _cache(
+        tmp_path, {"pre-tool-hook.sh": 'for d in "$base"/*/\ndo\n  echo "$d"\ndone\n'}
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "glob" in finding["detail"], finding["detail"]
+
+
 def test_a_test_fixture_naming_the_layer_is_not_a_hook_reading_it(tmp_path):
     """#241, and it is the measurement this whole file exists to make honestly.
 
@@ -274,6 +320,28 @@ def test_a_layer_list_only_outside_the_hook_set_is_the_reason_it_is_unknown(tmp_
         tmp_path / "control", {"pre-tool-hook.sh": ENUMERATED, "pre-path-hook.sh": FIXTURE}
     )
     assert _one(_project(tmp_path), cache, record)["state"] == "reads"
+
+
+def test_the_outside_fixture_case_also_names_the_glob_seen_in_the_hook_set(tmp_path):
+    """#616's exact reproduction: a stale fixture *and* a real glob-shaped hook.
+
+    This is the tree the issue reports: the only fixed layer list left anywhere is the
+    dependency's own test fixture (outside the hook set, per #241), while the hook set
+    itself already enumerates by directory glob. The `outside the hook set` sentence
+    alone -- what this check said before #616 -- gives no way to tell that apart from a
+    hook set with no enumeration evidence in it at all. The glob must be named in the
+    same detail.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": ENUMERATED},
+        extra={"tests/test-layer-enumeration.sh": FIXTURE},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "outside the hook set" in finding["detail"], finding["detail"]
+    assert "glob" in finding["detail"], finding["detail"]
+    assert "pre-tool-hook.sh" in finding["detail"], finding["detail"]
 
 
 def test_a_helper_the_hooks_source_is_part_of_the_hook_set(tmp_path):
