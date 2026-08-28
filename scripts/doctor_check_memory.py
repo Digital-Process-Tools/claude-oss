@@ -26,6 +26,10 @@ import doctor
 MEMORY_DIR = ".remember"
 MEMORY_CONFIG_DIR = ".claude/remember"
 
+#: A Windows drive letter followed by a separator ("C:/..." or "C:\...") is an
+#: absolute path there just as much as a leading "/" is on POSIX -- #614.
+_WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
 #: #210. Separate from identity.md on purpose -- see `check_core_memories` below.
 CORE_MEMORIES_NAME = "core-memories.md"
 
@@ -48,36 +52,142 @@ _ENTRY_HEADER_RE = re.compile(r"^(?:##|-)\s+(\d{4}-\d{2}-\d{2})\b", re.MULTILINE
 _HEADING_ONLY_RE = re.compile(r"^#{1,6}\s*.*$")
 
 
-def memory_layout(project_dir):
+def memory_layout(project_dir, home=None):
     """Where the memory plugin keeps its config and its saved sessions.
 
-    Two different places: `config.json` sits in `.claude/remember/`, while sessions go
-    to the `data_dir` that config names (`.remember` by default).
+    Two different places: `config.json` sits in `.claude/remember/` for a LOCAL
+    install (the plugin's own code copied into the repo), or is layered across the
+    plugin's bundled defaults, a user-global override at `~/.remember/config.json`,
+    and a per-project override that lives INSIDE the data dir itself -- and sessions
+    go wherever that layered config's `data_dir` names, `.remember` by default.
 
-    identity.md can sit in either, and which one is READ depends on the install layout,
-    which is why this went round twice. Measured against the plugin's session-start
-    hook rather than reasoned about: it tries `$REMEMBER_DIR/identity.md` (the data
-    dir), then the data dir's parent, then the plugin's own directory. In a local
-    install the plugin's own directory IS `<repo>/.claude/remember/`, so identity there
-    is read -- as the last-resort fallback. In a marketplace or dependency install,
-    which is how this plugin declares it, the plugin lives outside the repo entirely
-    and `<repo>/.claude/remember/identity.md` is never read at all.
+    identity.md can sit in either the config dir or the data dir, and which one is
+    READ depends on the install layout. Measured against the plugin's session-start
+    hook: it reads the resolved data dir first, then the data dir's parent, then the
+    plugin's own install directory. In a local install the plugin's own directory IS
+    `<repo>/.claude/remember/`, so identity there is read -- as the last-resort
+    fallback. In a marketplace or dependency install, which is how this plugin
+    declares it, the plugin lives outside the repo entirely and
+    `<repo>/.claude/remember/identity.md` is never read at all.
 
-    So the data dir is the location that works in every layout, and it is also the safe
-    one: the plugin writes a `.gitignore` containing `*` there, so the file cannot be
-    committed by accident. `.claude/` is partly tracked in a scaffolded repo and is not
-    safe in the same way.
+    So this function resolves `data_dir` the way the hook does, as far as it safely
+    can (#614):
+
+    - `$REMEMBER_DIR`, if the current process already has it -- set by the plugin's
+      own scripts while one of them is running, and authoritative when present.
+    - `.claude/remember/config.json`'s own `data_dir`, project-local and read first
+      regardless of install layout -- unchanged from before #614, and load-bearing:
+      `tests/test_dependency_setup.py` measures this against the plugin's own
+      session-start hook for a genuine dependency (non-local) install and the file
+      IS read there, so this function must not stop reading it.
+    - only when that file is absent or carries no `data_dir`, `~/.remember/config.json`
+      -- a user-global override this function never read before #614, for the layout
+      the issue was filed from: no project-local override at all, storage configured
+      purely at the user level.
+
+    What this does NOT do: replicate the plugin's `{slug}` substitution
+    (`session_dir_slug` in `lib-slug.sh` -- UTF-8-aware, over-200-character hashing,
+    Windows drive-letter folding) or its linked-worktree redirect
+    (`_resolve_memory_project_dir`). Reimplementing either is a second copy of
+    another plugin's logic that goes stale the moment it changes there and nothing
+    here would notice (see CLAUDE.md's `coverage_gate.py` trap). When a `data_dir`
+    from either layer names a `{slug}`-keyed external store this function cannot
+    resolve the real directory, and says so through its return value rather than
+    silently keeping a repo-local default it already knows is wrong.
+
+    Returns `(config_dir, data_dir, unresolved)`. `unresolved` is `None` when
+    `data_dir` is believed accurate; otherwise a sentence naming what could not be
+    confirmed and why. Callers MUST report that as an unknown, never as an absence:
+    checking `data_dir` in that state would ask about a directory this function
+    already knows is not the one the plugin reads.
     """
     root = Path(project_dir)
     config_dir = root / MEMORY_CONFIG_DIR
     data_dir = root / MEMORY_DIR
+
+    env_dir = os.environ.get("REMEMBER_DIR")
+    if env_dir:
+        return config_dir, Path(env_dir), None
+
+    project_cfg = config_dir / "config.json"
+    doc, unresolved = _read_config_layer(project_dir, project_cfg)
+    if unresolved:
+        return config_dir, data_dir, unresolved
+
+    raw = None
+    cfg_path = project_cfg
+    if isinstance(doc, dict) and doc.get("data_dir"):
+        raw = str(doc["data_dir"])
+    else:
+        # No project-local override. Fall back to the user-global layer -- the one
+        # a purely external install (no `.claude/remember/config.json` at all)
+        # relies on, and the one this function never read before #614.
+        if home is None:
+            try:
+                home = Path.home()
+            except RuntimeError:
+                # No HOME/USERPROFILE to resolve, so the user-global layer cannot be
+                # checked at all -- unlike settings_candidates in
+                # doctor_check_merge_permission.py, which degrades silently because
+                # its own caller already lists BOTH scopes and a missing one just
+                # narrows the search. Here there is only one remaining candidate
+                # (the repo-local default), and it is not known to be right: report
+                # unresolved rather than let it read as confirmed.
+                return (
+                    config_dir,
+                    data_dir,
+                    "this account's home directory could not be determined, so "
+                    "~/.remember/config.json -- the layer a purely external "
+                    "install's data_dir would be set in -- could not be checked",
+                )
+        home_cfg = Path(home) / MEMORY_DIR / "config.json"
+        hdoc, unresolved = _read_config_layer(project_dir, home_cfg)
+        if unresolved:
+            return config_dir, data_dir, unresolved
+        if isinstance(hdoc, dict) and hdoc.get("data_dir"):
+            raw = str(hdoc["data_dir"])
+            cfg_path = home_cfg
+
+    if raw is None:
+        return config_dir, data_dir, None
+
+    if "{slug}" in raw:
+        return (
+            config_dir,
+            data_dir,
+            "{} sets data_dir to \"{}\", which the plugin expands with a "
+            "per-project slug it computes at save time (session_dir_slug in "
+            "lib-slug.sh). This check does not reimplement that algorithm, so the "
+            "external store's exact location cannot be confirmed here".format(
+                _display(project_dir, cfg_path), raw
+            ),
+        )
+    if raw.startswith("~") or raw.startswith("/") or _WINDOWS_ABS_RE.match(raw):
+        return config_dir, Path(os.path.expanduser(raw)), None
+    return config_dir, root / raw, None
+
+
+def _read_config_layer(project_dir, cfg_path):
+    """One config.json, in the same three states as `_listdir` (#614).
+
+    Returns ``(doc, unresolved)``. ``doc`` is the parsed dict when the file exists
+    and parses, or ``None`` when it is simply absent -- the ordinary, expected case
+    for a layer nothing wrote. ``unresolved`` is ``None`` on either of those, and a
+    sentence when the file is present but could not be read or parsed: that must
+    not collapse into "absent", which is what a bare
+    ``except (OSError, ValueError): pass`` did before this fix and could not tell
+    apart from a config layer nobody configured.
+    """
     try:
-        doc = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
-        if isinstance(doc, dict) and doc.get("data_dir"):
-            data_dir = root / str(doc["data_dir"])
-    except (OSError, ValueError):
-        pass
-    return config_dir, data_dir
+        return json.loads(cfg_path.read_text(encoding="utf-8")), None
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, "{} could not be read ({})".format(
+            _display(project_dir, cfg_path), exc.strerror or exc.__class__.__name__
+        )
+    except ValueError as exc:
+        return None, "{} is not valid JSON ({})".format(_display(project_dir, cfg_path), exc)
 
 
 def _display(project_dir, path):
@@ -131,7 +241,7 @@ def _identity_names(entries):
     return [n for n in entries if n.startswith("identity") and n.endswith(".md")]
 
 
-def check_memory(project_dir):
+def check_memory(project_dir, home=None):
     """Is the memory plugin configured, or merely installed?
 
     Installed-and-unconfigured is the invisible state: it still runs and still saves.
@@ -156,8 +266,24 @@ def check_memory(project_dir):
     the memory plugin's session-start hook. That reasoning stays there, in one copy; what
     the messages below owe is the same conclusion, and the tests are what bind them
     together rather than a second prose copy that drifts.
+
+    A fourth state, on top of the three ``memory_layout`` already returns for a single
+    listing (#614): the layered config that decides ``data_dir`` can itself be
+    unresolved -- an external store keyed by a ``{slug}`` this check does not compute,
+    or a config layer it could not read. Checking ``store`` in that state would report
+    on a directory ``memory_layout`` already knows is not the one the plugin reads, so
+    it is refused before anything below gets a chance to call it absent.
     """
-    config_dir, store = memory_layout(project_dir)
+    config_dir, store, layout_problem = memory_layout(project_dir, home=home)
+    if layout_problem:
+        doctor.report(
+            "WARN",
+            "{} -- so whether identity.md is configured is unknown, not absent. "
+            "Nothing else in this check can answer while that is unresolved.".format(
+                layout_problem
+            ),
+        )
+        return
     # Data dir first, because that is the hook's first choice and the only location
     # read in every layout (see memory_layout).
     store_entries, store_problem = _listdir(store)
@@ -291,7 +417,7 @@ def _has_content(text):
     return False
 
 
-def check_core_memories(project_dir):
+def check_core_memories(project_dir, home=None):
     """Has anything ever been recorded to `core-memories.md`? A different
     question from `check_memory`'s identity.md, on purpose -- #210 is explicit
     that folding the two together (accepting one as evidence for the other) is
@@ -331,8 +457,21 @@ def check_core_memories(project_dir):
     Scaffolding is out, for the same reason `check_memory` refuses to seed
     identity.md: core memories are somebody else's agent's corrections. This
     check reports, and never writes.
+
+    A fifth state feeds this from `memory_layout` (#614): the layered config that
+    decides `data_dir` can itself be unresolved, and listing whatever fallback
+    `store` this function was handed in that state would ask about a directory
+    `memory_layout` already knows is wrong, not the store the plugin actually
+    reads.
     """
-    _, store = memory_layout(project_dir)
+    _, store, layout_problem = memory_layout(project_dir, home=home)
+    if layout_problem:
+        doctor.report(
+            "WARN",
+            "{} -- so whether any core memories exist is unknown, not "
+            "absent.".format(layout_problem),
+        )
+        return
     entries, problem = _listdir(store)
     if problem == "absent":
         doctor.report(

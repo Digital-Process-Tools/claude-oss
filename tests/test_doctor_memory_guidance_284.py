@@ -50,6 +50,15 @@ def _only():
     return lines[0]
 
 
+def _home(tmp_path):
+    """An isolated, empty home directory (#614). Without this, every call to
+    check_memory below that is not a local install would read the actual
+    developer's real ~/.remember/config.json, making the test's outcome depend
+    on whatever memory layout happens to be configured on the machine running
+    it."""
+    return tmp_path / "isolated-home"
+
+
 def _stray(root):
     """A marketplace install's most likely day-one shape: identity where it looks like
     it goes, and no data dir yet because nothing has saved."""
@@ -68,7 +77,7 @@ def test_stray_identity_is_reported_when_the_data_dir_does_not_exist_yet(tmp_pat
     installer ran doctor at all.
     """
     _stray(tmp_path)
-    doctor.check_memory(tmp_path)
+    doctor.check_memory(tmp_path, home=_home(tmp_path))
     state, message = _only()
 
     assert state == "WARN"
@@ -83,7 +92,7 @@ def test_the_data_dir_being_absent_is_still_said_out_loud(tmp_path):
     early return was carrying: the fix must not buy the stray branch by deleting the
     fact that no store exists yet."""
     _stray(tmp_path)
-    doctor.check_memory(tmp_path)
+    doctor.check_memory(tmp_path, home=_home(tmp_path))
     _, message = _only()
     assert ".remember" in message, message
     assert "does not exist" in message or "no memory store" in message, message
@@ -96,7 +105,7 @@ def test_no_identity_anywhere_does_not_claim_one_is_present(tmp_path):
     every assertion in this file.
     """
     (tmp_path / ".claude" / "remember").mkdir(parents=True)
-    doctor.check_memory(tmp_path)
+    doctor.check_memory(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "WARN"
     assert "never read" not in message, message
@@ -111,7 +120,7 @@ def test_a_local_install_is_still_recognised_without_a_data_dir(tmp_path):
     equally unreachable behind the early return."""
     config_dir = _stray(tmp_path)
     (config_dir / "scripts").mkdir()
-    doctor.check_memory(tmp_path)
+    doctor.check_memory(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "local install" in message, message
@@ -123,7 +132,7 @@ def test_identity_in_the_data_dir_is_still_the_passing_branch(tmp_path):
     store = tmp_path / ".remember"
     store.mkdir()
     (store / "identity.md").write_text("x\n", encoding="utf-8")
-    doctor.check_memory(tmp_path)
+    doctor.check_memory(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "memory store configured" in message, message
@@ -161,7 +170,7 @@ def test_an_unreadable_data_dir_is_not_reported_as_an_absent_identity(tmp_path):
                 "cannot establish an unreadable directory here ({}); what went untested "
                 "is doctor's unreadable-store branch, not its absent branch".format(not_denied)
             )
-        doctor.check_memory(tmp_path)
+        doctor.check_memory(tmp_path, home=_home(tmp_path))
         state, message = _only()
         assert state == "WARN"
         assert "no identity.md" not in message, (
