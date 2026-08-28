@@ -683,7 +683,21 @@ if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then
 # and before the 34-line "could not ask" arm that exists to report exactly that
 # state got a chance to (#588). This idiom is the one the doctor-diagnostic call
 # below already uses for the identical reason.
-"$python_bin" - "$SUPERTOOL_WATCH_NAME" "$radar_tiers_declared" <<'ASK_CONSUMER' && ask_consumer_status=0 || ask_consumer_status=$?
+#
+# `${radar_tiers_declared:-0}`, not a bare `$radar_tiers_declared` (#627):
+# `tests/test_ask_consumer_573.py` extracts this WHOLE `if`/heredoc/`fi` block,
+# starting at the `if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]...` line above, and
+# runs it standalone under `sh` with only `python_bin` and
+# `SUPERTOOL_WATCH_NAME` set -- that is the block's own tested contract, not an
+# oversight in the fixture, and `radar_tiers_declared` is assigned outside the
+# extracted region. A bare reference is a `set -u` failure the instant that
+# variable is unset, which is `#588`'s shape again: the block dies at THIS
+# line, before the crashed-probe arm three states down ever gets to run. The
+# default makes the block independently satisfiable the way its own harness
+# already assumes, and is a no-op wherever the whole script runs the normal
+# way, since `radar_tiers_declared` is always assigned by the time this line
+# is reached there.
+"$python_bin" - "$SUPERTOOL_WATCH_NAME" "${radar_tiers_declared:-0}" <<'ASK_CONSUMER' && ask_consumer_status=0 || ask_consumer_status=$?
 import importlib.util, json, os, sys
 
 name = sys.argv[1]
