@@ -3416,6 +3416,102 @@ def _derivable_watch_name(project_dir):
     return "yes", name, ""
 
 
+def _supertool_installs():
+    """``(installs, problem)`` -- every ``installPath`` for an installed supertool.
+
+    Shared by `_consumer_watch_name_verdict` and `_watch_declaration_split`: both
+    need the same scan of `installed_plugins.json` for the same dependency, and a
+    second copy of that scan inside one file is the drift #577's supertool-rule
+    comparison argues against, one level narrower.
+
+    ``installs`` is ``None`` when ``problem`` names why -- the registry could not
+    be read, is not a JSON object, or names no supertool install at all. Valid
+    JSON in a shape this cannot use (`plugins` not an object, an entry not a
+    dict) is folded into "no supertool install" rather than raising, the same
+    tolerance `_consumer_watch_name_verdict`'s own review round (#533) added
+    after an `AttributeError` out of `.items()` on a list took the whole doctor
+    run down.
+    """
+    registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+    try:
+        with open(registry, encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except (OSError, ValueError) as err:
+        return None, "{} could not be read ({})".format(registry, type(err).__name__)
+    if not isinstance(doc, dict):
+        return None, "{} is not a JSON object".format(registry)
+
+    plugins = doc.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
+    installs = [
+        entry.get("installPath")
+        for key, entries in plugins.items()
+        if key.split("@")[0] == "supertool"
+        for entry in (entries if isinstance(entries, list) else [])
+        if isinstance(entry, dict) and entry.get("installPath")
+    ]
+    if not installs:
+        return None, "{} lists no supertool install".format(registry)
+    return installs, None
+
+
+def _watch_declaration_split(project_dir):
+    """``(state, declaring_ops, silent_ops, why)`` -- which watch ops declare a
+    name and which stay silent, read off the installed supertool's own
+    `presets/watch/naming.py:declared_names()` rather than re-derived here.
+
+    #623: `_declared_watch_names` above answers "is a name declared anywhere in
+    `.supertool.json`", which is `True` the moment ONE op block carries
+    `watch_name` -- so a repo that declared it on `radar` alone and left
+    `channel`/`unwatch`/`watch`/`watches` silent read as fully configured. Only
+    those four ops actually spawn or reach a poller; a name reaching `radar`
+    alone reads a private board over a fleet the other four ops still resolve
+    to the shared default, which renders identically to a healthy empty board.
+
+    `declared_names()` already computes exactly this split and already names
+    which ops are silent (`Declared.silent_ops`) -- `WATCH_OPS`, the five-op
+    list this compares against, is the dependency's own fact and is read from
+    its installed copy, never hardcoded here, for the same reason
+    `_consumer_watch_name_verdict` reads `NAME_RE` from the same file instead
+    of keeping its own copy of the cap.
+
+    `state` is one of the module's own four (`found` / `silent` / `no-config` /
+    `unreadable`), plus a fifth this function adds -- `unknown` -- for "could
+    not even ask": no registry, no supertool install, no `naming.py` there, or
+    a module that failed to import. `declared_names()` itself has no
+    vocabulary for that, since it always assumes its own module already
+    imported successfully.
+    """
+    installs, problem = _supertool_installs()
+    if problem:
+        return "unknown", (), (), problem
+
+    rule_path = ""
+    for path in installs:
+        candidate = os.path.join(path, "presets", "watch", "naming.py")
+        if os.path.isfile(candidate):
+            rule_path = candidate
+            break
+    if not rule_path:
+        return "unknown", (), (), (
+            "none of {} holds presets/watch/naming.py".format(", ".join(installs))
+        )
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_oss_watch_naming_declared", rule_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        declared = module.declared_names(str(project_dir))
+    except (Exception, SystemExit) as err:
+        return "unknown", (), (), "{} could not be read ({})".format(
+            rule_path, type(err).__name__
+        )
+    return declared.state, declared.declaring_ops, declared.silent_ops, declared.why
+
+
 def _consumer_watch_name_verdict(name):
     """Would the installed supertool consumer accept `name` as a watch channel?
 
@@ -3434,33 +3530,9 @@ def _consumer_watch_name_verdict(name):
     socket because nothing asked whether the agreed name was one the consumer
     would use.
     """
-    registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
-    try:
-        with open(registry, encoding="utf-8") as handle:
-            doc = json.load(handle)
-    except (OSError, ValueError) as err:
-        return "unknown", "{} could not be read ({})".format(
-            registry, type(err).__name__
-        )
-    if not isinstance(doc, dict):
-        # Valid JSON, wrong shape -- an AttributeError out of `.items()` below
-        # would abort the whole doctor run over a file this check never used
-        # to depend on (#533's own review round). `unknown` is the answer a
-        # shape this reader cannot use earns, same as an unreadable file.
-        return "unknown", "{} is not a JSON object".format(registry)
-
-    plugins = doc.get("plugins")
-    if not isinstance(plugins, dict):
-        plugins = {}
-    installs = [
-        entry.get("installPath")
-        for key, entries in plugins.items()
-        if key.split("@")[0] == "supertool"
-        for entry in (entries if isinstance(entries, list) else [])
-        if isinstance(entry, dict) and entry.get("installPath")
-    ]
-    if not installs:
-        return "unknown", "{} lists no supertool install".format(registry)
+    installs, problem = _supertool_installs()
+    if problem:
+        return "unknown", problem
 
     rule_path = ""
     for path in installs:
@@ -3519,17 +3591,31 @@ def _current_watch_name(project_dir, env, state):
 
 
 def watch_channel_state(project_dir, env=None):
-    """Which watch channel does this repo actually resolve to? Twelve answers.
+    """Which watch channel does this repo actually resolve to? Fourteen answers.
 
-    `unreadable` / `malformed` / `conflict` / `overridden` / `mismatch` /
-    `undeclared-export` / `undeclared-export-unknown` / `derived-export` /
-    `agree` / `declared-only` / `derived` / `default`, and the count is the point. The filed
-    symptom -- four repos on one poller slot -- was NOT a repo whose declaration
-    disagreed with its environment. It was four repos declaring nothing at all with
-    one hand-copied export between them, so a check that only compared a
+    `unreadable` / `malformed` / `conflict` / `overridden` / `partial` /
+    `split-unknown` / `mismatch` / `undeclared-export` /
+    `undeclared-export-unknown` / `derived-export` / `agree` / `declared-only` /
+    `derived` / `default`, and the count is the point. The filed symptom -- four
+    repos on one poller slot -- was NOT a repo whose declaration disagreed with
+    its environment. It was four repos declaring nothing at all with one
+    hand-copied export between them, so a check that only compared a
     declaration against an export would have rendered the reported case and a clean
     one the same way. `undeclared-export` is that case and it is separate from
     `default`, which is the same absence with nothing exported over it.
+
+    `partial` and `split-unknown` are #623: `declared` above goes true the
+    moment ONE op block in `.supertool.json` carries `watch_name`, and only
+    four of the five watch ops (`channel`/`unwatch`/`watch`/`watches`) ever
+    spawn or reach a poller -- a name reaching `radar` alone leaves those four
+    silently resolving to the shared default, which reads as a healthy empty
+    board rather than as the private one it is. `_watch_declaration_split`
+    answers the finer question off the installed supertool's own
+    `declared_names()`; `partial` is that answer coming back with some watch
+    ops silent, `split-unknown` is the answer not being obtainable at all
+    (checked before `agree`/`declared-only`/`derived-export`/`derived`, so a
+    single-op declaration and a fully-declared one no longer converge on the
+    same OK).
 
     `unreadable` is separate from every state above for the same reason: a file
     that could not be parsed yields no names, which looks exactly like a file that
@@ -3575,6 +3661,37 @@ def watch_channel_state(project_dir, env=None):
         return "overridden", ", ".join(overrides)
 
     declared = next(iter(names)) if names else ""
+    if declared:
+        # #623: a name declared on one op block already made `declared` truthy
+        # above -- this is the finer question, whether it reached every watch
+        # op or only some of them. `found`-with-nothing-silent and every other
+        # state (`no-config`, `silent`, a mismatch against this repo's own
+        # read that should not normally happen since both read the same file)
+        # fall through unchanged below; only the two states below are new.
+        split_state, declaring_ops, silent_ops, split_why = _watch_declaration_split(
+            project_dir
+        )
+        if split_state == "found" and silent_ops:
+            return "partial", (
+                "{} declares {} in {} ({}), and {} of the watch ops declare "
+                "none ({}) -- so those ops' own subprocesses fall back to "
+                "whatever SUPERTOOL_WATCH_NAME (or nothing) is in the "
+                "environment when they run. That splits the fleet without "
+                "erroring anywhere: it reads a private board over a "
+                "default-channel one, identically to a healthy empty "
+                "board.".format(
+                    WATCH_CONFIG, declared, WATCH_CONFIG, ", ".join(declaring_ops),
+                    len(silent_ops), ", ".join(silent_ops),
+                )
+            )
+        if split_state in ("unknown", "unreadable"):
+            return "split-unknown", (
+                "{} declares {} once, and whether it reaches every watch op "
+                "or only some of them could not be determined ({}) -- not "
+                "answered as fully declared, which is what let a "
+                "declared-on-one-op-alone repo clear here silently "
+                "(#623).".format(WATCH_CONFIG, declared, split_why)
+            )
     if declared and exported:
         if declared == exported:
             return "agree", "declared in {} and exported as {}".format(
@@ -3670,6 +3787,12 @@ def check_watch_channel(project_dir, env=None):
     OK nobody measured, which is the shape it exists to report.
     """
     state, detail = watch_channel_state(project_dir, env=env)
+    if state == "partial":
+        report("WARN", "watch channel: {}".format(detail))
+        return
+    if state == "split-unknown":
+        report("WARN", "watch channel: {}".format(detail))
+        return
     if state == "unreadable":
         report(
             "WARN",
