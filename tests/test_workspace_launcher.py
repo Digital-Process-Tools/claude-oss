@@ -1228,10 +1228,14 @@ def test_no_tiers_declared_is_not_told_about_a_never_spawned_channel(tmp_path):
     assert "has never existed" not in done.stderr, done.stderr
 
 
-def test_a_consumer_whose_naming_has_no_resolve_is_silent_about_the_third_state(tmp_path):
-    """An older installed consumer may carry `NAME_RE` and nothing else. That is
-    `could not check`, not a confident "never spawned" -- silence, exactly like
-    every other `could not ask` road in this file that has nothing to compare.
+def test_a_consumer_whose_naming_has_no_resolve_says_it_could_not_check(tmp_path):
+    """An older installed consumer may carry `NAME_RE` and nothing else -- that
+    is `could not check`, not a confident "never spawned" AND not silence.
+
+    Found by review (#618): the first cut of this fix answered `could not
+    check` with silence, which renders identically to "checked, and it is
+    healthy" -- exactly the shape this file's own doctrine forbids for
+    `cannot_ask()`'s identical question three states above this one.
     """
     repo = _repo(tmp_path)
     (repo / ".supertool.json").write_text(
@@ -1240,6 +1244,50 @@ def test_a_consumer_whose_naming_has_no_resolve_is_silent_about_the_third_state(
     done, argv = run(repo, with_channel=True, naming=SUPERTOOL_NAMING)
     assert argv, done.stderr
     assert "has never existed" not in done.stderr, done.stderr
+    assert "could not be checked" in done.stderr, done.stderr
+
+
+def test_a_healthy_channel_says_nothing_at_all(tmp_path):
+    """The must-fire pair's must-NOT-fire half: with a working `resolve()` and
+    an existing state directory, NEITHER the never-spawned warning nor the
+    could-not-check one may appear. Without this, a fix for the silence above
+    that instead made the could-not-check warning fire unconditionally would
+    satisfy every other assertion in this file.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    existing = tmp_path / "existing-state-dir"
+    existing.mkdir()
+    done, argv = run(
+        repo, with_channel=True, naming=_naming_with_resolve(existing)
+    )
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "could not be checked" not in done.stderr, done.stderr
+
+
+def test_a_resolve_that_raises_says_it_could_not_check(tmp_path):
+    """`resolve()` is somebody else's code, executed at run time (#231's own
+    justification for reading it live rather than transcribing it) -- so it
+    can raise, and a raise must not read as "nothing to warn about" either.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    naming = (
+        "import re\n"
+        "NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}" + chr(92) + "Z')\n"
+        "def resolve(env=None):\n"
+        "    raise RuntimeError('boom')\n"
+    )
+    done, argv = run(repo, with_channel=True, naming=naming)
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "could not be checked" in done.stderr, done.stderr
+    assert "RuntimeError" in done.stderr, done.stderr
 
 
 def _launcher_without_its_scripts(tmp_path):

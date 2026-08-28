@@ -94,11 +94,6 @@ else
          "rather than a tick, which would otherwise run on guessed values." >&2
 fi
 
-# The flag makes this session ABLE to receive channel events. It does not create a
-# board: `radar` reads its tiers from this repo's own .supertool.json, and a fresh
-# clone has none. Reporting "armed" when only half of that holds is the defect this
-# whole plugin is about, so the state is stated rather than assumed.
-#
 # `python3` by name is a POSIX assumption: Windows ships `python` and no
 # `python3`, and its App Execution Alias makes a `python` that EXISTS and opens a
 # store page instead of running. So each candidate is proved by running it and
@@ -116,8 +111,15 @@ if [ -z "$python_bin" ]; then
          "session opens without a channel." >&2
 fi
 
-# Does this repo's board have anything to publish to it? Three states, not one
-# (#618).
+# The flag makes this session ABLE to receive channel events. It does not create a
+# board: `radar` reads its tiers from this repo's own .supertool.json, and a fresh
+# clone has none. Reporting "armed" when only half of that holds is the defect this
+# whole plugin is about, so the state is stated rather than assumed -- by the block
+# directly below, not by anything further up this file (found by review: this
+# paragraph used to sit directly above the code that stated it, and #618's edit
+# left it stranded above unrelated python-detection code instead).
+#
+# Does this repo's board have anything to publish to it? Three states, not one.
 #
 # This used to be one line: `grep -q radar "$repo_root/.supertool.json"`, which
 # also matches `radar_exclusions`, a key spelled `radar-slow`
@@ -801,25 +803,49 @@ except (Exception, SystemExit) as err:
 # naming.py may have `NAME_RE` and nothing else, and answering "never spawned"
 # from a module that cannot even compute the path would be a confident wrong
 # receipt about a question nothing here actually asked.
+#
+# THREE states, not two, and the third was the bug found by review: the first
+# cut of this block folded "could not check" -- no `resolve()` on this
+# version, `resolve()` raising, or `os.stat` raising something other than
+# `FileNotFoundError` -- into the same silent no-output as "checked, and it is
+# healthy". That is exactly the shape this file's own doctrine a few lines up
+# forbids for `cannot_ask()`'s identical question ("Silence here would be
+# indistinguishable from acceptance, which is the absence this plugin is
+# named after") -- restated here rather than only above it, because the
+# silence this time was in NEW code repeating an old mistake, not a gap in an
+# existing one.
 if tiers_declared:
+    state_dir_could_not_check = ""
     resolve_fn = getattr(module, "resolve", None)
-    if callable(resolve_fn):
+    if not callable(resolve_fn):
+        state_dir_could_not_check = (
+            "%s has no resolve() to ask (only NAME_RE, or nothing usable at "
+            "all) -- this may be an older supertool" % rule_path)
+    else:
         try:
             state_dir = resolve_fn().state_dir
-        except Exception:
+        except Exception as err:
+            state_dir_could_not_check = (
+                "%s's resolve() raised %s" % (rule_path, type(err).__name__))
             state_dir = ""
-        if state_dir:
-            # `os.path.isdir` swallows OSError into a bare False -- the same
-            # trap `Path.exists()` set for `release_delta.py` (CLAUDE.md) --
-            # so absence is read off the exception actually raised rather than
-            # off a boolean that cannot tell "not there" from "could not look".
+        if not state_dir_could_not_check and not state_dir:
+            state_dir_could_not_check = "%s's resolve() returned no state_dir" % rule_path
+        if not state_dir_could_not_check:
+            # The exception in hand decides absence from unreadable -- the
+            # same rule CLAUDE.md's `_read_config`/`Path.exists()` trap is
+            # about, one layer down: `os.path.isdir` or `Path.exists()` would
+            # swallow a permission error or an over-length path into the same
+            # bare False a genuine absence produces, and this line would then
+            # be unable to tell "never spawned" from "could not look".
             try:
                 os.stat(state_dir)
                 never_spawned = False
             except FileNotFoundError:
                 never_spawned = True
-            except OSError:
+            except OSError as err:
                 never_spawned = False
+                state_dir_could_not_check = (
+                    "%s could not be examined (%s)" % (state_dir, type(err).__name__))
             if never_spawned:
                 sys.stderr.write(
                     "oss-workspace: .supertool.json declares radar tiers, but the "
@@ -829,6 +855,13 @@ if tiers_declared:
                     "to a healthy board with nothing to report. Run "
                     "supertool 'radar' to raise one. supertool 'channel:health'\n"
                     % state_dir)
+    if state_dir_could_not_check:
+        sys.stderr.write(
+            "oss-workspace: .supertool.json declares radar tiers, but whether "
+            "anything has ever spawned on this channel could not be checked -- "
+            "%s. Not answered as either state: silence here would be "
+            "indistinguishable from a healthy board. supertool 'channel:health'\n"
+            % state_dir_could_not_check)
 
 if accepted:
     raise SystemExit(0)
