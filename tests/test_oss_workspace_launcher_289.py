@@ -131,6 +131,20 @@ def _is_path_char(char):
     return bool(char) and (char.isalnum() or char in "-_.~+/")
 
 
+def _link(where, target):
+    """Symlink, or the sentence saying why this platform could not make one.
+
+    Windows needs a privilege or Developer Mode for this, so the deny is measured
+    by attempting it -- never assumed from `sys.platform` (same helper as
+    `tests/test_doctor_supertool_entry_point_285.py`).
+    """
+    try:
+        os.symlink(str(target), str(where))
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        return "this platform would not create a symlink ({})".format(exc)
+    return None
+
+
 def _path_entry(tmp_path, name, content):
     """One directory on PATH holding a file called ``oss-workspace``.
 
@@ -165,18 +179,79 @@ def test_not_resolvable_is_distinct_from_mismatched(tmp_path):
 
 
 def test_matched_by_identity_is_the_positive_control(tmp_path):
-    """Positive control for the mismatch tests below: PATH resolving straight to
-    the running install's own bin/oss-workspace, with no symlink or copy involved.
-    Without this, every "does not warn" assertion could pass on a check that never
-    matches anything."""
+    """Positive control for the mismatch tests below: PATH resolving to a symlink
+    onto the running install's own bin/oss-workspace, the way `~/.local/bin`
+    resolves in a real install. Without this, every "does not warn" assertion
+    could pass on a check that never matches anything.
+
+    #617: this used to point PATH straight at `plugin_root / "bin"` -- the
+    plugin's own bin directory -- which is exactly the false positive the issue
+    is about (see `test_the_plugins_own_bin_directory_is_not_a_reachable_install
+    _617` below), so the positive control is now built the way a real install
+    is: a link elsewhere on PATH resolving TO that directory's file, never the
+    directory itself.
+    """
+    plugin_root = _plugin_root(tmp_path)
+    local_bin = tmp_path / "local-bin"
+    local_bin.mkdir()
+    refused = _link(local_bin / "oss-workspace", plugin_root / "bin" / "oss-workspace")
+    if refused:
+        pytest.skip(refused + "; what went untested is the matched-by-identity arm")
+
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=str(local_bin)
+    )
+    assert state == "matched", (state, detail)
+
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(local_bin))
+    assert doctor.FINDINGS[-1][0] == "OK", doctor.FINDINGS[-1]
+
+
+def test_the_plugins_own_bin_directory_is_not_a_reachable_install_617(tmp_path):
+    """The must-fire half of #617: a session's own PATH always carries
+    `<plugin_root>/bin`, which holds `oss-workspace` unconditionally -- it is
+    this running install's own copy, sitting right there. Searching it made
+    `matched` close to unconditional FROM INSIDE A SESSION and `not-resolvable`
+    close to unreachable, while a plain login shell -- the one the README's
+    install line is actually for -- was measured on the reporter's own machine
+    to carry none of it (`grep -c dpt-plugins` on a clean `zsh -i -l` PATH: 0).
+    So this check must answer about what the USER's shell can reach, not about
+    the PATH of the process asking -- the same shape this repo's own
+    `interpreter architecture` check exists to avoid one layer up. With PATH
+    holding nothing but the plugin's own bin directory, the honest answer is
+    `not-resolvable`, the same as an empty PATH."""
     plugin_root = _plugin_root(tmp_path)
     state, detail = doctor.oss_workspace_launcher_state(
         plugin_root=plugin_root, path=str(plugin_root / "bin")
     )
-    assert state == "matched", (state, detail)
+    assert state == "not-resolvable", (state, detail)
 
     doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(plugin_root / "bin"))
-    assert doctor.FINDINGS[-1][0] == "OK", doctor.FINDINGS[-1]
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN"
+    assert "not on PATH" in message, message
+
+
+def test_the_plugins_own_bin_directory_does_not_shadow_a_real_entry_further_on_617(
+    tmp_path,
+):
+    """Must-not-fire control in the same fixture as the exclusion above: PATH
+    carrying the plugin's own bin directory FIRST must not stop the search --
+    a real, reachable launcher further down PATH is still found and still
+    matches. Exclusion is a filter over which candidates count, not an early
+    return the moment the plugin's own bin is seen."""
+    plugin_root = _plugin_root(tmp_path)
+    local_bin = tmp_path / "local-bin"
+    local_bin.mkdir()
+    refused = _link(local_bin / "oss-workspace", plugin_root / "bin" / "oss-workspace")
+    if refused:
+        pytest.skip(refused + "; what went untested is the does-not-shadow arm")
+
+    search_path = os.pathsep.join([str(plugin_root / "bin"), str(local_bin)])
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=search_path
+    )
+    assert state == "matched", (state, detail)
 
 
 def test_matched_by_content_a_separate_copy_with_identical_bytes(tmp_path):

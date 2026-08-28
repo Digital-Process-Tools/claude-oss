@@ -41,7 +41,12 @@ def _messages():
 
 
 def test_a_project_with_no_memory_store_warns_with_the_fix(tmp_path):
-    doctor.check_memory(tmp_path)
+    """No `.claude/remember/config.json` here, so this is the one test in this file
+    that falls through to the user-global layer (#614) -- isolate the real home
+    directory, or the outcome would depend on whatever remember layout happens to be
+    configured on the machine running the suite."""
+    home = tmp_path / "isolated-home"
+    doctor.check_memory(tmp_path, home=home)
     assert _states() == ["WARN"]
     assert "remember" in _messages()
 

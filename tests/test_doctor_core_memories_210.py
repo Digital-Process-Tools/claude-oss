@@ -45,6 +45,14 @@ def _only():
     return lines[0]
 
 
+def _home(tmp_path):
+    """None of the fixtures in this file write `.claude/remember/config.json`, so
+    every call below falls through to the user-global config layer (#614) -- an
+    isolated, empty home keeps that from depending on whatever remember layout
+    happens to be configured on the machine running the suite."""
+    return tmp_path / "isolated-home"
+
+
 # --- _core_memory_summary: structure only, never content ---
 
 
@@ -82,7 +90,7 @@ def test_no_memory_store_at_all_is_ok_not_a_second_warning(tmp_path):
     warnings pile up) and #210 says this state is "already covered by the
     existing WARN, unchanged".
     """
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "no memory store" in message.lower() or "does not exist" in message.lower(), message
@@ -101,7 +109,7 @@ def test_an_unreadable_store_is_unknown_not_absent(tmp_path, monkeypatch):
         return [], "could not be read (Permission denied)"
 
     monkeypatch.setattr(doctor_check_memory, "_listdir", _boom)
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "WARN", message
     assert "unknown" in message.lower(), message
@@ -113,7 +121,7 @@ def test_store_present_no_core_memories_file_is_ok_first_day_is_not_a_fault(tmp_
     this state and it is correct.
     """
     (tmp_path / ".remember").mkdir()
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "core-memories.md" in message, message
@@ -126,7 +134,7 @@ def test_present_and_empty_is_distinct_from_absent(tmp_path):
     store = tmp_path / ".remember"
     store.mkdir()
     (store / "core-memories.md").write_text("# Core Memories\n", encoding="utf-8")
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "WARN", message
     assert "no dated entries" in message.lower() or "holds nothing" in message.lower(), message
@@ -149,7 +157,7 @@ def test_bullet_style_dated_entries_are_counted_too(tmp_path):
         "- 2026-03-08: third thing that happened.\n",
         encoding="utf-8",
     )
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "3" in message, message
@@ -171,7 +179,7 @@ def test_undated_content_is_ok_and_says_it_could_not_count_rather_than_warning(t
         "**Another correction, no date attached.**\n",
         encoding="utf-8",
     )
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "content present" in message.lower(), message
@@ -185,10 +193,10 @@ def test_check_memory_and_check_core_memories_agree_on_a_wholly_absent_store(tmp
     `check_memory`'s absent-store handling that breaks the assumption fails
     this test rather than silently losing the "nothing configured" signal.
     """
-    doctor_check_memory.check_memory(tmp_path)
+    doctor_check_memory.check_memory(tmp_path, home=_home(tmp_path))
     memory_state, memory_message = _only()
     doctor.FINDINGS.clear()
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     core_state, core_message = _only()
     assert memory_state == "WARN", memory_message
     assert core_state == "OK", core_message
@@ -205,7 +213,7 @@ def test_present_with_content_is_ok_and_reports_count_and_newest_date(tmp_path):
         "body two\n",
         encoding="utf-8",
     )
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
     assert "2" in message, message
@@ -234,7 +242,7 @@ def test_an_unreadable_core_memories_file_is_unknown_not_empty(tmp_path, monkeyp
         return real_read_text(self, *args, **kwargs)
 
     monkeypatch.setattr(_Path, "read_text", _boom)
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "WARN", message
     assert "could not be read" in message.lower(), message
@@ -245,6 +253,8 @@ def test_an_unreadable_core_memories_file_is_unknown_not_empty(tmp_path, monkeyp
 
 
 def test_check_core_memories_never_raises(tmp_path):
-    doctor_check_memory.check_core_memories(tmp_path)
+    doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     doctor.FINDINGS.clear()
-    doctor_check_memory.check_core_memories(tmp_path / "does" / "not" / "exist")
+    doctor_check_memory.check_core_memories(
+        tmp_path / "does" / "not" / "exist", home=_home(tmp_path)
+    )
