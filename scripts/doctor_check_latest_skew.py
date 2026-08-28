@@ -78,11 +78,16 @@ def check_latest_skew(project_dir, config, now=None):
       cache exists" and "a cache exists and could not be read" is worth
       keeping separate.
     * ``not-checked`` (via ``doctor.unmeasured``) -- no declared `repo`,
-      `scripts/statusline.py` could not be imported, or `repo` is not an
-      installed plugin's own source repository, so the cache's `latest` map
-      can never carry a reading for it regardless of how many times it
-      refreshes (#615). Answers nothing about the repository itself, so it
-      must not render as either state above.
+      `scripts/statusline.py` could not be imported, or `repo` does not
+      appear among the installed plugins' own source repositories, so the
+      cache's `latest` map cannot be assumed to carry a reading for it
+      (#615). That last reason is deliberately hedged, not asserted as
+      settled fact: `installed_plugins()` swallows a read failure on its own
+      `installed_plugins.json` to `{}`, the identical shape as "no plugin
+      installed at all", so this branch cannot tell "genuinely not a plugin
+      source repo" from "the registry could not be read" and must not claim
+      the former. Answers nothing about the repository itself, so it must
+      not render as either state above.
 
     ``now`` is a parameter, defaulting to ``time.time()``, so a test can drive
     the age comparison without a real clock.
@@ -146,12 +151,20 @@ def check_latest_skew(project_dir, config, now=None):
     age = _age_text(document.get("latest_fetched_at"), now)
     if cached is None:
         if not _is_plugin_source_repo(project_dir, repo):
+            # Hedged rather than categorical (a real gap the auditor found on
+            # review, #620/#615 bundle): `installed_plugins()` swallows a read
+            # failure on `installed_plugins.json` to `{}`, the identical shape
+            # as "no plugin is installed at all" -- this branch cannot tell
+            # "genuinely not a plugin source repo" from "the registry could
+            # not be read", so it must not assert the former as settled fact.
             doctor.unmeasured(
                 "latest skew",
-                "not checked -- {} is not an installed plugin's own source "
-                "repository, so the status line's `latest` cache can never carry "
-                "a reading for it (`refresh()` only ever writes readings for "
-                "installed plugins).".format(repo),
+                "not checked -- {} does not appear among the installed "
+                "plugins' own source repositories, so the status line's "
+                "`latest` cache cannot be assumed to carry a reading for it "
+                "(`refresh()` only ever writes readings for installed "
+                "plugins; this is also what an unreadable installed-plugins "
+                "registry would look like from here).".format(repo),
             )
             return
         doctor.report(

@@ -155,6 +155,29 @@ def test_a_non_plugin_repo_with_no_reading_is_not_checked_not_a_permanent_warn(
     assert "owner/name" in message
 
 
+def test_the_not_checked_reason_is_hedged_not_a_categorical_claim(tmp_path, monkeypatch):
+    """A finding from review of #615/#620: `installed_plugins()` swallows a read
+    failure on `installed_plugins.json` to `{}`, the identical shape as "no
+    plugin installed at all" -- `_is_plugin_source_repo` cannot tell those two
+    apart, so the not-checked message must not assert "is not an installed
+    plugin's own source repository" as settled fact when it could equally be
+    "the registry could not be read". `is not` reads as a claim the branch did
+    not actually establish; `does not appear among` does not."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins",
+        lambda project_root, plugins_root=None: {},
+    )
+    _write_cache(tmp_path, {"fetched_at": 1.0, "prs": 0, "issues": 0})
+    _reset()
+    doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"})
+    state, message = _finding()
+    assert state == "WARN"
+    assert "is not an installed plugin" not in message
+    assert "does not appear among" in message
+
+
 def test_a_live_read_that_does_not_answer_could_not_be_determined(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "_latest_release", lambda repo: None)
