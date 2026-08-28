@@ -169,6 +169,17 @@ def test_every_declared_watch_name_matches_what_oss_json_derives():
     about. `tests/test_doctor_watch_declaration_split_623.py` is the test for
     that mechanism; this one is the test that this repo's own file satisfies
     it.
+
+    And it asserts the other direction too: no `watch_name` declared under an
+    op OUTSIDE WATCH_OPS -- a typo (`"wathc"`), a stray key on an unrelated op,
+    or a future watch-adjacent op this tuple has not caught up with. #189's
+    original absence check (`_watch_names(doc) == {}`) scanned every op block
+    in the file, not a fixed list, so replacing it with a WATCH_OPS-scoped
+    equality check alone would have narrowed coverage silently: a value sitting
+    outside the tuple was invisible to `missing` above no matter what it said,
+    while the op it was actually meant for still fell back to the environment
+    -- the exact #648 harm, just relocated. Found by this issue's own review
+    round rather than assumed correct on the first pass.
     """
     expected = _derived_watch_name()
     declared = _watch_names(_load(CONFIG))
@@ -181,15 +192,25 @@ def test_every_declared_watch_name_matches_what_oss_json_derives():
         "declaration harms #189 and #648 both name -- see this module's "
         "docstring.".format(CONFIG.name, expected, WATCH_OPS, missing)
     )
+    stray = sorted(set(declared) - set(WATCH_OPS))
+    assert not stray, (
+        "ops.<op>.watch_name in {} is declared under {} -- outside WATCH_OPS "
+        "{!r}, so the equality check above never reads it. This is the other "
+        "half of #189's original absence check: a stray declaration here is "
+        "either a typo or copy-propagated cruft, and either way the op it was "
+        "actually meant for is still silent.".format(CONFIG.name, stray, WATCH_OPS)
+    )
 
 
 def test_a_mismatched_or_partial_declaration_is_what_that_reader_catches():
     """Positive control, in the new derived-equality shape.
 
     A name that does not match the derivation must fail the assertion above,
-    and a declaration on only some of WATCH_OPS must fail it too -- the
-    "must fire" beside test_every_declared_watch_name_matches_the above's
-    "must not fire". Exercised directly against `_watch_names` and
+    a declaration on only some of WATCH_OPS must fail it too, and a name
+    declared under an op OUTSIDE WATCH_OPS must fail the `stray` assertion --
+    three "must fire"s beside
+    `test_every_declared_watch_name_matches_what_oss_json_derives`'s two
+    "must not fire"s. Exercised directly against `_watch_names` and
     `_derived_watch_name`'s own logic rather than by mutating the tracked
     file, so this stays a fixture rather than a write.
     """
@@ -214,5 +235,14 @@ def test_a_mismatched_or_partial_declaration_is_what_that_reader_catches():
         {"ops": {op: {"watch_name": expected} for op in WATCH_OPS}}
     )
     assert all(everywhere_right.get(op) == expected for op in WATCH_OPS)
+    assert not (set(everywhere_right) - set(WATCH_OPS))
+
+    # Declared on an op OUTSIDE WATCH_OPS -- a typo or a stray key on an
+    # unrelated op. The equality check above never reads it (it only iterates
+    # WATCH_OPS), so this is what the `stray` assertion exists to catch.
+    stray = _watch_names(
+        {"ops": {"git-commit": {"watch_name": expected}}}
+    )
+    assert set(stray) - set(WATCH_OPS) == {"git-commit"}
 
     assert _watch_names({}) == {}
