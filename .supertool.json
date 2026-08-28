@@ -77,10 +77,23 @@
     }
   },
   "ops": {
+    "channel": {
+      "watch_name": "Digital-Process-Tools-claude-oss"
+    },
     "radar": {
+      "watch_name": "Digital-Process-Tools-claude-oss",
       "radar_tiers": {
         "gh-prs": {}
       }
+    },
+    "unwatch": {
+      "watch_name": "Digital-Process-Tools-claude-oss"
+    },
+    "watch": {
+      "watch_name": "Digital-Process-Tools-claude-oss"
+    },
+    "watches": {
+      "watch_name": "Digital-Process-Tools-claude-oss"
     },
     "git-commit": {
       "coauthor": "Claude Opus 5 (1M context) <noreply@anthropic.com>"
