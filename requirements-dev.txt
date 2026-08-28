@@ -1,0 +1,36 @@
+# Development and test dependencies for claude-oss (#611).
+#
+# `pyproject.toml` deliberately declares neither `[project.dependencies]` nor
+# `[build-system]` -- nothing installs this repository as a package, and the reasoning
+# for both omissions is in that file's own header comment. Neither reason covers
+# *development* dependencies: `pyproject.toml`'s `addopts` sets
+# `--cov=scripts --cov-report=term-missing --cov-fail-under=85`, so the documented
+# command (`python3 -m pytest tests/ -q`, given in README.md and CLAUDE.md) fails
+# before a single test collects on a machine that has pytest but not pytest-cov.
+#
+# This file is that declaration:
+#
+#   pytest         -- the test runner.
+#   pytest-cov     -- required by addopts above; without it the run never gets past
+#                      argument parsing ("unrecognized arguments: --cov=...").
+#   markdown-it-py -- scripts/assemble_changelog.py's one dependency. It guards its own
+#                      import and refuses to run without it, so the suite that exercises
+#                      it (heading refusal, raw-HTML refusal, the fence state machine)
+#                      silently checks nothing when this is absent (see
+#                      tests/test_workflow_dependencies.py).
+#   pyyaml         -- tests/test_shell_leg_budget_303.py and tests/test_python_floor_410.py
+#                      parse a workflow file as real YAML rather than as text.
+#
+# pytest-xdist is deliberately NOT here. It is optional worker-sizing guidance
+# (scripts/doctor.py's worker_sizing / _xdist_installed), never required by addopts or
+# by CI's own install step, and doctor.py reports its absence as an OK-level line
+# noting nothing here consumes the worker count -- never a failure -- so declaring it
+# required here would misstate that.
+#
+# `.github/workflows/tests.yml` installs this same set by hand in its own install step;
+# tests/test_dev_dependencies_611.py checks the two stay in agreement rather than
+# trusting that they do.
+pytest
+pytest-cov
+markdown-it-py
+pyyaml

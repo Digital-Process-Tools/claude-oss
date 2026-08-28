@@ -71,6 +71,12 @@ launcher` (#289/#333/#519), from PATH entries your own shell actually carries: t
 `bin/` directory is excluded from that check, because a running session always has it on PATH and
 finding the launcher only there says nothing about whether the command above ever worked (#617).
 
+That symlink step is not a stopgap waiting on the plugin's own installed directory reaching `PATH`
+some other way: measured on a clean login shell, the marketplace cache
+(`.../dpt-plugins/oss/<version>/bin`) is not on `PATH` at all outside a running session (#526), so
+the step above is the answer rather than a placeholder for one -- CLAUDE.md's "Traps" section
+carries the measurement.
+
 Then, in any repo you maintain:
 
 ```
@@ -146,6 +152,13 @@ What that would take is recorded in
 the gap and deliberately not a design.
 
 ## Development
+
+Install the test dependencies once (`pytest-cov` is required by `pyproject.toml`'s `addopts`;
+the plain `pytest` command below fails before a test runs without it):
+
+```
+pip install -r requirements-dev.txt
+```
 
 ```
 python3 -m pytest tests/ -q
