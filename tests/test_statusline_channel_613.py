@@ -286,6 +286,17 @@ def test_watch_preset_not_declared_is_cannot_determine_and_spawns_nothing(tmp_pa
     assert called == []
 
 
+def test_watch_preset_declared_a_non_dict_supertool_json_is_could_not_tell(tmp_path):
+    """Self-review finding on this issue: `.supertool.json` is a file this
+    module does not own or control the shape of, and `json.loads` accepts any
+    valid JSON document -- a bare list, a number, `null`. `.get` on anything
+    but a dict must never raise here: an `AttributeError` with no `except`
+    above it in `refresh()`'s own call chain would kill the WHOLE detached
+    refresh over one malformed-but-parseable file, not only this field."""
+    (tmp_path / ".supertool.json").write_text("[1, 2, 3]", encoding="utf-8")
+    assert statusline._watch_preset_declared(tmp_path) is None
+
+
 def test_watch_preset_declared_runs_the_health_check(tmp_path, monkeypatch):
     (tmp_path / ".supertool.json").write_text(
         json.dumps({"presets": ["git", "watch"]}), encoding="utf-8"
@@ -403,6 +414,27 @@ def test_watch_channel_enabled_default_on():
     assert oss_config.watch_channel_enabled({"watch_channel": True}) is True
     assert oss_config.watch_channel_enabled({"watch_channel": False}) is False
     assert oss_config.watch_channel_enabled({"watch_channel": "off"}) is True  # not a bool: not off
+
+
+def test_statusline_gate_matches_this_accessor():
+    """Self-review finding on this issue: `statusline.py` cannot import
+    `oss_config` (it has no imports of its own siblings at all -- vendored
+    standalone) and so carries the identical `is not False` gate inline,
+    twice, rather than calling `watch_channel_enabled`. Nothing tied the two
+    together, so they could drift silently -- this test is that tie, over
+    every config shape the other tests in this file exercise for the key.
+    """
+    for config in (
+        {}, {"watch_channel": True}, {"watch_channel": False},
+        {"watch_channel": "off"}, {"watch_channel": None}, {"watch_channel": 0},
+    ):
+        # `statusline.py`'s own inline gate, both call sites (refresh/gather),
+        # reproduced here rather than imported -- reproducing the CHECK, the
+        # same way `_expected_watch_name` reproduces `watch_channel_name`'s
+        # SUBSTITUTION above, so a change to either side is caught by drift
+        # rather than by one of them silently reading the other's mind.
+        inline = config.get("watch_channel") is not False
+        assert oss_config.watch_channel_enabled(config) == inline, config
 
 
 # --------------------------------------------------------------------- helpers

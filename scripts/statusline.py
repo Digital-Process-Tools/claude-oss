@@ -1468,6 +1468,15 @@ def _watch_preset_declared(root):
         data = json.loads((Path(root) / ".supertool.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    if not isinstance(data, dict):
+        # Self-review finding on this issue: `.supertool.json` is a file this
+        # module does not own or control the shape of, and `json.loads` accepts
+        # any valid JSON document -- a bare list, a number, `null`. `.get` on
+        # anything but a dict raised `AttributeError` here with no `except`
+        # above it in `refresh()`'s own call chain, so a malformed-but-parseable
+        # file silently killed the WHOLE detached refresh, not only this field:
+        # board counts and plugin versions stopped updating along with it.
+        return None
     presets = data.get("presets")
     if not isinstance(presets, list):
         return False

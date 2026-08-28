@@ -262,6 +262,24 @@ def watch_channel_enabled(config):
     stated default. A `str`/`int`/`None` spelled like a decision must not read as
     one either way; `validate()` is what tells the maintainer their value will be
     ignored, this accessor just picks the one value that turns the check off.
+
+    Not called from `scripts/statusline.py` itself -- that module has NO
+    imports of its own siblings, this repository's own included, because it is
+    vendored standalone into `.oss/statusline.py` (its own module docstring
+    says so, and `_expected_watch_name`'s docstring in that file says the same
+    of the name derivation it copies from `watch_channel_name` below).
+    `statusline.py` therefore carries the identical `config.get("watch_channel")
+    is not False` check inline, twice, rather than calling this. This accessor
+    exists for every OTHER reader of `.oss.json` that is not under that
+    constraint -- `doctor.py`, `scaffold.py`, a future one -- so the decision
+    has one written home instead of a fresh `is not False` at each call site.
+    Self-review finding on this issue: the first draft of this function had no
+    caller anywhere in this repository, and its own unit test exercised it in
+    complete isolation from `statusline.py`'s inline copies, which could have
+    drifted from it silently.
+    `tests/test_statusline_channel_613.py::test_statusline_gate_matches_this_accessor`
+    now pins the two together across every value this repo's own tests
+    exercise for the config key.
     """
     return config.get(WATCH_CHANNEL_KEY) is not False
 
