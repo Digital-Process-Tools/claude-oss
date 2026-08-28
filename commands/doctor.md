@@ -274,6 +274,41 @@ tracked file must not get to write the diagnosis.
 `/oss:scaffold` asks the registration half of this at scaffold time and names the same block; the
 route half and the read-failure states are asked only here.
 
+## The `channel MCP registration` line
+
+The watch channel line above says *which name* this repo resolves to; the radar board line says
+*whether a board is declared*. Neither asks whether any MCP server actually carries either into a
+session — until #621, `grep mcp scripts/doctor.py` returned nothing, so a maintainer could get a
+clean reading on both of those lines and still have no working channel, because the one thing that
+carries it — a `claude mcp` registration pointing at `claude-channel/channel.ts` — was never asked
+about here. `bin/oss-workspace:873-944` already asks it, at session-open, on stderr; this line asks
+the same question where a maintainer running the diagnostic can actually see it.
+
+- `OK … is registered pointing at … which exists` — the registration is real and the file it names
+  is there. This confirms the registration and the file; it does not confirm the consumer starts,
+  that `bun` is on PATH, or that anything is listening on the socket — the same limit the watch
+  channel and radar board lines each carry about their own reads.
+- `WARN … is not registered` — nothing carries the channel into a session. `bin/oss-workspace`
+  registers it at session-open; the line also names the `claude mcp add` command directly.
+- `WARN … which does not exist` — the registration outlives the file. `claude mcp get` answers 0
+  for any configured server whether or not the file it names still exists, because the path
+  `claude mcp add` stores is absolute and version-pinned and the plugin cache drops the old version
+  directory on update. The remedy is `claude mcp remove … -s local` and opening a session again to
+  re-register at the current path.
+- `WARN … no Command or Args line could be read` — registered, but where it points could not be
+  parsed (the shape a project-scope entry also prints). Not the same as absent: the comparison
+  failed, the registration did not.
+- `WARN … the filesystem would not say whether it exists` — the third state on the target check
+  itself: a permission-denied ancestor or an unreadable path, reported as unknown rather than as
+  confirmed gone.
+- `WARN … so whether … is registered is unknown` — `claude` is not on PATH, or the call itself did
+  not run. Never relayed as "not registered": that would claim an answer nobody was in a position
+  to give.
+
+This reads the registration only. It performs no registration and no removal — `bin/oss-workspace`
+owns that — and it makes one real `claude mcp get` call per run, which is a fact about the machine
+this diagnostic runs on, not about the repo being diagnosed.
+
 ## The `owned files` lines, and what to do about them
 
 Owned files — `.oss/README.md`, `.oss/assemble_changelog.py`,

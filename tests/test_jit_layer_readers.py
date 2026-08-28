@@ -799,6 +799,9 @@ def test_the_doctor_run_reports_the_layer(tmp_path, monkeypatch):
     """The main() wiring, so a check nobody calls cannot pass this file."""
     monkeypatch.setattr(doctor, "FINDINGS", [])
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(REPO_ROOT))
+    # #621 self-review: a real `claude mcp get` call answers about this machine,
+    # not this fixture -- and this test runs main() against REPO_ROOT itself.
+    monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
     doctor.main([])
     messages = [message for _, message in doctor.FINDINGS]
     assert any(message.startswith("jit rule layer:") for message in messages), messages
