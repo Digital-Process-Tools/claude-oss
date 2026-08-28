@@ -1126,52 +1126,71 @@ def _gh_external_issue_count(repo, total):
     and it is already what supertool's own `gh-issues` op uses for its external-filer
     marker, so the two boards agree instead of answering differently.
 
-    `search/issues` cannot filter on it, so this walks `gh issue list` instead of the
-    search API. That is a different call from `_gh_count`'s own paging trap: `gh api
-    --paginate --jq` runs its filter once per fetched page and prints one number per
-    page with no total, so the first line is a number smaller than the truth at exit
-    0. `gh issue list --json` is not that call -- it assembles the whole page set into
-    one JSON array itself before this function ever sees it -- but it is still bounded
-    by `--limit`, so the row count it returns is cross-checked against `total`: fewer
-    rows than the count `_gh_count` already took means this call did not cover every
-    open issue (a rate limit, a truncated page, the tracker growing between the two
+    **Not `gh issue list --json authorAssociation` (#620).** That field has never
+    existed on `gh issue list` -- `gh` refuses the whole call, exit 1, empty stdout,
+    every single time, and the six-fixture suite that shipped with #595 could not
+    catch it because every fixture there mocked `_run`'s *return value* and none of
+    them looked at what `_run` was *called with*. `author_association` does exist on
+    the REST `repos/{owner}/{repo}/issues` listing, so this reads that instead, with
+    `--jq` selecting the one field this function needs and dropping pull requests --
+    that endpoint mixes both, and a PR row carries a `pull_request` key an issue never
+    has, so `select(.pull_request == null)` filters server-side before this function
+    ever sees a row. Without it the row count would include PRs and permanently fail
+    the cross-check below, because `_gh_count`'s own `is:issue` search never counts
+    them.
+
+    **`--jq` output, not `--paginate`'s raw concatenation, and the difference is not
+    cosmetic.** `_gh_count`'s own docstring already documents that `gh api --paginate
+    --jq` runs its filter once per page and prints one number per page with no total
+    -- irrelevant here, since this asks for one row per issue rather than a count.
+    What matters for `--paginate` *without* `--jq` is that each page is a raw JSON
+    array, and concatenating two JSON arrays end to end produces text no parser can
+    read (`[...][...]`) -- the exact trap #620's own writeup names for a naive fix.
+    `--jq` sidesteps it by construction: piping `.[] | select(...) | .author_association`
+    through jq's raw-output mode prints one bare `author_association` value per line,
+    and *lines* concatenate safely across pages -- unlike JSON arrays, there is no
+    boundary for two pages' lines to collide on. `--paginate` alone still walks every
+    page regardless of the repository's issue count, so there is no analogue of the
+    old `--limit`-at-100 hazard to reintroduce here.
+
+    The row count is cross-checked against `total` exactly as before: fewer lines
+    than the count `_gh_count` already took means this call did not cover every open
+    issue (a rate limit, a truncated page, the tracker growing between the two
     calls), and the number is not reliable enough to report. `None`, never a count
     smaller than the truth -- the same convention `_gh_count`'s own docstring names.
+    A `null` line (jq's raw-mode spelling of a missing/`None` field) is treated the
+    same as a missing row: one unreadable association and the whole count is untaken.
     """
     if not isinstance(total, int):
         return None
     out = _run(
         [
             "gh",
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "open",
-            "--json",
-            "authorAssociation",
-            "--limit",
-            str(max(total, 1)),
+            "api",
+            "--paginate",
+            "-X",
+            "GET",
+            "repos/{}/issues".format(repo),
+            "-f",
+            "state=open",
+            "-f",
+            "per_page=100",
+            "--jq",
+            ".[] | select(.pull_request == null) | .author_association",
         ],
         timeout=25,
     )
-    if not out:
+    if out is None:
         return None
-    try:
-        rows = json.loads(out)
-    except ValueError:
-        return None
-    if not isinstance(rows, list) or len(rows) != total:
+    lines = out.split("\n") if out else []
+    if len(lines) != total:
         return None
     external = 0
-    for row in rows:
-        if not isinstance(row, dict):
+    for line in lines:
+        assoc = line.strip()
+        if not assoc or assoc.upper() == "NULL":
             return None
-        assoc = row.get("authorAssociation")
-        if not isinstance(assoc, str) or not assoc.strip():
-            return None
-        if assoc.strip().upper() not in _INSIDE_ASSOCIATIONS:
+        if assoc.upper() not in _INSIDE_ASSOCIATIONS:
             external += 1
     return external
 
