@@ -3,7 +3,9 @@
 The maintainer loop for an open-source repo, as a Claude Code plugin: triage the tracker, decide
 what is worth building, delegate it, review hard, merge on green, release.
 
-Default branch `main`. Tests: `python3 -m pytest tests/ -q`. CI is 13 legs — 3 OS × Python 3.9–3.12,
+Default branch `main`. Tests: `pip install -r requirements-dev.txt` once, then
+`python3 -m pytest tests/ -q` (`pytest-cov` is required by `addopts` in `pyproject.toml`; the bare
+command fails before a test runs without it — #611). CI is 13 legs — 3 OS × Python 3.9–3.12,
 plus shellcheck.
 
 **Supported floor: Python 3.9**, declared once in `pyproject.toml` as `[project]
@@ -313,6 +315,21 @@ separately rather than one list.
   `doctor` ran twice during this incident reporting the second ("already current") while saying
   nothing about the first being stale-but-wrong -- a true answer to a different question, standing in
   for the one being asked.
+- **A running session's PATH is not the PATH a maintainer's own shell has, and `#526` needed that
+  distinguished before the README's symlink instruction could be judged.** `#617` stopped
+  `oss_workspace_launcher_state` from searching the plugin's own `bin/` directory, on the reasoning
+  that a hit there proves nothing about whether the command a maintainer is told to run ever
+  resolves outside a session -- but it left open whether the marketplace cache directory
+  (`.../dpt-plugins/oss/<version>/bin`) reaches a plain login shell's `PATH` some other way, which
+  would make the `ln -sf` step redundant. Measured directly rather than assumed:
+  `env -i HOME="$HOME" TERM=xterm /bin/zsh -i -l -c 'echo $PATH' | tr : '\n' | grep -c dpt-plugins`
+  returns `0` on a clean macOS login shell -- no `dpt-plugins` entry at all, plugin cache or
+  otherwise. That settles `#526`'s open question the way its own second branch predicted: the
+  instruction is not a stopgap waiting to be dropped, because there is nothing on a plain shell's
+  `PATH` to shadow. Not observed here: Linux, Windows, or a project- or local-scope install, so the
+  claim is macOS-marketplace-scoped rather than universal -- but it is the first machine-measured
+  answer this repository has recorded for a question `#519`'s own lane declined to act on
+  unverified.
 
 ## Layout
 
