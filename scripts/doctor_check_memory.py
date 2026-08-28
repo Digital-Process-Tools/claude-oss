@@ -75,26 +75,25 @@ def memory_layout(project_dir, home=None):
 
     - `$REMEMBER_DIR`, if the current process already has it -- set by the plugin's
       own scripts while one of them is running, and authoritative when present.
-    - a LOCAL install's own `.claude/remember/config.json`, its bundled config in
-      that layout (unchanged from before #614).
-    - otherwise `~/.remember/config.json`, the user-global override the plugin's own
-      resolution (`lib-memory-dir.sh`) checks BEFORE its bundled default -- the layer
-      a marketplace install actually uses to decide `data_dir`, and the one this
-      function never read before #614. Reading `.claude/remember/config.json`
-      instead in that layout was consulting a file the plugin's own resolution never
-      opens at all: not the bundled config (which lives with the plugin, outside the
-      repo), not the user-global override, and not the per-project override (which
-      lives inside the resolved data dir, not here).
+    - `.claude/remember/config.json`'s own `data_dir`, project-local and read first
+      regardless of install layout -- unchanged from before #614, and load-bearing:
+      `tests/test_dependency_setup.py` measures this against the plugin's own
+      session-start hook for a genuine dependency (non-local) install and the file
+      IS read there, so this function must not stop reading it.
+    - only when that file is absent or carries no `data_dir`, `~/.remember/config.json`
+      -- a user-global override this function never read before #614, for the layout
+      the issue was filed from: no project-local override at all, storage configured
+      purely at the user level.
 
     What this does NOT do: replicate the plugin's `{slug}` substitution
     (`session_dir_slug` in `lib-slug.sh` -- UTF-8-aware, over-200-character hashing,
     Windows drive-letter folding) or its linked-worktree redirect
     (`_resolve_memory_project_dir`). Reimplementing either is a second copy of
     another plugin's logic that goes stale the moment it changes there and nothing
-    here would notice (see CLAUDE.md's `coverage_gate.py` trap). When `data_dir`
-    names a `{slug}`-keyed external store this function cannot resolve the real
-    directory, and says so through its return value rather than silently keeping a
-    repo-local default it already knows is wrong.
+    here would notice (see CLAUDE.md's `coverage_gate.py` trap). When a `data_dir`
+    from either layer names a `{slug}`-keyed external store this function cannot
+    resolve the real directory, and says so through its return value rather than
+    silently keeping a repo-local default it already knows is wrong.
 
     Returns `(config_dir, data_dir, unresolved)`. `unresolved` is `None` when
     `data_dir` is believed accurate; otherwise a sentence naming what could not be
@@ -110,54 +109,48 @@ def memory_layout(project_dir, home=None):
     if env_dir:
         return config_dir, Path(env_dir), None
 
-    config_entries, config_problem = _listdir(config_dir)
-    if config_problem not in (None, "absent"):
-        return (
-            config_dir,
-            data_dir,
-            "{} {} -- so whether the plugin is installed locally (which decides "
-            "which config layer governs data_dir) could not be determined".format(
-                _display(project_dir, config_dir), config_problem
-            ),
-        )
-    local_install = "scripts" in config_entries
+    project_cfg = config_dir / "config.json"
+    doc, unresolved = _read_config_layer(project_dir, project_cfg)
+    if unresolved:
+        return config_dir, data_dir, unresolved
 
-    if local_install:
-        cfg_path = config_dir / "config.json"
+    raw = None
+    cfg_path = project_cfg
+    if isinstance(doc, dict) and doc.get("data_dir"):
+        raw = str(doc["data_dir"])
     else:
+        # No project-local override. Fall back to the user-global layer -- the one
+        # a purely external install (no `.claude/remember/config.json` at all)
+        # relies on, and the one this function never read before #614.
         if home is None:
             try:
                 home = Path.home()
             except RuntimeError:
-                # No HOME/USERPROFILE to resolve. Diagnostic, not fatal: degrade to
-                # the repo-local default, the same fallback settings_candidates
-                # takes in doctor_check_merge_permission.py.
-                return config_dir, data_dir, None
-        cfg_path = Path(home) / MEMORY_DIR / "config.json"
+                # No HOME/USERPROFILE to resolve, so the user-global layer cannot be
+                # checked at all -- unlike settings_candidates in
+                # doctor_check_merge_permission.py, which degrades silently because
+                # its own caller already lists BOTH scopes and a missing one just
+                # narrows the search. Here there is only one remaining candidate
+                # (the repo-local default), and it is not known to be right: report
+                # unresolved rather than let it read as confirmed.
+                return (
+                    config_dir,
+                    data_dir,
+                    "this account's home directory could not be determined, so "
+                    "~/.remember/config.json -- the layer a purely external "
+                    "install's data_dir would be set in -- could not be checked",
+                )
+        home_cfg = Path(home) / MEMORY_DIR / "config.json"
+        hdoc, unresolved = _read_config_layer(project_dir, home_cfg)
+        if unresolved:
+            return config_dir, data_dir, unresolved
+        if isinstance(hdoc, dict) and hdoc.get("data_dir"):
+            raw = str(hdoc["data_dir"])
+            cfg_path = home_cfg
 
-    try:
-        doc = json.loads(cfg_path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return config_dir, data_dir, None
-    except OSError as exc:
-        return (
-            config_dir,
-            data_dir,
-            "{} could not be read ({})".format(
-                _display(project_dir, cfg_path), exc.strerror or exc.__class__.__name__
-            ),
-        )
-    except ValueError as exc:
-        return (
-            config_dir,
-            data_dir,
-            "{} is not valid JSON ({})".format(_display(project_dir, cfg_path), exc),
-        )
-
-    if not isinstance(doc, dict) or not doc.get("data_dir"):
+    if raw is None:
         return config_dir, data_dir, None
 
-    raw = str(doc["data_dir"])
     if "{slug}" in raw:
         return (
             config_dir,
@@ -172,6 +165,29 @@ def memory_layout(project_dir, home=None):
     if raw.startswith("~") or raw.startswith("/") or _WINDOWS_ABS_RE.match(raw):
         return config_dir, Path(os.path.expanduser(raw)), None
     return config_dir, root / raw, None
+
+
+def _read_config_layer(project_dir, cfg_path):
+    """One config.json, in the same three states as `_listdir` (#614).
+
+    Returns ``(doc, unresolved)``. ``doc`` is the parsed dict when the file exists
+    and parses, or ``None`` when it is simply absent -- the ordinary, expected case
+    for a layer nothing wrote. ``unresolved`` is ``None`` on either of those, and a
+    sentence when the file is present but could not be read or parsed: that must
+    not collapse into "absent", which is what a bare
+    ``except (OSError, ValueError): pass`` did before this fix and could not tell
+    apart from a config layer nobody configured.
+    """
+    try:
+        return json.loads(cfg_path.read_text(encoding="utf-8")), None
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, "{} could not be read ({})".format(
+            _display(project_dir, cfg_path), exc.strerror or exc.__class__.__name__
+        )
+    except ValueError as exc:
+        return None, "{} is not valid JSON ({})".format(_display(project_dir, cfg_path), exc)
 
 
 def _display(project_dir, path):

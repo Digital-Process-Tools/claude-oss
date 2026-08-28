@@ -160,6 +160,26 @@ def test_local_install_never_consults_the_home_config(tmp_path):
     assert unresolved is None, unresolved
 
 
+def test_unresolvable_home_is_reported_unknown_not_silently_defaulted(tmp_path, monkeypatch):
+    """The auditor's own finding on this fix: `Path.home()` raising RuntimeError (no
+    HOME/USERPROFILE) used to fall straight back to the repo-local default with no
+    `unresolved` reason at all -- indistinguishable from "checked, and this really is
+    the store". There is exactly one other candidate layer here (unlike
+    doctor_check_merge_permission.py's settings_candidates, which still has the
+    project scope to fall back to), so a home that cannot be resolved must be
+    reported as unknown, not silently taken as confirmed."""
+
+    def _boom():
+        raise RuntimeError("no home directory")
+
+    monkeypatch.setattr(doctor_check_memory.Path, "home", staticmethod(_boom))
+
+    _, data_dir, unresolved = doctor_check_memory.memory_layout(tmp_path, home=None)
+    assert data_dir == tmp_path / ".remember", data_dir
+    assert unresolved is not None
+    assert "home directory could not be determined" in unresolved, unresolved
+
+
 def test_malformed_user_global_config_is_unknown_not_silently_defaulted(tmp_path):
     """The swallowed `except (OSError, ValueError): pass` this issue names directly
     (#614 point 4): bad JSON must surface as unknown, not vanish."""
