@@ -35,7 +35,7 @@ REQUIRED_KEYS = {
     "state_file",
 }
 
-OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged"}
+OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged", "watch_channel"}
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
 # can record *why* a value is what it is has always been a key -- and every key not
@@ -243,6 +243,27 @@ def repo_problem(value):
 # `tests/test_watch_name.py`, which folds every accepted slug in its fixture and puts
 # the result through `watch_name_problem`, rather than prose nobody re-checks.
 WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+#: Whether the loop's own status line spends a detached refresh cycle asking
+#: `channel:health` about this repository's watch channel (#613). On by
+#: default -- the field exists to surface a dead consumer between ticks, and a
+#: repository that opts out is the exception, not the rule. `False` is the only
+#: value that turns it off; anything else (absent, `True`) leaves it on, the
+#: same "declared-or-not" shape `release_publish_policy`'s `stated` uses for a
+#: key whose absence must not read as a decision nobody made.
+WATCH_CHANNEL_KEY = "watch_channel"
+
+
+def watch_channel_enabled(config):
+    """Does this repository's status line probe the watch channel at all (#613)?
+
+    `False` only -- anything else, including absence, is "on" by the issue's own
+    stated default. A `str`/`int`/`None` spelled like a decision must not read as
+    one either way; `validate()` is what tells the maintainer their value will be
+    ignored, this accessor just picks the one value that turns the check off.
+    """
+    return config.get(WATCH_CHANNEL_KEY) is not False
 
 
 def watch_channel_name(value):
@@ -1564,6 +1585,15 @@ def validate(config):
 
     if "release" in config:
         problems.extend(_validate_release(config["release"]))
+
+    if "watch_channel" in config and not isinstance(config["watch_channel"], bool):
+        problems.append(
+            "watch_channel: expected true or false, got {!r}. Every non-empty "
+            "value here is not necessarily off, and only `false` is (#613) -- a "
+            "value spelled like a decision must not silently no-op.".format(
+                config["watch_channel"]
+            )
+        )
 
     return problems
 
