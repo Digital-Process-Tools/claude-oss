@@ -74,6 +74,80 @@ def _fake_plugin_root(tmp_path):
     return root
 
 
+def _child_env(tmp_path, *, home, xdg_cache_home, fake_identity, windows=None):
+    """The environment `_run_block`'s child gets, built where a test can read it.
+
+    Split out of `_run_block` for #643. The `windows` branch below copies the
+    whole ambient environment in, and HOME is a real variable on a GitHub
+    Actions Windows runner -- so setting HOME only when it is wanted left the
+    PARENT's HOME standing when it was not, and `home=False` produced a child
+    with a home after all. The launcher then behaved correctly against that
+    home, and the test asserting the no-home arm read the correct behaviour as
+    a failure. Absence has to be established by removing the variable, not by
+    declining to add one.
+
+    `windows` is a parameter rather than a read of `sys.platform` so the branch
+    that only runs on Windows is reachable from a test on any platform: the
+    leak is a fact about the ambient environment, not about the OS, and a guard
+    that can only run where the bug was found is a guard nobody re-runs.
+    """
+    windows = sys.platform == "win32" if windows is None else windows
+    env = {"PATH": os.environ.get("PATH", "")}
+    if windows:
+        # sh needs enough of the ambient environment to find an interpreter
+        # and DLLs on Windows; POSIX runners do not need this branch.
+        env.update(os.environ)
+        env["PATH"] = os.environ.get("PATH", "")
+    if home:
+        env["HOME"] = str(tmp_path / "home")
+    else:
+        env.pop("HOME", None)
+    if xdg_cache_home is not None:
+        env["XDG_CACHE_HOME"] = str(xdg_cache_home)
+    else:
+        env.pop("XDG_CACHE_HOME", None)
+    env["FAKE_PLUGIN_IDENTITY"] = fake_identity
+    return env
+
+
+#: Asks the child shell what IT resolves for the two variables, rather than
+#: trusting that an environment without them produces a shell without them.
+#: Git Bash's `sh` can synthesize a home from the Windows profile, and that is
+#: a thing only the child can answer.
+_HOME_PROBE = (
+    'echo "HOME=${HOME:-<unset>}"\n'
+    'echo "XDG_CACHE_HOME=${XDG_CACHE_HOME:-<unset>}"\n'
+)
+
+
+def _probe_child_home(tmp_path, env, name="home_probe.sh"):
+    """What the child shell resolves for HOME / XDG_CACHE_HOME, as two strings.
+
+    `<unset>` means the shell itself saw nothing there. Anything else is what
+    it resolved, whether that came from `env` or from the shell synthesizing
+    one -- which is the distinction the caller needs and the only one this can
+    answer, since a shell that invents a home is indistinguishable from a
+    parent that passed one once the child is running.
+    """
+    script = tmp_path / name
+    script.write_text("set -eu\n" + _HOME_PROBE, encoding="utf-8")
+    done = subprocess.run(
+        ["sh", str(script)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        universal_newlines=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    resolved = {}
+    for line in done.stdout.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            resolved[key] = value
+    return resolved.get("HOME"), resolved.get("XDG_CACHE_HOME")
+
+
 def _run_block(tmp_path, *, python_bin=None, home=True, xdg_cache_home=None,
                 fake_identity="v1", plugin_root=None):
     """Run the extracted block under `sh -eu`.
@@ -98,17 +172,12 @@ def _run_block(tmp_path, *, python_bin=None, home=True, xdg_cache_home=None,
         ),
         encoding="utf-8",
     )
-    env = {"PATH": os.environ.get("PATH", "")}
-    if sys.platform == "win32":
-        # sh needs enough of the ambient environment to find an interpreter
-        # and DLLs on Windows; POSIX runners do not need this branch.
-        env.update(os.environ)
-        env["PATH"] = os.environ.get("PATH", "")
-    if home:
-        env["HOME"] = str(tmp_path / "home")
-    if xdg_cache_home is not None:
-        env["XDG_CACHE_HOME"] = str(xdg_cache_home)
-    env["FAKE_PLUGIN_IDENTITY"] = fake_identity
+    env = _child_env(
+        tmp_path,
+        home=home,
+        xdg_cache_home=xdg_cache_home,
+        fake_identity=fake_identity,
+    )
     return subprocess.run(
         ["sh", str(script)],
         stdout=subprocess.PIPE,
@@ -164,13 +233,119 @@ def test_no_working_python_says_could_not_tell_rather_than_nothing(tmp_path):
     assert "could not be told" in result.stderr, result.stderr
 
 
+def test_the_no_home_fixture_removes_home_it_does_not_merely_decline_to_add_it(
+    tmp_path,
+):
+    """#643's actual defect, reproduced on every platform.
+
+    `windows=True` is passed explicitly rather than waited for: the ambient
+    copy is what leaks the parent's HOME, and this process has a HOME on every
+    runner this suite runs on, so the leak is reproducible here. Before the
+    fix this returned the PARENT's HOME under `home=False`, which is how a
+    correct launcher came to be reported as broken on one leg.
+    """
+    env = _child_env(
+        tmp_path,
+        home=False,
+        xdg_cache_home=None,
+        fake_identity="v1",
+        windows=True,
+    )
+    assert "HOME" not in env, (
+        "the ambient copy left a HOME standing under home=False, so the "
+        "no-home arm would run against a home: {!r}".format(env.get("HOME"))
+    )
+    assert "XDG_CACHE_HOME" not in env, env.get("XDG_CACHE_HOME")
+
+
+def test_the_fixture_still_passes_a_home_when_one_is_asked_for(tmp_path):
+    """The positive control for the test above.
+
+    `"HOME" not in env` also passes for a `_child_env` that lost the ability to
+    set HOME at all, which would silently disarm every other test in this file.
+    Same fixture, same `windows=True` branch, opposite expectation: the home
+    that arrives must be the one this test named, never the parent's.
+    """
+    env = _child_env(
+        tmp_path,
+        home=True,
+        xdg_cache_home=None,
+        fake_identity="v1",
+        windows=True,
+    )
+    assert env["HOME"] == str(tmp_path / "home"), env["HOME"]
+
+
 def test_neither_cache_dir_nor_home_is_set(tmp_path):
     """The third open question in #626 answered defensively: with nowhere to
     keep a prior, this must say so rather than silently skip the whole check.
+
+    The no-home condition is MEASURED before it is asserted on (#643). Removing
+    both variables from the child's environment is necessary and may not be
+    sufficient: Git Bash's `sh` can synthesize a home from the Windows profile,
+    and a shell that invents one is indistinguishable, from inside, from a
+    parent that passed one. So the child is asked what it actually resolved,
+    and where it still has a home this skips carrying that value rather than
+    failing -- the launcher's behaviour against a home it found is correct, and
+    reporting it as a defect is what #643 was.
+
+    Same rule as the permission and monkeypatch fixtures in CLAUDE.md, and the
+    skip is a measurement rather than a platform test for the reason #380
+    records: a runner that genuinely has no home still gets the real assertion,
+    whatever its OS.
     """
+    env = _child_env(tmp_path, home=False, xdg_cache_home=None, fake_identity="v1")
+    resolved_home, resolved_cache = _probe_child_home(tmp_path, env)
+    if resolved_home != "<unset>" or resolved_cache != "<unset>":
+        pytest.skip(
+            "the child shell resolved a home even with both variables removed "
+            "from its environment (HOME={!r}, XDG_CACHE_HOME={!r}, platform "
+            "{!r}) -- the shell synthesizes one here, so the no-home arm could "
+            "not be established. UNTESTED here: that the launcher says "
+            "'neither XDG_CACHE_HOME nor HOME is set' when it truly has "
+            "nowhere to keep a prior.".format(
+                resolved_home, resolved_cache, sys.platform
+            )
+        )
+
     result = _run_block(tmp_path, home=False, xdg_cache_home=None)
     assert result.returncode == 0, result.stderr
     assert "neither XDG_CACHE_HOME nor HOME is set" in result.stderr, result.stderr
+
+
+def test_the_home_probe_reports_a_home_when_there_is_one(tmp_path):
+    """The positive control for the skip above, and the reason it is a
+    measurement rather than a table.
+
+    A probe that answered `<unset>` unconditionally would send the test above
+    straight into its assertion on every platform, and a probe that answered a
+    path unconditionally would skip it on every platform -- both silently. This
+    pins that the probe distinguishes the two cases, so the skip fires on what
+    the child actually resolved and not on what this file assumed it would.
+
+    This runs on EVERY platform, including the ones where the skip above fires,
+    which is the half that makes the skip trustworthy: a skip whose own probe is
+    only exercised where the answer was already informative proves nothing about
+    the platform it actually fired on (#380's shape). On Windows this is the
+    evidence that the `<unset>` reading there was a real reading.
+
+    What is asserted is DISCRIMINATION -- a home that was passed reads as
+    something other than `<unset>`, one that was not reads as `<unset>` -- and
+    deliberately not the exact string. Git Bash may rewrite a Windows path on the
+    way into the child (a drive-letter form against a `/c/`-style one), and that
+    is a shell behaviour this repository has not measured; pinning the path form
+    here would be asserting a platform fact nobody established, which is the
+    defect one layer over from the one this test exists to guard.
+    """
+    env = _child_env(tmp_path, home=True, xdg_cache_home=None, fake_identity="v1")
+    resolved_home, resolved_cache = _probe_child_home(
+        tmp_path, env, name="home_probe_control.sh"
+    )
+    assert resolved_home not in (None, "", "<unset>"), (
+        "the probe could not see a HOME that was explicitly passed, so its "
+        "`<unset>` answers carry no information: {!r}".format(resolved_home)
+    )
+    assert resolved_cache == "<unset>", resolved_cache
 
 
 def test_a_broken_doctor_module_says_could_not_tell_rather_than_crashing(tmp_path):
