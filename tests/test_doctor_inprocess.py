@@ -282,6 +282,11 @@ def _quiet_main(monkeypatch):
     monkeypatch.setattr(doctor, "check_jit_rules", lambda *a, **k: None)
     monkeypatch.setattr(doctor, "check_merge_permission", lambda *a, **k: None)
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
+    # #621 self-review: a real `claude mcp get oss-channel` call, which answers
+    # about THIS machine's registrations -- not about the fixture -- and would
+    # make the suite non-hermetic on any dev machine that happens to have
+    # `claude` on PATH.
+    monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
 
 
 def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_them(
@@ -1529,6 +1534,9 @@ def test_main_reports_the_watch_channel(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("SUPERTOOL_WATCH_NAME", "oss-supertool")
     monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
+    # #621 self-review: a real `claude mcp get` call answers about this machine,
+    # not this fixture.
+    monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert doctor.WATCH_NAME_ENV in out
@@ -2144,6 +2152,9 @@ def test_main_reports_whether_anything_publishes_to_the_board(tmp_path, monkeypa
     monkeypatch.delenv("SUPERTOOL_WATCH_NAME", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
+    # #621 self-review: a real `claude mcp get` call answers about this machine,
+    # not this fixture.
+    monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     assert [m for _s, m in doctor.FINDINGS if m.startswith("radar board:")]
 

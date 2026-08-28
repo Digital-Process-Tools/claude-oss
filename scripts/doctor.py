@@ -3056,6 +3056,11 @@ def mcp_channel_registration_state(server=None, run=None, which=None):
       is the trap `release_delta.py`'s own `_read_config` was bitten by (#380).
     * ``registered`` -- an `Args:` path was read and exists.
 
+    An embedded null byte in the stored path folds into ``could-not-ask`` -- `os.stat`
+    raises `ValueError`, not `OSError`, for one, and that is a fact about the
+    argument this function was handed rather than about the registration, the same
+    distinction `_dir_state`'s own docstring draws for `.oss.json`.
+
     `run` and `which` are injected for the same reason `tool_binary_architecture`
     injects them: every branch is assertable without shelling out. This performs no
     registration and no removal -- `bin/oss-workspace` owns that, and this reads
@@ -3085,11 +3090,22 @@ def mcp_channel_registration_state(server=None, run=None, which=None):
     target = match.group(1).strip()
     try:
         os.stat(target)
-    except FileNotFoundError:
-        # The exception in hand settles it; no second question is asked of the
-        # filesystem to explain why the first failed (same rule `_read_config`
-        # was bitten by in #380).
+    except (FileNotFoundError, NotADirectoryError):
+        # Absence, stated by the exception itself -- the same pair
+        # `_locate_on_path` and `supertool_entry_point` both already treat as
+        # absence: `NotADirectoryError` says an ancestor of `target` is a plain
+        # file, so no path under it can exist, which is exactly what "gone" means
+        # here. No second question is asked of the filesystem to explain why the
+        # first failed (same rule `_read_config` was bitten by in #380).
         return "target-absent", target
+    except ValueError:
+        # `os.stat` raises `ValueError`, not `OSError`, for a path carrying an
+        # embedded null byte -- the same class `_dir_state`'s own docstring names
+        # elsewhere in this file. `target` was parsed out of `claude mcp get`'s
+        # output, which reflects `~/.claude.json`; that file is JSON, and JSON can
+        # spell a null. This must not raise: doctor.py's whole contract is exit 0,
+        # one VERDICT line, never a traceback out of a malformed registration.
+        return "could-not-ask", "the registered path could not be checked (embedded null byte)"
     except OSError as exc:
         return "target-unreadable", "{} ({})".format(target, exc.strerror or exc.__class__.__name__)
     return "registered", target

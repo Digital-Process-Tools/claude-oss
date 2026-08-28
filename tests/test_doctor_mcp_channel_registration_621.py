@@ -182,3 +182,43 @@ def test_server_name_matches_bin_oss_workspaces_own_constant():
         "scripts/doctor.py's CHANNEL_SERVER ({!r}) and bin/oss-workspace's own "
         "CHANNEL_SERVER have drifted apart".format(doctor.CHANNEL_SERVER)
     )
+
+
+def test_target_absent_when_an_ancestor_component_is_a_plain_file(tmp_path):
+    """Self-review finding: `NotADirectoryError` (an ancestor of the stored path is
+    a plain file, not a directory -- ENOTDIR) is absence too, the same way
+    `_locate_on_path` and `supertool_entry_point` both already treat it -- see
+    their own `except (FileNotFoundError, NotADirectoryError)` catches. Before this
+    fix, `os.stat` raising `NotADirectoryError` fell into the generic `OSError`
+    branch and was reported as `target-unreadable` ("this is unknown, not
+    confirmed gone") instead of the more useful and more correct `target-absent`,
+    which names the concrete removal remedy."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("x\n", encoding="utf-8")
+    target = blocker / "channel.ts"
+    text = "Type: stdio\nCommand: bun\nArgs: {}\n".format(target)
+    state, detail = doctor.mcp_channel_registration_state(
+        which=lambda name: "/usr/bin/claude", run=_run_answering(text)
+    )
+    assert state == "target-absent", (state, detail)
+    assert str(target) in detail, detail
+
+
+def test_could_not_ask_when_the_stored_path_carries_an_embedded_null(tmp_path):
+    """Self-review finding: `os.stat` raises `ValueError`, not `OSError`, for a
+    path carrying an embedded null byte -- the exact class `_dir_state`'s own
+    docstring names elsewhere in this file. `~/.claude.json` is JSON, and JSON can
+    spell a null, so a malformed or adversarial MCP registration must not raise
+    out of this function -- `doctor.py`'s whole contract is exit 0, one VERDICT
+    line, never a traceback."""
+    text = "Type: stdio\nCommand: bun\nArgs: /tmp/\x00evil\n"
+    state, detail = doctor.mcp_channel_registration_state(
+        which=lambda name: "/usr/bin/claude", run=_run_answering(text)
+    )
+    assert state == "could-not-ask", (state, detail)
+
+    doctor.check_mcp_channel_registration(
+        which=lambda name: "/usr/bin/claude", run=_run_answering(text)
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", (level, message)
