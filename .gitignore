@@ -29,3 +29,17 @@ __pycache__/
 # never part of the plugin. Swept into the v0.3.0 release commit by a `git
 # commit --all` and removed in the same release.
 .claude/jit-context/.discovery/
+
+# A machine-local MCP server registration -- this repo's history carried one
+# naming `claude-channel` with an absolute path into one person's own clone of
+# claude-supertool, excluded only in that one clone's .git/info/exclude, which
+# is invisible to every other checkout (#610). bin/oss-workspace already
+# registers the same consumer PORTABLY, at local scope, resolved from the
+# installed supertool plugin rather than from a checkout -- so this repo does
+# not need a tracked .mcp.json the way claude-supertool's own repo does
+# (${CLAUDE_PLUGIN_ROOT} resolves to THIS plugin's root here, which ships no
+# notifier). This rule exists so a future one-off `.mcp.json`, for whatever
+# local reason, never becomes committable just because it lands on a clone
+# nobody has touched .git/info/exclude in -- it is not a claim that one is
+# needed.
+.mcp.json
