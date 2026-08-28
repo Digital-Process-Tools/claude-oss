@@ -73,7 +73,10 @@ def test_current_with_no_partial_failure_is_still_ok_521(tmp_path, monkeypatch):
         lambda: {"state": "current", "plugin": "oss", "from": "0.12.0", "to": "0.12.0"},
     )
     doctor.check_auto_update(str(tmp_path))
-    assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
+    # The loop plugin's row is first and is this test's whole subject. #605 added a
+    # second row about the declared dependencies -- this receipt predates it and says
+    # nothing about them, which that row states rather than rounding to a pass. The
+    # count moved from 1; what is asserted about row 0 did not.
     state, message = doctor.FINDINGS[0]
     assert state == "OK", doctor.FINDINGS
     assert "already current" in message
@@ -100,8 +103,7 @@ def test_current_with_a_partial_failure_warns_and_names_it_521(tmp_path, monkeyp
         },
     )
     doctor.check_auto_update(str(tmp_path))
-    assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
-    state, message = doctor.FINDINGS[0]
+    state, message = doctor.FINDINGS[0]  # the loop plugin's row -- see #605 note above
     assert state == "WARN", doctor.FINDINGS
     assert "local" in message and "Could not read from remote repository" in message
 
@@ -126,7 +128,6 @@ def test_updated_with_a_partial_failure_names_the_failed_scope_too_521(tmp_path,
         },
     )
     doctor.check_auto_update(str(tmp_path))
-    assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
-    state, message = doctor.FINDINGS[0]
+    state, message = doctor.FINDINGS[0]  # the loop plugin's row -- see #605 note above
     assert state == "WARN", doctor.FINDINGS
     assert "local" in message and "boom" in message

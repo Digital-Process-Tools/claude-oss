@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep this plugin's installation current, and say what happened (#480).
+"""Keep this plugin and its declared dependencies current, and say what happened (#480, #605).
 
 Claude Code has no plugin auto-update. `autoUpdates` in `~/.claude.json` governs Claude
 Code itself, not what is installed alongside it, so a plugin drifts until somebody
@@ -30,6 +30,21 @@ now, and a restart is still needed before the new code fully runs), ``current``,
 ``could-not-check`` -- offline, `claude` not on PATH, a
 marketplace that did not resolve. Rendering the third as ``current`` would be this
 repository's own defect class pointed at its own updater.
+
+**The subject is the loop plugin AND every name in its manifest's `dependencies` (#605).**
+It was the loop plugin alone for as long as this module existed, while `statusline`'s
+`plugin_facts` already rendered currency for the whole set -- so the report's subject was
+wider than the actor's and nothing said so. Measured instance: `remember` sat at 0.21.0
+against a published 0.22.0 through a restart and a `/reload-plugins`, with a green
+three-plugin currency line beside it. Each plugin gets its own record in a
+``dependencies`` list; a dependency's verdict never becomes the loop plugin's, and the
+top-level `state`/`plugin`/`from`/`to` still answer about the loop plugin alone because
+every existing reader of this receipt asks them that question. A dependency adds a fourth
+state, ``not-installed`` -- see `_update_one` for why it is not a failure.
+
+One level, not transitive: the manifest is the only declaration available here, and a
+dependency's own dependencies would have to be read out of its installed copy. That is a
+different question and gets filed as one if it turns out to matter.
 
 Python 3.9 compatible.
 """
@@ -275,6 +290,49 @@ def plugin_name(plugin_root=None):
         return None
 
 
+def declared_dependencies(plugin_root=None):
+    """``(names, status)`` -- the plugins this one declares it needs (#605).
+
+    `status` is ``"ok"`` or ``"unreadable"``, and the two must not both arrive as an
+    empty list. "This manifest declares no dependencies" is a fact; "the `dependencies`
+    key is there and nobody can tell what it says" is the absence this repository is
+    named after, and an updater that acted on `[]` in the second case would silently
+    narrow itself back to one plugin with nothing reporting that it had.
+
+    Both entry shapes `doctor.declared_dependencies` accepts are accepted here --
+    a bare string, or an object carrying a `name` -- because the row a maintainer reads
+    and the actor that runs must agree about the set. `tests/
+    test_plugin_update_dependencies_605.py` compares the two derivations against the
+    shipped manifest rather than a fixture, which is the only comparison that can catch
+    them drifting apart.
+
+    An entry that is neither shape, or one whose name is empty, makes the whole list
+    unreadable rather than being dropped: a dependency skipped for being malformed is a
+    dependency nothing updates, reported as a list that was fully handled.
+    """
+    root = Path(plugin_root or Path(__file__).resolve().parent.parent)
+    try:
+        manifest = json.loads(
+            (root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return [], "unreadable"
+    if not isinstance(manifest, dict):
+        return [], "unreadable"
+    if "dependencies" not in manifest or manifest["dependencies"] is None:
+        return [], "ok"
+    raw = manifest["dependencies"]
+    if not isinstance(raw, list):
+        return [], "unreadable"
+    names = []
+    for item in raw:
+        name = item.get("name") if isinstance(item, dict) else item
+        if not isinstance(name, str) or not name:
+            return [], "unreadable"
+        names.append(name)
+    return names, "ok"
+
+
 def installed_scopes(name, project_root, plugins_root=None):
     """Which scopes this plugin is installed at, FOR THIS PROJECT (#521).
 
@@ -403,55 +461,46 @@ def _run(command, timeout=180):
     return result.returncode == 0, result.stdout.decode("utf-8", "replace").strip()
 
 
-def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None):
-    """Refresh the marketplace, update this plugin, and return the receipt.
+def _update_one(name, root, plugins_root, runner, scope_fallback):
+    """Update one plugin at every scope it is installed at, and say what happened (#605).
 
-    The marketplace refresh comes first and its failure is fatal to the run: without it
-    `latest` means whatever it meant the last time anything refreshed, so an update
-    against a stale index reports `current` about a version that is not the current one.
-    That is the third state wearing the first one's clothes, and it is the whole reason
-    the two commands are one function rather than two hook lines.
+    Four states, and the fourth is the one that only exists because the dependencies
+    arrived: ``updated`` / ``current`` / ``could-not-check`` / ``not-installed``.
+
+    **`scope_fallback` is the asymmetry between the loop plugin and a dependency, and it
+    is deliberate.** `installed_scopes` returns `[]` both when nothing is installed for
+    this project and when the install record carries no `scope` field -- the shape most
+    of #480's own fixtures use -- so the loop plugin has always fallen back to `["user"]`
+    and attempted the update anyway. That is the right trade for the plugin whose own
+    hook is running: it is installed by construction, so `[]` is far more likely to mean
+    "the record is thin" than "this is not installed".
+
+    It is the wrong trade for a declared dependency, which genuinely may not be installed
+    for this project. Falling back there would run `claude plugin update <name> --scope
+    user` against a project that has no such install, collect `Plugin "<name>" not found`,
+    and record it as `could-not-check` -- a plugin this project never had, reported as one
+    it might silently have lost. `not-installed` is the honest answer and it makes no call
+    at all; whether a declared dependency *should* be installed is a different question,
+    and `doctor.check_install`'s dependency row is what already owns it.
+
+    No `at` and no `plugin`/`name` key: the caller stamps the receipt once for the whole
+    run and labels each record, so neither can disagree between the entries.
     """
-    runner = _run if runner is None else runner
-    stamp = time.time()
-    status, where = opt_out(root, env)
-    if status == "off":
-        return {"state": "off", "at": stamp, "detail": "switched off by {}".format(where)}
-    if status == "unknown":
-        # Whether an opt-out was declared could not be told, and the docstring's
-        # reversibility promise is the one that must not be risked by a guess: modifying
-        # an install nobody can prove consented to it is worse than not modifying one
-        # that would have been fine to touch. Reported as `could-not-check`, not `off`
-        # and not `current` -- the receipt says nothing was decided, not that it was on
-        # or off (#492).
-        return {
-            "state": "could-not-check",
-            "at": stamp,
-            "detail": "auto-update opt-out status could not be determined -- {} -- so "
-            "nothing was touched until this is resolved".format(where),
-        }
-
-    name = plugin_name(plugin_root)
-    if not name:
-        return {
-            "state": "could-not-check",
-            "at": stamp,
-            "detail": "this plugin's own manifest could not be read, so there is nothing to name",
-        }
-
     before = installed_version(name, root, plugins_root)
-    ok, output = runner(["claude", "plugin", "marketplace", "update"])
-    if not ok:
-        return {
-            "state": "could-not-check",
-            "at": stamp,
-            "plugin": name,
-            "from": before,
-            "detail": "the marketplace did not refresh, so `latest` is whatever it "
-            "meant last time and no update was attempted: {}".format(output[-400:]),
-        }
+    scopes = installed_scopes(name, root, plugins_root)
+    if not scopes:
+        if not scope_fallback:
+            return {
+                "state": "not-installed",
+                "from": before,
+                "to": None,
+                "scopes": [],
+                "partial_failure": False,
+                "detail": "no install record for this plugin applies to this project, so "
+                "nothing was updated -- an absence, not a failed update",
+            }
+        scopes = ["user"]
 
-    scopes = installed_scopes(name, root, plugins_root) or ["user"]
     target = qualified_name(name, plugins_root)
     failures = []
     for scope in scopes:
@@ -461,10 +510,10 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
     if len(failures) == len(scopes):
         return {
             "state": "could-not-check",
-            "at": stamp,
-            "plugin": name,
             "from": before,
+            "to": None,
             "scopes": scopes,
+            "partial_failure": True,
             "detail": "every update call failed -- {}".format("; ".join(failures)),
         }
 
@@ -494,11 +543,10 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
         # exists to remove. One `None` is one unknown; it needs no partner to be one.
         return {
             "state": "could-not-check",
-            "at": stamp,
-            "plugin": name,
             "from": before,
             "to": after,
             "scopes": scopes,
+            "partial_failure": bool(failures),
             "detail": "the install record could not be read, so the version before and/or "
             "after is unknown{}".format(partial),
         }
@@ -506,10 +554,9 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
     if before and after and before != after:
         return {
             "state": "updated",
-            "at": stamp,
-            "plugin": name,
             "from": before,
             "to": after,
+            "scopes": scopes,
             "partial_failure": bool(failures),
             "detail": "run /reload-plugins to move the registry now; a restart is still "
             "needed before the new version fully runs -- this session is still on "
@@ -517,13 +564,89 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
         }
     return {
         "state": "current",
-        "at": stamp,
-        "plugin": name,
         "from": before,
         "to": after,
+        "scopes": scopes,
         "partial_failure": bool(failures),
         "detail": "already at the newest published version{}".format(partial),
     }
+
+
+def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None):
+    """Refresh the marketplace, update this plugin and its declared dependencies (#605).
+
+    The marketplace refresh comes first and its failure is fatal to the run: without it
+    `latest` means whatever it meant the last time anything refreshed, so an update
+    against a stale index reports `current` about a version that is not the current one.
+    That is the third state wearing the first one's clothes, and it is the whole reason
+    the two commands are one function rather than two hook lines. It stays fatal to the
+    whole run now that the run covers the dependencies too, and it stays exactly one
+    call: one index serves every name in the manifest, so refreshing per plugin would
+    scale the network cost with the dependency list for nothing.
+    """
+    runner = _run if runner is None else runner
+    stamp = time.time()
+    status, where = opt_out(root, env)
+    if status == "off":
+        return {"state": "off", "at": stamp, "detail": "switched off by {}".format(where)}
+    if status == "unknown":
+        # Whether an opt-out was declared could not be told, and the docstring's
+        # reversibility promise is the one that must not be risked by a guess: modifying
+        # an install nobody can prove consented to it is worse than not modifying one
+        # that would have been fine to touch. Reported as `could-not-check`, not `off`
+        # and not `current` -- the receipt says nothing was decided, not that it was on
+        # or off (#492).
+        return {
+            "state": "could-not-check",
+            "at": stamp,
+            "detail": "auto-update opt-out status could not be determined -- {} -- so "
+            "nothing was touched until this is resolved".format(where),
+        }
+
+    name = plugin_name(plugin_root)
+    if not name:
+        return {
+            "state": "could-not-check",
+            "at": stamp,
+            "detail": "this plugin's own manifest could not be read, so there is nothing to name",
+        }
+
+    dependencies, dependencies_status = declared_dependencies(plugin_root)
+
+    ok, output = runner(["claude", "plugin", "marketplace", "update"])
+    if not ok:
+        return {
+            "state": "could-not-check",
+            "at": stamp,
+            "plugin": name,
+            "from": installed_version(name, root, plugins_root),
+            "detail": "the marketplace did not refresh, so `latest` is whatever it "
+            "meant last time and no update was attempted: {}".format(output[-400:]),
+        }
+
+    # The loop plugin keeps the `or ["user"]` scope fallback and the dependencies do not
+    # -- see `_update_one`'s docstring for why the asymmetry is deliberate.
+    document = _update_one(name, root, plugins_root, runner, scope_fallback=True)
+    document["at"] = stamp
+    document["plugin"] = name
+
+    # A dependency's verdict never becomes the loop plugin's, in either direction: the
+    # top-level `state`/`plugin`/`from`/`to` above still answer about the loop plugin
+    # alone, because every existing reader of this receipt asks them that question. The
+    # dependencies are a sibling list, and `doctor.check_auto_update` reports it as its
+    # own row -- a failure recorded in a receipt no row reads is #521 with an extra step.
+    document["dependencies"] = [
+        dict(
+            _update_one(dependency, root, plugins_root, runner, scope_fallback=False),
+            name=dependency,
+        )
+        for dependency in dependencies
+    ]
+    # Absent from an older receipt this key means "nothing looked"; `False` here means
+    # the manifest was read and said what it declares. The two must stay distinguishable,
+    # which is why this is written even when the list is empty.
+    document["dependencies_unreadable"] = dependencies_status == "unreadable"
+    return document
 
 
 def write_receipt(document, path=None):
