@@ -5,10 +5,75 @@
     "watch"
   ],
   "validators": {
-    "py": {
-      "py-syntax": {
-        "cmd": "{python} -m py_compile {file}"
-      }
+    "jsonlint": {
+      "cmd": "{python} {supertool_dir}/validators/jsonlint/jsonlint.py {file}",
+      "match": "*.json",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "yaml-check": {
+      "cmd": "{python} {supertool_dir}/validators/yaml-check/yaml-check.py {file}",
+      "match": "*.yml",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "bash-check": {
+      "cmd": "{python} {supertool_dir}/validators/bash-check/bash-check.py {file}",
+      "match": "*.sh",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "bash-check-launcher": {
+      "cmd": "{python} {supertool_dir}/validators/bash-check/bash-check.py {file}",
+      "match": "bin/oss-workspace",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "yaml-check-yaml": {
+      "cmd": "{python} {supertool_dir}/validators/yaml-check/yaml-check.py {file}",
+      "match": "*.yaml",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "tomllint": {
+      "cmd": "{python} {supertool_dir}/validators/tomllint/tomllint.py {file}",
+      "match": "*.toml",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "markdownlint": {
+      "cmd": "{python} {supertool_dir}/validators/markdownlint/markdownlint.py {file}",
+      "match": "*.md",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": false,
+      "timeout": 15
+    },
+    "shellcheck": {
+      "cmd": "{python} {supertool_dir}/validators/shellcheck/shellcheck.py {file}",
+      "match": "*.sh",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": false,
+      "timeout": 15
+    },
+    "actionlint": {
+      "cmd": "{python} {supertool_dir}/validators/actionlint/actionlint.py {file}",
+      "match": ".github/workflows/*.yml",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": false,
+      "timeout": 20
+    },
+    "gitleaks": {
+      "cmd": "{python} {supertool_dir}/validators/gitleaks/gitleaks.py {file}",
+      "match": "*",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 20
     }
   },
   "ops": {
