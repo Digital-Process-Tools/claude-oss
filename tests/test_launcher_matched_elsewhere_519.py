@@ -107,10 +107,26 @@ def test_check_oss_workspace_launcher_warns_and_does_not_claim_a_match(tmp_path)
 
 def test_must_not_fire_own_identity_is_still_matched(tmp_path):
     """Regression guard for the must-not-fire control already in #289's suite:
-    the running install's own path must still be plain `matched`."""
+    the running install's own path must still be plain `matched`.
+
+    #617: PATH is a symlink elsewhere onto the plugin's own bin/oss-workspace,
+    not the plugin's own bin directory itself -- that directory is excluded
+    from the search, since a session's own PATH always carries it and a hit
+    there proves nothing about what the user's own shell can reach."""
     plugin_root = _plugin_root(tmp_path)
+    local_bin = tmp_path / "local-bin"
+    local_bin.mkdir()
+    try:
+        os.symlink(
+            str(plugin_root / "bin" / "oss-workspace"), str(local_bin / "oss-workspace")
+        )
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        pytest.skip(
+            "this platform would not create a symlink ({}); what went untested is "
+            "the own-identity-still-matched arm".format(exc)
+        )
     state, detail = doctor.oss_workspace_launcher_state(
-        plugin_root=plugin_root, path=str(plugin_root / "bin")
+        plugin_root=plugin_root, path=str(local_bin)
     )
     assert state == "matched", (state, detail)
 

@@ -1609,13 +1609,24 @@ def plugin_supertool_entries(cache_root=None, record=None):
 def supertool_entry_point(project_dir, cache_root=None, record=None):
     """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
 
-    Ten states. Three of them are ways of saying "could not tell", and those are the
+    Eleven states. Three of them are ways of saying "could not tell", and those are the
     reason this is a function rather than an ``==``:
 
     * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
     * ``own-tree-stranger`` -- a supertool checkout that has one anyway.
     * ``absent`` -- nothing there. A fresh clone, or a worktree cut mid-session.
-    * ``ok`` -- a link reaching a `supertool.py` in the plugin cache.
+    * ``ok`` -- a link reaching a `supertool.py` in the plugin cache, and matching
+      the version the install record calls active.
+    * ``stale-version`` -- a link reaching a real `supertool.py` in the plugin
+      cache, but one the install record no longer calls active (#619). Every
+      other comparison in this function is careful to keep "different" and "I
+      could not tell" apart; this one used to compute the disagreement and then
+      discard it into an `ok` line's parenthetical, so a shipped fix could sit
+      unused for as long as nobody happened to read the detail string. `detail`
+      names both versions. Kept apart from `other-target`: this link is
+      unambiguously the plugin's own artifact, just an old one, and the remedy
+      (relink to the active entry) differs from "this points somewhere
+      unrelated".
     * ``other-target`` -- a link reaching something else. Observed on this repo, where
       supertool's hook reported `./supertool already exists here and is not the plugin
       symlink -- leaving it untouched`. A deliberate local checkout looks exactly like
@@ -1692,7 +1703,9 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
         if same:
             active = active_versions([SUPERTOOL_ENTRY], record=record).get(SUPERTOOL_ENTRY)
             if active and active != version:
-                return "ok", "{} (cached {}, active {})".format(resolved, version, active)
+                return "stale-version", "{} (cached {}, active {})".format(
+                    resolved, version, active
+                )
             return "ok", resolved
     if undecidable:
         return "unknown-comparison", resolved
@@ -1719,6 +1732,15 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
         )
     elif state == "ok":
         report("OK", "./supertool: the plugin's entry point ({})".format(detail))
+    elif state == "stale-version":
+        report(
+            "WARN",
+            "./supertool: {} -- this resolves to a real supertool.py in the plugin "
+            "cache, but not the version the install record calls active. Same shape "
+            "as a dangling link that happens to resolve: every op through it runs a "
+            "superseded copy, silently, until it is relinked. Re-link ./supertool to "
+            "the active version's supertool.py.".format(detail),
+        )
     elif state == "absent":
         report(
             "WARN",
@@ -2015,7 +2037,31 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
     own = plugin_root / "bin" / "oss-workspace"
 
-    entry, unreadable = _locate_on_path("oss-workspace", path=path)
+    # #617: a session's own PATH always carries `<plugin_root>/bin`, because that
+    # is how the session reaches `supertool` and every other plugin binary --
+    # this repo's own launcher included. Searching it made `matched` close to
+    # unconditional from inside a session that this diagnostic is asked to run
+    # in, and `not-resolvable` close to unreachable, while a login shell opened
+    # outside a session -- the one the README's install line is actually for --
+    # was measured to carry none of it (issue's own reproduction: `grep -c
+    # dpt-plugins` on a clean `zsh -i -l` PATH answered 0). This check is asked
+    # "can the launcher this repo asks a user to install be reached", not "can
+    # THIS PROCESS reach its own binary" -- the same distinction #386's
+    # `tool_binary_architecture` draws against a subprocess's `uname -m`
+    # answering for itself rather than for the tool it spawns. So the plugin's
+    # own bin directory is excluded from the search before `_locate_on_path`
+    # ever sees it: a hit there proves nothing about what the reader's own shell
+    # can run, and letting it through defeats the very check #289 exists to be.
+    search = path if path is not None else os.environ.get("PATH", "")
+    own_dir = str(own.parent)
+    kept = []
+    for candidate_entry in search.split(os.pathsep):
+        if candidate_entry and same_directory(candidate_entry, own_dir):
+            continue
+        kept.append(candidate_entry)
+    filtered_path = os.pathsep.join(kept)
+
+    entry, unreadable = _locate_on_path("oss-workspace", path=filtered_path)
     if entry is None:
         if unreadable:
             return "path-unreadable", _describe_unreadable(unreadable)
@@ -2955,6 +3001,170 @@ def check_radar_publish(project_dir):
         "board and a route to it. This reads one declaration: it does not run `{}`, "
         "and it does not establish that any tier has ever "
         "emitted.".format(detail, WATCH_CONFIG, WATCH_PRESET, RADAR_OP),
+    )
+
+
+# The MCP registration that carries the channel into a session (#621). Named
+# separately from CHANNEL_SERVER's own definition in `bin/oss-workspace` -- shell
+# and Python cannot share one constant -- and kept identical to it by
+# `tests/test_doctor_mcp_channel_registration_621.py`'s own sync check, rather than
+# by inspection, for the reason #577's supertool-rule comparison gives: a fact
+# duplicated across two files drifts, and the drift is invisible from either file
+# alone.
+CHANNEL_SERVER = "oss-channel"
+
+_MCP_ARGS_RE = re.compile(r"^[ \t]*Args:[ \t]*(.*?)[ \t\r]*$", re.MULTILINE)
+
+
+def mcp_channel_registration_state(server=None, run=None, which=None):
+    """Is the channel MCP server registered, and does the path it stores exist?
+
+    `watch_channel_state` above answers which channel NAME this repo resolves to;
+    `radar_publish_state` answers whether a board is DECLARED. Neither asks whether
+    any MCP server actually carries either into a session -- `grep mcp
+    scripts/doctor.py` answered zero results for the whole life of this file, while
+    `bin/oss-workspace:873-944` already asks exactly this question, at session-open,
+    on stderr, where a maintainer running this diagnostic specifically because
+    something is not working never sees it.
+
+    Returns ``(state, detail)``. Six states, mirrored from `bin/oss-workspace`'s own
+    three-state read of `claude mcp get` (registered-and-resolvable /
+    registered-with-unresolvable-consumer-path / registered-with-unreadable-entry /
+    not-registered) plus two this diagnostic needs that a session-opener does not,
+    because it can be run when nothing is trying to open a session at all:
+
+    * ``could-not-ask`` -- `claude` is not on PATH, or the call itself did not run.
+      Not `not-registered`: that would claim an answer neither this process nor the
+      reader's own shell was ever in a position to give.
+    * ``not-registered`` -- `claude mcp get <server>` answered a nonzero exit, which
+      is what it does for a name nothing has configured.
+    * ``unreadable-entry`` -- the call answered 0 (a server config for this name
+      exists) but no `Args:` line could be parsed out of it -- the shape
+      `bin/oss-workspace`'s own comment names for a project-scope entry, which
+      prints no Command/Args at all. Where it points is unknown, and this is not
+      the same fact as absent: the comparison failed, the registration did not.
+    * ``target-absent`` -- an `Args:` path was read and does not exist here.
+      `bin/oss-workspace:873-879`'s own reasoning: `claude mcp get` answers 0 for
+      any CONFIGURED server whether or not the file it names still exists, because
+      the path `claude mcp add` stores is absolute and version-pinned and the
+      plugin cache drops the old version directory on auto-update -- the
+      registration outlives the file it names.
+    * ``target-unreadable`` -- an `Args:` path was read and the filesystem would
+      not say whether it exists (a permission-denied ancestor, an over-long
+      component). Kept apart from `target-absent`: the exception in hand answers
+      "could not tell", not "confirmed gone", and reporting the two the same way
+      is the trap `release_delta.py`'s own `_read_config` was bitten by (#380).
+    * ``registered`` -- an `Args:` path was read and exists.
+
+    `run` and `which` are injected for the same reason `tool_binary_architecture`
+    injects them: every branch is assertable without shelling out. This performs no
+    registration and no removal -- `bin/oss-workspace` owns that, and this reads
+    only, the same division `CLAUDE.md` draws for #610/#618's `.mcp.json`.
+    """
+    server = server or CHANNEL_SERVER
+    which = shutil.which if which is None else which
+    run = subprocess.run if run is None else run
+    if which("claude") is None:
+        return "could-not-ask", "claude is not on PATH"
+    try:
+        completed = run(
+            ["claude", "mcp", "get", server],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
+    if completed.returncode != 0:
+        return "not-registered", ""
+    stdout = completed.stdout
+    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+    match = _MCP_ARGS_RE.search(text)
+    if match is None or not match.group(1).strip():
+        return "unreadable-entry", _one_line(text, limit=200)
+    target = match.group(1).strip()
+    try:
+        os.stat(target)
+    except FileNotFoundError:
+        # The exception in hand settles it; no second question is asked of the
+        # filesystem to explain why the first failed (same rule `_read_config`
+        # was bitten by in #380).
+        return "target-absent", target
+    except OSError as exc:
+        return "target-unreadable", "{} ({})".format(target, exc.strerror or exc.__class__.__name__)
+    return "registered", target
+
+
+def check_mcp_channel_registration(server=None, run=None, which=None):
+    """One line, in every state -- see `mcp_channel_registration_state`.
+
+    OK here never means "the board is live". This reads a registration and, when
+    one exists, checks that the file it names is still there; it does not run
+    `claude mcp get` against every scope, does not start the consumer, and does not
+    establish that anything is listening on the socket -- the same limit
+    `check_watch_channel` and `check_radar_publish` each state about their own
+    reads. Together the three now cover name, declaration and transport; before
+    this, the third was silent on both sides of it (#621).
+    """
+    state, detail = mcp_channel_registration_state(server=server, run=run, which=which)
+    label = server or CHANNEL_SERVER
+    if state == "could-not-ask":
+        report(
+            "WARN",
+            "channel MCP registration: {} ({}), so whether {} is registered is "
+            "unknown -- not answered as unregistered, which would send you to "
+            "register a server that may already be there.".format(
+                detail, label, label
+            ),
+        )
+        return
+    if state == "not-registered":
+        report(
+            "WARN",
+            "channel MCP registration: {} is not registered, so nothing carries "
+            "the watch channel into a session. bin/oss-workspace registers it at "
+            "session-open; run it once, or `claude mcp add -s local {} bun "
+            "<path to claude-channel/channel.ts>`.".format(label, label),
+        )
+        return
+    if state == "unreadable-entry":
+        report(
+            "WARN",
+            "channel MCP registration: {} answers for {}, but no Command or Args "
+            "line could be read out of it ({}), so where it points is unknown and "
+            "cannot be compared. Not the same as absent -- the comparison failed, "
+            "the registration did not. `claude mcp remove {} -s local` and start a "
+            "session again to have it registered from scratch.".format(
+                label, label, detail, label
+            ),
+        )
+        return
+    if state == "target-absent":
+        report(
+            "WARN",
+            "channel MCP registration: {} is registered pointing at {}, which does "
+            "not exist. `claude mcp get` answers 0 for any configured server "
+            "whether or not the file it names still exists -- the path is "
+            "absolute and version-pinned, and the plugin cache drops the old "
+            "version directory on update, so the registration outlives the file. "
+            "`claude mcp remove {} -s local` and start a session again to have it "
+            "re-registered at the current path.".format(label, detail, label),
+        )
+        return
+    if state == "target-unreadable":
+        report(
+            "WARN",
+            "channel MCP registration: {} is registered pointing at {}, and the "
+            "filesystem would not say whether it exists -- so this is unknown, not "
+            "confirmed gone.".format(label, detail),
+        )
+        return
+    report(
+        "OK",
+        "channel MCP registration: {} is registered pointing at {}, which exists. "
+        "This confirms the registration and the file; it does not confirm the "
+        "consumer starts, that bun is on PATH, or that anything is listening on "
+        "the socket.".format(label, detail),
     )
 
 
@@ -7058,6 +7268,11 @@ def main(argv=None):
     # how a repo with a route to nowhere read as healthy (#191). Also needs no
     # config: both live in supertool's file.
     check_radar_publish(project_dir)
+    # The name and the declaration are two more questions, and neither is whether
+    # anything actually carries either into a session -- #621 was two clean OK
+    # lines either side of the one artifact that does. Needs no config: the MCP
+    # registration lives in claude's own config, not in .oss.json.
+    check_mcp_channel_registration()
     # Needs no config either: the hook lives under .git/hooks and the budget
     # lives in supertool's file. Structural only -- it never runs the hook.
     check_git_push_budget(project_dir)

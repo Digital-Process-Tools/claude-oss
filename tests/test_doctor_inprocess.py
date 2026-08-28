@@ -756,6 +756,15 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(
         doctor, "check_latest_skew", lambda project_dir, config: doctor.report("OK", "latest skew")
     )
+    # #621: a real subprocess call to `claude mcp get oss-channel`, which answers
+    # about THIS machine's MCP registrations -- not about this fixture's tree --
+    # exactly the same reason check_gh_binary and check_latest_skew are stubbed
+    # above rather than measured here.
+    monkeypatch.setattr(
+        doctor,
+        "check_mcp_channel_registration",
+        lambda **kw: doctor.report("OK", "channel MCP registration"),
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether either of the two Windows gaps below is real is a

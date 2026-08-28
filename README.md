@@ -45,18 +45,31 @@ declared dependencies and resolve from the same marketplace.
 
 ## After cloning a repo you maintain
 
-Install the launcher once, from this plugin's own checkout:
+Install the launcher once. **On a marketplace install** -- `/plugin install oss@dpt-plugins`,
+the route above, and the one almost everyone reading this took -- there is no checkout and no
+fixed path to write here: the plugin's own `bin/oss-workspace` lives under a version-scoped
+cache directory (`.../dpt-plugins/oss/<version>/bin/`) that moves on every release, so a literal
+command in this file would be correct until the next release and silently wrong after it (#617).
+Run `/oss:doctor` instead -- its `oss-workspace launcher` line prints the exact, paste-ready
+command for the version you actually have installed, platform-appropriate on POSIX and on
+Windows, computed from `PLUGIN_ROOT` rather than typed here.
+
+**If you have cloned this plugin's own repository** -- for development, or because you are
+contributing to it -- the equivalent line, run from that checkout, is:
 
 ```
 ln -sf "$PWD/bin/oss-workspace" ~/.local/bin/oss-workspace
 ```
 
-That line is POSIX-only, and there is no Windows equivalent to substitute for it (#330):
-`bin/oss-workspace` is a `/bin/sh` script that runs under Git Bash rather than cmd or
-PowerShell, and `~/.local/bin` is on no Windows `PATH`. Run `sh bin/oss-workspace` from this
-checkout instead -- `/oss:doctor` prints that as its remedy there. The symlink is resolved once
-against this checkout's own path, so it goes stale across an update; `/oss:doctor` now reports
-that too, under `oss-workspace launcher` (#333).
+POSIX only, and there is no Windows equivalent to substitute for it (#330): `bin/oss-workspace`
+is a `/bin/sh` script that runs under Git Bash rather than cmd or PowerShell, and `~/.local/bin`
+is on no Windows `PATH`. Run `sh bin/oss-workspace` from the checkout instead.
+
+Either way, the symlink is resolved once, at install time, and does not follow a later plugin
+update or a later commit in your checkout -- `/oss:doctor` reports that under `oss-workspace
+launcher` (#289/#333/#519), from PATH entries your own shell actually carries: the plugin's own
+`bin/` directory is excluded from that check, because a running session always has it on PATH and
+finding the launcher only there says nothing about whether the command above ever worked (#617).
 
 Then, in any repo you maintain:
 
