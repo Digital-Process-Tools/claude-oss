@@ -3016,7 +3016,7 @@ CHANNEL_SERVER = "oss-channel"
 _MCP_ARGS_RE = re.compile(r"^[ \t]*Args:[ \t]*(.*?)[ \t\r]*$", re.MULTILINE)
 
 
-def mcp_channel_registration_state(server=None, run=None, which=None):
+def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     """Is the channel MCP server registered, and does the path it stores exist?
 
     `watch_channel_state` above answers which channel NAME this repo resolves to;
@@ -3065,25 +3065,58 @@ def mcp_channel_registration_state(server=None, run=None, which=None):
     injects them: every branch is assertable without shelling out. This performs no
     registration and no removal -- `bin/oss-workspace` owns that, and this reads
     only, the same division `CLAUDE.md` draws for #610/#618's `.mcp.json`.
+
+    #629: `bin/oss-workspace` already runs `claude mcp get {server}` at session-open,
+    a few lines before it shells out to this diagnostic -- so a launcher-opened
+    session paid for the identical subprocess call twice, and `claude` is not a
+    cheap binary to start (~1.3s measured on this machine). When the launcher has
+    already asked, it exports the raw answer (`OSS_WORKSPACE_MCP_CHECKED`,
+    `_STATUS`, `_OUTPUT`) and this reads that instead of shelling out again.
+
+    This is a relay, not a cache: the two calls happen seconds apart inside one
+    session-open sequence, never across the kind of interval this repo's own
+    `statusline.py` cache history warns about (a reading taken once and read as
+    fresh much later). `env` defaults to `os.environ` and is injected for the same
+    reason `run`/`which` are. The handoff is trusted only for `CHANNEL_SERVER`
+    itself: `bin/oss-workspace` only ever pre-asks about its own hardcoded server,
+    so a caller asking about a different `server` -- every test in this file, and
+    any future caller -- always falls through to a real ask, never to a stale
+    handoff answering the wrong question. A malformed `_STATUS` (not an integer)
+    falls through the same way rather than guessing.
     """
     server = server or CHANNEL_SERVER
+    env = os.environ if env is None else env
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
-    if which("claude") is None:
-        return "could-not-ask", "claude is not on PATH"
-    try:
-        completed = run(
-            ["claude", "mcp", "get", server],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
-    if completed.returncode != 0:
+
+    precomputed = server == CHANNEL_SERVER and env.get("OSS_WORKSPACE_MCP_CHECKED") == "1"
+    returncode = None
+    if precomputed:
+        try:
+            returncode = int(env.get("OSS_WORKSPACE_MCP_STATUS", ""))
+        except ValueError:
+            precomputed = False
+
+    if precomputed:
+        text = env.get("OSS_WORKSPACE_MCP_OUTPUT", "")
+    else:
+        if which("claude") is None:
+            return "could-not-ask", "claude is not on PATH"
+        try:
+            completed = run(
+                ["claude", "mcp", "get", server],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
+        returncode = completed.returncode
+        stdout = completed.stdout
+        text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+
+    if returncode != 0:
         return "not-registered", ""
-    stdout = completed.stdout
-    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
     match = _MCP_ARGS_RE.search(text)
     if match is None or not match.group(1).strip():
         return "unreadable-entry", _one_line(text, limit=200)
@@ -3111,7 +3144,7 @@ def mcp_channel_registration_state(server=None, run=None, which=None):
     return "registered", target
 
 
-def check_mcp_channel_registration(server=None, run=None, which=None):
+def check_mcp_channel_registration(server=None, run=None, which=None, env=None):
     """One line, in every state -- see `mcp_channel_registration_state`.
 
     OK here never means "the board is live". This reads a registration and, when
@@ -3122,7 +3155,7 @@ def check_mcp_channel_registration(server=None, run=None, which=None):
     reads. Together the three now cover name, declaration and transport; before
     this, the third was silent on both sides of it (#621).
     """
-    state, detail = mcp_channel_registration_state(server=server, run=run, which=which)
+    state, detail = mcp_channel_registration_state(server=server, run=run, which=which, env=env)
     label = server or CHANNEL_SERVER
     if state == "could-not-ask":
         report(

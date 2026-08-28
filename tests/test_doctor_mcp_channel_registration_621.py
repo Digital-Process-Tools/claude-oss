@@ -204,6 +204,104 @@ def test_target_absent_when_an_ancestor_component_is_a_plain_file(tmp_path):
     assert str(target) in detail, detail
 
 
+def _run_that_must_not_be_called():
+    def run(cmd, **kwargs):
+        raise AssertionError(
+            "claude mcp get was shelled out to a second time -- the precomputed "
+            "OSS_WORKSPACE_MCP_* handoff should have made this call unnecessary"
+        )
+
+    return run
+
+
+def test_a_precomputed_registered_answer_skips_the_second_subprocess_call():
+    """#629: `bin/oss-workspace` already asked this at session-open. When it
+    hands the answer over via the three OSS_WORKSPACE_MCP_* variables, doctor
+    must not shell out again -- `run` raises if it is called at all."""
+    consumer_text = "Type: stdio\nCommand: bun\nArgs: /abs/path/channel.ts\n"
+    env = {
+        "OSS_WORKSPACE_MCP_CHECKED": "1",
+        "OSS_WORKSPACE_MCP_STATUS": "0",
+        "OSS_WORKSPACE_MCP_OUTPUT": consumer_text,
+    }
+    state, detail = doctor.mcp_channel_registration_state(
+        which=lambda name: "/usr/bin/claude",
+        run=_run_that_must_not_be_called(),
+        env=env,
+    )
+    # target-absent, not registered: /abs/path/channel.ts does not exist on the
+    # test machine, and that is fine -- the point of this test is that the
+    # SOURCE of the answer was the handoff, not a subprocess.
+    assert state == "target-absent", (state, detail)
+    assert "/abs/path/channel.ts" in detail, detail
+
+
+def test_a_precomputed_not_registered_answer_also_skips_the_call():
+    """Must-fire pair for the state above: a nonzero precomputed status reads as
+    not-registered without ever shelling out, the same as the live path does."""
+    env = {"OSS_WORKSPACE_MCP_CHECKED": "1", "OSS_WORKSPACE_MCP_STATUS": "1", "OSS_WORKSPACE_MCP_OUTPUT": ""}
+    state, detail = doctor.mcp_channel_registration_state(
+        which=lambda name: "/usr/bin/claude",
+        run=_run_that_must_not_be_called(),
+        env=env,
+    )
+    assert state == "not-registered", (state, detail)
+
+
+def test_the_handoff_is_ignored_for_a_different_server():
+    """`bin/oss-workspace` only ever pre-asks about its own hardcoded channel
+    server. A caller asking about a different server must fall through to a
+    real ask rather than answering the wrong question from a stale handoff --
+    must-not-fire control, paired with the two must-fire tests above."""
+    env = {
+        "OSS_WORKSPACE_MCP_CHECKED": "1",
+        "OSS_WORKSPACE_MCP_STATUS": "0",
+        "OSS_WORKSPACE_MCP_OUTPUT": "Type: stdio\nCommand: bun\nArgs: /nope\n",
+    }
+    state, detail = doctor.mcp_channel_registration_state(
+        server="some-other-server",
+        which=lambda name: "/usr/bin/claude",
+        run=_run_answering("", returncode=1),
+        env=env,
+    )
+    assert state == "not-registered", (state, detail)
+
+
+def test_a_malformed_precomputed_status_falls_through_to_a_real_ask():
+    """The handoff is trusted only when it parses. A non-integer STATUS -- a
+    shell quoting mistake, a future format change -- must not silently answer
+    `not-registered` for a channel that might actually be registered; it falls
+    through to the real subprocess call instead of guessing."""
+    env = {
+        "OSS_WORKSPACE_MCP_CHECKED": "1",
+        "OSS_WORKSPACE_MCP_STATUS": "not-a-number",
+        "OSS_WORKSPACE_MCP_OUTPUT": "",
+    }
+    state, detail = doctor.mcp_channel_registration_state(
+        which=lambda name: "/usr/bin/claude",
+        run=_run_answering("", returncode=1),
+        env=env,
+    )
+    assert state == "not-registered", (state, detail)
+
+
+def test_no_handoff_present_asks_normally():
+    """Must-not-fire control for the whole feature: an ordinary invocation with
+    no OSS_WORKSPACE_MCP_* variables in `env` behaves exactly as before --
+    `run` IS called."""
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        return _FakeCompleted(1, b"")
+
+    state, detail = doctor.mcp_channel_registration_state(
+        which=lambda name: "/usr/bin/claude", run=run, env={}
+    )
+    assert state == "not-registered", (state, detail)
+    assert calls, "the real subprocess call was skipped with no handoff present"
+
+
 def test_could_not_ask_when_the_stored_path_carries_an_embedded_null(tmp_path):
     """Self-review finding: `os.stat` raises `ValueError`, not `OSError`, for a
     path carrying an embedded null byte -- the exact class `_dir_state`'s own
