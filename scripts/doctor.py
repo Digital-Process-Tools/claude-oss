@@ -5945,6 +5945,10 @@ NOT_COMPARED_TOP_LEVEL = {
                    "holding none of them is the healthy state",
     "docs": "prose for people; nothing dispatches or executes it",
     "pyproject.toml": "test and lint configuration for this checkout",
+    "requirements-dev.txt": "development and test dependencies declared for this "
+                            "checkout, like pyproject.toml; installed by CI's own "
+                            "install step and by a contributor's own environment, "
+                            "never read at runtime by an installed plugin copy",
     "tests": "not shipped by every install and never read at runtime",
 }
 

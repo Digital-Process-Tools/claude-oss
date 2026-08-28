@@ -194,6 +194,82 @@ def test_the_partition_helper_fires_and_stays_silent():
     assert _uncovered({"a-directory-nobody-classified"}) == {"a-directory-nobody-classified"}
 
 
+def _empty_reasons(mapping):
+    """Keys of `mapping` whose reason string is empty or whitespace-only.
+
+    `NOT_COMPARED_TOP_LEVEL` is not a suppression list -- every entry carries a
+    reason that is a claim about the file, checked by a human reading the diff. A
+    key present with nothing behind it would pass the partition check above while
+    saying nothing to the next reader deciding whether the classification still
+    holds.
+    """
+    return {name for name, reason in mapping.items() if not reason.strip()}
+
+
+def _stale_entries(mapping, top_level):
+    """Keys of `mapping` that name a path no longer in the tracked tree.
+
+    A `NOT_COMPARED_TOP_LEVEL` entry is a claim about a file that exists; once the
+    file leaves the tree the claim is not merely unneeded, it is about nothing, and
+    the entry should have left with it.
+    """
+    return {name for name in mapping if name not in top_level}
+
+
+def test_the_reason_and_staleness_helpers_fire_and_stay_silent():
+    """The positive control for the two tests below.
+
+    Pairs a must-fire case with a must-not-fire case in the same fixture, since an
+    assertion that nothing is empty/stale also passes when the helper can never
+    return anything.
+    """
+    assert _empty_reasons({"a": "a real reason", "b": ""}) == {"b"}
+    assert _empty_reasons({"a": "a real reason", "b": "   "}) == {"b"}
+    assert _empty_reasons({"a": "a real reason"}) == set()
+
+    assert _stale_entries({"a": "reason"}, {"a", "b"}) == set()
+    assert _stale_entries({"a": "reason", "gone": "reason"}, {"a", "b"}) == {"gone"}
+
+
+def test_every_not_compared_reason_is_non_empty():
+    empty = _empty_reasons(doctor.NOT_COMPARED_TOP_LEVEL)
+    assert empty == set(), (
+        "these NOT_COMPARED_TOP_LEVEL entries carry an empty reason, so the "
+        "classification is a bare suppression rather than a checkable claim: "
+        "{}".format(sorted(empty))
+    )
+
+
+def test_no_not_compared_entry_names_a_path_that_has_left_the_tree():
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        pytest.skip(
+            "git could not be run ({}), so staleness was not checked".format(
+                exc.__class__.__name__
+            )
+        )
+    if done.returncode != 0:
+        pytest.skip(
+            "git ls-files exited {} in {}, so staleness was not checked".format(
+                done.returncode, REPO_ROOT
+            )
+        )
+    top_level = {line.split("/")[0] for line in done.stdout.splitlines() if line.strip()}
+    assert top_level, "git ls-files returned nothing, so this checked nothing"
+    stale = _stale_entries(doctor.NOT_COMPARED_TOP_LEVEL, top_level)
+    assert stale == set(), (
+        "these NOT_COMPARED_TOP_LEVEL entries name a path no longer in the tracked "
+        "tree, so the classification is now about nothing: {}".format(sorted(stale))
+    )
+
+
 def test_every_tracked_top_level_entry_is_compared_or_documented():
     """`schemas/` went uncompared for its whole life because nothing asked this.
 
