@@ -23,8 +23,9 @@
 #
 # pytest-xdist is deliberately NOT here. It is optional worker-sizing guidance
 # (scripts/doctor.py's worker_sizing / _xdist_installed), never required by addopts or
-# by CI's own install step, and doctor.py already degrades to a WARN rather than a
-# failure when it is absent -- declaring it required here would misstate that.
+# by CI's own install step, and doctor.py reports its absence as an OK-level line
+# noting nothing here consumes the worker count -- never a failure -- so declaring it
+# required here would misstate that.
 #
 # `.github/workflows/tests.yml` installs this same set by hand in its own install step;
 # tests/test_dev_dependencies_611.py checks the two stay in agreement rather than
