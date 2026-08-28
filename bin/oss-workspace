@@ -94,16 +94,6 @@ else
          "rather than a tick, which would otherwise run on guessed values." >&2
 fi
 
-# The flag makes this session ABLE to receive channel events. It does not create a
-# board: `radar` reads its tiers from this repo's own .supertool.json, and a fresh
-# clone has none. Reporting "armed" when only half of that holds is the defect this
-# whole plugin is about, so the state is stated rather than assumed.
-if [ ! -f "$repo_root/.supertool.json" ]; then
-    echo "oss-workspace: no .supertool.json here, so there are no radar tiers and no board to watch. The session still runs, and ops needing a preset will say so." >&2
-elif ! grep -q radar "$repo_root/.supertool.json" 2>/dev/null; then
-    echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
-fi
-
 # `python3` by name is a POSIX assumption: Windows ships `python` and no
 # `python3`, and its App Execution Alias makes a `python` that EXISTS and opens a
 # store page instead of running. So each candidate is proved by running it and
@@ -119,6 +109,70 @@ if [ -z "$python_bin" ]; then
     echo "oss-workspace: no working python was found (tried python3, python), so" \
          "neither the channel name nor the consumer path could be read. This" \
          "session opens without a channel." >&2
+fi
+
+# The flag makes this session ABLE to receive channel events. It does not create a
+# board: `radar` reads its tiers from this repo's own .supertool.json, and a fresh
+# clone has none. Reporting "armed" when only half of that holds is the defect this
+# whole plugin is about, so the state is stated rather than assumed -- by the block
+# directly below, not by anything further up this file (found by review: this
+# paragraph used to sit directly above the code that stated it, and #618's edit
+# left it stranded above unrelated python-detection code instead).
+#
+# Does this repo's board have anything to publish to it? Three states, not one.
+#
+# This used to be one line: `grep -q radar "$repo_root/.supertool.json"`, which
+# also matches `radar_exclusions`, a key spelled `radar-slow`
+# (`tests/test_workspace_launcher.py` already carries exactly that fixture for a
+# sibling arm), or the word sitting inside a comment. Read the same way
+# scripts/doctor.py's own `radar_publish_state` reads it instead: `ops.radar.
+# radar_tiers` has to be a non-empty object.
+#
+# `radar_tiers_declared` is remembered rather than acted on here: the THIRD
+# state -- tiers declared, and nothing has EVER spawned on this channel -- needs
+# the channel NAME, which is not resolved until further down. It fires from the
+# STATE_DIR_CHECK extension of ASK_CONSUMER below, not from this block.
+#
+# #618's own measurement: a repo can be FORWARDING, subscribed and verified, with
+# `watches` saying "the state directory ... does not exist yet, so nothing has
+# ever spawned on this channel" -- and this script's one line about the board
+# fired on the OPPOSITE case from that harm: no tiers (opted out) warned,
+# tiers-and-never-spawned (opted in, and blind) stayed silent.
+radar_tiers_declared=0
+if [ ! -f "$repo_root/.supertool.json" ]; then
+    echo "oss-workspace: no .supertool.json here, so there are no radar tiers and no board to watch. The session still runs, and ops needing a preset will say so." >&2
+elif [ -n "$python_bin" ]; then
+    radar_tiers_out=$("$python_bin" - "$repo_root/.supertool.json" <<'RADAR_TIERS'
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        doc = json.load(handle)
+except (OSError, ValueError):
+    print("no-tiers")
+    raise SystemExit(0)
+if not isinstance(doc, dict):
+    print("no-tiers")
+    raise SystemExit(0)
+ops = doc.get("ops")
+block = ops.get("radar") if isinstance(ops, dict) else None
+tiers = block.get("radar_tiers") if isinstance(block, dict) else None
+print("tiers" if isinstance(tiers, dict) and tiers else "no-tiers")
+RADAR_TIERS
+) || radar_tiers_out=no-tiers
+    if [ "$radar_tiers_out" = "tiers" ]; then
+        radar_tiers_declared=1
+    else
+        echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
+    fi
+else
+    # No working python here: fall back to the old, looser check rather than
+    # say nothing at all. Still capable of the false negative named above --
+    # unchanged from before this fix, and strictly better than silence. The
+    # THIRD state below needs python regardless of what this line decides.
+    if ! grep -q radar "$repo_root/.supertool.json" 2>/dev/null; then
+        echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
+    fi
 fi
 
 # ONE sentence for where this session ACTUALLY lands when any arm below refuses, and
@@ -629,10 +683,31 @@ if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then
 # and before the 34-line "could not ask" arm that exists to report exactly that
 # state got a chance to (#588). This idiom is the one the doctor-diagnostic call
 # below already uses for the identical reason.
-"$python_bin" - "$SUPERTOOL_WATCH_NAME" <<'ASK_CONSUMER' && ask_consumer_status=0 || ask_consumer_status=$?
+#
+# `${radar_tiers_declared:-0}`, not a bare `$radar_tiers_declared` (#627):
+# `tests/test_ask_consumer_573.py` extracts this WHOLE `if`/heredoc/`fi` block,
+# starting at the `if [ -n "${SUPERTOOL_WATCH_NAME:-}" ]...` line above, and
+# runs it standalone under `sh` with only `python_bin` and
+# `SUPERTOOL_WATCH_NAME` set -- that is the block's own tested contract, not an
+# oversight in the fixture, and `radar_tiers_declared` is assigned outside the
+# extracted region. A bare reference is a `set -u` failure the instant that
+# variable is unset, which is `#588`'s shape again: the block dies at THIS
+# line, before the crashed-probe arm three states down ever gets to run. The
+# default makes the block independently satisfiable the way its own harness
+# already assumes, and is a no-op wherever the whole script runs the normal
+# way, since `radar_tiers_declared` is always assigned by the time this line
+# is reached there.
+"$python_bin" - "$SUPERTOOL_WATCH_NAME" "${radar_tiers_declared:-0}" <<'ASK_CONSUMER' && ask_consumer_status=0 || ask_consumer_status=$?
 import importlib.util, json, os, sys
 
 name = sys.argv[1]
+# "1" only when .supertool.json declares a non-empty ops.radar.radar_tiers,
+# decided further up this script (#618). Anything else -- including a caller
+# that ran this program standalone with no second argv, the way
+# tests/test_doctor_inprocess.py extracts DERIVE_NAME above -- is "not
+# declared", never "declared", so a missing argument cannot forge the state
+# this block goes on to warn about.
+tiers_declared = len(sys.argv) > 2 and sys.argv[2] == "1"
 
 
 def cannot_ask(why):
@@ -727,6 +802,80 @@ try:
 except (Exception, SystemExit) as err:
     cannot_ask("%s could not be read (%s)" % (rule_path, type(err).__name__))
     raise SystemExit(0)
+
+# STATE_DIR_CHECK (#618): has anything EVER spawned on the channel this session
+# is about to use? Independent of `accepted` above and run regardless of it --
+# `module.resolve()` (below) falls back to the shared default paths on its own
+# when the name is rejected, so this reads the paths the consumer will actually
+# use either way rather than the ones this script guessed.
+#
+# ASKED, not transcribed, for the same reason `accepted` above is asked rather
+# than matched against a copy of NAME_RE kept in this file: `resolve()` is read
+# out of the SAME already-imported module, off the version actually installed,
+# so a future supertool changing where poller slots live changes what this
+# reads too. `getattr` rather than a bare attribute access: an older installed
+# naming.py may have `NAME_RE` and nothing else, and answering "never spawned"
+# from a module that cannot even compute the path would be a confident wrong
+# receipt about a question nothing here actually asked.
+#
+# THREE states, not two, and the third was the bug found by review: the first
+# cut of this block folded "could not check" -- no `resolve()` on this
+# version, `resolve()` raising, or `os.stat` raising something other than
+# `FileNotFoundError` -- into the same silent no-output as "checked, and it is
+# healthy". That is exactly the shape this file's own doctrine a few lines up
+# forbids for `cannot_ask()`'s identical question ("Silence here would be
+# indistinguishable from acceptance, which is the absence this plugin is
+# named after") -- restated here rather than only above it, because the
+# silence this time was in NEW code repeating an old mistake, not a gap in an
+# existing one.
+if tiers_declared:
+    state_dir_could_not_check = ""
+    resolve_fn = getattr(module, "resolve", None)
+    if not callable(resolve_fn):
+        state_dir_could_not_check = (
+            "%s has no resolve() to ask (only NAME_RE, or nothing usable at "
+            "all) -- this may be an older supertool" % rule_path)
+    else:
+        try:
+            state_dir = resolve_fn().state_dir
+        except Exception as err:
+            state_dir_could_not_check = (
+                "%s's resolve() raised %s" % (rule_path, type(err).__name__))
+            state_dir = ""
+        if not state_dir_could_not_check and not state_dir:
+            state_dir_could_not_check = "%s's resolve() returned no state_dir" % rule_path
+        if not state_dir_could_not_check:
+            # The exception in hand decides absence from unreadable -- the
+            # same rule CLAUDE.md's `_read_config`/`Path.exists()` trap is
+            # about, one layer down: `os.path.isdir` or `Path.exists()` would
+            # swallow a permission error or an over-length path into the same
+            # bare False a genuine absence produces, and this line would then
+            # be unable to tell "never spawned" from "could not look".
+            try:
+                os.stat(state_dir)
+                never_spawned = False
+            except FileNotFoundError:
+                never_spawned = True
+            except OSError as err:
+                never_spawned = False
+                state_dir_could_not_check = (
+                    "%s could not be examined (%s)" % (state_dir, type(err).__name__))
+            if never_spawned:
+                sys.stderr.write(
+                    "oss-workspace: .supertool.json declares radar tiers, but the "
+                    "poller state directory %s has never existed, so nothing has "
+                    "ever spawned on this channel -- a verified, subscribed, "
+                    "forwarding channel with an empty fleet renders identically "
+                    "to a healthy board with nothing to report. Run "
+                    "supertool 'radar' to raise one. supertool 'channel:health'\n"
+                    % state_dir)
+    if state_dir_could_not_check:
+        sys.stderr.write(
+            "oss-workspace: .supertool.json declares radar tiers, but whether "
+            "anything has ever spawned on this channel could not be checked -- "
+            "%s. Not answered as either state: silence here would be "
+            "indistinguishable from a healthy board. supertool 'channel:health'\n"
+            % state_dir_could_not_check)
 
 if accepted:
     raise SystemExit(0)

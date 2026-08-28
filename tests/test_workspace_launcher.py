@@ -1146,6 +1146,150 @@ def test_the_slug_that_works_by_one_character_is_still_accepted(tmp_path):
     assert "DISCARD" not in done.stderr, done.stderr
 
 
+# --- has anything EVER spawned on this channel? (#618) ------------------------
+#
+# `.supertool.json` declaring radar tiers only opens the door: the launcher
+# registers the consumer, exports the name and the session runs "armed" whether
+# or not a board has ever been raised on it. Found on a consumer repo where
+# `channel:health` was FORWARDING, subscribed and verified throughout, while
+# `watches` said the poller state directory "does not exist yet, so nothing has
+# ever spawned on this channel" -- and the launcher's own one line about the
+# board fired on the OPPOSITE case: no tiers (opted out) warned, tiers declared
+# and never spawned (opted in, and blind) stayed silent.
+#
+# The fixture plants a `resolve()` on the consumer's own naming.py, the same
+# shape `presets/watch/naming.py` ships (measured against supertool 0.51.0),
+# with `state_dir` baked in directly rather than reconstructed from the name --
+# what is under test here is the launcher reading `resolve()` off the installed
+# module and stat-ing the path it returns, not supertool's own path formula.
+
+
+def _naming_with_resolve(state_dir):
+    return (
+        "import re\n"
+        "NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}" + chr(92) + "Z')\n"
+        "class _Resolved:\n"
+        "    def __init__(self, state_dir):\n"
+        "        self.state_dir = state_dir\n"
+        "def resolve(env=None):\n"
+        "    return _Resolved(" + repr(str(state_dir)) + ")\n"
+    )
+
+
+def test_tiers_declared_and_a_never_spawned_channel_is_warned(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    never_existed = tmp_path / "never-existed-state-dir"
+    done, argv = run(
+        repo, with_channel=True, naming=_naming_with_resolve(never_existed)
+    )
+    assert argv, done.stderr
+    assert "has never existed" in done.stderr, done.stderr
+    assert "nothing has ever spawned" in done.stderr, done.stderr
+    assert str(never_existed) in done.stderr, done.stderr
+
+
+def test_tiers_declared_and_a_raised_channel_is_not_warned(tmp_path):
+    """The must-fire half's pair, same fixture shape, one variable changed.
+
+    Without it, a launcher that warns unconditionally whenever tiers are
+    declared -- ignoring `resolve()` entirely -- would satisfy the assertion
+    above and the new warning would be furniture on every healthy launch.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    existing = tmp_path / "existing-state-dir"
+    existing.mkdir()
+    done, argv = run(
+        repo, with_channel=True, naming=_naming_with_resolve(existing)
+    )
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "nothing has ever spawned" not in done.stderr, done.stderr
+
+
+def test_no_tiers_declared_is_not_told_about_a_never_spawned_channel(tmp_path):
+    """The old warning (no tiers at all) must still fire, and the NEW one must
+    not -- there is nothing to have spawned for a board that was never asked
+    to publish anything in the first place.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text('{"presets": ["git"]}', encoding="utf-8")
+    never_existed = tmp_path / "never-existed-state-dir"
+    done, argv = run(
+        repo, with_channel=True, naming=_naming_with_resolve(never_existed)
+    )
+    assert argv, done.stderr
+    assert "nothing publishes to it" in done.stderr, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+
+
+def test_a_consumer_whose_naming_has_no_resolve_says_it_could_not_check(tmp_path):
+    """An older installed consumer may carry `NAME_RE` and nothing else -- that
+    is `could not check`, not a confident "never spawned" AND not silence.
+
+    Found by review (#618): the first cut of this fix answered `could not
+    check` with silence, which renders identically to "checked, and it is
+    healthy" -- exactly the shape this file's own doctrine forbids for
+    `cannot_ask()`'s identical question three states above this one.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    done, argv = run(repo, with_channel=True, naming=SUPERTOOL_NAMING)
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "could not be checked" in done.stderr, done.stderr
+
+
+def test_a_healthy_channel_says_nothing_at_all(tmp_path):
+    """The must-fire pair's must-NOT-fire half: with a working `resolve()` and
+    an existing state directory, NEITHER the never-spawned warning nor the
+    could-not-check one may appear. Without this, a fix for the silence above
+    that instead made the could-not-check warning fire unconditionally would
+    satisfy every other assertion in this file.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    existing = tmp_path / "existing-state-dir"
+    existing.mkdir()
+    done, argv = run(
+        repo, with_channel=True, naming=_naming_with_resolve(existing)
+    )
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "could not be checked" not in done.stderr, done.stderr
+
+
+def test_a_resolve_that_raises_says_it_could_not_check(tmp_path):
+    """`resolve()` is somebody else's code, executed at run time (#231's own
+    justification for reading it live rather than transcribing it) -- so it
+    can raise, and a raise must not read as "nothing to warn about" either.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text(
+        '{"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}', encoding="utf-8"
+    )
+    naming = (
+        "import re\n"
+        "NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}" + chr(92) + "Z')\n"
+        "def resolve(env=None):\n"
+        "    raise RuntimeError('boom')\n"
+    )
+    done, argv = run(repo, with_channel=True, naming=naming)
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "could not be checked" in done.stderr, done.stderr
+    assert "RuntimeError" in done.stderr, done.stderr
+
+
 def _launcher_without_its_scripts(tmp_path):
     """A copy of the launcher under a plugin root carrying no `scripts/`.
 
