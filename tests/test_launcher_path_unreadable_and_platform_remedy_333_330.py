@@ -368,13 +368,31 @@ def test_no_warning_state_prints_a_posix_command_on_windows(tmp_path, state_name
 
 def test_the_matched_state_prints_no_remedy_on_either_platform(tmp_path):
     """A remedy in the OK state would be noise on POSIX and a false claim of a
-    problem on Windows."""
+    problem on Windows.
+
+    #617: PATH is built from a symlink onto the plugin's own bin/oss-workspace,
+    the way a real `~/.local/bin` install resolves -- not from the plugin's own
+    bin directory itself, which `oss_workspace_launcher_state` now excludes from
+    the search (see `tests/test_oss_workspace_launcher_289.py`'s #617 tests for
+    why: a session's own PATH always carries that directory, so searching it
+    proves nothing about what the user's own shell can reach)."""
     plugin_root = _plugin_root(tmp_path)
+    local_bin = tmp_path / "local-bin"
+    local_bin.mkdir()
+    try:
+        os.symlink(
+            str(plugin_root / "bin" / "oss-workspace"), str(local_bin / "oss-workspace")
+        )
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        pytest.skip(
+            "this platform would not create a symlink ({}); what went untested is "
+            "the matched-state-prints-no-remedy arm".format(exc)
+        )
     for windows in (True, False):
         doctor.FINDINGS.clear()
         doctor.check_oss_workspace_launcher(
             plugin_root=plugin_root,
-            path=str(plugin_root / "bin"),
+            path=str(local_bin),
             windows=windows,
         )
         level, message = doctor.FINDINGS[-1]
