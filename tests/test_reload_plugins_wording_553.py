@@ -119,7 +119,9 @@ def test_check_auto_update_updated_message_names_reload_plugins(tmp_path, monkey
         lambda: {"state": "updated", "plugin": "oss", "from": "0.11.0", "to": "0.12.0"},
     )
     doctor.check_auto_update(str(tmp_path))
-    assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
+    # Row 0 is the loop plugin's, which is this test's subject. #605 added a second row
+    # about the declared dependencies; this receipt predates it and says nothing about
+    # them, which that row states rather than rounding to a pass.
     state, message = doctor.FINDINGS[0]
     assert state == "WARN", doctor.FINDINGS
     assert "/reload-plugins" in message, message

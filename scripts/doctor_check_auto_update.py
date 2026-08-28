@@ -55,6 +55,13 @@ def check_auto_update(project_dir, sh_available=None):
       second question; folding it into "no receipt" would report a broken receipt as
       the ordinary pre-first-run state.
 
+    A sixth row follows all of these, unconditionally, whenever the updater actually ran:
+    what it did about the plugins this one declares it needs (#605). `_report_dependencies`
+    below holds it and its own three absences. It is a separate row rather than a clause in
+    the ones above because the loop plugin's verdict and a dependency's are different
+    answers, and #521 is the precedent for what happens when a second answer is folded into
+    a first: it reaches the receipt and stops there.
+
     A `updated`/`current` receipt additionally carries `partial_failure` (#521): one
     scope succeeding is enough for either verdict to stand on its own terms (a
     deliberate decision this row does not second-guess), but a scope that was silently
@@ -132,6 +139,17 @@ def check_auto_update(project_dir, sh_available=None):
         stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
     state = receipt.get("state")
     partial = bool(receipt.get("partial_failure"))
+    _report_plugin(receipt, state, partial, stamp)
+    # Second, and always: the loop plugin's row above answers about one plugin, and #605
+    # widened what the updater acts on. A row that stayed pinned to the first would have
+    # gone silently narrower than its own subject at the moment the subject widened --
+    # the shape this repository is about.
+    _report_dependencies(receipt)
+
+
+def _report_plugin(receipt, state, partial, stamp):
+    """The loop plugin's own row -- unchanged by #605, moved out so the dependency row
+    below cannot be reached only on some of its arms."""
     if state == "updated":
         message = (
             "auto-update: updated {} from {} to {}{} -- this session is still running "
@@ -162,3 +180,94 @@ def check_auto_update(project_dir, sh_available=None):
         "auto-update: could not check{} -- {}. This is not a statement that the plugin "
         "is current.".format(stamp, receipt.get("detail")),
     )
+
+#: A dependency state the updater records that is not a gap in what the updater did.
+#: `not-installed` is named in the row anyway -- "nothing was updated" and "nothing needed
+#: updating" are two answers, and a row that printed only the second would be the third
+#: state wearing the first's clothes. Whether a declared dependency *should* be installed
+#: is a different question, and `doctor`'s declared-dependencies row already owns it.
+_DEPENDENCY_OK_STATES = ("current", "not-installed")
+
+
+def _report_dependencies(receipt):
+    """What the updater did about the plugins this one declares it needs (#605).
+
+    Four inputs, and three of them are absences that must not render alike:
+
+    * **no `dependencies` key at all** -- a receipt written by the updater before #605.
+      It says nothing about dependencies because nothing looked, and the row says exactly
+      that. Reading it as "every dependency is current" is the defect class this
+      repository is named after, applied to its own instrument;
+    * **`dependencies_unreadable`** -- the manifest's own `dependencies` key could not be
+      read as a list of names, so which plugins should have been updated could not be
+      told and none were. WARN, because a manifest nobody can parse is a gap in the
+      product, not in the machine;
+    * **an empty list with the manifest readable** -- this plugin declares no
+      dependencies. A fact, reported at OK;
+    * **entries** -- summarised at the highest severity present, naming every plugin that
+      is not plainly current. `detail` is quoted rather than summarised for the same
+      reason #521 gave: the row that prints `state` and never looks at `detail` is how a
+      failure reaches a receipt and stops there.
+    """
+    if receipt.get("dependencies_unreadable"):
+        doctor.report(
+            "WARN",
+            "auto-update dependencies: this plugin's manifest has a `dependencies` key "
+            "that could not be read as a list of names, so which plugins should have "
+            "been updated could not be told and none were touched.",
+        )
+        return
+    if "dependencies" not in receipt:
+        doctor.report(
+            "OK",
+            "auto-update dependencies: this receipt records nothing about them -- it was "
+            "written by a version of the updater that only ever acted on the loop plugin "
+            "itself. That is not a statement that the declared dependencies are current; "
+            "the next session start writes a receipt that answers.",
+        )
+        return
+    entries = receipt.get("dependencies") or []
+    if not entries:
+        doctor.report(
+            "OK", "auto-update dependencies: this plugin's manifest declares none"
+        )
+        return
+
+    def described(entry):
+        name = entry.get("name")
+        state = entry.get("state")
+        if state == "updated":
+            return "{} updated {} to {}".format(name, entry.get("from"), entry.get("to"))
+        if state == "not-installed":
+            return "{} not installed for this project".format(name)
+        if state == "current":
+            return "{} current".format(name)
+        return "{} could not be checked ({})".format(name, entry.get("detail"))
+
+    moved = [e for e in entries if e.get("state") == "updated"]
+    unknown = [
+        e
+        for e in entries
+        if e.get("state") not in _DEPENDENCY_OK_STATES and e.get("state") != "updated"
+    ]
+    partial = [e for e in entries if e.get("partial_failure")]
+    summary = "auto-update dependencies: {}".format(
+        "; ".join(described(entry) for entry in entries)
+    )
+    if unknown or partial:
+        doctor.report(
+            "WARN",
+            summary + ". A plugin that could not be checked is not a plugin reported "
+            "current -- nothing was established about it.",
+        )
+        return
+    if moved:
+        doctor.report(
+            "WARN",
+            summary + ". This session is still running the copies it started with: run "
+            "/reload-plugins to move the registry now (which agents, skills and commands "
+            "resolve); a restart is still needed for command text already injected into "
+            "this turn.",
+        )
+        return
+    doctor.report("OK", summary)
