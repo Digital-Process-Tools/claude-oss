@@ -32,6 +32,7 @@ import scaffold  # noqa: E402
 # two tests that exercise the real mechanism need the real function under
 # that stub, not the stub itself.
 _REAL_CONSUMER_WATCH_NAME_VERDICT = doctor._consumer_watch_name_verdict
+_REAL_WATCH_DECLARATION_SPLIT = doctor._watch_declaration_split
 
 
 @pytest.fixture(autouse=True)
@@ -1264,6 +1265,26 @@ def _watch_name_accepted_by_default(monkeypatch):
     itself override this explicitly, per fixture-shadowing rules."""
     monkeypatch.setattr(
         doctor, "_consumer_watch_name_verdict", lambda name: ("accepted", "")
+    )
+
+
+@pytest.fixture(autouse=True)
+def _watch_declaration_split_reads_fully_declared_by_default(monkeypatch):
+    """#623 sibling of the fixture above, same reasoning: every test above this
+    line was written before `_watch_declaration_split` existed, declaring a
+    name on ONE op block (`radar`) and asserting on the OLD states
+    (`agree`/`declared-only`/`derived-export`/`derived`). Against the real
+    installed supertool that fixture shape genuinely IS half-declared, which
+    would turn every one of those into `partial` and break an assertion about
+    something else entirely. Patched to `found` with nothing silent -- "as far
+    as this repo declares, every watch op has it" -- so the existing
+    single-op fixtures keep exercising what they were written to exercise.
+    The tests that exercise the split itself override this explicitly, per
+    fixture-shadowing rules, the same way `_watch_name_accepted_by_default`'s
+    own overrides work.
+    """
+    monkeypatch.setattr(
+        doctor, "_watch_declaration_split", lambda project_dir: ("found", (), (), "")
     )
 
 

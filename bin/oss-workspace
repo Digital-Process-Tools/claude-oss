@@ -1043,8 +1043,17 @@ fi
 channel_registered=0
 registered_command=""
 registered_args=""
+# `mcp_get_status` is captured on the `if` itself (`set -eu`-safe: a command used
+# as an `if` condition is exempt from errexit either way) and exported below
+# alongside the raw output, so `scripts/doctor.py`'s own registration check --
+# `check_mcp_channel_registration`, run a few lines later via `doctor.sh` -- can
+# read this answer instead of shelling out to `claude mcp get` a second time in
+# the same session-open (#629: `claude` is not a cheap binary to start, and this
+# question was being asked twice back to back).
+mcp_get_status=1
 if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
     channel_registered=1
+    mcp_get_status=0
     # `[ \t]` rather than a POSIX character class: a class inside an awk program
     # still writes a doubled bracket into the file, and the guard that keeps this
     # script out of bash test syntax matches on the characters, not on the context.
@@ -1052,7 +1061,12 @@ if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
     # claude's output is where that difference shows up.
     registered_command=$(printf '%s\n' "$channel_entry" | awk '/^[ \t]*Command:/ { sub(/^[ \t]*Command:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }')
     registered_args=$(printf '%s\n' "$channel_entry" | awk '/^[ \t]*Args:/ { sub(/^[ \t]*Args:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }')
+else
+    mcp_get_status=$?
 fi
+export OSS_WORKSPACE_MCP_CHECKED=1
+export OSS_WORKSPACE_MCP_STATUS="$mcp_get_status"
+export OSS_WORKSPACE_MCP_OUTPUT="$channel_entry"
 
 channel_ready=0
 if [ "$find_consumer_status" -ne 0 ]; then
@@ -1243,6 +1257,15 @@ else
         esac
     fi
 fi
+
+# #629: exported only to relay one already-computed answer into the doctor
+# subprocess a few lines above -- never meant to reach the session itself. Left
+# exported, a `claude mcp get` answer read at session-open would go on
+# answering an in-session `/oss:doctor` run for the rest of the session, which
+# is precisely the reading-taken-once-and-treated-as-fresh-forever defect this
+# repo is named after (see `statusline.py`'s cache history). Unset before the
+# session starts, in every arm above -- ran, skipped, or could not be started.
+unset OSS_WORKSPACE_MCP_CHECKED OSS_WORKSPACE_MCP_STATUS OSS_WORKSPACE_MCP_OUTPUT
 
 if [ "$#" -eq 0 ]; then
     # The prompt goes FIRST and the variadic flag LAST. A positional after the
