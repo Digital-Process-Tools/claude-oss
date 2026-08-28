@@ -106,8 +106,18 @@ def test_a_wrong_shape_cache_could_not_be_determined(tmp_path, monkeypatch):
     assert "could not be determined" in message
 
 
-def test_a_cache_carrying_no_reading_for_this_repo_could_not_be_determined(tmp_path, monkeypatch):
+def test_a_plugin_repo_with_no_reading_could_not_be_determined(tmp_path, monkeypatch):
+    """The must-fire control beside the not-checked test below (#615): `owner/name`
+    IS one of the installed plugins' own source repositories here, so `refresh()`
+    could have written a `latest` reading for it and did not -- that is a real,
+    transient gap, not a structural one, and it stays `WARN ... could not be
+    determined`."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins",
+        lambda project_root, plugins_root=None: {"oss": {"repository": "owner/name"}},
+    )
     _write_cache(tmp_path, {"fetched_at": 1.0, "prs": 0, "issues": 0})
     _reset()
     doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"})
@@ -115,6 +125,34 @@ def test_a_cache_carrying_no_reading_for_this_repo_could_not_be_determined(tmp_p
     assert state == "WARN"
     assert "could not be determined" in message
     assert "no `latest` reading" in message
+
+
+def test_a_non_plugin_repo_with_no_reading_is_not_checked_not_a_permanent_warn(
+    tmp_path, monkeypatch
+):
+    """#615: `refresh()` only ever writes `latest[slug]` for installed plugins'
+    own source repositories (`installed_plugins()`'s `repository` field). A managed
+    repo that is not itself a plugin can never appear there, so a missing reading
+    for it is not a transient gap this check should keep warning about forever --
+    it is structurally unanswerable, and the permanent `WARN ... could not be
+    determined` this issue was filed against is what that renders as without this
+    branch."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins",
+        lambda project_root, plugins_root=None: {
+            "oss": {"repository": "Digital-Process-Tools/claude-oss"}
+        },
+    )
+    _write_cache(tmp_path, {"fetched_at": 1.0, "prs": 0, "issues": 0})
+    _reset()
+    doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"})
+    state, message = _finding()
+    assert state == "WARN"
+    assert "not checked" in message
+    assert "could not be determined" not in message
+    assert "owner/name" in message
 
 
 def test_a_live_read_that_does_not_answer_could_not_be_determined(tmp_path, monkeypatch):

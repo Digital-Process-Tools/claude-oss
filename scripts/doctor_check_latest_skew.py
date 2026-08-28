@@ -43,6 +43,23 @@ def _age_text(stamp, now):
     return "{}s old".format(int(max(0.0, now - stamp)))
 
 
+def _is_plugin_source_repo(project_dir, repo):
+    """Is `repo` one of the source repositories `statusline.refresh()` can ever
+    write a `latest` reading for -- an installed plugin's own manifest-declared
+    `repository`, resolved for this project (#615)?
+
+    `refresh()`'s `latest` map is keyed by ``repo_from_url(record["repository"])``
+    for each of ``installed_plugins(project_dir)``'s entries -- nothing else ever
+    populates it. A managed repo that is not itself an installed plugin can never
+    appear there, so asking whether the cache carries a reading for it is asking a
+    question the cache can never answer, no matter how many times it refreshes.
+    """
+    for record in statusline.installed_plugins(project_dir).values():
+        if statusline.repo_from_url(record.get("repository")) == repo:
+            return True
+    return False
+
+
 def check_latest_skew(project_dir, config, now=None):
     """Compare the status line's cached `latest` for this repo against the
     newest published version read live.
@@ -55,12 +72,17 @@ def check_latest_skew(project_dir, config, now=None):
       is a report about the *cache*, not a fault in the repo.
     * ``WARN ... could not be determined`` -- no cache file, an unreadable one,
       one that parses to the wrong shape, one carrying no reading for this
-      repo, or a live read that did not answer. Never folded into agreement,
-      on the same reasoning as #216: the distinction between "no cache exists"
-      and "a cache exists and could not be read" is worth keeping separate.
-    * ``not-checked`` (via ``doctor.unmeasured``) -- no declared `repo`, or
-      `scripts/statusline.py` could not be imported. Answers nothing about the
-      repository itself, so it must not render as either state above.
+      repo *while it is one of the repositories the cache could carry a
+      reading for*, or a live read that did not answer. Never folded into
+      agreement, on the same reasoning as #216: the distinction between "no
+      cache exists" and "a cache exists and could not be read" is worth
+      keeping separate.
+    * ``not-checked`` (via ``doctor.unmeasured``) -- no declared `repo`,
+      `scripts/statusline.py` could not be imported, or `repo` is not an
+      installed plugin's own source repository, so the cache's `latest` map
+      can never carry a reading for it regardless of how many times it
+      refreshes (#615). Answers nothing about the repository itself, so it
+      must not render as either state above.
 
     ``now`` is a parameter, defaulting to ``time.time()``, so a test can drive
     the age comparison without a real clock.
@@ -123,6 +145,15 @@ def check_latest_skew(project_dir, config, now=None):
     cached = cached_by_repo.get(repo) if isinstance(cached_by_repo, dict) else None
     age = _age_text(document.get("latest_fetched_at"), now)
     if cached is None:
+        if not _is_plugin_source_repo(project_dir, repo):
+            doctor.unmeasured(
+                "latest skew",
+                "not checked -- {} is not an installed plugin's own source "
+                "repository, so the status line's `latest` cache can never carry "
+                "a reading for it (`refresh()` only ever writes readings for "
+                "installed plugins).".format(repo),
+            )
+            return
         doctor.report(
             "WARN",
             "latest skew: could not be determined -- the cache under {} carries "
