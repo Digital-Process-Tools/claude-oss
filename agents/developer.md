@@ -134,6 +134,18 @@ it a second way — grep the new content back — before saying it.
    `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS` is the derived list, not a copy of one, so a
    guard added there later reaches this brief with no further edit here.
 
+   **A `guard` line is not always a file to add — read its receipt, not just its name (#566/#612).**
+   The list above is a fact about *this* repository. When you are dispatched into a different one,
+   a row can render `-- NOT IN THIS REPO, treat as uncovered`, meaning the named test file does not
+   exist there at all — do not try to run it, and do not spend a round trip discovering that by
+   hand; the class it would have guarded is simply uncovered by any narrowed run in that repo, which
+   is itself a reason to run the full suite instead. A row can also render `-- COULD NOT TELL
+   whether this repo has it`, meaning the path could not be examined — treat that the same way,
+   never as a quiet `absent`. Only a row with no such suffix names a file that genuinely exists here
+   and belongs in whatever you run. This is #612's own shape one file over from its fix: a brief
+   that hands out a guard's name without its state is the identical defect this plugin is named
+   after, reproduced in the text a dispatched agent reads rather than in the tool that produced it.
+
    The anti-pattern is the expensive half: **never re-run the full suite to watch a failure you have
    already seen.** Go back to the one file. Re-running everything to re-read the same assertion is
    the most wasteful loop available to a delegated agent.
