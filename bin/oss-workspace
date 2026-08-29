@@ -145,33 +145,59 @@ elif [ -n "$python_bin" ]; then
     radar_tiers_out=$("$python_bin" - "$repo_root/.supertool.json" <<'RADAR_TIERS'
 import json, sys
 
+# THREE strings out, not two ("tiers" was already right; "no-tiers" used to
+# also mean "could not read the file", which is #652: an unreadable config
+# and a real opt-out rendered as the same fact). "unreadable" is now its own
+# answer for the OSError/ValueError/non-dict arms, so the caller can tell
+# "the maintainer declared no tiers" from "this document could not be read
+# the way this script expects" -- two different facts, never one sentence.
 try:
     with open(sys.argv[1], encoding="utf-8") as handle:
         doc = json.load(handle)
 except (OSError, ValueError):
-    print("no-tiers")
+    print("unreadable")
     raise SystemExit(0)
 if not isinstance(doc, dict):
-    print("no-tiers")
+    print("unreadable")
     raise SystemExit(0)
 ops = doc.get("ops")
 block = ops.get("radar") if isinstance(ops, dict) else None
 tiers = block.get("radar_tiers") if isinstance(block, dict) else None
 print("tiers" if isinstance(tiers, dict) and tiers else "no-tiers")
 RADAR_TIERS
-) || radar_tiers_out=no-tiers
+) && radar_tiers_status=0 || radar_tiers_status=$?
+    # Status captured on the heredoc opener itself, not on a line after it --
+    # #588's shape, restated here rather than only in the ASK_CONSUMER block
+    # below, because a crashed interpreter is a THIRD way to reach this
+    # question with no real answer, on top of the two "unreadable" already
+    # covers from inside the probe.
+    if [ "${radar_tiers_status:-1}" -ne 0 ]; then
+        radar_tiers_out=unreadable
+    fi
     if [ "$radar_tiers_out" = "tiers" ]; then
         radar_tiers_declared=1
+    elif [ "$radar_tiers_out" = "unreadable" ]; then
+        radar_tiers_declared=unknown
+        echo "oss-workspace: whether .supertool.json declares radar tiers is UNKNOWN, not absent -- the file exists but could not be read as the JSON object this script expects (or the probe reading it crashed). Check delivery with supertool 'channel:health' before trusting a green board." >&2
     else
         echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
     fi
 else
-    # No working python here: fall back to the old, looser check rather than
-    # say nothing at all. Still capable of the false negative named above --
-    # unchanged from before this fix, and strictly better than silence. The
-    # THIRD state below needs python regardless of what this line decides.
-    if ! grep -q radar "$repo_root/.supertool.json" 2>/dev/null; then
-        echo "oss-workspace: .supertool.json declares no radar tiers, so the channel is open and nothing publishes to it. Check delivery with supertool 'channel:health' before trusting a green board." >&2
+    # No working python here, so this document cannot actually be parsed --
+    # the grep below is a weak, best-effort signal, not a read of the JSON,
+    # and #652 is the record of treating its silence as a confirmed "no
+    # tiers". It also matches `radar_exclusions`, a key spelled `radar-slow`,
+    # or the word sitting inside a comment (see the block comment above), so
+    # a MATCH is no more conclusive than a non-match: neither is a state this
+    # arm can assert as fact, so both report UNKNOWN and differ only in the
+    # weak signal named. The THIRD state below still needs python regardless
+    # of what this arm decides, since #627's STATE_DIR_CHECK never runs
+    # without one.
+    radar_tiers_declared=unknown
+    if grep -q radar "$repo_root/.supertool.json" 2>/dev/null; then
+        echo "oss-workspace: .supertool.json mentions \"radar\", but there is no python here to parse it, so whether it declares radar tiers is UNKNOWN rather than confirmed. Check delivery with supertool 'channel:health' before trusting a green board." >&2
+    else
+        echo "oss-workspace: .supertool.json does not mention \"radar\", but there is no python here to parse it properly, so whether it declares radar tiers is UNKNOWN rather than absent. Check delivery with supertool 'channel:health' before trusting a green board." >&2
     fi
 fi
 
@@ -707,7 +733,17 @@ name = sys.argv[1]
 # tests/test_doctor_inprocess.py extracts DERIVE_NAME above -- is "not
 # declared", never "declared", so a missing argument cannot forge the state
 # this block goes on to warn about.
-tiers_declared = len(sys.argv) > 2 and sys.argv[2] == "1"
+#
+# THREE states arrive here now, not two (#652): "1" (declared), "unknown"
+# (the earlier block could not read .supertool.json, or had no python to
+# parse it), and anything else, including a missing argv, meaning "not
+# declared". `tiers_unknown` is checked below the STATE_DIR_CHECK gate so an
+# unreadable config is reported as SKIPPED rather than silently read as "not
+# declared" -- which used to switch off #627's never-spawned-board check
+# with no receipt that anything had been skipped.
+radar_state = sys.argv[2] if len(sys.argv) > 2 else "0"
+tiers_declared = radar_state == "1"
+tiers_unknown = radar_state == "unknown"
 
 
 def cannot_ask(why):
@@ -828,7 +864,18 @@ except (Exception, SystemExit) as err:
 # named after") -- restated here rather than only above it, because the
 # silence this time was in NEW code repeating an old mistake, not a gap in an
 # existing one.
-if tiers_declared:
+if tiers_unknown:
+    # #652's composition: an unreadable .supertool.json used to leave
+    # `radar_tiers_declared` at its `0` default, which silently switched off
+    # this whole check with no receipt that it had been skipped. Reported
+    # loudly instead -- and NOT as "never existed", which would be a claim
+    # about a board this script never confirmed was declared at all.
+    sys.stderr.write(
+        "oss-workspace: whether .supertool.json declares radar tiers is "
+        "UNKNOWN, so whether anything has ever spawned on this channel was "
+        "not checked either -- skipped, not healthy. supertool "
+        "'channel:health'\n")
+elif tiers_declared:
     state_dir_could_not_check = ""
     resolve_fn = getattr(module, "resolve", None)
     if not callable(resolve_fn):
