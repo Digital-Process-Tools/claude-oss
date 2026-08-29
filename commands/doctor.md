@@ -309,6 +309,57 @@ This reads the registration only. It performs no registration and no removal —
 owns that — and it makes one real `claude mcp get` call per run, which is a fact about the machine
 this diagnostic runs on, not about the repo being diagnosed.
 
+## The `channel consumer pin` line
+
+The registration line above confirms the pinned path *exists*; it never compares the *version* that
+path is pinned to against the version supertool is actually installed at (#646). A pin left over
+from an earlier update stays `OK` twice over — registered, and the file it names still there —
+right up until the plugin cache drops that version's directory, at which point the registration that
+looked healthy stops resolving with no warning beforehand. This line only runs when the registration
+line above resolved to `registered`; every other registration state already has nothing to compare.
+
+It asks the registration a second time rather than reusing the answer above: each check is testable
+and stubbable on its own, the same pattern every sibling check in this file already follows, so this
+line makes its own `claude mcp get` call. Two real calls per run, not one — accepted rather than
+optimised away, because sharing one answer between the two checks was tried and reverted for
+breaking that independence.
+
+- `OK … matching the active install` — the pinned version and the active install agree.
+- `WARN … SKEW …` — they differ. The line also says whether the two files are byte-identical,
+  computed by hashing both rather than assumed: identical means the drift is cosmetic and
+  re-registering is a convenience; not identical means the consumer actually running is not the one
+  installed. **Not a hard failure** — a deliberate pin to an older copy is a legitimate choice, the
+  same way `./supertool` pointing at a local checkout is one, and this only names it.
+- `WARN … whether its pinned version matches the active install is unknown` — the third state: no
+  `.claude-plugin/plugin.json` could be found walking up from the registered path, its version could
+  not be read, no active version could be read to compare against, or neither parsed as a version.
+  Never folds into `OK` — an unparseable pair is not evidence of a match.
+
+The pinned version is read from the registered install's own manifest, found by walking up from the
+registered path, rather than matched out of a path segment that happens to look like a version.
+
+## The `dependency diagnostic` lines
+
+`declared_dependencies()` already reports a version per dependency elsewhere in this run — that
+answers "what is installed", not "is it working". Every declared dependency ships a diagnostic of
+its own (`supertool`'s `doctor` op, `remember`'s and `claude-jit-context`'s versioned `doctor.sh` /
+`jit-doctor.sh` scripts) and until #638 nothing here ever ran it. One line per declared dependency:
+
+- `OK … <version>: <the dependency's own verdict line>` — its diagnostic ran and answered. The
+  verdict is relayed verbatim, never re-derived — `claude-jit-context`'s documented exit codes (0
+  nothing inert / 1 a layer the matcher can never load / 2 SKIPPED) are carried through rather than
+  flattened into a boolean, and `remember`'s own trailing `VERDICT:` line (its script always exits 0
+  by design, so the exit code alone is not the signal) is what is relayed.
+- `OK … not installed` — an ordinary state, not a finding: nothing here says every declared
+  dependency must be installed everywhere this runs.
+- `WARN … could not run …` — installed, and still did not answer: no `supertool`/`bash` on PATH, its
+  script is not where the install record says the dependency is, it timed out, or it exited outside
+  its own documented contract. **Never folds into `OK`** — a diagnostic that gave up quietly must not
+  read the same as one that reported clean.
+
+Measured combined runtime on the machine this was written on is under 1s, so this runs on every
+invocation rather than behind a flag or a slower clock.
+
 ## The `owned files` lines, and what to do about them
 
 Owned files — `.oss/README.md`, `.oss/assemble_changelog.py`,
