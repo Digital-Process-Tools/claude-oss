@@ -102,9 +102,18 @@ just resolved and relays anything short of a clean pass -- see the `/oss:doctor`
 what it covers. It never refuses to open a session over a broken repo; a maintainer whose config
 is broken is exactly the person who needs a session in which to fix it. Set
 `OSS_WORKSPACE_SKIP_DOCTOR=1` (any non-empty value) to skip it -- announced either way, with the
-repo then reported as unknown rather than fine. Measured on macOS with `supertool`, `gh` and node
-on PATH: opening costs **0.45 s** without the diagnostic and **2.5 s** with it, most of that a
-per-dependency network check bounded at 25 s.
+repo then reported as unknown rather than fine.
+
+Measured 2026-08-29 on macOS 15.3.2 (arm64), with `supertool` 0.52.0, `gh` 2.98.0, node v22.22.1 and
+`claude` 2.1.219 on PATH: eight runs of the real launcher per arm, wall-clock mean, with the final
+`exec claude` replaced by a no-op so no interactive session is opened but every `claude mcp ...`
+subcommand still reaches the real binary -- opening costs **~1.3 s** without the diagnostic and
+**~3.2 s** with it. Both figures now include a `claude mcp get` call the launcher itself makes at
+every open (#621), which this receipt did not carry when it was first written; of the diagnostic's
+own added ~1.9 s, roughly half is its own `claude mcp get` call (`claude` itself takes about a second
+to start, independent of the network) and roughly half the pre-existing per-dependency network check
+bounded at 25 s per dependency -- not "most of it", the way this sentence used to read. One machine,
+one run of measurements; re-measure rather than trust this past its own date.
 
 ## Commands
 
