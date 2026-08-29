@@ -63,6 +63,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import agent_role  # noqa: E402
 import oss_config  # noqa: E402
 
 try:
@@ -75,6 +76,7 @@ STATE_SKIPPED = "skipped"
 STATE_COULD_NOT_RUN = "could-not-run"
 STATE_CREATED = "created"
 STATE_COULD_NOT_CREATE = "could-not-create"
+STATE_ROLE_FORBIDDEN = "role-forbidden"
 
 # The whole of what `state` may say in this module. `notes_section` answers about the
 # changelog and answers under `notes` for this reason (#134): two vocabularies under
@@ -88,11 +90,13 @@ PUBLISH_STATES = (
     STATE_COULD_NOT_RUN,
     STATE_CREATED,
     STATE_COULD_NOT_CREATE,
+    STATE_ROLE_FORBIDDEN,
 )
 
 EXIT_OK = 0
 EXIT_COULD_NOT_RUN = 3
 EXIT_SKIPPED = 4
+EXIT_ROLE_FORBIDDEN = 5
 
 CHANGELOG_NAME = "CHANGELOG.md"
 
@@ -468,6 +472,8 @@ def _exit_code(state):
         return EXIT_OK
     if state == STATE_SKIPPED:
         return EXIT_SKIPPED
+    if state == STATE_ROLE_FORBIDDEN:
+        return EXIT_ROLE_FORBIDDEN
     return EXIT_COULD_NOT_RUN
 
 
@@ -499,6 +505,41 @@ def main(argv=None):
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
+
+    # Checked before anything else -- before the config is even read -- so
+    # that no repository's own policy can be consulted on the sub-manager's
+    # behalf. #695 withholds *publish* authority from the per-tick
+    # sub-manager "in the code, not only in prose"; this is that code. Read
+    # against `args.repo`, not the calling process's own environment alone:
+    # `agent_role.current_role` falls back to a marker file under that
+    # repository's git directory, because an exported OSS_AGENT_ROLE does
+    # not survive from one Bash tool call to the next in this harness
+    # (measured, not assumed -- see scripts/agent_role.py's own docstring).
+    # NOTE: tagging (`git tag` / `git push origin <tag>`, in
+    # commands/release.md) is NOT gated by this check or any other code --
+    # it is a plain shell command, and withholding it from the sub-manager
+    # rests on agents/sub-manager.md's prose alone (it never runs the
+    # release phase). Only the publish half named here is code-enforced.
+    # A marker this process cannot classify -- expired, or unparsable --
+    # is deliberately treated the SAME as no marker at all: it fails open,
+    # towards permitting the release, not towards refusing it. Failing
+    # closed on "cannot tell" would silently reintroduce the bug this
+    # review round fixed -- a dead sub-manager's leftover marker blocking
+    # every release after it forever, with a reason that reads as correct.
+    # The underlying classification is not lost even though the decision
+    # ignores it: `refusal["marker_state"]` carries it for whoever wants to
+    # inspect why a release did or did not go through.
+    refusal = agent_role.release_refusal("publish a GitHub Release", root=args.repo)
+    if refusal["forbidden"]:
+        return _emit(
+            {
+                "state": STATE_ROLE_FORBIDDEN,
+                "command": None,
+                "reason": refusal["reason"],
+                "tag": args.tag,
+            },
+            args.as_json,
+        )
 
     root = Path(args.repo)
     config_path = Path(args.config) if args.config else root / oss_config.CONFIG_NAME
