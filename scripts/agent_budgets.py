@@ -37,13 +37,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     "agents/auditor.md": (14329, 15800),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
-    # Baseline raised from (7450, 8200): review of the first draft found
-    # the OSS_AGENT_ROLE mechanism did not survive across Bash tool calls
-    # (measured, not assumed) and that "tag, publish" overstated what the
-    # code-level withholding actually covers. Both are correctness fixes,
-    # not padding, and there was nothing safe to cut to pay for them in the
-    # same diff.
-    "agents/sub-manager.md": (8578, 9450),
+    # Baseline raised twice, both times for the same reason: a review
+    # finding was a correctness fix with nothing safe to cut to pay for it
+    # in the same diff. (7450, 8200) -> (8578, 9450): the OSS_AGENT_ROLE
+    # mechanism did not survive across Bash tool calls, and "tag, publish"
+    # overstated what the code-level withholding covers. (8578, 9450) ->
+    # (9918, 10900): the marker was write-only and blocked a legitimate
+    # release forever after a dead sub-manager's leftover file -- the
+    # marker-expiry and explicit-clear steps this fixes are load-bearing,
+    # not padding.
+    "agents/sub-manager.md": (9918, 10900),
 }
 
 

@@ -520,6 +520,15 @@ def main(argv=None):
     # it is a plain shell command, and withholding it from the sub-manager
     # rests on agents/sub-manager.md's prose alone (it never runs the
     # release phase). Only the publish half named here is code-enforced.
+    # A marker this process cannot classify -- expired, or unparsable --
+    # is deliberately treated the SAME as no marker at all: it fails open,
+    # towards permitting the release, not towards refusing it. Failing
+    # closed on "cannot tell" would silently reintroduce the bug this
+    # review round fixed -- a dead sub-manager's leftover marker blocking
+    # every release after it forever, with a reason that reads as correct.
+    # The underlying classification is not lost even though the decision
+    # ignores it: `refusal["marker_state"]` carries it for whoever wants to
+    # inspect why a release did or did not go through.
     refusal = agent_role.release_refusal("publish a GitHub Release", root=args.repo)
     if refusal["forbidden"]:
         return _emit(
