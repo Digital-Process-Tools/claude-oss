@@ -63,6 +63,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import agent_role  # noqa: E402
 import oss_config  # noqa: E402
 
 try:
@@ -75,6 +76,7 @@ STATE_SKIPPED = "skipped"
 STATE_COULD_NOT_RUN = "could-not-run"
 STATE_CREATED = "created"
 STATE_COULD_NOT_CREATE = "could-not-create"
+STATE_ROLE_FORBIDDEN = "role-forbidden"
 
 # The whole of what `state` may say in this module. `notes_section` answers about the
 # changelog and answers under `notes` for this reason (#134): two vocabularies under
@@ -88,11 +90,13 @@ PUBLISH_STATES = (
     STATE_COULD_NOT_RUN,
     STATE_CREATED,
     STATE_COULD_NOT_CREATE,
+    STATE_ROLE_FORBIDDEN,
 )
 
 EXIT_OK = 0
 EXIT_COULD_NOT_RUN = 3
 EXIT_SKIPPED = 4
+EXIT_ROLE_FORBIDDEN = 5
 
 CHANGELOG_NAME = "CHANGELOG.md"
 
@@ -468,6 +472,8 @@ def _exit_code(state):
         return EXIT_OK
     if state == STATE_SKIPPED:
         return EXIT_SKIPPED
+    if state == STATE_ROLE_FORBIDDEN:
+        return EXIT_ROLE_FORBIDDEN
     return EXIT_COULD_NOT_RUN
 
 
@@ -499,6 +505,23 @@ def main(argv=None):
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
+
+    # Checked before anything else -- before the config is even read -- so
+    # that no repository's own policy can be consulted on the sub-manager's
+    # behalf. #695 withholds release (tag, publish) authority from the
+    # per-tick sub-manager "in the code, not only in prose"; this is that
+    # code. See scripts/agent_role.py.
+    refusal = agent_role.release_refusal("publish a GitHub Release")
+    if refusal["forbidden"]:
+        return _emit(
+            {
+                "state": STATE_ROLE_FORBIDDEN,
+                "command": None,
+                "reason": refusal["reason"],
+                "tag": args.tag,
+            },
+            args.as_json,
+        )
 
     root = Path(args.repo)
     config_path = Path(args.config) if args.config else root / oss_config.CONFIG_NAME

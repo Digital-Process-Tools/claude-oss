@@ -37,6 +37,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     "agents/auditor.md": (14329, 15800),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
+    "agents/sub-manager.md": (7450, 8200),
 }
 
 
