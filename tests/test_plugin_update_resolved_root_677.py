@@ -151,7 +151,24 @@ def test_cli_print_resolved_root_prints_the_path(tmp_path, capsys, monkeypatch):
     )
     assert rc == 0
     out = capsys.readouterr().out
-    assert out == str(home_plugins / "cache" / "dpt-plugins" / "oss" / "9.9.9")
+    # .as_posix() on BOTH sides, not str() -- the consumer decides this, not
+    # which spelling makes the assertion pass. commands/tick.md's step 1 feeds
+    # this output straight into a bash snippet (`[ -d "$RESOLVED_ROOT" ]`, then
+    # `"$DOCTOR_ROOT/scripts/doctor.py"`), which runs under Git Bash on
+    # Windows -- the same Git-Bash consumer scripts/doctor.py's own
+    # _launcher_remedy already writes POSIX-separator paths for, and the exact
+    # reason main()'s --print-resolved-root mode emits .as_posix() rather than
+    # str() (see the self-review fix in this file's own history, and the
+    # dedicated PureWindowsPath regression test below). str() on the expected
+    # side compared correctly on POSIX only by coincidence -- both sides
+    # happen to already use forward slashes there -- and diverged the moment a
+    # real Windows CI leg supplied WindowsPath separators on the actual side,
+    # which is the second, separate defect in this fixture #680's CI turned up
+    # after the first (the HOME/USERPROFILE fixture) was fixed. Asserting
+    # .as_posix() on both sides is platform-honest rather than a one-off
+    # patch: it is correct on whichever OS actually runs this test, not tuned
+    # to the one this session happens to be on.
+    assert out == (home_plugins / "cache" / "dpt-plugins" / "oss" / "9.9.9").as_posix()
 
 
 def test_cli_print_resolved_root_prints_posix_separators_on_a_windows_path(monkeypatch, capsys):
