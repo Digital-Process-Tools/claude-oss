@@ -1214,6 +1214,33 @@ def test_check_test_ci_never_asserts_unenforced_off_an_ambiguous_token_681(tmp_p
     assert findings and findings[0]["state"] == "ambiguous"
 
 
+def test_the_ambiguous_state_never_shadows_an_unreadable_workflow_681(tmp_path):
+    """Self-review finding on this issue: the `ambiguous` arm was first written
+    ahead of the `unreadable` check, so a workflow directory that could not be
+    scanned at all was reported only as 'check this token by hand' -- silently
+    dropping the one fact (which path, which cause) #134 exists to carry. An
+    unread directory is a fact about the repo and has to survive whatever else
+    could not be classified, the same way #124 already reasons about `unclear`.
+    """
+    _workflow_named_that_will_not_stat(tmp_path, _FORGED_WORKFLOW_NAME)
+    findings = scaffold.check_test_ci(
+        tmp_path, _config(test_command="uv run --frobnicate value pytest")
+    )
+    assert findings and findings[0]["state"] == "unreadable"
+    assert scaffold.CAUSE_ENTRY_UNSTATTABLE in findings[0]["causes"]
+
+
+def test_module_flag_with_an_inline_value_is_not_discarded_681():
+    """Self-review finding on this issue: the generic 'self-contained, skip it'
+    branch for an '=' token ran BEFORE the module-flag check, so
+    '--module=pytest' and '-m=pytest' were discarded whole -- the same silent
+    misclassification #681 was filed over, just for the '=' spelling of the
+    module flag this fix itself introduced special handling for.
+    """
+    assert scaffold._runner_token("python --module=pytest tests/") == "pytest"
+    assert scaffold._runner_token("python -m=pytest") == "pytest"
+
+
 def test_check_test_ci_still_reports_unenforced_when_the_runner_is_clear_681(tmp_path):
     """The 'must fire' positive control paired with the test above: a command
     whose runner IS clearly determined, and genuinely not run anywhere, must

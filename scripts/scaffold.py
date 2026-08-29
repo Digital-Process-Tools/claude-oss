@@ -3066,7 +3066,18 @@ def _runner_token(command):
             continue
         if token.startswith("-"):
             if "=" in token:
-                # Self-contained (`--extra=dev`): nothing separate to skip or guess.
+                # Self-contained (`--extra=dev`): nothing separate to skip or guess --
+                # UNLESS the flag itself is a module flag (`-m=pytest`,
+                # `--module=pytest`), whose inline value is the candidate token for
+                # the same reason the separated form is below. Checked before the
+                # generic self-contained skip, not after: checking the generic case
+                # first would discard `--module=pytest` whole and let the loop return
+                # whatever non-flag token follows as the runner instead -- silently
+                # wrong, not even the ambiguous sentinel, since nothing downstream
+                # would ever see that this token needed special handling at all.
+                flag_part, _, value_part = token.partition("=")
+                if flag_part.lstrip("-") in _MODULE_FLAGS:
+                    return value_part
                 i += 1
                 continue
             bare = token.lstrip("-")
@@ -3132,26 +3143,7 @@ def check_test_ci(repo_root, config):
         return []
 
     token = _runner_token(command)
-    if token is _AMBIGUOUS_RUNNER:
-        # Before the unclear/unreadable/unenforced arms, all three of which either
-        # need a real token or state a claim about every workflow in the repo (#681).
-        # A token this function could not classify must never fall through to
-        # `unenforced` -- that state means "nothing in .github/workflows/ runs it",
-        # and this function does not know what it would even be looking for.
-        return [
-            {
-                "state": "ambiguous",
-                "detail": (
-                    "test_command '{command}' contains an option this check does not "
-                    "recognise, immediately followed by a value -- and cannot tell "
-                    "whether that value is the option's argument or the test runner. "
-                    "Guessing either way risks a false claim about whether anything in "
-                    "{dir}/ runs your tests, so nothing is reported enforced or "
-                    "unenforced here. Check by hand.".format(command=command, dir=WORKFLOW_DIR)
-                ),
-            }
-        ]
-    if token and any(token in text for text in texts):
+    if token is not _AMBIGUOUS_RUNNER and token and any(token in text for text in texts):
         return [
             {
                 "state": "unclear",
@@ -3212,6 +3204,30 @@ def check_test_ci(repo_root, config):
                             "{0} ({1})".format(path, cause) for path, cause in seen
                         ),
                     )
+                ),
+            }
+        ]
+
+    if token is _AMBIGUOUS_RUNNER:
+        # After `unreadable`, not before it (#682-review): an unread workflow
+        # directory is a fact about this repo that must survive whatever else
+        # could not be classified, the same way #124 already reasons about
+        # `unclear` above -- collapsing the two would silently drop `unreadable`'s
+        # path and cause whenever the token also happened to be ambiguous, which
+        # is precisely the "an absence produced by the tool, read as an absence
+        # in the world" defect class CLAUDE.md is about. `ambiguous` is not a
+        # claim about every workflow in the repo, so it still stands ahead of the
+        # one arm that IS such a claim, `unenforced`, immediately below.
+        return [
+            {
+                "state": "ambiguous",
+                "detail": (
+                    "test_command '{command}' contains an option this check does not "
+                    "recognise, immediately followed by a value -- and cannot tell "
+                    "whether that value is the option's argument or the test runner. "
+                    "Guessing either way risks a false claim about whether anything in "
+                    "{dir}/ runs your tests, so nothing is reported enforced or "
+                    "unenforced here. Check by hand.".format(command=command, dir=WORKFLOW_DIR)
                 ),
             }
         ]
