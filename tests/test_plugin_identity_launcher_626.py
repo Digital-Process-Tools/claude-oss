@@ -78,18 +78,35 @@ def _child_env(tmp_path, *, home, xdg_cache_home, fake_identity, windows=None):
     """The environment `_run_block`'s child gets, built where a test can read it.
 
     Split out of `_run_block` for #643. The `windows` branch below copies the
-    whole ambient environment in, and HOME is a real variable on a GitHub
-    Actions Windows runner -- so setting HOME only when it is wanted left the
-    PARENT's HOME standing when it was not, and `home=False` produced a child
-    with a home after all. The launcher then behaved correctly against that
-    home, and the test asserting the no-home arm read the correct behaviour as
-    a failure. Absence has to be established by removing the variable, not by
-    declining to add one.
+    whole ambient environment in, and setting HOME only when it is wanted
+    left a PARENT's HOME standing when it was not -- WHERE the ambient
+    environment carries one. That is real and reproducible on any platform
+    whose `os.environ` sets `HOME` (macOS, Linux CI legs, a developer's own
+    machine): `home=False` under the old logic produced a child with a home
+    after all, the launcher then behaved correctly against that home, and a
+    test asserting the no-home arm read the correct behaviour as a failure.
+
+    IT IS NOT THE WHOLE STORY ON WINDOWS, and this docstring used to claim
+    otherwise -- corrected after `fd9888a`'s own precondition assertion
+    (`assert "HOME" in os.environ`) failed on GitHub's `windows-latest`
+    legs: that runner's own Python `os.environ` carries no `HOME` at all, so
+    there was never a parent HOME for this fixture to leak there. Absence
+    still has to be established by removing the variable rather than
+    declining to add one -- that principle does not change -- but on a
+    Windows runner the pop this function performs is provably a no-op for
+    `HOME` specifically, because the key was never present in the copied
+    ambient environment to begin with. Whatever made #643's original Windows
+    legs fail is therefore not (or not only) this mechanism; see
+    `test_the_no_home_fixture_removes_home_it_does_not_merely_decline_to_add_it`
+    and `test_neither_cache_dir_nor_home_is_set` for what is and is not
+    established about the Git-Bash-synthesis alternative.
 
     `windows` is a parameter rather than a read of `sys.platform` so the branch
     that only runs on Windows is reachable from a test on any platform: the
     leak is a fact about the ambient environment, not about the OS, and a guard
-    that can only run where the bug was found is a guard nobody re-runs.
+    that can only run where the bug was found is a guard nobody re-runs. It
+    remains useful for exactly that reason even though real Windows CI cannot
+    exercise the HOME-leak case itself.
     """
     windows = sys.platform == "win32" if windows is None else windows
     env = {"PATH": os.environ.get("PATH", "")}
@@ -236,29 +253,55 @@ def test_no_working_python_says_could_not_tell_rather_than_nothing(tmp_path):
 def test_the_no_home_fixture_removes_home_it_does_not_merely_decline_to_add_it(
     tmp_path,
 ):
-    """#643's actual defect, reproduced on every platform.
+    """#643's actual defect, reproduced on every platform that has one.
 
-    `windows=True` is passed explicitly rather than waited for: the ambient
-    copy is what leaks the parent's HOME, and this process has a HOME on every
-    runner this suite runs on, so the leak is reproducible here. Before the
-    fix this returned the PARENT's HOME under `home=False`, which is how a
-    correct launcher came to be reported as broken on one leg.
+    `windows=True` is passed explicitly rather than waited for: on a platform
+    whose ambient `os.environ` carries `HOME`, `env.update(os.environ)`
+    leaks the PARENT's HOME through `home=False`'s old "decline to add"
+    logic, and this is that leak, forced regardless of host OS.
 
-    Asserts its own precondition first: this process's ambient `os.environ`
-    must actually carry `HOME`, or the pop below is a no-op and `"HOME" not
-    in env` would pass whether or not the fix's explicit-removal logic ran --
-    the exact "assertion vacuous on a platform" shape CLAUDE.md's Sec 4 warns
-    about. Every leg this suite runs on (macOS, Linux and Windows CI runners
-    alike) sets HOME, so this is a real check of the environment rather than
-    a skip-worthy gap; if a future runner genuinely lacks HOME the assertion
-    below fails loudly on its own message rather than silently proving
-    nothing.
+    THIS PRECONDITION WAS MEASURED WRONG ONCE ALREADY (#643 follow-up): the
+    original commit here asserted `"HOME" in os.environ` outright, on the
+    belief that every runner this suite runs on sets HOME. GitHub Actions'
+    `windows-latest` disproved that directly -- its own Python `os.environ`
+    carries no `HOME` at all, so the hard assertion failed on that leg with
+    its own message ("this platform cannot exercise this test") as the
+    failure text, which is a skip's message wearing a failure's exit code.
+    Confirmed by reproducing the identical failure locally: running this
+    file's suite with `HOME`/`XDG_CACHE_HOME` stripped from THIS process's
+    own ambient environment (`env -u HOME -u XDG_CACHE_HOME python3 -m
+    pytest ...`) reproduces the exact assertion text and line Windows CI
+    reported.
+
+    So the mechanism this test guards -- an ambient HOME leaking through a
+    fixture that merely declines to add one -- is real and reproducible
+    wherever HOME is ambiently set (macOS and Linux CI legs, and this
+    developer's own machine), and is NOT the story on GitHub's Windows
+    runners, which never had a HOME to leak in the first place. Whatever
+    caused the original #643 Windows failures is therefore NOT (or not only)
+    this leak; the leading remaining explanation is the sibling reviewer
+    finding on Git Bash's `sh` synthesizing its own HOME from `USERPROFILE`
+    / `HOMEDRIVE` / `HOMEPATH`, which this test does not scrub and does not
+    attempt to guard -- `test_neither_cache_dir_nor_home_is_set` below is
+    the one that probes for that, because probing the child is the only way
+    to tell a real absence from a shell-synthesized one.
+
+    Attempted, not assumed: precondition checked first, skip carrying the
+    platform and what was observed when it fails, so a runner with no
+    ambient HOME reads as untested rather than broken -- CLAUDE.md's own
+    permission-fixture rule, one axis over.
     """
-    assert "HOME" in os.environ, (
-        "this test's own precondition failed: the ambient environment has no "
-        "HOME to leak, so removing it below would be a no-op and prove "
-        "nothing about the fix -- this platform cannot exercise this test"
-    )
+    if "HOME" not in os.environ:
+        pytest.skip(
+            "this platform's ambient os.environ has no HOME at all (platform "
+            "{!r}), so home=False's old 'decline to add' behaviour and the "
+            "fix's explicit removal are indistinguishable here -- there is "
+            "nothing to leak and nothing to remove. UNTESTED here: whether "
+            "the ambient-HOME-leak mechanism this test guards is what #643's "
+            "Windows failures were ever caused by; see "
+            "test_neither_cache_dir_nor_home_is_set for the Git-Bash-synthesis "
+            "question this cannot answer.".format(sys.platform)
+        )
     env = _child_env(
         tmp_path,
         home=False,
