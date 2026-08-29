@@ -315,3 +315,80 @@ def test_every_swept_pattern_is_anchored_at_the_text_end(name):
     pattern = getattr(oss_config, name).pattern
     assert pattern.startswith(r"\A"), (name, pattern)
     assert pattern.endswith(r"\Z"), (name, pattern)
+
+
+# --- OLD_PATTERNS itself, pinned (#663) ------------------------------------
+#
+# The test above checks the *live* oss_config attributes, using OLD_PATTERNS
+# only as a source of names. It says nothing about the OLD_PATTERNS values
+# themselves -- and REPO_RE's entry is never read anywhere else in this file:
+# the reproduction test below covers only `changelog_dir` and
+# `changelog_untagged`. An unread dict value is a trap with a delay on it: the
+# moment somebody extends that parametrize list to `repo` -- the obvious next
+# edit in a fixture whose whole shape invites it -- OLD_PATTERNS["REPO_RE"]
+# goes from inert to load-bearing with no review of whether it still
+# describes anything real.
+#
+# It is *supposed* to be weaker than the live pattern -- that is the entire
+# point of "OLD_PATTERNS", kept verbatim as the pre-#173 anchor on purpose
+# (see the module docstring above). So the fix is not to strengthen it; it is
+# to pin the one thing that should never drift silently: everything BUT the
+# anchor. If oss_config's character class ever changes, OLD_PATTERNS must
+# change with it, or the "reproduction" it exists for stops reproducing
+# anything real. Same shape as #577 and #653: a direct comparison between two
+# copies of one fact, with a control proving the comparison actually catches
+# a one-sided edit.
+
+
+def _anchorless_body(pattern):
+    r"""Strip a leading anchor (\A or ^) and trailing anchor (\Z or $).
+
+    The anchor is exactly what OLD_PATTERNS is meant to weaken on purpose;
+    everything else is the fact that must not drift.
+    """
+    body = pattern
+    if body.startswith(r"\A"):
+        body = body[2:]
+    elif body.startswith("^"):
+        body = body[1:]
+    if body.endswith(r"\Z"):
+        body = body[:-2]
+    elif body.endswith("$"):
+        body = body[:-1]
+    return body
+
+
+@pytest.mark.parametrize("name", sorted(OLD_PATTERNS))
+def test_old_patterns_body_matches_the_live_patterns_body(name):
+    live_body = _anchorless_body(getattr(oss_config, name).pattern)
+    old_body = _anchorless_body(OLD_PATTERNS[name])
+    assert old_body == live_body, (
+        "OLD_PATTERNS[{0!r}] has drifted from oss_config's live {0}: the two "
+        "should differ only in the anchor -- {1!r} vs {2!r}".format(
+            name, old_body, live_body
+        )
+    )
+
+
+@pytest.mark.parametrize("name", sorted(OLD_PATTERNS))
+def test_old_patterns_still_carry_the_weak_pre_173_anchor(name):
+    r"""The other half: this dict is inert unless it is actually weaker than
+    the live pattern. A trailing \Z that quietly replaced the $ here would
+    stop reproducing anything and this file would not notice."""
+    pattern = OLD_PATTERNS[name]
+    assert not pattern.startswith(r"\A") and pattern.startswith("^"), (name, pattern)
+    assert not pattern.endswith(r"\Z") and pattern.endswith("$"), (name, pattern)
+
+
+def test_control_the_body_comparison_passes_on_an_edit_made_to_both():
+    a = r"\A[^/\s]+/[^/\s]+\Z"
+    b = r"^[^/\s]+/[^/\s]+$"
+    assert _anchorless_body(a) == _anchorless_body(b)
+
+
+def test_control_the_body_comparison_catches_a_one_sided_edit():
+    live = r"\A[^/\s]+/[^/\s]+\Z"
+    stale_old = r"^[^/\s]+/[^/\s]+$"  # not updated when the live class widened
+    widened_live = r"\A[^/\s.]+/[^/\s.]+\Z"
+    assert _anchorless_body(stale_old) != _anchorless_body(widened_live)
+    assert _anchorless_body(stale_old) == _anchorless_body(live)

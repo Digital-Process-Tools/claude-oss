@@ -2931,6 +2931,48 @@ def test_the_write_route_check_fires_on_the_pre_250_wording():
     }
 
 
+# #660: gh-pr-create refused three of four pull request payloads in one session
+# because the agent backslash-escaped a quote inside ordinary prose in pr_body's
+# JSON. Nothing in either write-route document warned against it, and a warning
+# retyped into a brief by hand was still missed on the third lane -- the same
+# argument that keeps `paste` named in the shipped blockquote rather than left
+# to memory. Checked with the same shape as the write-route class above: a
+# whitespace-collapsed read, a two-findings-or-none result, and a must-fire
+# control against the pre-660 wording so the check is proven to catch its own
+# absence before it is trusted to catch a future one.
+def _escape_warning_unmet(text):
+    collapsed = _collapse(text)
+    unmet = set()
+    if "backslash-escap" not in collapsed:
+        unmet.add("no-warning-against-backslash-escaping-quotes")
+    if "literal_backslashes" not in collapsed:
+        unmet.add("literal_backslashes-escape-hatch-not-named")
+    return unmet
+
+
+def test_both_write_route_documents_warn_against_backslash_escaped_quotes():
+    findings = {
+        str(path.relative_to(REPO_ROOT)): sorted(
+            _escape_warning_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in WRITE_ROUTE_DOCUMENTS
+        if _escape_warning_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document instructing an agent to write the pull request payload's "
+        "JSON does not warn against backslash-escaping quotes in ordinary "
+        "prose -- exactly the shape gh-pr-create refuses (#660): "
+        "{}".format(findings)
+    )
+
+
+def test_the_escape_warning_check_fires_on_the_pre_660_wording():
+    assert _escape_warning_unmet(PRIOR_WRITE_ROUTE) == {
+        "no-warning-against-backslash-escaping-quotes",
+        "literal_backslashes-escape-hatch-not-named",
+    }
+
+
 # A document that says the right thing, wrapped so the newline falls between
 # `supertool` and its quoted argument. Hand-wrapped prose does this; the reflow is
 # not aware of the inline code span.
