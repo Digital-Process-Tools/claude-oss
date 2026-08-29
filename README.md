@@ -119,6 +119,29 @@ per-dependency network check bounded at 25 s.
 | `/oss:doctor` | Config, dependencies, clone, worktree root, state file, which watch channel and radar board this repo resolves to, whether a `pre-push` hook's push budget was ever raised above supertool's 300s default, and whether the merge call can skip supertool's publish-confirm gate. Also reports which copy of this plugin answered the invocation (compared by content and by declared schema version, not by manifest version alone), where a defect in this plugin itself would get filed, whether `./supertool` points at this plugin's own checkout, and three lines about the machine itself — interpreter architecture, CPU topology, worker sizing. Exits 0 always; see `commands/doctor.md` for what each line means. |
 | `/oss:install-audit` | Is this install complete — the plugin, its declared dependencies, and what the human still has to do, answerable with no `.oss.json` in hand: is it present, valid, *and committed*; do declared dependencies resolve at a version this plugin's scripts can read; does the label vocabulary the triager needs exist; would re-scaffolding change the owned files. Exits 0 always; see `commands/install-audit.md`. |
 
+## Status line
+
+`/oss:scaffold` writes `.oss/statusline.py` as an owned file, and Claude Code renders its output
+in the corner of the terminal. Every field is separated by ` | `; a field this repository could not
+measure renders `?` rather than a guess, per this repository's own rule that a check which did not
+run must never look like one that ran clean.
+
+Left to right:
+
+| field | example | means |
+| --- | --- | --- |
+| model · context | `Opus · 42%` | Claude Code's own session facts, passed straight through. |
+| repo | `claude-oss main v0.15.0` | repo name, then branch (only when it is not the declared default) and the tracked version. |
+| board | `4pr 2ok 1x 1... 0? · 23is / 2eis` | open pull requests, then a CI breakdown (green/red/running/unknown, every group shown even at zero), then open issues and how many of those arrived from outside repository membership. |
+| release | `rel 4/17` | commits banked since the last release, over what a release here usually costs. Either half is `?` on its own when only one could be measured. |
+| tick | `tick 4m` / `tick due` / `tick off` / `tick -` / `tick ?` | when the next maintainer tick fires, if one is armed at all. |
+| last | `last 12:34` | a wall-clock stamp of when this line was last rendered — frozen like the rest of the line between renders, but a frozen clock time stays readable against your own watch. |
+| plugins | `plug 3✓ oss↥0.15.0 1?` | how many of this repo's declared plugin dependencies are current, then each one that is not, named. `↥`/`>` shows the **latest published** version behind a plugin marked `behind`; `↑`/`+` shows the version **installed** for one marked `ahead` — two markers that print two different fields, not two colours of the same one (#549/#550). `?` counts a plugin whose version could not be compared at all. |
+| ch | `ch✓` / `ch✗` / `ch◐` / `ch!` / `ch?` | whether supertool's watch channel is delivering — green when the consumer's counters are moving, red when nothing is listening, yellow (`◐`) when the consumer is bound but nobody is subscribed, `ch!` on a contradiction, `ch?` when nothing could be established. Set `"watch_channel": false` in `.oss.json` to turn it off — the field then disappears entirely rather than showing `ch?`, because an operator's deliberate off switch is not the same absence as a question this line asked and could not answer. |
+
+Colour, where the terminal supports it, adds a second signal on top of the marker shape rather
+than replacing it — every state above is told apart by its glyph alone, in monochrome.
+
 ## Status
 
 **Tested, not proven.** The claim this section used to make — that no real issue had gone from
