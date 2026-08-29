@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-oss-dev",
+  "owner": {
+    "name": "Digital Process Tools",
+    "email": "contact@dp.tools"
+  },
+  "metadata": {
+    "description": "Local marketplace for developing this plugin against its own checkout (#607). Points 'oss' at the directory this file ships in, rather than at a GitHub release, so `/plugin marketplace add /path/to/this/checkout` followed by `/plugin install oss@claude-oss-dev` resolves commands, skills and agents from the working tree itself -- an edit here is live in the next session, with no release required. This is a contributor route, not a replacement for the README's marketplace install: a maintainer running this loop against a DIFFERENT repository should use `dpt-plugins`, the tagged, released marketplace, because that is what the loop's own currency and release tooling assume the installed copy to be."
+  },
+  "plugins": [
+    {
+      "name": "oss",
+      "source": {
+        "source": "directory",
+        "path": "."
+      },
+      "description": "Run an open-source repo as its maintainer: triage the tracker, delegate the work, review hard, merge on green. One loop, one version, per-repo differences in config instead of prose. (Local/dev source -- resolves from this checkout, not a release.)",
+      "author": {
+        "name": "Digital Process Tools"
+      },
+      "homepage": "https://github.com/Digital-Process-Tools/claude-oss",
+      "repository": "https://github.com/Digital-Process-Tools/claude-oss",
+      "license": "Community License",
+      "keywords": ["open-source", "maintainer", "triage", "review", "release", "changelog", "development"],
+      "category": "productivity"
+    }
+  ]
+}

@@ -43,6 +43,38 @@ produced two wrong bug reports against this repo (#140). If a spawn comes back `
 Installing pulls in `supertool`, `remember` and `claude-jit-context` automatically — they are
 declared dependencies and resolve from the same marketplace.
 
+### Developing this plugin itself
+
+The marketplace install above unpacks a second tree under
+`~/.claude/plugins/cache/dpt-plugins/oss/<version>/`. Commands, skills and agents resolve
+from that cache copy, not from your clone — so an edit to `agents/developer.md` or
+`skills/manager/phases/dispatch.md` changes nothing about the session that runs it until a
+release is cut and the cache refreshes (#607). That is the right route for running this
+loop against a repository you maintain; it is the wrong one for working on this repo's own
+source.
+
+This repository ships `.claude-plugin/marketplace.json` with a `directory`-source entry
+that points at itself, so a local marketplace add resolves plugin content **in place** —
+Claude Code reads commands, skills and agents straight from the path you give it, with no
+copy into the plugin cache (confirmed by reading the installed CLI's own marketplace-source
+handling, version 2.1.219 — a `directory` source's `installLocation` is set to the given
+path directly, never cloned or copied elsewhere). From a clone of this repository:
+
+```
+/plugin marketplace add /path/to/your/claude-oss
+/plugin install oss@claude-oss-dev
+```
+
+Reload the same way any install needs it -- restart Claude Code, or run the reload
+command from the Install section above. An edit to `agents/`, `skills/` or `commands/` in
+your clone is live the next session — no release needed. This is a
+**contributor path alongside** the marketplace install above, not a replacement for it:
+a maintainer running the loop against a different repository should still use
+`dpt-plugins`, because that is the tagged, released copy the loop's own currency and
+release tooling (`/oss:doctor`'s `SKEW` line, `plugin_update.py`) assume the installed
+copy to be. Running both marketplaces registered at once is fine; just install `oss` from
+whichever one matches what you are doing in this session.
+
 ## After cloning a repo you maintain
 
 Install the launcher once. **On a marketplace install** -- `/plugin install oss@dpt-plugins`,
