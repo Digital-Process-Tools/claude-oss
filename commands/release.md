@@ -165,8 +165,8 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    It reads the version out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and out of this
    repository's own `.claude-plugin/plugin.json`, when this repository is the one that ships the
    definitions being audited — most repos this plugin manages are not that repository and carry no
-   such file, which is itself one of the three states below rather than an error. Pass the payload
-   to the auditor and repeat it in the release report. Three states, exit 0 on all of them — this
+   such file, which is itself one of the four states below rather than an error. Pass the payload
+   to the auditor and repeat it in the release report. Four states, exit 0 on all of them — this
    gate **annotates the checklist skew, it never blocks**:
 
    - **`matches`** — name the version, once. **Also carries `definitions`** (#572): an equal manifest
@@ -187,15 +187,21 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      release report. **This is evidence, not a verdict** — a byte-identical row is not proof that
      nothing relevant moved elsewhere in the two trees, only that nothing moved in that one file. Say
      what was compared and say plainly that it is not the whole answer.
-   - **`could-not-tell`** — a manifest was absent, unreadable, not JSON, or carried no string
-     `version` — including `${CLAUDE_PLUGIN_ROOT}` being unset, and including the ordinary case of a
-     repo that never shipped its own `.claude-plugin/plugin.json`. **Also `could-not-tell` when a
-     repo manifest was read but none of the checklist's own definition files exist in that repo**
-     (#580) — a readable `.claude-plugin/plugin.json` can belong to a different, unrelated plugin
-     entirely, and a version comparison between two unrelated plugins' numbers is not a skew, it is
-     a category error the gate used to report as one. Quote the `reason` the receipt gives. **It
-     never renders as a match**, and a `clean` underneath it is a clean audit of an unknown checklist
-     vintage, reported as one.
+   - **`not-applicable`** (#659) — the installed checklist's own version **is known**, quote it, but
+     this repository ships none of the checklist's own definition files, so there is nothing of its
+     own on disk to compare that version against. This is the ordinary shape for most repos this
+     plugin only installs into — including the #580 case, a repo that happens to ship its own,
+     unrelated `.claude-plugin/plugin.json` for a different plugin entirely, whose version has nothing
+     to do with this comparison. **Do not read `not-applicable` as `could-not-tell`**: which checklist
+     ran is not in doubt here — say so in the release report rather than reporting an unknown where a
+     measurement exists.
+   - **`could-not-tell`** — the installed checklist's own version could not be established: its
+     manifest was absent, unreadable, not JSON, or carried no string `version` — including
+     `${CLAUDE_PLUGIN_ROOT}` being unset. Also `could-not-tell` when this repo genuinely ships at
+     least one of the checklist's own definition files (a real subject for the comparison) but its
+     own manifest could not be read, so the comparison applies and simply could not be carried out.
+     Quote the `reason` the receipt gives. **It never renders as a match**, and a `clean` underneath
+     it is a clean audit of an unknown checklist vintage, reported as one.
 
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.

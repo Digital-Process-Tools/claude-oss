@@ -97,11 +97,13 @@ def test_a_reference_found_only_in_the_installed_copy_is_still_derived(tmp_path)
     installed copy's references derived.
 
     #580: a repo with no copy of ANY definition file is a repo that does not
-    ship the checklist at all, so the top-level state is `could-not-tell`
-    (not `differs`, as this test asserted before #580) -- but the derivation
-    itself is unaffected: `agents/developer.md` is still found via the
-    installed copy's reference and still reported, as `could-not-tell`
-    rather than silently dropped, which is the thing this test pins.
+    ship the checklist at all, so the top-level state is `not-applicable`
+    (not `differs`, as this test asserted before #580, and not
+    `could-not-tell` either, per #659 -- the installed checklist's own
+    version is fully known here) -- but the derivation itself is unaffected:
+    `agents/developer.md` is still found via the installed copy's reference
+    and still reported, as a `could-not-tell` per-file row rather than
+    silently dropped, which is the thing this test pins.
     """
     plugin_root = tmp_path / "plugin"
     repo = tmp_path / "repo"
@@ -118,7 +120,7 @@ def test_a_reference_found_only_in_the_installed_copy_is_still_derived(tmp_path)
 
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
 
-    assert payload["state"] == "could-not-tell", payload
+    assert payload["state"] == "not-applicable", payload
     rows = {row["path"]: row["state"] for row in payload["definitions"]}
     assert "agents/developer.md" in rows, rows
     # repo has no copy -> could-not-tell, not silently dropped

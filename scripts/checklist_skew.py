@@ -2,12 +2,13 @@
 """Whether the auditor's checklist matches the tree it is about to audit.
 
 `commands/release.md` gate 3 already requires the checklist version to be
-*recorded before the release-auditor spawn*, in three states -- matches /
-differs / could not tell -- and its own text says exactly what happens without
-a measurement: the honest answer is always "could not tell", and the rendered
-answer is usually nothing at all, because reading two manifests was a step a
-human performed by hand and typed into a payload. This is that read, done
-mechanically, so the honest answer is the one that actually gets printed.
+*recorded before the release-auditor spawn*, in four states -- matches /
+differs / not applicable / could not tell -- and its own text says exactly
+what happens without a measurement: the honest answer is always "could not
+tell", and the rendered answer is usually nothing at all, because reading two
+manifests was a step a human performed by hand and typed into a payload. This
+is that read, done mechanically, so the honest answer is the one that
+actually gets printed.
 
 The two numbers:
 
@@ -19,25 +20,44 @@ The two numbers:
               repository; most repos this plugin manages are not, and do not
               carry this file at all).
 
-Three states, matching the gate's own vocabulary exactly:
+Four states. #659: this module used to fold two different questions into one
+`could-not-tell` -- "which checklist is running" (answerable whenever the
+installed manifest reads) and "does this repo's own copy diverge" (genuinely
+inapplicable for the ordinary managed repo, which ships neither its own
+manifest nor the checklist's definition files at all). A release gated over a
+repo like that reported "could not tell" for a comparison it was in fact able
+to name half of. The two questions now render as two different states:
 
-  matches         both manifests read and their versions are equal.
-  differs         both manifests read and their versions disagree. Both
-                  numbers are named. Never a verdict about whether the skew
-                  mattered -- see `definitions` below.
-  could-not-tell  either manifest is absent, unreadable, not JSON, or carries
-                  no string 'version' -- including the ordinary case of a repo
-                  that only installed the plugin and never shipped its own
-                  .claude-plugin/plugin.json at all. It never renders as a
-                  match: a manifest this script could not read is not
-                  evidence that the two are the same. #580: also
-                  could-not-tell when a repo manifest *was* read but none of
-                  the checklist's own definition files exist in that repo --
-                  a readable .claude-plugin/plugin.json can belong to a
-                  different, unrelated plugin entirely (this is the ordinary
-                  shape for most managed repos that happen to ship their own
-                  plugin manifest), and a version comparison between two
-                  unrelated plugins' numbers has no subject.
+  matches         both manifests read, both sides ship the checklist's
+                  definitions, and the versions are equal.
+  differs         both manifests read, both sides ship the checklist's
+                  definitions, and the versions disagree. Both numbers are
+                  named. Never a verdict about whether the skew mattered --
+                  see `definitions` below.
+  not-applicable  the installed checklist's own version IS known, but this
+                  repository ships none of the checklist's own definition
+                  files -- so there is nothing of its own on disk to compare
+                  that version against. `installed_version` is always
+                  populated here; `repo_version` may or may not be (a repo
+                  that ships no definitions commonly ships no manifest of its
+                  own either, but #580's case -- a readable, unrelated
+                  plugin's own manifest -- lands here too, with
+                  `repo_version` naming that unrelated plugin's number
+                  purely for the receipt, never compared against anything).
+                  This is the ordinary shape for most repos this plugin only
+                  installs into. Never rendered as `could-not-tell`: the
+                  checklist that ran is not in doubt here, only whether a
+                  divergence check has a subject.
+  could-not-tell  the installed checklist's own version could NOT be
+                  established -- no plugin root, an absent/unreadable/
+                  non-JSON installed manifest, or one with no string
+                  'version' field. Also could-not-tell when this repo DOES
+                  ship at least one of the checklist's own definition files
+                  (so a divergence check has a real subject) but this repo's
+                  own manifest could not be read -- there the comparison
+                  applies and simply cannot be carried out. Never renders as
+                  a match: a manifest this script could not read is not
+                  evidence that the two are the same.
 
 This gate **annotates, it does not block** (`commands/release.md` says so in
 as many words, and blocking on a skew nobody chose would trade a reporting gap
@@ -52,13 +72,17 @@ because, once, a human answered that second question by hand: diffing the
 auditor's own definition, `agents/auditor.md`, and the ranking table
 `skills/manager/SKILL.md` owns, and finding the ranking rows byte-identical.
 
-So whenever both manifests could be read -- `matches` and `differs` alike --
-this module compares those three files, PLUS every `agents/*.md` path one of
-the three names in its own text -- e.g. `agents/auditor.md` delegating its
-platform band to `agents/developer.md` rather than reading it (#547) --
-byte-for-byte between the two trees, and reports each as `identical`,
-`differs`, or `could-not-tell` (a file present on one side only, or an
-unreadable one, is not silently skipped).
+So whenever the installed checklist's own version could be read -- `matches`,
+`differs` and `not-applicable` alike, #659 widened this from "both manifests
+readable" to "the installed one is readable", since the repo side not
+shipping a manifest is exactly the ordinary `not-applicable` case and the
+question this section answers does not depend on it -- this module compares
+those three files, PLUS every `agents/*.md` path one of the three names in
+its own text -- e.g. `agents/auditor.md` delegating its platform band to
+`agents/developer.md` rather than reading it (#547) -- byte-for-byte between
+the two trees, and reports each as `identical`, `differs`, or
+`could-not-tell` (a file present on one side only, or an unreadable one, is
+not silently skipped).
 
 #572: the comparison used to run only under `differs`, on the reasoning that
 an equal version number meant nothing to check. That left the byte comparison
@@ -90,6 +114,7 @@ from pathlib import Path
 STATE_MATCHES = "matches"
 STATE_DIFFERS = "differs"
 STATE_COULD_NOT_TELL = "could-not-tell"
+STATE_NOT_APPLICABLE = "not-applicable"
 
 EXIT_OK = 0
 
@@ -274,8 +299,11 @@ def _compare_definitions(plugin_root, repo):
 
 
 def compute(repo=".", plugin_root=None):
-    """The three-state skew payload. Never raises; a failure to read either
-    manifest is `could-not-tell`, not an exception a caller has to guard.
+    """The four-state skew payload. Never raises; a failure to read the
+    installed manifest is `could-not-tell`, not an exception a caller has to
+    guard -- and a repo that ships none of the checklist's own files is
+    `not-applicable`, not `could-not-tell`, whenever the installed version is
+    still known.
     """
     repo_path = Path(repo)
 
@@ -324,44 +352,80 @@ def compute(repo=".", plugin_root=None):
         )
     base["installed_version"] = installed_version
 
+    # #659: "which checklist ran" is already answered above -- installed_version
+    # is set. From here the only open question is whether THIS repo's own copy
+    # diverges, and that is a separate axis from whether its manifest happens
+    # to be readable: reading the repo manifest and deriving/comparing the
+    # definition files are both attempted regardless, and it is `present`
+    # (does this repo ship the checklist's own files at all), not
+    # `repo_version`, that decides whether the divergence question has a
+    # subject.
     repo_manifest = repo_path.joinpath(*MANIFEST_REL)
     base["repo_manifest"] = str(repo_manifest)
     repo_version, repo_err = _read_version(repo_manifest)
-    if repo_version is None:
-        return dict(
-            base,
-            state=STATE_COULD_NOT_TELL,
-            reason=(
-                "this repository's own .claude-plugin/plugin.json could not be "
-                "read, so either it does not ship these definitions or its "
-                "version is unknown"
-            ),
-            detail=repo_err or "",
-        )
     base["repo_version"] = repo_version
 
     definitions = _compare_definitions(plugin_root_path, repo_path)
     present, total = _repo_definition_presence(plugin_root_path, repo_path)
 
     if present == 0:
-        # #580: a readable repo manifest is not proof this repo ships the
-        # checklist -- it may be a different plugin's own manifest entirely.
-        # Zero of the derived definition files existing in the repo tree
-        # means the version comparison has no subject: replace the false
-        # "known and stale/matching" claim with the true "unknown" one.
+        # #580 found this case; #659 corrected its rendering. A readable repo
+        # manifest is not proof this repo ships the checklist -- it may be a
+        # different plugin's own manifest entirely -- and an unreadable one is
+        # the ordinary shape for a repo that only installed the plugin. Either
+        # way, zero of the derived definition files existing in the repo tree
+        # means the divergence comparison has no subject. That is not the same
+        # fact as "the checklist version is unknown" -- installed_version is
+        # right there -- so this is `not-applicable`, never `could-not-tell`.
+        if repo_version is not None:
+            subject = (
+                "this repository's own .claude-plugin/plugin.json could be "
+                "read ({0}), but none of the checklist's {1} definition "
+                "file(s) are present in this repository -- it does not ship "
+                "these definitions, so there is nothing of its own to "
+                "compare the installed checklist's version ({2}) "
+                "against".format(repo_version, total, installed_version)
+            )
+        else:
+            # _read_version always names a reason when version is None, so
+            # repo_err is populated on this branch -- this is the ordinary
+            # "never shipped a manifest at all" shape, not an unreachable
+            # default.
+            subject = (
+                "the installed checklist is {0}; this repository ships none "
+                "of its {1} definition file(s), and its own .claude-plugin/"
+                "plugin.json is unavailable too ({2}) -- the checklist "
+                "version is known, there is simply nothing on this "
+                "repository's own disk to compare it against".format(
+                    installed_version, total, repo_err or "no reason given"
+                )
+            )
+        return dict(
+            base,
+            state=STATE_NOT_APPLICABLE,
+            reason=subject,
+            detail="",
+            definitions=definitions,
+        )
+
+    if repo_version is None:
+        # This repo DOES ship at least one of the checklist's own definition
+        # files -- a real subject for the divergence check -- but its own
+        # manifest could not be read, so the comparison applies and simply
+        # cannot be carried out. Unlike the present == 0 branch, this IS the
+        # "which of the two matches" question left unanswered.
         return dict(
             base,
             state=STATE_COULD_NOT_TELL,
             reason=(
-                "this repository's own .claude-plugin/plugin.json could be read "
-                "({0}), but none of the checklist's {1} definition file(s) are "
-                "present in this repository -- it does not ship these "
-                "definitions, so its version and the installed checklist's "
-                "version ({2}) are not a comparison of the same thing".format(
-                    repo_version, total, installed_version
+                "this repository ships {0} of the checklist's {1} definition "
+                "file(s), but its own .claude-plugin/plugin.json could not be "
+                "read, so its version is unknown and cannot be compared to "
+                "the installed checklist ({2})".format(
+                    present, total, installed_version
                 )
             ),
-            detail="",
+            detail=repo_err or "",
             definitions=definitions,
         )
 
@@ -392,6 +456,7 @@ def compute(repo=".", plugin_root=None):
 HEADINGS = {
     STATE_MATCHES: "matches",
     STATE_DIFFERS: "differs",
+    STATE_NOT_APPLICABLE: "not applicable",
     STATE_COULD_NOT_TELL: "could not tell",
 }
 
@@ -424,7 +489,7 @@ def receipt(payload):
 
     lines.append(
         "gate                : ANNOTATES -- this never stops the release. "
-        "could-not-tell never renders as a match."
+        "could-not-tell/not-applicable never render as a match."
     )
     return "\n".join(lines)
 
@@ -433,8 +498,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description=(
             "Compare the installed auditing plugin's version to this "
-            "repository's own, in three states: matches, differs, "
-            "could-not-tell. Annotates; never blocks."
+            "repository's own, in four states: matches, differs, "
+            "not-applicable, could-not-tell. Annotates; never blocks."
         ),
     )
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
