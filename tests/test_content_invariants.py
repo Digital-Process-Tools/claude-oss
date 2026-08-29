@@ -2973,6 +2973,46 @@ def test_the_escape_warning_check_fires_on_the_pre_660_wording():
     }
 
 
+# #669: the shipped blockquote showed only single-op payloads, so a lane batching
+# writes paid a failed call -- `batch op missing op field` -- to discover that
+# `op = "paste"` (or `"edit"`, `"read"`, ...) has to sit inside every `[[ops]]`
+# entry. Third gap in this same paragraph inside one day (#660, #663, #669), and
+# checked the same shape as the two before it: a whitespace-collapsed read, a
+# named-findings-or-none result, and a must-fire control against the pre-669
+# wording, which is #660's PRIOR_WRITE_ROUTE -- neither anchor below is in it.
+def _batch_example_unmet(text):
+    collapsed = _collapse(text)
+    unmet = set()
+    if "[[ops]]" not in collapsed:
+        unmet.add("no-ops-array-shown")
+    if 'op = "paste"' not in collapsed:
+        unmet.add("op-field-not-shown-inside-an-entry")
+    return unmet
+
+
+def test_both_write_route_documents_show_a_worked_batch_example():
+    findings = {
+        str(path.relative_to(REPO_ROOT)): sorted(
+            _batch_example_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in WRITE_ROUTE_DOCUMENTS
+        if _batch_example_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document instructing an agent to batch several ops in one call does "
+        "not show `op` set inside an `[[ops]]` entry -- a lane batching writes "
+        "pays a failed call to learn the shape is required at all (#669): "
+        "{}".format(findings)
+    )
+
+
+def test_the_batch_example_check_fires_on_the_pre_669_wording():
+    assert _batch_example_unmet(PRIOR_WRITE_ROUTE) == {
+        "no-ops-array-shown",
+        "op-field-not-shown-inside-an-entry",
+    }
+
+
 # A document that says the right thing, wrapped so the newline falls between
 # `supertool` and its quoted argument. Hand-wrapped prose does this; the reflow is
 # not aware of the inline code span.

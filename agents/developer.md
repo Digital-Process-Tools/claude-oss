@@ -81,6 +81,29 @@ file. **Your changelog fragment is always a new file**, so every task reaches th
 raw `cat > file <<EOF` is not a substitute and does not fail loudly when you use it: it runs no
 post-write validator, cannot roll back, and tells you nothing about what it wrote.
 
+**Batching several ops in one call needs one more key than the single-op shapes above: `op`.**
+`supertool 'batch:@-'` takes a TOML `[[ops]]` array, and each entry carries its own op's payload
+fields *plus* `op = "paste"` (or `"edit"`, `"read"`, ...) naming which one it is — the field the
+single-op examples above never show, because there is only one op to be. Worked example, two new
+files in one call:
+
+```
+supertool 'batch:@-' <<'TOML'
+[[ops]]
+op = "paste"
+path = "a.py"
+content = '''...'''
+
+[[ops]]
+op = "paste"
+path = "b.py"
+content = '''...'''
+TOML
+```
+
+Omit `op` on any entry and the call fails with `batch op missing op field` — a failed call is how a
+lane without this example learns the shape (#669).
+
 **Write prose quotes plainly in the pull request payload's JSON — never
 backslash-escape a quote inside ordinary prose.** `gh-pr-create` refuses a
 body carrying literal backslash-quote, and `literal_backslashes = true`
@@ -142,10 +165,13 @@ it a second way — grep the new content back — before saying it.
    visible relationship to yours, so a subset you name by hand will not include them. Measured on PR
    #431: three named test files, 362 passed, and CI failed four legs on
    `tests/test_gate_state_consumers_328.py`, which was in none of them. Before you settle on a
-   narrowed command, run `python3 scripts/lane_setup.py <issue> --lane <each file you touched>` (repeat
-   `--lane` per file) and add every guard test its receipt names under `guard` to whatever you run —
-   `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS` is the derived list, not a copy of one, so a
-   guard added there later reaches this brief with no further edit here.
+   narrowed command, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane <each
+   file you touched>` (repeat `--lane` per file) and add every guard test its receipt names under
+   `guard` to whatever you run — `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS`
+   is the derived list, not a copy of one, so a guard added there later reaches this brief with no
+   further edit here. If the call itself does not resolve, that is a third state, not an empty one:
+   say so under `adjacent` and record the guard set as `could-not-determine` rather than as empty
+   (#647).
 
    **A `guard` line is not always a file to add — read its receipt, not just its name (#566/#612).**
    The list above is a fact about *this* repository. When you are dispatched into a different one,

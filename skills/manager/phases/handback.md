@@ -80,8 +80,9 @@ Pushing and opening is yours, and it is one read plus one call:
    named `#338`, the file became `425.…`, and CI read the mismatch as a fragment naming nothing).
    The rename and the rewrite are one coupled fact, not two — a fragment keyed to the pull request's
    own number does not exist until the pull request is open, so nothing about it is correct until
-   both halves have moved together. `scripts/rename_changelog_fragment.py <old path> <new number>`
-   performs both in one call: it moves the file with `git mv`, rewrites the fragment's own
+   both halves have moved together.
+   `${CLAUDE_PLUGIN_ROOT}/scripts/rename_changelog_fragment.py <old path> <new number>` performs both
+   in one call: it moves the file with `git mv`, rewrites the fragment's own
    self-reference to the new number, and **refuses** rather than leaving behind a fragment
    `assemble_changelog.py --check` would still reject — including when the old body never named
    itself at all, where there is nothing to move and the fix needs a human's `(#N)`. Renaming to the

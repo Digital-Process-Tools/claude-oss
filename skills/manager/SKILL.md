@@ -261,7 +261,8 @@ into the probe.
   the whole issue, comments included, has gone stale against what actually shipped. A lane was
   dispatched for part 3 of #81 after the fix had already landed and shipped: the body and every
   comment were read exactly as asked, and the brief was still written for finished work (#457). Before
-  writing a brief, run `scripts/preflight_check.py --pattern PATTERN --path FILE_OR_DIR` against the
+  writing a brief, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/preflight_check.py" --pattern
+  PATTERN --path FILE_OR_DIR` against the
   code path the issue names — for #81 that was one grep for `could not run` in `commands/release.md`
   — and read its `state` in three, never two: **`matched`**, **`not-matched`**, or
   **`could-not-search`**, which must never be read as `not-matched`. Whether a match means
@@ -446,10 +447,10 @@ Three calls stand in for judgement here, and none of them is optional:
 
 | Before | Call |
 | --- | --- |
-| naming a lane, against everything already running | `scripts/lane_setup.py <issue> --lane PATTERN --derive-held` (fallback: `--against PATTERN`, only on `could-not-derive-the-held-set`) |
-| bundling a second issue into a lane already claimed | `scripts/lane_setup.py <issue> --lane PATTERN --against PATTERN`, the candidate's declared lane against the one running lane, not the derived aggregate |
-| writing each brief | `scripts/lane_setup.py <issue>`, from the clone |
-| dispatching | `scripts/fleet_label.py <primary> <issue1,issue2,...> "<phrase>"` |
+| naming a lane, against everything already running | `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --lane PATTERN --derive-held` (fallback: `--against PATTERN`, only on `could-not-derive-the-held-set`) |
+| bundling a second issue into a lane already claimed | `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --lane PATTERN --against PATTERN`, the candidate's declared lane against the one running lane, not the derived aggregate |
+| writing each brief | `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue>`, from the clone |
+| dispatching | `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py <primary> <issue1,issue2,...> "<phrase>"` |
 
 Launch every dispatched lane in a single message so they run concurrently.
 
