@@ -198,6 +198,16 @@ separately rather than one list.
   own deepest lookable ancestor, then `os.listdir` on it, because enumeration answers regardless of
   how long the full path would be. Same rule underneath — never let a library decide the
   classification for you — reached by a second call rather than by none.
+- **Splitting the exception is not the whole fix if only one arm has a sentence.**
+  `oss_state.check_plugin_root` (#686) already had the mechanism right in the sense that mattered
+  most — its could-not-read state never collapsed into `unchanged` — but a single `except OSError`
+  covered both a genuine absence and an unreadable snapshot, and the one `why` string it returned was
+  written for the absence case only: it told a maintainer whose snapshot exists and cannot be read
+  (measured: `chmod 0`, confirmed `PermissionError`, errno 13) to run `--record-plugin-root`, which
+  cannot help them. The rule from the bullet above still applies — `FileNotFoundError` is the absence
+  arm, everything else is unreadable — but having the right arms is not the same as having written
+  the right words in each one. A checker's third state can be structurally correct and still name the
+  wrong remedy.
 - **A guard over "did this platform distinguish these two cases?" must ask a control, not a table of
   error codes.** Windows folds several Win32 codes onto `ENOENT`, so 206 (`ERROR_FILENAME_EXCED_RANGE`)
   reaches Python as an ordinary `FileNotFoundError`. A branch was written for 206, graded *reasoned*,
@@ -340,6 +350,18 @@ separately rather than one list.
   `tests/test_write_route_fact_parity_673.py` compares five named facts between the two documents
   pairwise and pins the batch error string against the actually-measured tool output, on purpose,
   because parity alone would have passed this exact case.
+- **A runbook table's command cells are commands a session runs verbatim, and nothing had ever run
+  one.** `skills/manager/SKILL.md`'s three-call table told a session to invoke
+  `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py` directly. That file is committed mode 100644 with
+  no shebang, so the row as written exits 126 -- `scripts/lane_setup.py`, invoked the same way two
+  rows up, is 100755 with a shebang, so the exec bit does survive packaging and this file
+  specifically never had one. The same table quoted `${CLAUDE_PLUGIN_ROOT}` in none of its four
+  cells, so a plugin root containing a space -- the ordinary shape of a Windows home directory built
+  from a two-word account name -- word-splits into argv. Both (#687, #689) were found by the
+  0.16.0 release gate's round-one audit, not by any test: `tests/test_op_table_commands_687_689.py`
+  now reads the table's own cells and checks quoting and exec-bit agreement for whatever script
+  each cell names, scoped to that one table and to `dispatch.md`'s matching compose line -- not a
+  sweep of every code fence in the loop's prose, which is a larger, separate piece of work.
 
 ## Layout
 

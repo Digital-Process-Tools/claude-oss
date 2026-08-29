@@ -88,10 +88,26 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      deliberately the productive one: the table grows by exactly the rows that were missing.
    - **`could not rank` — the ranking table never reached the agent.** Nothing was ranked, so the
      audit did not complete: that is **`could not run`, and it stops the tag**, the same contract as
-     a spawn that never started. Re-dispatch with the ranking table pasted into the payload verbatim
-     and record that you did — that is how the answer gets computed, not an extra round. A rank
-     nothing computed says nothing whatever about the finding, and must never be read as a row that
-     happens not to block.
+     a spawn that never started. Re-dispatch with the ranking table in the payload, **and get its text
+     by running the extractor, never by retyping it**:
+
+     ```bash
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"
+     ```
+
+     **#688: a hand transcription of this table once dropped the embargo prose off two of its rows**
+     — the reasons collapsed to a bare `yes` / `no`, though the blocking column happened to survive
+     the paste, so ranking itself was unaffected. The auditor caught the drop by reading
+     `skills/manager/SKILL.md` itself and comparing — the table is the only place its own rows are
+     written down, and this remedy must not become a second one. The script prints the table's own
+     bytes — found,
+     verbatim, exit 0 — or refuses on stdout and explains on stderr rather than emitting a
+     truncated table (`not-found`: the header is missing or the table has been reshaped;
+     `could-not-read`: `skills/manager/SKILL.md` itself could not be opened under the plugin root
+     you gave it). Paste its stdout into the payload unedited; a refusal is itself a finding to
+     report, not a cue to type the table in by hand anyway. Record that you did — that is how the
+     answer gets computed, not an extra round. A rank nothing computed says nothing whatever about
+     the finding, and must never be read as a row that happens not to block.
 
    **Stop the tag, not the loop.** Gate 3 is the only gate whose failure *produces* work: gate 1
    clears itself when CI goes green, gate 2 when the reviews finish, gate 4 names its own remedy —
