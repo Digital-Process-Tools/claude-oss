@@ -24,6 +24,7 @@ SCRIPT = REPO_ROOT / "scripts" / "checklist_skew.py"
 MATCHES = "matches"
 DIFFERS = "differs"
 COULD_NOT_TELL = "could-not-tell"
+NOT_APPLICABLE = "not-applicable"
 
 
 def _module():
@@ -139,10 +140,14 @@ def test_could_not_tell_when_installed_manifest_unreadable_json(tmp_path):
     assert payload["state"] == COULD_NOT_TELL
 
 
-def test_could_not_tell_when_repo_manifest_absent(tmp_path):
-    """The ordinary case for a repo that only installed the plugin: it never
-    shipped a .claude-plugin/plugin.json of its own, so there is no second
-    number on its disk to compare against -- and that must not read as a match.
+def test_not_applicable_when_repo_manifest_absent(tmp_path):
+    """#659: the ordinary case for a repo that only installed the plugin -- it
+    never shipped a .claude-plugin/plugin.json of its own, and ships none of
+    the checklist's own definition files either. The checklist version is
+    fully knowable (it is right there in the installed manifest); only the
+    divergence question has no subject. That must render as `not-applicable`,
+    not `could-not-tell` -- `could-not-tell` is reserved for "which checklist
+    ran" being unknown, and here it is not.
     """
     plugin_root = tmp_path / "plugin"
     _manifest(plugin_root, "9.9.9")
@@ -151,9 +156,27 @@ def test_could_not_tell_when_repo_manifest_absent(tmp_path):
     checklist_skew = _module()
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
 
-    assert payload["state"] == COULD_NOT_TELL
+    assert payload["state"] == NOT_APPLICABLE
+    assert payload["state"] != COULD_NOT_TELL
     assert payload["installed_version"] == "9.9.9"
     assert payload["repo_version"] is None
+
+
+def test_could_not_tell_positive_control_when_installed_manifest_unknown(tmp_path):
+    """Positive control beside the case above, in the same fixture shape: when
+    the *installed* checklist's own version cannot be read, that is the case
+    `could-not-tell` still names -- "which checklist ran" is genuinely
+    unknown, unlike the case above where it is known and only the repo side
+    has nothing to compare it to.
+    """
+    plugin_root = tmp_path / "plugin"  # no manifest written
+    repo = tmp_path / "repo"  # no manifest either
+
+    checklist_skew = _module()
+    payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
+
+    assert payload["state"] == COULD_NOT_TELL
+    assert payload["installed_version"] is None
 
 
 # ---------------------------------------------------------- plugin_root source
@@ -273,15 +296,20 @@ def test_matches_reports_definitions_identical_when_bytes_agree(tmp_path):
 # ------------------------------------------------------------- #580: unrelated repo
 
 
-def test_could_not_tell_when_repo_ships_no_definitions_at_all(tmp_path):
-    """#580: a managed repository that ships its own, unrelated
-    `.claude-plugin/plugin.json` (a different plugin entirely) satisfies the
-    manifest read, so the version comparison used to run anyway and report
-    `differs` (or `matches`, by pure coincidence) between two numbers that
-    have nothing to do with each other. Zero of the checklist's own
-    definition files existing in the repo tree is the repo saying it does not
-    ship these definitions at all -- the version comparison has no subject,
-    and the honest answer is `could-not-tell`, not `differs`.
+def test_not_applicable_when_repo_ships_no_definitions_at_all(tmp_path):
+    """#580, revisited by #659: a managed repository that ships its own,
+    unrelated `.claude-plugin/plugin.json` (a different plugin entirely)
+    satisfies the manifest read, so the version comparison used to run
+    anyway and report `differs` (or `matches`, by pure coincidence) between
+    two numbers that have nothing to do with each other. Zero of the
+    checklist's own definition files existing in the repo tree is the repo
+    saying it does not ship these definitions at all -- the version
+    comparison has no subject, so this is `not-applicable`, not `differs`.
+
+    #659: it must also not be `could-not-tell` -- the installed checklist's
+    own version (9.9.3) is fully known here, read successfully off disk. The
+    thing that is missing is a subject to compare it against, not the
+    checklist version itself.
     """
     plugin_root = tmp_path / "plugin"
     repo = tmp_path / "repo"
@@ -295,10 +323,38 @@ def test_could_not_tell_when_repo_ships_no_definitions_at_all(tmp_path):
     checklist_skew = _module()
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
 
-    assert payload["state"] == COULD_NOT_TELL
+    assert payload["state"] == NOT_APPLICABLE
     assert payload["state"] != DIFFERS
+    assert payload["state"] != COULD_NOT_TELL
     assert payload["installed_version"] == "9.9.3"
     assert payload["repo_version"] == "9.9.5"
+
+
+def test_could_not_tell_when_repo_ships_definitions_but_its_manifest_is_unreadable(tmp_path):
+    """Positive control for the case above, in the same shape: here the repo
+    genuinely *does* ship at least one of the checklist's own definition
+    files (a real signal this is the shipping repo, e.g. claude-oss itself),
+    but its own `.claude-plugin/plugin.json` is missing. The divergence
+    check now DOES apply -- there is a real subject -- but cannot be carried
+    out because the repo's own version is unknown, so this stays
+    `could-not-tell` rather than becoming `not-applicable`.
+    """
+    plugin_root = tmp_path / "plugin"
+    repo = tmp_path / "repo"
+    _manifest(plugin_root, "9.9.3")
+    # repo intentionally has no .claude-plugin/plugin.json at all
+    (plugin_root / "agents").mkdir(parents=True)
+    (repo / "agents").mkdir(parents=True)
+    (plugin_root / "agents" / "auditor.md").write_text("v1", encoding="utf-8")
+    (repo / "agents" / "auditor.md").write_text("v1", encoding="utf-8")
+
+    checklist_skew = _module()
+    payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
+
+    assert payload["state"] == COULD_NOT_TELL
+    assert payload["state"] != NOT_APPLICABLE
+    assert payload["installed_version"] == "9.9.3"
+    assert payload["repo_version"] is None
 
 
 def test_differs_positive_control_when_repo_ships_some_definitions(tmp_path):
