@@ -715,7 +715,14 @@ def main(argv=None):
                 )
             )
             return 1
-        sys.stdout.write(str(resolved))
+        # `.as_posix()`, not `str()`: this value is consumed by a bash snippet in
+        # commands/tick.md (`"$RESOLVED_ROOT/scripts/doctor.py"`) that runs inside
+        # Git Bash on Windows, where `str(WindowsPath(...))` prints native
+        # backslashes -- concatenating a POSIX-style suffix onto those produces a
+        # mixed-separator path. `scripts/doctor.py`'s own `_launcher_remedy` (the
+        # "run … inside Git Bash" case) already established this convention for the
+        # identical reason; this follows it rather than inventing a second one.
+        sys.stdout.write(resolved.as_posix())
         return 0
     document = update(root=root)
     write_receipt(document)

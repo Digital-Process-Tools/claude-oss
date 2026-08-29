@@ -1588,8 +1588,23 @@ def record_plugin_root(path, root):
     root = str(root).strip()
     snapshot = _plugin_root_snapshot_path(path)
     tmp = snapshot.with_suffix(snapshot.suffix + ".tmp")
-    tmp.write_text(json.dumps({"root": root}), encoding="utf-8")
-    tmp.replace(snapshot)
+    try:
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps({"root": root}), encoding="utf-8")
+        tmp.replace(snapshot)
+    except OSError as exc:
+        # Self-review finding: `append()` above wraps its own write in exactly this
+        # guard, with the same reasoning -- an OSError left to go straight through
+        # here would be a raw traceback instead of the clean FAIL line every other
+        # CLI mode in this file produces on error (a disk-full, a permission
+        # refusal, an over-MAX_PATH component on Windows).
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise StateError(
+            "could not record the plugin root snapshot ({})".format(exc)
+        )
     return {"root": root}
 
 
@@ -1627,7 +1642,20 @@ def check_plugin_root(path, current):
     try:
         snapshot.unlink()
     except OSError:
-        pass
+        # Self-review finding: a snapshot answers for ONE tick only (see this
+        # function's own docstring above) -- if the delete itself fails (a
+        # transient lock, common on Windows when another process briefly holds
+        # the file open), a later, UNRELATED tick's own check_plugin_root call
+        # would read this same leftover and answer for a comparison that tick
+        # never made. Deletion failing is not something this call can force,
+        # but scrubbing the content is a cheap best-effort second line: content
+        # that fails to parse below falls into `could-not-read` here AND for
+        # whatever later call finds this same leftover file, rather than
+        # silently handing back a real-looking prior.
+        try:
+            snapshot.write_text("", encoding="utf-8")
+        except OSError:
+            pass
     try:
         doc = json.loads(text)
         prior = doc.get("root") if isinstance(doc, dict) else None

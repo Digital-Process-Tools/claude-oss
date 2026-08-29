@@ -118,6 +118,31 @@ def test_cli_print_resolved_root_prints_the_path(tmp_path, capsys, monkeypatch):
     assert out == str(home_plugins / "cache" / "dpt-plugins" / "oss" / "9.9.9")
 
 
+def test_cli_print_resolved_root_prints_posix_separators_on_a_windows_path(monkeypatch, capsys):
+    """Self-review finding: the printed path is consumed by a bash snippet in
+    commands/tick.md that runs inside Git Bash on Windows, where a native
+    WindowsPath prints backslashes. `scripts/doctor.py`'s own `_launcher_remedy`
+    already established `.as_posix()` as this repo's convention for exactly this
+    situation -- this is the positive control that the CLI mode follows it,
+    built with `PureWindowsPath` so it is a real assertion on ANY host platform
+    rather than one that can only fail on a Windows runner."""
+    from pathlib import PureWindowsPath
+
+    monkeypatch.setattr(plugin_update, "plugin_name", lambda: "oss")
+    monkeypatch.setattr(
+        plugin_update,
+        "resolved_plugin_root",
+        lambda name, root, plugins_root=None: PureWindowsPath(
+            r"C:\Users\x\.claude\plugins\cache\dpt-plugins\oss\9.9.9"
+        ),
+    )
+    rc = plugin_update.main(["--root", r"C:\project", "--print-resolved-root"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "\\" not in out
+    assert out == "C:/Users/x/.claude/plugins/cache/dpt-plugins/oss/9.9.9"
+
+
 def test_cli_print_resolved_root_fails_loudly_when_it_cannot_resolve(tmp_path, capsys, monkeypatch):
     plugin_dir = tmp_path / "plugin"
     (plugin_dir / ".claude-plugin").mkdir(parents=True, exist_ok=True)

@@ -83,6 +83,24 @@ def test_record_plugin_root_refuses_an_empty_value(tmp_path):
         oss_state.record_plugin_root(str(path), "")
 
 
+def test_record_plugin_root_turns_an_oserror_into_a_stateerror(tmp_path, monkeypatch):
+    """Self-review finding: `append()` (the sibling write path in this same file)
+    wraps its atomic write in `except OSError -> StateError`, with the documented
+    reason that an uncaught OSError reaches the caller as a raw traceback instead
+    of the clean FAIL line every other CLI mode here produces. `record_plugin_root`
+    is a write path added by this diff and must not be the one place that
+    guarantee does not hold -- MUST FIRE."""
+    import pytest
+    path = tmp_path / "state.json"
+
+    def _boom(self, *a, **kw):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_text", _boom)
+    with pytest.raises(oss_state.StateError):
+        oss_state.record_plugin_root(str(path), ROOT_A)
+
+
 def test_plugin_root_line_renders_all_three_states(tmp_path):
     path = tmp_path / "state.json"
     could_not_read = oss_state.plugin_root_line(
@@ -131,6 +149,36 @@ def test_cli_check_plugin_root_with_no_snapshot_says_could_not_read(tmp_path, ca
     record = json.loads(capsys.readouterr().out)
     assert record["state"] == oss_state.PLUGIN_ROOT_COULD_NOT_READ
     assert "could not read" in capsys.readouterr().err or True
+
+
+def test_a_failed_unlink_still_scrubs_the_leftover_for_a_later_unrelated_read(tmp_path, monkeypatch):
+    """Self-review finding: if the snapshot's own delete fails (a transient lock,
+    observed as common on Windows for a just-closed file), a LATER, unrelated
+    tick's own check_plugin_root call must not silently read the leftover as a
+    real prior -- MUST FIRE. The comparison this call itself makes is unaffected
+    (the text was already read before the failed unlink), which is the paired
+    MUST NOT FIRE half."""
+    path = tmp_path / "state.json"
+    oss_state.record_plugin_root(str(path), ROOT_A)
+
+    real_unlink = Path.unlink
+
+    def _boom(self, *a, **kw):
+        if self.name.endswith(".plugin-root-snapshot.json"):
+            raise OSError(13, "Permission denied")
+        return real_unlink(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", _boom)
+    # This call's own comparison is still correct -- the failed delete does not
+    # corrupt what THIS caller reads back.
+    first = oss_state.check_plugin_root(str(path), ROOT_A)
+    assert first["state"] == oss_state.PLUGIN_ROOT_UNCHANGED
+
+    monkeypatch.undo()
+    # A later, unrelated call (no fresh --record-plugin-root in between) must
+    # not find a real-looking prior in the leftover file.
+    second = oss_state.check_plugin_root(str(path), ROOT_B)
+    assert second["state"] == oss_state.PLUGIN_ROOT_COULD_NOT_READ
 
 
 def test_cli_record_plugin_root_in_a_reading_mode_is_refused(tmp_path, capsys):
