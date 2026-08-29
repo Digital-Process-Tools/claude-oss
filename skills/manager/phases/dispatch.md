@@ -123,8 +123,8 @@ than reporting the tick as `filled` because the lane count matched.
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
 correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
-not intersect visibly (#267).** `scripts/lane_setup.py <issue> --lane PATTERN [--lane PATTERN ...]
---derive-held` is the route: it renders the new lane in canonical form -- a sorted, deduplicated
+not intersect visibly (#267).** `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --lane PATTERN
+[--lane PATTERN ...] --derive-held` is the route: it renders the new lane in canonical form -- a sorted, deduplicated
 list of repo-relative paths, each glob expanded against what is actually on disk -- and derives the
 held side itself, from every open pull request's own files and every live lane record's own files
 (#558), rather than asking you to retype what every other running lane already claimed. Run it with
@@ -189,7 +189,8 @@ of two or three stays two or three fixes, never one: **each issue keeps its own 
 own changelog fragment**, and the pull request closes every issue it carries.
 
 **Never bundle an issue a running lane already touches** —
-check with `scripts/lane_setup.py --lane PATTERN --against PATTERN`, read the other way from the
+check with `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py --lane PATTERN --against PATTERN`, read
+the other way from the
 disjointness rule above: overlap there means conflict, and overlap here, at selection time, against a
 *candidate's* declared lane rather than a running one, means the two are worth bundling. This is a
 different call from the one above, not the same one restated: it needs the overlap against one named
@@ -260,7 +261,8 @@ the same lever applied to whatever else a brief hands a lane before it starts wo
 rather than bounded, because nothing here can distinguish a genuinely wide orientation read from
 one that could have waited).
 
-**Run `scripts/lane_setup.py <issue>` from the clone before writing each brief, rather than typing
+**Run `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue>` from the clone before writing each
+brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
 them and the moment the dispatched agent does: `main` has moved mid-tick before, and a hand-copied
 worktree list has already flattened `cannot tell` to `idle` once, which is how `fix/313` and
@@ -283,6 +285,12 @@ Every brief carries these:
    > `content`** — `edit` needs an `old` and a new file has none, so `paste` is the only route to a
    > file that does not exist yet, and your changelog fragment is always one. A raw heredoc runs no
    > validator and rolls nothing back. `supertool 'ops'` lists everything.
+   >
+   > **Batching several ops in one call** needs `op = "paste"` (or `"edit"`, `"read"`, ...) inside
+   > every `[[ops]]` entry — the single-op shapes above omit it because there is only one op. Two
+   > pastes in one call: `[[ops]]` / `op = "paste"` / `path = "a.py"` / `content = '''...'''`, then a
+   > second `[[ops]]` block the same shape. Omitting `op` fails at the call with `batch op missing op
+   > field` — the shape this note exists so nobody pays a failed call to learn (#669).
    >
    > Write prose quotes plainly in the pull request payload's JSON — never
    > backslash-escaped; `gh-pr-create` refuses a body carrying literal
@@ -323,7 +331,7 @@ Every brief carries these:
    on the way in, not taken on trust. Every "must not fire" case is paired with a "must fire" case in
    the same fixture, because a silence assertion passes when the harness is broken.
 5. **Require the docs** — the repo's `docs_targets` for anything user-facing, the changelog always.
-6. **Name the live worktrees** — from `scripts/lane_setup.py <issue>`'s board, not retyped from
+6. **Name the live worktrees** — from the `lane_setup.py` run above's board, not retyped from
    memory, so agents know about each other.
 7. **Unconditional publishing clause:** commit, do not push, do not open a PR, do not comment on the
    issue. "Do not push *if* something blocks you" is how one agent correctly pushed.

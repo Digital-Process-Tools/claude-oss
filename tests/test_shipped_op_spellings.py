@@ -51,6 +51,7 @@ import oss_rules  # noqa: E402
 #: project enables in its `.supertool.json`; those are only measurable on a machine
 #: that loaded it.
 OP_INVENTORY = {
+    "batch": None,
     "channel": "watch",
     "edit": None,
     "gh-branch": "github",
