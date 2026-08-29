@@ -3101,8 +3101,11 @@ def test_a_document_naming_neither_op_is_still_reported():
 
 
 # `\r` is in both trailing classes, and it is not decoration. These are the
-# suite's only `$`-anchored multiline patterns, and there is no `.gitattributes`
-# here, so a Windows checkout is free to arrive as CRLF. Measured rather than
+# suite's only `$`-anchored multiline patterns. #675 added `.gitattributes`
+# (`* text=auto eol=lf`), which pins a fresh checkout of this repository to LF --
+# but the pin is a git-checkout-layer guarantee, not a guarantee about every string
+# these patterns might ever see (a document assembled or pasted from elsewhere could
+# still carry a CR), so the guard below stays. Measured rather than
 # argued: fed text that still carries a CR, `_routes_in_rows` returns `{}` and
 # `_op_table_heading_unmet` returns `set()` -- a silent clean, this repository's
 # own defect class. `Path.read_text` translates the newlines before either
@@ -3403,13 +3406,15 @@ def test_a_claim_over_an_unreadable_table_is_reported_not_skipped():
 def test_a_crlf_document_is_read_the_same_as_an_lf_one():
     """The platform control, and it is a measurement rather than a table.
 
-    CI runs three operating systems and this repository ships no
-    `.gitattributes`, so a Windows checkout may arrive CRLF. Rather than assert
-    an outcome for a platform this never ran on, the same document is fed in
-    both line endings and the two answers are compared -- which is a claim about
-    the patterns, not about the runner. The must-fire half is the comparison
-    itself: an LF answer of `set()` would make the equality meaningless, so the
-    fixture is the pre-#247 table, whose LF answer is two findings.
+    CI runs three operating systems. #675 pinned a fresh checkout of this
+    repository to LF via `.gitattributes`, which removes the everyday route to a
+    CRLF document but not every route -- content assembled or pasted at runtime
+    is not a git checkout and is not covered by the pin. Rather than assert an
+    outcome for a platform this never ran on, the same document is fed in both
+    line endings and the two answers are compared -- which is a claim about the
+    patterns, not about the runner. The must-fire half is the comparison itself:
+    an LF answer of `set()` would make the equality meaningless, so the fixture
+    is the pre-#247 table, whose LF answer is two findings.
     """
     lf = PRE_247_OP_TABLE
     crlf = lf.replace("\n", "\r\n")

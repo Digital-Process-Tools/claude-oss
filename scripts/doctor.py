@@ -6751,6 +6751,8 @@ NOT_COMPARED_TOP_LEVEL = {
                "written by scaffold and is not part of any plugin copy",
     ".claude-plugin": "its plugin.json is compared as a file above; nothing else in "
                       "there is read at runtime",
+    ".gitattributes": "a checkout's own bookkeeping (line-ending normalization), not "
+                      "read at runtime by an installed plugin copy",
     ".github": "runs in this repository's CI, never in an install",
     ".gitignore": "a checkout's own bookkeeping, not read at runtime",
     ".oss.json": "the config of whatever repo is being diagnosed, not of a plugin copy",
