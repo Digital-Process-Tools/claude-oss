@@ -474,9 +474,9 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `d2a2968`**, one commit past the `v0.15.0` tag (`3c53078`) — the commit that folded
-issues #622, #626 and #632 and left the tree with the unfolded-fragment state that turned this guard
-red.
+**Measured at `d2a2968`**, one commit past the `v0.15.0` tag (`3c53078`) — the commit that carried
+issues #622, #626 and #632 into `changelog.d/` still unfolded, which is the state that turned this
+guard red.
 Every number below was taken at this commit. The delta since the previous measurement is **22
 commits and 20 merged pull requests**, `git rev-list --count v0.14.0..HEAD` returning `22` against
 20 merge commits the forge lists as merged pull requests, intersected the same way as every previous
@@ -495,12 +495,14 @@ second one is worth naming because nothing else would have.
 
 ### This release shipped over the threshold, and demonstrated the merge op's own warning
 
-`v0.15.0` shipped **18 merged pull requests** against a threshold of 10. The delta also produced an
-observed instance of the `BEHIND` warning the merge op prints: `#643` was 7 commits behind, green on
-its own merge-base, and turned `main` red on landing — the composition case the warning exists to
-name, seen here rather than reasoned about. It is the reason this section exists to be re-derived at
-all: `#643` carried the fragments (`#622`, `#626`, `#632`) that made the currency guard's absence
-visible on the very next commit.
+`v0.15.0` shipped **19 merged pull requests** against a threshold of 10 — `git rev-list --count
+v0.14.0..v0.15.0` returns 21 commits, of which 19 are the merge commit of a pull request the forge
+lists and 2 (the release commit itself and `4a9aaba`, both named above) are not. The delta also
+produced an observed instance of the `BEHIND` warning the merge op prints: `#643` was 7 commits
+behind, green on its own merge-base, and turned `main` red on landing — the composition case the
+warning exists to name, seen here rather than reasoned about. It is the reason this section exists to
+be re-derived at all: `#643` carried the fragments (`#622`, `#626`, `#632`) that made the currency
+guard's absence visible on the very next commit.
 
 ### Half this release is the release gate's own output, same shape as last round
 
@@ -539,14 +541,15 @@ commit.
   `.oss/assemble_changelog.py` and `.oss/statusline.py` now match, byte for byte, the render the
   *previous* round of this section reported as canonical — and `.oss/statusline.py` is present there
   for the first time at all (previously absent). Its `.github/workflows/oss-changelog.yml` also
-  moved, from 8,943 B to 12,648 B, landing nine bytes short of the current render rather than on it.
+  moved, from 8,943 B to 12,648 B, landing nine bytes over the current render rather than on it.
   `.oss/README.md` did not move, because the render itself has not changed there across every round
   this table has run.
 - **The owned changelog trio otherwise unchanged** — `claude-jit-context` and `claude-5h-window-spread`
   carry the same bytes as every previous round.
-- **`.oss/statusline.py` on two** — `claude-jit-context` (unchanged, still drifted) and now, with
-  `claude-remember`'s addition above, effectively three field copies of this file exist for the
-  first time, though only two ever were counted here before.
+- **`.oss/statusline.py` on three now, not two.** `claude-jit-context` (unchanged, still drifted),
+  `claude-supertool` (unchanged bytes, but now drifted for the reason given below), and, with
+  `claude-remember`'s addition above, a third field copy of this file for the first time this table
+  has run.
 - **The remaining seven carry none of the five, unchanged** — `claude-marketplace`, `.github` and
   the four `mcp-*-warm` servers.
 
@@ -578,12 +581,12 @@ before counting, and comparing `sha256` against what each field repo carries:
   Read together with the point above, the shape is the same: this tree's own owned files keep
   growing between rounds, so a field copy that syncs to a render is current for at most one round of
   this table before the next round's growth leaves it behind again.
-- **The `would write today` column moved in three of four rows this round** — `.oss/assemble_changelog.py`
-  and `.oss/statusline.py` grew, `.github/workflows/oss-changelog.yml` did not — while the two
-  drifted cells that did not move this round (`claude-jit-context`, `claude-5h-window-spread`) stayed
-  exactly where they were. That is still the argument against gating on this column: it would have
-  fired on this tree's own additions and stayed silent about every cell that is actually stale in the
-  field.
+- **The `would write today` column moved in two of four rows this round** — `.oss/assemble_changelog.py`
+  and `.oss/statusline.py` grew; `.oss/README.md` and `.github/workflows/oss-changelog.yml` did not —
+  while the two drifted cells that did not move this round (`claude-jit-context`,
+  `claude-5h-window-spread`) stayed exactly where they were. That is still the argument against
+  gating on this column: it would have fired on this tree's own additions and stayed silent about
+  every cell that is actually stale in the field.
 
 ### The two installs, and the first exact match to a tag
 
@@ -606,13 +609,15 @@ the reason the two content hashes disagree at all.
 predecessor that the consequence is not always nil; nothing in this range touched
 `bin/oss-workspace` again, so this instance is carried rather than newly consequential.
 
-`python3 scripts/doctor.py --root .`, run from the clone rather than a fresh worktree (a bare
-worktree additionally lacks `./supertool` and `.remember`, which would misstate this as four more
-warnings than the clone itself carries): **6 warnings, the same six categories as the previous
-round** — the plugin-copy scope `not established`, `./supertool` pointing at a local checkout, the
-launcher `SKEW` above, `changelog.d/README.md` missing the Compatibility bullet (#260), the jit
-layer `unknown`, and `.oss/statusline.py` drifted in this clone's own vendored copy (naming 26
-changed callables this round, up from the four named last round, tracking the growth in the table
+`python3 scripts/doctor.py --root .`, run from the clone rather than a fresh worktree — a bare
+worktree of this repository additionally lacks `./supertool` and `.remember` (2 more warnings) and
+carries 4 config keys the config file cannot answer in a worktree, which the tool reports as
+outright failures rather than warnings (checked: 11 warnings and 4 failures in this branch's own
+worktree, against 6 warnings and 0 failures run from the clone): **6 warnings, the same six
+categories as the previous round** — the plugin-copy scope `not established`, `./supertool` pointing
+at a local checkout, the launcher `SKEW` above, `changelog.d/README.md` missing the Compatibility
+bullet (#260), the jit layer `unknown`, and `.oss/statusline.py` drifted in this clone's own vendored
+copy (naming 26 changed callables this round, tracking the growth in the table
 above).
 
 ### Still the most important sentence here
@@ -639,7 +644,7 @@ and calling it current.
 One claim stays deliberately unguarded, and the decision is re-taken rather than inherited: the
 "would write today" column is computed entirely from this tree and a three-line test could hold it.
 **Declined again**, on the same evidence as every previous round and one round more of it: the
-column moved in three of four rows this round while the cells that were already drifting kept
+column moved in two of four rows this round while the cells that were already drifting kept
 drifting unchanged. A gate on it would have fired on our own additions and been silent on the actual
 field drift. The reason not to add it is unchanged: it would redden unrelated pull requests until
 somebody edited `CLAUDE.md` to make CI green, training the reflex of editing the section instead of
