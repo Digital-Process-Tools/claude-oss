@@ -37,16 +37,21 @@ BUDGETS: dict[str, tuple[int, int]] = {
     "agents/auditor.md": (14329, 15800),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
-    # Baseline raised twice, both times for the same reason: a review
-    # finding was a correctness fix with nothing safe to cut to pay for it
-    # in the same diff. (7450, 8200) -> (8578, 9450): the OSS_AGENT_ROLE
-    # mechanism did not survive across Bash tool calls, and "tag, publish"
-    # overstated what the code-level withholding covers. (8578, 9450) ->
-    # (9918, 10900): the marker was write-only and blocked a legitimate
-    # release forever after a dead sub-manager's leftover file -- the
-    # marker-expiry and explicit-clear steps this fixes are load-bearing,
-    # not padding.
-    "agents/sub-manager.md": (9918, 10900),
+    # Baseline raised three times, each time for the same reason: a
+    # review finding was a correctness or precision fix with nothing safe
+    # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
+    # the OSS_AGENT_ROLE mechanism did not survive across Bash tool calls,
+    # and "tag, publish" overstated what the code-level withholding
+    # covers. (8578, 9450) -> (9918, 10900): the marker was write-only and
+    # blocked a legitimate release forever after a dead sub-manager's
+    # leftover file. (9918, 10900) -> (11714, 12900): "Same model, same
+    # authority" was false (the frontmatter pins sonnet; the scheduler
+    # runs whatever the maintainer's session runs) and the model choice
+    # was an unweighed default sitting next to `color: blue` -- correcting
+    # the claim and recording the choice as a judgement, plus the
+    # measurement-hazard note for whoever wires the scheduler, are the
+    # maintainer's own decision made legible rather than left silent.
+    "agents/sub-manager.md": (11714, 12900),
 }
 
 
