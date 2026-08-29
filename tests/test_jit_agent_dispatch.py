@@ -229,27 +229,15 @@ def test_the_diagnostic_does_not_count_the_record_as_a_rule(tmp_path, capsys):
     Both halves in one fixture: the number must be the rule, and the layer must still be
     reported at all, or "does not say 2" is satisfied by a check that said nothing.
 
-    The committed index this test starts from is patched to the seven-column shape a
-    fresh `rebuild-tsv.sh` would actually produce today: `oss_rules.index_rows()` does
-    not yet emit the `requires` column claude-jit-context 0.6.0 writes for a rule whose
-    frontmatter declares `requires:`, which is a separate, adjacent gap from #640 (this
-    check's own fix is what makes it visible at all -- reported, not fixed here, since
-    it is outside this diff's declared files). Left unpatched this test measures that
-    staleness instead of the count it is actually about.
+    No patching here any more: #665 made `oss_rules.index_rows()` emit the seven-column
+    shape `rebuild-tsv.sh` actually produces, `requires` included, so `install()`'s own
+    output already has the real shape this test needs and there is nothing left to
+    accommodate.
     """
     oss_rules.install(tmp_path)
     layer = tmp_path / ".claude" / "jit-context" / "tools" / oss_rules.LAYER
     index = layer / "00-index.tsv"
-    requires = oss_rules._field(
-        oss_rules.RULES["tools"]["supertool-required.md"], "requires"
-    )
-    original = index.read_text(encoding="utf-8")
-    patched = original.replace(
-        "\tsupertool-required.md\tblock\t\t\n",
-        "\tsupertool-required.md\tblock\t\t\t{}\n".format(requires),
-    )
-    assert patched != original, "the committed row no longer has the shape expected"
-    index.write_text(patched, encoding="utf-8")
+    content = index.read_text(encoding="utf-8")
 
     doctor.check_jit_rules(tmp_path)
     lines = [
@@ -260,7 +248,7 @@ def test_the_diagnostic_does_not_count_the_record_as_a_rule(tmp_path, capsys):
     assert lines, "the tools layer was not reported at all"
     reported = lines[0]
     indexed = len(
-        [row for row in patched.splitlines() if row.strip()]
+        [row for row in content.splitlines() if row.strip()]
     )
     assert "{} rule(s)".format(indexed) in reported, reported
 

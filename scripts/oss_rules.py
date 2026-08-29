@@ -11,7 +11,7 @@ carries its own index -- so one committed link would be enough to point a strang
 rules at anything on the machine. Copies into an owned layer are the supported shape.
 
 Rows are written in the same format a rebuild would produce -- `pattern<TAB>filename` for
-paths and vocabulary, the six-column shape for tools (see `index_rows()`) -- so regenerating
+paths and vocabulary, the seven-column shape for tools (see `index_rows()`) -- so regenerating
 the index is a no-op rather than a diff.
 
 Python 3.9 compatible.
@@ -593,9 +593,17 @@ def index_rows(dimension, rules):
 
     Paths index one row of `match<TAB>filename`; vocabulary indexes one row of
     `keyword<TAB>filename` per keyword; tools indexes one row of
-    `tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid` -- six columns, measured
-    against claude-jit-context's `rebuild-tsv.sh` rather than reasoned about (#80 found the
-    same list wrong when it was only reasoned about).
+    `tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid<TAB>requires` -- seven
+    columns, measured against claude-jit-context's `rebuild-tsv.sh` rather than reasoned
+    about (#80 found the same list wrong when it was only reasoned about). The seventh
+    column was added by #665: `requires` was declared in `TOOLS_SUPERTOOL`'s frontmatter
+    by #570 and read by `claude-jit-context` 0.6.0's `jit_missing_requires()`, but this
+    function never emitted it, so the shipped index disagreed with the rule body it
+    indexes and the field it names was never enforced anywhere it was scaffolded. The
+    six-column shape recorded a considered decision in `CHANGELOG.md` at #106 (v0.3.0) --
+    before `requires:` existed at all -- and `rebuild-tsv.sh` itself has since grown the
+    same seventh column, so widening the row here does not overturn that decision so much
+    as catch up to what it was already describing when it was written.
     """
     rows = []
     for name in sorted(rules):
@@ -613,7 +621,10 @@ def index_rows(dimension, rules):
                 mode = _field(body, "mode") or "remind"
                 require = _field(body, "require") or ""
                 forbid = _field(body, "forbid") or ""
-                rows.append("\t".join([tool, match, name, mode, require, forbid]))
+                requires = _field(body, "requires") or ""
+                rows.append(
+                    "\t".join([tool, match, name, mode, require, forbid, requires])
+                )
         else:
             match = _field(body, "match")
             if match:
