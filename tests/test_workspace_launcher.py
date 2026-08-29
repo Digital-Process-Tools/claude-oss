@@ -479,6 +479,46 @@ def test_a_repo_with_radar_tiers_gets_no_warning(tmp_path):
     assert "no board to watch" not in done.stderr
     assert "nothing publishes to it" not in done.stderr
 
+def test_a_malformed_supertool_json_is_unknown_not_no_tiers(tmp_path):
+    """Invalid JSON is "I could not read this", not "the maintainer declared no
+    tiers" -- two different facts that used to share one sentence (#652).
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text("{not json at all", encoding="utf-8")
+    done, _ = run(repo)
+    assert "UNKNOWN" in done.stderr, done.stderr
+    assert "declares no radar tiers" not in done.stderr, done.stderr
+
+
+def test_a_non_dict_supertool_json_is_unknown_not_no_tiers(tmp_path):
+    """Valid JSON that is not an object -- a list, say -- is the same "could not
+    read this the way I expect" fact as malformed JSON, not "no tiers declared".
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text("[1, 2, 3]", encoding="utf-8")
+    done, _ = run(repo)
+    assert "UNKNOWN" in done.stderr, done.stderr
+    assert "declares no radar tiers" not in done.stderr, done.stderr
+
+
+def test_unknown_radar_declaration_skips_the_never_spawned_check_loudly(tmp_path):
+    """The composition #652 is actually about: an unreadable .supertool.json used
+    to leave `radar_tiers_declared` at its 0 default, which silently switched off
+    #627's never-spawned-board check with no receipt that it had been skipped.
+    Now it must say so, and it must not claim "never existed" -- that would be a
+    fact about a board this script never confirmed was declared at all.
+    """
+    repo = _repo(tmp_path)
+    (repo / ".supertool.json").write_text("{not json at all", encoding="utf-8")
+    never_existed = tmp_path / "never-existed-state-dir"
+    done, argv = run(
+        repo, with_channel=True, naming=_naming_with_resolve(never_existed)
+    )
+    assert argv, done.stderr
+    assert "has never existed" not in done.stderr, done.stderr
+    assert "UNKNOWN" in done.stderr, done.stderr
+    assert "skipped" in done.stderr, done.stderr
+
 
 def test_a_missing_claude_is_a_named_failure(tmp_path):
     done, _ = run(_repo(tmp_path), with_claude=False)
