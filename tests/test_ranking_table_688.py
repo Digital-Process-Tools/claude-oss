@@ -189,3 +189,77 @@ def test_cli_could_not_read_when_no_plugin_root(monkeypatch, tmp_path):
     assert result.returncode != 0
     assert result.stdout == ""
     assert result.stderr.strip()
+
+
+# --------------------------------------------------------- self-review fixes
+
+
+def test_could_not_read_when_skill_md_is_not_valid_utf8(tmp_path):
+    """Self-review finding, #688: `UnicodeDecodeError` is a `ValueError`, not
+    an `OSError` -- a fixture that trips only the decode path, paired with
+    the ordinary-OSError missing-file case above, so a fix that widened the
+    `except` too far (or not far enough) shows up as a difference between
+    the two rather than as a passing test either way."""
+    mod = _module()
+    skill_dir = tmp_path / "skills" / "manager"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
+    state, table, reason = mod.load_table(str(tmp_path))
+    assert state == COULD_NOT_READ
+    assert table is None
+    assert reason
+
+
+def test_extracts_a_row_with_a_literal_pipe_inside_a_backtick_span():
+    """Self-review finding, #688: a `|` inside a code span (e.g. naming a
+    shell pipe) is not a column separator. Paired with
+    `test_must_fire_when_row_column_count_disagrees_with_header` above, which
+    keeps its unquoted extra `|` and must still refuse -- so this is not a
+    relaxation of the column check, only a correction of what counts as a
+    column boundary."""
+    mod = _module()
+    text = (
+        "  | Class | Blocks a release? | Embargo when reported upstream? |\n"
+        "  | --- | --- | --- |\n"
+        "  | `a|b` -- has a pipe in a code span | yes, unconditionally | yes |\n"
+    )
+    state, table, reason = mod.extract_ranking_table(text)
+    assert state == FOUND, reason
+    assert "`a|b`" in table
+
+
+def test_extracts_table_preserving_crlf_line_endings():
+    """Self-review finding, #688: the module's own contract says 'verbatim'
+    and 'original line endings included' -- a CRLF source must come back
+    CRLF, not silently normalised to LF."""
+    mod = _module()
+    text = (
+        "  | Class | Blocks a release? | Embargo when reported upstream? |\r\n"
+        "  | --- | --- | --- |\r\n"
+        "  | `destroys` -- data gone | yes, unconditionally | yes |\r\n"
+    )
+    state, table, reason = mod.extract_ranking_table(text)
+    assert state == FOUND, reason
+    assert "\r\n" in table
+    assert "\r\n\r\n" not in table
+    # every line break in a 3-line CRLF source is CRLF, none bare LF
+    assert table.count("\r\n") == table.count("\n")
+
+
+def test_load_table_preserves_crlf_from_a_real_file(tmp_path):
+    """Paired with the in-memory CRLF test above: `load_table` opens the
+    file itself, which is where Python's universal-newline translation would
+    silently strip the CR if the file were opened the ordinary way."""
+    mod = _module()
+    skill_dir = tmp_path / "skills" / "manager"
+    skill_dir.mkdir(parents=True)
+    crlf_text = (
+        "  | Class | Blocks a release? | Embargo when reported upstream? |\r\n"
+        "  | --- | --- | --- |\r\n"
+        "  | `destroys` -- data gone | yes, unconditionally | yes |\r\n"
+    )
+    with open(str(skill_dir / "SKILL.md"), "wb") as handle:
+        handle.write(crlf_text.encode("utf-8"))
+    state, table, reason = mod.load_table(str(tmp_path))
+    assert state == FOUND, reason
+    assert "\r\n" in table
