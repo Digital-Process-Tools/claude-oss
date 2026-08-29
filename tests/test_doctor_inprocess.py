@@ -771,6 +771,19 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_mcp_channel_registration",
         lambda **kw: doctor.report("OK", "channel MCP registration"),
     )
+    # #646: reads THIS machine's real MCP registration too (its own `claude mcp
+    # get` call, independent of the stub above), for the same reason.
+    monkeypatch.setattr(doctor, "check_channel_consumer_pin", lambda **kw: None)
+    # #638: real subprocess calls to each declared dependency's own diagnostic
+    # (a supertool op, two versioned bash scripts) -- answers about what is
+    # actually installed on THIS machine, not about this fixture's tree,
+    # exactly the same reason check_mcp_channel_registration is stubbed above
+    # rather than measured here.
+    monkeypatch.setattr(
+        doctor,
+        "check_dependency_diagnostics",
+        lambda *a, **kw: doctor.report("OK", "dependency diagnostics"),
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether either of the two Windows gaps below is real is a
@@ -2521,6 +2534,92 @@ def test_a_repo_scaffolded_before_the_preset_fix_warns_and_its_remedy_works(tmp_
     stale["presets"].append(doctor.WATCH_PRESET)
     (tmp_path / doctor.WATCH_CONFIG).write_text(json.dumps(stale), encoding="utf-8")
     assert doctor.radar_publish_state(tmp_path)[0] == "publishes"
+
+
+# --- #644: doctor's own no-tiers / no-route WARNs still printed a fragment a
+# maintainer has to merge by hand, while #622 gave scaffold's sibling checks the
+# whole corrected document. route-unknown must NOT get this treatment -- a merge
+# cannot safely decide what to append an unreadable value to.
+
+
+def test_no_tiers_warn_carries_the_whole_corrected_document_not_a_fragment(tmp_path):
+    """#644: the model is #622's scaffold.check_radar. A maintainer who pastes the
+    remedy fragment over an existing key can produce a board that looks configured
+    from outside and still publishes nothing -- the whole document sidesteps that
+    by construction."""
+    _supertool_config(tmp_path, {"presets": ["git", "github"]})
+    doctor.check_radar_publish(tmp_path)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "The whole file, corrected:" in message
+    merged = json.loads(message.split("The whole file, corrected: ", 1)[1])
+    assert doctor.WATCH_PRESET in merged["presets"]
+    assert merged["ops"]["radar"]["radar_tiers"]
+
+
+def test_no_route_warn_carries_the_whole_corrected_document_too(tmp_path):
+    stale = {
+        "presets": ["git", "github"],
+        "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+    }
+    _supertool_config(tmp_path, stale)
+    doctor.check_radar_publish(tmp_path)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "The whole file, corrected:" in message
+    merged = json.loads(message.split("The whole file, corrected: ", 1)[1])
+    assert doctor.WATCH_PRESET in merged["presets"]
+    assert merged["ops"]["radar"]["radar_tiers"] == {"gh-prs": {}}
+
+
+def test_route_unknown_warn_still_prints_only_a_fragment(tmp_path):
+    """Must-not-fire control for the two tests above: `route-unknown` means
+    `presets` could not be read at all, and a merge cannot safely decide what to
+    append an unreadable value to -- #622's own distinction, preserved here."""
+    _supertool_config(
+        tmp_path,
+        {"presets": "watch", "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
+    )
+    doctor.check_radar_publish(tmp_path)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "The whole file, corrected:" not in message
+
+
+def test_no_tiers_merged_document_declines_on_a_malformed_presets_shape(tmp_path):
+    """`_radar_merged_document` must return None -- print nothing rather than
+    something wrong -- when `presets` is present but not a list of strings, even
+    though the state here is still `no-tiers` (presets absent is fine; a
+    malformed non-list `presets` is the case this guards)."""
+    _supertool_config(tmp_path, {"presets": ["git", 3]})
+    doctor.check_radar_publish(tmp_path)
+    state, message = doctor.FINDINGS[-1]
+    assert state == "WARN"
+    assert "The whole file, corrected:" not in message
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {},
+        {"presets": ["git", "github"]},
+        {"presets": ["git", "github"], "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
+        {"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
+        {"presets": [doctor.WATCH_PRESET]},
+        {"presets": ["git", 3]},
+        {"ops": []},
+        {"presets": ["git"], "ops": {"radar": "gh-prs"}},
+        {"presets": ["git"], "ops": {"radar": {"radar_tiers": ["gh-prs"]}}},
+    ],
+)
+def test_doctor_and_scaffold_merged_documents_agree(doc):
+    """#644's own guard against the two copies drifting apart: not a string
+    comparison of the two functions' bodies (their docstrings legitimately cite
+    different issue numbers), but a behavioural one over the same fixtures --
+    the two copies exist because `doctor` imports `scaffold` only optionally, so
+    the check that keeps them honest has to run both and compare what they
+    produce, the same way #622's own two remedy strings are held together."""
+    assert doctor._radar_merged_document(doc) == scaffold._radar_merged_document(doc)
 
 
 # --- #260: the fragments README is a default, and scaffold cannot deliver a section

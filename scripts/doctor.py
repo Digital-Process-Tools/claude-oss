@@ -2534,6 +2534,66 @@ RADAR_REMEDY = (
 )
 
 
+def _radar_merged_document(doc):
+    """The whole corrected `.supertool.json`, not a fragment -- #644, mirroring
+    `scaffold._radar_merged_document` (#622).
+
+    A second, independently composed copy for the same reason `RADAR_REMEDY_CONFIG`
+    above is one: `doctor` imports `scaffold` optionally, with a stated fallback for
+    when the import fails, so this must not depend on that import succeeding.
+    `tests/test_supertool_rule_sync_577.py` is this repository's precedent for
+    guarding two copies of one string against each other; the two functions are held
+    together the same way #622's remedy pair already is, by a test that runs both
+    over the same fixture rather than by a shared constant.
+
+    `presets` is widened by appending the watch preset when it is absent or already
+    a list of strings that does not carry it; `radar_tiers` is widened the same way
+    when empty. Returns `None` -- print nothing rather than something wrong -- when
+    either shape is present and is not one of those: a malformed `presets` or
+    `radar_tiers` is exactly the case a merge must not paper over.
+    """
+    presets = doc.get("presets")
+    if presets is None:
+        new_presets = [WATCH_PRESET]
+    elif isinstance(presets, list) and all(isinstance(p, str) for p in presets):
+        new_presets = list(presets)
+        if WATCH_PRESET not in new_presets:
+            new_presets.append(WATCH_PRESET)
+    else:
+        return None
+
+    ops = doc.get("ops")
+    if ops is not None and not isinstance(ops, dict):
+        return None
+    block = ops.get(RADAR_OP) if isinstance(ops, dict) else None
+    if block is not None and not isinstance(block, dict):
+        return None
+    tiers = block.get(RADAR_TIERS_KEY) if isinstance(block, dict) else None
+    if tiers is not None and not isinstance(tiers, dict):
+        return None
+    new_tiers = dict(tiers) if tiers else {}
+    if not new_tiers:
+        new_tiers.update(RADAR_REMEDY_CONFIG["ops"][RADAR_OP][RADAR_TIERS_KEY])
+
+    merged = dict(doc)
+    merged["presets"] = new_presets
+    merged_ops = dict(ops) if isinstance(ops, dict) else {}
+    merged_block = dict(block) if isinstance(block, dict) else {}
+    merged_block[RADAR_TIERS_KEY] = new_tiers
+    merged_ops[RADAR_OP] = merged_block
+    merged["ops"] = merged_ops
+    return merged
+
+
+def _radar_merged_note(doc):
+    """" The whole file, corrected: {...}" or "" when `_radar_merged_document`
+    declined -- appended to a WARN's message, never on its own line."""
+    merged = _radar_merged_document(doc)
+    if merged is None:
+        return ""
+    return " The whole file, corrected: {}".format(json.dumps(merged, sort_keys=True))
+
+
 def _supertool_document(project_dir):
     """This repo's `.supertool.json` as a mapping, in three states rather than two.
 
@@ -2969,22 +3029,34 @@ def check_radar_publish(project_dir):
         )
         return
     if state == "no-tiers":
+        merged_doc, doc_problem, _doc_detail = _supertool_document(project_dir)
+        note = (
+            _radar_merged_note(merged_doc)
+            if not doc_problem and merged_doc is not None
+            else ""
+        )
         report(
             "WARN",
             "radar board: {}, so nothing publishes to it. supertool's `{}` refuses "
             "with none registered, and a board that prints nothing is "
             "byte-identical to a healthy one -- which is why this is asked here "
             "rather than left to one line of launcher stderr that scrolls away. "
-            "{}".format(detail, RADAR_OP, RADAR_REMEDY),
+            "{}{}".format(detail, RADAR_OP, RADAR_REMEDY, note),
         )
         return
     if state == "no-route":
+        merged_doc, doc_problem, _doc_detail = _supertool_document(project_dir)
+        note = (
+            _radar_merged_note(merged_doc)
+            if not doc_problem and merged_doc is not None
+            else ""
+        )
         report(
             "WARN",
             "radar board: {}, but `presets` in {} does not enable '{}', which is what "
             "provides `{}` -- so the op has no route here and the registered tiers "
             "cannot run. Both halves are needed and each is silent about the "
-            "other.".format(detail, WATCH_CONFIG, WATCH_PRESET, RADAR_OP),
+            "other.{}".format(detail, WATCH_CONFIG, WATCH_PRESET, RADAR_OP, note),
         )
         return
     if state == "route-unknown":
@@ -3144,7 +3216,186 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     return "registered", target
 
 
-def check_mcp_channel_registration(server=None, run=None, which=None, env=None):
+def _plugin_root_from_path(path):
+    """Walk up from PATH for a directory carrying ``.claude-plugin/plugin.json``.
+
+    That manifest is the authority for which version a path inside a plugin's
+    installed tree belongs to. #646: the alternative is matching a path
+    SEGMENT that happens to look like a version, and this repository has
+    already been burned by string-matching a shape rather than reading an
+    authority -- so this walks up and reads the manifest instead. Returns the
+    manifest's own directory, or ``None`` when none is found (the walk stops
+    at the filesystem root).
+    """
+    current = Path(path)
+    if not current.is_absolute():
+        current = Path(os.path.abspath(str(current)))
+    while True:
+        if (current / ".claude-plugin" / "plugin.json").is_file():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def _content_identical(left, right):
+    """``True`` / ``False`` / ``None`` (could not tell), by hashing both files'
+    bytes. Never raises: an unreadable file on either side is "could not tell",
+    not an accusation."""
+    try:
+        left_digest = hashlib.sha256(Path(left).read_bytes()).hexdigest()
+        right_digest = hashlib.sha256(Path(right).read_bytes()).hexdigest()
+    except OSError:
+        return None
+    return left_digest == right_digest
+
+
+def channel_consumer_pin_state(target, record=None, cache_root=None):
+    """Does the version the channel MCP registration's TARGET path is pinned
+    to match the version `active_versions` says supertool actually is? Three
+    states, not two (#646): `current` / `SKEW` / `could-not-tell`.
+
+    `mcp_channel_registration_state`'s own `registered` line reads the
+    consumer path and confirms the file exists; it never compares the
+    version that path is pinned to against what is actually installed, so a
+    stale pin (an older supertool copy the cache has not yet dropped) renders
+    `OK` twice over -- registered, AND the target exists -- while pointing at
+    a consumer this machine no longer runs by default.
+
+    Returns ``(state, detail)``:
+
+    * ``current`` -- the pinned version matches the active install.
+    * ``SKEW`` -- they differ. `detail` also says whether the two files are
+      byte-identical, computed by hashing both rather than assumed: that is
+      the difference between "cosmetic, re-register when convenient" and
+      "the consumer you are running is not the one you installed".
+    * ``could-not-tell`` -- the pinned version could not be read (no
+      manifest found walking up from `target`, or it does not parse), no
+      active version could be read to compare against, or the two versions
+      read but neither could be parsed as a comparable version. **Never
+      folds into `current`** -- an unparseable pair is not evidence of a
+      match.
+
+    This is deliberately not a hard failure and callers should not treat
+    `SKEW` as one: a pin to an older copy can be a legitimate, deliberate
+    choice, the same way `./supertool` pointing at a local checkout is a
+    legitimate choice `supertool_entry_point` already names rather than
+    judges. Same treatment here.
+    """
+    pinned_root = _plugin_root_from_path(target)
+    if pinned_root is None:
+        return "could-not-tell", (
+            "no .claude-plugin/plugin.json was found walking up from the "
+            "registered path ({}), so which version it belongs to is "
+            "unknown".format(target)
+        )
+    manifest_state, pinned_version = _manifest_version(pinned_root)
+    if manifest_state != "read":
+        return "could-not-tell", (
+            "the registered path resolves under {}, but its own manifest could "
+            "not be read, so its version is unknown".format(pinned_root)
+        )
+    active = active_versions([SUPERTOOL_ENTRY], record).get(SUPERTOOL_ENTRY)
+    if not active:
+        return "could-not-tell", (
+            "the registered path is pinned to {}, but no active supertool "
+            "version could be read from the install record, so there is "
+            "nothing to compare it against".format(pinned_version)
+        )
+    comparison = compare_versions(pinned_version, active)
+    if comparison == "unknown":
+        return "could-not-tell", (
+            "the registered path is pinned to {} and the active install reports "
+            "{}, and at least one of those could not be parsed as a version, so "
+            "they could not be compared".format(pinned_version, active)
+        )
+    if comparison == "current":
+        return "current", "{}, matching the active install".format(pinned_version)
+
+    active_roots, _active_version = dependency_install_roots(
+        SUPERTOOL_ENTRY, record=record, cache_root=cache_root
+    )
+    same = None
+    if active_roots:
+        try:
+            relative = Path(os.path.abspath(str(target))).relative_to(
+                Path(os.path.abspath(str(pinned_root)))
+            )
+        except ValueError:
+            relative = None
+        if relative is not None:
+            same = _content_identical(target, active_roots[0] / relative)
+    if same is True:
+        identity_clause = (
+            "byte-identical to the active install's copy at the same relative "
+            "path -- cosmetic, re-register when convenient"
+        )
+    elif same is False:
+        identity_clause = (
+            "NOT byte-identical to the active install's copy -- the consumer "
+            "you are running is not the one you installed"
+        )
+    else:
+        identity_clause = "whether the two files are byte-identical could not be established"
+    return "SKEW", "pinned to {}, active install is {} -- {}".format(
+        pinned_version, active, identity_clause
+    )
+
+
+def check_channel_consumer_pin(
+    server=None, run=None, which=None, env=None, record=None, cache_root=None,
+    precomputed=None,
+):
+    """Report `channel_consumer_pin_state`, only when the registration itself
+    resolved to a real file. Every other registration state is already
+    reported by `check_mcp_channel_registration`, and this has nothing to add
+    to a registration that is not-registered, unreadable, or points nowhere.
+
+    `precomputed` -- a `(state, detail)` pair from `mcp_channel_registration_state`
+    -- lets `main()` ask that question once and hand the answer to both this
+    check and `check_mcp_channel_registration`, rather than shelling out to
+    `claude mcp get` twice per doctor run for one answer. `claude` is not a
+    cheap binary to start (~1.3s measured on this machine, per that
+    function's own docstring) -- the same cost #629 removed one duplicate
+    call of already. Standalone callers (every test in this file) get the
+    same real-or-injected read `mcp_channel_registration_state` always did.
+    """
+    state, detail = (
+        precomputed if precomputed is not None
+        else mcp_channel_registration_state(server=server, run=run, which=which, env=env)
+    )
+    if state != "registered":
+        return
+    label = server or CHANNEL_SERVER
+    pin_state, pin_detail = channel_consumer_pin_state(detail, record=record, cache_root=cache_root)
+    if pin_state == "current":
+        report(
+            "OK",
+            "channel consumer pin: {} is registered pointing at {}, {}.".format(
+                label, SUPERTOOL_ENTRY, pin_detail
+            ),
+        )
+        return
+    if pin_state == "SKEW":
+        report(
+            "WARN",
+            "channel consumer pin: SKEW -- {} is registered {}. A deliberate "
+            "pin to an older copy is a legitimate choice, the same way "
+            "./supertool pointing at a local checkout is -- this only names "
+            "it.".format(label, pin_detail),
+        )
+        return
+    report(
+        "WARN",
+        "channel consumer pin: {} is registered, and whether its pinned "
+        "version matches the active install is unknown -- {}.".format(
+            label, pin_detail
+        ),
+    )
+
+
+def check_mcp_channel_registration(server=None, run=None, which=None, env=None, precomputed=None):
     """One line, in every state -- see `mcp_channel_registration_state`.
 
     OK here never means "the board is live". This reads a registration and, when
@@ -3154,8 +3405,15 @@ def check_mcp_channel_registration(server=None, run=None, which=None, env=None):
     `check_watch_channel` and `check_radar_publish` each state about their own
     reads. Together the three now cover name, declaration and transport; before
     this, the third was silent on both sides of it (#621).
+
+    `precomputed` -- see `check_channel_consumer_pin`'s docstring: `main()`
+    asks `mcp_channel_registration_state` once and hands the answer to both
+    checks rather than shelling out to `claude mcp get` twice.
     """
-    state, detail = mcp_channel_registration_state(server=server, run=run, which=which, env=env)
+    state, detail = (
+        precomputed if precomputed is not None
+        else mcp_channel_registration_state(server=server, run=run, which=which, env=env)
+    )
     label = server or CHANNEL_SERVER
     if state == "could-not-ask":
         report(
@@ -5104,6 +5362,7 @@ def active_versions(names, record=None):
     return found
 
 
+
 def dependency_repositories(names):
     """Origin repo per dependency, read from each plugin's own installed manifest.
 
@@ -5228,6 +5487,257 @@ def published_versions(repos):
 JIT_PLUGIN = "claude-jit-context"
 
 PLUGIN_CACHE_ROOT = "~/.claude/plugins/cache"
+
+#: Per declared dependency, how to reach its own diagnostic. Three shapes exist
+#: today (#638): `supertool` ships its diagnostic as a supertool OP, run through
+#: the `supertool` binary against the repo under diagnosis; `remember` and
+#: `claude-jit-context` each ship a versioned SCRIPT under their own install
+#: root. This is a fact about each dependency's own contract -- not a fact about
+#: a repo this plugin manages -- so it is not the kind of hardcoding the rest of
+#: this file avoids; it is the same kind of fact `JIT_HOOK_MANIFEST` above
+#: already is. A fourth dependency with a fourth shape lands in `could-not-run`
+#: below until it is added here.
+DEPENDENCY_DIAGNOSTICS = {
+    "supertool": {"kind": "op", "argv": ["doctor"]},
+    "remember": {"kind": "script", "rel": ("scripts", "doctor.sh")},
+    JIT_PLUGIN: {"kind": "script", "rel": ("scripts", "jit-doctor.sh")},
+}
+
+#: Measured (this repository, this machine): supertool's `doctor` op ~0.07s,
+#: `jit-doctor.sh` ~0.38s, `remember`'s `doctor.sh` ~0.57s -- under 1s combined.
+#: The cap below is generous against a hang, not against the ordinary case.
+DEPENDENCY_DIAGNOSTIC_TIMEOUT = 30
+
+
+def _last_nonblank_line(text):
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def _last_line_with_prefix(text, prefix):
+    for line in reversed((text or "").splitlines()):
+        if line.strip().startswith(prefix):
+            return line.strip()
+    return None
+
+
+def dependency_install_roots(name, record=None, cache_root=None):
+    """``(roots, version)`` -- where the *active* install of ``name`` is unpacked.
+
+    Generalises ``jit_hook_roots``'s own derivation (``installPath`` from the
+    install record preferred, a cache glob the fallback for records that
+    predate the field) to any declared dependency, not only
+    `claude-jit-context`. Kept as a separate function rather than a shared one
+    `jit_hook_roots` is rewritten to call, so this addition carries no risk to
+    that function's own callers and their tests.
+    """
+    version = active_versions([name], record).get(name)
+    if not version:
+        return [], None
+
+    roots = []
+    path = Path(record or os.path.expanduser(INSTALL_RECORD))
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {}
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    for key, entries in (plugins or {}).items() if isinstance(plugins, dict) else ():
+        if key.split("@", 1)[0] != name or not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("version") != version:
+                continue
+            if entry.get("installPath"):
+                roots.append(Path(str(entry["installPath"])))
+
+    if not roots:
+        cache = Path(cache_root or os.path.expanduser(PLUGIN_CACHE_ROOT))
+        try:
+            roots = [
+                candidate
+                for candidate in sorted(cache.glob("*/{}/{}".format(name, version)))
+                if _safe_is_dir(candidate)
+            ]
+        except OSError:
+            roots = []
+    return list(dict.fromkeys(roots)), version
+
+
+def dependency_diagnostic_state(
+    name, project_dir, record=None, cache_root=None, timeout=None, run=None, which=None
+):
+    """Does ``name``'s own diagnostic say it is working? Three states (#638).
+
+    `check_freshness` already reports presence and a version per declared
+    dependency -- "what is installed" -- which is a different and narrower
+    question than "is it working", and every declared dependency ships a
+    diagnostic that answers that one. This relays it rather than
+    reimplementing it: `CLAUDE.md`'s rule against restating a dependency's own
+    classification applies directly, and `dependency_diagnostic_state`'s job
+    is only to find and run that diagnostic and pass its answer through.
+
+    Returns ``(state, detail)``:
+
+    * ``relayed`` -- the diagnostic ran and answered. `detail` carries its own
+      verdict line (or, for `remember`, the trailing `VERDICT:` line its script
+      already composes) verbatim, never re-derived.
+    * ``not-installed`` -- an ordinary state, not a finding: `name` has no
+      active install in the record `active_versions` reads.
+    * ``could-not-run`` -- installed, and still did not answer: no known route
+      for this dependency's shape, no `supertool`/`bash` to run it with, its
+      script is not where the install record says the dependency is, it timed
+      out, or it exited outside its own documented contract. **Never folds
+      into `relayed`** -- a maintainer reading `OK dependency diagnostic:
+      remember` must be able to trust that remember's own script said so, not
+      that this function gave up quietly.
+
+    `claude-jit-context`'s exit code is a documented three-state contract in
+    its own right (0 nothing inert / 1 a layer the matcher can never load / 2
+    SKIPPED) and is honoured rather than flattened: all three still relay,
+    because all three are the dependency answering -- `SKIPPED` is not the
+    same claim as `OK` and must not render as one, so its own exit code and
+    verdict line are carried into the detail rather than summarised away.
+    `remember`'s script always exits 0 by its own design; its answer lives in
+    the trailing `VERDICT:` line it prints, which is what is relayed there.
+    """
+    run = subprocess.run if run is None else run
+    which = shutil.which if which is None else which
+    timeout = DEPENDENCY_DIAGNOSTIC_TIMEOUT if timeout is None else timeout
+
+    spec = DEPENDENCY_DIAGNOSTICS.get(name)
+    if spec is None:
+        return "could-not-run", (
+            "no known diagnostic route for {} -- not one of the shapes this relay "
+            "resolves".format(name)
+        )
+
+    if spec["kind"] == "op":
+        version = active_versions([name], record).get(name)
+        if not version:
+            return "not-installed", "{} is declared but not installed".format(name)
+        exe = which("supertool")
+        if exe is None:
+            return "could-not-run", (
+                "{} {} is active, but no `supertool` executable is on PATH to run "
+                "its diagnostic".format(name, version)
+            )
+        try:
+            done = run(
+                [exe] + spec["argv"],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return "could-not-run", "{} {}'s diagnostic timed out after {}s".format(
+                name, version, timeout
+            )
+        except OSError as exc:
+            return "could-not-run", "{} {}'s diagnostic could not be started ({})".format(
+                name, version, exc.strerror or exc.__class__.__name__
+            )
+        if done.returncode != 0:
+            return "could-not-run", "{} {}'s diagnostic exited {} -- {}".format(
+                name, version, done.returncode, _last_nonblank_line(done.stdout)
+            )
+        return "relayed", "{} {}: {}".format(
+            name, version, _last_nonblank_line(done.stdout) or "ran, no output"
+        )
+
+    # spec["kind"] == "script"
+    roots, version = dependency_install_roots(name, record=record, cache_root=cache_root)
+    if not version:
+        return "not-installed", "{} is declared but not installed".format(name)
+    if not roots:
+        return "could-not-run", (
+            "{} {} is active, but its install path could not be resolved".format(
+                name, version
+            )
+        )
+    script = roots[0].joinpath(*spec["rel"])
+    if not script.is_file():
+        return "could-not-run", (
+            "{} {} is active, but its diagnostic ({}) is not on disk at the resolved "
+            "install path".format(name, version, "/".join(spec["rel"]))
+        )
+    bash = which("bash")
+    if bash is None:
+        return "could-not-run", "no bash on PATH to run {} {}'s diagnostic".format(
+            name, version
+        )
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = str(project_dir)
+    try:
+        done = run(
+            [bash, str(script)],
+            cwd=str(project_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            timeout=timeout,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return "could-not-run", "{} {}'s diagnostic timed out after {}s".format(
+            name, version, timeout
+        )
+    except OSError as exc:
+        return "could-not-run", "{} {}'s diagnostic could not be started ({})".format(
+            name, version, exc.strerror or exc.__class__.__name__
+        )
+
+    verdict_line = _last_line_with_prefix(done.stdout, "VERDICT:")
+    if name == JIT_PLUGIN:
+        if done.returncode in (0, 1, 2):
+            return "relayed", "{} {}: exit {} -- {}".format(
+                name, version, done.returncode,
+                verdict_line or _last_nonblank_line(done.stdout),
+            )
+        return "could-not-run", (
+            "{} {}'s diagnostic exited {}, outside its documented 0/1/2 contract -- "
+            "{}".format(name, version, done.returncode, _last_nonblank_line(done.stdout))
+        )
+
+    # remember: its script always exits 0 by design, so the exit code is not
+    # the signal -- an unexpected nonzero here means the run itself broke, not
+    # that the dependency has something to report.
+    if done.returncode != 0:
+        return "could-not-run", "{} {}'s diagnostic exited {} -- {}".format(
+            name, version, done.returncode, _last_nonblank_line(done.stdout)
+        )
+    return "relayed", "{} {}: {}".format(
+        name, version, verdict_line or _last_nonblank_line(done.stdout) or "ran, no output"
+    )
+
+
+def check_dependency_diagnostics(
+    project_dir, record=None, cache_root=None, timeout=None, run=None, which=None
+):
+    """Relay each declared dependency's own diagnostic. `could-not-run` must
+    never render as `OK` -- that is the whole subject of #638.
+    """
+    names = declared_dependencies()
+    if not names:
+        unmeasured("dependency diagnostics", "no dependencies declared in the manifest")
+        return
+    for name in names:
+        state, detail = dependency_diagnostic_state(
+            name, project_dir, record=record, cache_root=cache_root,
+            timeout=timeout, run=run, which=which,
+        )
+        if state == "relayed":
+            report("OK", "dependency diagnostic -- {}".format(detail))
+        elif state == "not-installed":
+            report("OK", "dependency diagnostic -- {}: not installed".format(name))
+        else:
+            report(
+                "WARN",
+                "dependency diagnostic -- {}: could not run -- {}".format(name, detail),
+            )
+
 
 #: A *fixed layer list* in a hook, matched by shape rather than by its current spelling.
 #:
@@ -7583,10 +8093,26 @@ def main(argv=None):
     # lines either side of the one artifact that does. Needs no config: the MCP
     # registration lives in claude's own config, not in .oss.json.
     check_mcp_channel_registration()
+    # #646: the registration line above confirms the pinned path EXISTS; it
+    # never compares the version that path is pinned to against what is
+    # actually installed, so a stale-but-still-present pin renders OK twice
+    # over. This adds only the comparison, never a hard failure. A second
+    # `claude mcp get` call (each check reads the registration independently,
+    # so each stays testable and stubbable on its own -- the pattern every
+    # sibling check in this function already follows) rather than threading a
+    # precomputed answer through main(), which was tried and reverted: it
+    # made the ask run even when a caller had stubbed the OTHER check
+    # specifically to avoid it (self-review finding on this same change).
+    check_channel_consumer_pin()
     # Needs no config either: the hook lives under .git/hooks and the budget
     # lives in supertool's file. Structural only -- it never runs the hook.
     check_git_push_budget(project_dir)
     check_freshness(project_dir, config)
+    # `check_freshness` above answers "what version is installed" per declared
+    # dependency; it says nothing about whether that install is actually
+    # working. Every declared dependency ships its own diagnostic for that
+    # question, and relaying it costs under 1s combined, measured (#638).
+    check_dependency_diagnostics(project_dir)
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
     warns = sum(1 for state, _ in FINDINGS if state == "WARN")
