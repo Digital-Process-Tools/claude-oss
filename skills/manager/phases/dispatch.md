@@ -286,23 +286,19 @@ Every brief carries these:
    > file that does not exist yet, and your changelog fragment is always one. A raw heredoc runs no
    > validator and rolls nothing back. `supertool 'ops'` lists everything.
    >
-   > **Batching several ops in one call** needs `op = "paste"` (or `"edit"`, `"read"`, ...) inside
-   > every `[[ops]]` entry — the single-op shapes above omit it because there is only one op. Two
-   > pastes in one call: `[[ops]]` / `op = "paste"` / `path = "a.py"` / `content = '''...'''`, then a
-   > second `[[ops]]` block the same shape. Omitting `op` fails at the call with `batch op missing op
-   > field` — the shape this note exists so nobody pays a failed call to learn (#669).
+   > **Batching** needs `op = "paste"` (or `"edit"`, `"read"`, ...) set inside every `[[ops]]`
+   > entry — the shapes above omit it. Omit it and the call fails: `batch op missing op field`
+   > (#669).
    >
    > Write prose quotes plainly in the pull request payload's JSON — never
    > backslash-escaped; `gh-pr-create` refuses a body carrying literal
    > backslash-quote, and `literal_backslashes = true` is for a real backslash.
    >
-   > **Write your report from the worktree root — `cd <worktree_root>` first — not from your branch
-   > directory.** The report, the note and the pull request payload live outside every worktree so
-   > they survive the tree being reaped, and supertool refuses a path outside the current working
-   > directory: from the branch directory you get `ERROR: path escapes cwd`, and the cost is a
-   > re-send of the whole payload rather than a retry of a short command. Do not reach for the env
-   > var or the `allow_outside_cwd` key the refusal offers — both widen every op for the rest of the
-   > session to buy one write. Move the cwd, not the guard.
+   > **Write your report from the worktree root — `cd <worktree_root>` first, not your branch
+   > directory.** The report, note and PR payload live outside every worktree so they survive it
+   > being reaped; supertool refuses a path outside cwd (`ERROR: path escapes cwd`), costing a full
+   > re-send rather than a short retry. Do not use the env var or `allow_outside_cwd` escape hatch —
+   > both widen every op for the session to buy one write. Move the cwd, not the guard.
 
    The op names are in there deliberately, and the creating one is the reason. A named op that
    supertool later renames fails *at the call*; an **omitted** one does not fail at all — it routes
