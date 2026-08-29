@@ -91,12 +91,29 @@ def _statusline_entry(path):
     * present and readable -- `has_key` and `command` say what it found, `has_key=False`
       meaning read fine, no `statusLine` key (a settings.local.json that exists for some
       other reason entirely, most commonly).
+
+    Existence is established the same way `doctor._safe_is_file` normally would, but NOT
+    by calling it: `_safe_is_file` (owned by `doctor.py`, not this module) treats any
+    `OSError` from `Path.is_file()` as "not there" (CLAUDE.md's own `Path.exists()` trap,
+    one call over), which is exactly correct for "no such file" and exactly wrong for "the
+    containing directory is unsearchable" -- the second is unreadable, not absent, and
+    collapsing it into absent is the identical mistake this function's docstring already
+    warns against for a parse failure. `read_text` is called directly instead, and its own
+    `FileNotFoundError` is the one exception that means "not there"; every other `OSError`
+    (permission denied, a directory in the path that cannot be traversed, ...) is
+    unreadable. A missing parent directory (e.g. no `.claude/` at all) still raises
+    `FileNotFoundError`, not some other `OSError`, so the ordinary "no such repo furniture
+    yet" case is unaffected (#642 follow-up, found by this diff's own review round).
     """
-    if not doctor._safe_is_file(path):
-        return {"exists": False, "unreadable": False, "has_key": False, "command": ""}
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {"exists": False, "unreadable": False, "has_key": False, "command": ""}
+    except OSError:
+        return {"exists": True, "unreadable": True, "has_key": False, "command": ""}
+    try:
+        document = json.loads(text)
+    except ValueError:
         return {"exists": True, "unreadable": True, "has_key": False, "command": ""}
     if not isinstance(document, dict) or "statusLine" not in document:
         return {"exists": True, "unreadable": False, "has_key": False, "command": ""}

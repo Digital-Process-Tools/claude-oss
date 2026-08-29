@@ -22,6 +22,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -170,3 +172,50 @@ def test_readable_local_next_to_unreadable_tracked_is_still_unknown(tmp_path):
     state, message = doctor.FINDINGS[0]
     assert state == "WARN", doctor.FINDINGS
     assert "unknown" in message
+
+
+def test_unsearchable_directory_is_unknown_not_absent(tmp_path):
+    """A settings.json that genuinely exists, behind a .claude/ directory this process
+    cannot traverse, must not collapse into "sets no statusLine" -- the same defect this
+    module's own docstring already warns against for a parse failure, one call earlier.
+    An earlier version of this fix used doctor._safe_is_file() to test existence, which
+    swallows OSError (including "directory not searchable") into False, misreporting this
+    exact case as "neither file sets a statusLine".
+
+    A permission fixture is a measurement, not a given (CLAUDE.md): root ignores the mode
+    bit and some filesystems ignore it too, so the deny is confirmed by attempting the
+    exact read the code under test performs, and this skips (carrying what went untested)
+    rather than asserting on a permission nothing here established.
+    """
+    claude_dir = tmp_path / ".claude"
+    _write(claude_dir / "settings.json", {"statusLine": {"command": _ours_block()}})
+    import os
+
+    os.chmod(claude_dir, 0o000)
+    try:
+        # Establish the condition for real: can THIS process still read the file?
+        try:
+            (claude_dir / "settings.json").read_text(encoding="utf-8")
+            took = False
+        except PermissionError:
+            took = True
+        except OSError:
+            took = True
+        if not took:
+            pytest.skip(
+                "chmod 0o000 on .claude/ did not block this process's own read "
+                "(root, or a filesystem that ignores the mode bit) -- untested here"
+            )
+        _reset()
+        doctor.check_statusline(str(tmp_path))
+        assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
+        state, message = doctor.FINDINGS[0]
+        assert state == "WARN", doctor.FINDINGS
+        assert "unknown" in message
+        assert "sets no statusLine" not in message
+        assert "neither" not in message, (
+            "a real, unreadable file must not render identically to both files being "
+            "genuinely absent: " + message
+        )
+    finally:
+        os.chmod(claude_dir, 0o755)
