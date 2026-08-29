@@ -101,8 +101,8 @@ content = '''...'''
 TOML
 ```
 
-Omit `op` on any entry and the call fails with `batch op missing op field` — a failed call is how a
-lane without this example learns the shape (#669).
+Omit `op` on any entry and the call fails with `batch op missing 'op' field` — a failed call is
+how a lane without this example learns the shape (#669).
 
 **Write prose quotes plainly in the pull request payload's JSON — never
 backslash-escape a quote inside ordinary prose.** `gh-pr-create` refuses a

@@ -1,0 +1,8 @@
+# #675: size budgets in scripts/agent_budgets.py and scripts/skill_phases.py
+# measure raw checked-out bytes. Without a pin, a file's byte count -- and
+# therefore whether it is "under budget" -- is a property of the checkout
+# (LF on POSIX, CRLF on a fresh Windows clone), not of the file. This makes
+# every checkout agree: text files normalize to LF on checkout everywhere,
+# so `len(path.read_bytes())` means the same thing on every platform.
+*		text=auto eol=lf
+*.png		binary

@@ -287,7 +287,7 @@ Every brief carries these:
    > validator and rolls nothing back. `supertool 'ops'` lists everything.
    >
    > **Batching** needs `op = "paste"` (or `"edit"`, `"read"`, ...) set inside every `[[ops]]`
-   > entry — the shapes above omit it. Omit it and the call fails: `batch op missing op field`
+   > entry — the shapes above omit it. Omit it and the call fails: `batch op missing 'op' field`
    > (#669).
    >
    > Write prose quotes plainly in the pull request payload's JSON — never

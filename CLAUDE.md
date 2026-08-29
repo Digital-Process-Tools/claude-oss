@@ -330,6 +330,16 @@ separately rather than one list.
   claim is macOS-marketplace-scoped rather than universal -- but it is the first machine-measured
   answer this repository has recorded for a question `#519`'s own lane declined to act on
   unverified.
+- **Two copies of a brief agreeing with each other proves nothing about whether either is right.**
+  `agents/developer.md` and `skills/manager/phases/dispatch.md` both told an agent that an
+  `[[ops]]` entry missing its `op` field fails with `batch op missing op field` -- no quotes around
+  `op`. The real string, measured by actually tripping the failure, is `batch op missing 'op'
+  field`. `tests/test_content_invariants.py`'s #250/#669 checks only asserted each copy against a
+  floor -- does it name `paste`, does it name `path` and `content` -- never against each other, so
+  the two documents drifting into agreement on a wrong string was invisible to both (#673).
+  `tests/test_write_route_fact_parity_673.py` compares five named facts between the two documents
+  pairwise and pins the batch error string against the actually-measured tool output, on purpose,
+  because parity alone would have passed this exact case.
 
 ## Layout
 
@@ -380,6 +390,17 @@ history is largely expensive lessons written down so they are not paid twice, an
 a still-live trap costs a whole extra review round — a cost that will not show up next to the token
 count it saved. The budget is a visible number, not a mandate to shrink.
 
+**#675: every number in this table is now a property of the file, not of the checkout.**
+`scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
+number of bytes on every platform unless something pins line endings — a CRLF checkout of an
+LF-authored file adds one byte per line. `.gitattributes` (`* text=auto eol=lf`, added by #675)
+normalizes every text file to LF on checkout everywhere, so the byte count above means the same
+thing whether CI checked the file out on Linux, macOS or Windows. What this does **not** guarantee:
+a document assembled or pasted at runtime rather than checked out by git carries no such promise,
+so the raw-byte measurement stays exactly what it was — `agent_budgets.py` is unchanged by this pin
+on purpose (see `skills/manager/phases/dispatch.md`'s own note, below, for the incident that forced
+the choice between pinning and normalizing the measurement).
+
 ## The manager skill is a spine plus one file per phase
 
 `skills/manager/SKILL.md` is not an agent definition, and #491 said so — so nothing counted it, and
@@ -406,6 +427,16 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
+
+**This table is where #675 was found.** `dispatch.md` measured 25,980 B (LF, 338 lines) — 120 B
+under its 26,100 B budget — and 26,318 B as a Windows checkout's CRLF, 218 B *over* the same budget,
+because `scripts/skill_phases.py` measures raw checked-out bytes and this repository shipped no
+`.gitattributes` pinning line endings. #672 was sent back to fit under a ceiling that was never the
+number the table names — `budget - line_count`, not `budget` — on a checkout nobody in this repo's own
+sessions ever produces. `.gitattributes` (`* text=auto eol=lf`) closes that: every checkout now
+normalizes to LF, so the measured column above is the number on every platform's disk, and
+`budget` is the real ceiling again rather than `budget - line_count`. The checkers were deliberately
+left alone — see #675's own reasoning for why normalizing the measurement instead was rejected.
 
 **The total grew: 122,423 B became 142,188 B, +16%.** The spine's directive blocks and each phase
 file's own header are a second, shorter statement of what the phase file then argues at length, and
