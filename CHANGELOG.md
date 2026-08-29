@@ -7,6 +7,313 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-29
+
+### Added
+
+- The status line's board field splits open issues into two counts instead of one:
+  `14is / 2eis`, where `eis` is how many were filed by someone outside repository
+  membership. The split reads off GitHub's own `authorAssociation` rather than
+  `-author:@me`, so the number is a fact about the repository rather than about
+  whoever is authenticated on the machine rendering the line, and it agrees with
+  supertool's own `gh-issues` external-filer marker instead of answering differently.
+  A count nobody could take renders `?eis`, distinct from a genuine `0eis` (#595).
+  The vendored `.oss/statusline.py` copy in managed repositories does not pick this
+  up until it is re-scaffolded.
+
+- The status line adds a sixth-ish field, `ch`, showing whether the watch
+  channel supertool's own `channel:health` reads about is delivering: `chok`
+  (green) when the consumer's own counters are moving, `chx` (red) when nothing
+  is listening at the socket, `chb` (yellow) when the consumer is bound and
+  counting but no session is subscribed, `ch!` when the health file disagrees
+  with who actually holds the socket, and `ch?` when nothing could be
+  established -- no reading yet, a reading older than its own refresh interval,
+  or a channel name that was not derived from this repository's own `.oss.json`
+  and so cannot be attributed to this repository's fleet. `forwarded` is never
+  spelled as `delivered`: the field reports which of five states the consumer
+  is in, not whether an event reached a Claude session, which is not
+  observable from outside that session at all. Read once per a new third
+  clock, at most every 300s (an unmeasured starting guess, stated as one), by
+  the status line's existing detached `--refresh`, never on the render path --
+  `channel:health` is classed an acting op and spawns `claude mcp get` per
+  subscription tag. On by default; set `"watch_channel": false` in `.oss.json`
+  for a repository that does not run a channel at all (#613). The vendored
+  `.oss/statusline.py` copy in managed repositories does not pick this up
+  until it is re-scaffolded.
+
+### Removed
+
+- `board_from_cache`'s `state` field (`unknown`/`partial`/`measured`) is removed (#597). Nothing
+  read it -- `_board_field` already renders `?` per missing value straight off `prs`, `issues`,
+  `issues_external` and `checks`, so the summary could disagree with the values it summarized and
+  never affect anything a maintainer sees. #595 had just added a rule to it (`issues` present but
+  `issues_external` absent is `partial`) that, for the same reason, could not fire anywhere either.
+  The per-field `?` on each count is the whole answer now. A repo's vendored `.oss/statusline.py`
+  copy keeps the old field until that repo is re-scaffolded.
+- Compatibility: compatible - `board_from_cache` is not exposed by any documented interface: it is
+  a module-private function in a single vendored script, called only by that same script's own
+  `gather()`, and its return value never crosses a process boundary or a README-documented
+  contract. Weighed the counter-argument before choosing this over `breaking`: the file is
+  vendored into managed repos as `.oss/statusline.py`, so in principle a scaffolded repo could
+  hold its own caller this repo cannot see. It cannot hold one that *matters* to this verdict,
+  though -- `board_from_cache` is invoked only by code inside the same file (`gather()`, which
+  feeds `_board_field()`), never imported as a library elsewhere or exposed as a CLI flag or a
+  documented field, so the only place a caller could exist is inside a maintainer's own hand-edit
+  of that same vendored file, which this repo cannot version anyway. What #597 itself established
+  -- zero readers of the field, verified by grep and by two independent review spawns -- is the
+  fact this verdict rests on.
+
+### Fixed
+
+- README.md's `ln -sf ... ~/.local/bin/oss-workspace` step was filed as a possible
+  redundancy against the plugin's own marketplace cache directory already being on
+  `PATH`. Measured rather than assumed: a clean login shell carries no `dpt-plugins`
+  entry at all, so the marketplace cache is on `PATH` only inside a running session --
+  the one place the launcher is never run from. The symlink step stays, and README.md
+  and CLAUDE.md now record the measurement rather than leaving the question open (#526).
+
+- The supertool rule body existed twice with nothing comparing them: the tracked
+  `.claude/jit-context/tools/01-oss/supertool-required.md`, which this repository's own
+  sessions read, and `TOOLS_SUPERTOOL` in `scripts/oss_rules.py`, which is what gets written
+  into every scaffolded repository. An edit to one and not the other used to ship silently.
+  `tests/test_supertool_rule_sync_577.py` now compares the two bodies (normalised for line
+  endings and trailing whitespace only, so a Windows checkout's CRLF is not read as drift),
+  with a control pair proving it catches a one-sided edit and passes an edit made to both (#577).
+
+- \`bin/oss-workspace\`'s FIND_CONSUMER heredoc -- the block that locates the supertool
+  plugin's channel consumer -- ended in \`|| true\` with no captured exit status, and its
+  \`json.load\` was guarded only by \`except (OSError, ValueError)\`. A \`RecursionError\` out
+  of \`json.load\` on a deeply nested (but validly-formed) registry escaped that guard, the
+  interpreter exited nonzero, and \`|| true\` swallowed the status -- so \`channel_script\`
+  came back empty with no signal anything had crashed, and the launcher reported the SAME
+  confident \"the supertool plugin's channel consumer was not found\" sentence it gives for a
+  genuine absence. This was worse than the \`ASK_CONSUMER\` case #573/#588 already fixed at the
+  sibling call site: there a crash at least left a traceback on stderr beside the wrong
+  answer; here it read as a specific, plausible fact nobody had reason to doubt. The status is
+  now captured on the heredoc's own assignment (\`&& find_consumer_status=0 || find_consumer_status=$?\`,
+  the same idiom #588 established), and a crashed probe now reports its own third-state
+  sentence -- \"could not determine whether the supertool plugin's channel consumer is
+  installed ... UNKNOWN rather than absent\" -- distinct from both the ordinary not-found and
+  found-but-unverifiable sentences already in that block (#578).
+
+- `skills/manager/phases/dispatch.md` and `skills/manager/SKILL.md` now route the maintainer to
+  `--derive-held`, the derivation `#558` shipped, instead of teaching the hand-retyped `--against`
+  set as the only way to check a new lane's files against every other running lane. The hand-typed
+  side stays documented as the named fallback for `could-not-derive-the-held-set`, never the
+  default (#586).
+
+- `scripts/skill_phases.py`'s undeclared-phase-file check no longer folds an
+  unreadable phases directory into "no undeclared files found". `_undeclared_rows()`
+  caught `(RuntimeError, OSError)` around its call to `manager_docs.documents()`
+  and returned `[]` on either, discarding the `unreadable` state the module's own
+  docstring promises to preserve -- guard and bypass in one function. `OSError`
+  now returns an `unreadable` row instead; `RuntimeError` (no spine) still returns
+  `[]`, since that is already reported by the spine document's own `missing` row.
+  Found by the `v0.14.0` release gate's round-2 audit; no live route to the bypass
+  was demonstrated at HEAD (#589).
+
+- `scripts/assemble_changelog.py --check`/`--count`/`--check-links`, run with neither `--dir`
+  nor `--changelog`, used to derive its target by walking up from the script's own install
+  location for a `.git` — correct for the copy vendored beside the repo it serves
+  (`.oss/assemble_changelog.py`), and wrong for the copy shipped inside the plugin, whose own
+  checkout is always a clone unrelated to whatever repository the caller meant. That walk always
+  succeeded, always on the plugin's own tree, so a bare `--check` run from any directory reported a
+  clean `ok` about the plugin's own changelog fragments, never the caller's (#590). It now derives
+  from the **caller's own current working directory** instead, and refuses — the same way the fold
+  already did — when no `.git` is found above it, rather than falling back to a repository nobody
+  asked about. The `ok`/`skipped` receipts also now name the resolved directory that was actually
+  read, so the answer's subject is never implicit.
+  Repositories scaffolded by this plugin are unaffected in practice: their vendored
+  `.oss/assemble_changelog.py` copy is invoked with cwd inside that same repository (the generated
+  CI workflow, and an ordinary local checkout), so the derived root was already correct there and
+  stays correct after re-vendoring. The defect was specific to running the plugin's own bundled
+  copy — as `/oss:tick` does when auditing a *different* repository's tracker — against a tree that
+  is not this plugin's own.
+
+- The tick's step-2 board read prescribed a bare `gh-issues` literal, which caps at 50 open
+  issues silently -- a repo with 88 open issues read as 50 and the 38 oldest issues were
+  structurally invisible to the loop's triage. `commands/tick.md` now prescribes
+  `gh-issues:per=100` and teaches the reader to treat a still-capped footer as "at least N",
+  never as the whole backlog (#593).
+
+- The SessionStart auto-updater now keeps this plugin's declared dependencies current as well as
+  the plugin itself. It had only ever acted on the loop plugin, while the status line already
+  rendered currency for the plugin and every name in its manifest's `dependencies` -- so the
+  report's subject was wider than the actor's and nothing said so. Measured instance: `remember`
+  sat at 0.21.0 against a published 0.22.0 through a session restart and a `/reload-plugins`,
+  beside a green three-plugin currency line (#605).
+- Each plugin gets its own record in the receipt, with a fourth state a dependency can reach that
+  the loop plugin cannot: `not-installed`, for a declared dependency with no install record
+  applying to this project. Attempting it at a guessed scope would have collected
+  `Plugin "<name>" not found` and recorded a plugin this project never had as one it might
+  silently have lost (#605).
+- `doctor` reports the dependencies as their own row, and tells three absences apart rather than
+  rounding any of them to a pass: a receipt written before this change that says nothing about
+  dependencies, a manifest whose `dependencies` key could not be read, and a manifest that
+  declares none (#605).
+
+- This repo's own `.mcp.json` -- a machine-local MCP server registration excluded
+  only in one clone's `.git/info/exclude`, invisible to every other checkout -- is now
+  excluded in the tracked `.gitignore` instead, so it can never be committed by
+  accident from a clone nobody has touched `.git/info/exclude` in.
+  `bin/oss-workspace` already registers the same channel consumer portably, at local
+  scope, resolved from the installed supertool plugin rather than from a checkout, so
+  a tracked copy of the file itself was not needed (#610).
+
+- The documented development command, `python3 -m pytest tests/ -q`, failed before a
+  test ran on a machine with `pytest` but no `pytest-cov` -- `pyproject.toml`'s `addopts`
+  requires it and nothing declared it. `requirements-dev.txt` is now the single declared
+  list of development dependencies (`pytest`, `pytest-cov`, `markdown-it-py`, `pyyaml`,
+  matched against what `.github/workflows/tests.yml` already installs), and README.md and
+  CLAUDE.md both state the install line beside the test command they already give (#611).
+
+- `#611`'s own `requirements-dev.txt` reddened every leg of its pull request's CI:
+  `doctor.py`'s `NOT_COMPARED_TOP_LEVEL` partition test (#415) fails on any tracked
+  top-level entry it cannot place in either half of the plugin-copy comparison, and
+  the new file was in neither. `requirements-dev.txt` is now classified there, on
+  the same reasoning as `pyproject.toml` beside it: development and test
+  configuration for this checkout, never read at runtime by an installed plugin
+  copy (#611).
+
+- `agents/developer.md`'s guard-run instruction told a dispatched developer to add every guard test
+  `scripts/lane_setup.py` names under `guard` to whatever it ran, without saying that a row can also
+  render `NOT IN THIS REPO` or `COULD NOT TELL` (since #566) when the named test file belongs only
+  to claude-oss's own tree and does not exist in the repo actually being worked on -- so a brief
+  read literally sent a lane chasing a guard test file that could not exist, the round trip #612
+  measured on claude-supertool. The `lane_setup.py` receipt itself already carried the three states;
+  the prose consuming it did not distinguish them. Now it does (#612).
+
+- `doctor`'s memory check resolved the plugin's data dir by joining the repo root onto a
+  fixed path, in every install layout -- so an external store configured with
+  `~/.remember/config.json`'s own `data_dir` (a real remember layout, keyed by path
+  slug) was invisible to it: `/oss:doctor` reported "no identity.md" about a file it
+  never looked for, while `remember`'s own `doctor.sh` reported it present and read
+  two seconds later. It now reads `~/.remember/config.json` as well whenever
+  `.claude/remember/config.json` sets no `data_dir` of its own, and resolves a plain
+  `data_dir` from either layer correctly (#614).
+- When `data_dir` is keyed by a `{slug}` this check cannot compute (`session_dir_slug`
+  is UTF-8-aware, hashes over-200-character paths, and folds Windows drive letters --
+  reimplementing it would be a second copy of another plugin's logic going stale on
+  its own schedule), the check now says it does not know rather than silently
+  defaulting to a store it already knows is wrong. Same third state for an unreadable
+  or malformed config, replacing a bare `except (OSError, ValueError): pass` that
+  could not tell "normal for this layout" from "something is actually broken" (#614).
+- `$REMEMBER_DIR`, when the current process already has it set, is read directly and
+  wins over every config layer.
+
+- `doctor`'s `latest skew` check was a permanent `WARN` in any managed repo that is not itself an installed plugin: it read the status line's cached `latest[<managed repo>]`, a key `refresh()` only ever writes for installed plugins' own source repositories, so it could never exist for an ordinary managed repo no matter how many times the cache refreshed. Now reports `not-checked` when the declared repo is not one of the installed plugins' own source repositories, instead of a `WARN` nothing can clear (#615).
+
+- `jit rule layer`'s `could-not-determine` verdict now names it when a hook script
+  enumerates its dimension directory by shell glob (`for d in "$base"/*/; do`) rather
+  than by a fixed list, instead of reporting the same generic "no fixed layer list"
+  sentence for that case as for one with no enumeration evidence in it at all. The
+  state stays `could-not-determine` -- the glob is reported, never promoted to a
+  verdict, since it says nothing about what the loop's body then does with what it
+  visits -- but a maintainer reading the line can now tell a stale `unknown` (a hook
+  set that already enumerates by glob, the shape the upstream fix is expected to
+  take) from one with no evidence at all. Reported with reproduction against
+  `claude-jit-context` 0.6.0's `common.sh` (#616).
+
+- README's launcher install line no longer names `$PWD` as though every install were a
+  checkout. On a marketplace install there is no checkout and no fixed path to write
+  here -- the plugin's own `bin/oss-workspace` lives under a version-scoped cache
+  directory that moves on every release -- so the README now points at `/oss:doctor`'s
+  own `oss-workspace launcher` line, which computes the current, paste-ready command
+  from `PLUGIN_ROOT`. The `$PWD` line stays, scoped explicitly to a clone of this
+  plugin's own repository, where it is correct (#617).
+- `/oss:doctor`'s `oss-workspace launcher` check no longer searches the plugin's own
+  `bin/` directory on `PATH`. A running session's `PATH` always carries it, so the check
+  reported `matched` about a launcher that a plain login shell -- the one the README's
+  install line is actually for -- could not reach at all: measured on the reporter's own
+  machine, a clean `zsh -i -l` shell carried zero `dpt-plugins` entries on `PATH` while
+  the check, run from inside a session, reported the launcher installed and matching.
+  With the plugin's own `bin/` excluded, an install that only exists inside a session now
+  answers `not on PATH`, the same as a launcher that was never linked at all (#617).
+
+- `bin/oss-workspace` now says when a repo has declared radar tiers but nothing has
+  ever spawned on the channel it opened -- the case a verified, subscribed, forwarding
+  channel with an empty fleet renders identically to a healthy board with nothing to
+  report. Before this fix the launcher's only line about the board fired on the
+  OPPOSITE case: a repo with no radar tiers (opted out) was warned, and a repo with
+  tiers declared and no board ever raised (opted in, and blind) stayed silent (#618).
+
+- `/oss:doctor`'s `./supertool` check now reports a link resolving into a cached but
+  superseded plugin version as its own state, `stale-version`, at `WARN` -- naming both
+  versions and the remedy. It used to compute the disagreement and then discard it into
+  an `ok` line's parenthetical, so a shipped fix could sit unused for as long as nobody
+  read the detail string: this repo's own `./supertool` stayed linked to supertool 0.47.0
+  for eleven days after 0.49.0 and 0.51.0 shipped, with every pull request's check tally
+  reading `NOT ALL GREEN` on a check the newer version had already fixed. This is the
+  reporting half of claude-supertool#2071 -- the symlink resolves perfectly, to the wrong
+  version, so nothing that checks for a dangling link can see it (#619).
+
+- The status line's external-issue count (`?eis`) was permanent everywhere: `_gh_external_issue_count` asked `gh issue list --json` for `authorAssociation`, a field that command has never had, so the call failed on every single invocation. Routes through `gh api repos/{owner}/{repo}/issues` instead, where `author_association` exists, filtering out pull requests server-side and cross-checking the row count against the known total exactly as before (#620).
+
+- `/oss:doctor` now checks the channel MCP registration itself, not only the channel
+  name and the radar board declaration either side of it. Neither of those two answers
+  whether anything actually carries a channel into a session -- `grep mcp
+  scripts/doctor.py` had answered zero results for the whole life of this file, while
+  `bin/oss-workspace` already asked the same question at session-open, on stderr, where
+  a maintainer running the diagnostic specifically because something is not working
+  never sees it. A new `channel MCP registration` line mirrors that check's own states
+  -- registered and resolvable, registered with a target that no longer exists (the
+  registration outliving a version-pinned path after a plugin update), registered with
+  an entry that could not be parsed, not registered, and could-not-ask when `claude` is
+  not on PATH or the call itself failed (#621).
+
+- `watch channel` reported `OK` whether `.supertool.json` declared `watch_name`
+  on every op supertool's watch preset actually spawns from, or on just one --
+  a name declared on `radar` alone read as fully configured even though
+  `channel`/`unwatch`/`watch`/`watches` stayed silent and kept resolving to the
+  shared default socket, splitting the fleet without erroring anywhere. The
+  check now reads the installed supertool's own `presets/watch/naming.py:
+  declared_names()` (never re-derived locally) for the finer question -- which
+  watch ops actually declare the name -- and reports `WARN` for a partial
+  declaration, and `WARN` rather than a silent `OK` when that finer question
+  cannot be answered at all. A fully-declared repo, and a repo (like this one)
+  that derives its name rather than declaring it, are both unaffected (#623).
+
+- A launcher-opened session no longer pays for `claude mcp get oss-channel` twice.
+  `bin/oss-workspace` already asks this at session-open (to decide whether to
+  register the channel consumer); `scripts/doctor.py`'s own registration check
+  (added in #621) asked it again a few lines later, in the `doctor.sh` invocation
+  the same launcher performs. `claude` is not a cheap binary to start (~1.3s
+  measured on one machine): `bin/oss-workspace` now exports the raw answer it
+  already computed (`OSS_WORKSPACE_MCP_CHECKED`/`_STATUS`/`_OUTPUT`), unset again
+  before the session itself starts so it cannot go on answering a later in-session
+  `/oss:doctor` run with a session-open-stale reading, and `doctor.py` reads that
+  handoff instead of shelling out a second time. Trusted only for the launcher's
+  own hardcoded channel server and only when the handoff parses; any other caller,
+  or a malformed handoff, falls through to the real subprocess call unchanged.
+  A standalone `doctor.sh --root .` invocation (no launcher, no handoff) is
+  unaffected and still asks directly (#629).
+
+- Fixed: the `.oss.json` jit-context rule (`.claude/jit-context/paths/01-oss/oss-config.md`,
+  shipped into every scaffolded repository as `OSS_CONFIG` in `scripts/oss_rules.py`) matched
+  `\.oss\.json` unanchored, so it fired on `.oss.json.bak`, `.oss.json.orig`, and any path
+  carrying `.oss.json` as an inner segment -- injecting confident config prose about the wrong
+  file. Anchored to `(^|/)\.oss\.json$`, the same shape the changelog-fragments rule already
+  used. `tests/test_jit_oss_config_anchor_639.py` pins the must-fire and must-not-fire cases in
+  the same fixture, plus that the `.md`, the `OSS_CONFIG` twin, and the built `00-index.tsv`
+  all agree on the pattern (#639).
+
+- `.supertool.json` declares `watch_name` (`Digital-Process-Tools-claude-oss`) under all five
+  watch ops -- `channel`, `radar`, `unwatch`, `watch` and `watches` -- so every supertool op
+  touching this repo's watch channel resolves the name from the tracked config instead of the
+  environment. Previously the loop's own receipts on every tick warned that the channel name
+  "came from the environment" and that the socket and poller slots "may be another project's
+  fleet" -- and `radar` (the bare heal) writes into those poller slots, so the loop was forking
+  pollers into a fleet it could not attribute. `tests/test_supertool_config.py`'s own #189
+  guard used to refuse any declaration here at all, on the reasoning that a hand-typed name
+  would copy-propagate into another repository verbatim; that guard's own docstring named the
+  condition under which it expected to be revisited ("once #192 lands"), and #192 and #230 both
+  landed with nobody returning to it. The guard is now a derived-equality assertion instead of
+  an absence one: it requires every declared name to equal what `oss_config.watch_channel_name`
+  derives from this repository's own `.oss.json`, which catches #189's copy-propagation harm
+  strictly better than an absence check did -- copying this file into a repo with a different
+  `repo` in `.oss.json` now fails the test, where the old guard could not tell the two repos
+  apart (#648).
+
 ## [0.14.0] - 2026-08-26
 
 ### Added
@@ -5365,7 +5672,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.12.0
