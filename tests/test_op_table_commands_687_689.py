@@ -171,5 +171,5 @@ def test_fleet_label_row_matches_dispatch_md_invocation():
     assert skill_script == dispatch_script == "fleet_label.py"
     assert bool(skill_prefix) == bool(dispatch_prefix), (
         "SKILL.md and dispatch.md disagree on whether fleet_label.py needs "
-        "a python3 prefix: {0!r} vs {1!r}".format(skill_row, dispatch_text[:0])
+        "a python3 prefix: {0!r} vs {1!r}".format(skill_row, dispatch_call.group(0))
     )
