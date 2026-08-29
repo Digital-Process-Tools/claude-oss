@@ -11,13 +11,47 @@ that is unavailable. `None` here is a caller's cue to fall back to the pinned
 path and say so (route "pinned-root"), not a value to paper over.
 """
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import plugin_update  # noqa: E402
+
+
+def _set_home(monkeypatch, home):
+    """Point os.path.expanduser("~") at `home`, on whichever platform is
+    actually running this test (#680's own CI report -- Windows-only).
+
+    posixpath.expanduser reads $HOME. ntpath.expanduser never looks at HOME at
+    all -- it reads %USERPROFILE% first, and only falls back to
+    %HOMEDRIVE%/%HOMEPATH% when that is absent (cpython's own ntpath.py, read
+    directly rather than assumed). A fixture that sets only HOME is a no-op on
+    Windows: the CLI still resolves against the real runner's own profile
+    (observed in CI, under a runner-account temp directory), which has no
+    .claude/plugins/installed_plugins.json entry matching this fixture, so
+    resolved_plugin_root correctly, honestly returns None -- and rc == 1 is
+    not a Windows platform defect in the production resolver, it is this
+    fixture failing to construct the condition it claims to on that platform.
+
+    Setting both env vars is not a guess from a table -- every caller measures
+    immediately below whether it actually took, and skips loudly rather than
+    asserting on a condition this call did not establish (CLAUDE.md's own rule
+    for a permission fixture, applied here to an environment-variable one)."""
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    resolved = Path(os.path.expanduser("~"))
+    if resolved != Path(home):
+        pytest.skip(
+            "os.path.expanduser('~') resolved to {!r}, not the fixture's {!r}, "
+            "after setting both HOME and USERPROFILE -- what goes untested here "
+            "is this test's own home-directory fixture on whatever platform "
+            "produced this, not the production resolver".format(str(resolved), str(home))
+        )
 
 
 def _plugins_root(tmp_path, version, marketplace="dpt-plugins", name="oss"):
@@ -98,11 +132,13 @@ def test_cli_print_resolved_root_prints_the_path(tmp_path, capsys, monkeypatch):
     )
     monkeypatch.setattr(plugin_update, "receipt_dir", lambda: tmp_path / "receipt-dir")
     monkeypatch.chdir(plugin_dir)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _set_home(monkeypatch, tmp_path)
     # plugin_update.resolved_plugin_root/qualified_name/installed_version all
-    # default plugins_root off `~/.claude/plugins` -- point HOME at tmp_path
-    # and lay the fixture out under it so the CLI path (which cannot take a
-    # plugins_root override) resolves the same fixture.
+    # default plugins_root off `~/.claude/plugins` -- point the home directory
+    # at tmp_path (on whichever env var this platform's expanduser() actually
+    # reads -- see _set_home) and lay the fixture out under it, so the CLI
+    # path (which cannot take a plugins_root override) resolves the same
+    # fixture.
     home_plugins = tmp_path / ".claude" / "plugins"
     home_plugins.parent.mkdir(parents=True, exist_ok=True)
     import shutil
@@ -150,7 +186,13 @@ def test_cli_print_resolved_root_fails_loudly_when_it_cannot_resolve(tmp_path, c
         json.dumps({"name": "oss", "version": "0.14.0"}), encoding="utf-8"
     )
     monkeypatch.chdir(plugin_dir)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    # Same reasoning as _set_home's docstring: on Windows, HOME alone is a
+    # no-op, so this used to fall through to the real runner's own profile
+    # rather than the deliberately-empty tmp_path this test means to point
+    # at -- a coincidence (the real profile happening to lack a matching
+    # install) standing in for a real assertion, on exactly the platform
+    # least likely to be caught locally.
+    _set_home(monkeypatch, tmp_path)
     project = tmp_path / "project"
     project.mkdir(parents=True, exist_ok=True)
     rc = plugin_update.main(["--root", str(project), "--print-resolved-root"])
