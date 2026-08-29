@@ -30,7 +30,7 @@ def _layer(root, dimension):
 
 #: Which column of an index row holds the entry FILENAME, per dimension. Measured against
 #: claude-jit-context's `rebuild-tsv.sh` (see scripts/doctor.py's JIT_FILENAME_COLUMN,
-#: which carries the same citation): tools rows are six columns wide with the filename
+#: which carries the same citation): tools rows are seven columns wide with the filename
 #: third; paths and vocabulary are two columns with the filename second.
 FILENAME_COLUMN = {"tools": 2, "paths": 1, "vocabulary": 1}
 
@@ -61,7 +61,7 @@ def test_install_writes_an_index_beside_the_rules(tmp_path):
 
 
 def test_index_rows_are_shaped_per_dimension(tmp_path):
-    """Paths and vocabulary are `pattern<TAB>filename`; tools is the six-column shape
+    """Paths and vocabulary are `pattern<TAB>filename`; tools is the seven-column shape
     `rebuild-tsv.sh` writes (see FILENAME_COLUMN above) -- a two-column assertion applied to
     a tools row would fail on a correctly built index, which is this test's own defect
     wearing the opposite sign.
@@ -72,7 +72,7 @@ def test_index_rows_are_shaped_per_dimension(tmp_path):
         column = FILENAME_COLUMN[dimension]
         for line in index.read_text(encoding="utf-8").splitlines():
             fields = line.split("\t")
-            assert len(fields) == (6 if dimension == "tools" else 2), line
+            assert len(fields) == (7 if dimension == "tools" else 2), line
             assert fields[0].strip(), line
             assert fields[column].endswith(".md"), line
 
@@ -318,21 +318,25 @@ def test_tools_rule_names_the_replacement_op():
         )
 
 
-def test_tools_index_row_is_the_six_column_shape():
-    """`tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid`, re-derived from
-    claude-jit-context's rebuild-tsv.sh rather than trusted from the issue that named it
-    (#80 found the same list wrong when someone only reasoned about it).
+def test_tools_index_row_is_the_seven_column_shape():
+    """`tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid<TAB>requires`,
+    re-derived from claude-jit-context's rebuild-tsv.sh rather than trusted from the
+    issue that named it (#80 found the same list wrong when someone only reasoned about
+    it). The seventh column was added by #665: `requires` was declared in frontmatter by
+    #570 and read by claude-jit-context 0.6.0's `jit_missing_requires()`, but nothing
+    here ever emitted it, so the shipped index disagreed with the rule body it indexes.
     """
     rows = oss_rules.index_rows("tools", oss_rules.RULES["tools"])
     assert rows
     for row in rows:
         fields = row.split("\t")
-        assert len(fields) == 6, row
-        tool, match, filename, mode, require, forbid = fields
+        assert len(fields) == 7, row
+        tool, match, filename, mode, require, forbid, requires = fields
         assert tool == "Read|Edit|Write|Glob|Grep", tool
         assert match, "empty match -- the row would refuse to load"
         assert filename == "supertool-required.md", filename
         assert mode == "block", mode
+        assert requires == "supertool", requires
 
 
 def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():
