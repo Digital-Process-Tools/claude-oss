@@ -50,6 +50,25 @@ def test_absent_snapshot_says_absent_not_unreadable(tmp_path):
     assert "--record-plugin-root" in record["why"]
 
 
+def test_undecodable_snapshot_says_unreadable_not_absent(tmp_path):
+    """Self-review finding: `UnicodeDecodeError` is a `ValueError`, not an
+    `OSError`, so it slips past an `except OSError` the same way #76 already
+    demonstrated for `describe()`'s identical read. MUST FIRE: a snapshot
+    holding one stray non-UTF-8 byte must come back as a clean
+    PLUGIN_ROOT_COULD_NOT_READ record naming the decode failure, never as an
+    uncaught traceback and never as the absence sentence."""
+    path = tmp_path / "state.json"
+    oss_state.record_plugin_root(str(path), ROOT_A)
+    snapshot = Path(str(path) + ".plugin-root-snapshot.json")
+    snapshot.write_bytes(b"\xff\xfe\x00\x01invalid utf8 bytes \x80\x81")
+
+    record = oss_state.check_plugin_root(str(path), ROOT_A)
+    assert record["state"] == oss_state.PLUGIN_ROOT_COULD_NOT_READ
+    assert "no snapshot was recorded" not in record["why"]
+    assert "--record-plugin-root" not in record["why"]
+    assert "decode" in record["why"].lower()
+
+
 def test_unreadable_snapshot_says_unreadable_not_absent(tmp_path):
     """MUST FIRE: a snapshot that exists but cannot be read (permission denied)
     must not be told to run --record-plugin-root -- there is already a

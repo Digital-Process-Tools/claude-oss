@@ -1643,6 +1643,23 @@ def check_plugin_root(path, current):
                 "tick with --record-plugin-root before checking"
             ),
         }
+    except UnicodeDecodeError as exc:
+        # Self-review finding (#686): caught by name and before OSError, exactly
+        # as `describe()` above already does for its own read of a sibling
+        # file (that fix was for #76) -- `UnicodeDecodeError` is a `ValueError`,
+        # not an `OSError`, so an `except OSError` around this read lets it
+        # through as a raw traceback instead of the clean COULD_NOT_READ record
+        # every other reading mode in this file returns. A torn write or a
+        # pre-plugin tool writing in the console's codepage is the realistic
+        # way this snapshot gets one stray byte.
+        return {
+            "current": current,
+            "prior": None,
+            "state": PLUGIN_ROOT_COULD_NOT_READ,
+            "why": "the snapshot at {} exists but could not be decoded as UTF-8 ({})".format(
+                snapshot, exc
+            ),
+        }
     except OSError as exc:
         # Self-review finding (#686): a snapshot that EXISTS but could not be
         # read (a permission refusal, a transient lock) is a different fact
