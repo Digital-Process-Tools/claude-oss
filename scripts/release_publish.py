@@ -508,10 +508,19 @@ def main(argv=None):
 
     # Checked before anything else -- before the config is even read -- so
     # that no repository's own policy can be consulted on the sub-manager's
-    # behalf. #695 withholds release (tag, publish) authority from the
-    # per-tick sub-manager "in the code, not only in prose"; this is that
-    # code. See scripts/agent_role.py.
-    refusal = agent_role.release_refusal("publish a GitHub Release")
+    # behalf. #695 withholds *publish* authority from the per-tick
+    # sub-manager "in the code, not only in prose"; this is that code. Read
+    # against `args.repo`, not the calling process's own environment alone:
+    # `agent_role.current_role` falls back to a marker file under that
+    # repository's git directory, because an exported OSS_AGENT_ROLE does
+    # not survive from one Bash tool call to the next in this harness
+    # (measured, not assumed -- see scripts/agent_role.py's own docstring).
+    # NOTE: tagging (`git tag` / `git push origin <tag>`, in
+    # commands/release.md) is NOT gated by this check or any other code --
+    # it is a plain shell command, and withholding it from the sub-manager
+    # rests on agents/sub-manager.md's prose alone (it never runs the
+    # release phase). Only the publish half named here is code-enforced.
+    refusal = agent_role.release_refusal("publish a GitHub Release", root=args.repo)
     if refusal["forbidden"]:
         return _emit(
             {

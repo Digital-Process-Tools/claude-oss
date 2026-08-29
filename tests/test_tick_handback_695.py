@@ -117,6 +117,43 @@ def test_declared_field_is_none_when_no_header_present():
     assert verdict["declared"] is None
 
 
+# -- a quoted, stale header must not hijack classification of the real one --
+
+
+def test_a_quoted_stale_header_does_not_override_the_real_final_one():
+    """A sub-manager narrating what it tried is expected to quote an earlier
+    failed attempt before reporting the real outcome -- the agent brief
+    itself asks for "what you tried, what stopped you" in a blocked/
+    could-not-run report. A blockquoted TICK:/REASON: pair from that earlier
+    attempt must not be read as the tick's actual final state."""
+    message = (
+        "> Quoting an earlier failed attempt for context:\n"
+        "> TICK: could-not-run\n"
+        "> REASON: old stale spawn refusal\n"
+        "TICK: completed\n"
+        "Actually dispatched two lanes this tick.\n"
+    )
+    verdict = tick_handback.classify(message)
+    assert verdict["state"] == "completed"
+    assert verdict["state"] != "could-not-run"
+
+
+def test_a_stale_companion_line_before_the_real_header_is_not_used_as_detail():
+    """Same shape, narrower: even when the *header* is picked correctly, a
+    stale BLOCKER:/REASON: line sitting earlier in the message must not be
+    picked up as the real header's own detail."""
+    message = (
+        "Earlier in this tick a developer spawn was refused.\n"
+        "REASON: an earlier, unrelated refusal\n"
+        "TICK: blocked\n"
+        "BLOCKER: the actual, current blocker -- a pending permission prompt\n"
+    )
+    verdict = tick_handback.classify(message)
+    assert verdict["state"] == "blocked"
+    assert "actual, current blocker" in verdict["detail"]
+    assert "unrelated refusal" not in verdict["detail"]
+
+
 def test_framed_round_trip_via_module_reuse():
     import review_return
 

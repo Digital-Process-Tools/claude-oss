@@ -113,17 +113,32 @@ def classify(message):
         )
 
     text = str(message)
-    header = _TICK.search(text)
-    if header is None:
+    # The *last* header in the message, not the first. A sub-manager
+    # reporting `blocked` or `could-not-run` is explicitly asked, two
+    # sections below, to say "what you tried, what stopped you" -- and
+    # narrating an earlier failed attempt naturally involves quoting that
+    # attempt's own TICK:/BLOCKER:/REASON: lines before stating the real,
+    # final outcome. The first match in the text is exactly the quoted,
+    # stale one in that shape; the last match is the sub-manager's actual
+    # conclusion, which is what this classifier exists to report.
+    headers = list(_TICK.finditer(text))
+    if not headers:
         return _verdict(
             "could-not-classify",
             "no TICK: header found -- this tool cannot tell a completed "
             "tick reported in plain prose from one that did nothing at "
             "all, so it refuses to guess: read the message yourself",
         )
+    header = headers[-1]
 
     declared = header.group(1).lower()
     header_line = _rr.fold_to_one_ascii_line(_rr._line_containing(text, header.start()))
+    # Only text *after* the chosen header can supply its companion field.
+    # Searching the whole message (as an earlier version of this module
+    # did) let a stale BLOCKER:/REASON: line sitting before the real header
+    # be read as that header's own detail, even once the header itself was
+    # picked correctly.
+    tail = text[header.end():]
 
     if declared == "completed":
         return _verdict(
@@ -134,7 +149,7 @@ def classify(message):
         )
 
     if declared == "blocked":
-        match = _BLOCKER.search(text)
+        match = _BLOCKER.search(tail)
         if not match:
             return _verdict(
                 "could-not-classify",
@@ -153,7 +168,7 @@ def classify(message):
         )
 
     # declared == "could-not-run" -- the only remaining alternative in _TICK
-    match = _REASON.search(text)
+    match = _REASON.search(tail)
     if not match:
         return _verdict(
             "could-not-classify",

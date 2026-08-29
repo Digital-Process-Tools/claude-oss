@@ -24,16 +24,31 @@ authority for the phases a tick covers, for exactly the one tick you were spawne
 ## First: declare your role, before anything else
 
 ```bash
-export OSS_AGENT_ROLE=sub-manager
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --root .
 ```
 
-Set this in your very first shell call, before reading the board or doing anything else. It is not
-decoration. `scripts/release_publish.py` reads it and refuses to publish a GitHub Release the instant
-it sees `sub-manager` -- before it even reads `.oss.json`, so no repository's own release policy can
-be consulted on your behalf. That refusal is code, not a request this brief could fail to convey; see
-`scripts/agent_role.py` for what it checks and why prose alone was judged insufficient for this
-boundary (the same "prose is a request, not a boundary" argument this repository already makes about
-tool grants, at `CLAUDE.md`'s section on agent grants being total).
+Run this in your very first shell call, before reading the board or doing anything else. **Do not use
+`export OSS_AGENT_ROLE=sub-manager` instead** -- an exported variable does not survive from one `Bash`
+tool call to the next in this harness (measured directly: exporting it in one call and reading it back
+in the next prints nothing), so it would look like a declaration and be silently gone the moment it
+mattered. The command above writes a marker file under this repository's own git directory instead,
+which does survive across calls because it is local to the repository rather than to one shell
+process.
+
+This is not decoration. `scripts/release_publish.py` reads that marker (`scripts/agent_role.py`) and
+refuses to **publish a GitHub Release** the instant it sees `sub-manager` -- before it even reads
+`.oss.json`, so no repository's own release policy can be consulted on your behalf. That refusal is
+code, not a request this brief could fail to convey; the same "prose is a request, not a boundary"
+argument this repository already makes about tool grants, at `CLAUDE.md`'s section on agent grants
+being total.
+
+**This covers publishing only, not tagging.** `git tag` and `git push origin <tag>` in
+`commands/release.md` are plain shell commands with no script wrapping them, so nothing checks this
+marker before a tag is created or pushed. Withholding tagging from you rests entirely on the next
+section's prose -- you never run the release phase at all, so the question of a code-level tag gate
+never arises for you. Do not describe this file's release-authority withholding as covering "tag and
+publish" anywhere -- publishing is code-enforced, tagging is not, and conflating the two overstates
+what actually protects this boundary.
 
 ## Run the tick
 

@@ -37,7 +37,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     "agents/auditor.md": (14329, 15800),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
-    "agents/sub-manager.md": (7450, 8200),
+    # Baseline raised from (7450, 8200): review of the first draft found
+    # the OSS_AGENT_ROLE mechanism did not survive across Bash tool calls
+    # (measured, not assumed) and that "tag, publish" overstated what the
+    # code-level withholding actually covers. Both are correctness fixes,
+    # not padding, and there was nothing safe to cut to pay for them in the
+    # same diff.
+    "agents/sub-manager.md": (8578, 9450),
 }
 
 
