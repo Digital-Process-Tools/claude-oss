@@ -191,16 +191,30 @@ WATCH_NAME_ENV = "SUPERTOOL_WATCH_NAME"
 #: body, one file over.
 _WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
 
+#: A copy of `oss_config.REPO_RE`, for the same standalone-vendoring reason as
+#: the pattern above (#653). `oss_config.watch_channel_name` routes a candidate
+#: `repo` through `repo_problem` -- this pattern -- BEFORE folding it, which is
+#: what keeps a refused value like `'..'` from ever reaching the fold. The copy
+#: above used to skip straight to the fold and had no refusal in front of it at
+#: all, so `'..'` and `'../../etc'` -- both refused by `oss_config` -- still
+#: produced a channel name here. `tests/test_statusline_watch_name_refusal_653.py`
+#: is the positive control: slugs `oss_config` REJECTS, not only ones it accepts.
+_REPO_RE = re.compile(r"\A[^/\s]+/[^/\s]+\Z")
+
 
 def _expected_watch_name(repo):
     """The watch channel name THIS repository would derive from its own `repo`.
 
-    `None` for anything that is not a non-empty string -- there is no name to
-    expect from a `.oss.json` that states no repo, and `None` can never equal
-    whatever `SUPERTOOL_WATCH_NAME` happens to hold, which is exactly the "do
-    not attribute" outcome the issue's closing bullet asks for.
+    `None` for anything that is not a non-empty string that also matches the
+    same `owner/name` shape `oss_config.repo_problem` requires -- there is no
+    name to expect from a `.oss.json` that states no repo, or one that states
+    something `oss_config` would refuse, and `None` can never equal whatever
+    `SUPERTOOL_WATCH_NAME` happens to hold, which is exactly the "do not
+    attribute" outcome the issue's closing bullet asks for.
     """
     if not isinstance(repo, str) or not repo:
+        return None
+    if not _REPO_RE.match(repo):
         return None
     return _WATCH_NAME_UNSAFE_RE.sub("-", repo)
 
@@ -218,7 +232,13 @@ def parse_channel_report(text):
     if not text:
         return None
     for line in str(text).splitlines():
-        line = line.strip()
+        # Anchored at column 0, before any stripping (#654) -- an indented
+        # line that merely LOOKS like a state line (e.g. a padded "channel  :"
+        # detail line, or remote-authored text reproducing the shape) must
+        # never outrank the genuine state line. Stripping first erased that
+        # distinction and let the first STRIPPED match win regardless of
+        # indentation, which relied on the report's own composition order
+        # rather than on this parser's own anchor.
         if line.startswith("channel: "):
             return CHANNEL_STATES.get(line[len("channel: "):].strip())
     return None
