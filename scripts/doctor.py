@@ -3231,7 +3231,13 @@ def _plugin_root_from_path(path):
     if not current.is_absolute():
         current = Path(os.path.abspath(str(current)))
     while True:
-        if (current / ".claude-plugin" / "plugin.json").is_file():
+        # `_safe_is_file` (not a bare `.is_file()`) so an unreadable ancestor
+        # along the walk reads as "not found here" rather than raising --
+        # both still fold to the same `None` return either way, so the
+        # walk's own OUTCOME is unaffected; what this changes is only that
+        # the swallow is explicit and named, on every interpreter this repo
+        # supports, rather than left to pathlib's own version-dependent one.
+        if _safe_is_file(current / ".claude-plugin" / "plugin.json"):
             return current
         parent = current.parent
         if parent == current:
@@ -3352,14 +3358,16 @@ def check_channel_consumer_pin(
     reported by `check_mcp_channel_registration`, and this has nothing to add
     to a registration that is not-registered, unreadable, or points nowhere.
 
-    `precomputed` -- a `(state, detail)` pair from `mcp_channel_registration_state`
-    -- lets `main()` ask that question once and hand the answer to both this
-    check and `check_mcp_channel_registration`, rather than shelling out to
-    `claude mcp get` twice per doctor run for one answer. `claude` is not a
-    cheap binary to start (~1.3s measured on this machine, per that
-    function's own docstring) -- the same cost #629 removed one duplicate
-    call of already. Standalone callers (every test in this file) get the
-    same real-or-injected read `mcp_channel_registration_state` always did.
+    `precomputed` -- a `(state, detail)` pair from `mcp_channel_registration_state`,
+    for a caller that already asked and wants to hand this check the answer
+    rather than have it shell out to `claude mcp get` again -- see
+    `check_mcp_channel_registration`'s own docstring for why `main()` does
+    NOT do this by default: sharing one answer between both checks was tried
+    and reverted, because it made the real ask run even when a caller had
+    stubbed the OTHER check specifically to avoid it (self-review finding).
+    `main()` calls this check with no arguments, so it reads the
+    registration for itself -- the same real-or-injected read every test in
+    this file already exercises.
     """
     state, detail = (
         precomputed if precomputed is not None
@@ -3406,9 +3414,14 @@ def check_mcp_channel_registration(server=None, run=None, which=None, env=None, 
     reads. Together the three now cover name, declaration and transport; before
     this, the third was silent on both sides of it (#621).
 
-    `precomputed` -- see `check_channel_consumer_pin`'s docstring: `main()`
-    asks `mcp_channel_registration_state` once and hands the answer to both
-    checks rather than shelling out to `claude mcp get` twice.
+    `precomputed` -- a `(state, detail)` pair from `mcp_channel_registration_state`,
+    for a caller that already asked and wants to hand this check the answer
+    rather than have it shell out to `claude mcp get` again. `main()` does
+    NOT do this today: threading one answer to both this check and
+    `check_channel_consumer_pin` was tried and reverted, because it made the
+    real ask run even when a caller had stubbed one of the two checks
+    specifically to avoid it (self-review finding). `main()` calls each
+    check with no arguments, and each reads the registration independently.
     """
     state, detail = (
         precomputed if precomputed is not None
@@ -5628,7 +5641,6 @@ def dependency_diagnostic_state(
                 cwd=str(project_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                universal_newlines=True,
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
@@ -5639,12 +5651,19 @@ def dependency_diagnostic_state(
             return "could-not-run", "{} {}'s diagnostic could not be started ({})".format(
                 name, version, exc.strerror or exc.__class__.__name__
             )
+        # Bytes, decoded here with `errors="replace"` -- NOT `universal_newlines=True`,
+        # which decodes under `errors="strict"` with the runner's locale codec and
+        # raises `UnicodeDecodeError` (a `ValueError`, not an `OSError`) straight out of
+        # `subprocess.run` on one byte a real tool banner can plausibly print. This is
+        # the exact trap `_gh_version_text` above is already written to avoid, and this
+        # diagnostic carries the same "exit 0 always" contract that trap would break.
+        output = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
         if done.returncode != 0:
             return "could-not-run", "{} {}'s diagnostic exited {} -- {}".format(
-                name, version, done.returncode, _last_nonblank_line(done.stdout)
+                name, version, done.returncode, _last_nonblank_line(output)
             )
         return "relayed", "{} {}: {}".format(
-            name, version, _last_nonblank_line(done.stdout) or "ran, no output"
+            name, version, _last_nonblank_line(output) or "ran, no output"
         )
 
     # spec["kind"] == "script"
@@ -5676,7 +5695,6 @@ def dependency_diagnostic_state(
             cwd=str(project_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            universal_newlines=True,
             timeout=timeout,
             env=env,
         )
@@ -5689,16 +5707,21 @@ def dependency_diagnostic_state(
             name, version, exc.strerror or exc.__class__.__name__
         )
 
-    verdict_line = _last_line_with_prefix(done.stdout, "VERDICT:")
+    # Bytes, decoded here with `errors="replace"` -- see the "op" branch above
+    # for why `universal_newlines=True` is not used: a script this diagnostic
+    # does not control can print a byte this runner's locale cannot decode,
+    # and that must not raise out of a check contracted to exit 0 always.
+    output = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
+    verdict_line = _last_line_with_prefix(output, "VERDICT:")
     if name == JIT_PLUGIN:
         if done.returncode in (0, 1, 2):
             return "relayed", "{} {}: exit {} -- {}".format(
                 name, version, done.returncode,
-                verdict_line or _last_nonblank_line(done.stdout),
+                verdict_line or _last_nonblank_line(output),
             )
         return "could-not-run", (
             "{} {}'s diagnostic exited {}, outside its documented 0/1/2 contract -- "
-            "{}".format(name, version, done.returncode, _last_nonblank_line(done.stdout))
+            "{}".format(name, version, done.returncode, _last_nonblank_line(output))
         )
 
     # remember: its script always exits 0 by design, so the exit code is not
@@ -5706,10 +5729,10 @@ def dependency_diagnostic_state(
     # that the dependency has something to report.
     if done.returncode != 0:
         return "could-not-run", "{} {}'s diagnostic exited {} -- {}".format(
-            name, version, done.returncode, _last_nonblank_line(done.stdout)
+            name, version, done.returncode, _last_nonblank_line(output)
         )
     return "relayed", "{} {}: {}".format(
-        name, version, verdict_line or _last_nonblank_line(done.stdout) or "ran, no output"
+        name, version, verdict_line or _last_nonblank_line(output) or "ran, no output"
     )
 
 

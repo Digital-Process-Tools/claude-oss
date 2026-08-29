@@ -315,6 +315,62 @@ def test_check_dependency_diagnostics_unmeasured_with_no_declared_dependencies(t
     assert "dependency diagnostics" in message
 
 
+# --- a byte the runner's locale cannot decode must never raise (self-review) -
+
+
+def _run_that_decodes_like_real_subprocess(stdout_bytes, returncode=0):
+    """A fake `run` shaped after what `subprocess.run` itself actually does:
+    pass `universal_newlines=True` (or `text=True`) and it decodes the bytes
+    under `errors="strict"` and raises `UnicodeDecodeError` right there,
+    exactly like the real thing -- rather than a fake that hands back
+    pre-decoded text regardless of the kwargs, which cannot tell the caller
+    asked for strict decoding from one that did not. This is what makes the
+    test fail for the RIGHT reason on the pre-fix code (a fake that always
+    returns a `str` `.stdout` passed by coincidence: the bytes' own `repr()`
+    contains "not utf-8" as a literal substring even when nothing decoded
+    it, which is not what this test is meant to prove)."""
+
+    def run(cmd, **kwargs):
+        if kwargs.get("universal_newlines") or kwargs.get("text"):
+            stdout_bytes.decode("utf-8")  # raises UnicodeDecodeError, same as the real call
+        return _FakeCompleted(returncode, stdout_bytes)
+
+    return run
+
+
+def test_supertool_op_survives_non_utf8_stdout_bytes(tmp_path):
+    """A real tool banner can print a byte this runner's locale cannot decode.
+    `universal_newlines=True` would decode under `errors="strict"` and raise
+    `UnicodeDecodeError` (a `ValueError`, not an `OSError`) straight out of
+    `subprocess.run` -- exactly the trap `_gh_version_text` is already written
+    to avoid, and doctor.py's whole contract is exit 0, never a traceback."""
+    root = tmp_path / "cache" / "supertool" / "0.52.0"
+    record = _install_record(tmp_path, [("supertool", "0.52.0", root)])
+    raw = b"line one\nsupertool doctor: \xff\xfe not utf-8\n"
+
+    state, detail = doctor.dependency_diagnostic_state(
+        "supertool", tmp_path, record=record,
+        run=_run_that_decodes_like_real_subprocess(raw),
+        which=lambda name: "/usr/bin/supertool",
+    )
+    assert state == "relayed", (state, detail)
+    assert "not utf-8" in detail
+    assert "b'" not in detail  # decoded text, not a bytes repr standing in for it
+
+
+def test_jit_context_script_survives_non_utf8_stdout_bytes(tmp_path):
+    record = _jit_script(tmp_path)
+    raw = b"jit-doctor: ok \xff\xfe trailing garbage\n"
+
+    state, detail = doctor.dependency_diagnostic_state(
+        doctor.JIT_PLUGIN, tmp_path, record=record,
+        run=_run_that_decodes_like_real_subprocess(raw),
+        which=lambda name: "/bin/bash",
+    )
+    assert state == "relayed", (state, detail)
+    assert "b'" not in detail
+
+
 # --- an unknown dependency shape is could-not-run, not silently skipped -----
 
 

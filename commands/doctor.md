@@ -318,6 +318,12 @@ right up until the plugin cache drops that version's directory, at which point t
 looked healthy stops resolving with no warning beforehand. This line only runs when the registration
 line above resolved to `registered`; every other registration state already has nothing to compare.
 
+It asks the registration a second time rather than reusing the answer above: each check is testable
+and stubbable on its own, the same pattern every sibling check in this file already follows, so this
+line makes its own `claude mcp get` call. Two real calls per run, not one — accepted rather than
+optimised away, because sharing one answer between the two checks was tried and reverted for
+breaking that independence.
+
 - `OK … matching the active install` — the pinned version and the active install agree.
 - `WARN … SKEW …` — they differ. The line also says whether the two files are byte-identical,
   computed by hashing both rather than assumed: identical means the drift is cosmetic and

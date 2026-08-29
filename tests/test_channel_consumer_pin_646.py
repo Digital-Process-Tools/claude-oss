@@ -77,13 +77,19 @@ def test_could_not_tell_when_no_active_version_can_be_read(tmp_path):
     assert state == "could-not-tell", (state, detail)
 
 
-def test_could_not_tell_never_folds_into_current():
-    """Must-not-fire control across both could-not-tell arms: neither one is
-    spelled `current` -- an unparseable or absent pair is not evidence of a
-    match, and this is #646's own point about the third state."""
-    # already covered by both tests above asserting state != "current"; this
-    # test exists so the invariant has a name a reader can grep for.
-    assert "could-not-tell" != "current"
+def test_could_not_tell_never_folds_into_current(tmp_path):
+    """Must-not-fire control across both could-not-tell arms, exercised
+    against the real function rather than a self-review-flagged tautology:
+    a pinned version that cannot be compared -- here, an unparseable pinned
+    version string -- must never be spelled `current`. An unparseable or
+    absent pair is not evidence of a match, and this is #646's own point
+    about the third state."""
+    pinned_root = tmp_path / "cache" / "supertool" / "not-a-version"
+    consumer = _plugin_tree(pinned_root, "not-a-version")
+    record = _install_record(tmp_path, "0.52.0")
+    state, detail = doctor.channel_consumer_pin_state(consumer, record=record)
+    assert state == "could-not-tell", (state, detail)
+    assert state != "current"
 
 
 # --- current: versions match ------------------------------------------------
