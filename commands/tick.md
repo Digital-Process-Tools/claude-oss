@@ -58,23 +58,58 @@ Skill(manager)
    field exists to close. Only record a fresh wait (`--wait-dispatch`/`--wait-observable` on step
    6's `--decision` call) when this tick itself becomes blocked on something new.
 
-   **Compare this tick's plugin identity against the last one recorded (#477).** A version change
-   under a working loop invalidates every environmental fact the previous tick established, and
-   nothing notices it unless this is asked directly. Read doctor's own version line, then compare:
+   **Compare this tick's plugin identity against the last one recorded (#477, #677).** A version
+   change under a working loop invalidates every environmental fact the previous tick established,
+   and nothing notices it unless this is asked directly. `${CLAUDE_PLUGIN_ROOT}` is a
+   version-pinned path substituted once when this command was injected — asking THAT copy for its
+   own version can only ever answer with the version it was pinned to, and will report `unchanged`
+   straight through a real update (#677, observed: a real 0.14.0 → 0.15.0 update ten minutes
+   earlier reported `unchanged`, because the check was structurally asking the 0.14.0 copy what
+   version it is). Resolve the copy actually recorded as installed for this project instead, and
+   fall back to the pinned path only when that resolution fails — naming which route was used,
+   because the two are not the same measurement and comparing across them is #677's own second,
+   independently observed failure mode:
 
    ```bash
-   IDENTITY="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py" --root . 2>&1 \
+   RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
+     --print-resolved-root --root . 2>/dev/null)"
+   if [ -n "$RESOLVED_ROOT" ] && [ -d "$RESOLVED_ROOT" ]; then
+     DOCTOR_ROOT="$RESOLVED_ROOT"
+     ROUTE="resolved-install"
+   else
+     DOCTOR_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     ROUTE="pinned-root"
+   fi
+   IDENTITY="$(python3 "$DOCTOR_ROOT/scripts/doctor.py" --root . 2>&1 \
      | sed -n 's/^OK oss plugin version //p')"
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --check-plugin-identity "$IDENTITY"
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+     --check-plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"
    ```
 
-   Three answers, not two. `unchanged` — proceed, say nothing further. `changed` — report it
+   Four answers, not three. `unchanged` — proceed, say nothing further. `changed` — report it
    prominently before anything else this tick; whether to re-run the rest of doctor's diagnostic
    over it is a judgement call for this tick to make and name, not an automatic re-run. `could-not-
    tell` — no prior tick ever recorded one (a first tick after this shipped, commonly) — say so once
-   rather than letting it read as `unchanged`. Record this tick's own identity on step 6's
-   `--decision` call regardless of which of the three it found (`--plugin-identity "$IDENTITY"`), so
-   the next tick has a prior to compare against.
+   rather than letting it read as `unchanged`. `route-mismatch` — the prior tick's reading was taken
+   by a different route than this one (every repo hits this exactly once, on the tick this fix
+   itself ships: the prior was recorded via the old pinned-root route). Treat it like `could-not-
+   tell` for this tick — there is nothing comparable yet — and say so, rather than letting a route
+   change silently read as `changed` (the exact shape #677's own comment warned a naive fix would
+   produce for every repository on its first tick). Record this tick's own identity AND route on
+   step 6's `--decision` call regardless of which of the four it found (`--plugin-identity
+   "$IDENTITY" --plugin-identity-route "$ROUTE"`), so the next tick has a comparable prior.
+
+   **Also snapshot `${CLAUDE_PLUGIN_ROOT}` itself, for a check within THIS tick (#565).** The
+   comparison above is cross-tick, against the *previous* tick's recording. #565 asks a narrower,
+   separate question: does the value this tick keeps substituting into every command move out from
+   under it before this SAME tick ends — an update landing mid-session, which `plugin-currency.md`
+   already says is not itself a fault. Snapshot it now; step 6 checks it once more just before the
+   tick closes.
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+     --record-plugin-root "${CLAUDE_PLUGIN_ROOT}"
+   ```
 
 2. **Read the board**, batched into one call:
 
@@ -280,17 +315,30 @@ Skill(manager)
 6. **Write one state entry, and record the intake ratio with it.** The decision and the one reason
    for it. Reasoning that only matters to a pull request belongs in that pull request.
 
+   **First, check the root snapshot step 1 recorded, before it is overwritten by the next tick's own
+   recording (#565).** `changed` means `${CLAUDE_PLUGIN_ROOT}` moved out from under this very tick —
+   report it, the same as step 1's `changed` for the cross-tick comparison. `unchanged` — say
+   nothing further. `could-not-read` — step 1's snapshot was never taken (or something already
+   consumed it) — say so once rather than letting it read as `unchanged`.
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
+     --check-plugin-root "${CLAUDE_PLUGIN_ROOT}"
+   ```
+
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
      --decision "…" --at "<ISO timestamp>" \
      --filings <issues the loop filed> --merged-prs <PRs merged> \
      --window "since the last tick" \
-     --plugin-identity "$IDENTITY"
+     --plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --trend
    ```
 
-   `--plugin-identity "$IDENTITY"` is step 1's own reading (#477), carried onto this entry so the
-   next tick has a prior to compare against — see step 1 for what the three-state comparison means.
+   `--plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"` is step 1's own reading and its
+   route (#477, #677), carried onto this entry so the next tick has a *comparable* prior — see step
+   1 for what the four-state comparison means, and why the route travels with the identity rather
+   than being assumed to match.
 
    Pass `unknown` for a count you could not take, with `--intake-why` — **`could-not-count` is not
    zero**, and a metric that renders the two alike is worse than none. The denominator, the

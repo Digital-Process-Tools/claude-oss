@@ -117,16 +117,18 @@ def test_last_plugin_identity_scans_back_past_other_entry_kinds(tmp_path):
         str(state_path), "2026-01-03T00:00:00Z", "third tick, an intake record",
         detail={"intake": oss_state.intake(1, 1, window="test")},
     )
-    entry, identity = oss_state._last_plugin_identity(str(state_path))
+    entry, identity, route = oss_state._last_plugin_identity(str(state_path))
     assert identity == IDENTITY_A
     assert entry["decision"] == "first tick"
+    assert route is None
 
 
 def test_last_plugin_identity_with_no_history_at_all(tmp_path):
     state_path = tmp_path / "state.json"
-    entry, identity = oss_state._last_plugin_identity(str(state_path))
+    entry, identity, route = oss_state._last_plugin_identity(str(state_path))
     assert entry is None
     assert identity is None
+    assert route is None
 
 
 STAMP = "2026-08-25T00:00:00Z"
