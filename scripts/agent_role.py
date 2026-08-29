@@ -137,15 +137,25 @@ MARKER_NAME = "oss-agent-role"
 #: why this number is a judgement call, not a measurement.
 MARKER_TTL_SECONDS = 4 * 60 * 60
 
-#: The four states `_read_marker` can report. `live` is the only one
-#: `current_role` treats as a declaration; the other three all resolve as
+#: The five states `_read_marker` can report. `live` is the only one
+#: `current_role` treats as a declaration; the other four all resolve as
 #: "nothing declared" for the *forbid* decision, but are reported
-#: separately because "nobody ever wrote a marker" and "somebody wrote one
-#: and this tool no longer trusts it" are different facts a maintainer
-#: investigating a refusal may need to tell apart.
+#: separately because "nobody ever wrote a marker", "somebody wrote one
+#: and it expired", "somebody wrote one and this tool cannot parse it" and
+#: "something is there and this process cannot even read it" are four
+#: different facts a maintainer investigating a refusal -- or a
+#: non-refusal -- may need to tell apart. `unreadable` in particular must
+#: never collapse into `absent`: a permission-denied read and a genuine
+#: miss are different facts about the world (one says "check what wrote
+#: this and who can read it", the other says "nothing has run yet"), and
+#: reporting a confident absence about a file nothing was able to look at
+#: is this repository's own named trap (`doctor._dir_state`,
+#: `lane_setup.worktree_occupancy`, #380) -- a classification an `except`
+#: arm decided rather than one the caller actually established.
 MARKER_STATE_LIVE = "live"
 MARKER_STATE_STALE = "stale"
 MARKER_STATE_MALFORMED = "malformed"
+MARKER_STATE_UNREADABLE = "unreadable"
 MARKER_STATE_ABSENT = "absent"
 
 
@@ -231,20 +241,36 @@ def clear_role_marker(root: str = ".") -> bool:
 
 
 def _read_marker(root: str = ".") -> dict:
-    """The marker's own classification: `live`, `stale`, `malformed` or
-    `absent`, plus whatever role and age it carries when it has one.
+    """The marker's own classification: `live`, `stale`, `malformed`,
+    `unreadable` or `absent`, plus whatever role and age it carries when
+    it has one.
+
+    Asks the filesystem ONE question, not two. An earlier version checked
+    `path.is_file()` and then called `path.read_text()` -- but `is_file()`
+    is the same family as this repository's own documented `Path.exists()`
+    prohibition: it swallows `OSError` and answers `False` for a path that
+    exists and cannot be `stat()`'d, so a permission-denied marker read
+    `absent` at that line even before the read below got a chance to. The
+    fix removes the redundant question rather than adding a matching guard
+    to it: `read_text()` alone tells the whole story, and the exception it
+    raises -- `FileNotFoundError` for a genuine miss, anything else for
+    "there and unreadable" -- decides which arm runs. That is the same
+    pattern `scripts/review_return.py`'s own `_read_source` already uses
+    in this repository, for the identical reason.
 
     This is the one place staleness is decided, so `current_role` and any
     future caller that wants the raw classification both read it from
     here rather than each re-deriving "is this marker current" on its own.
     """
     path = _marker_path(root)
-    if path is None or not path.is_file():
+    if path is None:
         return {"state": MARKER_STATE_ABSENT, "role": None, "age_seconds": None}
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
         return {"state": MARKER_STATE_ABSENT, "role": None, "age_seconds": None}
+    except OSError:
+        return {"state": MARKER_STATE_UNREADABLE, "role": None, "age_seconds": None}
     try:
         data = json.loads(raw)
         role = data["role"]
