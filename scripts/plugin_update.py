@@ -447,6 +447,41 @@ def installed_version(name, project_root, plugins_root=None):
     return best
 
 
+def resolved_plugin_root(name, project_root, plugins_root=None):
+    """The on-disk directory of the copy actually recorded as installed for THIS
+    project (#677) -- as opposed to whatever `${CLAUDE_PLUGIN_ROOT}` a running
+    session happens to hold, which is substituted once at command-injection time
+    and is a version-pinned path: it can name the copy a session STARTED with, and
+    nothing built from it can ever detect that copy going stale.
+
+    Built from ``installed_version`` (the version `installed_plugins.json` records
+    for this project) and ``qualified_name`` (which carries the marketplace, e.g.
+    ``oss@dpt-plugins``), mirroring the cache layout observed on this machine:
+    ``<plugins_root>/cache/<marketplace>/<name>/<version>``. Returns ``None`` --
+    never a guessed path -- when any piece of that is unavailable: no version on
+    record for this project, no marketplace on record (an unqualified local/dev
+    install, which this cache layout does not describe), or the assembled
+    directory does not exist. A caller that gets ``None`` back has NOT been told
+    "unchanged"; it has been told this route could not resolve, and #677's own
+    comment is explicit that route failing to resolve must render as its own
+    state, never silently fall back to comparing nothing.
+    """
+    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    version = installed_version(name, project_root, plugins_root)
+    if not version:
+        return None
+    qualified = qualified_name(name, plugins_root)
+    if "@" not in qualified:
+        return None
+    marketplace = qualified.split("@", 1)[1]
+    if not marketplace:
+        return None
+    candidate = root / "cache" / marketplace / name / version
+    if not candidate.is_dir():
+        return None
+    return candidate
+
+
 def _run(command, timeout=180):
     """``(ok, output)``. A missing binary and a non-zero exit are both `not ok`."""
     try:
@@ -664,6 +699,24 @@ def write_receipt(document, path=None):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     root = argv[argv.index("--root") + 1] if "--root" in argv else os.getcwd()
+    if "--print-resolved-root" in argv:
+        # A read, not an update -- deliberately does not call update()/write_receipt()
+        # below, which refresh the marketplace and may modify the install. #677 needs
+        # only to ask where the currently-installed copy for THIS project lives.
+        name = plugin_name()
+        if not name:
+            sys.stderr.write("could not read this plugin's own name\n")
+            return 1
+        resolved = resolved_plugin_root(name, root)
+        if resolved is None:
+            sys.stderr.write(
+                "could not resolve the installed root for {!r} against {!r}\n".format(
+                    name, root
+                )
+            )
+            return 1
+        sys.stdout.write(str(resolved))
+        return 0
     document = update(root=root)
     write_receipt(document)
     if "--print" in argv:

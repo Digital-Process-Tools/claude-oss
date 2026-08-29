@@ -154,13 +154,24 @@ WAIT_COULD_NOT_EVALUATE = "could-not-evaluate"
 # window this check exists to catch, so a version-only comparison would ship
 # a check that cannot fire for the most common real skew.
 #
-# Three states, same shape as `cohort_freeze`'s and `wait`'s own thirds:
+# Four states now, not three (#677). The original three assumed both readings
+# came from the same route -- in practice, the same command run against the
+# same path every time. That assumption broke twice within an hour on the
+# machine that filed #677: a version-pinned `${CLAUDE_PLUGIN_ROOT}` reported
+# `unchanged` straight through a real update (the path names a version, so it
+# can never see that version move), and the very next comparison mixed a
+# hand-recorded prior taken from the copy that actually answers with a current
+# reading taken the old, pinned way -- producing `changed`, backwards, with
+# nothing having happened. Both operands must come from the same route for
+# `changed`/`unchanged` to mean anything at all.
 #
 #   changed          this tick's identity string differs from the prior
-#                     tick's. Could be the version, the content digest, or
-#                     both -- the whole string is the operand, so this does
-#                     not say which half moved.
-#   unchanged         the two strings are identical.
+#                     tick's, AND the two were read by the same route. Could
+#                     be the version, the content digest, or both -- the
+#                     whole string is the operand, so this does not say which
+#                     half moved.
+#   unchanged         the two strings are identical, and the two were read by
+#                     the same route.
 #   could-not-tell    no prior tick ever recorded an identity (a first tick
 #                      after this ships, or every earlier entry predates it),
 #                      or the prior recorded was blank. This must never
@@ -168,9 +179,50 @@ WAIT_COULD_NOT_EVALUATE = "could-not-evaluate"
 #                      recorded a version would otherwise look exactly like
 #                      one whose version has not moved, which is the absence
 #                      this issue is named after.
+#   route-mismatch   a prior WAS recorded, but it was read by a different
+#                     route than this tick's own reading -- e.g. one came from
+#                     a version-pinned path and the other from the copy that
+#                     actually answers, or the route changed when this fix
+#                     shipped. `changed`/`unchanged` between two different
+#                     measurements describes nothing that occurred, so this is
+#                     its own state rather than being decided either way.
+#                     Recording no route at all (the pre-#677 shape) is treated
+#                     as its own route rather than a wildcard, so a caller that
+#                     never opts into route tracking keeps comparing exactly as
+#                     it always did -- and a caller that starts routing for the
+#                     first time gets `route-mismatch`, not a false `changed`,
+#                     on the tick the mechanism changes.
 PLUGIN_UNCHANGED = "unchanged"
 PLUGIN_CHANGED = "changed"
 PLUGIN_COULD_NOT_TELL = "could-not-tell"
+PLUGIN_ROUTE_MISMATCH = "route-mismatch"
+
+#: Sentinel used in place of an absent route, so "no route recorded" compares
+#: as its own value rather than matching every real route by construction.
+_PLUGIN_IDENTITY_ROUTE_UNRECORDED = "unrecorded"
+
+# A within-tick plugin ROOT stability check (#565): does `${CLAUDE_PLUGIN_ROOT}`
+# itself move between two points inside the SAME tick? This is a different
+# question from the plugin identity comparison above, which is cross-tick and
+# persists in the state file's own entry list. #565 asks about a single
+# session's environment variable, not about a version recorded days apart --
+# so this is deliberately a second, narrower mechanism: an ephemeral sidecar
+# file beside the state file, written once at the top of a tick and consumed
+# (read, then deleted) the first time it is checked, rather than a durable
+# entry. A snapshot that outlived its own tick would answer a question about
+# some earlier, unrelated tick, which is worse than answering nothing.
+#
+#   changed           the root read back differs from the one recorded
+#                      earlier in this tick.
+#   unchanged         the two are identical.
+#   could-not-read    no snapshot was found (nothing was recorded earlier in
+#                      this tick, or a prior check already consumed it), or
+#                      the snapshot could not be parsed. Never rendered as
+#                      `unchanged` -- see the module comment above for why
+#                      that collapse is this repository's own defect class.
+PLUGIN_ROOT_CHANGED = "changed"
+PLUGIN_ROOT_UNCHANGED = "unchanged"
+PLUGIN_ROOT_COULD_NOT_READ = "could-not-read"
 
 
 class StateError(Exception):
@@ -1366,7 +1418,7 @@ def _wait_sentence(record):
     return head + "unrecognised wait state {!r}, so nothing is claimed".format(state)
 
 
-def plugin_identity_check(current, prior):
+def plugin_identity_check(current, prior, current_route=None, prior_route=None):
     """Compare this tick's plugin identity against the prior tick's recorded one (#477).
 
     ``current`` is this tick's own reading -- ``doctor.plugin_identity(PLUGIN_ROOT)``,
@@ -1375,11 +1427,22 @@ def plugin_identity_check(current, prior):
     previous entry that recorded one carried in ``detail["plugin_identity"]`` --
     ``_last_plugin_identity`` finds it -- or ``None`` when no earlier entry ever did.
 
-    Returns a record with ``current``, ``prior`` and ``state``; ``state`` is
-    ``PLUGIN_CHANGED``, ``PLUGIN_UNCHANGED`` or ``PLUGIN_COULD_NOT_TELL``, with a
-    ``why`` filled in only for the third. See the module-level comment beside the
-    three constants for what each means and why the comparison is over the whole
-    string rather than a version alone.
+    ``current_route``/``prior_route`` are each a short label for HOW that identity was
+    obtained (e.g. ``"resolved-install"`` vs the version-pinned ``"pinned-root"`` --
+    see ``commands/tick.md`` step 1) -- or ``None`` when the caller does not track
+    routes at all. A missing route is treated as its own value (#677's comment: two
+    readings taken by different routes are not the same measurement, and that
+    includes "nobody recorded a route" versus "this one was routed"), so a caller
+    that never opts in keeps comparing exactly as it always did, while the very tick
+    a route starts being recorded gets ``route-mismatch`` rather than a false
+    ``changed`` against the unrouted prior.
+
+    Returns a record with ``current``, ``prior``, ``current_route``, ``prior_route``
+    and ``state``; ``state`` is ``PLUGIN_CHANGED``, ``PLUGIN_UNCHANGED``,
+    ``PLUGIN_COULD_NOT_TELL`` or ``PLUGIN_ROUTE_MISMATCH``, with a ``why`` filled in
+    for every state except plain ``changed``/``unchanged``. See the module-level
+    comment beside the four constants for what each means and why the comparison is
+    over the whole string rather than a version alone.
     """
     if not current or not str(current).strip():
         raise StateError(
@@ -1388,10 +1451,14 @@ def plugin_identity_check(current, prior):
             "value here is a caller error rather than a real reading"
         )
     current = str(current).strip()
+    current_route = str(current_route).strip() if current_route else None
+    prior_route = str(prior_route).strip() if prior_route else None
     if prior is None or not str(prior).strip():
         return {
             "current": current,
             "prior": None,
+            "current_route": current_route,
+            "prior_route": prior_route,
             "state": PLUGIN_COULD_NOT_TELL,
             "why": (
                 "no earlier tick recorded a plugin identity -- this must not "
@@ -1401,9 +1468,43 @@ def plugin_identity_check(current, prior):
             ),
         }
     prior = str(prior).strip()
+
+    cur_route_key = current_route or _PLUGIN_IDENTITY_ROUTE_UNRECORDED
+    pri_route_key = prior_route or _PLUGIN_IDENTITY_ROUTE_UNRECORDED
+    if cur_route_key != pri_route_key:
+        return {
+            "current": current,
+            "prior": prior,
+            "current_route": current_route,
+            "prior_route": prior_route,
+            "state": PLUGIN_ROUTE_MISMATCH,
+            "why": (
+                "this tick's identity was read via {!r}, the prior tick's via {!r} "
+                "-- these are not the same measurement, so changed/unchanged "
+                "between them would describe nothing that occurred".format(
+                    current_route or "(no route recorded)",
+                    prior_route or "(no route recorded)",
+                )
+            ),
+        }
+
     if current == prior:
-        return {"current": current, "prior": prior, "state": PLUGIN_UNCHANGED, "why": None}
-    return {"current": current, "prior": prior, "state": PLUGIN_CHANGED, "why": None}
+        return {
+            "current": current,
+            "prior": prior,
+            "current_route": current_route,
+            "prior_route": prior_route,
+            "state": PLUGIN_UNCHANGED,
+            "why": None,
+        }
+    return {
+        "current": current,
+        "prior": prior,
+        "current_route": current_route,
+        "prior_route": prior_route,
+        "state": PLUGIN_CHANGED,
+        "why": None,
+    }
 
 
 def plugin_identity_line(record):
@@ -1429,6 +1530,10 @@ def _plugin_identity_sentence(record):
         return head + "could not tell -- {}".format(
             record.get("why") or "no reason recorded"
         )
+    if state == PLUGIN_ROUTE_MISMATCH:
+        return head + "route mismatch, not comparable -- {}".format(
+            record.get("why") or "no reason recorded"
+        )
     return head + "unrecognised plugin identity state {!r}, so nothing is claimed".format(
         state
     )
@@ -1441,9 +1546,12 @@ def _last_plugin_identity(path):
     and for the same reason (#436): a plugin identity recorded two ticks ago must
     still be found behind whatever landed after it.
 
-    Returns ``(entry, identity)`` for the most recent entry whose ``detail`` carries
-    a ``plugin_identity`` key -- even a falsy one, since the freshest statement is
-    what a reader must see -- or ``(None, None)`` if no entry ever recorded one.
+    Returns ``(entry, identity, route)`` for the most recent entry whose ``detail``
+    carries a ``plugin_identity`` key -- even a falsy one, since the freshest
+    statement is what a reader must see -- or ``(None, None, None)`` if no entry
+    ever recorded one. ``route`` is ``detail.get("plugin_identity_route")``, which
+    is ``None`` for every entry written before #677 -- that absence is itself
+    meaningful to `plugin_identity_check` and must not be papered over here.
     """
     for entry in reversed(read(path)):
         if not isinstance(entry, dict):
@@ -1452,8 +1560,113 @@ def _last_plugin_identity(path):
         if not isinstance(detail, dict):
             continue
         if "plugin_identity" in detail:
-            return entry, detail["plugin_identity"]
-    return None, None
+            return entry, detail["plugin_identity"], detail.get("plugin_identity_route")
+    return None, None, None
+
+
+def _plugin_root_snapshot_path(path):
+    """Where the within-tick root snapshot lives (#565): beside the state file,
+    never inside it -- this is deliberately NOT an entry, so it must not
+    accumulate in `--read`/`--trend`/history the way a real tick record does.
+    """
+    return Path(str(path) + ".plugin-root-snapshot.json")
+
+
+def record_plugin_root(path, root):
+    """Snapshot `root` for later comparison in THIS SAME tick (#565).
+
+    Called once, early in a tick -- see `commands/tick.md` step 1. Overwrites
+    whatever snapshot (if any) was left over from an earlier, presumably
+    incomplete tick; a snapshot is only ever meant to answer for the tick that
+    wrote it.
+    """
+    if not root or not str(root).strip():
+        raise StateError(
+            "record_plugin_root needs a non-empty root; an empty value here is a "
+            "caller error, not a real reading"
+        )
+    root = str(root).strip()
+    snapshot = _plugin_root_snapshot_path(path)
+    tmp = snapshot.with_suffix(snapshot.suffix + ".tmp")
+    tmp.write_text(json.dumps({"root": root}), encoding="utf-8")
+    tmp.replace(snapshot)
+    return {"root": root}
+
+
+def check_plugin_root(path, current):
+    """Compare `current` against the root snapshot recorded earlier in this tick
+    (#565), then consume the snapshot -- a snapshot answers for one tick only, so
+    a second check without a fresh `record_plugin_root` in between must not find
+    a leftover answer from whatever tick wrote it.
+
+    Returns a record with ``current``, ``prior`` and ``state``; ``state`` is
+    ``PLUGIN_ROOT_CHANGED``, ``PLUGIN_ROOT_UNCHANGED`` or
+    ``PLUGIN_ROOT_COULD_NOT_READ``, with a ``why`` filled in for the third. See
+    the module-level comment beside the three constants for what each means.
+    """
+    if not current or not str(current).strip():
+        raise StateError(
+            "check_plugin_root needs the current reading; an empty value here is "
+            "a caller error, not a real reading"
+        )
+    current = str(current).strip()
+    snapshot = _plugin_root_snapshot_path(path)
+    try:
+        text = snapshot.read_text(encoding="utf-8")
+    except OSError:
+        return {
+            "current": current,
+            "prior": None,
+            "state": PLUGIN_ROOT_COULD_NOT_READ,
+            "why": (
+                "no snapshot was recorded earlier in this tick (or an earlier "
+                "check already consumed it) -- record one at the start of the "
+                "tick with --record-plugin-root before checking"
+            ),
+        }
+    try:
+        snapshot.unlink()
+    except OSError:
+        pass
+    try:
+        doc = json.loads(text)
+        prior = doc.get("root") if isinstance(doc, dict) else None
+    except ValueError:
+        prior = None
+    if not prior or not str(prior).strip():
+        return {
+            "current": current,
+            "prior": None,
+            "state": PLUGIN_ROOT_COULD_NOT_READ,
+            "why": "the recorded snapshot exists but could not be read as a root value",
+        }
+    prior = str(prior).strip()
+    if current == prior:
+        return {"current": current, "prior": prior, "state": PLUGIN_ROOT_UNCHANGED, "why": None}
+    return {"current": current, "prior": prior, "state": PLUGIN_ROOT_CHANGED, "why": None}
+
+
+def plugin_root_line(record):
+    """One line a tick report can print. The state decides the sentence, not the caller."""
+    if not isinstance(record, dict):
+        raise StateError(
+            "plugin_root_line takes a plugin root record, not {!r}".format(record)
+        )
+    state = record.get("state")
+    head = "plugin root (within this tick): "
+    if state == PLUGIN_ROOT_UNCHANGED:
+        return _receipt_line(head + "unchanged ({})".format(record.get("current")))
+    if state == PLUGIN_ROOT_CHANGED:
+        return _receipt_line(
+            head + "changed -- was {}, now {}".format(record.get("prior"), record.get("current"))
+        )
+    if state == PLUGIN_ROOT_COULD_NOT_READ:
+        return _receipt_line(
+            head + "could not read -- {}".format(record.get("why") or "no reason recorded")
+        )
+    return _receipt_line(
+        head + "unrecognised plugin root state {!r}, so nothing is claimed".format(state)
+    )
 
 
 def _count_argument(text):
@@ -1628,8 +1841,26 @@ def _main(argv=None):
         "--check-plugin-identity",
         metavar="IDENTITY",
         help="compare this tick's plugin identity (doctor.plugin_identity(PLUGIN_ROOT)) "
-        "against the most recently recorded one (#477): changed, unchanged, or "
-        "could-not-tell if no prior tick ever recorded one",
+        "against the most recently recorded one (#477): changed, unchanged, "
+        "could-not-tell if no prior tick ever recorded one, or route-mismatch if "
+        "the prior was read by a different route (#677) -- pair with "
+        "--plugin-identity-route to record/compare the route itself",
+    )
+    group.add_argument(
+        "--record-plugin-root",
+        metavar="ROOT",
+        help="snapshot this tick's own resolved ${CLAUDE_PLUGIN_ROOT} for later "
+        "comparison, within THIS SAME tick (#565); call once, early -- see "
+        "commands/tick.md step 1. Pair with --check-plugin-root later in the "
+        "same tick",
+    )
+    group.add_argument(
+        "--check-plugin-root",
+        metavar="ROOT",
+        help="compare ${CLAUDE_PLUGIN_ROOT} against the snapshot --record-plugin-root "
+        "took earlier in this tick (#565): changed, unchanged, or could-not-read "
+        "if no snapshot was recorded (or one was already consumed). Consumes the "
+        "snapshot -- answers for one tick only",
     )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
@@ -1711,6 +1942,15 @@ def _main(argv=None):
         "--plugin-identity",
         help="attach this tick's plugin identity to the entry made by --decision "
         "(#477); use with --decision only",
+    )
+    parser.add_argument(
+        "--plugin-identity-route",
+        help="how the plugin identity was obtained -- e.g. resolved-install or "
+        "pinned-root (#677). Use with --check-plugin-identity (describes THIS "
+        "tick's reading) or with --decision --plugin-identity (records it onto "
+        "the entry, for the NEXT tick's comparison). A route mismatch between "
+        "the current and prior readings is its own state, never folded into "
+        "changed/unchanged",
     )
     args = parser.parse_args(argv)
 
@@ -1814,6 +2054,8 @@ def _main(argv=None):
             # path with a misleading "--at is required" refusal (found by
             # review) instead of naming the flag that was actually wrong.
             or args.check_plugin_identity is not None
+            or args.record_plugin_root is not None
+            or args.check_plugin_root is not None
         )
         if reading_mode and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
@@ -1857,10 +2099,35 @@ def _main(argv=None):
                 "accept them and drop them".format(", ".join(plugin_identity_flags))
             )
             return 1
+        if (
+            args.plugin_identity_route is not None
+            and args.check_plugin_identity is None
+            and args.plugin_identity is None
+        ):
+            return refuse(
+                "--plugin-identity-route needs --check-plugin-identity (describing "
+                "this tick's own reading) or --decision --plugin-identity (recording "
+                "it onto the entry) -- it names nothing on its own"
+            )
         if args.check_plugin_identity is not None:
-            found_entry, prior = _last_plugin_identity(args.path)
-            record = plugin_identity_check(args.check_plugin_identity, prior)
+            found_entry, prior, prior_route = _last_plugin_identity(args.path)
+            record = plugin_identity_check(
+                args.check_plugin_identity,
+                prior,
+                current_route=args.plugin_identity_route,
+                prior_route=prior_route,
+            )
             _say(plugin_identity_line(record), sys.stderr)
+            print(json.dumps(record, indent=2))
+            return 0
+        if args.record_plugin_root is not None:
+            record = record_plugin_root(args.path, args.record_plugin_root)
+            _say(_receipt_line("RECORDED plugin root (within this tick): {}".format(record["root"])), sys.stderr)
+            print(json.dumps(record, indent=2))
+            return 0
+        if args.check_plugin_root is not None:
+            record = check_plugin_root(args.path, args.check_plugin_root)
+            _say(plugin_root_line(record), sys.stderr)
             print(json.dumps(record, indent=2))
             return 0
         if args.pending_wait:
@@ -2147,6 +2414,13 @@ def _main(argv=None):
                     "or the other"
                 )
             detail["plugin_identity"] = args.plugin_identity
+            if args.plugin_identity_route is not None:
+                if "plugin_identity_route" in detail:
+                    return refuse(
+                        "--detail already carries a 'plugin_identity_route' key; "
+                        "pass one or the other"
+                    )
+                detail["plugin_identity_route"] = args.plugin_identity_route
         entry = append(args.path, args.at, args.decision, detail=detail)
         # After the write, never before. The line is a receipt for an entry that is on
         # disk, and a receipt printed ahead of the write it receipts is one that a
@@ -2164,6 +2438,12 @@ def _main(argv=None):
                 "RECORDED plugin identity: " + _receipt_line(args.plugin_identity),
                 sys.stderr,
             )
+            if args.plugin_identity_route is not None:
+                _say(
+                    "RECORDED plugin identity route: "
+                    + _receipt_line(args.plugin_identity_route),
+                    sys.stderr,
+                )
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:
