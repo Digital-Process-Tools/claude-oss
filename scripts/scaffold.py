@@ -243,17 +243,103 @@ __pycache__/
 # now reads this very template in `tests/test_doctor_inprocess.py`, so the two
 # cannot drift apart silently. Loading the preset spawns nothing: the ops become
 # available and a poller starts only when something asks for one.
+#
+# `watch_name` on all five ops the watch preset spawns from -- `channel`, `radar`,
+# `unwatch`, `watch`, `watches` -- not a subset (#682). supertool cannot see
+# `.oss.json` or the launcher's derivation of a channel name from it, so a
+# `.supertool.json` declaring none reads, on every single call and not only the
+# ones a launcher-started session ever reaches, as a possible cross-project
+# collision: a plain terminal running `./supertool 'watches'` in the same
+# checkout reads the shared default socket over a fleet alive on the derived
+# one -- a wrong answer, not a warning. A name on `radar` alone would still leave
+# the other four reading the shared socket, which is #1309's half-configured
+# state arriving through the config door. `__WATCH_NAME__` is substituted by
+# `_render_supertool_json`, never by `str.format` -- the JSON body itself uses
+# supertool's own `{python}`/`{supertool_dir}` placeholder syntax in the
+# validators block below, and `.format()` would try to resolve those too.
+#
+# `validators`: three defaults, chosen for being safe on any machine rather than
+# for coverage (#633 half one -- every scaffolded repo got none at all).
+# `jsonlint` is stdlib-only, `tomllint` degrades to `skipped` rather than a
+# false `ok` when tomllib/tomli is unavailable (supertool #1157), and
+# `bash-check` only needs a `bash` on PATH. Nothing here needs an external
+# binary install (shellcheck, actionlint, markdownlint, gitleaks all do): half
+# two of #633 -- `/oss:doctor` reporting a configured-but-absent toolchain --
+# does not exist yet, and an unreported "could not tell" on every write in
+# somebody else's repo is worse than no validator at all. Python itself needs
+# no entry: `py-syntax` is supertool's built-in syntax backstop and applies
+# with zero configuration, to every `.py` file, whether or not this file names
+# it.
 SUPERTOOL_JSON = """{
   "presets": ["git", "github", "watch"],
+  "validators": {
+    "jsonlint": {
+      "cmd": "{python} {supertool_dir}/validators/jsonlint/jsonlint.py {file}",
+      "match": "*.json",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "tomllint": {
+      "cmd": "{python} {supertool_dir}/validators/tomllint/tomllint.py {file}",
+      "match": "*.toml",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    },
+    "bash-check": {
+      "cmd": "{python} {supertool_dir}/validators/bash-check/bash-check.py {file}",
+      "match": "*.sh",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": true,
+      "timeout": 10
+    }
+  },
   "ops": {
+    "channel": {
+      "watch_name": "__WATCH_NAME__"
+    },
     "radar": {
+      "watch_name": "__WATCH_NAME__",
       "radar_tiers": {
         "gh-prs": {}
       }
+    },
+    "unwatch": {
+      "watch_name": "__WATCH_NAME__"
+    },
+    "watch": {
+      "watch_name": "__WATCH_NAME__"
+    },
+    "watches": {
+      "watch_name": "__WATCH_NAME__"
     }
   }
 }
 """
+
+
+def _render_supertool_json(config):
+    """The default `.supertool.json` -- watch_name derived from THIS repo's own
+    `.oss.json`, never invented (#682). `oss_config.watch_channel_name` is the
+    same derivation `bin/oss-workspace` falls back to and `scripts/doctor.py`
+    reads back, so a name declared here and a name the launcher would have
+    derived agree by construction rather than by two authors matching prose.
+
+    `repo_slug` refuses first, on the same terms as `_render_claude_md` and
+    `_render_contributing_md`: a caller reaching `render()` directly, as this
+    one does for a name substituted with `.replace()` rather than `.format()`,
+    gets the check even though `plan()`/`validate()` are nowhere in its path.
+    """
+    repo = repo_slug(config)
+    name, problem = oss_config.watch_channel_name(repo)
+    if problem:
+        # Unreachable once repo_slug() has already accepted the value -- both
+        # read the same oss_config.repo_problem -- kept rather than assumed,
+        # because a raise here is one sentence and a silent invented name is
+        # this plugin's own defect class.
+        raise ScaffoldError(problem)
+    return SUPERTOOL_JSON.replace("__WATCH_NAME__", name)
 
 DEPENDABOT_YML = """version: 2
 updates:
@@ -698,7 +784,7 @@ TEMPLATES = {
     ".github/PULL_REQUEST_TEMPLATE.md": lambda config: PULL_REQUEST_TEMPLATE_MD,
     ".github/dependabot.yml": lambda config: DEPENDABOT_YML,
     ".gitignore": lambda config: GITIGNORE,
-    ".supertool.json": lambda config: SUPERTOOL_JSON,
+    ".supertool.json": _render_supertool_json,
     # No rules seed here. The rules plugin ships its own examples, one per dimension,
     # and its README documents the frontmatter for each. A copy of that teaching in
     # this repo is a second copy to keep in step -- which is the drift this plugin
@@ -2931,10 +3017,77 @@ _COMMAND_WRAPPERS = frozenset(
     ("python", "python3", "py", "npx", "sh", "bash", "uv", "poetry", "pipenv", "run", "exec")
 )
 
+# A separated-form long option (`--extra dev`, never `--extra=dev`) whose value is
+# NOT the runner and must be skipped along with the flag itself (#681). Bounded to
+# the flags actually observed on the wrappers already in _COMMAND_WRAPPERS above --
+# uv's `--extra`/`--group`/`--python`/`--directory`/`--project`, poetry's
+# `--directory`/`-C`/`--project`, pipenv's `--python` -- rather than an open-ended
+# guess at every CLI's option surface. `_COMMAND_WRAPPERS` cannot help here even in
+# principle: the token being misclassified is an ARGUMENT, not a runner, so a longer
+# list of runner names answers a different question than the one this list answers.
+_SEPARATED_VALUE_FLAGS = frozenset(
+    ("extra", "group", "only", "with", "directory", "project", "workspace", "python", "config", "cd", "C")
+)
+
+# `-m`/`--module`'s value is not skipped -- it IS the thing a workflow would mention
+# (`python -m pytest` really does invoke `pytest`), so it becomes the candidate
+# token rather than being discarded like _SEPARATED_VALUE_FLAGS above.
+_MODULE_FLAGS = frozenset(("m", "module"))
+
+# Flags known to take NO value, so the token after one is never their argument by
+# mistake -- the mirror case of _SEPARATED_VALUE_FLAGS. `npx --yes jest` needs this:
+# without it, "--yes" followed by the non-flag "jest" is indistinguishable from
+# "--extra" followed by "dev", and the honest answer to that shape alone is
+# _AMBIGUOUS_RUNNER. Scoped the same way -- flags actually observed on a wrapper
+# already in _COMMAND_WRAPPERS -- not a general guess at every CLI's boolean flags.
+_KNOWN_BOOLEAN_FLAGS = frozenset(("yes",))
+
+
+# A sentinel distinct from None. `_runner_token` returning None already means "no
+# token at all" (an empty command, or one built entirely of wrappers) and that falls
+# through to `unenforced` unchanged -- this is the other, more dangerous case: a
+# separated-form option whose arity this function has never seen, immediately
+# followed by a token that could be that option's value OR the runner. #681's own
+# bug was guessing the first read of that ambiguity; guessing the second (returning
+# the following token as the runner) is the identical guess from the other side.
+# Declining -- and check_test_ci() below reading this out as its own state rather
+# than falling into `unenforced` -- is the fix, not a longer list of exceptions.
+_AMBIGUOUS_RUNNER = object()
+
 
 def _runner_token(command):
-    for token in command.split():
-        if token.startswith("-") or token in _COMMAND_WRAPPERS:
+    tokens = command.split()
+    i = 0
+    n = len(tokens)
+    while i < n:
+        token = tokens[i]
+        if token in _COMMAND_WRAPPERS:
+            i += 1
+            continue
+        if token.startswith("-"):
+            if "=" in token:
+                # Self-contained (`--extra=dev`): nothing separate to skip or guess.
+                i += 1
+                continue
+            bare = token.lstrip("-")
+            if bare in _MODULE_FLAGS:
+                i += 1
+                if i < n and not tokens[i].startswith("-"):
+                    return tokens[i]
+                continue
+            if bare in _SEPARATED_VALUE_FLAGS:
+                i += 2  # the flag and its value -- neither is the runner
+                continue
+            if bare in _KNOWN_BOOLEAN_FLAGS:
+                i += 1  # the flag alone -- whatever follows is not its value
+                continue
+            if i + 1 < n and not tokens[i + 1].startswith("-"):
+                # An option this function does not know the arity of, immediately
+                # followed by something that is not itself a flag. That token may
+                # be this option's value, or it may be the runner -- undecidable
+                # from here, and asserting either is the guess #681 is about.
+                return _AMBIGUOUS_RUNNER
+            i += 1
             continue
         return token
     return None
@@ -2947,6 +3100,11 @@ def check_test_ci(repo_root, config):
     or **nothing ran** -- and the third reads exactly like the first on the merge
     screen. A maintainer loop that merges on green, in a repo where CI checks a
     changelog fragment and never the tests, is merging on an absence.
+
+    A fourth, `ambiguous`, sits beside those three rather than inside them (#681):
+    not a claim about CI at all, but a refusal to make one, for the one case where
+    naming the runner would itself be a guess -- an option this function does not
+    know the arity of. It exists so `unenforced` never fires off that guess.
 
     No test workflow is generated. The runner, the matrix, the language version and
     whether a failure blocks a merge are all real decisions, none of them measured
@@ -2974,6 +3132,25 @@ def check_test_ci(repo_root, config):
         return []
 
     token = _runner_token(command)
+    if token is _AMBIGUOUS_RUNNER:
+        # Before the unclear/unreadable/unenforced arms, all three of which either
+        # need a real token or state a claim about every workflow in the repo (#681).
+        # A token this function could not classify must never fall through to
+        # `unenforced` -- that state means "nothing in .github/workflows/ runs it",
+        # and this function does not know what it would even be looking for.
+        return [
+            {
+                "state": "ambiguous",
+                "detail": (
+                    "test_command '{command}' contains an option this check does not "
+                    "recognise, immediately followed by a value -- and cannot tell "
+                    "whether that value is the option's argument or the test runner. "
+                    "Guessing either way risks a false claim about whether anything in "
+                    "{dir}/ runs your tests, so nothing is reported enforced or "
+                    "unenforced here. Check by hand.".format(command=command, dir=WORKFLOW_DIR)
+                ),
+            }
+        ]
     if token and any(token in text for text in texts):
         return [
             {

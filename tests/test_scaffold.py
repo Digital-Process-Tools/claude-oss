@@ -317,6 +317,64 @@ def test_the_shipped_config_turns_radar_on(tmp_path):
     assert written["ops"]["radar"]["radar_tiers"]
 
 
+def test_the_shipped_config_declares_watch_name_on_all_five_watch_ops_682(tmp_path):
+    """#682: supertool cannot see .oss.json or the launcher's derivation, so a
+    .supertool.json declaring no watch_name reads -- on every single call, not
+    just the ones a launcher-started session ever reaches -- as a possible
+    cross-project collision. All five ops the watch preset spawns from, not a
+    subset: a name on radar alone still leaves channel/unwatch/watch/watches
+    reading the shared default socket over a fleet alive on the derived one.
+    """
+    scaffold.apply(tmp_path, _config(repo="acme/widget"))
+    written = json.loads((tmp_path / ".supertool.json").read_text(encoding="utf-8"))
+    expected, problem = oss_config.watch_channel_name("acme/widget")
+    assert problem is None
+    for op in ("channel", "radar", "unwatch", "watch", "watches"):
+        assert written["ops"][op]["watch_name"] == expected
+
+
+def test_the_watch_name_comes_from_oss_json_not_invented_682(tmp_path):
+    """.oss.json's repo stays the one source (CLAUDE.md's own rule): a different
+    repo slug must produce a different derived name, never a hardcoded default
+    scaffold made up on its own.
+    """
+    scaffold.apply(tmp_path, _config(repo="other/repo"))
+    written = json.loads((tmp_path / ".supertool.json").read_text(encoding="utf-8"))
+    assert written["ops"]["watch"]["watch_name"] == "other-repo"
+    assert written["ops"]["watch"]["watch_name"] != "acme-widget"
+
+
+def test_rendering_supertool_json_refuses_an_invalid_repo_682():
+    """Same refusal shape as CLAUDE.md's repo_slug() -- an invented name from an
+    unusable repo value would be a fact this generated file states with no
+    measurement behind it.
+    """
+    with pytest.raises(scaffold.ScaffoldError):
+        scaffold.render(".supertool.json", _config(repo=None))
+
+
+def test_the_shipped_config_declares_defensible_default_validators_633(tmp_path):
+    """#633 half one: no scaffolded repo gets a single configured validator today,
+    so every write in a managed repo runs with no post-write check and no
+    rollback. The three shipped here are chosen for being safe on any machine:
+    jsonlint is stdlib-only, tomllint degrades to 'skipped' rather than a false
+    'ok' when tomllib/tomli is unavailable, and bash-check only needs a bash on
+    PATH. Nothing needing an external binary install (shellcheck, actionlint,
+    markdownlint, gitleaks) ships as a default -- half two of #633 (doctor
+    reporting a configured-but-absent toolchain) does not exist yet, and an
+    unreported 'could not tell' on every write is worse than no validator at all.
+    Python itself needs no entry: py-syntax is supertool's built-in backstop and
+    applies with zero configuration.
+    """
+    scaffold.apply(tmp_path, _config())
+    written = json.loads((tmp_path / ".supertool.json").read_text(encoding="utf-8"))
+    validators = written.get("validators")
+    assert validators and set(validators) == {"jsonlint", "tomllint", "bash-check"}
+    assert validators["jsonlint"]["match"] == "*.json"
+    assert validators["tomllint"]["match"] == "*.toml"
+    assert validators["bash-check"]["match"] == "*.sh"
+
+
 def test_an_existing_supertool_config_is_never_replaced(tmp_path):
     (tmp_path / ".supertool.json").write_text('{"presets": ["mine"]}', encoding="utf-8")
     scaffold.apply(tmp_path, _config())
@@ -370,12 +428,22 @@ def test_every_template_renders_without_a_leftover_placeholder():
     verbatim (#460), so `{issue}` in the rendered body is that value having arrived
     correctly, not a `.format()` slot .format() itself never filled. Stripped before
     the scan so a real leftover next to it is still caught.
+
+    `.supertool.json`'s `{python}`/`{supertool_dir}`/`{file}` are a second, disjoint
+    exception (#682): supertool's OWN placeholder syntax, substituted by supertool at
+    call time, never by scaffold. `_render_supertool_json` uses `.replace()` rather
+    than `.format()` specifically so these survive untouched -- a real leftover
+    `.format()` slot in this file would still be caught, since none of scaffold's own
+    substitutions ever spell a name from this set.
     """
     leftover = re.compile(r"\{[a-z_]+\}")
+    supertool_placeholders = re.compile(r"\{(python|supertool_dir|file)\}")
     config = _config()
     for name in scaffold.templates_for(config):
         body = scaffold.render(name, config)
         body = body.replace(config["branch_pattern"], "")
+        if name == ".supertool.json":
+            body = supertool_placeholders.sub("", body)
         found = leftover.search(body)
         assert found is None, "{} still contains {}".format(name, found and found.group(0))
 
@@ -1080,6 +1148,84 @@ def test_a_workflow_that_mentions_the_runner_but_not_the_command_is_unclear(tmp_
         tmp_path, _config(test_command="python3 -m unittest discover -s tests")
     )
     assert findings and findings[0]["state"] == "unclear"
+
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        ("uv run --extra dev pytest -q", "pytest"),
+        ("uv run --extra dev pytest tests/ -q -rs", "pytest"),
+        ("python -m pytest tests/ -q -rs", "pytest"),
+        ("uv run pytest -q", "pytest"),
+        ("npx --yes jest --ci", "jest"),
+        ("poetry run --directory sub pytest", "pytest"),
+    ],
+)
+def test_runner_token_does_not_return_an_options_value_681(command, expected):
+    """#681, reproduced against the shipped function before the fix: a separated
+    option value ('dev' from '--extra dev', 'sub' from '--directory sub') came
+    back as the runner. All six of the reporter's spellings, run against the
+    fixed function, must resolve to the actual test runner.
+    """
+    assert scaffold._runner_token(command) == expected
+
+
+def test_runner_token_declines_rather_than_guessing_an_unknown_option_681():
+    """The case none of the six spellings cover: an option this function has
+    never seen, immediately followed by a value it cannot classify. Guessing
+    that value IS the runner is #681's defect; guessing it is NOT (and
+    returning whatever follows) is the same guess wearing the other face.
+    Decline instead of guessing either way.
+    """
+    assert (
+        scaffold._runner_token("uv run --frobnicate value pytest")
+        is scaffold._AMBIGUOUS_RUNNER
+    )
+
+
+def test_check_test_ci_no_longer_false_alarms_on_the_681_reproduction(tmp_path):
+    """The reported defect, end to end. The real workflow runs pytest under a
+    different exact invocation than test_command. The buggy token ('dev', from
+    '--extra dev') does not appear in the workflow text, so the unfixed
+    function asserted 'unenforced' -- a claim that nothing runs the tests, made
+    because the check went looking for 'dev' instead of 'pytest'.
+    """
+    _with_workflow(
+        tmp_path, "jobs:\n  test:\n    steps:\n      - run: python -m pytest tests/ -q -rs\n"
+    )
+    findings = scaffold.check_test_ci(
+        tmp_path, _config(test_command="uv run --extra dev pytest -q")
+    )
+    assert findings and findings[0]["state"] == "unclear"
+    assert "pytest" in findings[0]["detail"]
+
+
+def test_check_test_ci_never_asserts_unenforced_off_an_ambiguous_token_681(tmp_path):
+    """The 'must not fire' half of the pair below: an unclassifiable token must
+    never fall through to 'unenforced', which is a claim about every workflow in
+    the repo that this function has not established when it cannot even name
+    the runner it is looking for.
+    """
+    _with_workflow(tmp_path, "jobs:\n  test:\n    steps:\n      - run: pytest\n")
+    findings = scaffold.check_test_ci(
+        tmp_path, _config(test_command="uv run --frobnicate value pytest")
+    )
+    assert findings and findings[0]["state"] == "ambiguous"
+
+
+def test_check_test_ci_still_reports_unenforced_when_the_runner_is_clear_681(tmp_path):
+    """The 'must fire' positive control paired with the test above: a command
+    whose runner IS clearly determined, and genuinely not run anywhere, must
+    still be reported unenforced.
+    """
+    _with_workflow(
+        tmp_path, "name: changelog\njobs:\n  fragment:\n    runs-on: ubuntu-latest\n"
+    )
+    findings = scaffold.check_test_ci(
+        tmp_path, _config(test_command="uv run --extra dev pytest -q")
+    )
+    assert findings and findings[0]["state"] == "unenforced"
 
 
 def test_no_test_command_reads_differently_from_one_nothing_runs(tmp_path):
