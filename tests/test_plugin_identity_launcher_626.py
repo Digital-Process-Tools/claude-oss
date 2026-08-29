@@ -243,7 +243,22 @@ def test_the_no_home_fixture_removes_home_it_does_not_merely_decline_to_add_it(
     runner this suite runs on, so the leak is reproducible here. Before the
     fix this returned the PARENT's HOME under `home=False`, which is how a
     correct launcher came to be reported as broken on one leg.
+
+    Asserts its own precondition first: this process's ambient `os.environ`
+    must actually carry `HOME`, or the pop below is a no-op and `"HOME" not
+    in env` would pass whether or not the fix's explicit-removal logic ran --
+    the exact "assertion vacuous on a platform" shape CLAUDE.md's Sec 4 warns
+    about. Every leg this suite runs on (macOS, Linux and Windows CI runners
+    alike) sets HOME, so this is a real check of the environment rather than
+    a skip-worthy gap; if a future runner genuinely lacks HOME the assertion
+    below fails loudly on its own message rather than silently proving
+    nothing.
     """
+    assert "HOME" in os.environ, (
+        "this test's own precondition failed: the ambient environment has no "
+        "HOME to leak, so removing it below would be a no-op and prove "
+        "nothing about the fix -- this platform cannot exercise this test"
+    )
     env = _child_env(
         tmp_path,
         home=False,
