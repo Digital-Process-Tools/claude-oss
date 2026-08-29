@@ -783,9 +783,20 @@ two alike is exactly the bug this closes. `commands/tick.md` step 1 is where the
 `--plugin-identity` on step 6's `--decision` call records `doctor.plugin_identity()`'s own string —
 version folded with a content digest, never the version alone, because a manifest version stays put
 for a whole release cycle while the content underneath it can still move (#418). `--check-plugin-
-identity` at the top of the *next* tick compares against it: `changed`, `unchanged`, or
-`could-not-tell` when no prior was ever recorded — which must never render as `unchanged`.
-`commands/tick.md` step 1 is where the call is wired.
+identity` at the top of the *next* tick compares against it: `changed`, `unchanged`,
+`could-not-tell` when no prior was ever recorded — which must never render as `unchanged` — or
+`route-mismatch` (#677) when the current and prior readings were obtained by different routes (the
+version-pinned `${CLAUDE_PLUGIN_ROOT}` never sees its own version move, so step 1 now resolves the
+actually-installed copy instead and tags each reading with which route produced it — a prior
+recorded by the old route is not the same measurement as a new one, so comparing them is its own
+state rather than a guessed `changed`/`unchanged`). `commands/tick.md` step 1 is where the call is
+wired.
+
+**#565 is a narrower, same-tick question one clock over: does `${CLAUDE_PLUGIN_ROOT}` itself move
+DURING this tick, not merely between two ticks?** An ephemeral, single-use sidecar
+(`--record-plugin-root` at step 1, `--check-plugin-root` at step 6, consumed on first read) answers
+it separately from the cross-tick identity comparison above, because the two are different clocks
+and folding them together would answer neither question honestly.
 
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.
