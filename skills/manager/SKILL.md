@@ -447,10 +447,10 @@ Three calls stand in for judgement here, and none of them is optional:
 
 | Before | Call |
 | --- | --- |
-| naming a lane, against everything already running | `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --lane PATTERN --derive-held` (fallback: `--against PATTERN`, only on `could-not-derive-the-held-set`) |
-| bundling a second issue into a lane already claimed | `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --lane PATTERN --against PATTERN`, the candidate's declared lane against the one running lane, not the derived aggregate |
-| writing each brief | `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue>`, from the clone |
-| dispatching | `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py <primary> <issue1,issue2,...> "<phrase>"` |
+| naming a lane, against everything already running | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN --derive-held` (fallback: `--against PATTERN`, only on `could-not-derive-the-held-set`) |
+| bundling a second issue into a lane already claimed | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN --against PATTERN`, the candidate's declared lane against the one running lane, not the derived aggregate |
+| writing each brief | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue>`, from the clone |
+| dispatching | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" <primary> <issue1,issue2,...> "<phrase>"` |
 
 Launch every dispatched lane in a single message so they run concurrently.
 

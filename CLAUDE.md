@@ -340,6 +340,18 @@ separately rather than one list.
   `tests/test_write_route_fact_parity_673.py` compares five named facts between the two documents
   pairwise and pins the batch error string against the actually-measured tool output, on purpose,
   because parity alone would have passed this exact case.
+- **A runbook table's command cells are commands a session runs verbatim, and nothing had ever run
+  one.** `skills/manager/SKILL.md`'s three-call table told a session to invoke
+  `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py` directly. That file is committed mode 100644 with
+  no shebang, so the row as written exits 126 -- `scripts/lane_setup.py`, invoked the same way two
+  rows up, is 100755 with a shebang, so the exec bit does survive packaging and this file
+  specifically never had one. The same table quoted `${CLAUDE_PLUGIN_ROOT}` in none of its four
+  cells, so a plugin root containing a space -- the ordinary shape of a Windows home directory built
+  from a two-word account name -- word-splits into argv. Both (#687, #689) were found by the
+  0.16.0 release gate's round-one audit, not by any test: `tests/test_op_table_commands_687_689.py`
+  now reads the table's own cells and checks quoting and exec-bit agreement for whatever script
+  each cell names, scoped to that one table and to `dispatch.md`'s matching compose line -- not a
+  sweep of every code fence in the loop's prose, which is a larger, separate piece of work.
 
 ## Layout
 
