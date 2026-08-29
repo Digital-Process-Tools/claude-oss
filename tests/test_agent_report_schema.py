@@ -151,6 +151,14 @@ def _mutations():
         report["tests"]["red"] = {"state": "not-run"}
         return report
 
+    def full_suite_ran_without_result(report):
+        report["tests"]["full"] = {"state": "ran"}
+        return report
+
+    def full_suite_unran_without_reason(report):
+        report["tests"]["full"] = {"state": "could-not-run"}
+        return report
+
     def pr_body_written_without_path(report):
         report["pr_body"] = {
             "state": "written", "path": "", "closes": {"state": "closes", "issues": [123]}
@@ -248,6 +256,8 @@ def _mutations():
         "docs-target-unread-carries-a-why": docs_target_unread_without_why,
         "observed-test-phase-carries-a-result": test_phase_observed_without_result,
         "unobserved-test-phase-carries-a-reason": test_phase_skipped_without_reason,
+        "ran-full-suite-carries-a-result": full_suite_ran_without_result,
+        "unran-full-suite-carries-a-reason": full_suite_unran_without_reason,
         "written-pr-body-carries-a-path": pr_body_written_without_path,
         "unwritten-pr-body-carries-a-reason": pr_body_absent_without_reason,
         "review-survey-returned-nothing-carries-a-reason": (
@@ -292,6 +302,73 @@ def test_every_enforced_claim_has_a_mutation_that_proves_it():
     assert claimed == proven, "claimed but unproven: {}; proven but unclaimed: {}".format(
         sorted(claimed - proven), sorted(proven - claimed)
     )
+
+
+# --- tests.full: whether the DEVELOPER's own full-suite run happened (#632) ----
+#
+# The manager never reproduces the suite itself (skills/manager/phases/review.md);
+# CI is the source of truth for the repository's whole test_command. What was
+# missing was a way for the REPORT to say whether the developer lane's own local
+# full run happened at all, so the manager did not have to read it out of prose in
+# a commit message or re-run it to find out. Optional, so an old report with no
+# `full` key stays valid -- the bump is additive, and $defs/full_suite mirrors
+# $defs/phase's three-state shape with its own vocabulary (ran / not-run /
+# could-not-run) because a developer's local run and a TDD red/green watch are
+# different claims answering different questions.
+
+
+def test_a_report_with_no_full_field_at_all_still_validates():
+    """The optionality itself, asserted rather than assumed -- every report ever
+    written before this field existed lacks it, and the bump must not silently
+    become required underneath them.
+    """
+    report = _example()
+    del report["tests"]["full"]
+    assert report_schema.validate(report) == []
+
+
+def test_full_suite_ran_with_a_result_validates():
+    report = _example()
+    report["tests"]["full"] = {
+        "state": "ran",
+        "command": "python3 -m pytest tests/ -q",
+        "result": "3835 passed, 6 skipped",
+        "wall_clock": "5m24s",
+        "platform": "macos-14",
+        "interpreter": "3.13.15",
+    }
+    assert report_schema.validate(report) == []
+
+
+def test_full_suite_not_run_with_a_reason_validates():
+    report = _example()
+    report["tests"]["full"] = {
+        "state": "not-run",
+        "reason": "change confined to one module whose own tests are green",
+    }
+    assert report_schema.validate(report) == []
+
+
+def test_full_suite_could_not_run_with_a_reason_validates():
+    """The state agents/developer.md's own criteria never spell but this contract
+    must: the harness itself failed, distinct from a decision not to run it."""
+    report = _example()
+    report["tests"]["full"] = {
+        "state": "could-not-run",
+        "reason": "the suite hung past the session's time budget and was killed",
+    }
+    assert report_schema.validate(report) == []
+
+
+def test_full_suite_rejects_a_state_outside_its_own_three():
+    """`not-applicable`, $defs/phase's own third state, must not leak in here --
+    it is not a state this vocabulary defines, and accepting it would let the
+    two shapes drift into meaning the same thing under different words.
+    """
+    report = _example()
+    report["tests"]["full"] = {"state": "not-applicable"}
+    errors = report_schema.validate(report)
+    assert errors, "a phase-only state was accepted on tests.full"
 
 
 def test_a_review_spawn_that_came_back_empty_is_spellable_and_is_not_clean():

@@ -3,15 +3,16 @@
   "$id": "agent-report.schema.json",
   "title": "Agent report",
   "description": "What an agent hands back when it finishes one issue: a JSON file the orchestrator queries field by field, plus a path and at most two lines in chat. The orchestrator reads what it needs when it needs it instead of paying for a document on every later turn of the session. Validate with scripts/report_schema.py.",
-  "x-schema-version": 6,
+  "x-schema-version": 7,
   "x-schema-compatibility": {
     "2": "unknown",
     "3": "breaking",
     "4": "breaking",
     "5": "additive",
-    "6": "breaking"
+    "6": "breaking",
+    "7": "additive"
   },
-  "x-honesty-compatibility": "What each contract declares about the contract IMMEDIATELY BELOW IT, and the only thing that lets a copy of this validator answer about a report older than itself (#416). `additive` means every document valid under the predecessor is valid under this version -- no enum member removed, no key newly required, no pattern tightened -- so an older report is a document this contract already covers. It is a claim about the whole contract and NOT about this document alone: the cross-field rules are Python in scripts/report_schema.py and the on-disk pass leaves the report entirely, and neither is described here, so a bump that adds an optional key while tightening a rule is `breaking` however additive the document looks. `breaking` and `unknown` and an absent entry all refuse, and they refuse for the same reason: the natural failure of a bump that forgot to declare is silence, and silence has to land on the side that over-refuses rather than the side that vouches for a contract nobody holds. A validator walks the chain from its own number down and stops at the first step that is not `additive`, so two steps back needs two declarations -- one claim about the last bump cannot carry a document from two contracts ago. The step is to the largest RECORDED contract below, never to the number minus one, so a gap in the numbering cannot invent a predecessor out of a version nobody ever declared; and a report naming a number that was never a contract is refused whatever the chain says. It stops above 1 whatever is declared, because 1 is not a contract. THIS IS DECLARED, NEVER DERIVED: deciding subset by comparing two schema documents would need both, and a copy of this validator has exactly one -- the older schema is absent, not unread. The author records the relation at the bump, the one moment anybody holds both. WHAT IS GUARDED AND WHAT IS NOT, because the first answer here was wrong: this map is INSIDE the contract fingerprint, so editing it after the fact without moving the number is caught the same way any other enforcing change is. The first version of #416 stripped it by analogy with x-schema-version, and the analogy does not hold -- x-schema-version is circular because the fingerprint record is KEYED by it, and nothing keys on this map. What no fingerprint can catch is a declaration that was wrong at the moment it was written, because checking it needs the OTHER schema and no copy holds two. That is the honest gap, and it is narrower than an unguarded field: the suite additionally holds that every recorded contract has a declaration at all, so the failure of a bump that forgets one is a red suite rather than a silent widening. GENERALISED FROM ONE INSTANCE, said plainly: 5 is the only additive bump this schema has ever had. 3 and 4 were both breaking in both directions, and 2 is `unknown` rather than `breaking` because the contract below it was never recorded. What is inferred from that instance is the shape of the question; what is NOT inferred is that additive bumps are common, or that a future one will be as easy to be sure about as adding two enum members and one optional key was.",
+  "x-honesty-compatibility": "What each contract declares about the contract IMMEDIATELY BELOW IT, and the only thing that lets a copy of this validator answer about a report older than itself (#416). `additive` means every document valid under the predecessor is valid under this version -- no enum member removed, no key newly required, no pattern tightened -- so an older report is a document this contract already covers. It is a claim about the whole contract and NOT about this document alone: the cross-field rules are Python in scripts/report_schema.py and the on-disk pass leaves the report entirely, and neither is described here, so a bump that adds an optional key while tightening a rule is `breaking` however additive the document looks. `breaking` and `unknown` and an absent entry all refuse, and they refuse for the same reason: the natural failure of a bump that forgot to declare is silence, and silence has to land on the side that over-refuses rather than the side that vouches for a contract nobody holds. A validator walks the chain from its own number down and stops at the first step that is not `additive`, so two steps back needs two declarations -- one claim about the last bump cannot carry a document from two contracts ago. The step is to the largest RECORDED contract below, never to the number minus one, so a gap in the numbering cannot invent a predecessor out of a version nobody ever declared; and a report naming a number that was never a contract is refused whatever the chain says. It stops above 1 whatever is declared, because 1 is not a contract. THIS IS DECLARED, NEVER DERIVED: deciding subset by comparing two schema documents would need both, and a copy of this validator has exactly one -- the older schema is absent, not unread. The author records the relation at the bump, the one moment anybody holds both. WHAT IS GUARDED AND WHAT IS NOT, because the first answer here was wrong: this map is INSIDE the contract fingerprint, so editing it after the fact without moving the number is caught the same way any other enforcing change is. The first version of #416 stripped it by analogy with x-schema-version, and the analogy does not hold -- x-schema-version is circular because the fingerprint record is KEYED by it, and nothing keys on this map. What no fingerprint can catch is a declaration that was wrong at the moment it was written, because checking it needs the OTHER schema and no copy holds two. That is the honest gap, and it is narrower than an unguarded field: the suite additionally holds that every recorded contract has a declaration at all, so the failure of a bump that forgets one is a red suite rather than a silent widening. GENERALISED FROM TWO INSTANCES, said plainly: 5 and 7 are the only additive bumps this schema has had. 3, 4 and 6 were breaking (6 in both directions, by adding a REQUIRED key rather than an optional one), and 2 is `unknown` rather than `breaking` because the contract below it was never recorded. 5 added two enum members and one optional key; 7 added one optional key (tests.full) and nothing else. What is inferred from these two is the shape of the question; what is NOT inferred is that additive bumps are common, or that a future one will be as easy to be sure about as these two were.",
   "x-honesty-versioning": "The contract number this document implements. A report carries the number it was written against in schema_version, and a copy of this validator compares the two -- and where they differ, reads x-schema-compatibility above to decide whether the difference matters, which is where the number also appears as a key. It is NOT in x-enforced, on purpose: everything in that list is something a report is refused over, and a version this copy does not hold is not a refusal. It is a state of its own -- unvalidatable by this copy, one of four the version pass has since #416 -- and folding it into either accepted or refused recreates #212 one layer down, where an old copy announced a correct report as broken and nothing distinguished that from a malformed one. WHEN THE NUMBER MOVES: on any change to what a validator accepts or refuses, never on prose. That is deliberately not semver's answer. Because additionalProperties is false and no-unknown-keys is enforced, even adding an OPTIONAL key is breaking in one direction -- an older copy refuses a report the new contract permits, which is exactly the 0.3.0-refuses-docs case that filed #221 -- so the useful line is not major-versus-minor but enforcing-versus-annotation. scripts/report_schema.py takes a fingerprint of this document with the free prose stripped -- description, title, examples, the x-honesty narratives and x-convention -- and tests/test_agent_report_schema.py fails when the enforcing content moves without the number, and fails louder when the number moves to a value nothing recorded. x-enforced and x-enforced-on-disk are deliberately INSIDE the fingerprint although nothing reads them: they are this document's own statement of what a validator refuses, paired one-to-one with a mutation table, so a change there is nearly always a contract change and an unnecessary bump is cheaper than a missed one. What the fingerprint cannot see: the cross-field rules are Python in report_schema.py -- _RULES for the ones scoped to a single node, and functions called directly from validate() for the ones that span the whole report, such as the below-bar checks added in #411 -- so a rule that starts refusing something new without any keyword moving here changes the contract and leaves the hash untouched. VERSION 1 IS NOT A CONTRACT: it is the value every report written before anyone counted carries. Measured 2026-08-16, 57 of the 71 reports on disk say 1 and 14 name no version at all, written against at least three mutually incompatible schemas. None of them can be dated retroactively and back-stamping them would manufacture a claim, so 1 is left meaning before-anyone-counted and 2 is the first value that carries information.",
   "x-honesty-on-disk": "x-enforced-on-disk is the one place this validator leaves the report and touches the filesystem: it opens the pr_body payload, parses it, and checks the shape the forge needs -- and, since #274, one thing about the payload's CONTENT rather than its shape: whether the body binds a closing keyword to each issue pr_body.closes says merging it closes. Since #411 there is a second content check, built the same way: whether the body carries the pr_anchor each below-bar item says it was recorded at. Both are deliberately absence detectors rather than readers -- neither decides what a forge would close or whether a paragraph really explains a finding; the reasoning is under pr_body.closes and under adjacent.pr_anchor, and the limits they leave behind are named in x-convention. That is a deliberate exception to shape-only, because pr_body.state of 'written' is the report's one claim about a file the NEXT step consumes, and a body the forge rejects is discovered after the agent's session has ended. It is a separate list, run by a separate function, so nothing here can be mistaken for the shape pass: validate() never reads a file, and the command line says when it skipped the payload rather than staying quiet about it. Which file it opens is not the report's to choose: pr_body.path is resolved against the report's own directory and anything landing outside it is refused without being opened, and so is a path the containment question cannot be answered for at all -- there is no arrangement of this field that makes this validator read a file elsewhere on the machine.",
   "x-honesty": "This schema checks SHAPE, never TRUTH. A structured summary is easier to accept without reading than a paragraph is, and that is the trade being made here: a refused disposition renders identically whether the refusal was argued or lazy. Two lists below say which is which. x-enforced is what scripts/report_schema.py actually refuses a report over, and every name in it is paired with a mutation in tests/test_agent_report_schema.py that proves the refusal happens. x-convention is the rest -- real parts of the contract, checked by nobody, and listed here so the next person meets the limit at the same moment they meet the schema.",
@@ -30,6 +31,8 @@
     "docs-target-unread-carries-a-why",
     "observed-test-phase-carries-a-result",
     "unobserved-test-phase-carries-a-reason",
+    "ran-full-suite-carries-a-result",
+    "unran-full-suite-carries-a-reason",
     "written-pr-body-carries-a-path",
     "unwritten-pr-body-carries-a-reason",
     "review-survey-returned-nothing-carries-a-reason",
@@ -249,13 +252,14 @@
     },
     "tests": {
       "type": "object",
-      "description": "One object rather than two, so a run with a green and no red is a stated state instead of a missing key.",
+      "description": "One object rather than two, so a run with a green and no red is a stated state instead of a missing key. `full` is OPTIONAL (#632): the manager phase files declare CI as the source of truth for the repository's whole test_command, so the manager never re-runs it and this field exists so the report can say whether the developer lane's own full run happened, without a schema-required key forcing every existing report to carry one.",
       "additionalProperties": false,
       "required": ["command", "red", "green"],
       "properties": {
         "command": {"type": "string"},
         "red": {"$ref": "#/$defs/phase"},
-        "green": {"$ref": "#/$defs/phase"}
+        "green": {"$ref": "#/$defs/phase"},
+        "full": {"$ref": "#/$defs/full_suite"}
       }
     },
     "phase": {
@@ -271,6 +275,25 @@
         "result": {"type": "string", "description": "The shortest decisive line, verbatim."},
         "note": {"type": "string"},
         "coverage": {"type": "string"},
+        "reason": {"type": "string"}
+      }
+    },
+    "full_suite": {
+      "type": "object",
+      "x-rule": "full-suite",
+      "description": "Whether the DEVELOPER lane's own full-suite run happened, on what platform, and what it cost -- not a claim the manager may re-run. The manager phase files name CI (13 legs across 3 operating systems and 4 interpreters) as the source of truth for the repository's whole test_command; this field exists so a report can answer the question CI cannot -- did the lane also run it locally, cheaply, before a pull request existed -- without the report requiring a manager-side re-run to find out. See agents/developer.md's own criteria (#632) for when the local run is worth its wall-clock; this field records the answer, it does not decide it.",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "enum": ["ran", "not-run", "could-not-run"],
+          "description": "ran: the full test_command executed to completion, on this lane's own platform and interpreter -- a strict subset of CI on the axis that matters, never a substitute for it. not-run: a deliberate decision not to, against agents/developer.md's own criteria -- a reason is required so a skip and a run render differently. could-not-run: the harness itself failed (crashed, timed out, could not start) -- distinct from not-run because a suite that could not start and a suite deliberately skipped must not collapse into one state, the same distinction $defs/phase already draws between not-applicable and not-run."
+        },
+        "command": {"type": "string", "description": "What actually ran -- may differ from tests.command when the full run is the repository's whole test_command and the TDD command above it was narrowed to one file."},
+        "result": {"type": "string", "description": "The shortest decisive line, verbatim -- counts and outcome, e.g. '3835 passed, 6 skipped'."},
+        "wall_clock": {"type": "string", "description": "How long it took. What makes the manager's own doctrine (never reproduce this) legible: a number worth citing when arguing whether the developer's own run is worth keeping."},
+        "platform": {"type": "string", "description": "The OS this ran on -- one of CI's 3, never all of them. Says plainly that this is not what CI's matrix answers."},
+        "interpreter": {"type": "string", "description": "The Python (or other) interpreter version this ran under -- one of CI's several, never all of them."},
         "reason": {"type": "string"}
       }
     },
@@ -379,7 +402,7 @@
   },
   "examples": [
     {
-      "schema_version": 6,
+      "schema_version": 7,
       "issue": 123,
       "branch": "fix/123",
       "head": "1dc856d",
@@ -400,6 +423,10 @@
           "state": "observed",
           "result": "219 passed, 1 skipped",
           "coverage": "91.4%"
+        },
+        "full": {
+          "state": "not-run",
+          "reason": "change is confined to one module whose own tests are green and nothing moved underneath it -- agents/developer.md's own criteria for skipping it"
         }
       },
       "review": {

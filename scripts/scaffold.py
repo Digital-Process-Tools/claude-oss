@@ -2135,6 +2135,69 @@ RADAR_REMEDY = (
 )
 
 
+def _radar_merged_document(doc):
+    """The whole corrected `.supertool.json`, not a fragment -- #622.
+
+    The remedy above is a fragment a maintainer has to merge into an existing
+    config by hand, across two independently silent halves (`presets` and
+    `ops.radar.radar_tiers`) -- getting one of the two right produces the state
+    this whole check exists to make visible: a board that is byte-identical
+    from outside to a healthy one. This computes the WHOLE corrected document
+    instead, so there is nothing left to reconcile.
+
+    `presets` is widened by appending the watch preset when it is absent or
+    already a list of strings that does not carry it; `radar_tiers` is
+    widened the same way when empty. Returns `None` -- print nothing rather
+    than something wrong -- when either shape is present and is not one of
+    those: a malformed `presets` or `radar_tiers` is exactly the case a merge
+    must not paper over by silently dropping it into a document that looks
+    complete.
+    """
+    presets = doc.get("presets")
+    if presets is None:
+        new_presets = [WATCH_PRESET]
+    elif isinstance(presets, list) and all(isinstance(p, str) for p in presets):
+        new_presets = list(presets)
+        if WATCH_PRESET not in new_presets:
+            new_presets.append(WATCH_PRESET)
+    else:
+        return None
+
+    ops = doc.get("ops")
+    if ops is not None and not isinstance(ops, dict):
+        return None
+    block = ops.get(RADAR_OP) if isinstance(ops, dict) else None
+    if block is not None and not isinstance(block, dict):
+        return None
+    tiers = block.get(RADAR_TIERS_KEY) if isinstance(block, dict) else None
+    if tiers is not None and not isinstance(tiers, dict):
+        return None
+    new_tiers = dict(tiers) if tiers else {}
+    if not new_tiers:
+        new_tiers.update(RADAR_REMEDY_CONFIG["ops"][RADAR_OP][RADAR_TIERS_KEY])
+
+    merged = dict(doc)
+    merged["presets"] = new_presets
+    merged_ops = dict(ops) if isinstance(ops, dict) else {}
+    merged_block = dict(block) if isinstance(block, dict) else {}
+    merged_block[RADAR_TIERS_KEY] = new_tiers
+    merged_ops[RADAR_OP] = merged_block
+    merged["ops"] = merged_ops
+    return merged
+
+
+def _radar_merged_note(doc):
+    """" The whole file, corrected: {...}" or "" when `_radar_merged_document`
+    declined -- appended to a finding's `detail`, never on its own line, so the
+    "every detail is flattened" invariant `_print_findings` documents still
+    holds: `json.dumps` with no `indent` contains no newline to flatten.
+    """
+    merged = _radar_merged_document(doc)
+    if merged is None:
+        return ""
+    return " The whole file, corrected: {}".format(json.dumps(merged, sort_keys=True))
+
+
 def check_radar(repo_root):
     """Is a board configured, or only the ability to receive one?
 
@@ -2206,7 +2269,9 @@ def check_radar(repo_root):
                 "state": "no-tiers",
                 "detail": (
                     "no radar tiers in {}, so a session can receive channel events and "
-                    "nothing publishes any. {}".format(RADAR_CONFIG, RADAR_REMEDY)
+                    "nothing publishes any. {}{}".format(
+                        RADAR_CONFIG, RADAR_REMEDY, _radar_merged_note(doc)
+                    )
                 ),
             }
         ]
@@ -2242,12 +2307,13 @@ def check_radar(repo_root):
                     "{} in {}, and the `{}` preset that provides the `{}` op reading "
                     "them is not enabled -- so nothing can publish to this board, and "
                     "that is byte-identical from outside to a board nobody has posted "
-                    "to yet. {}".format(
+                    "to yet. {}{}".format(
                         registered,
                         RADAR_CONFIG,
                         WATCH_PRESET,
                         RADAR_OP,
                         RADAR_REMEDY,
+                        _radar_merged_note(doc),
                     )
                 ),
             }

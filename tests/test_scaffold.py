@@ -178,6 +178,68 @@ def test_a_registered_tier_under_presets_that_omit_watch_is_no_route(tmp_path):
     assert findings and findings[0]["state"] == "no-route"
 
 
+def test_no_route_finding_prints_the_whole_corrected_document_not_a_fragment(tmp_path):
+    """#622. The remedy fragment forces a maintainer to merge two independently
+    silent halves of `.supertool.json` by hand -- getting one of the two right
+    produces the byte-identical-to-healthy state the whole check exists to catch.
+    The finding must instead carry the WHOLE corrected file, with the existing
+    preset preserved (not replaced) and the already-registered tier untouched.
+    """
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps(
+            {"presets": ["git"], "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}
+        ),
+        encoding="utf-8",
+    )
+    findings = scaffold.check_radar(tmp_path)
+    detail = findings[0]["detail"]
+    marker = "The whole file, corrected: "
+    assert marker in detail, detail
+    document = json.loads(detail[detail.index(marker) + len(marker):])
+    assert sorted(document["presets"]) == sorted(["git", scaffold.WATCH_PRESET])
+    assert document["ops"]["radar"]["radar_tiers"] == {"gh-prs": {}}
+    # Applying the printed document verbatim must satisfy both checkers -- the same
+    # standard #205's own remedy is held to.
+    (tmp_path / ".supertool.json").write_text(json.dumps(document), encoding="utf-8")
+    assert scaffold.check_radar(tmp_path) == []
+    assert doctor.radar_publish_state(tmp_path)[0] == "publishes"
+
+
+def test_no_tiers_finding_prints_the_whole_corrected_document_when_presets_is_readable(
+    tmp_path,
+):
+    """The other reachable state: tiers missing, `presets` present and already valid
+    (with or without `watch`). The merge must still preserve whatever was there.
+    """
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"presets": ["watch", "git"]}), encoding="utf-8"
+    )
+    findings = scaffold.check_radar(tmp_path)
+    detail = findings[0]["detail"]
+    marker = "The whole file, corrected: "
+    assert marker in detail, detail
+    document = json.loads(detail[detail.index(marker) + len(marker):])
+    assert sorted(document["presets"]) == sorted(["watch", "git"])
+    assert document["ops"]["radar"]["radar_tiers"]
+
+
+def test_route_unknown_prints_no_merged_document_because_presets_could_not_be_read(
+    tmp_path,
+):
+    """Positive control for the two tests above: when `presets` itself is not a
+    readable shape, a merge cannot safely decide what to append it to, so nothing
+    claiming to be "the whole file, corrected" may appear -- printing a document
+    here would risk silently discarding whatever the malformed value actually was.
+    """
+    (tmp_path / ".supertool.json").write_text(
+        '{"presets": "not-a-list", "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}}',
+        encoding="utf-8",
+    )
+    findings = scaffold.check_radar(tmp_path)
+    assert findings and findings[0]["state"] == "route-unknown"
+    assert "The whole file, corrected:" not in findings[0]["detail"]
+
+
 def test_scaffolds_own_radar_remedy_satisfies_both_checkers(tmp_path):
     """The remedy half of #205, and only that half -- said plainly, because the first
     version of this docstring called itself "#205's core" and a reviewer was right that

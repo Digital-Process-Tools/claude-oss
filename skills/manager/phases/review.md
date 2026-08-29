@@ -52,6 +52,15 @@ loop produces.
   missing with the remedy *run the writer*. No per-diff review sees that.
 - **Re-run the new suite against the default branch with the fix absent.**
 
+**That one run is a handful of tests, targeted, and CI structurally cannot perform it** — CI only
+ever runs the branch as proposed, with the fix present. It stays on the list. What it is not is
+license for the repository's whole `test_command` (#632): CI is 13 legs across 3 operating systems
+and 4 interpreters against your one platform, it is mandatory rather than optional, it is free on a
+public repository, and its result is already read at merge time by the check arithmetic above. The
+manager's job is to **read that gate**, never to reproduce a weaker copy of it locally — and
+`tests.full` on the report is how you learn whether the developer's own local full run happened at
+all, and on what platform, without running anything yourself to find out.
+
 Not on the list, and this is what creeps back: reading the load-bearing function line by line. Across
 four PRs it caught nothing, and it burns the one context that cannot be thrown away.
 

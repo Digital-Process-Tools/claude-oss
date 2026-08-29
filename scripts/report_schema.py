@@ -161,6 +161,19 @@ CONTRACT_FINGERPRINTS = {
     # this is not additive -- the new key is required, not merely a new enum
     # member on an existing one, so an old document is no longer a subset.
     6: "fbdd6e52e6cff60b6a3b9f540bf3bd4c848094660c2b7a2e9a9303146659c99c",
+    # 7 (#632): `tests.full`, optional, says whether the DEVELOPER lane's own
+    # full-suite run happened -- three states (ran / not-run / could-not-run),
+    # the same could-not-look-is-not-clean shape every other survey here uses.
+    # Motivated by the manager's own doctrine that it never reproduces the
+    # suite itself (skills/manager/phases/review.md): the report is the only
+    # route by which the manager learns whether a local full run happened at
+    # all, and on what platform. ADDITIVE: nothing removed, nothing newly
+    # required, no pattern tightened -- an old report with no `full` key is
+    # still valid, since `full` is optional and `tests`' own `required` list
+    # is unchanged. The number still moved, because a version-6 copy refuses
+    # any version-7 report carrying `full` (an unknown key under
+    # additionalProperties: false), which is breaking in that one direction.
+    7: "e6cdbcea7419317c93a8ce9d398c3814b8eb4541fb8afdc05925d750f4487067",
 }
 
 _TYPES = {
@@ -725,6 +738,32 @@ def _rule_test_phase(node, path, errors):
         )
 
 
+def _rule_full_suite(node, path, errors):
+    """tests.full (#632): the same shape as $defs/phase, different vocabulary.
+
+    `ran` owes its result for the same reason `phase`'s `observed` does: a claim
+    that a suite ran and nothing else is not evidence, it is prose. `not-run`
+    and `could-not-run` both owe a reason, and for different reasons that must
+    not collapse into one -- `not-run` is a decision against
+    agents/developer.md's own criteria, `could-not-run` is the harness failing
+    before any decision was made. Rendering both the same way is exactly the
+    class this whole schema exists to make unspellable: a check that could not
+    look must never read like one that looked and found nothing.
+    """
+    state = node.get("state")
+    if state == "ran" and not _text(node, "result"):
+        errors.append(
+            "{}: state 'ran' needs the result it observed -- a claim that the full "
+            "suite ran with nothing else is prose, not evidence".format(_label(path))
+        )
+    if state in ("not-run", "could-not-run") and not _text(node, "reason"):
+        errors.append(
+            "{}: state {!r} needs a reason -- a suite nobody ran and a suite that "
+            "could not start are different claims and must not render the "
+            "same way".format(_label(path), state)
+        )
+
+
 def _rule_pr_body(node, path, errors):
     state = node.get("state")
     if state == "written" and not _text(node, "path"):
@@ -910,6 +949,7 @@ _RULES = {
     "class-verdict": _rule_class_verdict,
     "docs-target": _rule_docs_target,
     "test-phase": _rule_test_phase,
+    "full-suite": _rule_full_suite,
     "pr-body": _rule_pr_body,
     "compliance-item": _rule_compliance_item,
 }

@@ -1150,6 +1150,136 @@ else
     fi
 fi
 
+# --- plugin identity: did it change since the last session here? (#626) -------
+#
+# `commands/tick.md` step 1 already compares this tick's plugin identity
+# against the last one recorded (#477) -- but only a `/oss:tick` reaches that
+# step. A QA session, a review, or an ordinary working session never does, and
+# those are exactly the sessions that carry a stale environmental picture: an
+# earlier session's command text against a later session's registry. The
+# setup diagnostic just below already runs `scripts/doctor.py` over THIS REPO
+# on every launch, and "oss plugin version X" is one line inside its many
+# findings -- printed only when the overall VERDICT is not `ok`, and a version
+# change is not itself a failure there, so it is routinely swallowed by a
+# healthy VERDICT and never said loudly.
+#
+# The prior lives in a file of its own rather than in `<state_file>`, the
+# per-repo path named in `.oss.local.json`: that file will not exist yet on
+# the very first launch after a clone (the branch above sends that session to
+# /oss:setup instead, before any `.oss.json` does), and the plugin's identity
+# is a fact about this MACHINE's install, not about any one repo -- one file
+# serves every repo this launcher opens, the same way the launcher itself is
+# one binary symlinked in front of all of them.
+#
+# The read stays fast on purpose: `doctor.plugin_identity()` alone -- a
+# manifest read plus a tree digest over the PLUGIN's own checkout -- never the
+# full diagnostic below, which also reaches the network for dependency
+# versions with a 25s timeout each.
+# `${HOME:-}`, not a bare `$HOME`: `${XDG_CACHE_HOME:-$HOME/.cache}` only
+# evaluates its fallback when XDG_CACHE_HOME is unset, and on a machine that
+# sets NEITHER, that fallback is exactly the branch taken -- so a bare `$HOME`
+# there aborts this line under `set -u` with "HOME: unbound variable", before
+# the guard below ever gets a chance to say so.
+plugin_identity_file="${XDG_CACHE_HOME:-${HOME:-}/.cache}/oss-workspace/last-plugin-identity"
+if [ -z "${XDG_CACHE_HOME:-}" ] && [ -z "${HOME:-}" ]; then
+    echo "oss-workspace: neither XDG_CACHE_HOME nor HOME is set, so whether the oss plugin changed since the last session here could not be told." >&2
+elif [ -z "$python_bin" ]; then
+    echo "oss-workspace: no working python was found, so whether the oss plugin changed since the last session here could not be told." >&2
+else
+    # Same idiom as ASK_CONSUMER above and for the same reason (#588): the
+    # status capture is attached to the heredoc's own opener line, not to a
+    # line after it, because `set -eu` kills the script at a crashed probe
+    # before a later line ever runs.
+    plugin_identity_current=$("$python_bin" - "$plugin_root" "$plugin_identity_file" <<'PLUGIN_IDENTITY'
+import os
+import sys
+
+plugin_root, prior_path = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(plugin_root, "scripts"))
+try:
+    import doctor
+except Exception as err:
+    sys.stderr.write(
+        "oss-workspace: doctor.py could not be imported (%s), so whether the oss "
+        "plugin changed since the last session here could not be told.\n"
+        % type(err).__name__
+    )
+    raise SystemExit(1)
+
+try:
+    current = doctor.plugin_identity(plugin_root)
+except Exception as err:
+    sys.stderr.write(
+        "oss-workspace: the plugin identity could not be read (%s), so whether it "
+        "changed since the last session here could not be told.\n"
+        % type(err).__name__
+    )
+    raise SystemExit(1)
+
+try:
+    with open(prior_path, encoding="utf-8") as handle:
+        prior = handle.read().strip()
+except FileNotFoundError:
+    prior = None
+except OSError as err:
+    sys.stderr.write(
+        "oss-workspace: %s could not be read (%s), so whether the oss plugin "
+        "changed since the last session here could not be told.\n"
+        % (prior_path, type(err).__name__)
+    )
+    raise SystemExit(1)
+
+if prior is None:
+    # Said once, never rendered as `unchanged` -- the ordinary state on the
+    # very first launch after this file itself first shipped, and every bit
+    # as much "could not tell" as the exception arms above, which already
+    # explain themselves on stderr. This one has nothing to explain beyond
+    # "there is no prior yet", so it says exactly that rather than leaving
+    # the case statement below silent for a state its own comment claims is
+    # already announced.
+    sys.stderr.write(
+        "oss-workspace: no prior oss plugin identity is recorded at %s, so "
+        "whether it changed since the last session here is unknown. Normal "
+        "on the first launch this ran; recorded now for the next one.\n"
+        % prior_path
+    )
+    print("could-not-tell")
+elif prior == current:
+    print("unchanged")
+else:
+    print("changed %s -> %s" % (prior, current))
+
+# Recorded regardless of the state above -- a failed write here is a gap in
+# NEXT session's comparison, never in this one's, so it is announced rather
+# than raised.
+try:
+    os.makedirs(os.path.dirname(prior_path), exist_ok=True)
+    with open(prior_path, "w", encoding="utf-8") as handle:
+        handle.write(current)
+except OSError as err:
+    sys.stderr.write(
+        "oss-workspace: %s could not be written (%s), so this session's plugin "
+        "identity will not be there for the next one to compare against.\n"
+        % (prior_path, type(err).__name__)
+    )
+PLUGIN_IDENTITY
+) || plugin_identity_current="could-not-tell"
+    case $plugin_identity_current in
+        unchanged) ;;
+        could-not-tell*) ;;  # already announced above, on stderr
+        changed*)
+            plugin_identity_change=${plugin_identity_current#changed }
+            echo "oss-workspace: the oss plugin changed since your last session here ($plugin_identity_change). Every environmental fact an earlier session established under the old version -- command text, the report schema, the rules layer -- may be stale in THAT session; this one starts fresh." >&2
+            ;;
+        *)
+            # A shape neither this shell nor its own contract expects -- the same
+            # unheard-of-verdict caution the doctor block below takes with its own
+            # comparison, rather than silently treating it as `unchanged`.
+            echo "oss-workspace: the plugin-identity comparison printed something this launcher does not recognise (${plugin_identity_current}), so whether the oss plugin changed since the last session here is UNKNOWN." >&2
+            ;;
+    esac
+fi
+
 # --- the setup diagnostic, before the session starts working ------------------
 #
 # A broken setup surfaces at second zero rather than after a tick has been spent
