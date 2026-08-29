@@ -28,7 +28,7 @@
     },
     "bash-check-launcher": {
       "cmd": "{python} {supertool_dir}/validators/bash-check/bash-check.py {file}",
-      "match": "bin/oss-workspace",
+      "match": "{bin/oss-workspace,*/bin/oss-workspace}",
       "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
       "rollback_on_fail": true,
       "timeout": 10
@@ -63,7 +63,7 @@
     },
     "actionlint": {
       "cmd": "{python} {supertool_dir}/validators/actionlint/actionlint.py {file}",
-      "match": ".github/workflows/*.yml",
+      "match": "{.github/workflows/*.yml,*/.github/workflows/*.yml}",
       "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
       "rollback_on_fail": false,
       "timeout": 20
