@@ -1971,14 +1971,63 @@ def test_watch_channel_default_names_which_of_three_reasons_it_was(tmp_path):
 
 def test_watch_channel_a_declaration_still_wins_over_the_derivation(tmp_path):
     """Precedence, mirroring bin/oss-workspace: export, then declaration, then
-    derivation. A derivable repo must not turn a declaration into `derived`."""
+    derivation. A derivable repo must not turn a declaration into `derived`.
+
+    The declared name here has to be the one this repo's own .oss.json derives
+    to (#655 gave the declared-alone branch a comparison it used to skip), or
+    this test would be asserting `declared-mismatch`, which is a real state but
+    not the one this test is about."""
     _oss_config_doc(tmp_path, {"repo": "owner/name"})
-    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "owner-name"}}})
     assert doctor.watch_channel_state(tmp_path, env={})[0] == "declared-only"
     assert (
-        doctor.watch_channel_state(tmp_path, env={"SUPERTOOL_WATCH_NAME": "oss"})[0]
+        doctor.watch_channel_state(
+            tmp_path, env={"SUPERTOOL_WATCH_NAME": "owner-name"}
+        )[0]
         == "agree"
     )
+
+
+def test_watch_channel_declared_alone_is_checked_against_this_repos_own_derivation(
+    tmp_path,
+):
+    """#655: `declared-only` used to clear a name declared alone with no
+    comparison against what this repo's own .oss.json derives -- so a
+    .supertool.json copied from another repo cleared byte-identical to a
+    correct declaration. This is the reproduction from the issue body: a
+    declared name that is not this repo's own must not read as `declared-only`.
+
+    The must-not-fire arm is the test above, which shares this fixture's repo
+    and changes only the declared name to the one that agrees."""
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    _supertool_config(
+        tmp_path, {"ops": {"radar": {"watch_name": "some-other-org-other-repo"}}}
+    )
+    assert doctor.watch_channel_state(tmp_path, env={})[0] == "declared-mismatch"
+
+
+def test_check_watch_channel_warns_on_a_declared_name_this_repo_did_not_derive(
+    tmp_path, capsys
+):
+    """The verdict, not just the state: `declared-mismatch` must print WARN, and
+    the clean case beside it must stay OK -- same fixture, only the declared
+    name differs, so a check that stopped firing cannot be told from a check
+    that never ran."""
+    _oss_config_doc(tmp_path, {"repo": "owner/name"})
+    _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "owner-name"}}})
+    doctor.check_watch_channel(tmp_path, env={})
+    quiet = [state for state, _ in doctor.FINDINGS]
+    doctor.FINDINGS.clear()
+
+    _supertool_config(
+        tmp_path, {"ops": {"radar": {"watch_name": "some-other-org-other-repo"}}}
+    )
+    doctor.check_watch_channel(tmp_path, env={})
+    loud = [(state, message) for state, message in doctor.FINDINGS]
+
+    assert quiet == ["OK"]
+    assert [state for state, _ in loud] == ["WARN"]
+    assert "655" in loud[0][1]
 
 
 def test_watch_channel_state_never_prints_the_repo_it_derived_from(tmp_path):

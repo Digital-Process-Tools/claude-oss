@@ -206,6 +206,40 @@ def test_rules_with_no_index_are_a_finding(tmp_path):
     assert "index" in _messages().lower()
 
 
+def test_a_layer_with_only_its_own_record_and_no_index_is_consistent(tmp_path):
+    """#641: a layer holding ONLY its generated JIT_ENTRY_SKIP record has zero
+    rule entries by construction -- an absent or empty index beside them is the
+    correct rendering of "nothing to index", not the missing-table defect the
+    FAIL arm above exists to catch. That defect requires entries to exist.
+    """
+    layer = _layer(tmp_path)
+    (layer / doctor.JIT_ENTRY_SKIP).write_text("---\ntitle: x\n---\n", encoding="utf-8")
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_a_layer_with_only_its_own_record_and_an_empty_index_is_consistent(tmp_path):
+    """The twin of the test above, for the empty-index arm rather than the
+    missing-index one."""
+    layer = _layer(tmp_path)
+    (layer / doctor.JIT_ENTRY_SKIP).write_text("---\ntitle: x\n---\n", encoding="utf-8")
+    (layer / "00-index.tsv").write_text("", encoding="utf-8")
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+
+
+def test_a_layer_with_real_rules_and_an_empty_index_still_fails(tmp_path):
+    """The must-fire control for both tests above: a layer that DOES have
+    entries and an empty index is the real defect, and the zero-entries guard
+    must not swallow it."""
+    layer = _layer(tmp_path)
+    (layer / "conventions.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
+    (layer / "00-index.tsv").write_text("", encoding="utf-8")
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["FAIL"], _messages()
+    assert "1 rule" in _messages()
+
+
 def test_the_index_is_looked_for_inside_the_layer_not_at_the_root(tmp_path):
     """An index at the rules root does not satisfy a layer that has none of its own."""
     layer = _layer(tmp_path)
@@ -312,6 +346,51 @@ def test_a_tools_row_that_matches_every_column_is_current(tmp_path):
     doctor.check_jit_rules(tmp_path)
     assert _states() == ["OK"], _messages()
     assert "rebuild" not in _messages().lower()
+
+
+def test_a_seven_column_tools_row_from_a_newer_builder_is_not_read_as_drift(tmp_path):
+    """#640: claude-jit-context 0.6.0's rebuild-tsv.sh writes a seventh
+    `requires` column on the tools row (its own #203). Before the fix,
+    `jit_index_drift` compared against a fixed six-column string, so every
+    up-to-date repo's tools rows read as stale -- a widened index that adds
+    nothing NEW is not drift, it is what the current builder writes.
+    """
+    layer = _layer(tmp_path, "tools")
+    entry = layer / "no-force-push.md"
+    entry.write_text(
+        "---\ntool: Bash\nmatch: git push\nmode: block\n---\n", encoding="utf-8"
+    )
+    index = layer / "00-index.tsv"
+    index.write_text(
+        "Bash\tgit push\tno-force-push.md\tblock\t\t\t\n", encoding="utf-8"
+    )
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["OK"], _messages()
+    assert "rebuild" not in _messages().lower()
+
+
+def test_a_populated_seventh_column_that_disagrees_is_still_drift(tmp_path):
+    """The must-fire control for the test above: the seventh column carries a
+    value, and it disagrees with the frontmatter -- normalising trailing empty
+    fields must not swallow a real disagreement in a populated one.
+    """
+    layer = _layer(tmp_path, "tools")
+    entry = layer / "no-force-push.md"
+    entry.write_text(
+        "---\ntool: Bash\nmatch: git push\nmode: block\nrequires: git\n---\n",
+        encoding="utf-8",
+    )
+    index = layer / "00-index.tsv"
+    index.write_text(
+        "Bash\tgit push\tno-force-push.md\tblock\t\t\t\n", encoding="utf-8"
+    )
+    _touched_after(index, entry)
+
+    doctor.check_jit_rules(tmp_path)
+    assert _states() == ["WARN"], _messages()
+    assert "rebuild the index" in _messages().lower()
 
 
 def test_a_row_that_cannot_be_derived_is_named_rather_than_judged(tmp_path):

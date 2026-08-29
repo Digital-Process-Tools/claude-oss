@@ -3591,12 +3591,13 @@ def _current_watch_name(project_dir, env, state):
 
 
 def watch_channel_state(project_dir, env=None):
-    """Which watch channel does this repo actually resolve to? Fourteen answers.
+    """Which watch channel does this repo actually resolve to? Fifteen answers.
 
     `unreadable` / `malformed` / `conflict` / `overridden` / `partial` /
     `split-unknown` / `mismatch` / `undeclared-export` /
     `undeclared-export-unknown` / `derived-export` / `agree` / `declared-only` /
-    `derived` / `default`, and the count is the point. The filed symptom -- four
+    `declared-mismatch` / `derived` / `default`, and the count is the point. The
+    filed symptom -- four
     repos on one poller slot -- was NOT a repo whose declaration disagreed with
     its environment. It was four repos declaring nothing at all with one
     hand-copied export between them, so a check that only compared a
@@ -3631,6 +3632,16 @@ def watch_channel_state(project_dir, env=None):
     value was never what the reader needs; both places to look are named, and the
     file is contributor-writable in a managed repo, which is how a tracked file
     gets to write a diagnostic's own output lines.
+
+    `declared-mismatch` is #655: a name declared alone, with nothing exported
+    over it, used to clear as `declared-only` with no comparison against what
+    this repo's own `.oss.json` derives -- so a `.supertool.json` copied from
+    another repo's declaration cleared byte-identically to this repo's own
+    correct one. The `exported`-alone branch already makes exactly this
+    comparison (`undeclared-export` / `derived-export`); `declared-mismatch` is
+    its twin for the declared-alone branch, reached only when a derivation is
+    actually available -- `declared-only` still covers "nothing to compare
+    against", the same as `undeclared-export-unknown` does on the export side.
     """
     environ = os.environ if env is None else env
     names, problem, problem_detail = _declared_watch_names(project_dir)
@@ -3742,6 +3753,19 @@ def watch_channel_state(project_dir, env=None):
             OSS_CONFIG
         )
     if declared:
+        # #655: an export with no declaration beside it is compared against what
+        # this repo's own .oss.json derives to (the `exported` branch above,
+        # `undeclared-export` / `derived-export`) -- but a NAME declared alone
+        # used to clear as `declared-only` with no such comparison at all, so a
+        # .supertool.json copied from another repo cleared identically to a
+        # repo's own correct declaration. Mirror the exported branch: where a
+        # derivation is available and disagrees, that is a separate state.
+        derivable, derived, _why = _derivable_watch_name(project_dir)
+        if derivable == "yes" and derived != declared:
+            return "declared-mismatch", (
+                "declared in {}, and it does not match what {}'s repo derives "
+                "to".format(WATCH_CONFIG, OSS_CONFIG)
+            )
         return "declared-only", "declared in {}".format(WATCH_CONFIG)
 
     # Nothing declared and nothing exported used to end here as one answer. Since
@@ -3931,6 +3955,14 @@ def check_watch_channel(project_dir, env=None):
             "not enumerate the pollers on that channel.".format(detail),
         )
         return
+    if state == "declared-mismatch":
+        report(
+            "WARN",
+            "watch channel: {} -- so this is the shape a {} copied from another "
+            "repo takes: it clears every syntax check and every watch op reads a "
+            "name that is not this repo's own (#655).".format(detail, WATCH_CONFIG),
+        )
+        return
     if state == "declared-only":
         name = _current_watch_name(project_dir, env, state)
         verdict, why = (
@@ -4026,14 +4058,39 @@ JIT_ENTRY_SKIP = "00-README.md"
 # The index columns each dimension's builder writes, and where the ENTRY FILENAME sits
 # in them. Measured against claude-jit-context's `rebuild-tsv.sh`, not reasoned about:
 #
-#   tools       tool <TAB> match <TAB> filename <TAB> mode|remind <TAB> require <TAB> forbid
+#   tools       tool <TAB> match <TAB> filename <TAB> mode|remind <TAB> require <TAB> forbid <TAB> requires
 #   paths       match <TAB> filename
 #   vocabulary  keyword <TAB> filename, one row per keyword
 #
 # #80's report said the tools columns were `tool, match, mode, require, forbid` -- five,
-# with the filename absent. There are six and the filename is the third of them, which is
-# why this table is derived from the builder rather than from the description of it.
+# with the filename absent. There are now seven and the filename is the third of them,
+# which is why this table is derived from the builder rather than from the description
+# of it. The seventh (`requires`) arrived with claude-jit-context 0.6.0 (its own #203)
+# and #640 is what this table not being self-updating cost: `jit_index_drift` compared a
+# fixed six-column row for a whole release, so every up-to-date repo's tools rows read as
+# stale. The fix does not pin the arity a second time -- see
+# `_strip_trailing_empty_columns` below.
 JIT_FILENAME_COLUMN = {"tools": 2, "paths": 1, "vocabulary": 1}
+
+
+def _strip_trailing_empty_columns(rows):
+    """Tab-separated rows, trailing empty fields dropped, as a set of tuples.
+
+    #640: the tools row's own arity is not this repo's to pin -- claude-jit-context
+    widened it from six columns to seven without warning, and a comparison keyed to a
+    fixed width read every correctly-built index as drift the moment the dependency
+    released. Stripping trailing empty fields on both sides makes a widened index that
+    declares nothing NEW a no-op here, which is what it is; a row that gains a
+    POPULATED trailing field is still caught, because that field is no longer
+    trailing-empty on the side that carries it.
+    """
+    normalized = set()
+    for row in rows:
+        columns = row.split("\t")
+        while columns and columns[-1] == "":
+            columns.pop()
+        normalized.add(tuple(columns))
+    return normalized
 
 
 def _jit_field(text, field):
@@ -4179,11 +4236,21 @@ def jit_index_drift(dimension, entries, index_text):
                 _jit_field(text, "mode") or "remind",
                 _jit_field(text, "require") or "",
                 _jit_field(text, "forbid") or "",
+                _jit_field(text, "requires") or "",
             ])}
         else:
             expected = {"{}\t{}".format(match, name)}
 
-        if expected != indexed:
+        # #640: the builder's own arity is not pinned. claude-jit-context 0.6.0
+        # added a seventh `requires` column to the tools row (its own #203), so
+        # comparing full row strings read every up-to-date repo's index as
+        # stale -- a widened index that declares nothing NEW is not drift, it
+        # is what the current builder writes. Trailing empty columns are
+        # stripped from both sides before comparing, so a row that gained an
+        # arity nobody populated is a no-op here, and a row that gained a
+        # POPULATED trailing column is still caught, because it is no longer
+        # trailing-empty on the side that carries it.
+        if _strip_trailing_empty_columns(expected) != _strip_trailing_empty_columns(indexed):
             drift.append(name)
 
     return sorted(set(drift)), undecidable
@@ -4194,7 +4261,11 @@ def check_jit_rules(project_dir):
 
     The matcher reads the index, not the markdown. A rule whose row is missing never
     fires, and a rule that never fires is indistinguishable from one that fired and had
-    nothing to say -- so a missing or empty index is a FAIL, not a warning.
+    nothing to say -- so a missing or empty index is a FAIL, not a warning, WHEN the
+    layer has entries to index. #641: zero entries beside a missing or empty index is
+    the consistent state of a layer with nothing to index -- a layer holding only its
+    own generated JIT_ENTRY_SKIP record, for instance -- and it is reported OK rather
+    than FAILed for a defect that requires entries to exist by definition.
 
     Rules are organised per dimension (vocabulary, paths, tools) and per layer inside
     it, and **each layer carries its own index**. Checking one index at the root would
@@ -4279,6 +4350,18 @@ def check_jit_rules(project_dir):
         entries = {p.name: p for p in rules if p.name != JIT_ENTRY_SKIP}
 
         if not index.is_file():
+            if not entries:
+                # #641: zero entries and no index is the CONSISTENT state for a
+                # layer that ships nothing to index -- a layer holding only its
+                # generated JIT_ENTRY_SKIP record, for instance. The FAIL below
+                # is for the real defect, which requires entries to exist in the
+                # first place; it has no zero-entry case by construction.
+                report(
+                    "OK",
+                    "{}: 0 rule(s) and no {} -- consistent, there is nothing to "
+                    "index.".format(name, JIT_INDEX),
+                )
+                continue
             report(
                 "FAIL",
                 "{}: {} rule(s) and no {} -- the matcher reads the index, so none of "
@@ -4301,6 +4384,18 @@ def check_jit_rules(project_dir):
             continue
 
         if not index_text.strip():
+            if not entries:
+                # #641, the twin of the missing-index case above: an empty index
+                # beside zero entries is the correct rendering of a layer with
+                # nothing to index, not the silence-standing-in-for-deleted-rows
+                # this arm was written to catch -- that defect requires
+                # entries to exist, by definition.
+                report(
+                    "OK",
+                    "{}: {} is empty beside 0 rule(s) -- consistent, there is "
+                    "nothing to index.".format(name, JIT_INDEX),
+                )
+                continue
             report(
                 "FAIL",
                 "{}: {} is empty beside {} rule(s). An empty table is the same silence "
