@@ -284,6 +284,10 @@ Every brief carries these:
    > file that does not exist yet, and your changelog fragment is always one. A raw heredoc runs no
    > validator and rolls nothing back. `supertool 'ops'` lists everything.
    >
+   > Write prose quotes plainly in the pull request payload's JSON — never
+   > backslash-escaped; `gh-pr-create` refuses a body carrying literal
+   > backslash-quote, and `literal_backslashes = true` is for a real backslash.
+   >
    > **Write your report from the worktree root — `cd <worktree_root>` first — not from your branch
    > directory.** The report, the note and the pull request payload live outside every worktree so
    > they survive the tree being reaped, and supertool refuses a path outside the current working

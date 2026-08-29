@@ -81,6 +81,11 @@ file. **Your changelog fragment is always a new file**, so every task reaches th
 raw `cat > file <<EOF` is not a substitute and does not fail loudly when you use it: it runs no
 post-write validator, cannot roll back, and tells you nothing about what it wrote.
 
+**Write prose quotes plainly in the pull request payload's JSON — never
+backslash-escape a quote inside ordinary prose.** `gh-pr-create` refuses a
+body carrying literal backslash-quote, and `literal_backslashes = true`
+exists for the rare case a real backslash is meant.
+
 Use triple-single-quoted literal strings for the field values. **A literal block processes no
 escapes**, so write exactly the bytes you want on disk — doubling a backslash puts two on disk, and
 that is a bug no validator will catch because the file still parses. Validators run after the write
