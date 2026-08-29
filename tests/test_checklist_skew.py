@@ -1,9 +1,12 @@
 """#538: nothing compared the auditing plugin's version to the tree it audits.
 
 `commands/release.md` gate 3 already requires the checklist version to be recorded
-before the release-auditor spawn, in three states -- matches / differs / could not
-tell -- and says the honest answer is always "could not tell" when nothing measures
-it. This pins the module that performs the read: `scripts/checklist_skew.py`.
+before the release-auditor spawn, in four states -- matches / differs /
+not-applicable / could not tell (#659 split the divergence question, "does this
+repo ship a diverging copy", out of "could not tell" once the checklist version
+itself is known) -- and says the honest answer is always "could not tell" when
+nothing measures the checklist version at all. This pins the module that performs
+the read: `scripts/checklist_skew.py`.
 
 Every case that reports one state also reports a different one in the same shape,
 one mutation away -- a positive control beside each negative one, so a fixture that
