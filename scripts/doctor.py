@@ -53,10 +53,46 @@ PLUGIN_ROOT = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
-# #497: five `check_*` functions moved out of this file into their own modules
-# (`scripts/doctor_check_*.py`), each reaching this module's shared names through
-# `import doctor` rather than `from doctor import name` -- so a monkeypatch on
-# `doctor.<name>` from a test still reaches code that used to be inline here.
+# --- the per-check module convention (#497, #630) ---------------------------
+#
+# **A new check goes in its own `scripts/doctor_check_<subject>.py`, not here.**
+# `<subject>` is the check's own name with `check_` stripped, so
+# `check_mcp_channel_registration` lives in
+# `scripts/doctor_check_mcp_channel_registration.py`. Every module on disk today
+# follows that derivation exactly, which is why it is stated as a rule rather
+# than as a habit.
+# The module reaches this file's shared names through `import doctor` -- never
+# `from doctor import name` -- defines the check and its own private helpers, and
+# `doctor.py` imports the names back immediately below, so `doctor.check_X` keeps
+# answering and `main()` keeps calling it as a bare name.
+#
+# **When staying in this file is the right answer**, so this is a rule with an
+# exception rather than a prohibition to route around: the shared machinery
+# (`report`, `report_with_remedy`, `unmeasured`, `_one_line`, the verdict
+# arithmetic, `main()` itself), helpers several checks call, and the `check_*`
+# functions that take their subject as an argument rather than having one --
+# `SHARED` in `scripts/doctor_modules.py` is where those are named.
+#
+# **The rule has a ratchet, because the previous version of this comment did
+# not.** #628 added a whole new check straight into this file twenty minutes
+# before #630 was filed and nothing objected -- a run of completed moves is a
+# batch, not a direction. `scripts/doctor_modules.py` declares which checks are
+# still defined here and `tests/test_doctor_check_convention_630.py` compares that
+# declaration against this file in both directions: a check defined and not
+# declared fails, and a declaration whose check has moved fails too, so the list
+# can only shrink. Adding a check here is still possible and now costs a visible
+# line somebody can review.
+#
+# **No tally lives in this block.** The set of modules is on disk and
+# `doctor_modules.check_modules()` reads it. The sentence this replaces opened by
+# counting them, went stale the moment the next one landed, and nothing noticed --
+# which is #630's own second instance and the reason the guard above refuses a
+# written-down count here.
+#
+# --- end of the per-check module convention ---------------------------------
+#
+# The `sys.modules` alias below is what makes `import doctor` resolve to THIS
+# module rather than a second copy.
 # That only resolves correctly when THIS module is what "doctor" names in
 # `sys.modules`. When this file runs as the script entry point its own module
 # name is `__main__`, not `doctor`, so without this alias each moved module's
@@ -2363,9 +2399,14 @@ def check_state_file(project_dir, config):
 from doctor_check_auto_update import check_auto_update
 
 # #551: cross-references the status line's cached `latest` against the newest
-# published version read live -- a new check, not a relocation, but wired the
-# same way (#497's convention) for the same reason: a test that monkeypatches
-# `doctor.<name>` must reach code this module calls.
+# published version read live -- a new check in scripts/doctor_check_latest_skew.py,
+# not a relocation, but wired the same way (#497's convention) for the same
+# reason: a test that monkeypatches `doctor.<name>` must reach code this module
+# calls. The full path is spelled out because a bare `import` carries no `.py`
+# suffix, and both tests/test_unwired_scripts_253.py and the convention guard in
+# tests/test_doctor_check_convention_630.py match on one -- this module was the
+# gap that guard found, having been left out of the hand-written list in
+# tests/test_doctor_check_relocation_497.py at the moment it landed.
 from doctor_check_latest_skew import check_latest_skew
 
 
@@ -2423,6 +2464,18 @@ from doctor_check_merge_permission import (
     _entry_count,
     merge_permission_state,
     check_merge_permission,
+)
+
+
+# #582: does the supertool that resolves here carry the ops this plugin's own
+# shipped text names? Written straight into scripts/doctor_check_supertool_ops.py
+# rather than inline here -- see the convention block at the top of this file
+# (#630). It is a new check, not a relocation, so nothing about it ever lived in
+# this module; only the re-export below does, so `doctor.check_supertool_ops`
+# and a test's `monkeypatch.setattr(doctor, ...)` both reach the one definition.
+from doctor_check_supertool_ops import (
+    supertool_op_inventory,
+    check_supertool_ops,
 )
 
 
@@ -3076,144 +3129,21 @@ def check_radar_publish(project_dir):
     )
 
 
-# The MCP registration that carries the channel into a session (#621). Named
-# separately from CHANNEL_SERVER's own definition in `bin/oss-workspace` -- shell
-# and Python cannot share one constant -- and kept identical to it by
-# `tests/test_doctor_mcp_channel_registration_621.py`'s own sync check, rather than
-# by inspection, for the reason #577's supertool-rule comparison gives: a fact
-# duplicated across two files drifts, and the drift is invisible from either file
-# alone.
-CHANNEL_SERVER = "oss-channel"
-
-_MCP_ARGS_RE = re.compile(r"^[ \t]*Args:[ \t]*(.*?)[ \t\r]*$", re.MULTILINE)
-
-
-def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
-    """Is the channel MCP server registered, and does the path it stores exist?
-
-    `watch_channel_state` above answers which channel NAME this repo resolves to;
-    `radar_publish_state` answers whether a board is DECLARED. Neither asks whether
-    any MCP server actually carries either into a session -- `grep mcp
-    scripts/doctor.py` answered zero results for the whole life of this file, while
-    `bin/oss-workspace:873-944` already asks exactly this question, at session-open,
-    on stderr, where a maintainer running this diagnostic specifically because
-    something is not working never sees it.
-
-    Returns ``(state, detail)``. Six states, mirrored from `bin/oss-workspace`'s own
-    three-state read of `claude mcp get` (registered-and-resolvable /
-    registered-with-unresolvable-consumer-path / registered-with-unreadable-entry /
-    not-registered) plus two this diagnostic needs that a session-opener does not,
-    because it can be run when nothing is trying to open a session at all:
-
-    * ``could-not-ask`` -- `claude` is not on PATH, or the call itself did not run.
-      Not `not-registered`: that would claim an answer neither this process nor the
-      reader's own shell was ever in a position to give.
-    * ``not-registered`` -- `claude mcp get <server>` answered a nonzero exit, which
-      is what it does for a name nothing has configured.
-    * ``unreadable-entry`` -- the call answered 0 (a server config for this name
-      exists) but no `Args:` line could be parsed out of it -- the shape
-      `bin/oss-workspace`'s own comment names for a project-scope entry, which
-      prints no Command/Args at all. Where it points is unknown, and this is not
-      the same fact as absent: the comparison failed, the registration did not.
-    * ``target-absent`` -- an `Args:` path was read and does not exist here.
-      `bin/oss-workspace:873-879`'s own reasoning: `claude mcp get` answers 0 for
-      any CONFIGURED server whether or not the file it names still exists, because
-      the path `claude mcp add` stores is absolute and version-pinned and the
-      plugin cache drops the old version directory on auto-update -- the
-      registration outlives the file it names.
-    * ``target-unreadable`` -- an `Args:` path was read and the filesystem would
-      not say whether it exists (a permission-denied ancestor, an over-long
-      component). Kept apart from `target-absent`: the exception in hand answers
-      "could not tell", not "confirmed gone", and reporting the two the same way
-      is the trap `release_delta.py`'s own `_read_config` was bitten by (#380).
-    * ``registered`` -- an `Args:` path was read and exists.
-
-    An embedded null byte in the stored path folds into ``could-not-ask`` -- `os.stat`
-    raises `ValueError`, not `OSError`, for one, and that is a fact about the
-    argument this function was handed rather than about the registration, the same
-    distinction `_dir_state`'s own docstring draws for `.oss.json`.
-
-    `run` and `which` are injected for the same reason `tool_binary_architecture`
-    injects them: every branch is assertable without shelling out. This performs no
-    registration and no removal -- `bin/oss-workspace` owns that, and this reads
-    only, the same division `CLAUDE.md` draws for #610/#618's `.mcp.json`.
-
-    #629: `bin/oss-workspace` already runs `claude mcp get {server}` at session-open,
-    a few lines before it shells out to this diagnostic -- so a launcher-opened
-    session paid for the identical subprocess call twice, and `claude` is not a
-    cheap binary to start (~1.3s measured on this machine). When the launcher has
-    already asked, it exports the raw answer (`OSS_WORKSPACE_MCP_CHECKED`,
-    `_STATUS`, `_OUTPUT`) and this reads that instead of shelling out again.
-
-    This is a relay, not a cache: the two calls happen seconds apart inside one
-    session-open sequence, never across the kind of interval this repo's own
-    `statusline.py` cache history warns about (a reading taken once and read as
-    fresh much later). `env` defaults to `os.environ` and is injected for the same
-    reason `run`/`which` are. The handoff is trusted only for `CHANNEL_SERVER`
-    itself: `bin/oss-workspace` only ever pre-asks about its own hardcoded server,
-    so a caller asking about a different `server` -- every test in this file, and
-    any future caller -- always falls through to a real ask, never to a stale
-    handoff answering the wrong question. A malformed `_STATUS` (not an integer)
-    falls through the same way rather than guessing.
-    """
-    server = server or CHANNEL_SERVER
-    env = os.environ if env is None else env
-    which = shutil.which if which is None else which
-    run = subprocess.run if run is None else run
-
-    precomputed = server == CHANNEL_SERVER and env.get("OSS_WORKSPACE_MCP_CHECKED") == "1"
-    returncode = None
-    if precomputed:
-        try:
-            returncode = int(env.get("OSS_WORKSPACE_MCP_STATUS", ""))
-        except ValueError:
-            precomputed = False
-
-    if precomputed:
-        text = env.get("OSS_WORKSPACE_MCP_OUTPUT", "")
-    else:
-        if which("claude") is None:
-            return "could-not-ask", "claude is not on PATH"
-        try:
-            completed = run(
-                ["claude", "mcp", "get", server],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=20,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
-        returncode = completed.returncode
-        stdout = completed.stdout
-        text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
-
-    if returncode != 0:
-        return "not-registered", ""
-    match = _MCP_ARGS_RE.search(text)
-    if match is None or not match.group(1).strip():
-        return "unreadable-entry", _one_line(text, limit=200)
-    target = match.group(1).strip()
-    try:
-        os.stat(target)
-    except (FileNotFoundError, NotADirectoryError):
-        # Absence, stated by the exception itself -- the same pair
-        # `_locate_on_path` and `supertool_entry_point` both already treat as
-        # absence: `NotADirectoryError` says an ancestor of `target` is a plain
-        # file, so no path under it can exist, which is exactly what "gone" means
-        # here. No second question is asked of the filesystem to explain why the
-        # first failed (same rule `_read_config` was bitten by in #380).
-        return "target-absent", target
-    except ValueError:
-        # `os.stat` raises `ValueError`, not `OSError`, for a path carrying an
-        # embedded null byte -- the same class `_dir_state`'s own docstring names
-        # elsewhere in this file. `target` was parsed out of `claude mcp get`'s
-        # output, which reflects `~/.claude.json`; that file is JSON, and JSON can
-        # spell a null. This must not raise: doctor.py's whole contract is exit 0,
-        # one VERDICT line, never a traceback out of a malformed registration.
-        return "could-not-ask", "the registered path could not be checked (embedded null byte)"
-    except OSError as exc:
-        return "target-unreadable", "{} ({})".format(target, exc.strerror or exc.__class__.__name__)
-    return "registered", target
+# CHANNEL_SERVER, _MCP_ARGS_RE, mcp_channel_registration_state and
+# check_mcp_channel_registration moved to
+# scripts/doctor_check_mcp_channel_registration.py (#630, on #497's convention);
+# see that module for the check, the state function and their constants,
+# unchanged. All four are imported back here: `check_channel_consumer_pin`
+# below (#646, not moved -- it reaches a chain of this file's own
+# version-comparison helpers) still reads `CHANNEL_SERVER` and
+# `mcp_channel_registration_state` as bare names, and `main()` calls the check
+# as one.
+from doctor_check_mcp_channel_registration import (
+    CHANNEL_SERVER,
+    _MCP_ARGS_RE,
+    mcp_channel_registration_state,
+    check_mcp_channel_registration,
+)
 
 
 def _plugin_root_from_path(path):
@@ -3400,91 +3330,6 @@ def check_channel_consumer_pin(
         "version matches the active install is unknown -- {}.".format(
             label, pin_detail
         ),
-    )
-
-
-def check_mcp_channel_registration(server=None, run=None, which=None, env=None, precomputed=None):
-    """One line, in every state -- see `mcp_channel_registration_state`.
-
-    OK here never means "the board is live". This reads a registration and, when
-    one exists, checks that the file it names is still there; it does not run
-    `claude mcp get` against every scope, does not start the consumer, and does not
-    establish that anything is listening on the socket -- the same limit
-    `check_watch_channel` and `check_radar_publish` each state about their own
-    reads. Together the three now cover name, declaration and transport; before
-    this, the third was silent on both sides of it (#621).
-
-    `precomputed` -- a `(state, detail)` pair from `mcp_channel_registration_state`,
-    for a caller that already asked and wants to hand this check the answer
-    rather than have it shell out to `claude mcp get` again. `main()` does
-    NOT do this today: threading one answer to both this check and
-    `check_channel_consumer_pin` was tried and reverted, because it made the
-    real ask run even when a caller had stubbed one of the two checks
-    specifically to avoid it (self-review finding). `main()` calls each
-    check with no arguments, and each reads the registration independently.
-    """
-    state, detail = (
-        precomputed if precomputed is not None
-        else mcp_channel_registration_state(server=server, run=run, which=which, env=env)
-    )
-    label = server or CHANNEL_SERVER
-    if state == "could-not-ask":
-        report(
-            "WARN",
-            "channel MCP registration: {} ({}), so whether {} is registered is "
-            "unknown -- not answered as unregistered, which would send you to "
-            "register a server that may already be there.".format(
-                detail, label, label
-            ),
-        )
-        return
-    if state == "not-registered":
-        report(
-            "WARN",
-            "channel MCP registration: {} is not registered, so nothing carries "
-            "the watch channel into a session. bin/oss-workspace registers it at "
-            "session-open; run it once, or `claude mcp add -s local {} bun "
-            "<path to claude-channel/channel.ts>`.".format(label, label),
-        )
-        return
-    if state == "unreadable-entry":
-        report(
-            "WARN",
-            "channel MCP registration: {} answers for {}, but no Command or Args "
-            "line could be read out of it ({}), so where it points is unknown and "
-            "cannot be compared. Not the same as absent -- the comparison failed, "
-            "the registration did not. `claude mcp remove {} -s local` and start a "
-            "session again to have it registered from scratch.".format(
-                label, label, detail, label
-            ),
-        )
-        return
-    if state == "target-absent":
-        report(
-            "WARN",
-            "channel MCP registration: {} is registered pointing at {}, which does "
-            "not exist. `claude mcp get` answers 0 for any configured server "
-            "whether or not the file it names still exists -- the path is "
-            "absolute and version-pinned, and the plugin cache drops the old "
-            "version directory on update, so the registration outlives the file. "
-            "`claude mcp remove {} -s local` and start a session again to have it "
-            "re-registered at the current path.".format(label, detail, label),
-        )
-        return
-    if state == "target-unreadable":
-        report(
-            "WARN",
-            "channel MCP registration: {} is registered pointing at {}, and the "
-            "filesystem would not say whether it exists -- so this is unknown, not "
-            "confirmed gone.".format(label, detail),
-        )
-        return
-    report(
-        "OK",
-        "channel MCP registration: {} is registered pointing at {}, which exists. "
-        "This confirms the registration and the file; it does not confirm the "
-        "consumer starts, that bun is on PATH, or that anything is listening on "
-        "the socket.".format(label, detail),
     )
 
 
@@ -8058,6 +7903,17 @@ def main(argv=None):
     # #285 put its own check there: a reader who has just read one PATH-resolution
     # line takes the next one for the same question.
     check_oss_workspace_launcher()
+    # The third question about supertool, and the first two do not answer it
+    # (#582): `check_tool` above says it is on PATH, `check_supertool_entry_point`
+    # says `./supertool` points at the right thing, and neither asks whether the
+    # supertool that answers here carries the ops this plugin's own commands and
+    # briefs name. Placed after the launcher rather than between the two PATH
+    # lines so #285's own "immediately under" reasoning above stays true. Needs no
+    # config: both halves are facts about the plugin and the resolved binary.
+    # `cwd` is the directory being diagnosed on purpose -- which ops are loaded
+    # depends on the `presets` list in the `.supertool.json` that resolves from
+    # there, so asking from anywhere else answers about the wrong repository.
+    check_supertool_ops(cwd=project_dir)
 
     # Passed through even when the config is None: each of these prints its own
     # "not checked" line, and skipping the call would restore the silence #62 is about.

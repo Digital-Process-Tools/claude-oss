@@ -176,6 +176,47 @@ performance cores, while **several agents running suites concurrently each size 
 whole machine without seeing each other** — the doctor cannot count the other agents, and does
 not pretend to. `WARN` when the count is unknown; the count is never invented as 0 or 1.
 
+## The `supertool op inventory` line
+
+Three lines above it ask about supertool and none of them asks this. `supertool: available` says the
+binary is on PATH and runs; `supertool entry point` says whether `./supertool` points at the right
+thing. Neither asks whether the supertool that answers here carries the ops this plugin's own
+`commands/`, `skills/` and `agents/` text names (#582) -- and those are two separately released
+artifacts on two clocks, so an `oss` release naming an op the installed supertool predates fails
+loudly at the step that needed it, mid-tick, with nothing having asked first. That is #551's shape
+one dependency over: two mechanisms answering "am I current" from different sources, with the
+diagnostic reporting whichever happened to be fine.
+
+The expected set is derived from the shipped text at call time, never listed beside the check: a
+constant goes silently narrower than its subject the moment somebody adds a call, which is what
+#547 records about a coverage derivation pinned to one file across a split.
+
+- `OK … all N op(s) … resolve` — every op name this plugin's text spells is one the resolved
+  supertool lists. It compares names against the roster and runs none of them, so this says nothing
+  about arguments, about forge credentials the `gh-*` family needs, or about whether a call would
+  succeed.
+- `WARN … are not carried by the supertool that resolves here` — each missing op is named
+  individually, with the file whose call will break. Two causes and the line names both: the
+  installed supertool predates the op, or the preset carrying it is not listed under `presets` in
+  this repo's `.supertool.json`. `supertool 'ops'` names which presets are loaded here and which are
+  not, which is usually the faster of the two to check.
+- `WARN … is unknown` — the roster call itself did not answer: supertool is not on PATH, the call
+  would not run, it exited non-zero, or its output did not carry the very op used to ask it, which
+  is the parse's own positive control. Never relayed as "they are all there": clearing a gap nobody
+  measured is the failure this line exists to avoid. A source directory this plugin ships that could
+  not be read lands here too, rather than quietly narrowing the expected set.
+
+Which directories are read is a measurement rather than a preference. Scanning every markdown file
+in the tree was tried first and derived `write`, `op1` and `op2` — all three out of `CHANGELOG.md`,
+where they appear inside prose describing a payload shape — so three spurious `missing` names would
+have told a maintainer their supertool was broken when it was not. Narrative history is not
+instruction text a session executes.
+
+One real subprocess per run (`supertool ops:roster`), from the directory being diagnosed rather than
+from the plugin's own tree: which ops are loaded depends on the `.supertool.json` that resolves from
+the caller's directory, so asking from anywhere else would answer confidently about a different
+repository.
+
 ## The `watch channel` line
 
 One line, twelve states, and none of them is a claim about which pollers are running. It compares
