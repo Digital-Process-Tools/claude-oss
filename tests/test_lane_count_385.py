@@ -204,7 +204,7 @@ def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(tmp_pat
 
     monkeypatch.setattr(lane_setup.oss_config, "load", fake_load)
 
-    payload = lane_setup.compute(str(repo), 385, "origin")
+    payload = lane_setup.compute(str(repo), 385, "origin", claim=True)
 
     assert payload["lanes"]["record"]["state"] == "recorded"
     assert payload["lanes"]["count"]["state"] == "resolved"

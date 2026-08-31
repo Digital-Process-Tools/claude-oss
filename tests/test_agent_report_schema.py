@@ -913,6 +913,25 @@ def _disk_mutations(tmp_path):
             ),
             tmp_path,
         ),
+        # #698: the payload itself, not the report's separate `closes` claim, says
+        # this closes nothing (`no_close: true`) while its own body still binds a
+        # closing keyword to the very issue the report says it closes -- the
+        # narrower, payload-only contradiction `no_close_body_errors` exists for.
+        "pr-body-no-close-payload-has-a-body-that-closes-nothing": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t",
+                    "body": "Closes #999.",
+                    "head": "fix/123",
+                    "base": "main",
+                    "no_close": True,
+                },
+                name="no-close-contradiction.pr.json",
+                closes={"state": "closes", "issues": [999]},
+            ),
+            tmp_path,
+        ),
         # A payload the forge would accept, saying nothing at all about the below-bar
         # item the report says is recorded in it. Nothing else in this table can refuse
         # it: the shape pass is satisfied (the anchor is present, long enough, and the

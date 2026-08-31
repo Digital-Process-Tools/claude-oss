@@ -290,7 +290,7 @@ Skill(manager)
    derived branch and worktree, and the condensed board back, freshly re-derived rather than pasted:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue>
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim
    ```
 
    Run from the clone, before `git worktree add` — that is where `.oss.local.json` is present and
@@ -298,6 +298,10 @@ Skill(manager)
    `resolved-stale` is not `resolved`, `could-not-resolve` blocks (exit 3) rather than guessing a base,
    and a `worktree_root` absent from this tree (as it always is inside a worktree this loop already
    cut) reads `unknown`, never a guessed path.
+
+   **`--claim` registers this lane in the worktree-root registry (#705); omit it for any earlier
+   disjointness probe on a candidate that might not be dispatched** — a probe that carries `--claim`
+   leaves a phantom record behind that can block a later `--derive-held` call for hours.
 
    **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
    suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the

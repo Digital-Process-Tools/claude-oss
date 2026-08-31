@@ -261,8 +261,8 @@ the same lever applied to whatever else a brief hands a lane before it starts wo
 rather than bounded, because nothing here can distinguish a genuinely wide orientation read from
 one that could have waited).
 
-**Run `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue>` from the clone before writing each
-brief, rather than typing
+**Run `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --claim` from the clone before writing
+each brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
 them and the moment the dispatched agent does: `main` has moved mid-tick before, and a hand-copied
 worktree list has already flattened `cannot tell` to `idle` once, which is how `fix/313` and
@@ -271,6 +271,10 @@ the resolved base, the derived branch and worktree, and the condensed board in o
 re-derived rather than pasted — paste its board output straight into the brief so every agent knows
 who else is out there. `commands/tick.md` names the same call and its three states in full; this is
 the pointer, not a second copy of that explanation.
+
+**`--claim` belongs only here, never on a probe above** (#705): every call used to record this
+lane unconditionally, so probing several candidates before picking one left phantom records that
+blocked `--derive-held` for hours. The probe forms above are now read-only; only `--claim` writes.
 
 Every brief carries these:
 
