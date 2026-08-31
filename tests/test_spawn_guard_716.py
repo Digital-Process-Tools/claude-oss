@@ -265,6 +265,78 @@ def test_control_a_spawn_with_no_timeout_is_out_of_scope():
     assert scan.unguarded == [], scan
 
 
+ALIASED_SUBPROCESS = textwrap.dedent(
+    """
+    import subprocess as sp
+
+    def test_thing():
+        result = sp.run(["tool"], capture_output=True, timeout=10)
+        assert result.returncode == 0
+    """
+)
+
+FROM_IMPORTED_SPAWN = textwrap.dedent(
+    """
+    from subprocess import run
+
+    def test_thing():
+        result = run(["tool"], capture_output=True, timeout=10)
+        assert result.returncode == 0
+    """
+)
+
+ALIASED_HELPER = textwrap.dedent(
+    """
+    from spawn_guard import run as guarded
+
+    def test_thing():
+        result = guarded(["tool"], subject="x", capture_output=True, timeout=10)
+        assert result.returncode == 0
+    """
+)
+
+UNRELATED_RUN = textwrap.dedent(
+    """
+    from mymodule import run
+
+    def test_thing():
+        result = run(["tool"], timeout=10)
+        assert result
+    """
+)
+
+
+@pytest.mark.parametrize(
+    "source", [ALIASED_SUBPROCESS, FROM_IMPORTED_SPAWN], ids=["as-alias", "from-import"]
+)
+def test_control_a_spawn_reached_through_an_alias_is_still_seen(source):
+    """Must fire. The analyzer resolves the module's own `import` statements rather
+    than matching the literal spelling `subprocess.`: an aliased spawn that the
+    sweep could not see would report as clean, which is this module's own subject
+    one level up in the tool. (Raised by the audit on this change; there is no such
+    import in `tests/` today, and that is precisely why the first one would produce
+    no signal.)
+    """
+    scan = spawn_guard.scan_source(source, "synthetic.py")
+    assert len(scan.spawns) == 1, scan
+    assert len(scan.unguarded) == 1, scan
+
+
+def test_control_an_aliased_helper_call_is_seen_and_clean():
+    scan = spawn_guard.scan_source(ALIASED_HELPER, "synthetic.py")
+    assert len(scan.spawns) == 1, scan
+    assert scan.unguarded == [], scan
+
+
+def test_control_an_unrelated_run_from_another_module_is_not_a_spawn():
+    """The must-not-fire half of the two above. Resolving bare names by binding
+    would otherwise turn every `run(..., timeout=...)` in the suite into a finding,
+    which is a guard nobody could keep green and so a guard somebody switches off.
+    """
+    scan = spawn_guard.scan_source(UNRELATED_RUN, "synthetic.py")
+    assert scan.spawns == [], scan
+
+
 def test_control_a_call_routed_through_the_helper_is_counted_and_clean():
     """Counted, not dropped. A converted site that left the population would make
     the sweep's own positive control below weaken by exactly as much as this change
@@ -296,9 +368,19 @@ def test_a_file_that_does_not_parse_is_reported_as_unscannable_not_as_clean(tmp_
 def test_the_sweep_reached_this_suite_at_all():
     """The positive control for the two assertions below: an analyzer that matched
     nothing would pass both of them while measuring nothing. The floor is set well
-    under the count observed when #716 was implemented (51, of which 39 were
-    converted in that change and 12 already carried their own try) so that deleting
-    a test file does not redden an unrelated pull request.
+    under the count observed when #716 was implemented. Measured by running
+    `scan_tree` against `tests/` as it stood at the parent commit `cb5b28d`: **50**
+    spawns, of which 39 were unguarded and converted here and 11 already carried
+    their own try; and 57 after this change, counting the spawns its own new test
+    files add. The floor is well below both so that deleting a test file does not
+    redden an unrelated pull request.
+
+    Those two numbers were 51 and 12 in the first draft of this file -- an
+    off-by-one transcription of the lane's own sweep, caught by the review of this
+    very commit. Worth leaving the correction visible: a wrong "measured" count in
+    the one file whose whole subject is not letting an unmeasured thing pass for a
+    measured one is the same defect one level up, and re-derivation is the only
+    thing that catches it.
     """
     scan = spawn_guard.scan_tree(REPO_ROOT / "tests")
     assert len(scan.spawns) > 30, len(scan.spawns)

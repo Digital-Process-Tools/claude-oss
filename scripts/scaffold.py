@@ -3326,6 +3326,25 @@ def _print_row(label, finding):
 def _main(argv=None):
     import argparse
 
+    # `--show` prints generated bodies verbatim, and stdout is encoded with the
+    # CONSOLE's codepage rather than the source file's. Two of those bodies carry
+    # characters cp1252 has no room for -- `.oss/statusline.py`'s `U+2713`, and the
+    # `U+21A5`/`U+2191`/`U+2713` in the statusline-marker table of the vocabulary rule
+    # #702 made shippable -- so on an ordinary Windows console this died at the
+    # `print(body)` below, after the plan had already been computed and part of the
+    # body already written. Measured through the real CLI with PYTHONIOENCODING=cp1252;
+    # `tests/test_scaffold_show_console_encoding_702.py` reproduces both.
+    #
+    # `backslashreplace`, not `replace`: the character stays visible as an escape
+    # instead of becoming a question mark, so a body that cannot be shown faithfully
+    # says so rather than differing silently from the one `--apply` would write. Same
+    # guard, same reason, as scripts/ranking_table.py and its siblings.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
+
     parser = argparse.ArgumentParser(description="Scaffold repo furniture from .oss.json.")
     parser.add_argument("--config", default=".oss.json", help="path to .oss.json")
     parser.add_argument("--root", default=".", help="repo root to scaffold")

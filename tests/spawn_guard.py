@@ -34,6 +34,9 @@ render identically, which is the defect this module is named after:
   different defect, and not this one. It is not counted and not reported.
 - **A `timeout` arriving through `**kwargs`** or held in a variable. The kwarg is
   matched by name in the call's own AST; nothing here evaluates anything.
+- **A spawn reached through a name this module's `import` statements did not bind.**
+  Aliases and `from` imports ARE resolved -- see `_Bindings` -- but a spawn stored in
+  a dict, returned by a factory or reached through a class attribute is not.
 - **`Popen(...).communicate(timeout=...)`.** Measured at the time of writing:
   `tests/` contains no `communicate` or `wait` call on a `Popen`, so the shape is
   out of the analyzer rather than silently mishandled by it. If one appears, this
@@ -151,33 +154,69 @@ def _try_catches_timeout(node):
     return False
 
 
-def _is_spawn(call):
-    """A bare `subprocess.<spawn>(...)`, which is the shape that can go wrong."""
-    func = call.func
-    return (
-        isinstance(func, ast.Attribute)
-        and func.attr in SPAWNS
-        and isinstance(func.value, ast.Name)
-        and func.value.id == "subprocess"
-    )
+class _Bindings(object):
+    """Which local names in one module refer to what.
 
-
-def _is_helper_spawn(call):
-    """A `spawn_guard.run(...)`, which is guarded by construction.
-
-    Counted as a spawn anyway, deliberately. If converting a site removed it from
-    the population, the sweep's own positive control -- "did this analyzer reach
-    the suite at all" -- would weaken by exactly as much as the fix improved
-    things, and a suite in which every site had been converted would look
-    identical to one the analyzer never read.
+    Resolved from the module's own `import` statements rather than matched against
+    the literal spellings `subprocess.` and `spawn_guard.`. `import subprocess as
+    sp` and `from subprocess import run` are both ordinary Python, and an analyzer
+    that knows only one spelling reports a file using another as **clean** -- the
+    same absence this module exists to stop, one level up in the tool. There is no
+    such import in `tests/` today (measured), which is exactly why it was worth
+    closing: the first one to arrive would produce no signal at all.
     """
-    func = call.func
-    return (
-        isinstance(func, ast.Attribute)
-        and func.attr == "run"
-        and isinstance(func.value, ast.Name)
-        and func.value.id == "spawn_guard"
-    )
+
+    def __init__(self, tree):
+        self.subprocess_modules = set()
+        self.bare_spawns = set()
+        self.helper_modules = set()
+        self.helper_runs = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    bound = alias.asname or alias.name.split(".")[0]
+                    if alias.name == "subprocess":
+                        self.subprocess_modules.add(bound)
+                    elif alias.name == "spawn_guard":
+                        self.helper_modules.add(bound)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "subprocess":
+                    for alias in node.names:
+                        if alias.name in SPAWNS:
+                            self.bare_spawns.add(alias.asname or alias.name)
+                elif node.module == "spawn_guard":
+                    for alias in node.names:
+                        if alias.name == "run":
+                            self.helper_runs.add(alias.asname or alias.name)
+
+    def is_spawn(self, call):
+        """A bare spawn, which is the shape that can go wrong."""
+        func = call.func
+        if isinstance(func, ast.Attribute):
+            return (
+                func.attr in SPAWNS
+                and isinstance(func.value, ast.Name)
+                and func.value.id in self.subprocess_modules
+            )
+        return isinstance(func, ast.Name) and func.id in self.bare_spawns
+
+    def is_helper_spawn(self, call):
+        """A call into this module's own `run`, which is guarded by construction.
+
+        Counted as a spawn anyway, deliberately. If converting a site removed it
+        from the population, the sweep's own positive control -- "did this analyzer
+        reach the suite at all" -- would weaken by exactly as much as the fix
+        improved things, and a suite in which every site had been converted would
+        look identical to one the analyzer never read.
+        """
+        func = call.func
+        if isinstance(func, ast.Attribute):
+            return (
+                func.attr == "run"
+                and isinstance(func.value, ast.Name)
+                and func.value.id in self.helper_modules
+            )
+        return isinstance(func, ast.Name) and func.id in self.helper_runs
 
 
 def scan_source(source, path):
@@ -196,13 +235,14 @@ def scan_source(source, path):
         for child in ast.iter_child_nodes(node):
             parents[child] = node
 
+    bindings = _Bindings(tree)
     spawns = []
     unguarded = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        through_helper = _is_helper_spawn(node)
-        if not through_helper and not _is_spawn(node):
+        through_helper = bindings.is_helper_spawn(node)
+        if not through_helper and not bindings.is_spawn(node):
             continue
         if not any(kw.arg == "timeout" for kw in node.keywords):
             continue
