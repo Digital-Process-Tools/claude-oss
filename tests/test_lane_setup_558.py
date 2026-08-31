@@ -33,15 +33,16 @@ on, must never render as an empty confident held set -- `could-not-derive`, neve
 
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import lane_setup  # noqa: E402
+import spawn_guard  # noqa: E402
 
 
 def _write_record(worktree_root, issue, files=None, age_seconds=0):
@@ -406,9 +407,10 @@ def _cli(tmp_path, *extra_args):
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    return subprocess.run(
+    return spawn_guard.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "558", "--repo", str(tmp_path)]
         + list(extra_args),
+        subject="what lane_setup.py's CLI answers for this tree and these flags",
         capture_output=True,
         text=True,
         env=env,

@@ -11,11 +11,13 @@ separately drives the shell wrapper exactly as the harness would.
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+
+import spawn_guard  # noqa: E402
 
 
 def _hooks_json() -> dict:
@@ -67,8 +69,9 @@ def test_wrapper_script_end_to_end_through_the_real_shell_invocation(tmp_path):
     env = dict(os.environ)
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["BATCH_HINT_STATE_DIR"] = str(tmp_path)
-    result = subprocess.run(
+    result = spawn_guard.run(
         ["sh", str(ROOT / "hooks" / "batch-hint.sh")],
+        subject="whether the wrapper script is wired to the hook at all",
         input=payload,
         capture_output=True,
         text=True,

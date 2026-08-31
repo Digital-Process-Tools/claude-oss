@@ -23,7 +23,6 @@ Every negative assertion here ("must not render as completed") carries a
 positive control in the same fixture, per this repo's own working rule.
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -31,7 +30,9 @@ REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "tick_handback.py"
 
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "tests"))
 
+import spawn_guard  # noqa: E402
 import tick_handback  # noqa: E402
 
 
@@ -200,8 +201,9 @@ def test_framed_round_trip_via_module_reuse():
 
 
 def _run(stdin_text, extra_args=()):
-    return subprocess.run(
+    return spawn_guard.run(
         [sys.executable, str(SCRIPT), *extra_args],
+        subject="the verdict and exit code tick_handback.py's CLI produces for this input",
         input=stdin_text,
         capture_output=True,
         text=True,

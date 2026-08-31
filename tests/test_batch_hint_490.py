@@ -13,7 +13,6 @@ single-op calls fires.
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -21,8 +20,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import batch_hint  # noqa: E402
+import spawn_guard  # noqa: E402
 
 
 # The classification these tests exercise now derives from `supertool
@@ -235,8 +236,9 @@ def _run_hook(tmp_path, session_id, command):
     import os
     full_env = dict(os.environ)
     full_env.update(env)
-    result = subprocess.run(
+    result = spawn_guard.run(
         [sys.executable, str(ROOT / "scripts" / "batch_hint.py")],
+        subject="what the hook answers for this call, and so the whole streak it is part of",
         input=payload,
         capture_output=True,
         text=True,
@@ -276,8 +278,9 @@ def test_status_cli_makes_the_unknown_counter_observable(tmp_path):
     _run_hook(tmp_path, session, "supertool 'read:a\'oops")
     _run_hook(tmp_path, session, "supertool 'read:a\'oops")
     env = {**__import__("os").environ, "BATCH_HINT_STATE_DIR": str(tmp_path)}
-    result = subprocess.run(
+    result = spawn_guard.run(
         [sys.executable, str(ROOT / "scripts" / "batch_hint.py"), "--status", session],
+        subject="whether --status makes the unknown counter observable",
         capture_output=True,
         text=True,
         env=env,
