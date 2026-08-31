@@ -2385,6 +2385,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     derived_dir = (REPO / "changelog.d") if REPO else None
     derived_changelog = (REPO / "CHANGELOG.md") if REPO else None
 
+    # `--check` and `--check-links` together used to run only the links audit --
+    # the mode dispatch below is a chain of `if`/`return`, and `check_links` was
+    # tested and returned before `check` was ever reached, so a fragment this
+    # run never opened could sit next to a link table that happened to be fine
+    # and the whole thing printed a single confident `ok`. That `ok` names what
+    # it did audit ("N release section(s)"), which reads as thorough rather
+    # than partial, and a combined invocation like this one is exactly what a
+    # "check before pushing" habit reaches for. Refusing the combination is the
+    # same shape as the `--untagged` refusal just below: a caller who asks for
+    # two audits in one call gets two separate ones, never a silent choice
+    # between them.
+    if args.check and args.check_links:
+        _receipt("refused",
+                 "--check and --check-links together only ever ran the links "
+                 "audit -- the fragment audit was silently skipped, and the "
+                 "printed ok named only the half that ran",
+                 ["run       --check --dir <fragment directory> for the "
+                  "fragment audit",
+                  "run       --check-links --changelog <changelog file> "
+                  "[--untagged x.y.z,...] for the link audit",
+                  "why       each flag already audits its own thing "
+                  "completely; combining them silently ran only one, which is "
+                  "the one failure mode a guard must not have"])
+        return REFUSED
+
     # `--untagged` is read by `--check-links` and by nothing else. Accepting it
     # silently on the fold, `--check` or `--count` would make a declaration that
     # was never consulted look exactly like one that was honoured -- including a
