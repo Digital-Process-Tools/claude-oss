@@ -297,12 +297,15 @@ Every brief carries these:
    > Write prose quotes plainly in the pull request payload's JSON — never
    > backslash-escaped; `gh-pr-create` refuses a body carrying literal
    > backslash-quote, and `literal_backslashes = true` is for a real backslash.
+   > A doubled `\n` is the same reflex and opens as one line; refused too (#685).
    >
-   > **Write your report from the worktree root — `cd <worktree_root>` first, not your branch
-   > directory.** The report, note and PR payload live outside every worktree so they survive it
-   > being reaped; supertool refuses a path outside cwd (`ERROR: path escapes cwd`), costing a full
-   > re-send rather than a short retry. Do not use the env var or `allow_outside_cwd` escape hatch —
-   > both widen every op for the session to buy one write. Move the cwd, not the guard.
+   > **`cd <worktree_root>` on every write call leaving your branch directory, not once.** A shell
+   > cwd does not persist between calls, so a later bare `supertool` writes into the clone (#685).
+   > The report, note and PR payload live outside every worktree so they survive it being reaped;
+   > supertool refuses a path outside cwd (`ERROR: path escapes cwd`), costing a full re-send
+   > rather than a short retry. Do not use the env var or `allow_outside_cwd` escape hatch — both
+   > widen every op for the session to buy one write. Move the cwd, not the guard. A moved cwd
+   > reads like a vanished file: read the validator's `at:` line.
 
    The op names are in there deliberately, and the creating one is the reason. A named op that
    supertool later renames fails *at the call*; an **omitted** one does not fail at all — it routes
