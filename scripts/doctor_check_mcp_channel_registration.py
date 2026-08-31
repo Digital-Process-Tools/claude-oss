@@ -11,10 +11,15 @@ name looked up this way is always the current value in `doctor`'s own
 namespace, which is what keeps a test's `monkeypatch.setattr(doctor, ...)`
 reaching code that used to be inline.
 
-`doctor.py` imports both names back out of this module, so `doctor.CHANNEL_SERVER`,
-`doctor.mcp_channel_registration_state` and `doctor.check_mcp_channel_registration`
-keep answering exactly as they did before the move -- a pure relocation, not a
-rewrite. `check_channel_consumer_pin` (#646) deliberately stays in `doctor.py`
+`doctor.py` imports all four names back out of this module -- `CHANNEL_SERVER`,
+`_MCP_ARGS_RE`, `mcp_channel_registration_state` and
+`check_mcp_channel_registration` -- so each keeps answering exactly as it did
+before the move. The move is a pure relocation apart from two things, both stated
+rather than left to be discovered: the shared names above are now reached through
+`doctor.`, and the two top-level definitions are separated by the two blank lines
+every other module here uses rather than the one they had inline.
+
+`check_channel_consumer_pin` (#646) deliberately stays in `doctor.py`
 for now and reads `mcp_channel_registration_state` through that re-export: it
 depends on a chain of `doctor.py`'s own version-comparison helpers, so moving it
 is its own individually reviewable change rather than a rider on this one. It is

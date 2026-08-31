@@ -77,7 +77,20 @@ OP_INVENTORY = {
 # `supertool` / `./supertool`, then each whitespace-separated quoted argument. The
 # separator is whitespace only, so a heredoc opener `<<'EOF'` ends the argument list
 # rather than being read as an op called EOF.
-_CALL_RE = re.compile(r"(?:\./)?\bsupertool(?P<args>(?:\s+(?:'[^']*'|\"[^\"]*\"))+)")
+#
+# The lookbehind is not a word boundary, and that is measured rather than
+# defensive (#582's lane): a boundary only requires a word/non-word transition,
+# and `-` is non-word, so the old pattern matched inside `not-supertool` -- a
+# phrase written in a comment to describe that very defect in a sibling
+# derivation -- and this guard reported the quoted argument beside it as an
+# undeclared op spelling shipped to a reader. A word ending in "supertool" is not
+# this command, and the remedy would have been to declare a placeholder op nobody
+# ships, which is the opposite mistake this file's own docstring warns about for
+# `op1`/`op2`. Narrowing only: every real invocation this matched before it still
+# matches.
+_CALL_RE = re.compile(
+    r"(?:\./)?(?<![\w.-])supertool(?P<args>(?:\s+(?:'[^']*'|\"[^\"]*\"))+)"
+)
 _ARG_RE = re.compile(r"'([^']*)'|\"([^\"]*)\"")
 _OP_RE = re.compile(r"\A([A-Za-z][A-Za-z0-9_.-]*)")
 

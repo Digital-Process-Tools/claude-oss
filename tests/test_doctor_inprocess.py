@@ -846,6 +846,14 @@ def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
+    # #582: nothing else in this test stops `shutil.which` answering for real, so
+    # without this the new check spawns `supertool ops:roster` on whatever machine
+    # runs the suite -- twice, once per `doctor.main()` below. The assertions here
+    # are substring checks on the VERDICT line, which an extra WARN satisfies
+    # identically to none, so nothing would have caught it. The neighbouring
+    # `check_mcp_channel_registration` has the same property and predates this
+    # change; it is left alone here rather than fixed in passing.
+    monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
     doctor.main()
     out = capsys.readouterr().out
     assert "VERDICT: not usable" in out

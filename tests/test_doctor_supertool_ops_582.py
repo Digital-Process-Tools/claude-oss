@@ -244,9 +244,93 @@ def test_a_roster_that_does_not_list_the_op_used_to_ask_it_is_could_not_ask():
     assert available == {"gh-prs", "ops"}
 
 
+def test_prose_shaped_like_a_roster_block_is_not_read_as_one():
+    """A reviewer finding on this diff, and it defeated the control the module
+    claims to carry. Lowercase English with no punctuation matches the op-name
+    token shape exactly, and the word `ops` is the control token itself -- so an
+    indented banner mentioning ops parsed as a complete inventory of English
+    words. The block now has to carry at least one token no sentence produces.
+    """
+    banner = (
+        "supertool: unrecognized configuration, falling back to defaults\n"
+        "\n"
+        "  usage information for ops and other legacy commands is deprecated\n"
+        "  please update your config to continue using this tool safely\n"
+    )
+    assert ops_check.parse_roster(banner) == set(), ops_check.parse_roster(banner)
+
+    state, available, detail = ops_check.supertool_roster(
+        run=_run_answering(banner), which=_which_finding()
+    )
+    assert state == "could-not-ask", (state, sorted(available), detail)
+
+    # Positive control in the same fixture: a real-shaped roster must still read,
+    # or "prose is rejected" is satisfied by a parse that rejects everything.
+    state, available, _detail = ops_check.supertool_roster(
+        run=_run_answering(_roster_text(["gh-prs", "ops"])), which=_which_finding()
+    )
+    assert state == "read" and available == {"gh-prs", "ops"}
+
+
+def test_an_unquoted_call_is_derived_and_a_sentence_is_not(tmp_path):
+    """An auditor finding on this diff: the derivation only saw quoted arguments,
+    so `supertool ops:roster` written bare -- which this diff itself added to
+    `commands/doctor.md` -- contributed nothing and was indistinguishable from an
+    op nobody names.
+
+    The must-not-fire half is the reason the bare form requires a colon. Measured
+    across `commands/`, `skills/` and `agents/`: with the colon required, exactly
+    one bare call is derived and it is the real one; without it, eighteen English
+    words are, because `the supertool that answers here` is a sentence.
+    """
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "commands/doctor.md": (
+                "One real subprocess per run (`supertool ops:roster`), from the\n"
+                "directory being diagnosed. Whether the supertool that answers\n"
+                "here carries them is what this line is for.\n"
+            ),
+        },
+    )
+    named, _roots = ops_check.named_ops(root)
+    assert "ops" in named, (
+        "an unquoted `supertool ops:roster` names an op and must be derived; "
+        "got {!r}".format(sorted(named))
+    )
+    for word in ("that", "answers", "here", "supertool"):
+        assert word not in named, (
+            "{!r} came out of an ordinary sentence, not a call: {!r}".format(
+                word, sorted(named)
+            )
+        )
+    assert set(named) == {"ops"}, sorted(named)
+
+
+def test_a_hyphen_before_the_command_is_not_a_call(tmp_path):
+    """The other half of the same reviewer finding: a bare word boundary is
+    satisfied by a hyphen, so `not-supertool 'fake-op'` in prose derived an op
+    nobody calls -- and the roster would correctly not carry it, producing a
+    `missing` line naming a call that does not exist."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "commands/tick.md": (
+                "not-supertool 'fake-op' is a decoy\n"
+                "supertool 'gh-prs'\n"
+            ),
+        },
+    )
+    named, _roots = ops_check.named_ops(root)
+    assert "fake-op" not in named, sorted(named)
+    assert "gh-prs" in named, (
+        "positive control: the real call in the same fixture must still be derived"
+    )
+
+
 def test_supertool_not_on_path_is_could_not_ask():
     state, available, detail = ops_check.supertool_roster(
-        run=_run_answering(_roster_text(["ops"])), which=lambda name: None
+        run=_run_answering(_roster_text(["git-status", "ops"])), which=lambda name: None
     )
     assert state == "could-not-ask"
     assert available == set()
@@ -369,7 +453,7 @@ def test_the_check_reports_one_line_in_every_state(tmp_path, monkeypatch):
     seen = _capture(monkeypatch)
     ops_check.check_supertool_ops(
         plugin_root=root,
-        run=_run_answering(_roster_text(["ops"])),
+        run=_run_answering(_roster_text(["git-status", "ops"])),
         which=_which_finding(),
     )
     assert len(seen) == 1 and seen[0][0] == "WARN", seen
@@ -401,7 +485,7 @@ def test_the_check_never_raises_when_the_plugin_root_is_not_there(tmp_path, monk
     seen = _capture(monkeypatch)
     ops_check.check_supertool_ops(
         plugin_root=tmp_path / "does-not-exist",
-        run=_run_answering(_roster_text(["ops"])),
+        run=_run_answering(_roster_text(["git-status", "ops"])),
         which=_which_finding(),
     )
     assert len(seen) == 1 and seen[0][0] == "WARN", seen

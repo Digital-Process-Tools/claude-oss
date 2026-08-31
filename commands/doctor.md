@@ -178,9 +178,9 @@ not pretend to. `WARN` when the count is unknown; the count is never invented as
 
 ## The `supertool op inventory` line
 
-Three lines above it ask about supertool and none of them asks this. `supertool: available` says the
-binary is on PATH and runs; `supertool entry point` says whether `./supertool` points at the right
-thing. Neither asks whether the supertool that answers here carries the ops this plugin's own
+Two lines above it ask about supertool and neither asks this. `supertool: available` says the
+binary is on PATH and runs; the `./supertool` line says whether this repo's entry point reaches the
+right file. Neither asks whether the supertool that answers here carries the ops this plugin's own
 `commands/`, `skills/` and `agents/` text names (#582) -- and those are two separately released
 artifacts on two clocks, so an `oss` release naming an op the installed supertool predates fails
 loudly at the step that needed it, mid-tick, with nothing having asked first. That is #551's shape

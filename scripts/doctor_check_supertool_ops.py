@@ -23,6 +23,30 @@ somebody adds a call -- the shape #547 records for `checklist_skew.py` pinning
 to `skills/manager/SKILL.md` across the phase split. `scripts/manager_docs.py`
 is the precedent this follows.
 
+**There is a sibling, and it is named here rather than left for somebody to
+discover.** `tests/test_shipped_op_spellings.py` (#197/#224) asks a closely
+related question in the suite: every op spelling invoked in shipped prose must
+appear in a hand-declared `OP_INVENTORY`, and where supertool is on
+PATH those declarations are measured against `ops:roster` too. #582's own
+pre-flight looked at `doctor.py` and correctly found nothing; it did not look at
+`tests/`, so this overlap is real and was not known when the issue was written.
+
+What each one answers is still different, which is why both exist rather than
+one being deleted:
+
+* that test runs in the suite and in CI, against a **declared** list a human
+  maintains, and it can fail a pull request over a spelling nobody confirmed;
+* this check runs on the machine being diagnosed, against a set **derived** at
+  call time with nothing to maintain, and it is the only one a user of this
+  plugin -- who never runs this repository's test suite -- ever sees.
+
+They also disagree about scope on purpose: that test reads shipped prose plus
+`bin/oss-workspace` and `scripts/doctor*.py`, because its subject is remedies a
+reader pastes; this one reads `commands/`, `skills/` and `agents/`, because its
+subject is calls a session makes. Whether the pair should be collapsed is a
+maintainer's call and not one this lane made -- it is recorded here so the
+question is visible from either file.
+
 **Which directories are scanned is itself a measurement, not a preference.** A
 whole-tree scan of this repository's markdown was tried first and derived three
 op names that are not ops at all -- `write`, `op1` and `op2`, every one of them
@@ -65,18 +89,38 @@ ROSTER_OP = "ops:roster"
 #: `check_tool` and `mcp_channel_registration_state` in `doctor.py` both use 20.
 ROSTER_TIMEOUT = 20
 
+#: An argument of a call, in the two spellings the shipped text uses. The bare
+#: one is an auditor finding on this diff and its width is measured, not guessed:
+#: requiring a colon in a bare argument derives exactly one thing across
+#: commands/, skills/ and agents/ today -- `ops:roster`, out of a line this very
+#: diff added to commands/doctor.md -- and nothing else. Dropping the colon
+#: requirement instead derives eighteen English words (`and`, `that`, `is`,
+#: `predates`, ...), because `the supertool that answers here` is a sentence, not
+#: a call. So the colon stays, and the residual is stated rather than left to be
+#: found: a bare op named with NO argument (`supertool ops`) is still invisible
+#: to this derivation, and the eighteen words are why it has to be.
+_QUOTED_ARG = r"'[^'\n]*'" + r'|"[^"\n]*"'
+_BARE_ARG = r"[a-z][a-z0-9_-]*:[^\s`" + "'" + r'"]*'
+_ARG_ALTERNATION = "(?:" + _QUOTED_ARG + "|" + _BARE_ARG + ")"
+
 #: A supertool call in shipped text: the command (optionally as `./supertool` or
-#: under `${CLAUDE_PLUGIN_ROOT}/`), then one or more quoted op strings. The
-#: negative lookahead is what keeps `python3 supertool.py '...'` -- a filename,
-#: not the command -- from being read as a call.
+#: under `${CLAUDE_PLUGIN_ROOT}/`), then one or more op arguments. The lookahead
+#: keeps `python3 supertool.py '...'` -- a filename, not the command -- from being
+#: read as a call, and the matching lookbehind is not symmetry: a reviewer finding
+#: on this diff measured that a bare word boundary is satisfied by a hyphen, so
+#: `not-supertool 'fake-op'` in prose derived `fake-op` and would have produced a
+#: `missing` line naming a call nobody makes. Both sides exclude `-` and `.`, not
+#: only the word characters a boundary already covers.
 _CALL_RE = re.compile(
-    r"""(?:\./|\$\{CLAUDE_PLUGIN_ROOT\}/)?\bsupertool(?![\w.-])[ \t]+"""
-    r"""((?:'[^'\n]*'|"[^"\n]*")(?:[ \t]+(?:'[^'\n]*'|"[^"\n]*"))*)"""
+    r"(?:\./|\$\{CLAUDE_PLUGIN_ROOT\}/)?(?<![\w.-])supertool(?![\w.-])[ \t]+"
+    + "(" + _ARG_ALTERNATION + r"(?:[ \t]+" + _ARG_ALTERNATION + r")*)"
 )
 
-#: One quoted argument out of a matched call. Written as two concatenated raw
-#: strings so neither quote character has to be escaped inside the other.
-_ARG_RE = re.compile(r"'([^'\n]*)'" + r'|"([^"\n]*)"')
+#: One argument out of a matched call. Written as concatenated raw strings so
+#: neither quote character has to be escaped inside the other.
+_ARG_RE = re.compile(
+    r"'([^'\n]*)'" + r'|"([^"\n]*)"' + "|(" + _BARE_ARG + ")"
+)
 
 #: The op name is the leading segment of an op string, before its first colon.
 #: An argument that does not start with one -- `@-`, `<N>`, a placeholder in
@@ -87,14 +131,18 @@ _OP_NAME_RE = re.compile(r"\A[a-z][a-z0-9_-]*")
 #: safety class supertool annotates it with.
 _ROSTER_TOKEN_RE = re.compile(r"\A[a-z][a-z0-9_-]*[*!]?\Z")
 
+#: A token ordinary English prose does not produce: a compound name, or one
+#: carrying supertool's declared safety class. See `_is_op_vocabulary`.
+_COMPOUND_RE = re.compile(r"[-_]|[*!]\Z")
+
 
 def ops_in_text(text):
     """Every op name named by a `supertool ...` call in `text`, in order."""
     found = []
     for call in _CALL_RE.finditer(text):
         for arg in _ARG_RE.finditer(call.group(1)):
-            raw = arg.group(1) if arg.group(1) is not None else arg.group(2)
-            name = _OP_NAME_RE.match(raw or "")
+            raw = next((group for group in arg.groups() if group is not None), "")
+            name = _OP_NAME_RE.match(raw)
             if name is not None:
                 found.append(name.group(0))
     return found
@@ -151,27 +199,68 @@ def named_ops(plugin_root=None):
     return dict((key, sorted(value)) for key, value in ops.items()), roots
 
 
+def _is_op_vocabulary(tokens):
+    """Does this contiguous run of name-shaped tokens look like an op vocabulary
+    rather than a run of English words?
+
+    **This is the half a reviewer defeated, and the fix is bounded rather than
+    complete.** The first version accepted any indented line whose tokens all
+    matched `_ROSTER_TOKEN_RE`, and lowercase prose with no punctuation matches
+    that shape exactly: a two-line banner reading *"usage information for ops and
+    other legacy commands is deprecated / please update your config to continue
+    using this tool safely"* parsed to twenty English words, one of which was
+    `ops` -- the very token `supertool_roster` uses as its control. A parse that
+    can be satisfied by prose cannot be a control against prose.
+
+    So a block additionally has to carry at least one token no English sentence
+    produces: a compound name (`gh-pr-create`, `around_line`, `ops-compact`) or a
+    declared safety class (`paste*`, `radar!`). That is a property of supertool's
+    op namespace rather than a list of its op names -- a list here would go
+    narrower than its subject the moment supertool adds an op, which is the whole
+    thing #582 forbids.
+
+    **The limit, stated rather than left to be discovered.** A supertool loading
+    only single-word read-only ops would fail this test and be reported
+    `could-not-ask`. That is over-refusal, and it is the safe direction: the
+    answer is a WARN saying nothing was established, never a `present` clearing a
+    gap nobody measured and never a `missing` naming ops that are really there.
+    """
+    return any(_COMPOUND_RE.search(token) for token in tokens)
+
+
 def parse_roster(text):
     """Every op name in a `supertool ops:roster` output.
 
     The roster's names arrive as an indented block of whitespace-separated
-    tokens, each optionally carrying its safety class (`*`, `!`). A line is read
-    as part of that block only when it is indented AND every token on it is
-    shaped like an op name -- which is what keeps the surrounding prose out
-    without this function having to know the wording of any particular
-    supertool version's header.
+    tokens, each optionally carrying its safety class (`*`, `!`). A line joins a
+    block only when it is indented AND every token on it is shaped like an op
+    name; anything else ends the block. Blocks are kept **contiguous** rather
+    than accumulated across a whole output, so scattered prose lines cannot pool
+    into one apparent vocabulary, and a block is admitted only if
+    `_is_op_vocabulary` recognises it -- see there for what that buys and what it
+    does not.
+
+    Nothing here knows the wording of any particular supertool version's header,
+    which is deliberate: a parse anchored on a header sentence breaks silently
+    the first time the header is reworded, and silence is the failure mode this
+    module exists to avoid.
     """
     names = set()
+    block = []
+
+    def _flush():
+        if block and _is_op_vocabulary(block):
+            for token in block:
+                names.add(token.rstrip("*!"))
+        del block[:]
+
     for line in text.splitlines():
-        if not line[:1].isspace():
+        tokens = line.split() if line[:1].isspace() else []
+        if tokens and all(_ROSTER_TOKEN_RE.match(token) for token in tokens):
+            block.extend(tokens)
             continue
-        tokens = line.split()
-        if not tokens:
-            continue
-        if not all(_ROSTER_TOKEN_RE.match(token) for token in tokens):
-            continue
-        for token in tokens:
-            names.add(token.rstrip("*!"))
+        _flush()
+    _flush()
     return names
 
 
