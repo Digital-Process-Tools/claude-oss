@@ -107,7 +107,12 @@ how a lane without this example learns the shape (#669).
 **Write prose quotes plainly in the pull request payload's JSON — never
 backslash-escape a quote inside ordinary prose.** `gh-pr-create` refuses a
 body carrying literal backslash-quote, and `literal_backslashes = true`
-exists for the rare case a real backslash is meant.
+exists for the rare case a real backslash is meant. The same reflex one
+character over doubles the newline: a body whose `\n`s arrive doubled opens
+as one enormous line with every heading visible as a backslash and an n
+(#685, observed at 30 literal against 4 real). `report_schema.py` refuses a
+body more escaped than formatted; a backslash you really mean goes in a code
+span, where a forge renders it verbatim.
 
 Use triple-single-quoted literal strings for the field values. **A literal block processes no
 escapes**, so write exactly the bytes you want on disk — doubling a backslash puts two on disk, and
@@ -855,16 +860,24 @@ decoration: a stale note from a previous run of the same branch reads exactly li
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.
 
-**Run that write from the worktree root — `cd <worktree_root>` first — and the same for the report
-and the pull request payload below.** These are the only writes this task makes outside your branch
-directory, and supertool refuses a path outside the current working directory: standing in the
-branch directory you get `ERROR: path escapes cwd`, on the one write this brief guarantees you will
-make. The refusal is correct and is not something to argue with; what is wrong is doing it twice,
-because the failed attempt costs a re-send of the whole payload rather than a retry of a short
-command. The refusal message also offers an env var and an `allow_outside_cwd` key in
-`.supertool.json`. **Do not take either.** Both widen every op for the rest of the session, in
-somebody else's repository, to buy one write that moving the cwd already buys. Move the cwd, not the
-guard.
+**Prefix `cd <worktree_root>` to every write call that leaves your branch directory — the note, the
+report and the pull request payload — not once at the top.** A shell cwd does not persist between
+your calls, so a *later* bare `supertool` runs from wherever the session started, which is normally
+the main clone. "`cd` first" is true and insufficient: it describes a one-time setup for a condition
+that has to hold at every write. Two lanes in one session followed it and still wrote into the
+clone; the second then reported its note as having *vanished from the shared worktree root between
+writes*, and it was found untracked in the clone hours later (#685). A write that went somewhere
+unexpected, read as a write that did not happen — so **before you report a file as missing, check
+the directory rather than the file**: `report_schema.py` prints `at: <absolute path>` under every
+verdict, and if that is not under `<worktree_root>` your cwd moved.
+
+supertool refuses a path outside the current working directory — standing in the branch directory
+you get `ERROR: path escapes cwd`, on each of the three writes above. The refusal
+is correct and is not something to argue with; what is wrong is doing it twice, because the failed
+attempt costs a re-send of the whole payload rather than a retry of a short command. The refusal
+message also offers an env var and an `allow_outside_cwd` key in `.supertool.json`. **Do not take
+either.** Both widen every op for the rest of the session, in somebody else's repository, to buy one
+write that moving the cwd already buys. Move the cwd, not the guard.
 
 Not every run needs one. A finding that fits its own field belongs in the report; write a note only
 when something genuinely worth keeping would otherwise have to be dropped or would be too long for
