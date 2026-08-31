@@ -532,9 +532,10 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `27d2f15`**, twenty-one commits past the `v0.15.0` tag (`3c53078`, the annotated tag
-object; the commit it names is `6bb42ca`) — the commit carrying thirty-five unfolded fragments in
-`changelog.d/`, which is the state that makes this guard answerable at all. Every number below was
+**Measured at `27d2f15`, the commit `v0.16.0` was cut from** — twenty-one commits past the
+`v0.15.0` tag (`3c53078`, the annotated tag object; the commit it names is `6bb42ca`), and the
+commit carrying thirty-five unfolded fragments in `changelog.d/`, which is the state that makes
+this guard answerable at all. Every number below was
 taken at this commit. The delta since the previous measurement is **21 commits and 20 merged pull
 requests**. Every claim below is graded **observed** (a named command produced it) or **reasoned**
 (argued from code that was read, not run). **Re-derive this at each release rather than editing
