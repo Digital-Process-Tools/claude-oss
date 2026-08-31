@@ -25,8 +25,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import lane_setup  # noqa: E402
+import spawn_guard  # noqa: E402
 
 
 # --- sizing: enumerate the class rather than trust the issue's own list ----------
@@ -154,7 +156,6 @@ def test_lane_report_against_side_does_not_leak_into_triggered_guards(tmp_path):
 def _cli(tmp_path, *extra_args):
     import json as _json
     import os
-    import subprocess
 
     (tmp_path / ".oss.json").write_text(
         _json.dumps(
@@ -176,9 +177,10 @@ def _cli(tmp_path, *extra_args):
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    return subprocess.run(
+    return spawn_guard.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "432", "--repo", str(tmp_path)]
         + list(extra_args),
+        subject="the guard set lane_setup.py's receipt names for this lane",
         capture_output=True,
         text=True,
         env=env,

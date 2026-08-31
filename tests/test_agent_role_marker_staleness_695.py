@@ -39,7 +39,6 @@ entirely.
 """
 
 import json
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -48,24 +47,44 @@ REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "agent_role.py"
 
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "tests"))
 
 import agent_role  # noqa: E402
+import spawn_guard  # noqa: E402
 
 
 def _init_repo(tmp_path):
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, timeout=30)
-    subprocess.run(
+    """Routed through `spawn_guard.run` rather than bare `subprocess.run` so that a
+    runner too slow to answer skips this test carrying what went unmeasured, rather
+    than erroring on a setup step (#716). Setup is deliberately not exempt: a `git
+    commit` that never returned leaves this file's subject exactly as unmeasured as
+    one that returned the wrong thing.
+    """
+    subject = "the role marker, in a git repository this fixture never finished creating"
+    spawn_guard.run(
+        ["git", "init", "-q", str(tmp_path)], subject=subject, check=True, timeout=30
+    )
+    spawn_guard.run(
         ["git", "-C", str(tmp_path), "config", "user.email", "t@example.com"],
+        subject=subject,
         check=True,
         timeout=30,
     )
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True, timeout=30
+    spawn_guard.run(
+        ["git", "-C", str(tmp_path), "config", "user.name", "t"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
     (tmp_path / "README.md").write_text("x", encoding="utf-8")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True, timeout=30)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"], check=True, timeout=30
+    spawn_guard.run(
+        ["git", "-C", str(tmp_path), "add", "-A"], subject=subject, check=True, timeout=30
+    )
+    spawn_guard.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
 
 
@@ -163,27 +182,30 @@ def test_clear_role_marker_on_an_absent_marker_is_not_an_error(tmp_path):
 
 def test_cli_clear_removes_a_marker_written_by_a_separate_process(tmp_path):
     _init_repo(tmp_path)
-    write = subprocess.run(
+    write = spawn_guard.run(
         [sys.executable, str(SCRIPT), "--write", "sub-manager", "--root", str(tmp_path)],
+        subject="the marker --clear is then asked to remove",
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert write.returncode == 0, write.stdout + write.stderr
 
-    clear = subprocess.run(
+    clear = spawn_guard.run(
         [sys.executable, str(SCRIPT), "--clear", "--root", str(tmp_path)],
+        subject="whether --clear removes a marker written by a separate process",
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert clear.returncode == 0, clear.stdout + clear.stderr
 
-    read_back = subprocess.run(
+    read_back = spawn_guard.run(
         [sys.executable, "-c", (
             "import sys; sys.path.insert(0, {0!r}); import agent_role; "
             "print(agent_role.current_role(root={1!r}))"
         ).format(str(REPO / "scripts"), str(tmp_path))],
+        subject="what a separate process reads back after --clear",
         capture_output=True,
         text=True,
         timeout=30,

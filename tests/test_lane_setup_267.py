@@ -19,7 +19,6 @@ reports "no overlap" would pass half of this file.
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +28,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "lane_setup.py"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+import spawn_guard  # noqa: E402
 
 
 def _make_tree(root):
@@ -246,8 +248,9 @@ def _cli(tmp_path, *extra_args):
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    return subprocess.run(
+    return spawn_guard.run(
         [sys.executable, str(SCRIPT), "267", "--repo", str(tmp_path), "--json"] + list(extra_args),
+        subject="the JSON payload lane_setup.py emits for this tree",
         capture_output=True,
         text=True,
         env=env,

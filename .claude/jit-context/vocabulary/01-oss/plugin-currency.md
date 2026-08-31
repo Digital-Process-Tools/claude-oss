@@ -44,7 +44,7 @@ So a session can hold a registry at one version and instructions from another, a
 | `current` | counted in `N✓` | | green | -- |
 | `unknown` | `N?` | | dim | nothing was comparable |
 
-`ahead` is the normal state for this repo's own clone (unreleased work), and normal for any session
+`ahead` is the normal state in a clone of the plugin itself (unreleased work), and normal for any session
 in the window after a release before the cache refreshes. It is not a problem.
 
 `version_status` folds a stale comparison into `unknown` rather than inventing vocabulary -- so a

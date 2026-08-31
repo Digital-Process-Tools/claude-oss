@@ -21,8 +21,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCTOR = REPO_ROOT / "scripts" / "doctor.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import doctor  # noqa: E402
+import spawn_guard  # noqa: E402
 import oss_config  # noqa: E402
 import scaffold  # noqa: E402
 
@@ -377,8 +379,9 @@ def test_a_fresh_install_with_nothing_configured_is_gaps_not_broken(tmp_path, mo
 def _run_cli(cwd, args=()):
     env = dict(os.environ)
     env.pop("CLAUDE_PROJECT_DIR", None)
-    return subprocess.run(
+    return spawn_guard.run(
         [sys.executable, str(DOCTOR), "--install-audit"] + list(args),
+        subject="what --install-audit says when run as a real CLI",
         cwd=str(cwd),
         env=env,
         stdout=subprocess.PIPE,

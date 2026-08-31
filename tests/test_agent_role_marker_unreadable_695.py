@@ -42,7 +42,6 @@ a readable marker must still classify `live`, so a broken classifier that
 answered the same thing for everything could not pass both halves.
 """
 
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -52,24 +51,44 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "tests"))
 
 import agent_role  # noqa: E402
+import spawn_guard  # noqa: E402
 
 
 def _init_repo(tmp_path):
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, timeout=30)
-    subprocess.run(
+    """Routed through `spawn_guard.run` rather than bare `subprocess.run` so that a
+    runner too slow to answer skips this test carrying what went unmeasured, rather
+    than erroring on a setup step (#716). Setup is deliberately not exempt: a `git
+    commit` that never returned leaves this file's subject exactly as unmeasured as
+    one that returned the wrong thing.
+    """
+    subject = "the role marker, in a git repository this fixture never finished creating"
+    spawn_guard.run(
+        ["git", "init", "-q", str(tmp_path)], subject=subject, check=True, timeout=30
+    )
+    spawn_guard.run(
         ["git", "-C", str(tmp_path), "config", "user.email", "t@example.com"],
+        subject=subject,
         check=True,
         timeout=30,
     )
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True, timeout=30
+    spawn_guard.run(
+        ["git", "-C", str(tmp_path), "config", "user.name", "t"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
     (tmp_path / "README.md").write_text("x", encoding="utf-8")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True, timeout=30)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"], check=True, timeout=30
+    spawn_guard.run(
+        ["git", "-C", str(tmp_path), "add", "-A"], subject=subject, check=True, timeout=30
+    )
+    spawn_guard.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
 
 

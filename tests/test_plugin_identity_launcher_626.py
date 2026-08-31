@@ -17,6 +17,10 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+import spawn_guard  # noqa: E402
+
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 
 BLOCK_START = (
@@ -148,8 +152,9 @@ def _probe_child_home(tmp_path, env, name="home_probe.sh"):
     """
     script = tmp_path / name
     script.write_text("set -eu\n" + _HOME_PROBE, encoding="utf-8")
-    done = subprocess.run(
+    done = spawn_guard.run(
         ["sh", str(script)],
+        subject="what the child shell resolves for HOME and XDG_CACHE_HOME",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
@@ -195,8 +200,9 @@ def _run_block(tmp_path, *, python_bin=None, home=True, xdg_cache_home=None,
         xdg_cache_home=xdg_cache_home,
         fake_identity=fake_identity,
     )
-    return subprocess.run(
+    return spawn_guard.run(
         ["sh", str(script)],
+        subject="what the launcher block says about this plugin identity",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
