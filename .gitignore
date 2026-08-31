@@ -43,4 +43,11 @@ __pycache__/
 # nobody has touched .git/info/exclude in -- it is not a claim that one is
 # needed.
 .mcp.json
+
+# Common Python local-state / build-artifact shapes -- the same class as .venv/ below, added
+# proactively rather than waiting for each to sweep into a release commit of its own (#710).
+venv/
+env/
+.tox/
+*.egg-info/
 .venv/
