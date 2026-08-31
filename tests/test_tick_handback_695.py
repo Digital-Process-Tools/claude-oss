@@ -117,25 +117,58 @@ def test_declared_field_is_none_when_no_header_present():
     assert verdict["declared"] is None
 
 
-# -- a quoted, stale header must not hijack classification of the real one --
+# -- more than one TICK: header is refused, never guessed at (#706) --
 
 
-def test_a_quoted_stale_header_does_not_override_the_real_final_one():
-    """A sub-manager narrating what it tried is expected to quote an earlier
-    failed attempt before reporting the real outcome -- the agent brief
-    itself asks for "what you tried, what stopped you" in a blocked/
-    could-not-run report. A blockquoted TICK:/REASON: pair from that earlier
-    attempt must not be read as the tick's actual final state."""
+def test_a_second_quoted_header_after_the_real_one_is_refused_not_guessed():
+    """agents/sub-manager.md documents the header on the *first* line, with
+    narrative -- which may quote an earlier attempt, an issue body, or a CI
+    log -- coming after it. That is the only order the brief can produce, so
+    this fixture builds it in that order rather than the reversed one #706
+    found the old fixture using.
+
+    Even in the documented order, a quoted TICK:-shaped line in the
+    narrative gives this module two headers and no way to tell which one is
+    real. #706's proposal is the stronger of the two options on the issue:
+    refuse outright rather than silently pick first or last."""
     message = (
-        "> Quoting an earlier failed attempt for context:\n"
+        "TICK: completed\n"
+        "Actually dispatched two lanes this tick. For context, an earlier "
+        "attempt this same tick quoted a stale message:\n"
         "> TICK: could-not-run\n"
         "> REASON: old stale spawn refusal\n"
+    )
+    verdict = tick_handback.classify(message)
+    assert verdict["state"] == "could-not-classify"
+    assert verdict["state"] != "completed"
+    assert verdict["state"] != "could-not-run"
+
+
+def test_positive_control_the_same_message_with_only_one_header_classifies():
+    """Positive control for the test above: strip the second, quoted
+    TICK:-shaped line and the identical message classifies cleanly. Without
+    this, the negative assertion above would pass even if `classify` refused
+    every message unconditionally."""
+    message = (
         "TICK: completed\n"
-        "Actually dispatched two lanes this tick.\n"
+        "Actually dispatched two lanes this tick. For context, an earlier "
+        "attempt this same tick was refused for an unrelated reason.\n"
     )
     verdict = tick_handback.classify(message)
     assert verdict["state"] == "completed"
-    assert verdict["state"] != "could-not-run"
+
+
+def test_two_distinct_real_looking_headers_is_also_refused():
+    """Two headers that both look like real, unquoted declarations -- not
+    one quoted inside narrative -- must refuse the same way. There is no
+    shape the sub-manager brief can produce with two headers, quoted or
+    not, so this module does not try to distinguish "looks quoted" from
+    "looks real": it refuses on count alone."""
+    message = "TICK: blocked\nBLOCKER: first thing\nTICK: completed\n"
+    verdict = tick_handback.classify(message)
+    assert verdict["state"] == "could-not-classify"
+    assert verdict["state"] != "blocked"
+    assert verdict["state"] != "completed"
 
 
 def test_a_stale_companion_line_before_the_real_header_is_not_used_as_detail():

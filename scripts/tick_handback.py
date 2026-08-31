@@ -42,7 +42,11 @@ frame parser is a second place for that bug to recur.
                     silently did nothing -- read the message yourself rather
                     than guess. Also the answer when a header is present but
                     its required companion field (`BLOCKER:` / `REASON:`) is
-                    missing.
+                    missing, or when more than one `TICK:` header appears in
+                    the message at all (#706) -- a handback naming two
+                    outcomes is not a shape `agents/sub-manager.md`'s
+                    template can produce, so this refuses to pick one rather
+                    than guessing between the first and the last.
 
 ## What this deliberately does not do
 
@@ -113,14 +117,16 @@ def classify(message):
         )
 
     text = str(message)
-    # The *last* header in the message, not the first. A sub-manager
-    # reporting `blocked` or `could-not-run` is explicitly asked, two
-    # sections below, to say "what you tried, what stopped you" -- and
-    # narrating an earlier failed attempt naturally involves quoting that
-    # attempt's own TICK:/BLOCKER:/REASON: lines before stating the real,
-    # final outcome. The first match in the text is exactly the quoted,
-    # stale one in that shape; the last match is the sub-manager's actual
-    # conclusion, which is what this classifier exists to report.
+    # Exactly one TICK: header is the only shape agents/sub-manager.md's
+    # template can produce (#706): the header goes on the first line, with
+    # narrative -- which may quote an earlier attempt, an issue body, or a
+    # CI log -- coming after it. A sub-manager reporting `blocked` or
+    # `could-not-run` is explicitly asked, two sections below, to say "what
+    # you tried, what stopped you", and that narrative can introduce a
+    # second TICK:-shaped line even when it comes after the real header, as
+    # #706 measured. Taking the first or the last match is a guess about
+    # which one is real; refuse instead, the same way a missing header
+    # refuses rather than assuming `completed`.
     headers = list(_TICK.finditer(text))
     if not headers:
         return _verdict(
@@ -129,7 +135,16 @@ def classify(message):
             "tick reported in plain prose from one that did nothing at "
             "all, so it refuses to guess: read the message yourself",
         )
-    header = headers[-1]
+    if len(headers) > 1:
+        return _verdict(
+            "could-not-classify",
+            "{0} TICK: headers found, not one -- a handback naming more "
+            "than one outcome is not a shape agents/sub-manager.md's "
+            "template can produce, so this refuses to pick one rather "
+            "than guessing between the first and the last: read the "
+            "message yourself".format(len(headers)),
+        )
+    header = headers[0]
 
     declared = header.group(1).lower()
     header_line = _rr.fold_to_one_ascii_line(_rr._line_containing(text, header.start()))
