@@ -15,15 +15,10 @@ instead, with a control proving the check can fail against the document as it re
 fix.
 """
 
-import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RELEASE_MD = REPO_ROOT / "commands" / "release.md"
-
-#: Matches "--all" or "-a" as a whole flag token (not inside a longer word), and a bare
-#: "git add ." / "git add -A" -- the shapes that stage more than the release touched.
-_FORBIDDEN_STAGING = re.compile(r"--all\b|(?<!\w)-a\b|git add \.\B|git add -A")
 
 
 def _then_section(text):
