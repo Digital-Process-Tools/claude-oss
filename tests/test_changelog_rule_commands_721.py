@@ -36,6 +36,8 @@ import shlex
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
@@ -53,18 +55,17 @@ COMMITTED_RULE = (
     REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
 )
 
-#: The version the fixture's CHANGELOG.md declares, and the one the rendered rule
-#: declares as untagged -- so the link audit has a heading to look at and a reason
-#: not to demand a `releases/tag/v...` URL for it. Both halves come from one value
-#: for the same reason `.oss.json` holds `changelog_untagged` once.
-FIXTURE_UNTAGGED = ["0.1.0"]
-
-#: A changelog the link audit has something to say `ok` about: an `[Unreleased]`
-#: heading with its link ref, and one release heading whose missing ref is declared
-#: rather than absent. Both halves are the fixture's job -- a refusal about this
-#: file's contents would be indistinguishable from a refusal about the flags, which
-#: are the subject.
-CHANGELOG_BODY = """# Changelog
+#: The three states `oss_rules._untagged_clause` keeps apart, each with the
+#: CHANGELOG.md that makes the link audit answer `ok` for it. They render three
+#: different commands -- no flag, `--untagged ''`, and `--untagged '0.1.0'` -- and a
+#: guard that exercised only one of them would leave two spellings the generator can
+#: produce and nothing has ever run.
+#:
+#: The fixture has to move with the state rather than be written once: a release
+#: heading that carries a link ref AND is declared untagged is a refusal (measured),
+#: so a single changelog would make two of the three legs fail for a reason that has
+#: nothing to do with the flags, which are the subject.
+_CHANGELOG_HEAD = """# Changelog
 
 ## [Unreleased]
 
@@ -76,6 +77,25 @@ CHANGELOG_BODY = """# Changelog
 
 [Unreleased]: https://example.invalid/compare/v0.1.0...HEAD
 """
+
+_TAG_LINK = "[0.1.0]: https://example.invalid/releases/tag/v0.1.0\n"
+
+UNTAGGED_STATES = [
+    ("declared-nothing", None, _CHANGELOG_HEAD + _TAG_LINK),
+    ("declared-empty", [], _CHANGELOG_HEAD + _TAG_LINK),
+    ("declared-a-version", ["0.1.0"], _CHANGELOG_HEAD),
+]
+
+UNTAGGED_IDS = [case[0] for case in UNTAGGED_STATES]
+
+#: What the tests that are not about the untagged states themselves use. Named
+#: rather than defaulted: `None` is one of the three real values here, so a helper
+#: taking `untagged=None` to mean `caller said nothing` would silently answer the
+#: `declared-nothing` leg with the `declared-a-version` command -- which is what the
+#: first version of this file did, and the leg failed on a link ref rather than on
+#: anything about flags. Absent and null are three-state neighbours in this repo's
+#: own config vocabulary; a sentinel that collapses them belongs nowhere near it.
+DEFAULT_LABEL, DEFAULT_UNTAGGED, DEFAULT_CHANGELOG = UNTAGGED_STATES[-1]
 
 FRAGMENT_BODY = "- a fix that names its own issue (#1).\n"
 
@@ -94,20 +114,20 @@ def _assembler_lines(body):
     ]
 
 
-def _tree(tmp_path, name="repo"):
+def _tree(tmp_path, name="repo", changelog=DEFAULT_CHANGELOG):
     """A plugin-shaped tree with one valid fragment and one release heading."""
     root = tmp_path / name
     (root / "scripts").mkdir(parents=True)
     (root / "scripts" / "assemble_changelog.py").write_text("# ours\n", encoding="utf-8")
     (root / "changelog.d").mkdir()
     (root / "changelog.d" / "1.fixed.md").write_text(FRAGMENT_BODY, encoding="utf-8")
-    (root / "CHANGELOG.md").write_text(CHANGELOG_BODY, encoding="utf-8")
+    (root / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
     return root
 
 
-def _rendered(root):
+def _rendered(root, untagged=DEFAULT_UNTAGGED):
     return oss_rules.rules(
-        root, fragments_dir="changelog.d", untagged=FIXTURE_UNTAGGED
+        root, fragments_dir="changelog.d", untagged=untagged
     )["paths"]["changelog-fragments.md"]
 
 
@@ -129,14 +149,22 @@ def _run(root, command, monkeypatch):
 # ------------------------------------------------------------------ the reported bug
 
 
+@pytest.mark.parametrize(
+    "label, untagged, changelog", UNTAGGED_STATES, ids=UNTAGGED_IDS
+)
 def test_every_command_the_generated_rule_publishes_is_one_the_assembler_accepts(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, label, untagged, changelog
 ):
     """The generator, which is the side that matters: its output ships into every
     scaffolded repository, where nobody here will ever see it go wrong.
+
+    All three `changelog_untagged` states, because the rule renders a different
+    `--check-links` line for each -- no flag, an empty one, and a list -- and
+    `--untagged` is refused by every mode but that one. Exercising a single state
+    would leave two spellings the generator can produce and nothing has ever run.
     """
-    root = _tree(tmp_path)
-    commands = _assembler_lines(_rendered(root))
+    root = _tree(tmp_path, name=label, changelog=changelog)
+    commands = _assembler_lines(_rendered(root, untagged=untagged))
     assert commands, "the rule emitted no invocation for a tree that has an assembler"
 
     for command in commands:
