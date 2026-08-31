@@ -39,6 +39,12 @@ Every verdict row names the contract it was decided against, on the pass as well
 the failure. A validator that announces its version only when it objects cannot be
 compared with another copy, which is the whole reason the announcement exists.
 
+Every verdict row also names WHERE it looked: an `at:` line carrying the absolute path
+the argument resolved to, or the sentence saying it could not be resolved. `ok
+reports/x.json` is the same string in two different directories, and #685 is two damaged
+handbacks in one session plus a note reported as having vanished that had simply been
+written one directory over, under a cwd nobody had stated.
+
 Handed the pull request payload instead of the report -- the two land in one directory
 one suffix apart -- it says so by name and names the call to run. Enumerating the
 fourteen report keys a correct payload lacks is accurate and useless: it reads as a
@@ -997,6 +1003,61 @@ def _one_line(text, limit=200):
     return safe[:limit]
 
 
+def resolved_receipt(path):
+    """Where on disk a path on the command line actually landed.
+
+    Returns `(text, state)` -- `resolved` carrying an absolute path, or
+    `could-not-resolve` carrying the sentence saying so. Never the argument
+    echoed back as though it had been resolved.
+
+    `ok reports/x.json` is the same string whether that resolved inside the
+    worktree root the brief names or inside the main clone a stale cwd left the
+    session in. #685 is two handbacks damaged by exactly that silence in one
+    session, and the second one was reported as a note that had *vanished from
+    the shared worktree root between writes*. It had not vanished; it was
+    written one directory over, and was found untracked in the clone hours
+    later. Nothing in the loop named the directory anything was read from or
+    written to, so "the file is not there" and "I am not where I think I am"
+    render identically -- this repository's own defect class, in a handback
+    rather than in a checker.
+
+    This does not stop the write going to the wrong place. It stops the wrong
+    place being invisible, which is the half a validator can actually reach.
+    """
+    try:
+        return _one_line(Path(path).resolve(), 300), "resolved"
+    except (OSError, ValueError) as exc:
+        # ValueError as well as OSError, for the reason `_contained_path` gives
+        # below: a NUL byte in a path raises `ValueError` from `resolve()`.
+        # MEASURED, on this repository's own machine (darwin, CPython 3.9):
+        # `Path("a" + chr(0) + "b").resolve()` raises `ValueError: embedded null
+        # byte`, and that arm is asserted by a test which establishes the
+        # condition before asserting on it.
+        #
+        # The `OSError` half is DEFENSIVE AND UNMEASURED, and saying so is the
+        # point (found by review). An earlier version of this comment claimed an
+        # over-long component raises it; that does not reproduce with the call
+        # actually made here -- `resolve()` defaults to `strict=False` and does
+        # not stat, so `Path("/tmp/" + "a" * 3000).resolve()` returns a 3013-
+        # character path without raising. `OSError` is kept because `resolve()`
+        # touches the filesystem on some platforms to read link targets and this
+        # function must not be the thing that kills a validator run, but nothing
+        # here has produced one, and a comment asserting a mechanism nobody
+        # measured is what this repository files issues about.
+        #
+        # Either way this is a location that could not be stated -- not the same
+        # answer as a location, and it must not print like one. The sentence
+        # deliberately does not open with "could not resolve": `main` renders it
+        # under a `could-not-resolve --` prefix, and repeating the words there
+        # printed them twice on the one line a reader scans.
+        return (
+            "{} could not be made absolute ({})".format(
+                _one_line(path, 120), _one_line(exc, 80)
+            ),
+            "could-not-resolve",
+        )
+
+
 def _contained_path(base_dir, raw_path):
     """Resolve the payload's path against the report's own directory.
 
@@ -1190,6 +1251,93 @@ def no_close_body_errors(payload):
     ]
 
 
+#: A backslash followed by an `n` that is NOT followed by an ASCII letter or
+#: digit -- so a line break spelled as an escape counts and a Windows path
+#: component does not. Spelled through `chr` rather than as a string escape so
+#: that no reader -- and no payload carrying this source through another
+#: serialisation on its way to disk -- has to count backslashes to know what it
+#: is. #685 is a doubled backslash surviving every validator it passed.
+#:
+#: The lookahead is the whole difference between a finding that is strong and
+#: one nobody can trust, and it was added on review. A naive count of the two
+#: characters matches `nina`, `notes` and `nathan` in an ordinary unbackticked
+#: Windows path, and such a body has zero real line breaks -- so a one-sentence
+#: pull request body naming `C:\Users\nina\notes` was refused outright. What
+#: survives the narrowing is every realistic shape of the damage: a doubled
+#: paragraph break is backslash-n followed by a backslash, a list item is
+#: followed by `-`, a heading by `#`. What it gives up is a damaged body whose
+#: every escape happens to be followed immediately by a letter, which is the
+#: "a pass here is weak" half already stated below.
+_BACKSLASH = chr(92)
+_LINE_BREAK_ESCAPE = re.compile(re.escape(_BACKSLASH + "n") + "(?![A-Za-z0-9])")
+_REAL_NEWLINE = chr(10)
+
+
+def count_line_break_escapes(text):
+    """How many backslash-n sequences in `text` are shaped like line breaks.
+
+    Public so a test can pin the narrowing itself rather than only its effect:
+    a counter that had simply stopped counting and one that counts the right
+    subset produce the same `[]` from the check below.
+    """
+    return len(_LINE_BREAK_ESCAPE.findall(text))
+
+
+def escaped_newline_body_errors(payload):
+    """#685 instance 1: a body that is more escaped than it is formatted.
+
+    Observed once, and discovered only because somebody read the payload before
+    opening it: 30 literal backslash-n sequences against 4 real newlines, in a
+    body hand-built as JSON inside a TOML literal. The three closing lines sat
+    on real newlines and everything above them did not -- one half of the write
+    escaped and the other half did not -- so it was not a uniform encoding
+    choice anybody could argue for. Opened unread it renders as one enormous
+    line with every heading and paragraph break visible as a backslash and an
+    n, under the maintainer's account, after the agent's session has ended.
+
+    An ABSENCE detector, in the same sense as `closing_body_errors` above and
+    for the same reason: it answers "is this body more escaped than formatted?"
+    and never "is this body correct". A finding is strong; a pass is weak --
+    four stray escapes under thirty real line breaks pass, and should, because
+    this counts a ratio and does not read the prose.
+
+    This repository is hostile to heuristics, and the objection it raises is
+    that an un-passable check gets tuned until it passes. That objection is
+    answered by the remedy rather than by a flag: literal escapes are counted
+    only OUTSIDE code spans and fences, so a body that genuinely means a
+    backslash-n puts it in backticks -- where a forge renders it verbatim and
+    this check does not look, and which is what markdown wants anyway. No new
+    payload key was added for it, deliberately: `forge_payload` carries the
+    forge's own vocabulary (#698), and an escape hatch invented here would be
+    this repository's word in somebody else's object.
+
+    On a damaged body the strippers are also the safe way round. `_FENCE` is
+    line-anchored, so a one-line body has no fences to strip and the count
+    stays high -- a wrongly-unstripped span can only turn a pass into a
+    finding, never the other way.
+    """
+    if not isinstance(payload, dict):
+        return []
+    body = payload.get("body")
+    if not isinstance(body, str):
+        return []
+    literal = count_line_break_escapes(prose_of(body))
+    real = body.count(_REAL_NEWLINE)
+    if literal <= real:
+        return []
+    return [
+        "pr_body.payload.body: {} line-break-shaped backslash-n sequences outside "
+        "code spans against {} real line break(s) -- more escaped than formatted. A JSON "
+        "payload written with doubled backslashes opens as one enormous line with "
+        "every heading and paragraph break visible in the rendered body, and the "
+        "reading lands on somebody else after your session has ended (#685, "
+        "observed at 30 against 4). If the body genuinely means a backslash-n, put "
+        "it in a code span: a forge renders it verbatim there and this check does "
+        "not look inside one. This counts a ratio; it does not read the prose, so "
+        "a pass here is weak.".format(literal, real)
+    ]
+
+
 def validate_pr_body(report, schema=None, base_dir=None):
     """Open the pull request payload the report says it wrote, and check its shape.
 
@@ -1260,6 +1408,7 @@ def validate_pr_body(report, schema=None, base_dir=None):
     # this file's own defect class inside the check written against it.
     errors.extend(closing_body_errors(node.get("closes"), payload.get("body")))
     errors.extend(no_close_body_errors(payload))
+    errors.extend(escaped_newline_body_errors(payload))
     errors.extend(below_bar_body_errors(report, payload.get("body")))
     return errors
 
@@ -1331,9 +1480,17 @@ def inspect_file(path, schema=None, check_pr_body=True):
     schema = load_schema() if schema is None else schema
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError as well as OSError, and it is not symmetry. A NUL byte is
+        # legal in the string a caller types and `read_text` raises `ValueError:
+        # embedded null byte` for one -- which escaped this arm and landed in
+        # main()'s `except ValueError`, printing "the schema itself is unusable".
+        # A report path crashing the check, reported as the maintainer's own
+        # configuration being broken: a wrong answer delivered calmly, which is
+        # worse than the traceback it replaced. `_contained_path` already makes
+        # exactly this argument for the payload path one field over.
         return VERSION_UNDECIDABLE, "the report could not be read", [
-            "{}: cannot read the report ({})".format(path, exc)
+            "{}: cannot read the report ({})".format(_one_line(path), _one_line(exc))
         ]
     try:
         report = json.loads(raw)
@@ -1457,6 +1614,14 @@ def main(argv=None):
             # contract only when it objects tells two copies apart exactly when
             # nobody is comparing them, which was #212's remedy defeating itself.
             _line(sys.stdout, "ok {} ({})".format(report, sentence))
+        # Under every verdict, not only the pass. A receipt that appears only on
+        # a clean run tells two directories apart exactly when nobody is
+        # comparing them, which was #212's remedy defeating itself one field
+        # over. The path above is the argument as typed; this is where it landed.
+        where, where_state = resolved_receipt(report)
+        _line(sys.stdout, "  at: {}".format(
+            where if where_state == "resolved" else "could-not-resolve -- " + where
+        ))
         if args.shape_only:
             # A check that was skipped must never render as a check that passed.
             _line(sys.stdout, "  shape only: the pull request payload was not read")

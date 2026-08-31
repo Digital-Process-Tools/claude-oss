@@ -297,12 +297,15 @@ Every brief carries these:
    > Write prose quotes plainly in the pull request payload's JSON — never
    > backslash-escaped; `gh-pr-create` refuses a body carrying literal
    > backslash-quote, and `literal_backslashes = true` is for a real backslash.
+   > A doubled `\n` is the same reflex and opens as one line; refused too (#685).
    >
-   > **Write your report from the worktree root — `cd <worktree_root>` first, not your branch
-   > directory.** The report, note and PR payload live outside every worktree so they survive it
-   > being reaped; supertool refuses a path outside cwd (`ERROR: path escapes cwd`), costing a full
-   > re-send rather than a short retry. Do not use the env var or `allow_outside_cwd` escape hatch —
-   > both widen every op for the session to buy one write. Move the cwd, not the guard.
+   > **`cd <worktree_root>` on every write call leaving your branch directory, not once.** A shell
+   > cwd does not persist between calls, so a later bare `supertool` writes into the clone (#685).
+   > The report, note and PR payload live outside every worktree so they survive it being reaped;
+   > supertool refuses a path outside cwd (`ERROR: path escapes cwd`), costing a full re-send
+   > rather than a short retry. Do not use the env var or `allow_outside_cwd` escape hatch — both
+   > widen every op for the session to buy one write. Move the cwd, not the guard. A moved cwd
+   > reads like a vanished file: read the validator's `at:` line.
 
    The op names are in there deliberately, and the creating one is the reason. A named op that
    supertool later renames fails *at the call*; an **omitted** one does not fail at all — it routes
@@ -317,9 +320,9 @@ Every brief carries these:
    The cwd paragraph is here for the same reason and is the same defect one op over (#266). The
    brief guarantees a write outside every worktree and requires every write to go through supertool,
    which refuses exactly that path — so an agent doing precisely what both halves say is refused on
-   the one write it was promised. The refusal is right; nothing naming the remedy is the bug, and it
-   cost two agents a re-sent heredoc before anyone wrote it down. Same test file holds it: a
-   document requiring the out-of-tree write must also name the refusal and the cwd that avoids it.
+   each write it was promised. The refusal is right; nothing naming the remedy is the bug, and it
+   cost two agents a re-sent heredoc; naming it *once* then cost two more (#685). Same test file
+   holds the refusal and remedy, `test_write_receipt_685.py` the per-call half.
 
 2. **Name the hidden judgment call.** If you cannot state what the agent will have to decide, you
    have not read the issue closely enough to delegate it.
