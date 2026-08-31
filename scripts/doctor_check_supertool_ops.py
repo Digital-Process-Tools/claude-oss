@@ -298,10 +298,16 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
             )
         )
     if not named:
+        # The per-root states are in the sentence rather than summarised away: a
+        # root that is not there and a root that was read and holds no call are
+        # the same empty contribution and are not the same fact, and this is the
+        # one arm where nothing else in the line distinguishes them.
         return "could-not-ask", (
-            "no supertool call was found in {} of this plugin, so there was no "
-            "expected set to check the roster against -- an empty expectation is "
-            "satisfied by any roster and is not evidence".format(_roots_phrase())
+            "no supertool call was found in this plugin's own text ({}), so there "
+            "was no expected set to check the roster against -- an empty "
+            "expectation is satisfied by any roster and is not evidence".format(
+                _roots_detail(roots)
+            )
         )
     return "present", (
         "all {} op(s) named by {} of this plugin resolve in the supertool that "
@@ -311,6 +317,14 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
 
 def _roots_phrase():
     return ", ".join("{}/".format(name) for name in OP_TEXT_ROOTS)
+
+
+def _roots_detail(roots):
+    """One clause per source root, naming its state."""
+    return "; ".join(
+        "{}/: {}{}".format(name, state, " -- {}".format(detail) if detail else "")
+        for name, state, detail in roots
+    )
 
 
 def check_supertool_ops(plugin_root=None, run=None, which=None, cwd=None):

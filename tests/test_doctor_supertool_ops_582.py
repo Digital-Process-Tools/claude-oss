@@ -330,6 +330,25 @@ def test_deriving_no_ops_at_all_is_could_not_ask_not_present(tmp_path):
     )
     assert state == "could-not-ask", (state, detail)
     assert "no supertool call" in detail, detail
+    # The per-root states have to be in the sentence: "read it and found nothing"
+    # and "it is not there" are the same empty contribution and not the same fact,
+    # and this is the one arm where nothing else in the line separates them.
+    assert "commands/: read" in detail, detail
+    assert "skills/: absent" in detail and "agents/: absent" in detail, detail
+
+
+def test_every_source_root_absent_does_not_read_as_a_clean_empty_scan(tmp_path):
+    """Positive control for the assertion above, in the opposite direction: with
+    no root on disk at all the line must still name all three as absent rather
+    than implying three directories were opened and found quiet."""
+    state, detail = ops_check.supertool_op_inventory(
+        plugin_root=Path(tmp_path) / "not-a-plugin-root",
+        run=_run_answering(_roster_text(["gh-prs", "ops"])),
+        which=_which_finding(),
+    )
+    assert state == "could-not-ask", (state, detail)
+    for name in ops_check.OP_TEXT_ROOTS:
+        assert "{}/: absent".format(name) in detail, detail
 
 
 # --- the reported line ------------------------------------------------------
