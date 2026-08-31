@@ -168,20 +168,52 @@ def _git_dir(root: str = ".") -> Path | None:
     here. `None` covers every way this can fail to answer -- `git` missing
     from PATH, `root` not inside a repository, or the call erroring -- so a
     caller never has to guess which.
+
+    Deliberately does NOT pass `text=True` (#707): that decodes under
+    `errors="strict"` using this platform's own preferred text codec
+    (`locale.getpreferredencoding(False)`, not necessarily UTF-8), and a
+    `UnicodeDecodeError` there is a `ValueError` -- a subclass of neither
+    `OSError` nor `subprocess.SubprocessError` below, so it escaped this
+    function entirely on the ordinary no-role-declared publish path, which
+    calls this three times before any of `release_publish.main()`'s six
+    documented states are reached. Bytes are requested instead and decoded
+    explicitly as UTF-8 -- `git` writes paths in UTF-8 (confirmed against a
+    real accented worktree path during review), so this is the codec that
+    is actually correct here, unlike the platform-dependent default
+    `text=True` used before.
+
+    A decode failure returns `None` rather than substituting with
+    `errors="replace"`: this function's own contract is that `None` covers
+    every way it can fail to answer, and `doctor.dependency_diagnostic_state`'s
+    `errors="replace"` convention is right for a diagnostic *log line* a
+    human reads, not for a path this module goes on to read from or write
+    to. Substituting U+FFFD here would fabricate a plausible-looking but
+    almost-certainly-nonexistent `Path`, which `_marker_path` and
+    `write_role_marker`/`_read_marker` would then read from -- or WRITE
+    to -- at a location nobody actually computed from `git`'s real answer,
+    silently rendering a genuinely live marker as `absent` (this same
+    module's own documented trap, reintroduced by the very fix that closes
+    #707's crash) rather than reporting the "could not determine" this
+    function already has a state for.
     """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--git-dir"],
             cwd=root,
             capture_output=True,
-            text=True,
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0:
         return None
-    raw = result.stdout.strip()
+    stdout = result.stdout
+    if isinstance(stdout, bytes):
+        try:
+            stdout = stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    raw = (stdout or "").strip()
     if not raw:
         return None
     path = Path(raw)
