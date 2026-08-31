@@ -734,11 +734,11 @@ def record_lane(worktree_root, issue, branch, path, files=None):
     when `--lane` was given -- so a later `derive_held_set` call, run from a sibling
     lane checking availability, can read what this lane actually holds instead of
     the maintainer retyping it. `None` (no `--lane` on this call) tries not to
-    overwrite a file list a previous call already recorded for this same issue: the
-    registry is refreshed on every call by design, and a plain `lane_setup.py <issue>`
-    call made after the `--lane`-carrying one (the ordinary sequence -- SKILL.md's
-    dispatch table runs the overlap check first, then a bare setup call to write the
-    brief) would otherwise blank out the one payload #558 depends on. `files=[]` (a
+    overwrite a file list a previous call already recorded for this same issue: if
+    this issue's record already carries a file list, a later call that reaches this
+    function with no `--lane` of its own (still gated on `--claim` since #705 --
+    this function itself is never reached by an unclaimed call at all) preserves it
+    rather than blanking out the one payload #558 depends on. `files=[]` (a
     `--lane` that resolved to zero files) is a real, distinct state and is stored as
     given.
 
