@@ -39,6 +39,12 @@ Every verdict row names the contract it was decided against, on the pass as well
 the failure. A validator that announces its version only when it objects cannot be
 compared with another copy, which is the whole reason the announcement exists.
 
+Every verdict row also names WHERE it looked: an `at:` line carrying the absolute path
+the argument resolved to, or the sentence saying it could not be resolved. `ok
+reports/x.json` is the same string in two different directories, and #685 is two damaged
+handbacks in one session plus a note reported as having vanished that had simply been
+written one directory over, under a cwd nobody had stated.
+
 Handed the pull request payload instead of the report -- the two land in one directory
 one suffix apart -- it says so by name and names the call to run. Enumerating the
 fourteen report keys a correct payload lacks is accurate and useless: it reads as a
