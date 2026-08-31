@@ -21,8 +21,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import doctor  # noqa: E402
+import spawn_guard  # noqa: E402
 import oss_config  # noqa: E402
 import scaffold  # noqa: E402
 
@@ -566,8 +568,12 @@ def test_check_tool_survives_a_banner_this_locale_cannot_decode(monkeypatch, tmp
 
     # Control: the fixture really does put that byte on the pipe. Read in bytes mode,
     # the one way to look without triggering the defect under test.
-    emitted = subprocess.run(
-        emit_bad, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60
+    emitted = spawn_guard.run(
+        emit_bad,
+        subject="whether the fixture really does put an undecodable byte on the pipe",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=60,
     )
     assert emitted.returncode == 0
     assert bytes([bad]) in emitted.stdout, (
@@ -1934,8 +1940,10 @@ def test_the_preset_that_provides_radar_is_measured_against_supertool(tmp_path):
             "went unmeasured here; it remains a transcription only"
         )
     _supertool_config(tmp_path, {"presets": []})
-    probe = subprocess.run(
+    probe = spawn_guard.run(
         ["supertool", "radar:--state"],
+        subject="which preset supertool names for an unrouted 'radar', the transcription "
+        "doctor.WATCH_PRESET is measured against",
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
@@ -2219,8 +2227,10 @@ def test_doctor_and_the_launcher_agree_on_what_is_derivable(tmp_path):
         else:
             _oss_config_doc(tmp_path, doc)
         assert doctor._derivable_watch_name(tmp_path)[0] == expected, (doc, expected)
-        run = subprocess.run(
+        run = spawn_guard.run(
             [sys.executable, str(script), str(target), str(REPO_ROOT / "scripts")],
+            subject="whether the launcher derives a watch name for this config, which is "
+            "the half of the agreement doctor cannot answer for itself",
             capture_output=True,
             text=True,
             timeout=120,
@@ -2458,9 +2468,11 @@ def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
     landing = "LANDING-SENTENCE-FROM-THE-CALLER."
     for repo in repos:
         _oss_config_doc(tmp_path, {"repo": repo})
-        run = subprocess.run(
+        run = spawn_guard.run(
             [sys.executable, str(script), str(target),
              str(REPO_ROOT / "scripts"), landing],
+            subject="the name the launcher derives for this repo, compared against "
+            "oss_config.watch_channel_name",
             capture_output=True,
             text=True,
             timeout=120,

@@ -872,9 +872,28 @@ subdirectories are not supported and a symlink there fails outright. So it keeps
 
 ## What is here
 
+Every file this directory holds, and nothing else — `/oss:scaffold` writes these and
+replaces them wholesale on every run.
+
+- `README.md` — this file. It ships beside the others because a directory of generated
+  files with no note is a directory somebody edits.
 - `assemble_changelog.py` — validates changelog fragments and folds them into
   `CHANGELOG.md` at release time. It lives in your repository rather than in the plugin
   because CI checks out your repository and nothing else.
+- `statusline.py` — renders one status line for this repository: the tracker board, when
+  the next tick is due, and whether the plugin copies you are running are current. It is
+  **opt-in, and nothing here calls it**: it stays inert until a `statusLine` entry in
+  `__SETTINGS__` points at it, so removing that entry stops it and breaks nothing else.
+  The command that entry runs is
+
+  ```bash
+  __STATUSLINE_COMMAND__
+  ```
+
+  `/oss:scaffold` writes that entry only when the file has no `statusLine` at all; one you
+  already set is never touched, whatever it points at. Every field it prints has three
+  states and the third is `?` — a count nobody took, or a version comparison nobody could
+  make. `?` is never rounded up to `0` or to a tick.
 
 ## Running the fragment check yourself
 
@@ -1135,10 +1154,17 @@ def _assembler_packages():
 
 
 def _owned_readme(config, plugin_root):
+    # `__SETTINGS__` and `__STATUSLINE_COMMAND__` are substituted rather than typed into
+    # the template for the reason #693 was filed over one level up: a second spelling of
+    # a path drifts, and the copy that drifts is the one in the document nobody can edit
+    # in their own repository. Both constants are defined below this function; that is
+    # fine, since the body runs at call time rather than at import.
     return (
         OWNED_README.replace("__DIR__", OWNED_DIR)
         .replace("__FRAGMENTS__", fragments_dir(config))
         .replace("__PACKAGES__", _assembler_packages())
+        .replace("__SETTINGS__", SETTINGS_PATH)
+        .replace("__STATUSLINE_COMMAND__", STATUSLINE_COMMAND)
     )
 
 
@@ -3299,6 +3325,25 @@ def _print_row(label, finding):
 
 def _main(argv=None):
     import argparse
+
+    # `--show` prints generated bodies verbatim, and stdout is encoded with the
+    # CONSOLE's codepage rather than the source file's. Two of those bodies carry
+    # characters cp1252 has no room for -- `.oss/statusline.py`'s `U+2713`, and the
+    # `U+21A5`/`U+2191`/`U+2713` in the statusline-marker table of the vocabulary rule
+    # #702 made shippable -- so on an ordinary Windows console this died at the
+    # `print(body)` below, after the plan had already been computed and part of the
+    # body already written. Measured through the real CLI with PYTHONIOENCODING=cp1252;
+    # `tests/test_scaffold_show_console_encoding_702.py` reproduces both.
+    #
+    # `backslashreplace`, not `replace`: the character stays visible as an escape
+    # instead of becoming a question mark, so a body that cannot be shown faithfully
+    # says so rather than differing silently from the one `--apply` would write. Same
+    # guard, same reason, as scripts/ranking_table.py and its siblings.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
 
     parser = argparse.ArgumentParser(description="Scaffold repo furniture from .oss.json.")
     parser.add_argument("--config", default=".oss.json", help="path to .oss.json")

@@ -27,8 +27,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import doctor  # noqa: E402
+import spawn_guard  # noqa: E402
 
 MOVED = {
     "doctor_check_auto_update": ["check_auto_update"],
@@ -122,8 +124,9 @@ def test_doctor_py_runs_as_the_script_entry_point_and_reaches_every_moved_check(
     originally written to describe -- reasoned, not reproduced, since the current
     file layout crashes first every time this was tried.
     """
-    completed = subprocess.run(
+    completed = spawn_guard.run(
         [sys.executable, str(SCRIPTS_DIR / "doctor.py"), "--root", str(tmp_path)],
+        subject="whether doctor.py still exits 0 with one VERDICT line reaching every moved check",
         cwd=str(tmp_path),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
