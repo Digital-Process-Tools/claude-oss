@@ -5,6 +5,18 @@ allowed-tools: Bash
 
 Write `.oss.json` for the repo in the current directory, by **measuring it**, not by asking.
 
+**Check whether `.oss.json` already exists before doing anything else.** If it does — the
+ordinary state of a fresh clone of a repo this plugin already manages — the probe/build
+pipeline below is the wrong route to run over it: it derives every project fact from
+scratch, including facts nobody asked it to re-derive, and writing that over a config
+somebody already reviewed loses whatever it could not measure. Observed on a real repo
+(#701): `release.authority`, `merge_method`, a `version_sites` entry, and
+`changelog_untagged` all reverted from a decision on record to a derived absence, and
+`labels.priority` went the other way (see #703). Skip straight to **Show, then write**
+below and run `--split .oss.json` on the file that is already there — since #701 it
+recognises this shape (no machine-scoped key in the tracked file, no `.oss.local.json` on
+this machine) on its own and never touches the tracked half in that case.
+
 ## Probe
 
 **Do not assemble the probe by hand.** `--probe` measures the repo and writes it, and
@@ -155,10 +167,23 @@ the file nor the exclusion.
 idempotent, so it is also the migration for a repo that already has a combined `.oss.json`: run it
 once and commit the result.
 
-**A second maintainer on a repo that already has a committed `.oss.json`** runs this same command
-unchanged. `--split` writes their `.oss.local.json` and rewrites the project half in place; review
-that diff before committing, because a project half that changed is a finding about the repo rather
-than about their laptop.
+**A second maintainer on a repo that already has a committed `.oss.json`** runs this same
+`--split` command, and which of two things happens depends on what is already in the file:
+
+- **The ordinary case — the committed `.oss.json` is already split**, carrying none of
+  `clone`, `worktree_root`, `state_file`. That is every fresh clone of an already-onboarded
+  repo. `--split` derives the three values from the repository root (#608's own
+  derivation, reached here from the setup side — #701), writes them to
+  `.oss.local.json` alone, and leaves the tracked file byte-for-byte untouched. The
+  receipt says **`derived, not configured`**, naming the three values, precisely so a
+  guess is never mistaken for something a maintainer chose (#608's acceptance
+  condition). There is no diff to review in this case, because nothing in the tracked
+  file moved.
+- **The legacy case — a machine-scoped key is still sitting in the committed file**,
+  left there before this repo was split, or added back by hand. `--split` moves it out
+  into `.oss.local.json` and rewrites the project half in place, exactly as before;
+  review that diff before committing, because a project half that changed here is a
+  finding about the repo rather than about the laptop running the command.
 
 Confirm afterwards that `git status` shows `.oss.json` and nothing else — no `.oss.local.json`, no
 stray file.

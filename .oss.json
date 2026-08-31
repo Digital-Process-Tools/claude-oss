@@ -15,7 +15,7 @@
     "README.md"
   ],
   "labels": {
-    "priority": [],
+    "priority": ["priority-high", "priority-medium", "priority-low"],
     "lanes": []
   },
   "milestones": [],
