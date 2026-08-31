@@ -1028,13 +1028,30 @@ def resolved_receipt(path):
         return _one_line(Path(path).resolve(), 300), "resolved"
     except (OSError, ValueError) as exc:
         # ValueError as well as OSError, for the reason `_contained_path` gives
-        # below: a NUL byte in a path raises `ValueError` from `resolve()` on
-        # every supported interpreter, and an over-long component raises
-        # `OSError`. Either way this is a location that could not be stated --
-        # which is not the same answer as a location, and must not print like
-        # one.
+        # below: a NUL byte in a path raises `ValueError` from `resolve()`.
+        # MEASURED, on this repository's own machine (darwin, CPython 3.9):
+        # `Path("a" + chr(0) + "b").resolve()` raises `ValueError: embedded null
+        # byte`, and that arm is asserted by a test which establishes the
+        # condition before asserting on it.
+        #
+        # The `OSError` half is DEFENSIVE AND UNMEASURED, and saying so is the
+        # point (found by review). An earlier version of this comment claimed an
+        # over-long component raises it; that does not reproduce with the call
+        # actually made here -- `resolve()` defaults to `strict=False` and does
+        # not stat, so `Path("/tmp/" + "a" * 3000).resolve()` returns a 3013-
+        # character path without raising. `OSError` is kept because `resolve()`
+        # touches the filesystem on some platforms to read link targets and this
+        # function must not be the thing that kills a validator run, but nothing
+        # here has produced one, and a comment asserting a mechanism nobody
+        # measured is what this repository files issues about.
+        #
+        # Either way this is a location that could not be stated -- not the same
+        # answer as a location, and it must not print like one. The sentence
+        # deliberately does not open with "could not resolve": `main` renders it
+        # under a `could-not-resolve --` prefix, and repeating the words there
+        # printed them twice on the one line a reader scans.
         return (
-            "could not resolve {} to an absolute path ({})".format(
+            "{} could not be made absolute ({})".format(
                 _one_line(path, 120), _one_line(exc, 80)
             ),
             "could-not-resolve",
@@ -1234,13 +1251,36 @@ def no_close_body_errors(payload):
     ]
 
 
-#: A backslash followed by an `n`, as two characters in the DECODED body.
-#: Spelled through `chr` rather than as a string escape so that no reader --
-#: and no payload carrying this source through another serialisation on its way
-#: to disk -- has to count backslashes to know what it is. #685 is a doubled
-#: backslash surviving every validator it passed.
-_LITERAL_NEWLINE = chr(92) + "n"
+#: A backslash followed by an `n` that is NOT followed by an ASCII letter or
+#: digit -- so a line break spelled as an escape counts and a Windows path
+#: component does not. Spelled through `chr` rather than as a string escape so
+#: that no reader -- and no payload carrying this source through another
+#: serialisation on its way to disk -- has to count backslashes to know what it
+#: is. #685 is a doubled backslash surviving every validator it passed.
+#:
+#: The lookahead is the whole difference between a finding that is strong and
+#: one nobody can trust, and it was added on review. A naive count of the two
+#: characters matches `nina`, `notes` and `nathan` in an ordinary unbackticked
+#: Windows path, and such a body has zero real line breaks -- so a one-sentence
+#: pull request body naming `C:\Users\nina\notes` was refused outright. What
+#: survives the narrowing is every realistic shape of the damage: a doubled
+#: paragraph break is backslash-n followed by a backslash, a list item is
+#: followed by `-`, a heading by `#`. What it gives up is a damaged body whose
+#: every escape happens to be followed immediately by a letter, which is the
+#: "a pass here is weak" half already stated below.
+_BACKSLASH = chr(92)
+_LINE_BREAK_ESCAPE = re.compile(re.escape(_BACKSLASH + "n") + "(?![A-Za-z0-9])")
 _REAL_NEWLINE = chr(10)
+
+
+def count_line_break_escapes(text):
+    """How many backslash-n sequences in `text` are shaped like line breaks.
+
+    Public so a test can pin the narrowing itself rather than only its effect:
+    a counter that had simply stopped counting and one that counts the right
+    subset produce the same `[]` from the check below.
+    """
+    return len(_LINE_BREAK_ESCAPE.findall(text))
 
 
 def escaped_newline_body_errors(payload):
@@ -1281,13 +1321,13 @@ def escaped_newline_body_errors(payload):
     body = payload.get("body")
     if not isinstance(body, str):
         return []
-    literal = prose_of(body).count(_LITERAL_NEWLINE)
+    literal = count_line_break_escapes(prose_of(body))
     real = body.count(_REAL_NEWLINE)
     if literal <= real:
         return []
     return [
-        "pr_body.payload.body: {} literal backslash-n sequences outside code spans "
-        "against {} real line break(s) -- more escaped than formatted. A JSON "
+        "pr_body.payload.body: {} line-break-shaped backslash-n sequences outside "
+        "code spans against {} real line break(s) -- more escaped than formatted. A JSON "
         "payload written with doubled backslashes opens as one enormous line with "
         "every heading and paragraph break visible in the rendered body, and the "
         "reading lands on somebody else after your session has ended (#685, "
@@ -1440,9 +1480,17 @@ def inspect_file(path, schema=None, check_pr_body=True):
     schema = load_schema() if schema is None else schema
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError as well as OSError, and it is not symmetry. A NUL byte is
+        # legal in the string a caller types and `read_text` raises `ValueError:
+        # embedded null byte` for one -- which escaped this arm and landed in
+        # main()'s `except ValueError`, printing "the schema itself is unusable".
+        # A report path crashing the check, reported as the maintainer's own
+        # configuration being broken: a wrong answer delivered calmly, which is
+        # worse than the traceback it replaced. `_contained_path` already makes
+        # exactly this argument for the payload path one field over.
         return VERSION_UNDECIDABLE, "the report could not be read", [
-            "{}: cannot read the report ({})".format(path, exc)
+            "{}: cannot read the report ({})".format(_one_line(path), _one_line(exc))
         ]
     try:
         report = json.loads(raw)

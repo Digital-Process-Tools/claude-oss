@@ -320,9 +320,9 @@ Every brief carries these:
    The cwd paragraph is here for the same reason and is the same defect one op over (#266). The
    brief guarantees a write outside every worktree and requires every write to go through supertool,
    which refuses exactly that path — so an agent doing precisely what both halves say is refused on
-   the one write it was promised. The refusal is right; nothing naming the remedy is the bug, and it
-   cost two agents a re-sent heredoc before anyone wrote it down. Same test file holds it: a
-   document requiring the out-of-tree write must also name the refusal and the cwd that avoids it.
+   each write it was promised. The refusal is right; nothing naming the remedy is the bug, and it
+   cost two agents a re-sent heredoc; naming it *once* then cost two more (#685). Same test file
+   holds the refusal and remedy, `test_write_receipt_685.py` the per-call half.
 
 2. **Name the hidden judgment call.** If you cannot state what the agent will have to decide, you
    have not read the issue closely enough to delegate it.

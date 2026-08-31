@@ -102,8 +102,47 @@ def test_the_counts_in_the_damaged_fixture_are_the_observed_ones():
 def test_the_check_fires_on_the_observed_damage():
     errors = _body_errors(DAMAGED_BODY)
     assert errors, "a body with 30 literal escapes against 4 real newlines passed"
-    assert "30" in errors[0] and "4" in errors[0], errors[0]
+    # 15, not 30: a doubled paragraph break is two escapes and counts once,
+    # because only the first of the pair is followed by something that is not a
+    # letter or a digit. See the Windows-path test below for why that narrowing
+    # exists at all.
+    assert "15" in errors[0] and "4" in errors[0], errors[0]
     assert "pr_body.payload.body" in errors[0]
+
+
+def test_a_windows_path_in_prose_is_not_read_as_a_doubled_escape():
+    """Found by review, and it is the difference between an absence detector
+    whose finding is strong and one nobody can trust.
+
+    A backslash followed by an `n` is not an escape when the `n` merely begins
+    the next path component -- and an unbackticked Windows path in a one-line
+    body has zero real newlines, so a naive substring count refuses it outright.
+    That is a body somebody legitimately wrote, in a repository that ships
+    Windows-path fixes, and refusing it contradicts the docstring beside the
+    check."""
+    windows = (
+        "Restores the fallback for C:{b}Users{b}nina{b}notes and "
+        "C:{b}Users{b}noah{b}file so tests pass on Windows.".format(b=chr(92))
+    )
+    assert _body_errors(windows) == [], _body_errors(windows)
+
+    # Must-fire in the same fixture: the same sentence with the escapes shaped
+    # like line breaks rather than like path separators is still refused, so the
+    # pass above is a narrowing and not the check going quiet.
+    damaged = windows.replace(chr(92) + "n", chr(92) + "n ")
+    assert _body_errors(damaged) != [], damaged
+
+
+def test_only_line_break_shaped_escapes_are_counted():
+    """Control on the narrowing itself. The fixture still carries 30 raw
+    backslash-n substrings; what the check counts is the 15 that are shaped
+    like line breaks. Without this, a reader cannot tell the narrowing from the
+    counter being broken."""
+    assert DAMAGED_BODY.count(BACKSLASH_N) == 30
+    assert report_schema.count_line_break_escapes(DAMAGED_BODY) == 15
+    windows = "C:{b}Users{b}nina{b}notes".format(b=chr(92))
+    assert windows.count(BACKSLASH_N) == 2
+    assert report_schema.count_line_break_escapes(windows) == 0
 
 
 def test_a_healthy_body_passes_and_the_check_is_not_vacuous():
@@ -149,7 +188,7 @@ def test_the_check_runs_from_validate_pr_body_on_a_real_payload(tmp_path):
         tmp_path, payload=payload, closes={"state": "closes", "issues": [685, 583]}
     )
     errors = report_schema.validate_pr_body(report, base_dir=tmp_path)
-    assert any("literal" in e for e in errors), errors
+    assert any("backslash-n" in e for e in errors), errors
 
 
 # --- the receipt that names where it looked --------------------------------
@@ -221,13 +260,57 @@ def test_a_path_that_cannot_be_resolved_says_so_rather_than_echoing_it():
         )
     text, state = report_schema.resolved_receipt(hostile)
     assert state == "could-not-resolve"
-    assert "could not resolve" in text
+    # The sentence must NOT itself open with "could not resolve": `main` renders
+    # it under a `could-not-resolve --` prefix, and a helper that repeats the
+    # prefix prints the words twice on the one line a reader is scanning.
+    assert not text.lower().startswith("could not resolve"), text
+    assert "absolute" in text, text
 
     # Positive control in the same fixture: the resolving arm still resolves,
     # so a `could-not-resolve` for everything would not pass this pair.
     ok_text, ok_state = report_schema.resolved_receipt(".")
     assert ok_state == "resolved"
     assert os.path.isabs(ok_text)
+
+
+def test_main_on_an_unresolvable_path_blames_the_path_and_not_the_schema(capsys):
+    """Adjacent to #685 and found while pinning the receipt: `inspect_file`
+    guarded its read with `except OSError` alone, so a NUL-bearing report path
+    raised `ValueError` out of `read_text` and landed in `main`'s
+    `except ValueError`, which prints *the schema itself is unusable*. A report
+    path crashing the check, reported as the maintainer's own configuration
+    being broken -- a wrong answer delivered calmly, which is worse than the
+    traceback it replaced.
+
+    This is also the only route that exercises the composed `at:` line for the
+    could-not-resolve state, which is why the two live in one test."""
+    hostile = "reports/x" + chr(0) + ".json"
+    try:
+        Path(hostile).read_text(encoding="utf-8")
+    except ValueError:
+        pass
+    except OSError:
+        pytest.skip(
+            "this interpreter raised OSError rather than ValueError for a "
+            "NUL-bearing path, so the arm under test was not established here; "
+            "untested: inspect_file's ValueError arm on {}".format(sys.platform)
+        )
+    else:
+        pytest.skip(
+            "this interpreter read a NUL-bearing path without raising; "
+            "untested: inspect_file's ValueError arm on {}".format(sys.platform)
+        )
+
+    assert report_schema.main([hostile]) == 1
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert "the schema itself is unusable" not in combined, combined
+    assert "cannot read the report" in combined, combined
+
+    lines = _at_lines(out.out)
+    assert lines, "no `at:` receipt for a path that could not be resolved"
+    assert lines[0].startswith("at: could-not-resolve -- "), lines[0]
+    assert "could-not-resolve -- could not resolve" not in lines[0], lines[0]
 
 
 # --- the sixth shared fact: the cwd move is per call -----------------------
