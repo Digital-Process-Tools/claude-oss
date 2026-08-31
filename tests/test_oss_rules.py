@@ -423,15 +423,42 @@ def _changelog_rule(root):
     return (_layer(root, "paths") / "changelog-fragments.md").read_text(encoding="utf-8")
 
 
-def _assembler_command(body):
-    """The one shell line that invokes the assembler, or None if the rule emits none."""
-    found = [
+def _assembler_commands(body):
+    """Every shell line that invokes the assembler, in the order the rule prints them.
+
+    Plural since #721. The rule used to publish a single command combining `--check`
+    and `--check-links`; the assembler refuses that combination outright, so the rule
+    publishes one invocation per audit.
+
+    This helper asserts nothing about the count on purpose. The singular version did --
+    `at most one` -- and seven callers below inherited a hard constraint on the *number*
+    of audits from a helper whose subject is the *path* they name. How many invocations
+    there should be is a question each caller answers for itself; answering it here
+    answers it once, for all of them, in the file least likely to be read when the
+    number changes.
+    """
+    return [
         line.strip()
         for line in body.splitlines()
         if line.strip().startswith("python3 ") and "assemble_changelog.py" in line
     ]
-    assert len(found) < 2, "more than one invocation to check: {}".format(found)
-    return found[0] if found else None
+
+
+def _assembler_command(body, flag):
+    """The single invocation carrying *flag*, or None if the rule emits none at all.
+
+    Matched against the shlex-split tokens rather than the raw line: `--check` is a
+    prefix of `--check-links`, so a substring test finds the other command and reports
+    an agreement it never established.
+    """
+    commands = _assembler_commands(body)
+    if not commands:
+        return None
+    found = [command for command in commands if flag in shlex.split(command)]
+    assert len(found) == 1, "expected exactly one {} invocation, got {}".format(
+        flag, found
+    )
+    return found[0]
 
 
 def _script_argument(command):
@@ -464,11 +491,16 @@ def test_scaffolded_rule_names_an_assembler_that_exists_in_that_tree(tmp_path):
     root = _scaffolded(tmp_path)
     oss_rules.install(root)
 
-    command = _assembler_command(_changelog_rule(root))
-    assert command, "no invocation emitted for a tree that has an assembler"
-    script = _script_argument(command)
-    assert (root / script).is_file(), "{}: not in the tree it was written into".format(script)
-    assert script == VENDORED, script
+    commands = _assembler_commands(_changelog_rule(root))
+    assert commands, "no invocation emitted for a tree that has an assembler"
+    # Every line, not the first. A second invocation naming a path that is not in the
+    # tree is the identical defect, and it is the one a singular helper could not see.
+    for command in commands:
+        script = _script_argument(command)
+        assert (root / script).is_file(), "{}: not in the tree it was written into".format(
+            script
+        )
+        assert script == VENDORED, script
 
 
 def test_this_repo_shaped_rule_names_an_assembler_that_exists_in_that_tree(tmp_path):
@@ -478,11 +510,14 @@ def test_this_repo_shaped_rule_names_an_assembler_that_exists_in_that_tree(tmp_p
     root = _plugin_shaped(tmp_path)
     oss_rules.install(root)
 
-    command = _assembler_command(_changelog_rule(root))
-    assert command, "no invocation emitted for a tree that has an assembler"
-    script = _script_argument(command)
-    assert (root / script).is_file(), "{}: not in the tree it was written into".format(script)
-    assert script == IN_TREE, script
+    commands = _assembler_commands(_changelog_rule(root))
+    assert commands, "no invocation emitted for a tree that has an assembler"
+    for command in commands:
+        script = _script_argument(command)
+        assert (root / script).is_file(), "{}: not in the tree it was written into".format(
+            script
+        )
+        assert script == IN_TREE, script
 
 
 def test_the_two_populations_get_different_commands(tmp_path):
@@ -495,7 +530,7 @@ def test_the_two_populations_get_different_commands(tmp_path):
     oss_rules.install(managed)
     oss_rules.install(ours)
 
-    assert _assembler_command(_changelog_rule(managed)) != _assembler_command(
+    assert _assembler_commands(_changelog_rule(managed)) != _assembler_commands(
         _changelog_rule(ours)
     )
 
@@ -510,21 +545,30 @@ def test_a_tree_with_no_assembler_gets_no_invocation(tmp_path):
     oss_rules.install(root)
 
     body = _changelog_rule(root)
-    assert _assembler_command(body) is None, "guessed a path in a tree that has none"
+    assert _assembler_commands(body) == [], "guessed a path in a tree that has none"
     assert "assemble_changelog.py" not in body, body
     assert "could not" in body.lower(), "silent about being unable to look:\n" + body
 
 
-def test_the_emitted_command_passes_dir_and_changelog(tmp_path):
+def test_the_emitted_commands_pass_dir_and_changelog(tmp_path):
     """The assembler derives its own root by walking up for a `.git` when it is given
     neither, which under a plugin finds the wrong repository.
+
+    Per command since #721, and both flags on both: that is what
+    `scaffold.CHANGELOG_WORKFLOW`'s two steps pass, and this rule closes by promising
+    the reader that their command and the CI leg's cannot disagree. Asserting it of
+    only one of the two lines would leave the other free to derive its own root.
     """
     root = _scaffolded(tmp_path)
     oss_rules.install(root)
-    command = _assembler_command(_changelog_rule(root))
-    assert "--dir" in command, command
-    assert "--changelog" in command, command
-    assert "--check" in command, command
+    body = _changelog_rule(root)
+
+    for flag in ("--check", "--check-links"):
+        command = _assembler_command(body, flag)
+        assert command, "no {} invocation emitted".format(flag)
+        tokens = shlex.split(command)
+        assert "--dir" in tokens, command
+        assert "--changelog" in tokens, command
 
 
 def test_the_emitted_path_uses_forward_slashes(tmp_path):
@@ -533,8 +577,9 @@ def test_the_emitted_path_uses_forward_slashes(tmp_path):
     """
     for root in (_scaffolded(tmp_path), _plugin_shaped(tmp_path)):
         oss_rules.install(root)
-        script = _script_argument(_assembler_command(_changelog_rule(root)))
-        assert "\\" not in script, script
+        for command in _assembler_commands(_changelog_rule(root)):
+            script = _script_argument(command)
+            assert "\\" not in script, script
 
 
 def test_the_fragments_directory_is_the_one_the_repo_uses(tmp_path):
@@ -548,7 +593,10 @@ def test_the_fragments_directory_is_the_one_the_repo_uses(tmp_path):
     block = body.split("\n---\n")[0]
     match_line = [ln for ln in block.splitlines() if ln.startswith("match:")][0]
     assert "changes/" in match_line, match_line
-    assert "changes" in _assembler_command(body)
+    # The fragment audit is the one that takes a directory, so that is the invocation
+    # the repo's own directory has to reach. Asked of whichever line happened to come
+    # first, this passes on a rule that names the directory only where it is not read.
+    assert "changes" in _assembler_command(body, "--check")
 
 
 def test_the_committed_layer_in_this_repo_names_a_path_that_is_here():
@@ -558,10 +606,11 @@ def test_the_committed_layer_in_this_repo_names_a_path_that_is_here():
     body = (
         REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
     ).read_text(encoding="utf-8")
-    command = _assembler_command(body)
-    assert command, "the committed rule emits no invocation, though this repo has one"
-    script = _script_argument(command)
-    assert (REPO_ROOT / script).is_file(), "{}: not in this repository".format(script)
+    commands = _assembler_commands(body)
+    assert commands, "the committed rule emits no invocation, though this repo has one"
+    for command in commands:
+        script = _script_argument(command)
+        assert (REPO_ROOT / script).is_file(), "{}: not in this repository".format(script)
 
     # And that it is the CURRENT rendering. Resolving is necessary and not sufficient: the
     # old committed string named a path that resolves here, which is precisely why the bug
@@ -694,13 +743,13 @@ def test_a_declined_repo_is_not_sent_back_to_the_command_that_declined(tmp_path)
     clean_body = _changelog_rule(clean)
 
     # Declined: no invocation, no false remedy, and the workflow that does run is named.
-    assert _assembler_command(declined_body) is None, declined_body
+    assert _assembler_commands(declined_body) == [], declined_body
     assert DECLINED_ANCHOR in _flat(declined_body), declined_body
     assert ".github/workflows/changelog.yml" in declined_body, declined_body
     assert VENDORING_REMEDY not in _flat(declined_body), declined_body
 
     # No gate: the remedy is true here, and this is the arm that must keep firing.
-    assert _assembler_command(clean_body) is None, clean_body
+    assert _assembler_commands(clean_body) == [], clean_body
     assert VENDORING_REMEDY in _flat(clean_body), clean_body
     assert DECLINED_ANCHOR not in _flat(clean_body), clean_body
 

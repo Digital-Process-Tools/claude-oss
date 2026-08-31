@@ -566,6 +566,13 @@ says nothing is read as compatible with the count of such fragments reported out
 loud. A field on every fragment is a field on every fragment to get wrong, so it is
 required exactly where the question is genuinely open.
 
+The fragment check on every pull request reads this line, not just the release. A
+declaration that will not parse — a word that is neither verdict, a verdict with no
+reason, both at once, or a `removed` fragment carrying none — is refused there,
+naming the file and the value. A format that is documented and unenforced is worse
+than one that is neither: contributors follow it and learn nothing when they get it
+wrong, and the correction arrives at release time when it is most expensive.
+
 It is a plain bullet rather than front matter, so the assembler needs no special case
 and the claim ships into `CHANGELOG.md` where a user reads it, instead of being
 metadata deleted at the fold.
