@@ -212,14 +212,35 @@ def _ere_matches(pattern, subject):
     real rather than approximated through Python's `re` -- a PCRE engine accepts syntax an
     awk ERE refuses or reads differently, so a Python-side pass is not evidence about the
     hook. `-v` passes both strings so neither is interpolated into the program text.
+
+    A spawn that never answers within the timeout measures nothing about whether `pattern`
+    matches `subject` -- it is neither a MATCH nor a NOMATCH -- so `subprocess.TimeoutExpired`
+    is skipped rather than left to propagate as an assertion failure would (#712). Observed
+    on `windows-latest`: Git for Windows' `awk.EXE` did not answer a one-line `BEGIN` block
+    inside 10 seconds, and the uncaught exception reddened a release on a commit that never
+    touched this rule, this pattern or this function. Widening the timeout would only move
+    the threshold (`CLAUDE.md`'s "do not tune a test until it passes"); the fix is that a
+    timeout must not render as the same outcome a wrong answer does. `pytest.skip` raises
+    immediately, before the caller's next assertion runs -- which is what skips the whole
+    test rather than one assertion, load-bearing for callers with a positive control after
+    the first assertion that would otherwise report a false "must not fire" with nothing
+    proving it can fire.
     """
+    awk_path = _awk()
     program = 'BEGIN { print (subject ~ pattern) ? "MATCH" : "NOMATCH" }'
-    result = subprocess.run(
-        [_awk(), "-v", "subject=" + subject, "-v", "pattern=" + pattern, program],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    try:
+        result = subprocess.run(
+            [awk_path, "-v", "subject=" + subject, "-v", "pattern=" + pattern, program],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.skip(
+            "awk ({}) did not answer within {}s on {!r} -- this measures nothing about "
+            "whether {!r} matches {!r}, and is not the same outcome as a NOMATCH "
+            "(#712)".format(awk_path, exc.timeout, sys.platform, pattern, subject)
+        )
     assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
     return result.stdout.strip() == "MATCH"
 
@@ -245,6 +266,24 @@ def test_the_changelog_match_fires_on_changelog_md_and_still_fires_on_a_fragment
         "must not fire: this is the positive control -- an unrelated file whose name merely "
         "contains the word must stay silent, or the pattern is matching everything"
     )
+
+
+def test_ere_matches_skips_rather_than_fails_on_a_timeout(monkeypatch):
+    """A `subprocess.TimeoutExpired` means the ERE was never measured -- neither a MATCH
+    nor a NOMATCH -- so it must render as a skip of the whole test, not as the same
+    failure a wrong answer produces (#712). `pytest.raises(Exception)` would not catch
+    this: pytest's own skip exception derives from `BaseException` rather than
+    `Exception` (the trap CLAUDE.md records), so the outcome type is pinned here rather
+    than left to `Exception`, which would silently pass this test for the wrong reason
+    if `_ere_matches` merely swallowed the timeout instead of skipping through it.
+    """
+
+    def _timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["awk"], timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", _timeout)
+    with pytest.raises(pytest.skip.Exception):
+        _ere_matches("x", "y")
 
 
 def test_no_awk_escape_that_compiles_to_nothing():
