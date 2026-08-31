@@ -872,7 +872,7 @@ the directory rather than the file**: `report_schema.py` prints `at: <absolute p
 verdict, and if that is not under `<worktree_root>` your cwd moved.
 
 supertool refuses a path outside the current working directory — standing in the branch directory
-you get `ERROR: path escapes cwd`, on the one write this brief guarantees you will make. The refusal
+you get `ERROR: path escapes cwd`, on each of the three writes above. The refusal
 is correct and is not something to argue with; what is wrong is doing it twice, because the failed
 attempt costs a re-send of the whole payload rather than a retry of a short command. The refusal
 message also offers an env var and an `allow_outside_cwd` key in `.supertool.json`. **Do not take
