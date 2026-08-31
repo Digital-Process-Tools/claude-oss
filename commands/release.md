@@ -369,7 +369,18 @@ which gate 4 already accepts unconditionally.
 ## Then
 
 Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject` —
-or with `chore(release): {version}` when it is null, per the rule above — and tag. Then **verify the tag exists on the remote**:
+or with `chore(release): {version}` when it is null, per the rule above — and tag.
+
+**Stage explicit paths for the release commit. Never `git commit --all` (or `-a`), and never a
+bare `git add .` / `git add -A`.** `--all` commits every unstaged change the working tree happens
+to carry, not only the release's own — at `0.16.0` it swept an untracked `.venv/` into the commit,
+1,390 files where 41 were intended, caught only because the commit had not yet reached the remote
+(#710). The same accident, a different offender, is already recorded in `.gitignore`'s own comment
+against the `v0.3.0` release commit. Name the paths the release actually touched — the folded
+changelog, the version-site files, anything else this run wrote — and stage those, or `git add`
+each one explicitly before a pathless commit.
+
+Then **verify the tag exists on the remote**:
 
 ```bash
 git ls-remote --tags origin <tag>
