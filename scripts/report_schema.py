@@ -174,6 +174,19 @@ CONTRACT_FINGERPRINTS = {
     # any version-7 report carrying `full` (an unknown key under
     # additionalProperties: false), which is breaking in that one direction.
     7: "e6cdbcea7419317c93a8ce9d398c3814b8eb4541fb8afdc05925d750f4487067",
+    # 8 (#698): forge_payload gains `no_close`, optional -- supertool's own field
+    # for opening a pull request that deliberately closes nothing, which the
+    # payload previously could not carry at all under additionalProperties:
+    # false, so every such pull request this pipeline produced validated
+    # INVALID by construction. ADDITIVE: nothing removed, nothing newly
+    # required, no pattern tightened -- an old report with no `no_close` in its
+    # payload is still valid. The number still moved, because a version-7 copy
+    # refuses any version-8 payload carrying `no_close` (an unknown key under
+    # forge_payload's own additionalProperties: false), which is breaking in
+    # that one direction. The on-disk pass also gained one rule, paired with a
+    # mutation test: a payload declaring `no_close: true` while its own body
+    # still binds a closing keyword is refused.
+    8: "184b54a76a33b8f5e4452a6759c2dea5e251cc96fa818dc36ee31d38bd80065e",
 }
 
 _TYPES = {
@@ -1147,6 +1160,36 @@ def closing_body_errors(closes, body):
     return errors
 
 
+def no_close_body_errors(payload):
+    """#698: the payload's own `no_close` against its own body -- a narrower check
+    than `closing_body_errors` above, which compares the REPORT's declared
+    `pr_body.closes` against the body. This one needs neither: `no_close` is the
+    field supertool's `gh-pr-create` actually reads off the payload to decide
+    whether to open a non-closing pull request at all, so a payload that sets it
+    true while its own body still binds a closing keyword is contradicting
+    itself, independent of what the report separately claims about `closes`.
+
+    Same shape as the `closes-nothing` arm on purpose: an absence detector, so a
+    finding is strong and a pass is weak, and it says nothing about what the
+    forge will actually close.
+    """
+    if not isinstance(payload, dict) or payload.get("no_close") is not True:
+        return []
+    body = payload.get("body")
+    if not isinstance(body, str):
+        return []
+    found = _ANY_CLOSING_REFERENCE.search(prose_of(body))
+    if found is None:
+        return []
+    return [
+        "pr_body.payload.no_close: true, and the body binds a closing keyword ({}) "
+        "outside a code span or an HTML comment. no_close is supertool's own escape "
+        "hatch for a pull request that genuinely closes nothing; a bound keyword "
+        "beside it says the opposite, and the forge would close the issue despite "
+        "the payload's own claim that it would not.".format(_one_line(found.group(0), 60))
+    ]
+
+
 def validate_pr_body(report, schema=None, base_dir=None):
     """Open the pull request payload the report says it wrote, and check its shape.
 
@@ -1216,6 +1259,7 @@ def validate_pr_body(report, schema=None, base_dir=None):
     # read has no closing keyword to be missing, and reporting one for it would be
     # this file's own defect class inside the check written against it.
     errors.extend(closing_body_errors(node.get("closes"), payload.get("body")))
+    errors.extend(no_close_body_errors(payload))
     errors.extend(below_bar_body_errors(report, payload.get("body")))
     return errors
 

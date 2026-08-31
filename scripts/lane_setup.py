@@ -42,6 +42,12 @@ collapsing them by accident:
              the third state was reachable only for an empty path.
   board      ok (condensed from `supertool git-worktrees`) or could-not-run (supertool
              is not on PATH, or the call itself failed) -- never silently empty.
+  record     recorded (this call passed --claim and the write succeeded), unknown
+             (no worktree_root to write to -- expected inside a worktree this loop
+             cuts), could-not-write (worktree_root known, the write itself failed),
+             or not-claimed (#705: this call did not pass --claim, so it asked
+             without writing -- the ordinary shape for a disjointness probe that
+             may never be dispatched).
 
 `git rev-parse` on a full ref, never abbreviated: a short sha returns `[]` from
 `gh run list --commit` and exits 0, which has cost this loop a round already
@@ -945,17 +951,42 @@ def lane_count(worktree_root):
     return {"state": "resolved", "count": live, "detail": ""}
 
 
-def lanes_snapshot(worktree_root, issue, branch, path, files=None):
-    """Record this lane's own presence, then report the live picture -- including
-    itself. Called from `compute` at the one moment #385 says the count is useful:
-    setup time, before a lane sizes itself against the machine and before `doctor`
-    typically runs.
+def lanes_snapshot(worktree_root, issue, branch, path, files=None, claim=False):
+    """Report the live picture, and record this lane's own presence only when asked.
 
-    `files` (#558) passes straight through to `record_lane`: when this call's own
-    `--lane` resolved a file list, it is what a later `derive_held_set` call reads
-    back for this issue.
+    #705: every call used to write a record unconditionally, whether or not the
+    caller was actually committing to this lane. A maintainer probing three
+    candidate lanes to check disjointness (`--lane`/`--derive-held`, neither of
+    which implies a dispatch decision) left two phantom records behind -- each one
+    carrying `files=None`, which is exactly the shape `held_from_live_lanes`
+    refuses to trust as complete (#558). The record then outlived the probe by up
+    to the full TTL, blocking every later `--derive-held` call in the meantime --
+    a refusal that was correct about what it was asked and wrong about the world,
+    because what it was asked was never a claim to begin with.
+
+    So writing is now gated on `claim`, an explicit "I am dispatching this lane"
+    signal from the caller -- never inferred from which other flags happen to be
+    present, because `--lane` and `--derive-held` are both legitimately used by a
+    probe that decides nothing. When `claim` is False, nothing is written: the
+    live count still reports what is *already* on disk (#385's original read),
+    and `record` comes back `not-claimed` rather than `recorded` or `unknown`, so
+    a reader can tell "asked, not claiming" apart from "there was nowhere to
+    write" and from "this call actually registered itself".
+
+    `files` (#558) passes straight through to `record_lane` when `claim` is True:
+    when this call's own `--lane` resolved a file list, it is what a later
+    `derive_held_set` call reads back for this issue.
     """
-    record = record_lane(worktree_root, issue, branch, path, files=files)
+    if claim:
+        record = record_lane(worktree_root, issue, branch, path, files=files)
+    else:
+        record = {
+            "state": "not-claimed",
+            "path": None,
+            "detail": "this call did not pass --claim, so nothing was written -- "
+            "pass --claim only at the moment this lane is actually being "
+            "dispatched, not while probing candidates (#705).",
+        }
     count = lane_count(worktree_root)
     return {"record": record, "count": count}
 
@@ -1436,6 +1467,7 @@ def compute(
     lane_patterns=None,
     against_patterns=None,
     derive_held=False,
+    claim=False,
 ):
     """Everything a lane brief needs, in one payload. `config.state` gates the exit.
 
@@ -1455,6 +1487,12 @@ def compute(
     a forge call that fails must never render as an empty, confident held set, so
     a failed derivation flows into `lane_report` as `could-not-derive`, not as
     `against=None` (which would silently read as "nothing to check against").
+
+    `claim` (#705) is the only thing that makes this call write a lane record.
+    Default False: every read here -- base, branch, worktree occupancy, the
+    board, `--lane`/`--against`/`--derive-held` -- runs exactly as before, and
+    nothing is written to the registry. Pass `claim=True` only at the moment
+    this lane is actually being dispatched, never while probing candidates.
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
@@ -1519,7 +1557,7 @@ def compute(
     lane_files = lane["lane"]["files"] if lane and lane.get("lane") is not None else None
     lanes = lanes_snapshot(
         config.get("worktree_root"), issue, branch.get("name"), worktree.get("path"),
-        files=lane_files,
+        files=lane_files, claim=claim,
     )
 
     return {
@@ -1792,6 +1830,15 @@ def main(argv=None):
         "refused together with --against, since a derived exclusion and a "
         "hand-typed one beside it is exactly the ambiguity this exists to close",
     )
+    parser.add_argument(
+        "--claim",
+        action="store_true",
+        help="write this lane's own record to the registry (#705); every other "
+        "call -- including one carrying --lane or --derive-held -- is a read and "
+        "writes nothing, so probing candidate lanes never leaves a phantom "
+        "record behind. Pass this only at the moment this lane is actually "
+        "dispatched.",
+    )
     args = parser.parse_args(argv)
 
     if args.derive_held and args.against:
@@ -1805,7 +1852,7 @@ def main(argv=None):
 
     payload = compute(
         args.repo, args.issue, args.remote, args.lane, args.against,
-        derive_held=args.derive_held,
+        derive_held=args.derive_held, claim=args.claim,
     )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
