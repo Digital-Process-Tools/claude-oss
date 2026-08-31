@@ -43,3 +43,4 @@ __pycache__/
 # nobody has touched .git/info/exclude in -- it is not a claim that one is
 # needed.
 .mcp.json
+.venv/

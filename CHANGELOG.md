@@ -7,6 +7,438 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-31
+
+### Added
+
+- `commands/tick.md` step 1 now snapshots `${CLAUDE_PLUGIN_ROOT}` at the start of a tick and
+  step 6 checks it again just before the tick closes (`oss_state.py --record-plugin-root` /
+  `--check-plugin-root`), so an auto-update landing mid-session -- which moves the value every
+  later command in the tick keeps substituting -- is reported (`changed`) instead of going
+  unnoticed. This is a within-tick, single-use check (an ephemeral sidecar file, consumed on
+  first read), deliberately separate from #477/#677's cross-tick plugin-identity comparison,
+  which asks a different question over a different clock (#565).
+
+- Ships `.claude-plugin/marketplace.json` with a `directory`-source entry pointing at
+  this checkout itself, so a contributor can `/plugin marketplace add` their own clone and
+  `/plugin install oss@claude-oss-dev` to resolve commands, skills and agents straight
+  from that checkout -- no copy into the plugin cache, confirmed by reading the installed
+  CLI's own marketplace-source handling. Previously, an edit to `agents/` or `skills/` in
+  a clone changed nothing about the session running it until a release was cut and the
+  marketplace cache refreshed (#607). This is a contributor path alongside the README's
+  existing marketplace install, not a replacement for it: a maintainer running the loop
+  against a different repository should still use the tagged, released `dpt-plugins`
+  marketplace, which is what this plugin's own currency and release tooling assume the
+  installed copy to be.
+
+- `/oss:doctor` now relays each declared dependency's own diagnostic (supertool's
+  `doctor` op, `remember`'s and `claude-jit-context`'s versioned `doctor.sh` /
+  `jit-doctor.sh` scripts), not only its installed version. Previously
+  `OK claude-jit-context: 0.6.0` was true and answered a different question than
+  "is it working" -- every declared dependency ships its own diagnostic that
+  answers that one, and nothing relayed it. Three states -- `relayed` /
+  `not-installed` / `could-not-run` -- and `could-not-run` never renders as `OK`.
+  `claude-jit-context`'s documented 0/1/2 exit-code contract (nothing inert / a
+  layer the matcher can never load / SKIPPED) is honoured rather than flattened
+  into a boolean; `remember`'s script always exits 0, so its own trailing
+  `VERDICT:` line is what is relayed. Measured combined runtime on this machine
+  is under 1s, so this runs on every `/oss:doctor` invocation rather than behind
+  a flag (#638).
+
+- README documents the status line for the first time: a section covering all of the fields
+  `scripts/statusline.py` renders -- model/context, repo/branch/version, the board summary,
+  release progress, the next tick, the last-render stamp, plugin currency (including which
+  marker shows the latest published version versus which shows what is installed), and the
+  watch-channel field `ch` added by #613/#645. Every field this plugin's status line shipped so
+  far had gone undocumented; #645 added the fifth (sixth-ish) field and had nowhere to slot it
+  because no section existed at all (#650).
+
+- Split the maintainer loop into a scheduler and a per-tick sub-manager (#695). `agents/sub-manager.md` runs exactly one tick and reports back through `scripts/tick_handback.py`, a three-state classifier (`completed` / `blocked` / `could-not-run`, plus `returned-nothing` for a spawn that died silently) so a sub-manager that found nothing to do and one that never got to speak cannot render identically. *Publishing* a GitHub Release is withheld from the sub-manager in code, not only in prose: `scripts/agent_role.py` resolves a declared role from a marker file under the repository's own git directory (an exported environment variable does not survive across separate `Bash` tool calls in this harness, measured directly) and `scripts/release_publish.py` refuses to publish before it reads anything else when the role is `sub-manager`. The marker expires after a bounded window and can be cleared explicitly, so a sub-manager that dies mid-tick does not leave a permanent block on every later release (the first version was write-only and did exactly that). *Tagging* is not code-gated -- it is a plain shell command with no wrapping script -- and rests on the sub-manager never running the release phase at all; full tag-and-publish authority for a per-tick spawn is filed separately as #696. Two-level agent spawning (scheduler -> sub-manager -> developer) was confirmed working rather than assumed. The scheduler side of the split -- rewiring `commands/tick.md` and `skills/manager/SKILL.md` to actually dispatch a sub-manager per tick -- is not part of this change; see the issue's own handback for why.
+
+### Fixed
+
+- `/oss:scaffold` now prints the whole corrected `.supertool.json` when a repo's radar
+  board is registered but not routed (`no-route`) or has no tiers registered at all
+  (`no-tiers`), instead of only a fragment a maintainer has to merge by hand into a
+  config with two independently silent halves (`presets` and `ops.radar.radar_tiers`).
+  Getting one of the two right by hand produced a board that is byte-identical from
+  outside to a healthy one -- exactly the state the check exists to make visible.
+  `.supertool.json` itself is still never overwritten; only what is printed changed.
+  The remaining state, `route-unknown` (an unreadable `presets`), still prints only
+  the fragment, deliberately: a merge cannot safely decide what to append an
+  unreadable value to. `/oss:doctor`'s `scripts/doctor.py` carries the identical
+  remedy string and the identical gap and is not touched by this change -- it needs
+  the same fix, tracked separately (#622).
+
+- `bin/oss-workspace` now compares the oss plugin's identity (version plus content
+  digest) against the one recorded from the last session it opened, and says so
+  loudly when it changed -- three states, `unchanged` (silence), `changed` (an
+  explicit line before the session opens), and `could-not-tell` (no prior
+  recorded, or the identity could not be read; said once, never rendered as
+  `unchanged`). Previously only `/oss:tick` step 1 (#477) made this comparison, so
+  a QA session, a review or an ordinary working session -- exactly the sessions
+  that carry a stale environmental picture across an update -- never saw it. The
+  prior is kept in its own file under `XDG_CACHE_HOME`/`HOME`, one per machine
+  rather than per repo, since a fresh clone reaches this launcher before any
+  `.oss.json` or `.oss.local.json` exists (#626).
+
+- Agent report schema bumped to contract 7 (additive): `tests.full` is a new optional
+  field on `tests` saying whether the developer lane's own full-suite run happened --
+  `ran` (with the result, wall-clock, platform and interpreter), `not-run` (with a
+  reason), or `could-not-run` (the harness itself failed, distinct from a decision not
+  to run it). Previously the manager had no way to learn this without reading it out
+  of prose in a commit message or re-running the suite itself to find out.
+- `skills/manager/phases/review.md` now states explicitly that the manager never runs
+  the repository's whole `test_command`, in any phase, for any reason -- CI (13 legs
+  across 3 operating systems and 4 interpreters) is the source of truth, and
+  `tests.full` on the report is how the manager learns whether a local full run
+  happened at all. The one run this does not forbid -- re-running the new suite
+  against the default branch with the fix absent, to prove the test is not vacuous --
+  stays on the manager's checklist unchanged; CI structurally cannot perform it, since
+  it only ever runs the branch as proposed with the fix present (#632).
+
+- `/oss:scaffold`'s `.supertool.json` template declared no `validators` block at
+  all, so every `paste`/`edit` in a freshly scaffolded repo ran with no post-write
+  check and no rollback -- the only thing standing between an agent and a
+  syntactically broken file landing on disk, in a repo where no agent is granted
+  `Edit` or `Write`. The template now ships three defaults chosen for being safe on
+  any machine rather than for coverage: `jsonlint` (stdlib-only), `tomllint`
+  (degrades to `skipped` rather than a false `ok` when tomllib/tomli is
+  unavailable), and `bash-check` (needs only a `bash` on PATH). Validators needing
+  an external binary install (`shellcheck`, `actionlint`, `markdownlint`,
+  `gitleaks`) are deliberately left out of the default: `/oss:doctor` has no line
+  yet reporting a configured-but-absent toolchain (half two of this issue, tracked
+  separately), and an unreported "could not tell" on every write in someone else's
+  repo would be worse than no validator at all. Python itself needed no entry --
+  supertool's built-in `py-syntax` backstop applies to every `.py` file with zero
+  configuration, in this repo and in every one it scaffolds alike (#633).
+
+- `README.md`'s launcher-timing receipt re-measured: opening the session cost
+  0.45 s / 2.5 s before #621 added a `claude mcp get` subprocess to every
+  `/oss:doctor` run, and the sentence never moved. Re-measured 2026-08-29 on
+  macOS with the real launcher (eight runs per arm, mean, final `exec claude`
+  no-opped so no interactive session opens but every `claude mcp ...` call
+  still reaches the real binary): **~1.3 s** without the diagnostic, **~3.2 s**
+  with it. The attribution clause moved too -- the diagnostic's own added
+  cost is now roughly half its own `claude mcp get` call and half the
+  pre-existing network check, not "most of it" as the old sentence read.
+  `tests/test_readme_launcher_timing_637.py` pins that the receipt names a
+  date and a method (never the numbers themselves, which this repository
+  does not tune tests to hold), so the next staleness is visible rather than
+  silent (#637).
+
+- `/oss:doctor`'s jit tools-index drift check no longer pins the tools row to a fixed
+  six columns. `claude-jit-context` 0.6.0 writes a seventh `requires` column, so every
+  repository whose index was correctly rebuilt by that dependency reported `stale` on
+  every tools row, regardless of whether anything had actually drifted. Trailing empty
+  columns are now stripped from both the derived and the indexed row before comparing,
+  so a widened index that adds nothing new is a no-op here -- a row that gains a
+  *populated* trailing column is still caught, because it is no longer trailing-empty
+  on the side that carries it (#640).
+
+- `/oss:doctor`'s jit rules check no longer FAILs a layer that holds zero rule entries
+  and a missing or empty index. That is the consistent state of a layer that ships
+  nothing to index -- one holding only its own generated `00-README.md`, for instance
+  -- not the missing-table defect the FAIL arm exists to catch, which requires entries
+  to exist in the first place. Such a layer now reports OK, naming that it is
+  consistent rather than staying silent about it (#641).
+
+- `/oss:doctor`'s statusline check now reads `.claude/settings.local.json` alongside the
+  tracked `.claude/settings.json`, and reports which file answered. A repository that
+  wires the status line the untracked way -- the only correct route for a repo whose own
+  tests forbid the key in the tracked file -- used to be indistinguishable from one that
+  never opted in at all, and the WARN's remedy, taken literally, would have added the key
+  to the wrong file and reddened that repository's CI (#642). An unreadable/unparseable
+  settings file is now its own state (`unknown`) rather than rendering as "sets no
+  statusLine", and a disagreement between the two files -- the local one wins -- is named
+  in the message rather than silently dropped.
+
+- `/oss:doctor`'s own `no-tiers` and `no-route` radar-board WARNs now print the whole
+  corrected `.supertool.json`, not a fragment a maintainer has to merge by hand across
+  two independently silent halves (`presets` and `ops.radar.radar_tiers`). This is the
+  `scripts/doctor.py` half of #622, which fixed only `scripts/scaffold.py`'s sibling
+  check because `doctor.py` was held by a concurrent lane at the time; that lane
+  merged and freed the file, and the code path the issue was actually filed about
+  -- `/oss:doctor` -- carried the identical remedy string and the identical gap until
+  now. `route-unknown` (an unreadable `presets`) still prints only the fragment,
+  deliberately: a merge cannot safely decide what to append an unreadable value to
+  (#644).
+
+- `/oss:doctor`'s channel MCP registration check now compares the version the
+  registered consumer path is pinned to against the version `supertool` is
+  actually installed at, instead of only confirming the pinned path exists.
+  Previously a stale pin (an older supertool copy the plugin cache had not
+  dropped yet) rendered two clean `OK` lines side by side that disagreed with
+  each other. New `channel consumer pin` line, three states -- `current` /
+  `SKEW` / `could-not-tell`, and `could-not-tell` never folds into `current`.
+  The pinned version is read from the registered install's own
+  `.claude-plugin/plugin.json`, found by walking up from the registered path,
+  rather than matched out of a path segment that happens to look like a
+  version. `SKEW` also says whether the two files are byte-identical,
+  computed by hashing both rather than assumed, since that is the difference
+  between a cosmetic pin and a genuinely different consumer running. This is
+  a comparison, not a hard failure: a deliberate pin to an older copy renders
+  as a WARN naming it, the same treatment `./supertool` pointing at a local
+  checkout already gets (#646).
+
+- `agents/developer.md` told a lane to run `python3 scripts/lane_setup.py <issue>
+  --lane <files>` before narrowing its test command. That path is
+  repo-relative; the script lives in the plugin, not in the repo being
+  managed, so the call resolved to nothing in every managed repository and
+  the cross-cutting guard step it exists to run never ran. Swept for the
+  class rather than the instance: eleven command-shaped `scripts/*.py`
+  invocations across `agents/developer.md`, `skills/manager/SKILL.md` and
+  `skills/manager/phases/{dispatch,handback}.md` were missing the
+  `${CLAUDE_PLUGIN_ROOT}` prefix every other shipped command already
+  carries. Ten now have it; the eleventh (`dispatch.md`'s worktree-naming
+  line) no longer names a path at all, since it only ever needed to point
+  back at the command run earlier in the same file. `agents/developer.md`
+  also names the
+  third state this class was hiding: if the call itself does not resolve,
+  say so under `adjacent` and record the guard set as `could-not-determine`
+  rather than as empty. `tests/test_script_path_resolution_647.py` scans
+  every agent and manager-loop document for a command-shaped script path
+  without the prefix, with a positive control proving it fires on the exact
+  shape reported and stays silent on a bare prose mention of the same
+  script (#647).
+
+- `bin/oss-workspace` (#652): an unreadable or malformed `.supertool.json` -- OSError,
+  invalid JSON, a document that is not a JSON object, or a crashed probe -- used to
+  print the identical sentence a genuine opt-out prints, "declares no radar tiers".
+  It now reports that state as UNKNOWN, distinct from both "declared" and "not
+  declared". The composition this closes: `radar_tiers_declared` used to stay `0` on
+  every one of those paths, which silently gated off #627's never-spawned-board check
+  with no receipt that anything had been skipped -- an unreadable config now makes
+  that check say so out loud ("skipped, not healthy") instead of staying silent or
+  printing a false "never existed". The no-python fallback (a plain `grep` for the
+  word `radar`) is folded into the same third state rather than left asserting "no
+  tiers" from a signal its own comment already called unreliable.
+
+- The status line's `_expected_watch_name` now carries `oss_config.watch_channel_name`'s
+  refusal, not only its fold. Before this fix, a `repo` value `oss_config` rejects outright --
+  `'..'`, `'../../etc'` -- still produced a channel name in the copy `scripts/statusline.py`
+  carries for its own standalone vendoring, because the copy skipped straight to the character
+  substitution with no refusal in front of it. The existing regression test only ever exercised
+  slugs both functions accept, which could not have caught this; the new fixture adds the
+  positive control, slugs `oss_config` rejects. A review of this fix found the same gap one
+  level up -- nothing pinned `statusline._REPO_RE`'s pattern against `oss_config.REPO_RE`'s, so
+  a future tightening or loosening of the latter would silently stop being reflected in the
+  former, and the value-level fixture would keep passing regardless. A direct pattern
+  comparison, in the shape `tests/test_supertool_rule_sync_577.py` already uses for a different
+  pair, closes that (#653).
+
+- The status line's `parse_channel_report` now anchors the `channel: ` match at column 0,
+  before any stripping, instead of stripping each line first. Stripping first meant an indented
+  line that merely looked like a state line could outrank the genuine, un-indented state
+  further down in the report -- relying on the report's own composition order rather than on
+  this parser's own anchor. Not currently exploitable (supertool's `watch` preset always
+  composes the real state as the first element of the report body), which is the argument for
+  fixing the parser rather than continuing to depend on another project's ordering (#654).
+
+- `/oss:doctor`'s watch-channel check now compares a name **declared alone** in
+  `.supertool.json` against what this repo's own `.oss.json` derives it should be,
+  the same comparison the exported-alone branch already made. Before, a name
+  declared with nothing exported over it cleared as `declared-only` with no such
+  comparison, so a `.supertool.json` copied from another repository -- the exact
+  shape that put four repos on one poller slot -- cleared with a line
+  byte-identical to a repo's own correct declaration. The new state,
+  `declared-mismatch`, WARNs and names the disagreement (#655).
+
+- `.supertool.json`'s `bash-check-launcher` and `actionlint` validator
+  entries matched only the canonical relative spelling of their target path
+  (`bin/oss-workspace`, `.github/workflows/*.yml`) -- a `./`-prefixed or
+  absolute spelling of the same path silently reached no validator at all,
+  since fnmatch's `*` crosses `/` in a suffix glob but not past a leading
+  literal. `bash-check-launcher` exists precisely because `bin/oss-workspace`
+  is extensionless and `*.sh` misses it, and it guards the file #588 broke --
+  so an agent editing it from inside a worktree, using the `./`-prefixed or
+  absolute spelling an edit tool is most likely to produce, could have
+  bypassed the syntax check entirely. Both patterns now use brace-expansion
+  (`{bin/oss-workspace,*/bin/oss-workspace}`,
+  `{.github/workflows/*.yml,*/.github/workflows/*.yml}`) so all three
+  spellings match while an unrelated path that merely ends the same way
+  still does not (#656).
+
+- `checklist_skew.py` no longer answers `could-not-tell` for a release gate when the running
+  checklist's own version is fully known and only the divergence check has no subject -- a
+  repository that installs the plugin but ships none of the checklist's own definition files (the
+  ordinary case, and #580's unrelated-manifest case alike). That combination is now a fourth state,
+  `not-applicable`, reserved for "the checklist version is known, this repo just has nothing of its
+  own to compare it against." `could-not-tell` narrows to the case it should have always meant: the
+  installed checklist's own version could not be established, or this repo genuinely ships the
+  checklist's definitions but its own manifest could not be read. `commands/release.md` gate 3 is
+  updated to describe all four states (#659).
+
+- `agents/developer.md` and the matching blockquote in
+  `skills/manager/phases/dispatch.md` now warn against backslash-escaping a
+  quote inside ordinary prose in the pull request payload's JSON. Found
+  across one maintainer session: `gh-pr-create` refused three of four
+  payloads for exactly that reason, and a warning retyped into a brief by
+  hand was still missed on the third lane -- the same argument that keeps
+  `paste` named in the shipped blockquote rather than left to memory.
+  `tests/test_content_invariants.py` pins the sentence into both documents,
+  the same shape as the existing check for the `edit`/`paste` write-route
+  guidance, so it cannot be dropped silently later (#660).
+
+- `tests/test_generated_file_injection.py`'s `OLD_PATTERNS` dict was inert
+  for `REPO_RE`: its weak `^...$` anchor -- accurate to the pre-#173 pattern
+  it reproduces -- was never read or asserted against anywhere in the file,
+  only used as a source of attribute names for a check against the *live*
+  pattern. A third monkeypatch test extending today's two-entry reproduction
+  list to `repo` would have made it load-bearing with nothing having ever
+  confirmed it still described anything real. New tests pin the regex body
+  (everything but the deliberately weak anchor) of all three `OLD_PATTERNS`
+  entries against `oss_config`'s live patterns, with a positive control
+  proving the comparison catches a one-sided edit -- the same shape
+  `tests/test_statusline_watch_name_refusal_653.py` and
+  `tests/test_supertool_rule_sync_577.py` already use for other pairs
+  (#663).
+
+- `oss_rules.index_rows()` never emitted the seventh `requires` column its own
+  `TOOLS_SUPERTOOL` rule declares in frontmatter (`requires: supertool`, added by #570), so
+  the shipped `.claude/jit-context/tools/01-oss/00-index.tsv` disagreed with the rule body
+  it indexes -- in this repository and in every repository `scripts/scaffold.py` writes that
+  layer into. Confirmed against the installed dependency rather than reasoned about:
+  `claude-jit-context` 0.6.0's `jit_missing_requires()` reads the TSV's 7th column, not the
+  `.md` frontmatter, so this was a real functional gap and not a cosmetic one -- `requires:
+  supertool`'s degrade-to-advisory behaviour never took effect anywhere it shipped. The row
+  now carries all seven columns `rebuild-tsv.sh` writes, and the committed index is
+  regenerated to match -- reproducibly: `oss_rules.install()` against a scratch directory
+  produces byte-identical content. The six-column shape was a considered decision recorded
+  in `CHANGELOG.md` at #106 (v0.3.0), before `requires:` existed; it is not overturned here
+  so much as caught up, since `rebuild-tsv.sh` itself grew the same seventh column after that
+  decision was made. `tests/test_jit_agent_dispatch.py::test_the_diagnostic_does_not_count_
+  the_record_as_a_rule`'s fixture patch, added by #664 to accommodate this exact gap on the
+  record, is reverted now that the source produces the real shape directly (#665).
+
+- `agents/developer.md` and `skills/manager/phases/dispatch.md` shipped
+  single-op payload examples only, so a lane batching several writes into
+  one call learned `op = "paste"` (or `"edit"`, `"read"`, ...) is required
+  inside every `[[ops]]` entry by paying a failed call: `batch op missing
+  op field`. Third gap in the same paragraph inside one day, after #660 and
+  #663. Both documents now carry a worked batch example -- a full worked
+  form in `agents/developer.md`, which had headroom under its size budget,
+  and a compact prose form in `skills/manager/phases/dispatch.md`, which
+  had roughly 680 bytes of headroom before this change and fit the addition
+  without raising the budget. `tests/test_content_invariants.py` pins both
+  documents to name `[[ops]]` and `op = "paste"` together, with a control
+  proving the check fires on the pre-#669 wording (#669).
+
+- `tests/test_content_invariants.py` checked the write-route paragraph duplicated across
+  `agents/developer.md` and `skills/manager/phases/dispatch.md` each against its own floor
+  -- does it name `paste`, does it name `path` and `content` -- and never against each
+  other, so the two documents could drift into agreement on a shared mistake with nothing
+  to catch it. They had: both quoted a missing-`op` batch failure as `batch op missing op
+  field`, which is not what `supertool 'batch:@-'` actually prints (`batch op missing 'op'
+  field`, measured directly). `tests/test_write_route_fact_parity_673.py` adds a per-fact
+  parity check between the two documents -- the read-only op roster, the `edit:@-` and
+  `paste:@-` field lists, the batch error string, and the `literal_backslashes` escape
+  hatch -- with must-fire controls proving the comparison can actually fail, and asserts
+  the batch error string against the measured tool output rather than only between the
+  two copies, since parity alone would have passed the exact case it just caught. The
+  original premise (byte-for-byte equality between two worked-example TOML blocks) no
+  longer applies: `eb273b5` removed the walkthrough from `dispatch.md` entirely, so a
+  strict pin would fail on arrival -- the decision recorded here and in the pull request
+  is which facts a condensed, pasted-into-every-brief blockquote and the fuller agent
+  definition must still agree on verbatim, and which may legitimately live only in the
+  fuller copy (#673).
+
+- Size budgets in `scripts/agent_budgets.py` and `scripts/skill_phases.py` measure raw
+  checked-out bytes, so under-budget was a property of the checkout, not of the file:
+  `skills/manager/phases/dispatch.md` measured 25,980 B (LF) against its 26,100 B budget
+  and 26,318 B as a Windows checkout's CRLF, over the same budget by 218 B, because this
+  repository shipped no `.gitattributes` pinning line endings -- the failure that sent
+  #672 back on three Windows legs while every POSIX leg was green. Added `.gitattributes`
+  (`* text=auto eol=lf`) so every checkout normalizes text files to LF; the checkers are
+  unchanged and still measure raw bytes on purpose, so the number in `CLAUDE.md`'s budget
+  tables describes the file rather than a normalization the reader would otherwise have to
+  know about. `git add --renormalize .` produces no diff on this tree -- every tracked file
+  was already LF -- and no tracked file needs a `-text` exemption; `docs/oss.png`, the one
+  binary in the tree, is declared `binary` explicitly rather than relying on git's own
+  auto-detection. `tests/test_line_ending_pin_675.py` drives a real scratch git repository
+  under a Windows-style `core.autocrlf`, with a paired must-fire control proving the
+  identical fixture reproduces the original over-budget checkout when the pin is absent
+  (#675).
+
+- `commands/tick.md` step 1's plugin-identity check read a version-pinned `${CLAUDE_PLUGIN_ROOT}`,
+  so it could never detect the running plugin's own version changing -- observed reporting
+  `unchanged` straight through a real 0.14.0 to 0.15.0 update. It now resolves the copy actually
+  recorded as installed for this project (`plugin_update.resolved_plugin_root`) and falls back to
+  the pinned path only when that fails, naming which route produced each reading. A route mismatch
+  between the current and prior readings -- including the very first tick after this ships, where
+  the prior was recorded by the old route -- is its own state (`route-mismatch`) rather than being
+  folded into `changed` or `unchanged`, since two readings taken by different routes are not the
+  same measurement (#677).
+
+- `scripts/scaffold.py::_runner_token` returned an option's separated value as the
+  test-runner name -- `dev` from `uv run --extra dev pytest -q`, `sub` from
+  `poetry run --directory sub pytest` -- so `check_test_ci`'s `unenforced` arm could
+  claim "nothing in `.github/workflows/` runs it" off a token that was never the
+  runner, on the one check whose job is catching CI silently gating nothing.
+  `_runner_token` now tracks a small, bounded set of separated-value flags on the
+  wrappers it already recognises (`--extra`, `--directory`, `--group`, `--python`,
+  and others actually seen on `uv`/`poetry`/`pipenv`) and skips flag and value
+  together, and treats `-m`/`--module`'s value as the candidate token rather than
+  discarding it (`python -m pytest` really does invoke `pytest`). An option it still
+  cannot classify no longer falls through to a guess in either direction: it returns
+  a distinct sentinel, and `check_test_ci` reports a new fourth state, `ambiguous`,
+  rather than ever asserting `unenforced` off an unclassified token (#681, reported
+  by @jbkkz against `jbkkz/requivo`).
+
+- `/oss:scaffold`'s `.supertool.json` template declared no `watch_name` on any op,
+  which is the exact half-configured state supertool warns about on every
+  `watches`/`channel:health`/`radar` call: a plain terminal in the scaffolded
+  checkout reads the shared default socket over a fleet that is alive on the
+  channel `bin/oss-workspace` derives for a launcher-started session -- a wrong
+  answer, not a warning. The template now declares `watch_name` on all five ops the
+  `watch` preset spawns from (`channel`, `radar`, `unwatch`, `watch`, `watches`),
+  derived from the repo's own `.oss.json` via `oss_config.watch_channel_name` --
+  the same derivation `bin/oss-workspace` falls back to -- so `.oss.json` stays the
+  one source and scaffold never invents a name of its own (#682, reported by
+  @jbkkz against `jbkkz/requivo`).
+
+- `oss_state.check_plugin_root` (#686) no longer tells a maintainer whose
+  plugin-root snapshot exists but could not be read to run
+  `--record-plugin-root` -- that remedy is only correct for a genuine
+  absence. Found by the 0.16.0 release gate's round-one audit: it recorded a
+  snapshot, `chmod 0`'d it, confirmed the deny actually took
+  (`PermissionError`, errno 13), and found the `why` sentence unchanged from
+  the "no snapshot was recorded" case. `state` was already the correct
+  `PLUGIN_ROOT_COULD_NOT_READ` in both cases and never collapsed into
+  `PLUGIN_ROOT_UNCHANGED` -- only the sentence was wrong. The absence arm
+  (`FileNotFoundError`) keeps its existing wording; a new, separate
+  `except OSError` arm names the snapshot's path and the underlying error
+  instead. Self-review during this fix also found a second gap in the same
+  function: `UnicodeDecodeError` (a `ValueError`, not an `OSError`) reached
+  the same read uncaught, exactly the shape `describe()` was already fixed
+  for in #76 -- a stray non-UTF-8 byte in the snapshot raised a raw traceback
+  instead of a clean could-not-read record. That arm is added too.
+
+- The manager loop's three-call runbook table (`skills/manager/SKILL.md`) invoked
+  `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py` directly. That file ships mode 100644 with no
+  shebang, so run as written the call exited 126 (permission denied) -- `skills/manager/phases/
+  dispatch.md` already invoked the identical script through `python3 "..."` and worked. The
+  table's row now matches (#687).
+
+- `commands/release.md` gate 3's remedy for `could not rank` told the maintainer
+  to paste the ranking table into the release-audit payload verbatim, by hand --
+  and a hand transcription of it once dropped the embargo prose off two of its
+  rows, rendering them as bare `yes` / `no`. The auditor caught it by reading
+  `skills/manager/SKILL.md` itself and comparing; ranking was unaffected because
+  the blocking column happened to survive the paste. `scripts/ranking_table.py`
+  now extracts the table's own bytes from the
+  installed `skills/manager/SKILL.md` -- found, verbatim, or a loud refusal
+  (`not-found` for a missing header or a reshaped table, `could-not-read` for an
+  unopenable file), never a truncated table -- and `commands/release.md`'s
+  remedy runs it and pastes its stdout unedited instead of retyping the table
+  (#688).
+
+- The manager loop's three-call runbook table (`skills/manager/SKILL.md`) interpolated
+  `${CLAUDE_PLUGIN_ROOT}` unquoted in all four command cells. A plugin root containing a space --
+  the ordinary shape of a Windows home directory built from a two-word account name --
+  word-splits into argv the moment a session pastes one of the cells into a shell. All four cells
+  now quote it (#689).
+
 ## [0.15.0] - 2026-08-29
 
 ### Added
@@ -5672,7 +6104,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.13.0
