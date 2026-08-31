@@ -175,8 +175,17 @@ def test_the_verdict_names_the_absolute_path_it_actually_read(tmp_path, capsys):
         "two reports in two directories produced the same receipt, which is the "
         "silence #685 is about: {}".format(lines)
     )
-    assert str(one.resolve()) in lines[0][0]
-    assert str(two.resolve()) in lines[1][0]
+    # Asserted on the trailing components rather than on the whole resolved
+    # string, and joined with `os.sep` rather than a literal slash. Two reasons,
+    # both cross-platform: `_one_line` folds every byte outside printable ASCII
+    # to `?`, so a tmp root under a non-ASCII account name would fail a
+    # whole-string containment test about nothing the receipt got wrong; and it
+    # truncates at 300, which cuts the tail. Truncation is the right end to lose
+    # for this receipt -- the head is the clone-or-worktree-root half #685 is
+    # about -- but it makes a whole-string test brittle on a deep Windows temp
+    # path for no gain.
+    assert lines[0][0].endswith(os.sep.join(("wt", "reports", "report.json"))), lines[0]
+    assert lines[1][0].endswith(os.sep.join(("clone", "reports", "report.json"))), lines[1]
 
 
 def test_an_invalid_report_also_names_where_it_looked(tmp_path, capsys):
@@ -188,7 +197,10 @@ def test_an_invalid_report_also_names_where_it_looked(tmp_path, capsys):
     path.write_text(json.dumps(broken), encoding="utf-8")
     assert report_schema.main([str(path)]) == 1
     lines = _at_lines(capsys.readouterr().out)
-    assert lines and str(tmp_path.resolve()) in lines[0], lines
+    assert lines, "no `at:` receipt under an INVALID verdict"
+    stated = lines[0][len("at:"):].strip()
+    assert os.path.isabs(stated), stated
+    assert stated.endswith("report.json"), stated
 
 
 def test_a_path_that_cannot_be_resolved_says_so_rather_than_echoing_it():
