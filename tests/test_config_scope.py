@@ -253,6 +253,93 @@ def test_split_cli_is_idempotent(tmp_path):
     assert (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8") == local_first
 
 
+def _project_only(root):
+    """The shape #608 and #701 describe: already split, no machine keys anywhere."""
+    project, _ = oss_config.split(_combined(root))
+    return project
+
+
+def test_split_cli_derives_when_no_machine_keys_anywhere_but_still_moves_them_when_present(
+    tmp_path, capsys
+):
+    """The negative case needs its positive control in the same fixture (CLAUDE.md's
+    rule on negative assertions), or "the project half was untouched" also passes on a
+    run that changed nothing at all.
+    """
+    # Positive control: machine keys ARE present in the committed file, none configured
+    # here yet -- the ordinary migration --split has always performed.
+    with_keys = tmp_path / "with_keys"
+    _git_repo(with_keys)
+    combined_path = with_keys / oss_config.CONFIG_NAME
+    combined_path.write_text(json.dumps(_combined(with_keys), indent=2), encoding="utf-8")
+
+    assert oss_config._main(["--split", str(combined_path)]) == 0
+    moved_project = json.loads(combined_path.read_text(encoding="utf-8"))
+    moved_local = json.loads(
+        (with_keys / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8")
+    )
+    assert not (set(moved_project) & oss_config.LOCAL_KEYS)
+    assert set(moved_local) == oss_config.LOCAL_KEYS
+
+    # The case #608 and #701 report: no machine key in the committed file, and no
+    # .oss.local.json on this machine either -- the ordinary state of a fresh clone.
+    no_keys = tmp_path / "no_keys"
+    _git_repo(no_keys)
+    project_path = no_keys / oss_config.CONFIG_NAME
+    before = json.dumps(_project_only(no_keys), indent=2)
+    project_path.write_text(before, encoding="utf-8")
+    assert not (no_keys / oss_config.LOCAL_CONFIG_NAME).is_file()
+
+    assert oss_config._main(["--split", str(project_path)]) == 0
+
+    # Byte-identical -- nothing was rewritten, not even reformatted, because there was
+    # nothing in it to move.
+    assert project_path.read_text(encoding="utf-8") == before
+
+    local = json.loads(
+        (no_keys / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8")
+    )
+    assert set(local) == oss_config.LOCAL_KEYS
+    resolved = str(no_keys.resolve())
+    assert local["clone"] == resolved
+    assert local["worktree_root"] == "{}-wt".format(resolved)
+    assert local["state_file"] == ".max/name-watch.json"
+
+    out = capsys.readouterr().out
+    assert "derived, not configured" in out
+
+    # Idempotent, same as the ordinary migration: re-running must not rewrite either
+    # file once the machine half has been derived once.
+    local_first = local
+    assert oss_config._main(["--split", str(project_path)]) == 0
+    assert project_path.read_text(encoding="utf-8") == before
+    assert (
+        json.loads((no_keys / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+        == local_first
+    )
+    assert "already split; no key moved" in capsys.readouterr().out
+
+
+def test_split_cli_derives_a_fallback_state_file_when_repo_is_not_a_string(tmp_path, capsys):
+    """`_derive_local_config` copies `build()`'s ``(document.get("repo") or "/").split("/")``
+    pattern, but `build()` only ever runs on a probe `probe_problems` has already confirmed
+    carries a string `repo` -- `split_config_file` has no such gate, so a hand-edited or
+    corrupted `.oss.json` with `repo` present and not a string used to raise a bare
+    `AttributeError` out of `_main` instead of returning cleanly, unlike every other
+    malformed-input path in this function (found in review, #701).
+    """
+    _git_repo(tmp_path)
+    path = tmp_path / oss_config.CONFIG_NAME
+    combined = _project_only(tmp_path)
+    combined["repo"] = 123
+    path.write_text(json.dumps(combined, indent=2), encoding="utf-8")
+
+    assert oss_config._main(["--split", str(path)]) == 0
+
+    local = json.loads((tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+    assert local["state_file"] == ".max/oss-watch.json"
+
+
 def test_split_cli_refuses_a_config_it_cannot_read(tmp_path, capsys):
     path = tmp_path / oss_config.CONFIG_NAME
     path.write_text("{ broken", encoding="utf-8")

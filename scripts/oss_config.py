@@ -1994,6 +1994,39 @@ def _ignore_rule(root, name):
     return "unknown", stderr[-1] if stderr else "git check-ignore exited {}".format(done.returncode)
 
 
+def _derive_local_config(document, root):
+    """The three machine-scoped values, computed from ``root`` rather than read.
+
+    Same derivation `build()` reaches for when a fresh probe has nothing on disk to
+    measure against -- `<clone>-wt` for `worktree_root`, `.max/<repo-name>-watch.json`
+    for `state_file` -- reused here for a different situation. `build()` runs once, on
+    a repo that has never had a config at all. This runs on a repo whose committed
+    `.oss.json` is already correct and already split, and that simply has no
+    `.oss.local.json` on THIS machine -- the ordinary state of a fresh clone (#608,
+    #701). No network call and no `gh`: the repo name comes from ``document["repo"]``,
+    already on disk, rather than from a fresh probe.
+    """
+    clone = str(Path(root).resolve())
+    # `build()` uses this identical fallback (line ~1849), but only after
+    # `probe_problems` has already refused a probe whose `repo` is not a string.
+    # `split_config_file` reads a committed file with no such gate -- a hand-edited
+    # or otherwise corrupted `.oss.json` can carry a `repo` that is present and
+    # truthy and not a string (an int, a dict, a list, a bool), and every OTHER
+    # malformed-input path in `split_config_file` returns a problem sentence
+    # rather than crashing. `isinstance` first folds that case into the same
+    # "nothing usable" fallback an absent or empty `repo` already takes, instead
+    # of a bare `AttributeError` out of `_main` (found in review, #701).
+    repo_value = document.get("repo")
+    repo_name = (repo_value if isinstance(repo_value, str) else "/").split("/")[-1]
+    return {
+        "clone": clone,
+        "worktree_root": "{}-wt".format(clone),
+        "state_file": (
+            ".max/{}-watch.json".format(repo_name) if repo_name else ".max/oss-watch.json"
+        ),
+    }
+
+
 def split_config_file(path):
     """Migrate a combined config in place. Returns ``(problems, notes)``.
 
@@ -2005,6 +2038,16 @@ def split_config_file(path):
     Idempotent. A project half with no machine keys and a machine half already on disk is
     an already-split repo, and re-running must not rewrite either file -- a migration you
     are afraid to repeat is one nobody runs twice, including after a bad merge.
+
+    A THIRD shape, not a variant of either of the above (#608, #701): no machine key in
+    the committed file AND no `.oss.local.json` on this machine -- the ordinary state of
+    every fresh clone of an already-onboarded repo. There is nothing here to *move*, so
+    nothing is moved: the three values are derived from the repository root instead,
+    written to the machine half alone, and the project half is left byte-for-byte
+    untouched. The receipt says `derived, not configured` rather than a plain `OK`,
+    because a value this script guessed and a value a maintainer chose must never render
+    the same way to whoever reads the note -- #608's own acceptance condition, reached
+    here from the setup side.
     """
     path = Path(path)
     if not path.is_file():
@@ -2019,6 +2062,23 @@ def split_config_file(path):
 
     if not local and target.is_file():
         notes.append("{}: already split; no key moved.".format(path.name))
+    elif not local:
+        derived = _derive_local_config(document, path.parent)
+        _write_json(target, derived)
+        notes.append(
+            "{}: derived, not configured -- no machine-scoped key in {} and no {} on "
+            "this machine, so clone={!r}, worktree_root={!r}, state_file={!r} were "
+            "guessed from the repository root rather than read. {} was left "
+            "untouched.".format(
+                target.name,
+                path.name,
+                target.name,
+                derived["clone"],
+                derived["worktree_root"],
+                derived["state_file"],
+                path.name,
+            )
+        )
     else:
         _write_json(target, local)
         _write_json(path, project)
