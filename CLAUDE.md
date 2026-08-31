@@ -639,9 +639,11 @@ instability `commands/release.md` records at *A denied call is a fourth answer*.
 
 ### The reach probe: eleven repositories, fifty-five probes, and nothing moved
 
-`gh repo list Digital-Process-Tools --limit 100` returns **eleven** repositories, unchanged, and
-each of five artifacts was probed in every one — **55 probes**, no filtered subset, re-run at this
-commit.
+`gh repo list Digital-Process-Tools --limit 100` returns **eleven** repositories **in that one
+GitHub organisation**, unchanged, and each of five artifacts was probed in every one — **55
+probes**, no filtered subset, re-run at this commit. **The count is scoped to the org the command
+names, not to "the field"**: a repository under a different account — public or private — renders
+identically to one that does not exist, and this probe has no way to tell the two apart (#711).
 
 - **`.oss.json` on four** — this one, `claude-supertool`, `claude-jit-context`, `claude-remember`.
   Unchanged.
@@ -652,16 +654,25 @@ commit.
 - **The remaining seven carry none of the five, unchanged** — `claude-marketplace`, `.github` and
   the four `mcp-*-warm` servers.
 
-What has **still** not been observed, across fourteen rounds: any repository scaffolded **by a
-maintainer who is not the author of this plugin**. This round weakens that sentence slightly and
-does not retire it — the plugin was installed and run by a second maintainer here for the first
-time, on the plugin's own repository, which is not the same act as scaffolding a repository with it.
+What has **still** not been observed, across fourteen rounds **within the one organisation this
+probe can see**: any repository scaffolded **by a maintainer who is not the author of this
+plugin**. That qualifier is not decoration: `#711` found that `#705` was filed from
+`jbkkz/requivo`, a repository under a personal account this probe cannot enumerate — so "not
+observed" here means "not observed by a probe that could not have seen it", not "does not exist".
+The owned-files table below inherits the identical gap (#711) — a managed repository outside
+`Digital-Process-Tools` is not a column in it either. This round weakens the
+scaffolded-by-a-second-maintainer sentence slightly and does not retire it — the plugin was
+installed and run by a second maintainer here for the first time, on the plugin's own repository,
+which is not the same act as scaffolding a repository with it.
 
 ### Owned files in the field
 
 Rendering each at `27d2f15` with `scaffold.render_owned(name, config, ".")` — the config loaded
 with `oss_config.load('.oss.json')`, the file path and not the directory — encoding to UTF-8 before
-counting, and comparing `sha256` against what each field repo carries:
+counting, and comparing `sha256` against what each field repo carries. **Same org-scoped subject
+set as the reach probe above (#711)**: a managed repository outside `Digital-Process-Tools` —
+`jbkkz/requivo`, named in `#711` and `#705`, included — is not a column here and was not checked
+for any of the five artifacts, in this round or any before it.
 
 | owned file | would write today | `claude-jit-context` | `claude-5h-window-spread` | `claude-remember` | `claude-supertool` |
 | --- | --- | --- | --- | --- | --- |
