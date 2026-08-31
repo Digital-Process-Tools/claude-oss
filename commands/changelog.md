@@ -112,8 +112,16 @@ happens to hold. Fixed at the callee rather than by adding `set -e` here, becaus
 gap exists for any future caller of either copy of the script, in this repo or a scaffolded
 one, not only for this command's own resolver.
 
-Fragment names must parse, the section must be a real Keep a Changelog heading, and the body must be
-a single top-level list with no headings, no raw HTML and no unclosed fences.
+Fragment names must parse, the section must be a real Keep a Changelog heading, the body must be
+a single top-level list with no headings, no raw HTML and no unclosed fences, and any
+`- Compatibility:` bullet must read as `breaking` or `compatible` with a reason after it -- a
+`removed` fragment carrying none is a finding, every other section may omit it.
+
+That last clause is not decoration: the compatibility grammar used to be enforced only by
+`scripts/release_version.py`, at gate 4, so a fragment that got it wrong passed every leg of the
+pull request that introduced it and stopped the release days later. `--check` reads it now, and its
+`ok` receipt says so. Whatever this paragraph claims and the receipt does not name is a claim about
+a check that did not run: read the receipt.
 
 ## Link refs, and the versions that were never tagged
 
