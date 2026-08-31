@@ -26,32 +26,30 @@ text — the file name is metadata, and metadata does not survive being read out
 
 ## Compatibility, on a `removed` fragment
 
-A `removed` fragment must say whether the removal breaks anything, as an ordinary bullet
-in the body:
+A `removed` fragment must say whether the removal breaks anything, as an ordinary
+bullet in the body:
 
 ```markdown
-- Compatibility: compatible - an `.oss.json` already carrying the key still validates (#113).
-- Compatibility: breaking - callers passing the old key now fail (#113).
+- Compatibility: breaking|compatible - <reason>
 ```
 
-`scripts/release_version.py` reads it to propose the release number, and a `removed`
-fragment that declares nothing is `could not decide` rather than a quiet minor — the
-number stops and the author is asked. The **reason** after the verdict is required: a
-bare flag is the same unsourced verdict one field further along, and the sentence is the
-part worth having. A word that is neither `breaking` nor `compatible` is also `could not
-decide`, so a value nothing recognises never grades as compatible.
+The release number is proposed from these fragments, and a `removed` fragment that
+declares nothing stops the proposal rather than defaulting quietly — a patch bump
+over a breaking change is indistinguishable in the tag from a considered one. A word
+that is neither `breaking` nor `compatible` stops it too, so a value nothing
+recognises never grades as compatible.
+
+The reason after the verdict is required: a bare flag is the same unsourced verdict
+one field further along, and the sentence is the part worth having.
 
 Only `removed` is required to carry one. Every other section may, and a fragment that
-says nothing is read as compatible with the count of such fragments reported out loud.
-That is deliberate: every fragment carrying a field is every fragment having a field to
-get wrong, so the field is required exactly where the question is genuinely open. #171 is
-the case for it — `113.removed.md` was written by an author who knew the answer and put
-it in the one place a checker cannot see, and the version recommended beside it never
-mentioned the file.
+says nothing is read as compatible with the count of such fragments reported out
+loud. A field on every fragment is a field on every fragment to get wrong, so it is
+required exactly where the question is genuinely open.
 
-It is a plain bullet rather than front matter, so the assembler needs no special case and
-the claim ships into `CHANGELOG.md` where a user reads it, instead of being metadata
-deleted at the fold.
+It is a plain bullet rather than front matter, so the assembler needs no special case
+and the claim ships into `CHANGELOG.md` where a user reads it, instead of being
+metadata deleted at the fold.
 
 ## Checking and folding
 
