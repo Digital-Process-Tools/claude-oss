@@ -379,7 +379,7 @@ scripts/agent_role.py       the code-level half of withholding release authority
 scripts/tick_handback.py    a sub-manager's handback: completed / blocked / could-not-run / returned-nothing / could-not-classify
 scripts/ranking_table.py    the ranking table's own bytes out of SKILL.md, not a retype: found / not-found / could-not-read
 scripts/release_delta.py    the release gate's range: delta / first-release / could-not-run
-scripts/release_publish.py  the GitHub Release: created / skipped by policy / could-not-create
+scripts/release_publish.py  the GitHub Release: created / skipped by policy / could-not-create / role-forbidden
 scripts/release_version.py  the release number, proposed from the fragments: proposed / no-baseline / could-not-decide
 scripts/oss_state.py        the tick state file, and the intake metric it records
 scripts/review_return.py    what a review spawn handed back: states-findings / no-findings / referred-not-stated / returned-nothing / could-not-classify / could-not-read
