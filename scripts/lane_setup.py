@@ -728,18 +728,29 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
         else:
             held_files = sorted(derived_held["held"])
             b = resolve_lane(repo, held_files) if held_files else {"patterns": [], "files": []}
+            # #774, audit round: a held FILE can trip `_lane_pattern_problem`
+            # exactly the way a hand-typed pattern can -- a real git-tracked path
+            # containing '|' is legal on the filesystems this loop runs on, and
+            # `resolve_lane` gives it the identical `refused` state either way.
+            # Checking only `a_refused` left a refused held file silently
+            # dropping out of `b["files"]`, so a lane whose own pattern resolved
+            # cleanly could still read `available` while one of the files it was
+            # meant to be checked against was never actually compared -- the
+            # same dangerous direction the `a_refused` branch below exists to
+            # close, just on the other side of the comparison.
+            b_refused = _refused_patterns(b)
             if a is None:
                 overlap = None
-            elif a_refused:
-                # #774: a refused lane pattern means this comparison never ran
-                # for it -- rendering `available` here would be the dangerous
-                # direction (a real collision hiding behind an unchecked
-                # pattern reads as clear to dispatch on), so this is its own
-                # state rather than folding into either `available` or
+            elif a_refused or b_refused:
+                # #774: a refused pattern on either side means this comparison
+                # never ran for it -- rendering `available` here would be the
+                # dangerous direction (a real collision hiding behind an
+                # unchecked pattern reads as clear to dispatch on), so this is
+                # its own state rather than folding into either `available` or
                 # `blocked`.
                 overlap = None
                 overlap_state = "could-not-check"
-                overlap_detail = _unresolved_overlap_detail(a, a_refused, None, [])
+                overlap_detail = _unresolved_overlap_detail(a, a_refused, b, b_refused)
                 availability = {
                     "state": "could-not-check",
                     "files": [],
@@ -886,6 +897,22 @@ def record_lane(worktree_root, issue, branch, path, files=None):
     the held set rather than a wrong, silently narrower `resolved` one. A read
     failure here becomes a loud "cannot be trusted complete" one call later, never
     a quiet one.
+
+    **`branch_confirmed_created` (#771 review round) is carried forward the same
+    way, and for the same reason `files` already is.** This function's own
+    docstring frames a second `--claim` for the same issue as an ordinary,
+    supported refresh ("re-running lane_setup.py mid-lane... refreshes the TTL
+    instead of leaving a duplicate"), and until this fix that refresh silently
+    dropped the flag `held_from_live_lanes` had written -- a lane whose branch
+    was positively observed alive, re-claimed once, and then genuinely merged
+    and deleted no longer got route 3's prompt prune; it fell back to the
+    240-minute TTL, quietly re-opening the exact #734 gap #771 exists to close.
+    Preserved only when the previous record's own `branch` still matches this
+    call's `branch` -- an observation about a branch that has since been
+    renamed in the record is not an observation about this one -- and, like the
+    `files` preserve above, best-effort: a previous record that cannot be read
+    simply does not carry the flag forward, which is the safe direction (falls
+    back to age-based judgement, never to a false prune).
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
@@ -905,16 +932,16 @@ def record_lane(worktree_root, issue, branch, path, files=None):
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     record_path = os.path.join(root, "{0}.json".format(issue))
+    try:
+        with open(record_path) as fh:
+            previous = json.load(fh)
+    except (OSError, ValueError, AttributeError):
+        previous = None
     files_to_store = sorted(files) if files is not None else None
-    if files_to_store is None:
-        try:
-            with open(record_path) as fh:
-                previous = json.load(fh)
-            prev_files = previous.get("files")
-            if isinstance(prev_files, list):
-                files_to_store = prev_files
-        except (OSError, ValueError, AttributeError):
-            files_to_store = None
+    if files_to_store is None and previous is not None:
+        prev_files = previous.get("files")
+        if isinstance(prev_files, list):
+            files_to_store = prev_files
     payload = {
         "issue": issue,
         "branch": branch,
@@ -923,6 +950,12 @@ def record_lane(worktree_root, issue, branch, path, files=None):
         "pid": os.getpid(),
         "files": files_to_store,
     }
+    if (
+        previous is not None
+        and previous.get("branch") == branch
+        and previous.get("branch_confirmed_created") is True
+    ):
+        payload["branch_confirmed_created"] = True
     tmp_path = record_path + ".tmp"
     try:
         with open(tmp_path, "w") as fh:

@@ -253,3 +253,66 @@ def test_held_from_live_lanes_without_repo_is_unaffected_by_the_new_field(tmp_pa
     result = lane_setup.held_from_live_lanes(worktree_root)
     assert result["state"] == "resolved"
     assert "c.py" in result["held"]
+
+
+# --- record_lane: branch_confirmed_created survives a --claim refresh -----------
+# Review round: `record_lane` already preserves `files` across a re-`--claim` for
+# the same issue (its own docstring calls this an ordinary, supported refresh) but
+# did not carry `branch_confirmed_created` forward -- so a lane observed alive,
+# re-claimed once, then genuinely merged and deleted silently lost route 3's
+# prompt prune and fell back to the 240-minute TTL, reopening the exact #734 gap
+# #771 exists to close. This section proves the preserve and its own control (a
+# changed branch name must NOT carry an old observation forward).
+
+
+def test_record_lane_carries_branch_confirmed_created_across_a_reclaim(tmp_path):
+    repo = _real_git_repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/1"], check=True)
+    worktree_root = tmp_path / "wt"
+
+    lane_setup.record_lane(worktree_root, 1, "fix/1", "/some/path", files=["a.py"])
+    lane_setup.held_from_live_lanes(worktree_root, repo=repo)  # observes branch alive
+    record_path = os.path.join(lane_setup.lane_registry_dir(worktree_root), "1.json")
+    with open(record_path) as fh:
+        assert json.load(fh).get("branch_confirmed_created") is True
+
+    # An ordinary mid-lane re-claim, same issue, same branch.
+    lane_setup.record_lane(worktree_root, 1, "fix/1", "/some/path", files=["a.py"])
+    with open(record_path) as fh:
+        assert json.load(fh).get("branch_confirmed_created") is True
+
+    subprocess.run(["git", "-C", str(repo), "branch", "-D", "fix/1"], check=True)
+    result = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    assert result["state"] == "unknown"
+    assert result["held"] == {}
+    assert result["stale_pruned"] == [{"issue": 1, "branch": "fix/1"}]
+
+
+def test_record_lane_does_not_carry_the_flag_forward_when_the_branch_changed(tmp_path):
+    """Control: an observation about `fix/1` must never be read as an
+    observation about `fix/2` just because the same issue number re-claimed
+    under a new branch name."""
+    repo = _real_git_repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/1"], check=True)
+    worktree_root = tmp_path / "wt"
+
+    lane_setup.record_lane(worktree_root, 1, "fix/1", "/some/path", files=["a.py"])
+    lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    record_path = os.path.join(lane_setup.lane_registry_dir(worktree_root), "1.json")
+    with open(record_path) as fh:
+        assert json.load(fh).get("branch_confirmed_created") is True
+
+    # Re-claimed under a different branch name -- fix/2 has never been observed.
+    lane_setup.record_lane(worktree_root, 1, "fix/2", "/some/path", files=["a.py"])
+    with open(record_path) as fh:
+        assert "branch_confirmed_created" not in json.load(fh)
+
+
+def test_record_lane_first_claim_never_carries_the_flag(tmp_path):
+    """Control: a record's very first write has no previous record to read from
+    and must not fabricate the flag."""
+    worktree_root = tmp_path / "wt"
+    lane_setup.record_lane(worktree_root, 1, "fix/1", "/some/path", files=["a.py"])
+    record_path = os.path.join(lane_setup.lane_registry_dir(worktree_root), "1.json")
+    with open(record_path) as fh:
+        assert "branch_confirmed_created" not in json.load(fh)

@@ -157,6 +157,38 @@ def test_lane_report_availability_blocked_still_fires_with_a_real_collision(tmp_
     assert report["availability"]["state"] == "blocked"
 
 
+def test_lane_report_availability_could_not_check_for_a_refused_held_file(tmp_path):
+    """Audit round: a held FILE (from an open pull request's own file list, or
+    a sibling lane's own recorded files) can trip `_lane_pattern_problem`
+    exactly the way a hand-typed --lane/--against pattern can -- a real
+    git-tracked path containing '|' is legal on the filesystems this loop
+    runs on. Checking only the --lane side's own refused patterns left a
+    refused held file silently dropping out of the comparison, so a lane
+    with no real collision against its *resolvable* held files still read
+    `available` while one of the files it was meant to be checked against
+    was never actually compared -- the same dangerous direction #774's
+    `a_refused` handling exists to close, on the other side of the
+    comparison."""
+    _make_tree(tmp_path)
+    derived_held = _derived_held({"scripts/weird|file.py": ["PR #9"]})
+    report = lane_setup.lane_report(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    assert report["overlap_state"] == "could-not-check"
+    assert report["availability"]["state"] == "could-not-check"
+    assert report["availability"]["state"] not in ("available", "blocked")
+    assert "1 of 1 against pattern(s) refused" in report["availability"]["detail"]
+
+
+def test_lane_report_availability_available_when_the_held_set_is_fully_clean(tmp_path):
+    """Must-fire control: a held set with no refused entries at all, and no
+    real collision, must still read `available` -- #774's fix for the held
+    side must not turn a genuinely clean derivation into `could-not-check`."""
+    _make_tree(tmp_path)
+    derived_held = _derived_held({"scripts/b.py": ["PR #9"]})
+    report = lane_setup.lane_report(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    assert report["overlap_state"] == "resolved"
+    assert report["availability"]["state"] == "available"
+
+
 # --- receipt: the answer line itself, the issue's own measurement ----------------
 
 
