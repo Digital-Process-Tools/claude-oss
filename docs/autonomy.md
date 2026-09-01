@@ -34,8 +34,14 @@ counter-example: the first version of the sentence above had neither, and was wr
 sweep whose scope quietly excludes the one case that would contradict it reports the answer it was
 scoped to give. `workflow_dispatch` is named per workflow rather than exempted wholesale — the
 test's `MANUAL_DISPATCH_EXCEPTIONS` carries a reason for each entry and confirms nothing under
-`scripts/` issues the call that would make "a human presses this" false, so a future automated
-dispatch cannot ride in on this exception unnoticed.
+`scripts/`, `hooks/` or `bin/` — this plugin's own code — issues the call that would make "a human
+presses this" false, so a future automated dispatch riding in through this plugin's own code cannot
+go unnoticed. That check does not reach `skills/`, `agents/` or `commands/`: those are prose a
+session reads and acts on under supervision rather than code that runs by itself, and telling an
+executable directive there apart from a description of one is a harder problem the check does not
+attempt (#740). This paragraph and `MANUAL_DISPATCH_EXCEPTIONS` are checked against each other, in
+both directions, by `test_docs_autonomy_names_every_unattended_exception_and_no_others` — before it
+existed, the two were free to drift apart with every other test in the file still green (#736).
 
 The consequence follows from the ownership contract rather than from anything about scheduling.
 The executable artifacts an install puts in a managed repository are the changelog gate — a
