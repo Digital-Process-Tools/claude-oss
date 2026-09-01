@@ -290,6 +290,11 @@ def _quiet_main(monkeypatch):
     # make the suite non-hermetic on any dev machine that happens to have
     # `claude` on PATH.
     monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
+    # #582, and exactly the same reason one line up: a real `supertool ops:roster`
+    # subprocess, answering about the supertool installed on THIS machine and the
+    # `.supertool.json` presets that resolve from the fixture's own directory --
+    # neither of which is what any test using this helper is about.
+    monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
 
 
 def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_them(
@@ -780,6 +785,19 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # #646: reads THIS machine's real MCP registration too (its own `claude mcp
     # get` call, independent of the stub above), for the same reason.
     monkeypatch.setattr(doctor, "check_channel_consumer_pin", lambda **kw: None)
+    # #582: a real `supertool ops:roster` subprocess. Its answer is a fact about
+    # the supertool installed on THIS machine AND about the `.supertool.json`
+    # presets resolving from the fixture directory -- which carries none, so the
+    # `github` preset is genuinely unloaded there and the check genuinely WARNs
+    # with ten named ops. That is the check doing its job on a repo that has not
+    # enabled the preset (#582's own example), not a gap in this fixture's tree,
+    # so it is stubbed here the same way check_gh_binary and check_latest_skew
+    # are rather than being papered over by writing presets the fixture does not
+    # otherwise need. Its own three states are covered by
+    # tests/test_doctor_supertool_ops_582.py.
+    monkeypatch.setattr(
+        doctor, "check_supertool_ops", lambda **kw: doctor.report("OK", "supertool op inventory")
+    )
     # #638: real subprocess calls to each declared dependency's own diagnostic
     # (a supertool op, two versioned bash scripts) -- answers about what is
     # actually installed on THIS machine, not about this fixture's tree,
@@ -828,6 +846,14 @@ def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
     monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
+    # #582: nothing else in this test stops `shutil.which` answering for real, so
+    # without this the new check spawns `supertool ops:roster` on whatever machine
+    # runs the suite -- twice, once per `doctor.main()` below. The assertions here
+    # are substring checks on the VERDICT line, which an extra WARN satisfies
+    # identically to none, so nothing would have caught it. The neighbouring
+    # `check_mcp_channel_registration` has the same property and predates this
+    # change; it is left alone here rather than fixed in passing.
+    monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
     doctor.main()
     out = capsys.readouterr().out
     assert "VERDICT: not usable" in out
@@ -1575,8 +1601,10 @@ def test_main_reports_the_watch_channel(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
     # #621 self-review: a real `claude mcp get` call answers about this machine,
-    # not this fixture.
+    # not this fixture. #582's roster call is the same shape and stubbed for the
+    # same reason.
     monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
+    monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert doctor.WATCH_NAME_ENV in out
@@ -2246,8 +2274,10 @@ def test_main_reports_whether_anything_publishes_to_the_board(tmp_path, monkeypa
     monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_STATE_DIR", raising=False)
     # #621 self-review: a real `claude mcp get` call answers about this machine,
-    # not this fixture.
+    # not this fixture. #582's roster call is the same shape and stubbed for the
+    # same reason.
     monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
+    monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     assert [m for _s, m in doctor.FINDINGS if m.startswith("radar board:")]
 

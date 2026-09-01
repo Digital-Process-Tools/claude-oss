@@ -49,6 +49,12 @@ MOVED = {
         "_identity_names",
         "check_memory",
     ],
+    "doctor_check_mcp_channel_registration": [
+        "CHANNEL_SERVER",
+        "_MCP_ARGS_RE",
+        "mcp_channel_registration_state",
+        "check_mcp_channel_registration",
+    ],
     "doctor_check_merge_permission": [
         "MERGE_OP",
         "MERGE_RULE_FILE",

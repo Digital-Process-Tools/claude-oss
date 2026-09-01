@@ -870,6 +870,8 @@ def test_the_doctor_run_reports_the_layer(tmp_path, monkeypatch):
     # #621 self-review: a real `claude mcp get` call answers about this machine,
     # not this fixture -- and this test runs main() against REPO_ROOT itself.
     monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
+    # #582: a real `supertool ops:roster` call, same reason, same fixture.
+    monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
     doctor.main([])
     messages = [message for _, message in doctor.FINDINGS]
     assert any(message.startswith("jit rule layer:") for message in messages), messages
