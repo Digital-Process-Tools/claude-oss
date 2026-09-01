@@ -2931,6 +2931,51 @@ def test_the_write_route_check_fires_on_the_pre_250_wording():
     }
 
 
+# ---------------------------------------------------------------- #729: the commit route
+#
+# Every developer lane ends at a commit -- both write-route documents say so --
+# and the raw-command guard refuses a plain `git commit -m ...` on sight,
+# redirecting to `supertool 'git-commit:@-'`. Neither document named the op, so
+# 100% of lanes paid one refused call to learn a remedy the refusal already
+# prints. Checked the same shape as the #250 check above: op_spellings() over a
+# whitespace-collapsed read, and a must-fire control against the pre-729
+# wording (#250's own PRIOR_WRITE_ROUTE fixture, which names no commit route
+# either) so the check is proven to catch its own absence.
+def _commit_route_unmet(text):
+    collapsed = _collapse(text)
+    ops = {op for op, _ in op_spellings(collapsed)}
+    unmet = set()
+    if "git-commit" not in ops:
+        unmet.add("no-commit-op-is-named")
+    return unmet
+
+
+def test_both_write_route_documents_name_the_commit_op():
+    findings = {
+        str(path.relative_to(REPO_ROOT)): sorted(
+            _commit_route_unmet(path.read_text(encoding="utf-8"))
+        )
+        for path in WRITE_ROUTE_DOCUMENTS
+        if _commit_route_unmet(path.read_text(encoding="utf-8"))
+    }
+    assert not findings, (
+        "a document instructing an agent to commit its work names no supertool "
+        "commit op, so the one write every lane makes unconditionally has no "
+        "documented route and the agent pays a refused `git commit -m` first "
+        "(#729): {}".format(findings)
+    )
+
+
+def test_the_commit_route_check_fires_on_the_pre_729_wording():
+    assert _commit_route_unmet(PRIOR_WRITE_ROUTE) == {"no-commit-op-is-named"}
+
+
+def test_a_document_naming_the_commit_op_is_not_flagged():
+    """Must-not-fire control: a document that does name it is not a false positive."""
+    named = PRIOR_WRITE_ROUTE + "\nCommit through `supertool 'git-commit:@-'`.\n"
+    assert _commit_route_unmet(named) == set()
+
+
 # #660: gh-pr-create refused three of four pull request payloads in one session
 # because the agent backslash-escaped a quote inside ordinary prose in pr_body's
 # JSON. Nothing in either write-route document warned against it, and a warning
