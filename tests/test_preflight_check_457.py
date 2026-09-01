@@ -164,6 +164,50 @@ def test_an_unreadable_directory_with_no_match_elsewhere_is_could_not_search(tmp
     assert control["state"] == "matched"
 
 
+# #727: a `not-matched` over one file and a `not-matched` over the whole
+# tree render identically once a human retypes the answer as prose -- the
+# receipt already carries `files_searched`, but not the paths that were
+# actually asked for, so a reader still has to remember the `--path`
+# argument separately to quote the scope honestly. `roots` closes that: the
+# searched paths, verbatim, in the same JSON the state comes from.
+
+
+def test_result_names_the_roots_it_searched(tmp_path):
+    (tmp_path / "f.py").write_text("nothing relevant\n", encoding="utf-8")
+
+    result = pc.search("could not run", [tmp_path])
+    assert result["roots"] == [str(tmp_path)]
+
+
+def test_result_names_every_root_when_several_are_given(tmp_path):
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+
+    result = pc.search("could not run", [first, second])
+    assert result["roots"] == [str(first), str(second)]
+
+
+def test_a_could_not_search_result_still_names_its_roots(tmp_path):
+    """The scope must be recoverable from the receipt even on the state a
+    maintainer is most likely to escalate rather than quote verbatim."""
+    result = pc.search("([unclosed", [tmp_path])
+    assert result["state"] == "could-not-search"
+    assert result["roots"] == [str(tmp_path)]
+
+
+def test_a_missing_root_result_also_names_its_roots(tmp_path):
+    """The other early-return could-not-search path (a root that does not
+    exist) must not drop the scope either -- covers the second of the two
+    early exits in search(), the invalid-pattern case above covers the
+    first."""
+    missing = tmp_path / "does-not-exist"
+    result = pc.search("anything", [missing])
+    assert result["state"] == "could-not-search"
+    assert result["roots"] == [str(missing)]
+
+
 def test_one_missing_root_among_several_is_could_not_search_even_with_a_clean_miss_elsewhere(tmp_path):
     """#457's own multi-part/bundle use passes several --path roots in one
     call. If one candidate's path was mistyped or moved, that must not be
@@ -199,3 +243,131 @@ def test_main_cli_could_not_search_exits_nonzero(tmp_path, capsys):
     assert code == pc.EXIT_COULD_NOT_SEARCH
     out = json.loads(capsys.readouterr().out)
     assert out["state"] == "could-not-search"
+
+
+# #717: an undecodable file (a __pycache__/*.pyc, on every real Python tree)
+# has no text to search, ever, regardless of who is asking -- it is not the
+# same failure as a permission-denied file, and folding it into
+# unreadable_files made could-not-search fire on precisely the negative
+# answer (nothing else to report) and never on the positive one (a match
+# elsewhere still reports matched with the identical undecodable file
+# present). These fixtures write raw invalid-UTF-8 bytes directly, so
+# nothing here depends on chmod semantics or a platform's permission model.
+
+_INVALID_UTF8 = bytes([0xFF, 0xFE, 0x00, 0x01, 0x0D, 0x0D, 0x0A, 0x0A])
+
+
+def test_undecodable_file_alone_is_not_matched_never_could_not_search(tmp_path):
+    """The must-not-fire half: an undecodable file with nothing else to find
+    must not suppress the honest not-matched answer -- paired below with the
+    must-fire half, a genuinely permission-denied file, which still forces
+    could-not-search."""
+    (tmp_path / "module.pyc").write_bytes(_INVALID_UTF8)
+    (tmp_path / "clean.py").write_text("nothing relevant here\n", encoding="utf-8")
+
+    result = pc.search("could not run", [tmp_path])
+    assert result["state"] == "not-matched"
+    assert result["state"] != "could-not-search"
+
+
+def test_undecodable_file_is_reported_as_skipped_not_unreadable(tmp_path):
+    target = tmp_path / "module.pyc"
+    target.write_bytes(_INVALID_UTF8)
+
+    result = pc.search("anything", [tmp_path])
+    assert str(target) in result["skipped_files"]
+    assert str(target) not in result["unreadable_files"]
+
+
+def test_undecodable_file_present_alongside_a_real_match_still_matches(tmp_path):
+    (tmp_path / "module.pyc").write_bytes(_INVALID_UTF8)
+    target = tmp_path / "source.py"
+    target.write_text("could not run\n", encoding="utf-8")
+
+    result = pc.search("could not run", [tmp_path])
+    assert result["state"] == "matched"
+    assert result["matches"] == [
+        {"path": str(target), "line": 1, "text": "could not run"}
+    ]
+
+
+def test_skipped_files_key_is_always_present_even_when_empty(tmp_path):
+    """A skipped count is not free of the same hazard as could-not-search --
+    it must be printed always, never suppressed at zero (#717)."""
+    (tmp_path / "clean.py").write_text("nothing relevant\n", encoding="utf-8")
+
+    result = pc.search("could not run", [tmp_path])
+    assert result["state"] == "not-matched"
+    assert result["skipped_files"] == []
+
+
+# Review finding on #717: any UnicodeDecodeError was folded into skipped_files
+# categorically, on the claim that an undecodable file "has no text to search,
+# ever" -- true for genuine binary garbage, false for a real source file
+# encoded in something other than UTF-8 (Latin-1, cp1252, ...), which has a
+# real match this search would then silently miss. The distinguishing signal
+# is a NUL byte -- the same heuristic `git diff` and `grep -I` use to call a
+# file binary -- present in every one of the fixtures above (a genuine .pyc
+# does contain one) and absent from ordinary non-UTF-8 text.
+
+
+def test_non_utf8_text_with_no_null_byte_is_ambiguous_and_forces_could_not_search(tmp_path):
+    """The must-fire half of the review finding: Latin-1 text with a real
+    match must not silently downgrade to not-matched just because it isn't
+    UTF-8 -- there is no NUL byte here, so this could be real text, and the
+    honest answer is could-not-search, not a guess."""
+    target = tmp_path / "legacy.py"
+    target.write_bytes('match_target = "caf\xe9 marker"\n'.encode("latin-1"))
+    assert b"\x00" not in target.read_bytes()
+
+    result = pc.search("marker", [tmp_path])
+    assert result["state"] == "could-not-search"
+    assert str(target) in result["unreadable_files"]
+    assert str(target) not in result["skipped_files"]
+
+
+def test_a_null_byte_is_what_makes_an_undecodable_file_skipped(tmp_path):
+    """The must-not-fire half, paired with the test above: a file with a NUL
+    byte (the actual #717 target -- every real .pyc has one) is skipped, not
+    forced to could-not-search, even though it also fails UTF-8 decoding."""
+    target = tmp_path / "module.pyc"
+    target.write_bytes(_INVALID_UTF8)
+    assert b"\x00" in target.read_bytes()
+
+    result = pc.search("anything", [tmp_path])
+    assert result["state"] == "not-matched"
+    assert str(target) in result["skipped_files"]
+    assert str(target) not in result["unreadable_files"]
+
+
+def test_a_permission_denied_file_still_forces_could_not_search_despite_717(tmp_path):
+    """The must-fire half, kept beside the undecodable-file relief above: a
+    genuinely permission-denied file is not the same failure as an
+    undecodable one, and #717's fix must not blur that distinction back
+    into a quiet not-matched."""
+    if os.name == "nt":
+        pytest.skip("POSIX permission bits; Windows chmod semantics differ")
+    blocked = tmp_path / "blocked.py"
+    blocked.write_text("could not run\n", encoding="utf-8")
+
+    old_mode = blocked.stat().st_mode
+    os.chmod(blocked, 0o000)
+    try:
+        try:
+            blocked.read_bytes()
+            deny_took = False
+        except PermissionError:
+            deny_took = True
+
+        result = pc.search("could not run", [tmp_path])
+        if not deny_took:
+            pytest.skip(
+                "chmod 000 did not deny reading on this platform/user -- "
+                "UNTESTED HERE: whether a permission-denied file still forces "
+                "could-not-search after #717's undecodable-file relief"
+            )
+        assert result["state"] == "could-not-search"
+        assert str(blocked) in result["unreadable_files"]
+        assert str(blocked) not in result["skipped_files"]
+    finally:
+        os.chmod(blocked, old_mode)
