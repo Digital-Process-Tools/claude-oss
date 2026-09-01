@@ -327,6 +327,21 @@ def _lane_pattern_problem(pattern):
     target: absolute, drive-prefixed or traversing out of the repo is refused
     before anything touches the filesystem, not caught after.
 
+    #766: a `|`-joined value (`--lane 'a|b'`) used to fall straight through to
+    the literal branch below -- `_is_lane_glob` only tests for `*?[`, so an
+    awk/ERE-style alternation is neither a glob (no `Path.glob` semantics for
+    `|`) nor a real filename, and the flag's own repeatable form is what
+    actually spells "these two files". It resolved as one literal path that
+    matched nothing on disk, the receipt printed it `(literal)`, and the
+    overlap check then reported `none` for a pattern that was never read at
+    all -- a disjointness gate rendering "could not be checked" as "checked,
+    clear". Measured against this repository's own `--lane`, by the
+    maintainer, three hours before this fix was written; the issue's own
+    reproduction is against a sibling repo. `|` is refused unconditionally
+    here rather than inferred as a mistake sometimes: it is not a legal glob
+    metacharacter this module gives any meaning to, so there is no reading of
+    it that is not the repeatable-flag form spelled wrong.
+
     **Deliberately not `os.path.isabs`.** The auditor measured
     `posixpath.isabs("/etc/passwd")` and `ntpath.isabs("/etc/passwd")`
     disagreeing with each other -- True and False -- so a check that delegates
@@ -347,6 +362,12 @@ def _lane_pattern_problem(pattern):
     """
     if not isinstance(pattern, str) or not pattern.strip():
         return "lane pattern is empty"
+    if "|" in pattern:
+        return (
+            "lane pattern {0!r} contains '|' -- this flag takes one file or glob "
+            "per invocation and does not read '|' as alternation; repeat --lane "
+            "(or --against) once per file instead (#766)".format(pattern)
+        )
     normalized = pattern.replace("\\", "/")
     if normalized.startswith("/") or re.match(r"^[A-Za-z]:", pattern):
         return "lane pattern {0!r} is not relative".format(pattern)
@@ -669,7 +690,19 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     guards = guards_for_files(a["files"], repo) if a else []
     result = {"lane": a, "against": b, "overlap": overlap, "guards": guards}
     if derived_held is not None:
-        result["held_source"] = {"state": derived_held["state"], "detail": derived_held["detail"]}
+        # #734, review round: `derived_held["lanes"]["stale_pruned"]` names every
+        # registry record this call's own `derive_held_set` deleted as a side
+        # effect (a branch it corroborated as locally gone) -- surfaced here so a
+        # caller can see what was pruned rather than the deletion happening with
+        # no trace anywhere in this payload. Absent on the two shapes that carry
+        # no `lanes` sub-dict at all (no config loaded; a hand-built `derived_held`
+        # in an older test fixture), which is exactly "nothing pruned", not a
+        # different claim.
+        result["held_source"] = {
+            "state": derived_held["state"],
+            "detail": derived_held["detail"],
+            "stale_pruned": derived_held.get("lanes", {}).get("stale_pruned", []),
+        }
         result["availability"] = availability
     return result
 
@@ -801,6 +834,58 @@ def record_lane(worktree_root, issue, branch, path, files=None):
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     return {"state": "recorded", "path": record_path, "detail": ""}
+
+
+def release_lane(worktree_root, issue):
+    """Remove this issue's own record, once the caller has independently
+    confirmed the lane is done -- #734, route 1. The one caller this loop
+    ships is the merge step, after it has already read `state` / `mergedAt` /
+    `mergeCommit` back off the remote (`skills/manager/phases/merge.md`): that
+    read-back is the confirmation, this function is just the write.
+
+    Three states, not two -- the same shape as `record_lane`'s own, on the
+    opposite side of the same registry:
+
+      released           the record existed and was removed.
+      not-found           no record existed for this issue -- releasing a
+                           lane that never claimed (`--claim` was never
+                           passed at dispatch), or one whose record already
+                           expired past the TTL and was pruned by an earlier
+                           reader. Not a failure: there was nothing to do.
+      could-not-release   `worktree_root` is not known, or a record exists
+                           and the removal itself failed (a permission
+                           error, a directory where the file should be).
+
+    #734's own three recorded instances are all lanes the loop itself merged
+    and read back, 20-90 minutes stale against the 240-minute TTL -- the gap
+    this closes is exactly that window, not the TTL itself, which stays as
+    the fallback for a lane that never gets released at all (abandoned,
+    merged by hand outside this loop, or older than this fix).
+    """
+    root = lane_registry_dir(worktree_root)
+    if root is None:
+        return {
+            "state": "could-not-release",
+            "path": None,
+            "detail": "worktree_root is not known, so there is no registry to "
+            "release this lane's record from.",
+        }
+    record_path = os.path.join(root, "{0}.json".format(issue))
+    try:
+        os.remove(record_path)
+    except FileNotFoundError:
+        return {
+            "state": "not-found",
+            "path": record_path,
+            "detail": "no live record for this issue -- nothing to release.",
+        }
+    except OSError as exc:
+        return {
+            "state": "could-not-release",
+            "path": record_path,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    return {"state": "released", "path": record_path, "detail": ""}
 
 
 def lane_count(worktree_root):
@@ -1104,7 +1189,35 @@ def held_from_open_prs(repo_slug):
     return {"state": "resolved", "held": held, "detail": ""}
 
 
-def held_from_live_lanes(worktree_root, exclude_issue=None):
+def _branch_confirmed_gone(repo, branch):
+    """True only when `repo`'s local `refs/heads` positively confirm `branch` no
+    longer exists there -- #734, route 3. Every worktree cut from the same
+    `worktree_root` shares this namespace (`git worktree add` creates a local
+    branch in the one clone's shared `.git`), so this needs no fetch and no
+    network call: the loop's own merge cleanup runs `git branch -d` on that
+    same shared clone (supertool's `gh-pr-merge` help text), and the deletion
+    is visible here the instant it happens.
+
+    Never a table of exit codes: `git show-ref --verify --quiet refs/heads/X`
+    answers 0 (exists) or 1 (does not) when it can answer at all, and only a
+    clean 1 is trusted as gone. `_git` returning `None` (git not on PATH, or the
+    call itself could not be launched) and any other code are both "could not
+    confirm" -- this function's whole job is to never let silence read as a
+    refusal, the same posture `_absence_confirmed` already takes for a
+    filesystem path one module up.
+
+    Deliberately **not** checked against the remote. At the moment a lane is
+    first dispatched its branch exists only locally -- nothing has pushed it
+    yet -- so a remote-tracking check (`git ls-remote` or a cached
+    `refs/remotes/...` ref) would read a brand-new, genuinely live lane as
+    already gone. The local ref is never ambiguous that way: it exists exactly
+    as long as some worktree could have it checked out.
+    """
+    code, _, _ = _git(repo, "show-ref", "--verify", "--quiet", "refs/heads/" + branch)
+    return code == 1
+
+
+def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
     """Every live lane record's own file list -- #558, the second held-set source.
     Reads the same registry `lane_count` reads, for the full file lists rather than
     a count, and applies the identical TTL/absence handling rather than a second
@@ -1122,10 +1235,22 @@ def held_from_live_lanes(worktree_root, exclude_issue=None):
                          of this script that predates #558) -- the held set would
                          be incomplete, and #558 is explicit that this must never
                          render as a confident (even if partial) `resolved`.
+
+    `repo` (#734, route 3): when given, every record's own declared `branch` is
+    corroborated against `repo`'s local `refs/heads` (`_branch_confirmed_gone`)
+    before the record is trusted as held. A record whose branch is positively
+    confirmed gone is pruned from disk the same way an expired one already is --
+    `LANE_RECORD_TTL_SECONDS` is a reasonable ceiling for "abandoned", and a very
+    long time to keep blocking a follow-up after a merge the loop itself just
+    performed and read back (#734's own three instances: 20, 27 and 90 minutes
+    stale). `stale_pruned` names every record removed this way, `[]` when none
+    were. Omitting `repo` (the default) reproduces the exact pre-#734 behaviour,
+    unconditionally: every existing caller that does not pass it sees age as the
+    only signal, same as before this parameter existed.
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
-        return {"state": "unknown", "held": {}, "detail": "worktree_root is not known."}
+        return {"state": "unknown", "held": {}, "stale_pruned": [], "detail": "worktree_root is not known."}
     try:
         found = os.stat(root)
     except (FileNotFoundError, NotADirectoryError):
@@ -1133,37 +1258,48 @@ def held_from_live_lanes(worktree_root, exclude_issue=None):
             return {
                 "state": "could-not-derive",
                 "held": {},
+                "stale_pruned": [],
                 "detail": "a lane registry may exist at {0} but could not be examined "
                 "-- an ancestor could not be looked at, which is not a confirmed "
                 "absence.".format(root),
             }
-        return {"state": "unknown", "held": {}, "detail": "no lane registry at {0}.".format(root)}
+        return {
+            "state": "unknown", "held": {}, "stale_pruned": [],
+            "detail": "no lane registry at {0}.".format(root),
+        }
     except OSError as exc:
         return {
             "state": "could-not-derive",
             "held": {},
+            "stale_pruned": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     except ValueError as exc:
         return {
             "state": "could-not-derive",
             "held": {},
+            "stale_pruned": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     if not stat.S_ISDIR(found.st_mode):
-        return {"state": "unknown", "held": {}, "detail": "no lane registry at {0}.".format(root)}
+        return {
+            "state": "unknown", "held": {}, "stale_pruned": [],
+            "detail": "no lane registry at {0}.".format(root),
+        }
     try:
         names = os.listdir(root)
     except OSError as exc:
         return {
             "state": "could-not-derive",
             "held": {},
+            "stale_pruned": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
 
     now = time.time()
     held = {}
     live_count = 0
+    stale_pruned = []
     for name in names:
         if not name.endswith(".json"):
             continue
@@ -1182,9 +1318,24 @@ def held_from_live_lanes(worktree_root, exclude_issue=None):
             return {
                 "state": "could-not-derive",
                 "held": {},
+                "stale_pruned": stale_pruned,
                 "detail": "lane record {0} under {1} could not be read.".format(name, root),
             }
         if exclude_issue is not None and str(issue) == str(exclude_issue):
+            continue
+        branch = data.get("branch")
+        if repo is not None and branch and _branch_confirmed_gone(repo, branch):
+            # #734, route 3: a positive confirmation, not an inference from age
+            # -- the branch this record names cannot be checked out anywhere,
+            # which is what the loop's own merge cleanup (`git branch -d`)
+            # leaves behind. Pruned immediately rather than merely skipped,
+            # unlike the age-based `continue` below: age is a guess about
+            # abandonment, this is a fact about the shared clone.
+            try:
+                os.remove(entry_path)
+            except OSError:
+                pass  # another reader may already have pruned it
+            stale_pruned.append({"issue": issue, "branch": branch})
             continue
         age = now - recorded_at
         if age >= 0 and age > LANE_RECORD_TTL_SECONDS:
@@ -1194,6 +1345,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None):
             return {
                 "state": "could-not-derive",
                 "held": {},
+                "stale_pruned": stale_pruned,
                 "detail": "live lane record for issue {0} carries no files -- recorded "
                 "without --lane, or by a version of this script that predates #558 -- "
                 "so the held set cannot be trusted complete while that lane is "
@@ -1209,12 +1361,13 @@ def held_from_live_lanes(worktree_root, exclude_issue=None):
         return {
             "state": "unknown",
             "held": {},
+            "stale_pruned": stale_pruned,
             "detail": "no live lane records under {0} besides the excluded issue.".format(root),
         }
-    return {"state": "resolved", "held": held, "detail": ""}
+    return {"state": "resolved", "held": held, "stale_pruned": stale_pruned, "detail": ""}
 
 
-def derive_held_set(repo_slug, worktree_root, exclude_issue=None):
+def derive_held_set(repo_slug, worktree_root, exclude_issue=None, repo=None):
     """The file set a new lane is not free to touch, mechanically -- #558: the
     exclusion a maintainer used to retype from memory (CLAUDE.md's own defect
     class -- a check that never ran and a check that found nothing render
@@ -1227,9 +1380,14 @@ def derive_held_set(repo_slug, worktree_root, exclude_issue=None):
     combined state is `could-not-derive` too, with both problems named in
     `detail` -- #558's own words: this "must never render as `available`, and it
     must not render as `blocked` either."
+
+    `repo` (#734, route 3) passes straight through to `held_from_live_lanes`,
+    which is the only one of the two sources it applies to -- an open pull
+    request is read from the forge itself, already the true current state, and
+    has no local branch ref to corroborate against.
     """
     prs = held_from_open_prs(repo_slug)
-    lanes = held_from_live_lanes(worktree_root, exclude_issue=exclude_issue)
+    lanes = held_from_live_lanes(worktree_root, exclude_issue=exclude_issue, repo=repo)
     problems = []
     if prs["state"] == "could-not-derive":
         problems.append("open pull requests: " + prs["detail"])
@@ -1488,11 +1646,25 @@ def compute(
     a failed derivation flows into `lane_report` as `could-not-derive`, not as
     `against=None` (which would silently read as "nothing to check against").
 
-    `claim` (#705) is the only thing that makes this call write a lane record.
-    Default False: every read here -- base, branch, worktree occupancy, the
-    board, `--lane`/`--against`/`--derive-held` -- runs exactly as before, and
-    nothing is written to the registry. Pass `claim=True` only at the moment
-    this lane is actually being dispatched, never while probing candidates.
+    `claim` (#705) is the only thing that makes this call write *this lane's own*
+    record. Default False: `--lane`/`--against`/`--derive-held` never write a
+    record for the issue this call is about, and nothing here writes a lane
+    record on that issue's behalf without `--claim`. Pass `claim=True` only at
+    the moment this lane is actually being dispatched, never while probing
+    candidates.
+
+    **That is narrower than "nothing is written to the registry", and it always
+    has been.** `lanes_snapshot` -> `lane_count` prunes a TTL-expired record as a
+    side effect of the read it performs regardless of `claim` (its own docstring
+    says so); `--derive-held` (#734, review round) can now do the same for a
+    *different* issue's record, whenever `held_from_live_lanes` corroborates a
+    live record's declared branch as locally confirmed gone -- a probe that never
+    intends to dispatch can still delete another lane's stale record. Both are
+    deletions of records this loop has independent evidence are dead (aged out,
+    or the branch a merge already removed), never of a record still legitimately
+    held, and both are reported: `lane_report`'s `held_source.stale_pruned` and
+    the receipt's `held :` line name exactly what a `--derive-held` call removed,
+    so this is a write with a trace, not a silent one.
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
@@ -1545,7 +1717,9 @@ def compute(
     board = read_board(repo)
 
     derived_held = (
-        derive_held_set(config.get("repo"), config.get("worktree_root"), exclude_issue=issue)
+        derive_held_set(
+            config.get("repo"), config.get("worktree_root"), exclude_issue=issue, repo=repo,
+        )
         if derive_held
         else None
     )
@@ -1732,6 +1906,20 @@ def receipt(payload):
                 lines.append(
                     "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(held_source["detail"])
                 )
+            # #734, review round: a stale-branch prune is a real write this call
+            # performs even when --claim was never passed -- named here so it is
+            # never a silent action with no trace anywhere in this receipt.
+            stale_pruned = held_source.get("stale_pruned") or []
+            if stale_pruned:
+                lines.append(
+                    "  held    : {0} stale record(s) released (branch confirmed gone): {1}".format(
+                        len(stale_pruned),
+                        ", ".join(
+                            "lane #{0} ({1})".format(item["issue"], item["branch"])
+                            for item in stale_pruned
+                        ),
+                    )
+                )
         if lane["overlap"] is None:
             # #558 review round: the pre-#558 "only one side given" wording is
             # wrong when `held_source` is present and no --lane was given -- that
@@ -1839,6 +2027,16 @@ def main(argv=None):
         "record behind. Pass this only at the moment this lane is actually "
         "dispatched.",
     )
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="release this issue's own lane record (#734), instead of computing "
+        "setup facts -- call this once the merge step has independently "
+        "verified the pull request merged (state/mergedAt/mergeCommit read "
+        "back off the remote), so a follow-up dispatched minutes later never "
+        "reads this lane as still held. Exits 0 whether or not a record "
+        "existed to release; every other flag is ignored when this is given.",
+    )
     args = parser.parse_args(argv)
 
     if args.derive_held and args.against:
@@ -1849,6 +2047,19 @@ def main(argv=None):
             stream.reconfigure(errors="backslashreplace")
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
+
+    if args.release:
+        config, _problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
+        worktree_root = config.get("worktree_root") if config else None
+        result = release_lane(worktree_root, args.issue)
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            print("RELEASE #{0}: {1}{2}".format(
+                args.issue, result["state"],
+                " -- " + result["detail"] if result["detail"] else "",
+            ))
+        return EXIT_COULD_NOT_RUN if result["state"] == "could-not-release" else EXIT_OK
 
     payload = compute(
         args.repo, args.issue, args.remote, args.lane, args.against,

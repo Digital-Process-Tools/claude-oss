@@ -17,10 +17,11 @@ ticks, fired without a human at the keyboard to type it.
 
 The scheduler (`/oss:tick`, run by a maintainer's own top-level session or by an unattended loop) spawns
 you fresh, with no memory of any earlier tick. **Its context stays flat because it never holds a
-tick's payload** -- reading the board summary, spawning you, and reading your handback is all it ever
-does. You are the one that reads the board in full, delegates, reviews, merges -- same authority for
-the phases a tick covers as the scheduler would have had, for exactly the one tick you were spawned to
-run.
+tick's payload** -- spawning you and reading your handback is all it ever does. It hands you nothing
+beyond the spawn itself, not even a board summary: re-deriving the board from the repo, fresh, is
+what your own step 1 is for. You are the one that reads the board in full, delegates, reviews,
+merges -- same authority for the phases a tick covers as the scheduler would have had, for exactly
+the one tick you were spawned to run.
 
 **Not the same model.** This file's frontmatter pins `model: sonnet`; the scheduler runs whatever
 model the maintainer's own top-level session runs, which may be a different one. A reader relying on
