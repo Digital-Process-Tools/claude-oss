@@ -39,20 +39,47 @@ miss a genuine match in it -- trading the loud third state for a quiet
 not-matched, the defect this whole repository is named after, one layer
 inside the fix meant to remove it.
 
-So the two are told apart by a NUL byte -- the same signal `git diff` and
-`grep -I` use to call a file binary, because ordinary text in any encoding
-this tool could plausibly be asked to search does not contain one, while a
-compiled artifact reliably does. **Present:** the file is treated as binary
-and goes to `skipped_files` -- this is the actual #717 target
-(`__pycache__/*.pyc`, present in every Python tree the moment a package is
-imported or tested even once) -- reported on every result, never suppressed
-at zero, and never forcing could-not-search on its own. **Absent:** the
-decode failure is genuinely ambiguous -- it could be real text this search
-should have been able to read -- so it falls back to `unreadable_files` and
-still forces could-not-search, the conservative answer rather than a guess.
-A file this process was actually denied (`OSError`) reaches
-`unreadable_files` the same way and forces could-not-search for the
-original reason, unchanged.
+So the two are told apart first by a byte-order mark and only then by a NUL
+byte (#738). UTF-16-encoded ASCII carries a NUL byte for every character, so
+a NUL-byte test alone cannot tell UTF-16 source from a compiled artifact --
+both are all NUL at that resolution, and the v0.17.0 release gate found a
+UTF-16 file containing the searched pattern taking the skipped_files branch
+unconditionally and reporting not-matched. A byte-order mark (`\xff\xfe`
+little-endian, `\xfe\xff` big-endian) is checked first and reliably
+identifies the file as UTF-16 where present -- real UTF-16 text written by
+any ordinary tool carries one. **BOM present:** what the file actually
+contains is still genuinely ambiguous, the same way Latin-1 and cp1252
+already are, so it falls back to `unreadable_files` and forces
+could-not-search rather than a guess at the content -- this module does not
+attempt to decode and search UTF-16 text, only to stop calling it binary.
+**BOM absent, decode still failed:** a NUL byte is the remaining signal --
+the same one `git diff` and `grep -I` use to call a file binary, because
+ordinary text in the encodings this check does not already route away
+(Latin-1, cp1252) does not contain one, while a compiled artifact reliably
+does. **Present:** the file is treated as binary and goes to
+`skipped_files` -- this is the actual #717 target (`__pycache__/*.pyc`,
+present in every Python tree the moment a package is imported or tested
+even once) -- reported on every result, never suppressed at zero, and never
+forcing could-not-search on its own. **Absent:** the decode failure is
+genuinely ambiguous -- it could be real text this search should have been
+able to read -- so it falls back to `unreadable_files` and still forces
+could-not-search, the conservative answer rather than a guess. A file this
+process was actually denied (`OSError`) reaches `unreadable_files` the same
+way and forces could-not-search for the original reason, unchanged.
+
+BOM-less UTF-16 is a worse, separate gap this fix does not close, found by
+review on this same issue: ASCII-content UTF-16 written without a mark is
+not "indistinguishable from binary by the NUL test above" -- it never
+reaches that test at all. Every byte of ASCII-content UTF-16 (the character
+byte and its paired NUL) is independently a legal single-byte UTF-8
+codepoint, so `raw.decode("utf-8", errors="strict")` succeeds outright, the
+file is read as garbled text with a NUL interleaved between every
+character, the pattern never survives being split by those NULs, and the
+search returns a clean not-matched with `skipped_files` and
+`unreadable_files` both empty -- no signal anything unusual happened.
+Closing it needs a design decision this issue does not make (a heuristic
+for BOM-less UTF-16 risks false positives on legitimate UTF-8 containing a
+genuine NUL) and is filed separately rather than attempted here.
 
 ## What a match means is not this script's to decide
 
@@ -104,6 +131,13 @@ EXIT_COULD_NOT_SEARCH = 3
 STATE_MATCHED = "matched"
 STATE_NOT_MATCHED = "not-matched"
 STATE_COULD_NOT_SEARCH = "could-not-search"
+
+# #738: checked ahead of the NUL-byte test below -- UTF-16-encoded ASCII
+# carries a NUL byte per character, so the NUL test alone always calls a
+# UTF-16 file binary regardless of content. A byte-order mark is the
+# unambiguous signal that came first.
+_UTF16_BOM_LE = b"\xff\xfe"
+_UTF16_BOM_BE = b"\xfe\xff"
 
 
 def _walk_files(root):
@@ -211,7 +245,18 @@ def search(pattern, roots):
             # could-not-search alone. Absent: genuinely ambiguous, so it
             # falls back to unreadable_files and still forces
             # could-not-search -- the conservative answer, not a guess.
-            if b"\x00" in raw:
+            #
+            # #738: that NUL-byte claim is false for UTF-16 -- UTF-16-encoded
+            # ASCII carries a NUL byte for every character, so the test
+            # above called every UTF-16 file binary regardless of content,
+            # and a pattern genuinely present in one reported not-matched.
+            # A byte-order mark is checked first and is unambiguous where
+            # present: route it to unreadable_files, the same conservative
+            # could-not-search answer already given to Latin-1/cp1252,
+            # rather than a guess at content this module does not decode.
+            if raw[:2] in (_UTF16_BOM_LE, _UTF16_BOM_BE):
+                unreadable_files.append(str(path))
+            elif b"\x00" in raw:
                 skipped_files.append(str(path))
             else:
                 unreadable_files.append(str(path))
