@@ -1588,6 +1588,22 @@ def validate(config):
             for field in ("priority", "lanes"):
                 if not isinstance(labels.get(field), list):
                     problems.append("labels.{}: expected a list (an empty one is fine)".format(field))
+            # #762: the label the loop attaches to every issue it files, so the intake
+            # metric's numerator is read off the tracker instead of recalled from a
+            # tick's own memory. Optional and null-is-fine, same shape as
+            # test_command/changelog_dir -- a repo that has not declared one yet is
+            # not a typo, it is `could-not-count` at counting time.
+            if "filed_by_loop" in labels:
+                filed_by_loop = labels["filed_by_loop"]
+                if filed_by_loop is not None and (
+                    isinstance(filed_by_loop, bool)
+                    or not isinstance(filed_by_loop, str)
+                    or not filed_by_loop.strip()
+                ):
+                    problems.append(
+                        "labels.filed_by_loop: expected a label name (string) or null "
+                        "for 'not declared', got {!r}".format(filed_by_loop)
+                    )
 
     for field in ("version_sites", "docs_targets"):
         if field in config and not isinstance(config[field], list):

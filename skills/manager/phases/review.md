@@ -106,6 +106,13 @@ automatically a new issue -- three receipts, and every item gets exactly one of 
 - **a line in the pull request** being merged, or in the state entry, when the finding is real and
   below the bar -- a named decision, never a silent drop.
 
+**When the receipt is a new issue, attach `labels.filed_by_loop`'s label in the same
+`gh-issue-create` payload, if `.oss.json` declares one (#762).** That single write is the whole
+mechanism the intake metric's numerator now depends on -- an issue filed without it is
+indistinguishable from one a stranger or the maintainer typed by hand, which is the exact ambiguity
+#762 exists to close. A repo that has not declared the label is not a reason to invent a spelling;
+file the issue exactly as before and leave it unlabelled.
+
 The `reason` beside the item is the agent's argument for why it is yours rather than theirs, and
 the receipt -- whichever of the three -- is what keeps #254 closed: an item with no receipt is
 still open. An issue is the receipt that costs the most to drain, so it is the one that needs the
