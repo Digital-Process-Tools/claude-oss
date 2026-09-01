@@ -1337,11 +1337,13 @@ fi
 #     reads a pass on `VERDICT: not usable -- 4 failure(s)` exactly as loudly as on
 #     `VERDICT: ok`. The line is parsed; the status is never branched on for the
 #     repo's health.
-#   * `--root` is passed because this script has ALREADY resolved the root. Invoked
-#     with neither `--root` nor CLAUDE_PROJECT_DIR the diagnostic prints
-#     `WARN project dir guessed from cwd` and downgrades an otherwise-`ok` tree to
-#     `usable with gaps -- 1 warning(s)` -- a warning manufactured by the
-#     invocation rather than a fact about the repository.
+#   * `--root` is passed because this script has ALREADY resolved the root, so
+#     nothing about the diagnostic's own invocation is left to guess at here.
+#     Invoked with neither `--root` nor CLAUDE_PROJECT_DIR the diagnostic prints
+#     `OK project dir guessed from cwd` -- guessing from cwd is the documented
+#     default invocation, not a failed measurement (#756 moved this off WARN,
+#     where it used to downgrade an otherwise-`ok` tree for an artefact of the
+#     invocation rather than a fact about the repository).
 #
 # The status IS read for one thing the VERDICT line cannot report: whether the
 # diagnostic ran at all. Exit 0 with no VERDICT line means it started and never

@@ -462,9 +462,12 @@ def test_the_environment_is_used_when_no_root_is_given(tmp_path):
 
 
 def test_cwd_is_used_when_neither_is_given_and_says_it_is_a_guess(tmp_path):
+    """#756: guessing from cwd is the documented default invocation, not a failed
+    measurement -- the level moved to OK, the wording (and the fact it names the
+    guessed tree) did not."""
     chosen, findings = doctor.resolve_project_dir(None, None, str(tmp_path))
     assert chosen == tmp_path
-    assert findings[0][0] == "WARN"
+    assert findings[0][0] == "OK"
     assert "guessed" in findings[0][1]
 
 
