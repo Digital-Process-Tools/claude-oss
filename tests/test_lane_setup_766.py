@@ -91,7 +91,13 @@ def test_a_pipe_alternation_never_fabricates_an_overlap(tmp_path):
     """The issue's own harm, end to end: a `|`-joined --lane checked against a
     single real --against file must not render `overlap: none` as though a real
     disjointness check had run -- the refused side contributes no files, so
-    `lane_overlap` has nothing to compare and the caller is told that plainly.
+    `lane_overlap` has nothing to compare, and the caller is told that plainly.
+
+    #774: `overlap` itself is `None` here rather than `[]` -- an empty list is
+    what a real, checked, disjoint comparison also produces, and the wider
+    half of this issue (left unbuilt when the narrower half landed) gives the
+    unresolved case its own `overlap_state` rather than folding it into the
+    same value.
     """
     _make_tree(tmp_path)
     report = lane_setup.lane_report(
@@ -100,7 +106,8 @@ def test_a_pipe_alternation_never_fabricates_an_overlap(tmp_path):
         ["scripts/common.sh"],
     )
     assert report["lane"]["patterns"][0]["state"] == "refused"
-    assert report["overlap"] == []
+    assert report["overlap"] is None
+    assert report["overlap_state"] == "could-not-check"
     assert report["lane"]["files"] == []
 
 
@@ -149,7 +156,9 @@ def test_cli_reports_the_pipe_pattern_as_refused_not_as_a_clean_overlap(tmp_path
     )
     payload = json.loads(done.stdout)
     assert payload["lane"]["lane"]["patterns"][0]["state"] == "refused"
-    assert payload["lane"]["overlap"] == []
+    # #774: never the same `[]` a real, checked, disjoint comparison produces.
+    assert payload["lane"]["overlap"] is None
+    assert payload["lane"]["overlap_state"] == "could-not-check"
 
 
 def test_cli_reports_the_true_overlap_for_the_documented_repeated_form(tmp_path):

@@ -197,13 +197,26 @@ def test_held_from_live_lanes_prunes_a_record_whose_branch_is_confirmed_gone(tmp
     """The issue's own third instance: lane #694 merged, the loop's own cleanup
     ran `git branch -d fix/694`, and the record still claimed
     `commands/tick.md` twenty minutes later against a 240-minute TTL. A
-    positively-confirmed-gone branch must be excluded from the held set and
-    the record itself pruned, not merely aged out later."""
+    branch this function has previously observed created, and which is now
+    positively confirmed gone, must be excluded from the held set and the
+    record itself pruned, not merely aged out later.
+
+    #771 review: the branch is genuinely created, observed by a first read,
+    and then deleted here -- unlike the pre-#771 version of this test, which
+    simulated "merged and cleaned up" with a branch that was simply never
+    created at all. That is exactly the ambiguity #771 is about: this test's
+    own sibling in tests/test_lane_setup_771.py proves a branch never
+    observed created must NOT be pruned the same way.
+    """
     repo = _real_git_repo(tmp_path)
-    # `fix/694` is never created -- the branch a merge-and-cleanup would have
-    # deleted, confirmed absent by construction rather than by race.
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
     record_path = _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    # A first read while the branch exists -- #771's own precondition for
+    # trusting a later absence as deletion rather than "never created".
+    first = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    assert first["state"] == "resolved"
+    subprocess.run(["git", "-C", str(repo), "branch", "-D", "fix/694"], check=True)
 
     result = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     assert result["state"] == "unknown"
@@ -215,12 +228,17 @@ def test_held_from_live_lanes_prunes_a_record_whose_branch_is_confirmed_gone(tmp
 def test_held_from_live_lanes_stale_branch_prune_does_not_touch_a_live_sibling(tmp_path):
     """Two records, one prunable and one not -- the held set must keep exactly
     the live one's files, and only the gone branch's record is removed from
-    disk."""
+    disk. #771 review: both branches are created (and observed by a first
+    read) before #2's is deleted -- see the note on the sibling test above."""
     repo = _real_git_repo(tmp_path)
     subprocess.run(["git", "-C", str(repo), "branch", "fix/1"], check=True)
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/2"], check=True)
     worktree_root = tmp_path / "wt"
     live_path = _write_record(worktree_root, 1, files=["a.py"], branch="fix/1")
     gone_path = _write_record(worktree_root, 2, files=["b.py"], branch="fix/2")
+    first = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    assert first["state"] == "resolved"
+    subprocess.run(["git", "-C", str(repo), "branch", "-D", "fix/2"], check=True)
 
     result = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     assert result["state"] == "resolved"
@@ -290,8 +308,15 @@ def test_derive_held_set_forwards_repo_so_a_merged_lane_stops_blocking(tmp_path,
 
     monkeypatch.setattr(lane_setup.subprocess, "run", _fake_run)
     repo = _real_git_repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
     _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    # #771 review: observe the branch alive once before it is deleted -- see
+    # the note on test_held_from_live_lanes_prunes_a_record_whose_branch_is_
+    # confirmed_gone above.
+    first = lane_setup.derive_held_set("owner/repo", worktree_root, repo=repo)
+    assert first["state"] == "resolved"
+    subprocess.run(["git", "-C", str(repo), "branch", "-D", "fix/694"], check=True)
 
     result = lane_setup.derive_held_set("owner/repo", worktree_root, repo=repo)
     assert result["state"] == "resolved"
@@ -308,9 +333,15 @@ def test_derive_held_set_forwards_repo_so_a_merged_lane_stops_blocking(tmp_path,
 
 def test_lane_report_surfaces_which_records_were_pruned(tmp_path):
     repo = _real_git_repo(tmp_path)
-    # `fix/694` is never created -- confirmed gone by construction.
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
     _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    # #771 review: observe the branch alive once, then delete it -- see the
+    # note on test_held_from_live_lanes_prunes_a_record_whose_branch_is_
+    # confirmed_gone above.
+    first = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    assert first["state"] == "resolved"
+    subprocess.run(["git", "-C", str(repo), "branch", "-D", "fix/694"], check=True)
     derived = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     # Wrap in the same shape `derive_held_set` hands `lane_report`.
     derived_held = {"state": "resolved", "held": derived["held"], "lanes": derived, "detail": ""}

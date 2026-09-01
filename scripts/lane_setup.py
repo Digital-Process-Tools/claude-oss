@@ -613,6 +613,46 @@ def guards_for_files(files, repo=None):
     return result
 
 
+def _refused_patterns(resolved):
+    """Every pattern in a `resolve_lane` result (`resolved["patterns"]`) that was
+    refused outright, rather than checked against the tree at all -- #774. A
+    `glob-no-match` pattern is a well-formed, verified fact (the pattern really
+    does match nothing on disk) and correctly contributes an empty `files` list;
+    a `refused` pattern was never read as a pattern in the first place, so the
+    comparison `lane_overlap` performs never happened for it at all. Conflating
+    the two -- both leave the pattern's own files out of `files` -- is exactly
+    how a disjointness check that never ran for one side ends up printing the
+    identical `overlap : none` a real, checked, disjoint result would also print
+    (the issue's own measurement). `None` in, `[]` out: nothing to ask about a
+    side that was never given.
+    """
+    if resolved is None:
+        return []
+    return [entry["pattern"] for entry in resolved["patterns"] if entry["state"] == "refused"]
+
+
+def _unresolved_overlap_detail(a, a_refused, b, b_refused):
+    """One line naming which side(s) carried a refused pattern and how many --
+    #774's own suggested shape, `1 of 1 lane pattern(s) refused`, so the reason
+    a comparison could not run is said in as many words rather than standing in
+    silently for the bare word `none`.
+    """
+    parts = []
+    if a_refused:
+        parts.append(
+            "{0} of {1} lane pattern(s) refused: {2}".format(
+                len(a_refused), len(a["patterns"]), ", ".join(a_refused)
+            )
+        )
+    if b_refused:
+        parts.append(
+            "{0} of {1} against pattern(s) refused: {2}".format(
+                len(b_refused), len(b["patterns"]), ", ".join(b_refused)
+            )
+        )
+    return "; ".join(parts)
+
+
 def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     """The `lane` section of a lane-setup payload, or None when nothing at all
     was asked for. Two lanes given: also the overlap between them, so a
@@ -638,19 +678,42 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     and never `blocked`.
 
     `availability` (#558) is a *per-candidate* verdict -- available / blocked /
-    could-not-derive-the-held-set -- computed only when `derived_held` was given, and
-    only for the `lane` side against the derived set: a mechanical question this
-    function can answer on its own. The tick-level *fill* verdict (filled /
-    under-filled / could-not-tell) that #558 also names is deliberately NOT computed
-    here: it needs the full list of candidate issues under consideration this tick,
-    which is a judgement about which issues are even being weighed, not a fact this
-    script can derive from one `--lane` argument. That verdict stays prose in the
-    tick, per the issue's own framing of the two halves as separable.
+    could-not-check / could-not-derive-the-held-set -- computed only when
+    `derived_held` was given, and only for the `lane` side against the derived
+    set: a mechanical question this function can answer on its own. The
+    tick-level *fill* verdict (filled / under-filled / could-not-tell) that #558
+    also names is deliberately NOT computed here: it needs the full list of
+    candidate issues under consideration this tick, which is a judgement about
+    which issues are even being weighed, not a fact this script can derive from
+    one `--lane` argument. That verdict stays prose in the tick, per the issue's
+    own framing of the two halves as separable.
+
+    `overlap_state` (#774) is a third answer sitting beside `overlap` itself --
+    `resolved` (both sides were actually compared), `could-not-check` (at least
+    one side carried a pattern `_lane_pattern_problem` refused, so the
+    comparison never ran for it), or `n/a` (fewer than both sides were given at
+    all, the pre-existing case). `overlap` alone cannot carry this on its own:
+    `[]` is the correct, meaningful answer for two sides that were both
+    genuinely resolved and share nothing, and #774's own measurement is that a
+    refused pattern produces the identical `[]` -- one word, `none`, for two
+    different claims, and in `--against` mode there is no sibling `verdict:`
+    line to disambiguate it. `overlap` itself is left `None` whenever
+    `overlap_state` is `could-not-check`, the same "nothing to report as a file
+    list" shape the pre-existing `n/a` case already uses, so a caller reading
+    `overlap` alone (the pre-#774 contract) never mistakes an unresolved
+    comparison for a computed empty one; `overlap_detail` carries the reason.
+    A refused pattern on the derived-held `lane` side also stops `availability`
+    from reading `available` -- the dangerous direction, since a real collision
+    hiding behind an unchecked pattern would otherwise render as clear to
+    dispatch on.
     """
     if not lane_patterns and not against_patterns and derived_held is None:
         return None
     a = resolve_lane(repo, lane_patterns) if lane_patterns else None
+    a_refused = _refused_patterns(a)
     availability = None
+    overlap_state = "n/a"
+    overlap_detail = ""
     if derived_held is not None:
         if derived_held["state"] != "resolved":
             b = None
@@ -665,8 +728,27 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
         else:
             held_files = sorted(derived_held["held"])
             b = resolve_lane(repo, held_files) if held_files else {"patterns": [], "files": []}
-            overlap = lane_overlap(a["files"], b["files"]) if a is not None else None
-            if a is not None:
+            if a is None:
+                overlap = None
+            elif a_refused:
+                # #774: a refused lane pattern means this comparison never ran
+                # for it -- rendering `available` here would be the dangerous
+                # direction (a real collision hiding behind an unchecked
+                # pattern reads as clear to dispatch on), so this is its own
+                # state rather than folding into either `available` or
+                # `blocked`.
+                overlap = None
+                overlap_state = "could-not-check"
+                overlap_detail = _unresolved_overlap_detail(a, a_refused, None, [])
+                availability = {
+                    "state": "could-not-check",
+                    "files": [],
+                    "holders": [],
+                    "detail": overlap_detail,
+                }
+            else:
+                overlap = lane_overlap(a["files"], b["files"])
+                overlap_state = "resolved"
                 if overlap:
                     holders = []
                     for f in overlap:
@@ -683,12 +765,31 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
                     availability = {"state": "available", "files": [], "holders": [], "detail": ""}
     else:
         b = resolve_lane(repo, against_patterns) if against_patterns else None
-        overlap = lane_overlap(a["files"], b["files"]) if a and b else None
+        b_refused = _refused_patterns(b)
+        if a is None or b is None:
+            overlap = None
+        elif a_refused or b_refused:
+            # #774: the wider half of #766 -- a refused pattern on either side
+            # means the comparison never ran, and must never render as the
+            # same `none` a real, checked, disjoint pair also prints.
+            overlap = None
+            overlap_state = "could-not-check"
+            overlap_detail = _unresolved_overlap_detail(a, a_refused, b, b_refused)
+        else:
+            overlap = lane_overlap(a["files"], b["files"])
+            overlap_state = "resolved"
     # #566: `repo` is threaded through so each guard's `status` is answered against
     # the repository the lane is actually dispatched into, never against claude-oss's
     # own tree by default -- the whole defect this issue is about.
     guards = guards_for_files(a["files"], repo) if a else []
-    result = {"lane": a, "against": b, "overlap": overlap, "guards": guards}
+    result = {
+        "lane": a,
+        "against": b,
+        "overlap": overlap,
+        "overlap_state": overlap_state,
+        "overlap_detail": overlap_detail,
+        "guards": guards,
+    }
     if derived_held is not None:
         # #734, review round: `derived_held["lanes"]["stale_pruned"]` names every
         # registry record this call's own `derive_held_set` deleted as a side
@@ -1189,6 +1290,18 @@ def held_from_open_prs(repo_slug):
     return {"state": "resolved", "held": held, "detail": ""}
 
 
+def _show_ref_code(repo, branch):
+    """The raw `git show-ref --verify --quiet refs/heads/<branch>` exit code in
+    `repo`, or `None` when git itself could not answer (`_git` returning `None`
+    -- git not on PATH, or the call could not be launched). Shared by
+    `_branch_confirmed_gone` and `_branch_confirmed_present` (#771) so both read
+    from the one call rather than the registry paying for `git show-ref` twice
+    per record.
+    """
+    code, _, _ = _git(repo, "show-ref", "--verify", "--quiet", "refs/heads/" + branch)
+    return code
+
+
 def _branch_confirmed_gone(repo, branch):
     """True only when `repo`'s local `refs/heads` positively confirm `branch` no
     longer exists there -- #734, route 3. Every worktree cut from the same
@@ -1212,9 +1325,55 @@ def _branch_confirmed_gone(repo, branch):
     `refs/remotes/...` ref) would read a brand-new, genuinely live lane as
     already gone. The local ref is never ambiguous that way: it exists exactly
     as long as some worktree could have it checked out.
+
+    **#771: "gone" here also covers "never created yet".** `git show-ref` answers
+    the identical "not found" for a branch a merge already deleted and for a
+    branch `--claim` has recorded but `git worktree add` has not cut. This
+    function alone cannot tell those apart -- see `held_from_live_lanes`, which
+    is where the distinction is actually made, never here.
     """
-    code, _, _ = _git(repo, "show-ref", "--verify", "--quiet", "refs/heads/" + branch)
-    return code == 1
+    return _show_ref_code(repo, branch) == 1
+
+
+def _branch_confirmed_present(repo, branch):
+    """True only when `repo`'s local `refs/heads` positively confirm `branch`
+    exists there right now -- #771, the positive counterpart of
+    `_branch_confirmed_gone`. `git show-ref --verify` answers 0 (exists) or 1
+    (does not) when it can answer at all, and only a clean 0 is trusted as
+    present -- never inferred from "not confirmed gone", which would also be
+    true whenever git could not answer at all.
+    """
+    return _show_ref_code(repo, branch) == 0
+
+
+def _mark_branch_confirmed_created(entry_path, data):
+    """Persist that `data`'s own declared branch has been positively observed to
+    exist in the shared clone's `refs/heads` -- #771. Written once, the first
+    time a corroborating read (`held_from_live_lanes`, given `repo`) sees the
+    branch present, so a *later* read that finds the identical branch absent
+    can trust that absence as "gone by deletion" (route 3's own prune
+    condition) rather than "never created" (the claimed-but-not-yet-cut window
+    #771 is about) -- the one distinction `_branch_confirmed_gone` alone cannot
+    make, because both states are the same absence in `refs/heads`.
+
+    Best-effort, like `record_lane`'s own write: a failure here (a permission
+    blip, a concurrent writer) leaves this record exactly as conservative as
+    before this function ran -- still not eligible for route 3's prune until
+    some other read confirms it -- never raises, and never blocks the read
+    already in progress around it.
+    """
+    payload = dict(data)
+    payload["branch_confirmed_created"] = True
+    tmp_path = entry_path + ".tmp"
+    try:
+        with open(tmp_path, "w") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp_path, entry_path)
+    except OSError:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
@@ -1237,16 +1396,39 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                          render as a confident (even if partial) `resolved`.
 
     `repo` (#734, route 3): when given, every record's own declared `branch` is
-    corroborated against `repo`'s local `refs/heads` (`_branch_confirmed_gone`)
-    before the record is trusted as held. A record whose branch is positively
-    confirmed gone is pruned from disk the same way an expired one already is --
-    `LANE_RECORD_TTL_SECONDS` is a reasonable ceiling for "abandoned", and a very
-    long time to keep blocking a follow-up after a merge the loop itself just
-    performed and read back (#734's own three instances: 20, 27 and 90 minutes
-    stale). `stale_pruned` names every record removed this way, `[]` when none
-    were. Omitting `repo` (the default) reproduces the exact pre-#734 behaviour,
-    unconditionally: every existing caller that does not pass it sees age as the
-    only signal, same as before this parameter existed.
+    corroborated against `repo`'s local `refs/heads` before the record is trusted
+    as held. A record whose branch is positively confirmed gone is pruned from
+    disk the same way an expired one already is -- `LANE_RECORD_TTL_SECONDS` is a
+    reasonable ceiling for "abandoned", and a very long time to keep blocking a
+    follow-up after a merge the loop itself just performed and read back (#734's
+    own three instances: 20, 27 and 90 minutes stale). `stale_pruned` names every
+    record removed this way, `[]` when none were. Omitting `repo` (the default)
+    reproduces the exact pre-#734 behaviour, unconditionally: every existing
+    caller that does not pass it sees age as the only signal, same as before this
+    parameter existed.
+
+    **#771: absence from `refs/heads` alone is never trusted as "gone by
+    deletion".** `_branch_confirmed_gone`'s own docstring says why: the identical
+    absence also describes a lane `--claim` has recorded but whose branch
+    `git worktree add` has not cut yet -- the loop's own documented dispatch
+    order puts those two calls in that order, so the window is real and
+    structural, not a race to be narrowed. Reproduced directly: three lanes
+    claimed back to back, a sibling's `--derive-held` read in between each
+    claim and its own `git worktree add`, and the registry emptied itself --
+    every record pruned, none of the three branches ever having existed.
+
+    So a record is only pruned here once **this same record** has been
+    positively observed with its branch present at some earlier read
+    (`data["branch_confirmed_created"]`, written by `_mark_branch_confirmed_created`
+    the first time a corroborating call sees it) -- never on a bare "not found"
+    alone. A record never yet observed present that now reads "not found" falls
+    through to the age-based judgement below, exactly the pre-#734, no-`repo`
+    behaviour -- the same degrade this function already makes when `repo` is
+    omitted entirely, and never worse than that. `release_lane` (route 1,
+    called by the merge step once it has read a merge back off the remote)
+    stays the fast, authoritative release; this corroboration is a backstop for
+    when route 1's caller never ran, and #771 narrows what it is allowed to
+    infer from silence without removing it.
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
@@ -1324,19 +1506,33 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
         if exclude_issue is not None and str(issue) == str(exclude_issue):
             continue
         branch = data.get("branch")
-        if repo is not None and branch and _branch_confirmed_gone(repo, branch):
-            # #734, route 3: a positive confirmation, not an inference from age
-            # -- the branch this record names cannot be checked out anywhere,
-            # which is what the loop's own merge cleanup (`git branch -d`)
-            # leaves behind. Pruned immediately rather than merely skipped,
-            # unlike the age-based `continue` below: age is a guess about
-            # abandonment, this is a fact about the shared clone.
-            try:
-                os.remove(entry_path)
-            except OSError:
-                pass  # another reader may already have pruned it
-            stale_pruned.append({"issue": issue, "branch": branch})
-            continue
+        if repo is not None and branch:
+            ref_code = _show_ref_code(repo, branch)
+            if ref_code == 1:
+                if data.get("branch_confirmed_created") is True:
+                    # #734, route 3: a positive confirmation, not an inference
+                    # from age -- the branch this record names cannot be
+                    # checked out anywhere, and was itself previously observed
+                    # to exist (below), which is what the loop's own merge
+                    # cleanup (`git branch -d`) leaves behind. Pruned
+                    # immediately rather than merely skipped, unlike the
+                    # age-based `continue` below: age is a guess about
+                    # abandonment, this is a fact about the shared clone.
+                    try:
+                        os.remove(entry_path)
+                    except OSError:
+                        pass  # another reader may already have pruned it
+                    stale_pruned.append({"issue": issue, "branch": branch})
+                    continue
+                # #771: never observed created -- "not found" here is exactly
+                # as likely to mean "claimed, not yet cut" as "merged and
+                # cleaned up", and this function cannot tell those apart from
+                # a bare absence. Fall through to the age-based judgement.
+            elif ref_code == 0 and data.get("branch_confirmed_created") is not True:
+                # #771: branch positively exists right now -- record it so a
+                # later read, once the branch is genuinely gone, can trust
+                # that absence as deletion.
+                _mark_branch_confirmed_created(entry_path, data)
         age = now - recorded_at
         if age >= 0 and age > LANE_RECORD_TTL_SECONDS:
             continue  # expired; `lane_count` is what prunes it from disk
@@ -1920,7 +2116,13 @@ def receipt(payload):
                         ),
                     )
                 )
-        if lane["overlap"] is None:
+        # #774: `overlap_state` is checked first -- `.get` rather than `[]` so a
+        # payload built before this field existed (an older test fixture, or a
+        # hand-built dict) still renders the pre-#774 lines below rather than
+        # raising.
+        if lane.get("overlap_state") == "could-not-check":
+            lines.append("  overlap : COULD NOT CHECK -- {0}".format(lane.get("overlap_detail", "")))
+        elif lane["overlap"] is None:
             # #558 review round: the pre-#558 "only one side given" wording is
             # wrong when `held_source` is present and no --lane was given -- that
             # is "no candidate to check", not "only the against side is missing",
@@ -1937,9 +2139,10 @@ def receipt(payload):
         availability = lane.get("availability")
         if availability is not None:
             # #558: the per-candidate verdict the issue asks for -- available /
-            # blocked / could-not-derive-the-held-set -- never rendered as
-            # `available` or `blocked` when the held set itself could not be
-            # derived.
+            # blocked / could-not-check / could-not-derive-the-held-set -- never
+            # rendered as `available` or `blocked` when the held set itself
+            # could not be derived, or when the lane side itself could not be
+            # checked (#774: a refused pattern must never render as clear).
             if availability["state"] == "available":
                 lines.append("  verdict : available")
             elif availability["state"] == "blocked":
@@ -1947,6 +2150,10 @@ def receipt(payload):
                     "  verdict : BLOCKED -- {0} (held by {1})".format(
                         ", ".join(availability["files"]), ", ".join(availability["holders"])
                     )
+                )
+            elif availability["state"] == "could-not-check":
+                lines.append(
+                    "  verdict : COULD NOT CHECK -- {0}".format(availability["detail"])
                 )
             else:
                 lines.append(
