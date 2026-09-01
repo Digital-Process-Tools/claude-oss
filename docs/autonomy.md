@@ -16,18 +16,26 @@ Half one is exercised on every tick. Half two has no runtime at all, and that is
 ## What is true today, derived rather than asserted
 
 **Every workflow this repository runs, and every workflow it writes into a repository that installs
-it, fires on `push` or `pull_request` — a human act. Nothing fires on a clock or on a dispatch from
-outside. The one thing an install does start on a clock is a `.github/dependabot.yml` seeded once
-when absent, and nothing in this plugin merges what that opens.**
+it, fires on `push` or `pull_request` — a human act — with one named exception: this repository's
+own `tests.yml` also carries `workflow_dispatch` as of #679, itself a human act (`gh workflow run
+tests.yml`, run by a maintainer) rather than a clock, and the remedy for the case where the forge
+drops a push-triggered run on `main` and leaves no other route short of an empty commit. Nothing
+fires on a clock or on a dispatch from outside this repository. The one thing an install does start
+on a clock is a `.github/dependabot.yml` seeded once when absent, and nothing in this plugin merges
+what that opens.**
 
 Both halves are measured by `tests/test_unattended_triggers_237.py`. It reads the `on:` block of
 this repository's own workflows and of every workflow in `scaffold.OWNED`, and fails three ways:
 when an unattended trigger appears, when a workflow declares no human trigger either, and when a
 workflow's trigger block cannot be read at all. The third is the one that matters — a sweep that
-could not look must not render as a sweep that found nothing. The dependabot exception is checked
-separately, and is checked at all because it is the counter-example: the first version of the
-sentence above did not have it, and was wrong. A sweep whose scope quietly excludes the one case
-that would contradict it reports the answer it was scoped to give.
+could not look must not render as a sweep that found nothing. The dependabot exception and the
+`workflow_dispatch` exception are each checked separately, and are checked at all because each is a
+counter-example: the first version of the sentence above had neither, and was wrong twice over. A
+sweep whose scope quietly excludes the one case that would contradict it reports the answer it was
+scoped to give. `workflow_dispatch` is named per workflow rather than exempted wholesale — the
+test's `MANUAL_DISPATCH_EXCEPTIONS` carries a reason for each entry and confirms nothing under
+`scripts/` issues the call that would make "a human presses this" false, so a future automated
+dispatch cannot ride in on this exception unnoticed.
 
 The consequence follows from the ownership contract rather than from anything about scheduling.
 The executable artifacts an install puts in a managed repository are the changelog gate — a

@@ -47,6 +47,28 @@ UNATTENDED = ("schedule", "repository_dispatch")
 # A human act on this repository.
 ATTENDED = ("push", "pull_request", "pull_request_target", "issues", "issue_comment")
 
+# `workflow_dispatch` is a button, but the API presses it too -- so it stays flagged
+# for every workflow except the ones named here, and a name has to carry a reason.
+# Adding a workflow to this dict is the "re-derive docs/autonomy.md in the same
+# commit" the failure message below asks for: this constant and that document's text
+# are the same decision, made twice on purpose so the code and the prose cannot
+# drift apart the way the rest of docs/autonomy.md's central claim is guarded
+# against drifting from this file.
+#
+# #679 is the first entry: a maintainer running `gh workflow run tests.yml` by hand
+# when the forge drops a push-triggered run on `main`, with no remedy otherwise short
+# of an empty commit to the default branch. `test_the_manual_dispatch_exception_is_
+# named_and_reasoned` below checks that nothing in this plugin's own scripts issues
+# that call itself -- if something did, "a human presses this" would be false and the
+# exception would have no basis.
+MANUAL_DISPATCH_EXCEPTIONS = {
+    "ours: .github/workflows/tests.yml": (
+        "#679 -- the manual remedy for a push-triggered run the forge drops on "
+        "main. Invoked by a maintainer running `gh workflow run tests.yml`; nothing "
+        "in this plugin's own scripts, skills, agents or commands calls it."
+    ),
+}
+
 
 def _config():
     return {
@@ -120,7 +142,14 @@ def test_there_is_something_to_check():
 
 
 def test_no_workflow_starts_by_itself():
-    """The central claim of docs/autonomy.md, measured rather than asserted."""
+    """The central claim of docs/autonomy.md, measured rather than asserted.
+
+    `workflow_dispatch` on a workflow named in `MANUAL_DISPATCH_EXCEPTIONS` does not
+    count against this: that dict is the record of a conscious decision, checked for
+    staleness and for a reason by `test_the_manual_dispatch_exception_is_named_and_
+    reasoned` below, which is a stronger claim than "the sweep did not happen to look
+    here."
+    """
     unattended = []
     unreadable = []
     for label, text in _workflow_sources():
@@ -131,10 +160,11 @@ def test_no_workflow_starts_by_itself():
         for event in events:
             if event in UNATTENDED:
                 unattended.append("{}: on.{}".format(label, event))
-            elif event == "workflow_dispatch":
+            elif event == "workflow_dispatch" and label not in MANUAL_DISPATCH_EXCEPTIONS:
                 unattended.append(
                     "{}: on.workflow_dispatch -- a button, not a clock, but the API "
-                    "presses it too".format(label)
+                    "presses it too, and this workflow is not named in "
+                    "MANUAL_DISPATCH_EXCEPTIONS".format(label)
                 )
 
     assert not unreadable, (
@@ -142,11 +172,55 @@ def test_no_workflow_starts_by_itself():
         "files fire only on a human act, and this run could not read them to check."
     ).format(", ".join(unreadable))
     assert not unattended, (
-        "a workflow now fires without a human: {}. "
+        "a workflow now fires without a human, undeclared: {}. "
         "That is not a bug -- it may be the first piece of the unattended loop #237 is "
-        "about. It does mean docs/autonomy.md is stale and has to be re-derived in the "
-        "same commit."
+        "about. Either name it in MANUAL_DISPATCH_EXCEPTIONS with a reason, if a human "
+        "is genuinely the only thing that can press it, or treat it as the real thing "
+        "#237 is about. Either way, docs/autonomy.md has to be re-derived in the same "
+        "commit."
     ).format("; ".join(unattended))
+
+
+def test_the_manual_dispatch_exception_is_named_and_reasoned():
+    """The exception carved out above needs three things checked, or it is a way to
+    silence the sweep rather than a documented decision -- the same distinction the
+    dependabot exception below is checked for, on its own axis.
+
+    * every exception carries a non-empty reason;
+    * the workflow it names still exists and still declares workflow_dispatch, so a
+      renamed or reverted file does not leave a stale, unfired exception behind;
+    * nothing under scripts/ -- the only place this plugin's own automation lives --
+      issues the call that would make "a human presses this" false. Scoped to
+      scripts/ rather than every file: prose describing the manual command, in a
+      workflow comment or a test docstring, is not an automated call and must not
+      trip this.
+    """
+    sources = dict(_workflow_sources())
+    for label, reason in MANUAL_DISPATCH_EXCEPTIONS.items():
+        assert reason.strip(), "{}: exception with no reason".format(label)
+        assert label in sources, (
+            "{} is named as a manual-dispatch exception but no longer exists in "
+            "the workflow sweep -- remove the stale exception, and re-derive "
+            "docs/autonomy.md.".format(label)
+        )
+        events = triggers(sources[label])
+        assert events is not None and "workflow_dispatch" in events, (
+            "{} is named as a manual-dispatch exception but no longer declares "
+            "workflow_dispatch -- remove the stale exception, and re-derive "
+            "docs/autonomy.md.".format(label)
+        )
+
+    calling = []
+    for path in sorted((REPO_ROOT / "scripts").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "gh workflow run" in text or "/dispatches" in text:
+            calling.append(str(path.relative_to(REPO_ROOT)))
+    assert not calling, (
+        "{} issue(s) a workflow-dispatch call. MANUAL_DISPATCH_EXCEPTIONS is built "
+        "on 'a human presses this, the API does not' -- if this plugin's own code "
+        "dispatches a workflow, that basis is gone and the exception needs "
+        "re-arguing, not just re-checking.".format(", ".join(calling))
+    )
 
 
 def test_every_workflow_declares_a_human_trigger():
@@ -229,9 +303,22 @@ def test_detector_reads_our_own_workflows_as_attended():
         assert events, "{}: reader returned {!r}".format(label, events)
 
 
-@pytest.mark.parametrize("text", [SCHEDULED, DISPATCHED])
+UNNAMED_DISPATCH = "name: undeclared\n\non:\n  workflow_dispatch:\n"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [SCHEDULED, DISPATCHED, UNNAMED_DISPATCH],
+    ids=["schedule", "repository_dispatch", "unnamed workflow_dispatch"],
+)
 def test_the_sweep_would_fail_on_a_planted_workflow(text, monkeypatch):
-    """A planted source must redden the sweep -- otherwise it passes on anything."""
+    """A planted source must redden the sweep -- otherwise it passes on anything.
+
+    The third case is the must-fire pairing for `MANUAL_DISPATCH_EXCEPTIONS`: a
+    `workflow_dispatch` on anything other than the one named workflow must still
+    redden the sweep, or the exception is a way to turn the whole check off rather
+    than a scoped one.
+    """
     monkeypatch.setattr(
         sys.modules[__name__],
         "_workflow_sources",
