@@ -690,7 +690,19 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     guards = guards_for_files(a["files"], repo) if a else []
     result = {"lane": a, "against": b, "overlap": overlap, "guards": guards}
     if derived_held is not None:
-        result["held_source"] = {"state": derived_held["state"], "detail": derived_held["detail"]}
+        # #734, review round: `derived_held["lanes"]["stale_pruned"]` names every
+        # registry record this call's own `derive_held_set` deleted as a side
+        # effect (a branch it corroborated as locally gone) -- surfaced here so a
+        # caller can see what was pruned rather than the deletion happening with
+        # no trace anywhere in this payload. Absent on the two shapes that carry
+        # no `lanes` sub-dict at all (no config loaded; a hand-built `derived_held`
+        # in an older test fixture), which is exactly "nothing pruned", not a
+        # different claim.
+        result["held_source"] = {
+            "state": derived_held["state"],
+            "detail": derived_held["detail"],
+            "stale_pruned": derived_held.get("lanes", {}).get("stale_pruned", []),
+        }
         result["availability"] = availability
     return result
 
@@ -1634,11 +1646,25 @@ def compute(
     a failed derivation flows into `lane_report` as `could-not-derive`, not as
     `against=None` (which would silently read as "nothing to check against").
 
-    `claim` (#705) is the only thing that makes this call write a lane record.
-    Default False: every read here -- base, branch, worktree occupancy, the
-    board, `--lane`/`--against`/`--derive-held` -- runs exactly as before, and
-    nothing is written to the registry. Pass `claim=True` only at the moment
-    this lane is actually being dispatched, never while probing candidates.
+    `claim` (#705) is the only thing that makes this call write *this lane's own*
+    record. Default False: `--lane`/`--against`/`--derive-held` never write a
+    record for the issue this call is about, and nothing here writes a lane
+    record on that issue's behalf without `--claim`. Pass `claim=True` only at
+    the moment this lane is actually being dispatched, never while probing
+    candidates.
+
+    **That is narrower than "nothing is written to the registry", and it always
+    has been.** `lanes_snapshot` -> `lane_count` prunes a TTL-expired record as a
+    side effect of the read it performs regardless of `claim` (its own docstring
+    says so); `--derive-held` (#734, review round) can now do the same for a
+    *different* issue's record, whenever `held_from_live_lanes` corroborates a
+    live record's declared branch as locally confirmed gone -- a probe that never
+    intends to dispatch can still delete another lane's stale record. Both are
+    deletions of records this loop has independent evidence are dead (aged out,
+    or the branch a merge already removed), never of a record still legitimately
+    held, and both are reported: `lane_report`'s `held_source.stale_pruned` and
+    the receipt's `held :` line name exactly what a `--derive-held` call removed,
+    so this is a write with a trace, not a silent one.
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
@@ -1879,6 +1905,20 @@ def receipt(payload):
             else:
                 lines.append(
                     "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(held_source["detail"])
+                )
+            # #734, review round: a stale-branch prune is a real write this call
+            # performs even when --claim was never passed -- named here so it is
+            # never a silent action with no trace anywhere in this receipt.
+            stale_pruned = held_source.get("stale_pruned") or []
+            if stale_pruned:
+                lines.append(
+                    "  held    : {0} stale record(s) released (branch confirmed gone): {1}".format(
+                        len(stale_pruned),
+                        ", ".join(
+                            "lane #{0} ({1})".format(item["issue"], item["branch"])
+                            for item in stale_pruned
+                        ),
+                    )
                 )
         if lane["overlap"] is None:
             # #558 review round: the pre-#558 "only one side given" wording is

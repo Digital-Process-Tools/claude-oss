@@ -296,3 +296,85 @@ def test_derive_held_set_forwards_repo_so_a_merged_lane_stops_blocking(tmp_path,
     result = lane_setup.derive_held_set("owner/repo", worktree_root, repo=repo)
     assert result["state"] == "resolved"
     assert "commands/tick.md" not in result["held"]
+
+
+# --- review round: a stale-branch prune must leave a trace, not just a side ------
+# effect -- `compute()`'s own docstring used to claim nothing is written to the
+# registry without --claim, and that stopped being true the moment --derive-held
+# started pruning OTHER issues' records as a side effect of route 3. The prune
+# itself is correct (only ever a positively-confirmed-gone branch); what was
+# missing is any way for the caller to see it happened at all.
+
+
+def test_lane_report_surfaces_which_records_were_pruned(tmp_path):
+    repo = _real_git_repo(tmp_path)
+    # `fix/694` is never created -- confirmed gone by construction.
+    worktree_root = tmp_path / "wt"
+    _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    derived = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    # Wrap in the same shape `derive_held_set` hands `lane_report`.
+    derived_held = {"state": "resolved", "held": derived["held"], "lanes": derived, "detail": ""}
+
+    report = lane_setup.lane_report(tmp_path, ["scripts/free.py"], None, derived_held=derived_held)
+    assert report["held_source"]["stale_pruned"] == [{"issue": 694, "branch": "fix/694"}]
+
+
+def test_lane_report_stale_pruned_is_empty_when_nothing_was_pruned(tmp_path):
+    """Control: a clean derivation -- nothing gone, nothing pruned -- must not
+    fabricate a prune that never happened."""
+    repo = _real_git_repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "branch", "fix/1"], check=True)
+    worktree_root = tmp_path / "wt"
+    _write_record(worktree_root, 1, files=["a.py"], branch="fix/1")
+    derived = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
+    derived_held = {"state": "resolved", "held": derived["held"], "lanes": derived, "detail": ""}
+
+    report = lane_setup.lane_report(tmp_path, ["scripts/free.py"], None, derived_held=derived_held)
+    assert report["held_source"]["stale_pruned"] == []
+
+
+def test_receipt_names_a_stale_prune_so_it_is_never_a_silent_write(tmp_path):
+    """The text receipt -- what a maintainer or a dispatched agent actually
+    reads -- must name a prune too, not only the JSON payload."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "free.py").write_text("x\n")
+    derived_held = {
+        "state": "resolved",
+        "held": {},
+        "lanes": {"stale_pruned": [{"issue": 694, "branch": "fix/694"}]},
+        "detail": "",
+    }
+    payload = _minimal_payload(tmp_path, derived_held, ["scripts/free.py"])
+    text = lane_setup.receipt(payload)
+    assert "stale record(s) released" in text
+    assert "lane #694 (fix/694)" in text
+
+
+def test_receipt_says_nothing_about_a_prune_when_none_happened(tmp_path):
+    """Control: the new line must not appear on an ordinary, clean derivation."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "free.py").write_text("x\n")
+    derived_held = {"state": "resolved", "held": {}, "lanes": {"stale_pruned": []}, "detail": ""}
+    payload = _minimal_payload(tmp_path, derived_held, ["scripts/free.py"])
+    text = lane_setup.receipt(payload)
+    assert "stale record(s) released" not in text
+
+
+def _minimal_payload(repo, derived_held, lane_patterns):
+    return {
+        "issue": 734,
+        "repo": str(repo),
+        "config": {"state": "ok", "problems": []},
+        "base": {
+            "state": "resolved", "remote": "origin", "ref": "origin/main",
+            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "detail": "",
+        },
+        "branch": {
+            "state": "resolved", "pattern": "fix/{issue}", "name": "fix/734",
+            "detail": "", "exists_local": False, "exists_remote": False,
+        },
+        "worktree": {"state": "resolved", "root": "/tmp", "path": "/tmp/734", "detail": "", "exists": False},
+        "board": {"state": "ok", "lines": []},
+        "lanes": None,
+        "lane": lane_setup.lane_report(repo, lane_patterns, None, derived_held=derived_held),
+    }
