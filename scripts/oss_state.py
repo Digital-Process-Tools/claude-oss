@@ -731,7 +731,7 @@ def _count(value, label):
 
 
 def tick_cost(session, window, start_ctx, calls, context_carried, is_first=False,
-              prior_floor=None, why=None, rate=None):
+              prior_floor=None, session_has_prior=False, why=None, rate=None):
     """What one tick cost to *carry* (#694): its own start context, calls, context
     carried, and -- when it can be told -- the session floor and what was inherited.
 
@@ -742,12 +742,22 @@ def tick_cost(session, window, start_ctx, calls, context_carried, is_first=False
     first tick's own start_ctx become the floor rather than staying unknown forever.
     ``prior_floor`` is a floor an earlier tick in the same session already established,
     read back by the CLI before this is called -- never read from the forge in here,
-    for the same reason `intake` takes its counts as arguments.
+    for the same reason `intake` takes its counts as arguments. ``session_has_prior`` is
+    a SEPARATE fact from ``prior_floor``: whether this session has ANY earlier tick-cost
+    entry at all, resolved floor or not. A session whose earlier ticks all recorded
+    floor-unknown has no ``prior_floor`` to conflict against, but it unambiguously
+    already has history -- found by audit: without this flag, a resumed session (or a
+    copy-pasted `--tick-cost-first`) could claim to be the session's first tick a second
+    time and be accepted silently, manufacturing a false floor nothing later corrects.
 
     Any of ``start_ctx``/``calls``/``context_carried`` may be ``None`` for a reading
     that could not be taken, in which case ``why`` is required: an unexplained absence
     is indistinguishable from a measurement of nothing, which is this repository's
-    founding defect class landing inside the instrument built to measure it.
+    founding defect class landing inside the instrument built to measure it. The
+    ``is_first``/history conflict is checked BEFORE that could-not-measure branch and
+    unconditionally on it -- found by review: the claim "this is the session's first
+    tick" is about which tick this is, not about whether this tick's own counts could
+    be read, so an unknown reading must not let a false claim slip through unchecked.
 
     ``rate`` is an optional list-rate, USD per million tokens. When given, the derived
     ``cost`` always carries a note that it is a list-rate computation and not a billed
@@ -765,6 +775,15 @@ def tick_cost(session, window, start_ctx, calls, context_carried, is_first=False
         )
     session = str(session).strip()
     window = str(window).strip()
+
+    if prior_floor is not None:
+        prior_floor = _count(prior_floor, "prior_floor")
+    if is_first and (prior_floor is not None or session_has_prior):
+        raise StateError(
+            "this was asserted as session {!r}'s first tick, but this session already "
+            "has an earlier tick-cost entry recorded -- either the session id was "
+            "reused, or this is not really the first tick".format(session)
+        )
 
     start_ctx = _count(start_ctx, "start_ctx")
     calls = _count(calls, "calls")
@@ -792,15 +811,6 @@ def tick_cost(session, window, start_ctx, calls, context_carried, is_first=False
         record["state"] = TICK_COST_COULD_NOT_MEASURE
         record["why"] = str(why).strip()
         return record
-
-    if prior_floor is not None:
-        prior_floor = _count(prior_floor, "prior_floor")
-    if is_first and prior_floor is not None:
-        raise StateError(
-            "this was asserted as session {!r}'s first tick, but a floor was already "
-            "recorded earlier for that session -- either the session id was reused, "
-            "or this is not really the first tick".format(session)
-        )
 
     if rate is not None:
         if rate < 0:
@@ -890,8 +900,9 @@ def _tick_cost_sentence(record):
 
 
 def _session_tick_cost_floor(path, session):
-    """The earliest recorded floor for ``session`` in the history at ``path``, or
-    ``None`` if this session has never established one.
+    """``(floor, has_prior)`` for ``session`` in the history at ``path``: the earliest
+    recorded floor, or ``None`` if this session has never established one; and whether
+    this session has ANY earlier tick-cost entry at all, resolved floor or not.
 
     Reads the file -- this is the CLI-support half, kept apart from `tick_cost` itself
     for the same reason `_last_wait`/`_last_plugin_identity` are: a function that reads
@@ -900,7 +911,15 @@ def _session_tick_cost_floor(path, session):
     Once a floor is established for a session it does not move -- `start_ctx` keeps
     growing every later tick, so scanning for the first entry that already carries one
     is enough; a later entry's floor, if the session ever gets one, is the same value.
+
+    ``has_prior`` is a separate return, not folded into ``floor is not None`` -- found
+    by audit: a session whose earlier ticks all recorded floor-unknown has no floor to
+    return, but scanning only for a floor let a later, falsely-first-claiming tick in
+    that SAME session go unrefused, because nothing told `tick_cost` this session
+    already had history at all.
     """
+    floor = None
+    has_prior = False
     for entry in read(path):
         detail = entry.get("detail") if isinstance(entry, dict) else None
         record = detail.get("tick_cost") if isinstance(detail, dict) else None
@@ -908,10 +927,10 @@ def _session_tick_cost_floor(path, session):
             continue
         if record.get("session") != session:
             continue
-        floor = record.get("floor")
-        if floor is not None:
-            return floor
-    return None
+        has_prior = True
+        if floor is None and record.get("floor") is not None:
+            floor = record.get("floor")
+    return floor, has_prior
 
 
 def intake(filings, merged_prs, window, why=None):
@@ -2570,6 +2589,55 @@ def _main(argv=None):
             return refuse(
                 "--at is required with --decision; the timestamp is not read from a clock"
             )
+        if tick_cost_flags:
+            # Built FIRST among the five pending-record types, ahead of lanes, cohort,
+            # wait and intake -- found by review: a fully valid --tick-cost-* set used
+            # to be built LAST, so an unrelated group's refusal (an incomplete intake
+            # set, say) short-circuited the function before this block ever ran, and
+            # the measured record vanished with no NOT RECORDED line at all. Building
+            # it before anything else protects it the same way the lane record has
+            # always been protected against intake's own "missing flags" refusal (see
+            # the comment on that below) -- every tick records both, so this one must
+            # not be the one silently exposed to the other four's failure modes.
+            missing = [
+                name
+                for name in (
+                    "--tick-cost-session",
+                    "--tick-cost-window",
+                    "--tick-cost-start-ctx",
+                    "--tick-cost-calls",
+                    "--tick-cost-context-carried",
+                )
+                if name not in tick_cost_flags
+            ]
+            if missing:
+                # Each of start-ctx/calls/context-carried may legitimately be
+                # 'unknown' -- but the flag still has to be PASSED for that, the same
+                # rule --filings/--merged-prs already follow. A flag simply absent is
+                # not the same claim as one spelling out 'unknown'.
+                return refuse(
+                    "a tick-cost record needs --tick-cost-session, --tick-cost-window, "
+                    "--tick-cost-start-ctx, --tick-cost-calls and "
+                    "--tick-cost-context-carried (each may be 'unknown', but not "
+                    "absent); missing {}".format(", ".join(missing))
+                )
+            prior_floor, session_has_prior = _session_tick_cost_floor(
+                args.path, args.tick_cost_session
+            )
+            pending_tick_cost = tick_cost(
+                args.tick_cost_session,
+                args.tick_cost_window,
+                None if args.tick_cost_start_ctx is UNKNOWN_COUNT else args.tick_cost_start_ctx,
+                None if args.tick_cost_calls is UNKNOWN_COUNT else args.tick_cost_calls,
+                None
+                if args.tick_cost_context_carried is UNKNOWN_COUNT
+                else args.tick_cost_context_carried,
+                is_first=args.tick_cost_first,
+                prior_floor=prior_floor,
+                session_has_prior=session_has_prior,
+                why=args.tick_cost_why,
+                rate=args.tick_cost_rate,
+            )
         if args.lane is not None and args.lanes is not None:
             return refuse(
                 "--lane and --lanes cannot both be given; use --lane for named lanes "
@@ -2693,44 +2761,6 @@ def _main(argv=None):
                 why=args.intake_why,
             )
             pending_intake = record
-        if tick_cost_flags:
-            missing = [
-                name
-                for name in (
-                    "--tick-cost-session",
-                    "--tick-cost-window",
-                    "--tick-cost-start-ctx",
-                    "--tick-cost-calls",
-                    "--tick-cost-context-carried",
-                )
-                if name not in tick_cost_flags
-            ]
-            if missing:
-                # Each of start-ctx/calls/context-carried may legitimately be
-                # 'unknown' -- but the flag still has to be PASSED for that, the same
-                # rule --filings/--merged-prs already follow. A flag simply absent is
-                # not the same claim as one spelling out 'unknown'.
-                return refuse(
-                    "a tick-cost record needs --tick-cost-session, --tick-cost-window, "
-                    "--tick-cost-start-ctx, --tick-cost-calls and "
-                    "--tick-cost-context-carried (each may be 'unknown', but not "
-                    "absent); missing {}".format(", ".join(missing))
-                )
-            prior_floor = _session_tick_cost_floor(args.path, args.tick_cost_session)
-            record = tick_cost(
-                args.tick_cost_session,
-                args.tick_cost_window,
-                None if args.tick_cost_start_ctx is UNKNOWN_COUNT else args.tick_cost_start_ctx,
-                None if args.tick_cost_calls is UNKNOWN_COUNT else args.tick_cost_calls,
-                None
-                if args.tick_cost_context_carried is UNKNOWN_COUNT
-                else args.tick_cost_context_carried,
-                is_first=args.tick_cost_first,
-                prior_floor=prior_floor,
-                why=args.tick_cost_why,
-                rate=args.tick_cost_rate,
-            )
-            pending_tick_cost = record
         detail = json.loads(args.detail) if args.detail else None
         if intake_flags:
             if detail is None:

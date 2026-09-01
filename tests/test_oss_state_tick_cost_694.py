@@ -147,6 +147,44 @@ def test_first_tick_asserted_against_a_session_that_already_has_a_floor_is_refus
     assert SESSION in str(caught.value)
 
 
+def test_first_tick_asserted_against_a_session_with_only_floor_unknown_history_is_refused():
+    """Found by the auditor: a session whose earlier ticks never resolved a floor
+    (every one recorded floor-unknown) has no `prior_floor` to conflict against, but it
+    unambiguously already has history -- `session_has_prior` carries that fact
+    separately from `prior_floor`, and `is_first` must be refused against it too, not
+    only against an already-resolved floor."""
+    with pytest.raises(oss_state.StateError) as caught:
+        oss_state.tick_cost(
+            SESSION, WINDOW, start_ctx=411000, calls=9, context_carried=2000000,
+            is_first=True, prior_floor=None, session_has_prior=True,
+        )
+    assert SESSION in str(caught.value)
+
+
+def test_first_tick_conflict_fires_even_when_this_readings_own_counts_are_unknown():
+    """Found by review: the is_first/prior conflict used to sit below the
+    could-not-measure early return, so an unknown reading skipped the check entirely --
+    the session-reuse claim is about which TICK this is, not about whether this tick's
+    own counts could be read, so it must fire regardless."""
+    with pytest.raises(oss_state.StateError) as caught:
+        oss_state.tick_cost(
+            SESSION, WINDOW, start_ctx=None, calls=None, context_carried=None,
+            is_first=True, prior_floor=49000, why="no usage block this turn",
+        )
+    assert SESSION in str(caught.value)
+
+
+def test_no_session_history_and_is_first_true_is_accepted():
+    """The positive control for both refusals above: a genuinely first tick, with
+    nothing recorded for this session yet, is accepted."""
+    record = oss_state.tick_cost(
+        SESSION, WINDOW, start_ctx=96000, calls=1, context_carried=1000,
+        is_first=True, prior_floor=None, session_has_prior=False,
+    )
+    assert record["state"] == oss_state.TICK_COST_MEASURED
+    assert record["floor"] == 96000
+
+
 def test_the_window_is_required():
     with pytest.raises(oss_state.StateError):
         oss_state.tick_cost(SESSION, "", start_ctx=1, calls=1, context_carried=1)
@@ -348,3 +386,48 @@ def test_a_refused_decision_drops_nothing_silently(tmp_path):
     assert "FAIL" in result.stdout
     assert "NOT RECORDED" in result.stdout
     assert not path.exists()
+
+
+def test_cli_a_complete_tick_cost_set_is_not_dropped_by_an_unrelated_intake_refusal(tmp_path):
+    """Found by review: a fully valid `--tick-cost-*` set used to be built LAST among
+    the pending records, so an unrelated group's refusal (an incomplete intake set,
+    here) short-circuited the function before tick_cost's own block ever ran -- the
+    measured record vanished with no `NOT RECORDED` line at all, the exact #222 shape
+    the file's own comment says every pending record is protected against."""
+    path = tmp_path / "state.json"
+    argv = [
+        str(path), "--decision", "tick x", "--at", STAMP,
+        "--filings", "5",  # incomplete: no --merged-prs/--window -> refused
+    ] + TICK_COST_ARGV
+    result = _piped(argv)
+    assert result.returncode == 1
+    assert "FAIL" in result.stdout
+    assert "NOT RECORDED tick cost" in result.stdout, result.stdout
+    assert not path.exists()
+
+
+def test_cli_a_resumed_session_falsely_claiming_first_tick_is_refused(tmp_path):
+    """Found by the auditor: a session whose only prior tick recorded floor-unknown
+    (never resolved a floor) must still refuse a later, falsely-first-claiming tick --
+    the session unambiguously already has history, resolved floor or not."""
+    path = tmp_path / "state.json"
+    first_argv = [
+        str(path), "--decision", "tick 1", "--at", STAMP,
+        "--tick-cost-session", SESSION, "--tick-cost-window", WINDOW,
+        "--tick-cost-start-ctx", "50000", "--tick-cost-calls", "3",
+        "--tick-cost-context-carried", "1000",
+    ]
+    first = _piped(first_argv)
+    assert first.returncode == 0, first.stdout
+    assert oss_state.read(path)[0]["detail"]["tick_cost"]["state"] == oss_state.TICK_COST_FLOOR_UNKNOWN
+
+    bogus_first_argv = [
+        str(path), "--decision", "tick 2 bogus first", "--at", "2026-08-28T10:00:00Z",
+        "--tick-cost-session", SESSION, "--tick-cost-window", WINDOW,
+        "--tick-cost-start-ctx", "411000", "--tick-cost-calls", "9",
+        "--tick-cost-context-carried", "2000000", "--tick-cost-first",
+    ]
+    second = _piped(bogus_first_argv)
+    assert second.returncode == 1, second.stdout
+    assert "FAIL" in second.stdout
+    assert len(oss_state.read(path)) == 1, "the bogus first-tick claim must not land"

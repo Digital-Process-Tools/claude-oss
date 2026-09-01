@@ -362,8 +362,15 @@ Skill(manager)
    becomes the session's floor, and every later tick in the same session finds it automatically by
    scanning the state file for an earlier entry carrying the same session id. **If you are not certain
    this is genuinely the session's first tick — a resumed session, for instance — omit
-   `--tick-cost-first` rather than guess**; the CLI records `floor-unknown` instead of a false floor,
-   and a false floor, once written, is never corrected by anything later.
+   `--tick-cost-first` rather than guess**; the CLI refuses it outright if this session already has an
+   earlier entry, resolved floor or not, rather than silently writing a false one — and a false floor,
+   once written, would never be corrected by anything later. The block above is deliberately the
+   *later*-tick shape; on the one call this session ever makes as its own first tick, append the flag:
+
+   ```bash
+     … --tick-cost-why "no live token-usage read available to this tick" \
+     --tick-cost-first
+   ```
 
    **`start_ctx`, `calls` and `context_carried` are not reliably readable from inside a running tick
    today.** Nothing in this loop currently hands the ticking agent a live token count. Pass `unknown`

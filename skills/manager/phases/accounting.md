@@ -179,9 +179,12 @@ Three states, same shape as intake's:
 
 `--tick-cost-session` is the session id every tick in one continuous run shares, so a later tick's
 floor lookup can find an earlier one's; `--tick-cost-first` asserts that this is that session's own
-first tick, and is refused if the session already has a floor recorded — an assertion that
-contradicts recorded history names a session id reused, or a first tick that was not really first,
-never silently overwrites the earlier floor. **What this tick can actually measure today is
+first tick, and is refused if the session already has ANY earlier tick-cost entry, resolved floor or
+not — a session whose earlier ticks all recorded `floor-unknown` still unambiguously already has
+history, and treating only an established floor as the conflict signal let a resumed session's false
+`--tick-cost-first` through silently (found by audit). An assertion that contradicts recorded history
+names a session id reused, or a first tick that was not really first, never silently overwrites the
+earlier floor. **What this tick can actually measure today is
 narrower than what the metric wants**: nothing in this loop currently hands the ticking agent a live
 token count, so `start_ctx`/`calls`/`context_carried` are ordinarily recorded `unknown` with
 `--tick-cost-why`, and that is the honest answer rather than a guessed one — see `commands/tick.md`
