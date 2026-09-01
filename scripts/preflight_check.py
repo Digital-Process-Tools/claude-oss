@@ -30,19 +30,29 @@ the tree today.
 
 ## A file with no text in it is not a file the search was denied (#717)
 
-A file that fails to decode as UTF-8 was read successfully -- it simply has
-no text to search, on this run or any other, regardless of who is asking.
-That is not the same failure as a permission-denied file or an unwalkable
-directory, and treating it as one made every real Python source tree
-(`__pycache__/*.pyc`, present the moment a package is imported or tested
-even once) degrade to could-not-search on precisely the negative answer: the
-unreadable set only downgrades the verdict when there is nothing else to
-report, so a match found elsewhere still returned `matched` with the
-identical undecodable files present. `skipped_files` is the accounting for
-this class -- reported on every result, never suppressed at zero, so the
-count is never silently dropped -- and it never forces could-not-search on
-its own. A file this process was actually denied (`unreadable_files`) still
-does.
+A file that fails to decode as UTF-8 was read successfully -- but "cannot
+decode as UTF-8" is not the same claim as "has no text to search", and
+treating every decode failure as the second, categorically, was tried and
+found wrong by review on this same issue: real source in Latin-1, cp1252 or
+UTF-16 fails this decode too, and a categorical downgrade would silently
+miss a genuine match in it -- trading the loud third state for a quiet
+not-matched, the defect this whole repository is named after, one layer
+inside the fix meant to remove it.
+
+So the two are told apart by a NUL byte -- the same signal `git diff` and
+`grep -I` use to call a file binary, because ordinary text in any encoding
+this tool could plausibly be asked to search does not contain one, while a
+compiled artifact reliably does. **Present:** the file is treated as binary
+and goes to `skipped_files` -- this is the actual #717 target
+(`__pycache__/*.pyc`, present in every Python tree the moment a package is
+imported or tested even once) -- reported on every result, never suppressed
+at zero, and never forcing could-not-search on its own. **Absent:** the
+decode failure is genuinely ambiguous -- it could be real text this search
+should have been able to read -- so it falls back to `unreadable_files` and
+still forces could-not-search, the conservative answer rather than a guess.
+A file this process was actually denied (`OSError`) reaches
+`unreadable_files` the same way and forces could-not-search for the
+original reason, unchanged.
 
 ## What a match means is not this script's to decide
 
@@ -178,20 +188,33 @@ def search(pattern, roots):
             text = raw.decode("utf-8", errors="strict")
         except UnicodeDecodeError:
             # #717: a file that cannot decode as UTF-8 was not denied to
-            # this process -- it was read fine, it simply has no text in
-            # it, ever, regardless of who asks. Folding that into
+            # this process -- it was read fine. Most of the time it simply
+            # has no text in it (a __pycache__/*.pyc, present the moment a
+            # package is imported or tested once), and folding that into
             # unreadable_files made could-not-search fire on every real
-            # Python tree (__pycache__/*.pyc, present the moment a package
-            # is imported or tested once) and, worse, fire precisely on the
-            # negative answer: the unreadable set only downgrades the
-            # verdict when there is nothing else to report, so a match
-            # elsewhere still returned matched with the identical
-            # undecodable file present. skipped_files is the honest
-            # accounting for this class -- reported always, never
-            # suppressed at zero -- and never forces could-not-search on
-            # its own. A genuinely permission-denied file (OSError, above)
-            # is a different failure and still does.
-            skipped_files.append(str(path))
+            # Python tree and, worse, fire precisely on the negative
+            # answer: the unreadable set only downgrades the verdict when
+            # there is nothing else to report, so a match elsewhere still
+            # returned matched with the identical undecodable file present.
+            #
+            # But "cannot decode as UTF-8" is not the same claim as "has no
+            # text", and review on this same issue found the gap: real
+            # source in Latin-1/cp1252/UTF-16 fails this decode too, and a
+            # categorical downgrade would silently miss a genuine match in
+            # it -- trading the loud third state for a quiet not-matched,
+            # this repo's own defect class. A NUL byte is the distinguishing
+            # signal -- the same one `git diff` and `grep -I` use to call a
+            # file binary -- because ordinary text in any encoding this tool
+            # could plausibly be asked to search does not contain one, while
+            # a compiled artifact reliably does. Present: skipped_files,
+            # reported always, never suppressed at zero, never forcing
+            # could-not-search alone. Absent: genuinely ambiguous, so it
+            # falls back to unreadable_files and still forces
+            # could-not-search -- the conservative answer, not a guess.
+            if b"\x00" in raw:
+                skipped_files.append(str(path))
+            else:
+                unreadable_files.append(str(path))
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             if compiled.search(line):

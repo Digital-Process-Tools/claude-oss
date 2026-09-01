@@ -280,11 +280,14 @@ replace-don't-append rule that goes with them (#491).
 pattern the issue names, in three states -- `matched`, `not-matched`, `could-not-search`, the last
 of which must never render as the second -- so a dispatch decision can tell an issue whose fix
 already shipped from one still genuinely open before an agent is briefed for it (#457). A file that
-cannot decode as UTF-8 (a `__pycache__/*.pyc`, on every Python tree) is counted separately as
-`skipped_files`, reported always and never forcing `could-not-search` on its own -- only a file the
-process was genuinely denied still does (#717). The receipt also names `roots`, the paths actually
-searched, on every state including `could-not-search`, so the scope travels into a brief along with
-the answer instead of being retyped from memory as a summary (#727).
+fails to decode as UTF-8 is told apart by whether it contains a NUL byte, the same signal `git
+diff`/`grep -I` use to call a file binary: present (a `__pycache__/*.pyc`, on every Python tree)
+it counts as `skipped_files`, reported always and never forcing `could-not-search` on its own;
+absent, the decode failure is genuinely ambiguous -- real source in another encoding fails the
+same decode -- and it still forces `could-not-search`, the conservative answer rather than a
+guess (#717). The receipt also names `roots`, the paths actually searched, on every state
+including `could-not-search`, so the scope travels into a brief along with the answer instead of
+being retyped from memory as a summary (#727).
 
 `python3 scripts/transcript_refusals.py` also now reports `turns_over_threshold_count`/`_share`
 against a measured 140-turn threshold and `decile_bytes`/`first_fifth_byte_share`, the two lane-cost

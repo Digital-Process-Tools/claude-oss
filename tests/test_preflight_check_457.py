@@ -290,6 +290,45 @@ def test_skipped_files_key_is_always_present_even_when_empty(tmp_path):
     assert result["skipped_files"] == []
 
 
+# Review finding on #717: any UnicodeDecodeError was folded into skipped_files
+# categorically, on the claim that an undecodable file "has no text to search,
+# ever" -- true for genuine binary garbage, false for a real source file
+# encoded in something other than UTF-8 (Latin-1, cp1252, ...), which has a
+# real match this search would then silently miss. The distinguishing signal
+# is a NUL byte -- the same heuristic `git diff` and `grep -I` use to call a
+# file binary -- present in every one of the fixtures above (a genuine .pyc
+# does contain one) and absent from ordinary non-UTF-8 text.
+
+
+def test_non_utf8_text_with_no_null_byte_is_ambiguous_and_forces_could_not_search(tmp_path):
+    """The must-fire half of the review finding: Latin-1 text with a real
+    match must not silently downgrade to not-matched just because it isn't
+    UTF-8 -- there is no NUL byte here, so this could be real text, and the
+    honest answer is could-not-search, not a guess."""
+    target = tmp_path / "legacy.py"
+    target.write_bytes('match_target = "caf\xe9 marker"\n'.encode("latin-1"))
+    assert b"\x00" not in target.read_bytes()
+
+    result = pc.search("marker", [tmp_path])
+    assert result["state"] == "could-not-search"
+    assert str(target) in result["unreadable_files"]
+    assert str(target) not in result["skipped_files"]
+
+
+def test_a_null_byte_is_what_makes_an_undecodable_file_skipped(tmp_path):
+    """The must-not-fire half, paired with the test above: a file with a NUL
+    byte (the actual #717 target -- every real .pyc has one) is skipped, not
+    forced to could-not-search, even though it also fails UTF-8 decoding."""
+    target = tmp_path / "module.pyc"
+    target.write_bytes(_INVALID_UTF8)
+    assert b"\x00" in target.read_bytes()
+
+    result = pc.search("anything", [tmp_path])
+    assert result["state"] == "not-matched"
+    assert str(target) in result["skipped_files"]
+    assert str(target) not in result["unreadable_files"]
+
+
 def test_a_permission_denied_file_still_forces_could_not_search_despite_717(tmp_path):
     """The must-fire half, kept beside the undecodable-file relief above: a
     genuinely permission-denied file is not the same failure as an
