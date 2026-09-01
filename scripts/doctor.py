@@ -1642,11 +1642,38 @@ def plugin_supertool_entries(cache_root=None, record=None):
     return found
 
 
+def _supertool_regular_file_version(path):
+    """The version a regular file at that name reports for ``<path> version``, or
+    ``None`` if it would not run or its output did not parse.
+
+    #742: the shape of `_gh_version_text` above, one file over -- a subprocess call
+    whose own failure (not executable, not found, hangs) is caught rather than left to
+    crash a script whose contract is exit 0 always. `check_tool("supertool",
+    ["supertool", "version"])` elsewhere in this file already establishes the output
+    shape parsed here: one line, ``supertool <version>``.
+    """
+    try:
+        completed = subprocess.run(
+            [str(path), "version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    text = completed.stdout.decode("utf-8", "replace")
+    first_line = text.splitlines()[0].strip() if text.splitlines() else ""
+    match = re.match(r"^supertool\s+(\S+)$", first_line)
+    return match.group(1) if match else None
+
+
 def supertool_entry_point(project_dir, cache_root=None, record=None):
     """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
 
-    Eleven states. Three of them are ways of saying "could not tell", and those are the
-    reason this is a function rather than an ``==``:
+    Thirteen states. Four of them are ways of saying "could not tell", and those are
+    the reason this is a function rather than an ``==``:
 
     * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
     * ``own-tree-stranger`` -- a supertool checkout that has one anyway.
@@ -1676,8 +1703,17 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
       ``unknown-plugin-path`` so the message can name which of the two happened, and
       apart from ``other-target`` because falling through to that is precisely the
       accusation this pair exists to avoid.
-    * ``not-a-symlink`` / ``dangling`` / ``unreadable`` -- present and not usable, each
-      with its own remedy, none of them "create one".
+    * ``not-a-symlink-ok`` / ``not-a-symlink-mismatch`` / ``not-a-symlink-unknown`` --
+      a regular file at that name, answered by running it (#742) rather than by
+      stat. Every state above this one reads a symlink *target*; a regular file has
+      the identical question to answer -- does calling it reach the tool the briefs
+      mean -- and it is cheaper to answer, because a file can simply be run. Worth
+      keeping apart from the symlink states for one more reason: the *real* shape of
+      this defect (a link pinned to a version directory a plugin update emptied,
+      #289) is itself a symlink and lands in a branch above, so this branch used to
+      be silent about the fault it sits beside and loud about the fix for it.
+    * ``dangling`` / ``unreadable`` -- present and not usable, each with its own
+      remedy, none of them "create one".
     """
     link = Path(project_dir) / SUPERTOOL_ENTRY
     root, core = _own_supertool_tree(project_dir)
@@ -1708,7 +1744,18 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     if not present:
         return "absent", ""
     if not os.path.islink(str(link)):
-        return "not-a-symlink", _display(project_dir, link)
+        # #742: measured by running it, not by stat -- see _supertool_regular_file_
+        # version and the docstring bullet above for why this is a run rather than
+        # a comparison against the symlink states' own cache lookup.
+        version = _supertool_regular_file_version(link)
+        active = active_versions([SUPERTOOL_ENTRY], record=record).get(SUPERTOOL_ENTRY)
+        if version is None or active is None:
+            return "not-a-symlink-unknown", _display(project_dir, link)
+        if version == active:
+            return "not-a-symlink-ok", "{} ({})".format(_display(project_dir, link), version)
+        return "not-a-symlink-mismatch", "{} (reports {}, installed {})".format(
+            _display(project_dir, link), version, active
+        )
 
     try:
         target = os.readlink(str(link))
@@ -1788,8 +1835,14 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "here, or link it by hand to the supertool plugin's supertool.py.",
         )
     elif state == "other-target":
+        # #756: the sentence itself already says why this is not a warning -- "this
+        # names the target rather than judging it" -- because the two states it
+        # cannot tell apart (a deliberate local checkout, a stale link) are
+        # indistinguishable in principle from here. Keeping it a WARN pinned every
+        # local-checkout maintainer at `usable with gaps` forever, for a line with
+        # nothing for them to do.
         report(
-            "WARN",
+            "OK",
             "./supertool points at {}, which is not a supertool.py in the plugin cache. "
             "A deliberate local checkout looks exactly like this and may be what you "
             "want; a stale link from another machine looks the same and is not. Nothing "
@@ -1811,12 +1864,26 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "file -- so this is unknown, not wrong. Not reported as a bad target: the "
             "comparison failed, the link did not.".format(detail),
         )
-    elif state == "not-a-symlink":
+    elif state == "not-a-symlink-ok":
+        report(
+            "OK",
+            "{} is not a symlink, but running it answers the installed version -- "
+            "op calls through it reach the tool the briefs mean.".format(detail),
+        )
+    elif state == "not-a-symlink-mismatch":
         report(
             "WARN",
-            "{} exists and is not a symlink. supertool's session-start hook leaves "
-            "anything already at that name untouched, so every op call in this repo "
-            "reaches whatever this is rather than the tool the briefs mean.".format(detail),
+            "{} is not a symlink, and running it answers a different version than "
+            "the one installed. Same shape as a stale-version link that happens to "
+            "resolve: every op through it runs whatever build this file is, "
+            "silently, until it is replaced.".format(detail),
+        )
+    elif state == "not-a-symlink-unknown":
+        report(
+            "WARN",
+            "{} exists and is not a symlink, and running it with `version` did not "
+            "answer (or the installed version could not be read) -- so whether it "
+            "reaches the tool the briefs mean is unknown, not confirmed.".format(detail),
         )
     elif state == "dangling":
         report(
@@ -6153,6 +6220,20 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         if globbing
         else ""
     )
+    # #743: both returns below used to read as "not yet determined", which a fixed
+    # dependency can never satisfy any other way -- this check's only OK condition
+    # is a fixed list naming `layer`, and the upstream fix (claude-jit-context#176)
+    # removes exactly that. Left unsaid, the line invites a reader to expect it to
+    # clear on its own on the next dependency release; it will not, for as long as
+    # this check requires a list. Stated once and appended to both, rather than
+    # left to the reader to infer from "consistent with the upstream fix" two
+    # sentences earlier -- that phrase describes evidence, not durability.
+    durable_note = (
+        " This state does not clear on its own once the dependency's fixed list is "
+        "gone for good (#743): the only OK condition this check has is a fixed "
+        "list naming {}, so a fully up-to-date {} stays unknown here, not "
+        "temporarily unmeasured.".format(layer, JIT_PLUGIN)
+    )
     if outside:
         # The judgement call in #241, taken the honest way: a layer list in a file the
         # runtime never executes is *reported as the reason this is unknown*, not
@@ -6165,8 +6246,9 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "only layer list(s) found are outside the hook set ({}) -- files the runtime "
             "never executes, typically that plugin's own test fixtures, which name {} "
             "whether or not anything enumerates it. So this is unknown, not a pass: a "
-            "fixture answered this check for a whole release (#241).{}{}".format(
-                len(scripts), named, ", ".join(outside[:3]), layer, partial, glob_note
+            "fixture answered this check for a whole release (#241).{}{}{}".format(
+                len(scripts), named, ", ".join(outside[:3]), layer, partial, glob_note,
+                durable_note,
             ),
         )
 
@@ -6175,8 +6257,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         "{} hook script(s) of {} were read and none carries a fixed layer list, so "
         "whether {} is read could not be determined from the hooks on disk. That is "
         "what an enumerate-the-directory implementation looks like -- the shape the "
-        "upstream fix takes -- which is why this is unknown rather than a gap.{}{}".format(
-            len(scripts), named, layer, partial, glob_note
+        "upstream fix takes -- which is why this is unknown rather than a gap.{}{}{}".format(
+            len(scripts), named, layer, partial, glob_note, durable_note
         ),
     )
 
@@ -7818,7 +7900,15 @@ def resolve_project_dir(root, env_value, cwd):
     # CLAUDE_PROJECT_DIR reaches hooks, not the Bash tool, so this is often a guess.
     # Say that it is one rather than presenting it as resolved.
     chosen = Path(cwd)
-    return chosen, [("WARN", "project dir guessed from cwd: {}".format(chosen))]
+    # #756: guessing from cwd is the documented default invocation (running the
+    # diagnostic from inside the repo being diagnosed), not a failed measurement --
+    # the check reached an answer and the answer is right. It stayed a WARN long
+    # enough to spend the warning count on every healthy machine; see the
+    # `interpreter architecture` precedent earlier in this file for the same move
+    # made once already. The remedy this line names (--root / CLAUDE_PROJECT_DIR) is
+    # unchanged, and the --root/CLAUDE_PROJECT_DIR disagreement above still WARNs --
+    # this only touches the case where the answer is a guess and nothing disagrees.
+    return chosen, [("OK", "project dir guessed from cwd: {}".format(chosen))]
 
 
 def main(argv=None):

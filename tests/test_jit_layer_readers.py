@@ -801,6 +801,54 @@ def test_a_repo_without_the_layer_has_nothing_to_read(tmp_path):
     assert finding["state"] == "no-layer"
 
 
+def test_the_terminal_unknown_states_say_they_will_not_clear_on_their_own(tmp_path):
+    """#743: `unknown` here used to read as "not yet determined", and the upstream
+    fix (claude-jit-context#176) means it never will be, for as long as this
+    check's only OK condition is a fixed list. #743 does not attempt the promotion
+    a fixed dependency would need to clear this WARN -- the existing fixtures
+    above are exactly the reason: #616's own tests pin `could-not-determine` for a
+    bare enumerate-the-directory hook, on purpose, because seeing the glob shape is
+    not proof the loop's body reads what it visits. What #743 asks for instead is
+    that the terminal line says plainly it is terminal, so a reader is not left
+    expecting the next dependency release to clear it.
+
+    Both `could-not-determine` call sites that can be reached with NO fixed list
+    anywhere in the tree carry the note; the two call sites that DO have a fixed
+    list (`reads`, `unread`) must not, which is the must-not-fire half.
+    """
+    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": ENUMERATED})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "does not clear on its own" in finding["detail"], finding["detail"]
+    assert "#743" in finding["detail"], finding["detail"]
+
+    # The sibling terminal branch: a fixed list exists, but only outside the hook
+    # set (#241's own fixture case) -- still no evidence inside the hooks, so this
+    # is durable the same way.
+    cache, record = _cache(
+        tmp_path / "outside",
+        {"pre-tool-hook.sh": ENUMERATED},
+        extra={"tests/test-layer-enumeration.sh": FIXTURE},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "does not clear on its own" in finding["detail"], finding["detail"]
+
+    # Must-not-fire controls, same fixture shapes as the tests above: a state that
+    # DOES have durable evidence -- a fixed list, naming or omitting the layer --
+    # must not carry a sentence about never clearing, because it already has an
+    # answer rather than a durable non-answer.
+    cache, record = _cache(tmp_path / "reads", {"pre-tool-hook.sh": NAMES})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "reads", finding
+    assert "does not clear on its own" not in finding["detail"], finding["detail"]
+
+    cache, record = _cache(tmp_path / "unread", {"pre-tool-hook.sh": OMITS})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "unread", finding
+    assert "does not clear on its own" not in finding["detail"], finding["detail"]
+
+
 def test_every_state_this_check_emits_has_a_level(tmp_path):
     """Vacuity guard: the four states are asserted to have been *seen*, not assumed.
 

@@ -25,6 +25,7 @@ missing is entirely local: doctor never says which of those happened.
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,8 +33,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import doctor  # noqa: E402
+import spawn_guard  # noqa: E402
 
 MARKET = "dpt-plugins"
 VERSION = "9.9.9"
@@ -270,7 +273,10 @@ def test_a_link_to_something_else_is_distinct_from_absent(tmp_path):
 
     doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
     level, message = doctor.FINDINGS[-1]
-    assert level == "WARN"
+    # #756: named, not judged -- the two states this cannot tell apart (a
+    # deliberate local checkout, a stale link) are indistinguishable in
+    # principle, so this stopped being a WARN. The target is still the point.
+    assert level == "OK"
     assert "elsewhere.py" in message, message
 
 
@@ -304,14 +310,101 @@ def test_an_undeterminable_plugin_path_is_not_reported_as_a_wrong_target(tmp_pat
     assert "somewhere.py" in message, message
 
 
-def test_a_regular_file_at_that_name_is_its_own_state(tmp_path):
-    """Not a symlink at all. `readlink` has nothing to say, and calling it absent would
-    be wrong in the direction that gets acted on."""
+def _executable(path, body):
+    """A regular file made executable, or the sentence saying why not.
+
+    #742's three states are established by RUNNING the file, so the fixture has to
+    actually run -- a mode fixture is a measurement, not a given (this repo's own
+    CLAUDE.md). Windows has no execute bit and `os.chmod` there does not make an
+    arbitrary script runnable by name, so this attempts the exact operation
+    (`<path> version`) rather than asserting a POSIX fact as a product verdict.
+    """
+    path.write_text(body, encoding="utf-8")
+    try:
+        os.chmod(str(path), 0o755)
+    except OSError:
+        pass
+    # #716: a raw `subprocess.run` with a timeout and nothing catching
+    # `TimeoutExpired` reports whatever this fixture's caller would have asserted
+    # about the answer instead of reporting that a slow runner produced none.
+    # `spawn_guard.run` skips the whole test on that timeout rather than letting it
+    # render as a failure about the wrong thing.
+    try:
+        completed = spawn_guard.run(
+            [str(path), "version"],
+            subject="whether this fixture's executable answers `version` at all",
+            timeout=10,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+    except OSError as exc:
+        return str(exc)
+    if completed.returncode != 0 or b"supertool" not in completed.stdout:
+        return "the executable fixture did not answer `version` as expected here ({!r})".format(
+            completed.stdout
+        )
+    return None
+
+
+def test_a_regular_file_that_cannot_be_run_is_unknown_not_a_pass_or_a_warning(tmp_path):
+    """Not a symlink at all, and not runnable either -- `readlink` has nothing to
+    say, calling it absent would be wrong in the direction that gets acted on, and
+    calling it a confirmed pass or fail would claim a measurement that was never
+    taken (#742's third acceptance criterion)."""
     project = tmp_path / "repo"
     project.mkdir()
-    (project / "supertool").write_text("#!/bin/sh\n", encoding="utf-8")
+    (project / "supertool").write_text("not a script\n", encoding="utf-8")
     (state, detail), _ = _state(project, tmp_path)
-    assert state == "not-a-symlink", (state, detail)
+    assert state == "not-a-symlink-unknown", (state, detail)
+
+    doctor.FINDINGS.clear()
+    home, record, _ = _cache(tmp_path)
+    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", message
+    assert "unknown" in message, message
+
+
+def test_a_regular_file_reporting_the_installed_version_does_not_warn(tmp_path):
+    """#742's first acceptance criterion: a regular file at that name, answering at
+    the installed version, must not WARN -- it reaches the tool the briefs mean just
+    as well as a correct symlink does."""
+    project = tmp_path / "repo"
+    project.mkdir()
+    refused = _executable(
+        project / "supertool", "#!/bin/sh\necho \"supertool {}\"\n".format(VERSION)
+    )
+    if refused:
+        pytest.skip(refused + "; what went untested is the not-a-symlink-ok arm")
+    state, detail = _state(project, tmp_path)[0]
+    assert state == "not-a-symlink-ok", (state, detail)
+    assert VERSION in detail, detail
+
+    doctor.FINDINGS.clear()
+    home, record, _ = _cache(tmp_path)
+    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "OK", message
+
+
+def test_a_regular_file_reporting_a_different_version_warns_and_names_both(tmp_path):
+    """#742's second acceptance criterion: a mismatch WARNs and the line names both
+    versions -- the fact the old sentence's "whatever this is" was only guessing at."""
+    project = tmp_path / "repo"
+    project.mkdir()
+    refused = _executable(project / "supertool", "#!/bin/sh\necho \"supertool 1.0.0\"\n")
+    if refused:
+        pytest.skip(refused + "; what went untested is the not-a-symlink-mismatch arm")
+    state, detail = _state(project, tmp_path)[0]
+    assert state == "not-a-symlink-mismatch", (state, detail)
+    assert "1.0.0" in detail and VERSION in detail, detail
+
+    doctor.FINDINGS.clear()
+    home, record, _ = _cache(tmp_path)
+    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", message
+    assert "1.0.0" in message and VERSION in message, message
 
 
 def test_a_dangling_link_is_not_the_same_as_no_link(tmp_path):
@@ -399,10 +492,10 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
     silence this whole file is about, and a state that printed two would scroll."""
     home, record, entry = _cache(tmp_path)
     seen = set()
-    for name in ("absent", "not-a-symlink", "own-tree"):
+    for name in ("absent", "not-a-symlink-unknown", "own-tree"):
         project = tmp_path / ("case-" + name)
         project.mkdir()
-        if name == "not-a-symlink":
+        if name == "not-a-symlink-unknown":
             (project / "supertool").write_text("x\n", encoding="utf-8")
         if name == "own-tree":
             (project / ".supertool.json").write_text("{}\n", encoding="utf-8")
@@ -411,4 +504,4 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
         doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
         assert len(doctor.FINDINGS) == 1, (name, doctor.FINDINGS)
         seen.add(name)
-    assert seen == {"absent", "not-a-symlink", "own-tree"}
+    assert seen == {"absent", "not-a-symlink-unknown", "own-tree"}

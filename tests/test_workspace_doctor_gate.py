@@ -206,11 +206,14 @@ def test_the_announcement_is_not_printed_when_nothing_is_run(tmp_path):
 
 
 def test_the_resolved_root_is_passed_so_no_warning_is_manufactured(tmp_path):
-    """Invoked with neither `--root` nor `CLAUDE_PROJECT_DIR` the diagnostic prints
-    `WARN project dir guessed from cwd` and downgrades an otherwise-`ok` tree to
-    `usable with gaps -- 1 warning(s)`. The launcher has already resolved the root,
-    so a warning produced by not passing it is an artefact of the invocation rather
-    than a fact about the repository.
+    """Invoked with neither `--root` nor `CLAUDE_PROJECT_DIR` the diagnostic used to
+    print `WARN project dir guessed from cwd` and downgrade an otherwise-`ok` tree to
+    `usable with gaps -- 1 warning(s)`; #756 moved that line to OK, since guessing
+    from cwd is the documented default invocation rather than a failed measurement.
+    This test uses a stub diagnostic rather than the real one, so its own assertions
+    do not depend on that change -- but the launcher's whole point still holds:
+    the root is resolved once, here, and passed explicitly, so nothing about the
+    diagnostic's own invocation is left to guess at.
     """
     repo = _repo(tmp_path / "repo")
     root, log = _plugin(tmp_path, "echo 'VERDICT: ok'\n")
