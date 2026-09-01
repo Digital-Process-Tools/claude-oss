@@ -67,6 +67,23 @@ or one a stranger opened, is intake the loop did not generate, and folding it in
 numerator with work the loop has no lever on. Both halves of that rule travel with the number; a
 window and an authorship rule left unstated make the ratio unreadable a week later.
 
+**The numerator used to be recalled, not measured, and #762 is what closes that.** An issue the loop
+filed and one the maintainer typed by hand carry the same account and the same auth — nothing on the
+tracker separates them, so "issues the loop itself filed" was whatever the ticking agent remembered
+filing during its own tick. `labels.filed_by_loop` in `.oss.json` is the fix: a label name, declared
+per repo the same way `labels.priority` and `labels.lanes` already are, never invented here or
+hardcoded in this file. When it is declared, attach it to every issue this loop files, in the same
+`gh-issue-create` payload that creates the issue — that is the whole mechanism, and it is what makes
+the count re-derivable by anyone reading the tracker rather than trusted from a tick's own memory.
+
+**A repo with no declared `labels.filed_by_loop` gets `could-not-count`, never zero.** So does a
+window whose start predates the label's own introduction — issues filed before the mechanism
+existed are unlabelled and therefore uncountable, and that is `unknown` for those windows rather
+than a backfill: guessing which of them the loop filed after the fact is the identical unverifiable
+claim #762 exists to close. **Never write or remove this label from an agent other than the filing
+call itself** — an issue found missing it, or carrying it wrongly, is a finding to report, the same
+rule `agents/triager.md` already follows for a `cohort-*` label.
+
 **The review layer is a discovery machine and must not be throttled to make this number look
 better.** The findings are the return on the review, not a side effect of it. Rationing filings
 while discovery runs ahead of delivery moves the queue into somebody's head, which is the one place
@@ -129,6 +146,49 @@ Four states, and the third is the one that gets lost:
 | `no-denominator` | nothing merged in the window. 6/0 is not 6 and it is not 0; the numerator still reports |
 | `could-not-count` | a count was not taken — pass `unknown` with `--intake-why`. **Never renders as zero** |
 | `partial` | `--trend` only: some ticks counted and some did not. A real sum, and not the range's total |
+
+### Tick cost: what this tick cost to *carry* (#694)
+
+A tick's own dollar cost points at the wrong ticks. Across a 42-hour window measured on this
+project, ranking 48 ticks by cost said twelve of them were expensive; ranking the same ticks by
+**context inherited at their start** explained why, and the work those ticks did was not the
+variable — a late tick in a long session pays roughly twice per call for doing less, because it is
+late. 60% of the context carried across those 48 ticks was inherited history rather than anything
+this tick itself produced.
+
+`scripts/oss_state.py`'s `tick_cost` records, per tick: **start context** (input tokens the moment
+this tick begins), **floor** (the session's own first tick's start — 45-125k rather than zero, the
+spine, the skill and the system prompt every tick inherits), **inherited** (`start_ctx - floor`, the
+recoverable part), **calls**, **context carried**, and **cost as a derived column only**, never the
+primary key.
+
+**Attribution runs tick-start to next-tick-start**, so work done between ticks lands on the earlier
+one. A known and accepted skew, not a bug — the boundary is recorded so a later reader can tell.
+**"Inherited" is measured against the session's own first tick**, itself 45-125k, so the figure is
+inherited-from-earlier-ticks, not total-overhead; a claim of the latter is over-reporting. **A cost
+column is a list-rate computation, never a billed amount**, and it says so wherever it renders —
+`tick_cost`'s own record carries the disclaimer inside it, so a renderer cannot drop it by omission.
+
+Three states, same shape as intake's:
+
+| State | What it means |
+| --- | --- |
+| `measured` | start context, calls and context carried were all taken, and the floor is known. `inherited` is derivable, and 0 lives here as a real finding |
+| `floor-unknown` | the three counts were taken, but no floor could be established — no earlier tick in this session recorded one, and this tick was not asserted as the session's first. `inherited` stays unknown; the raw reading is kept, never discarded |
+| `could-not-measure` | one or more of the three counts could not be read at all. **Never renders as zero** |
+
+`--tick-cost-session` is the session id every tick in one continuous run shares, so a later tick's
+floor lookup can find an earlier one's; `--tick-cost-first` asserts that this is that session's own
+first tick, and is refused if the session already has ANY earlier tick-cost entry, resolved floor or
+not — a session whose earlier ticks all recorded `floor-unknown` still unambiguously already has
+history, and treating only an established floor as the conflict signal let a resumed session's false
+`--tick-cost-first` through silently (found by audit). An assertion that contradicts recorded history
+names a session id reused, or a first tick that was not really first, never silently overwrites the
+earlier floor. **What this tick can actually measure today is
+narrower than what the metric wants**: nothing in this loop currently hands the ticking agent a live
+token count, so `start_ctx`/`calls`/`context_carried` are ordinarily recorded `unknown` with
+`--tick-cost-why`, and that is the honest answer rather than a guessed one — see `commands/tick.md`
+step 6.
 
 **Never count by aggregating pages.** `gh api … --paginate --jq 'length'` runs the filter once per
 page and prints **one number per page**, never a total — measured `98` then `13` against a real

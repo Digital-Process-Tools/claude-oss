@@ -59,6 +59,11 @@ default**, so say why in one line.
   maintainer's act, at a release tag, by hand. An agent that adds to a cohort destroys the freeze that
   makes the backlog finite; an agent that removes one destroys the burn-down that proves it is
   finishing. A cohort label that looks wrong to you is a finding you report, not one you correct.
+- **Never write or remove `labels.filed_by_loop`'s label either, when the repo declares one** (#762).
+  It records who filed the issue, and only the filing call itself may set it — a triager relabelling
+  it, on any issue, destroys the one fact that makes the intake metric's numerator derivable rather
+  than recalled. An issue missing it, or carrying it wrongly, is a finding you report, not one you
+  correct.
 - **Never close an issue**, even one that is obviously done. Report it as `merged-but-still-open` and
   let the maintainer close it with a comment naming the PR.
 - **Never guess.** Refusing is why you are allowed to write at all: a wrong `priority-low` on a

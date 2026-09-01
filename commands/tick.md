@@ -333,9 +333,13 @@ Skill(manager)
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
      --decision "…" --at "<ISO timestamp>" \
-     --filings <issues the loop filed> --merged-prs <PRs merged> \
+     --filings <issues carrying labels.filed_by_loop, opened since the last tick> \
+     --merged-prs <PRs merged> \
      --window "since the last tick" \
-     --plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"
+     --plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE" \
+     --tick-cost-session "$CLAUDE_CODE_SESSION_ID" --tick-cost-window "this tick" \
+     --tick-cost-start-ctx unknown --tick-cost-calls unknown --tick-cost-context-carried unknown \
+     --tick-cost-why "no live token-usage read available to this tick"
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --trend
    ```
 
@@ -346,8 +350,35 @@ Skill(manager)
 
    Pass `unknown` for a count you could not take, with `--intake-why` — **`could-not-count` is not
    zero**, and a metric that renders the two alike is worse than none. The denominator, the
-   authorship rule and why no target ratio is claimed are in the skill under *Intake: filings per
-   merged pull request*.
+   authorship rule, the label that makes the numerator derivable rather than recalled (#762), and why
+   no target ratio is claimed are in the skill under *Intake: filings per merged pull request*.
+
+   **Record what this tick cost to *carry*, in the same call (#694).** A tick's own dollar cost
+   points at the wrong ticks — ranking 48 ticks by cost said twelve were expensive; ranking the same
+   ticks by context inherited at their start explained why, and it was not that they did more work.
+   `--tick-cost-session "$CLAUDE_CODE_SESSION_ID"` is a real, observable value — Claude Code sets it
+   in the environment, so it costs nothing to read and nothing to invent. Pass `--tick-cost-first`
+   only on the very first `--decision` this running session writes: that tick's own `start_ctx`
+   becomes the session's floor, and every later tick in the same session finds it automatically by
+   scanning the state file for an earlier entry carrying the same session id. **If you are not certain
+   this is genuinely the session's first tick — a resumed session, for instance — omit
+   `--tick-cost-first` rather than guess**; the CLI refuses it outright if this session already has an
+   earlier entry, resolved floor or not, rather than silently writing a false one — and a false floor,
+   once written, would never be corrected by anything later. The block above is deliberately the
+   *later*-tick shape; on the one call this session ever makes as its own first tick, append the flag:
+
+   ```bash
+     … --tick-cost-why "no live token-usage read available to this tick" \
+     --tick-cost-first
+   ```
+
+   **`start_ctx`, `calls` and `context_carried` are not reliably readable from inside a running tick
+   today.** Nothing in this loop currently hands the ticking agent a live token count. Pass `unknown`
+   for all three with `--tick-cost-why "no live token-usage read available to this tick"` — **do not
+   estimate a number**, the same rule `--filings unknown` already follows; a guessed figure sitting in
+   the history is worse than an honest `could-not-measure`, because nothing downstream knows to
+   distrust it. If your environment genuinely exposes a usage read, pass the real numbers instead —
+   the CLI does not care where they came from, only that they were measured rather than guessed.
 
    **If this tick is closing blocked (#337), attach the wait to the same `--decision` call** rather
    than leaving it in the `reason` string alone:

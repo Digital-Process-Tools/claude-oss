@@ -69,6 +69,38 @@ INTAKE_PARTIAL = "partial"
 # to avoid, so they are not the same value even inside the parser.
 UNKNOWN_COUNT = object()
 
+# What a tick costs to *carry* (#694): a tick's own start context, the session's floor
+# (its first tick's own start -- 45-125k rather than zero, per the spine/skill/system
+# prompt every tick inherits), the inherited part between them, and the calls and
+# context this one tick carried. Ranking ticks by dollar cost alone points at the wrong
+# ones: ranking the same 48 ticks by context inherited at their start explained why
+# twelve of them were expensive, and it was not that they did more work.
+#
+# Three states, same shape as `intake`'s -- a broken counter reporting zero must never
+# render like a perfectly efficient tick, and a floor nobody could establish must never
+# render like a tick that inherited nothing:
+#
+#   measured           start_ctx, calls and context_carried were all taken, AND the
+#                      floor is known (either this is the session's own first tick, or
+#                      an earlier tick in the same session already established one).
+#                      `inherited` is derivable and a value of 0 lives here.
+#   floor-unknown      start_ctx, calls and context_carried were all taken, but no
+#                      floor could be established -- no earlier tick in this session
+#                      recorded one, and this tick was not asserted as the session's
+#                      first. `inherited` stays unknown rather than being guessed at
+#                      from `start_ctx`, because a floor cannot be told from a genuine
+#                      first tick and an earlier tick that ran before this metric
+#                      existed. The raw reading is still kept, never discarded.
+#   could-not-measure  one or more of start_ctx/calls/context_carried could not be
+#                      read at all -- the harness gave no usage block, the transcript
+#                      truncated. Never renders as zero, and it carries the reason.
+#
+# `cost` is a derived column only, never the primary key, and it never renders without
+# saying it is a list-rate computation, not a billed amount (#694's own limit).
+TICK_COST_MEASURED = "measured"
+TICK_COST_FLOOR_UNKNOWN = "floor-unknown"
+TICK_COST_COULD_NOT_MEASURE = "could-not-measure"
+
 # The lane-model mix (#316): which model each dispatched developer lane ran on, and
 # whether that was the shipped default or a per-lane override with a reason. Same three
 # extra states as intake, for the same reason -- a tick that dispatched nothing and a
@@ -696,6 +728,209 @@ def _count(value, label):
     if value < 0:
         raise StateError("{} cannot be negative ({})".format(label, value))
     return value
+
+
+def tick_cost(session, window, start_ctx, calls, context_carried, is_first=False,
+              prior_floor=None, session_has_prior=False, why=None, rate=None):
+    """What one tick cost to *carry* (#694): its own start context, calls, context
+    carried, and -- when it can be told -- the session floor and what was inherited.
+
+    ``session`` is an opaque identifier a later tick's floor lookup matches on. Without
+    one, nothing could ever tell this tick's floor apart from a different session's.
+    ``is_first`` is the caller's own assertion that this is the session's first tick --
+    the same kind of self-report `intake`'s counts already are, and it is what lets the
+    first tick's own start_ctx become the floor rather than staying unknown forever.
+    ``prior_floor`` is a floor an earlier tick in the same session already established,
+    read back by the CLI before this is called -- never read from the forge in here,
+    for the same reason `intake` takes its counts as arguments. ``session_has_prior`` is
+    a SEPARATE fact from ``prior_floor``: whether this session has ANY earlier tick-cost
+    entry at all, resolved floor or not. A session whose earlier ticks all recorded
+    floor-unknown has no ``prior_floor`` to conflict against, but it unambiguously
+    already has history -- found by audit: without this flag, a resumed session (or a
+    copy-pasted `--tick-cost-first`) could claim to be the session's first tick a second
+    time and be accepted silently, manufacturing a false floor nothing later corrects.
+
+    Any of ``start_ctx``/``calls``/``context_carried`` may be ``None`` for a reading
+    that could not be taken, in which case ``why`` is required: an unexplained absence
+    is indistinguishable from a measurement of nothing, which is this repository's
+    founding defect class landing inside the instrument built to measure it. The
+    ``is_first``/history conflict is checked BEFORE that could-not-measure branch and
+    unconditionally on it -- found by review: the claim "this is the session's first
+    tick" is about which tick this is, not about whether this tick's own counts could
+    be read, so an unknown reading must not let a false claim slip through unchecked.
+
+    ``rate`` is an optional list-rate, USD per million tokens. When given, the derived
+    ``cost`` always carries a note that it is a list-rate computation and not a billed
+    amount -- #694's own limit, stated once here so a renderer cannot drop it.
+    """
+    if not session or not str(session).strip():
+        raise StateError(
+            "a tick-cost record needs a session -- an opaque id so a later tick in the "
+            "same run can find this one's floor. Without it, 'inherited' can never be "
+            "told from a first tick's own zero."
+        )
+    if not window or not str(window).strip():
+        raise StateError(
+            "a tick-cost record needs a window -- what this reading covers, in words."
+        )
+    session = str(session).strip()
+    window = str(window).strip()
+
+    if prior_floor is not None:
+        prior_floor = _count(prior_floor, "prior_floor")
+    if is_first and (prior_floor is not None or session_has_prior):
+        raise StateError(
+            "this was asserted as session {!r}'s first tick, but this session already "
+            "has an earlier tick-cost entry recorded -- either the session id was "
+            "reused, or this is not really the first tick".format(session)
+        )
+
+    start_ctx = _count(start_ctx, "start_ctx")
+    calls = _count(calls, "calls")
+    context_carried = _count(context_carried, "context_carried")
+
+    record = {
+        "window": window,
+        "session": session,
+        "start_ctx": start_ctx,
+        "calls": calls,
+        "context_carried": context_carried,
+        "floor": None,
+        "inherited": None,
+        "cost": None,
+        "why": None,
+    }
+
+    if start_ctx is None or calls is None or context_carried is None:
+        if not why or not str(why).strip():
+            raise StateError(
+                "a tick-cost reading that could not be taken needs a why. Without it, "
+                "could-not-measure is an absence with no cause, which reads as a "
+                "measurement of nothing."
+            )
+        record["state"] = TICK_COST_COULD_NOT_MEASURE
+        record["why"] = str(why).strip()
+        return record
+
+    if rate is not None:
+        if rate < 0:
+            raise StateError("a list rate cannot be negative ({})".format(rate))
+        record["cost"] = {
+            "list_rate_usd": round(context_carried / 1000000.0 * float(rate), 4),
+            "note": "list-rate at the given rate, not a billed amount",
+        }
+
+    if is_first:
+        floor = start_ctx
+    elif prior_floor is not None:
+        floor = prior_floor
+    else:
+        floor = None
+
+    if floor is None:
+        record["state"] = TICK_COST_FLOOR_UNKNOWN
+        record["why"] = (
+            "no earlier tick in session {!r} recorded a floor, and this tick was not "
+            "asserted as the session's first -- the floor cannot be told from a "
+            "genuine first tick and an earlier tick that ran before this metric "
+            "existed".format(session)
+        )
+        return record
+
+    record["floor"] = floor
+    record["inherited"] = start_ctx - floor
+    record["state"] = TICK_COST_MEASURED
+    return record
+
+
+def _cost_suffix(record):
+    """The list-rate disclaimer, appended wherever a cost is rendered -- #694's own
+    limit is that a cost column read without it is quoted as a bill."""
+    cost = record.get("cost")
+    if not isinstance(cost, dict):
+        return ""
+    return ", ${:.4f} at list rate ({})".format(
+        cost.get("list_rate_usd"), cost.get("note") or "list-rate, not a bill"
+    )
+
+
+def tick_cost_line(record):
+    """One line a tick report can print. The state decides the sentence, not the
+    caller -- same join as `intake_line`, so a caller cannot skip it by branching."""
+    return _receipt_line(_tick_cost_sentence(record))
+
+
+def _tick_cost_sentence(record):
+    """`tick_cost_line`'s branches. Unfolded on purpose -- it has one caller."""
+    if not isinstance(record, dict):
+        raise StateError("tick_cost_line takes a tick_cost record, not {!r}".format(record))
+    state = record.get("state")
+    window = record.get("window") or "an unstated window"
+    session = record.get("session") or "an unstated session"
+    head = "tick cost {} ({}): ".format(window, session)
+
+    if state == TICK_COST_COULD_NOT_MEASURE:
+        return head + (
+            "could not measure ({}) -- no start context, no calls, no context "
+            "carried, and this is not zero".format(record.get("why") or "no reason recorded")
+        )
+    if state == TICK_COST_FLOOR_UNKNOWN:
+        return head + (
+            "start {} / {} calls / {} carried, floor unknown so inherited is not "
+            "claimed -- {}{}".format(
+                record.get("start_ctx"),
+                record.get("calls"),
+                record.get("context_carried"),
+                record.get("why") or "no reason recorded",
+                _cost_suffix(record),
+            )
+        )
+    if state == TICK_COST_MEASURED:
+        return head + (
+            "start {} = floor {} + inherited {}, {} calls, {} carried{}".format(
+                record.get("start_ctx"),
+                record.get("floor"),
+                record.get("inherited"),
+                record.get("calls"),
+                record.get("context_carried"),
+                _cost_suffix(record),
+            )
+        )
+    return head + "unrecognised tick-cost state {!r}, so nothing is claimed".format(state)
+
+
+def _session_tick_cost_floor(path, session):
+    """``(floor, has_prior)`` for ``session`` in the history at ``path``: the earliest
+    recorded floor, or ``None`` if this session has never established one; and whether
+    this session has ANY earlier tick-cost entry at all, resolved floor or not.
+
+    Reads the file -- this is the CLI-support half, kept apart from `tick_cost` itself
+    for the same reason `_last_wait`/`_last_plugin_identity` are: a function that reads
+    the state file cannot be unit-tested for what it writes without also faking a disk.
+
+    Once a floor is established for a session it does not move -- `start_ctx` keeps
+    growing every later tick, so scanning for the first entry that already carries one
+    is enough; a later entry's floor, if the session ever gets one, is the same value.
+
+    ``has_prior`` is a separate return, not folded into ``floor is not None`` -- found
+    by audit: a session whose earlier ticks all recorded floor-unknown has no floor to
+    return, but scanning only for a floor let a later, falsely-first-claiming tick in
+    that SAME session go unrefused, because nothing told `tick_cost` this session
+    already had history at all.
+    """
+    floor = None
+    has_prior = False
+    for entry in read(path):
+        detail = entry.get("detail") if isinstance(entry, dict) else None
+        record = detail.get("tick_cost") if isinstance(detail, dict) else None
+        if not isinstance(record, dict):
+            continue
+        if record.get("session") != session:
+            continue
+        has_prior = True
+        if floor is None and record.get("floor") is not None:
+            floor = record.get("floor")
+    return floor, has_prior
 
 
 def intake(filings, merged_prs, window, why=None):
@@ -2016,6 +2251,46 @@ def _main(argv=None):
         "the current and prior readings is its own state, never folded into "
         "changed/unchanged",
     )
+    parser.add_argument(
+        "--tick-cost-session",
+        help="an opaque id for this session (#694), so a later tick's floor lookup "
+        "matches on it; use with --decision",
+    )
+    parser.add_argument(
+        "--tick-cost-window",
+        help="what this tick-cost reading covers, in words -- 'this tick'",
+    )
+    parser.add_argument(
+        "--tick-cost-start-ctx",
+        type=_count_argument,
+        help="input tokens at the moment this tick begins, or 'unknown' (#694)",
+    )
+    parser.add_argument(
+        "--tick-cost-calls",
+        type=_count_argument,
+        help="tool calls this tick made, or 'unknown'",
+    )
+    parser.add_argument(
+        "--tick-cost-context-carried",
+        type=_count_argument,
+        help="context tokens this tick carried across its calls, or 'unknown'",
+    )
+    parser.add_argument(
+        "--tick-cost-first",
+        action="store_true",
+        help="this is the session's own first tick -- its start_ctx becomes the "
+        "floor; refused if this session already has one recorded",
+    )
+    parser.add_argument(
+        "--tick-cost-why",
+        help="why start-ctx/calls/context-carried is 'unknown'; required when any is",
+    )
+    parser.add_argument(
+        "--tick-cost-rate",
+        type=float,
+        help="optional list-rate, USD per million tokens -- renders a derived cost "
+        "that always says it is list-rate, never a billed amount",
+    )
     args = parser.parse_args(argv)
 
     intake_flags = [
@@ -2063,6 +2338,20 @@ def _main(argv=None):
         for name, value in (("--plugin-identity", args.plugin_identity),)
         if value is not None
     ]
+    tick_cost_flags = [
+        name
+        for name, value in (
+            ("--tick-cost-session", args.tick_cost_session),
+            ("--tick-cost-window", args.tick_cost_window),
+            ("--tick-cost-start-ctx", args.tick_cost_start_ctx),
+            ("--tick-cost-calls", args.tick_cost_calls),
+            ("--tick-cost-context-carried", args.tick_cost_context_carried),
+            ("--tick-cost-first", True if args.tick_cost_first else None),
+            ("--tick-cost-why", args.tick_cost_why),
+            ("--tick-cost-rate", args.tick_cost_rate),
+        )
+        if value is not None
+    ]
 
     # The intake pair and the lane record, each once it has been built and while the
     # entry carrying it has not landed. `refuse` reads both, so a refusal after either
@@ -2073,6 +2362,7 @@ def _main(argv=None):
     pending_lanes = None
     pending_cohort = None
     pending_wait_record = None
+    pending_tick_cost = None
 
     def refuse(message):
         """Print the verdict, then what the run did not record. In that order.
@@ -2102,6 +2392,9 @@ def _main(argv=None):
         if pending_wait_record is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + wait_line(pending_wait_record), sys.stderr)
+        if pending_tick_cost is not None:
+            sys.stdout.flush()
+            _say("NOT RECORDED " + tick_cost_line(pending_tick_cost), sys.stderr)
         return 1
 
     try:
@@ -2161,6 +2454,12 @@ def _main(argv=None):
             _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(plugin_identity_flags))
+            )
+            return 1
+        if reading_mode and tick_cost_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(tick_cost_flags))
             )
             return 1
         if (
@@ -2289,6 +2588,55 @@ def _main(argv=None):
         if not args.at:
             return refuse(
                 "--at is required with --decision; the timestamp is not read from a clock"
+            )
+        if tick_cost_flags:
+            # Built FIRST among the five pending-record types, ahead of lanes, cohort,
+            # wait and intake -- found by review: a fully valid --tick-cost-* set used
+            # to be built LAST, so an unrelated group's refusal (an incomplete intake
+            # set, say) short-circuited the function before this block ever ran, and
+            # the measured record vanished with no NOT RECORDED line at all. Building
+            # it before anything else protects it the same way the lane record has
+            # always been protected against intake's own "missing flags" refusal (see
+            # the comment on that below) -- every tick records both, so this one must
+            # not be the one silently exposed to the other four's failure modes.
+            missing = [
+                name
+                for name in (
+                    "--tick-cost-session",
+                    "--tick-cost-window",
+                    "--tick-cost-start-ctx",
+                    "--tick-cost-calls",
+                    "--tick-cost-context-carried",
+                )
+                if name not in tick_cost_flags
+            ]
+            if missing:
+                # Each of start-ctx/calls/context-carried may legitimately be
+                # 'unknown' -- but the flag still has to be PASSED for that, the same
+                # rule --filings/--merged-prs already follow. A flag simply absent is
+                # not the same claim as one spelling out 'unknown'.
+                return refuse(
+                    "a tick-cost record needs --tick-cost-session, --tick-cost-window, "
+                    "--tick-cost-start-ctx, --tick-cost-calls and "
+                    "--tick-cost-context-carried (each may be 'unknown', but not "
+                    "absent); missing {}".format(", ".join(missing))
+                )
+            prior_floor, session_has_prior = _session_tick_cost_floor(
+                args.path, args.tick_cost_session
+            )
+            pending_tick_cost = tick_cost(
+                args.tick_cost_session,
+                args.tick_cost_window,
+                None if args.tick_cost_start_ctx is UNKNOWN_COUNT else args.tick_cost_start_ctx,
+                None if args.tick_cost_calls is UNKNOWN_COUNT else args.tick_cost_calls,
+                None
+                if args.tick_cost_context_carried is UNKNOWN_COUNT
+                else args.tick_cost_context_carried,
+                is_first=args.tick_cost_first,
+                prior_floor=prior_floor,
+                session_has_prior=session_has_prior,
+                why=args.tick_cost_why,
+                rate=args.tick_cost_rate,
             )
         if args.lane is not None and args.lanes is not None:
             return refuse(
@@ -2485,6 +2833,20 @@ def _main(argv=None):
                         "pass one or the other"
                     )
                 detail["plugin_identity_route"] = args.plugin_identity_route
+        if pending_tick_cost is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a tick-cost record is "
+                    "attached"
+                )
+            if "tick_cost" in detail:
+                return refuse(
+                    "--detail already carries a 'tick_cost' key; pass one or the "
+                    "other"
+                )
+            detail["tick_cost"] = pending_tick_cost
         entry = append(args.path, args.at, args.decision, detail=detail)
         # After the write, never before. The line is a receipt for an entry that is on
         # disk, and a receipt printed ahead of the write it receipts is one that a
@@ -2508,6 +2870,8 @@ def _main(argv=None):
                     + _receipt_line(args.plugin_identity_route),
                     sys.stderr,
                 )
+        if pending_tick_cost is not None:
+            _say("RECORDED " + tick_cost_line(pending_tick_cost), sys.stderr)
         print(json.dumps(entry, indent=2))
         return 0
     except StateError as exc:

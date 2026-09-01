@@ -447,9 +447,9 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/SKILL.md` | 58,377 B | 64,600 B |
 | `skills/manager/phases/dispatch.md` | 26,052 B | 28,700 B |
 | `skills/manager/phases/handback.md` | 18,864 B | 20,700 B |
-| `skills/manager/phases/accounting.md` | 10,663 B | 11,700 B |
+| `skills/manager/phases/accounting.md` | 15,093 B | 16,600 B |
 | `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
-| `skills/manager/phases/review.md` | 10,348 B | 11,400 B |
+| `skills/manager/phases/review.md` | 11,637 B | 12,800 B |
 | `skills/manager/phases/merge.md` | 10,012 B | 11,000 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
@@ -476,11 +476,28 @@ warrant. `tests/test_claude_md_phase_budget_table_725.py` now holds this table a
 agent table above against `agent_budgets.BUDGETS` — closing the gap #725 filed: two hand-copied
 tables and nothing that compared either one to its source.
 
-**The total grew: 122,423 B became 142,188 B, +16%.** The spine's directive blocks and each phase
-file's own header are a second, shorter statement of what the phase file then argues at length, and
-that is a real cost paid on every read of the phase file. It buys the number that actually matters
-here — what a session loads before it knows which phase it will reach — which fell 52%. Quote both,
-or the saving reads as free.
+**`accounting.md`'s budget was raised for #694 and #762, landed together because both touch the same
+intake paragraph and the same `--decision` call.** #762 gives the intake numerator a mechanism
+(`labels.filed_by_loop`) instead of a recalled memory; #694 adds a whole second metric, tick cost,
+beside it. Both are load-bearing argument, not padding, so the fix was to raise the ceiling rather
+than trim either one to fit the old one — 10,663 B measured became 15,093 B, about 42% growth in one
+file. A split into its own phase file was weighed and declined for the same reason #725 declined one
+for `dispatch.md`: accounting is one subject — closing a tick's books — not two phases wearing one
+name, and unlike the two `Tick cost`/`Intake` subsections this stays a smaller, together-reviewable
+change than a fresh phase file plus its own spine directive block would be. `review.md`'s budget
+moved by the same #762: one paragraph, naming where the filing-time label attach happens, pushed
+10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
+trimming something else in the same file to absorb, so it was raised too.
+
+**The total grew: 122,423 B became 150,230 B, +22.7%** — re-derived here rather than trusted from
+a prior edit of this sentence, which read 142,188 B / +16% and had already gone stale by the time the
+two rows above it moved, with nothing checking it against the table (found by review, this round: no
+test ties this sentence's numbers to the table's own column, only the per-file rows). Sum the table's
+own "measured (baseline)" column the next time a row changes, rather than editing this sentence by
+hand. The spine's directive blocks and each phase file's own header are a second, shorter statement of
+what the phase file then argues at length, and that is a real cost paid on every read of the phase
+file. It buys the number that actually matters here — what a session loads before it knows which
+phase it will reach — which fell 52%. Quote both, or the saving reads as free.
 
 **The split's own defect is that an unread phase file is a rule that did not run, and that renders
 exactly like a rule with nothing to say.** Nothing in this repository can observe whether a reader

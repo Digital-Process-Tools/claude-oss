@@ -89,10 +89,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # rather than assumed still adequate.
     "skills/manager/phases/dispatch.md": (26052, 28700, "delegating: fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
-    "skills/manager/phases/review.md": (10348, 11400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
+    "skills/manager/phases/review.md": (11637, 12800, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),
     "skills/manager/phases/release.md": (10195, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
-    "skills/manager/phases/accounting.md": (10663, 11700, "closing a tick: the cohort freeze and the intake ratio"),
+    "skills/manager/phases/accounting.md": (15093, 16600, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
 }
 
 
