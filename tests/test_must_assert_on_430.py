@@ -85,8 +85,15 @@ _NO_SUCH_PLATFORM = "not-a-real-platform-430"
 # import pytest under its relocated `HOME`. Matched loosely enough to survive
 # a Python release quoting the module name differently -- 3.9 and 3.12, both
 # checked directly against this machine, print it unquoted, but nothing here
-# is willing to bet the next release keeps it that way.
-_CHILD_COULD_NOT_IMPORT_PYTEST = re.compile(r"No module named ['\"]?pytest['\"]?")
+# is willing to bet the next release keeps it that way. Anchored at the end
+# (optional trailing quote/whitespace, then end of the line) on purpose:
+# without it this matched any module name that merely STARTS WITH "pytest" --
+# exactly the naming convention real pytest plugins use (`pytest_xdist`,
+# `pytest_cov`, `pytest_asyncio`...), so a genuinely broken plugin dependency
+# would have been silently relabelled as this one already-explained harness
+# limitation instead of failing loudly on what could be a real regression
+# (reviewer finding on this same round).
+_CHILD_COULD_NOT_IMPORT_PYTEST = re.compile(r"No module named ['\"]?pytest['\"]?\s*$")
 
 
 def _child_could_not_run(result):
@@ -313,3 +320,38 @@ def test_a_child_that_ran_normally_is_not_skipped(pytester, monkeypatch):
     except pytest.skip.Exception as exc:
         pytest.fail("_run() skipped an ordinary result: {}".format(exc))
     assert outcome is real_result
+
+
+def test_a_missing_plugin_import_failure_is_not_mistaken_for_the_child_import_failure(
+    pytester, monkeypatch
+):
+    """Reviewer finding on this same round: the un-anchored regex matched any
+    module name that merely STARTS WITH "pytest" -- exactly the naming
+    convention real pytest plugins use (`pytest_xdist`, `pytest_cov`,
+    `pytest_asyncio`...). A child that fails to import one of those prints an
+    empty stdout and a `No module named 'pytest_xdist'` stderr line, which
+    satisfied both of `_child_could_not_run`'s conditions before the anchor
+    was added -- so a genuinely broken plugin dependency would have been
+    silently relabelled as #719's own already-explained harness limitation
+    and skipped, instead of failing loudly on what could be a real
+    regression. This is the must-not-fire control for that: `_run` must not
+    skip on this input.
+    """
+    plugin_failure = pytest.RunResult(
+        ret=1,
+        outlines=[],
+        errlines=[
+            'ImportError: Error importing plugin "pytest_xdist": '
+            "No module named 'pytest_xdist'",
+        ],
+        duration=0.05,
+    )
+    monkeypatch.setattr(pytester, "runpytest_subprocess", lambda *a, **kw: plugin_failure)
+    try:
+        outcome = _run(pytester)
+    except pytest.skip.Exception as exc:
+        pytest.fail(
+            "_run() mistook a missing-plugin failure for #719's own "
+            "condition: {}".format(exc)
+        )
+    assert outcome is plugin_failure
