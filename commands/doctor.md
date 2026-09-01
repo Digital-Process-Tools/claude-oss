@@ -212,6 +212,19 @@ where they appear inside prose describing a payload shape — so three spurious 
 have told a maintainer their supertool was broken when it was not. Narrative history is not
 instruction text a session executes.
 
+**The expected set has two paths into it, not one (#739).** `SKILL.md`'s own op table -- "Which
+call to make: the op table answers it, row by row" -- is written with the op *as* the cell, never
+preceded by the word `supertool`, so the ordinary call-shaped derivation above never saw it: the
+first version of this check reported `all 18 op(s) … resolve` while 21 real ops the table itself
+named, `gh-issue-create` and `gh-run` and `gh-job` among them, were invisible to it. The table is
+now parsed by its own heading, the same way `scripts/ranking_table.py` reads the ranking table out
+of the identical file, rather than swept as free text -- sweeping the table's own prose as text is
+exactly the `write`/`op1`/`op2` trap above, one column over: a bare word in the Op column's own
+description (a payload field, an issue number) is not accepted unless it is compound-shaped, which
+is what keeps it out. A bare op-shaped word outside the table -- `` `watch` ``, naming the *preset*
+elsewhere in this file, which happens to collide with a real op name -- is still not derived; this
+is a narrow, structured-source widening, not a general one.
+
 One real subprocess per run (`supertool ops:roster`), from the directory being diagnosed rather than
 from the plugin's own tree: which ops are loaded depends on the `.supertool.json` that resolves from
 the caller's directory, so asking from anywhere else would answer confidently about a different
