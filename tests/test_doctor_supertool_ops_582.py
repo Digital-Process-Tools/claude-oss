@@ -229,6 +229,41 @@ def test_changelog_shaped_prose_is_still_not_derived_via_the_table_path(tmp_path
     )
 
 
+def test_an_escaped_pipe_inside_a_backtick_span_is_not_a_column_separator(tmp_path):
+    """A self-review finding on this diff: the real merge row's escaped
+    alternation (`` `gh-pr-merge:N:squash\\|force\\|cleanup` ``) is also
+    derivable through the ordinary call-shaped path elsewhere in this
+    repository's own text, so a fixture built only from the real tree cannot
+    tell a working `_table_row_cells` from a broken one on that row -- the
+    other path would paper over the regression. This fixture uses a made-up
+    op name reachable ONLY through the table's escaped-pipe cell, so a
+    `|`-split that does not respect backticks would truncate the cell here
+    and this test would catch it where the dogfood test cannot."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "skills/manager/SKILL.md": (
+                "## Which call to make: the op table answers it, row by row\n"
+                "\n"
+                "| Need | Op |\n"
+                "| --- | --- |\n"
+                "| Merging | `gh-fake-merge:N:squash\\|force\\|cleanup` "
+                "— see below; without `\\|force` it previews and merges nothing |\n"
+                "\n"
+            ),
+        },
+    )
+    named, _roots = ops_check.named_ops(root)
+    assert "gh-fake-merge" in named, (
+        "the op name before the escaped alternation must survive a naive "
+        "`|`-split that does not track backticks; got {!r}".format(sorted(named))
+    )
+    assert "force" not in named, (
+        "the escaped alternation's own words must not be read as a second op; "
+        "got {!r}".format(sorted(named))
+    )
+
+
 def test_the_real_op_table_in_this_repository_now_derives_its_named_ops():
     """Dogfood, against the tree this actually ships: every cell #739's issue
     named as missed must now be derived out of `skills/manager/SKILL.md`'s
