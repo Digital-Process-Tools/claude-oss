@@ -50,7 +50,7 @@ constraint below — commit and stop, never enter another agent's worktree, neve
 pull request, never comment on the issue — lives in this file and nowhere else.
 
 That is not hypothetical. A spawned reviewer ran a `git checkout` mid-run and reddened the
-author's own suite; a sibling audit definition summarised itself as *annotates, never
+author's own suite (#769); a sibling audit definition summarised itself as *annotates, never
 blocks*, meaning its output, and a spawn read it as a scope on its effects and ran an
 acting op against the live watch channel of the session that had dispatched it (#251). The
 same sentence already appears further down about the reviewers you spawn — `Explore`
@@ -536,12 +536,29 @@ authors already told a `general-purpose` reviewer in prose not to edit and it ed
 landing an unreviewed test on a commit, once rewriting ~90 lines of core. `Explore` carries no
 `Edit`/`Write`, which closes that channel. **It does not close every channel, and the brief must say
 so rather than promise more than it delivers: `Explore` still has `Bash`, a complete write path.**
-Tell it explicitly, in addition, that it must not mutate the tree — a reviewer has already run a
-`git checkout` mid-run to verify a claim and reddened the author's own concurrently-running suite on
-its own new test. **Because of that, read your own suite figures as possibly contaminated by a
-concurrent reviewer**: if a spawn touched the tree while your suite was running, the numbers you
-report may not be the numbers your committed code produces, and a red you cannot otherwise explain
-is worth a clean re-run before you trust it.
+Tell it explicitly, in addition, that it must not mutate the tree. The brief already saying so is
+not a mechanism, and #769 is the proof: told twice, two different agents mutated the tree in the
+same run anyway — `Explore` wrote through a symlink into the real worktree and reverted a tracked
+file to its parent-commit content in place, and `oss:auditor` wrote and deleted a scratch file
+inside the same tree. **Neither left a ref movement or a reflog entry.** Nothing in the repository
+recorded either one; the first was caught only because the lane happened to run `git diff` at the
+right moment, before reading the agent's own admission of it. So take a receipt instead of relying
+on luck, and read your own suite figures as possibly contaminated by a concurrent reviewer until you
+have one: snapshot the tree before you spawn, and compare after both return.
+
+```
+BEFORE=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot)
+# ... spawn both agents, wait for both final messages ...
+printf '%s' "$BEFORE" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before -
+```
+
+`clean` (exit 0) means nothing persisted. `mutated` (exit 1) names what changed — restore it
+(`git checkout -- <path>`, or delete a leftover scratch file), re-run whatever suite you already
+ran, and record it under `adjacent` as `tooling:` rather than silently absorbing it.
+`could-not-compare` (exit 3) means the check itself failed; treat that as `could not check`, never
+as clean. **It cannot see a write created and deleted before the `compare` call runs** — a
+self-cleaning mutation, `oss:auditor`'s own shape above, is invisible to any before/after comparison
+by construction, so `clean` here means nothing persisted, not that nothing happened.
 
 **Your final message is the only thing that reaches you — everything a spawn wrote before that line
 is invisible to the caller.** State this in both briefs: the final message IS the return value, and

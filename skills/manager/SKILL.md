@@ -484,8 +484,8 @@ Pushing and opening is yours, and it is one read plus one call:
   seen. If it is wrong, argue it or send it back -- do not quietly rewrite it, because the person who
   did the work writes the record.
 - **Hand the payload path to `gh-pr-create:@FILE`.** Not `gh pr create`, and not a body of your own.
-  The op **reports** a missing or malformed `Closes #N` and still exits 0 with the pull request
-  created, so reading the receipt is yours.
+  The op **refuses** a body with a missing or malformed `Closes #N` — nothing is created — and the
+  error names `no_close` as the remedy for a pull request that deliberately closes nothing.
 - **Spend one call on the check rather than the claim:**
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <the report path>` -- the report path,
   never the payload path. Three answers: `ok`, a finding, and `UNVALIDATABLE` at exit 2, which is a
