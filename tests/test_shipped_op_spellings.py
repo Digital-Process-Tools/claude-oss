@@ -44,6 +44,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import manager_docs  # noqa: E402
 import oss_rules  # noqa: E402
 
 #: Where a declared spelling resolves. `None` is a built-in -- loaded everywhere
@@ -126,6 +127,17 @@ def shipped_documents():
     which is `doctor.py` plus every `doctor_check_*.py` module #497 split its checks
     into -- the message text moved with them, so the population has to follow.
 
+    #752: `(REPO_ROOT / "skills").rglob("SKILL.md")` reads a literal filename, which
+    is the spine alone -- `skills/manager/phases/*.md` was added by the same commit
+    (`ad38b93`, #750) that this test's own `_CALL_RE` narrowing landed in, and neither
+    guard could see the other's file. `CLAUDE.md`'s own rule for exactly this shape --
+    "a content check over the loop reads the set, never the spine" -- is
+    `scripts/manager_docs.py`, already consumed by `tests/test_content_invariants.py`
+    for this identical purpose. Routed through it here too, rather than adding a
+    second `skills/manager/phases/*.md` glob next to the first: a phase file added
+    later reaches both checks the moment it exists, not when two globs are
+    remembered in step.
+
     Deliberately **not** `scripts/*.py` as a whole: `scripts/batch_hint.py` writes
     `supertool 'op1' 'op2'` as an ILLUSTRATIVE example inside its own docstring,
     syntactically identical to a real invocation. A blind sweep would report
@@ -137,7 +149,13 @@ def shipped_documents():
     this plugin happens to ship.
     """
     documents = []
-    for path in sorted((REPO_ROOT / "skills").rglob("SKILL.md")):
+    manager_paths, manager_unreadable = manager_docs.documents(REPO_ROOT)
+    assert not manager_unreadable, (
+        "manager_docs.documents() could not list skills/manager/phases/, so this "
+        "sweep cannot claim to have covered the manager loop's phase files: "
+        "{}".format(manager_unreadable)
+    )
+    for path in manager_paths:
         documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
     for pattern in ("agents/*.md", "commands/*.md", ".claude/jit-context/*/*/*.md"):
         for path in sorted(REPO_ROOT.glob(pattern)):
@@ -324,3 +342,53 @@ def test_an_unreadable_roster_comes_back_as_a_reason_not_as_no_ops():
         assert reason, "loaded_ops() returned no ops and no reason"
     else:
         assert {"read", "paste", "edit"} <= ops, sorted(ops)[:20]
+
+
+def test_phase_files_are_in_the_swept_population():
+    """#752: the sweep must actually read the phase files, not merely declare that
+    it does. Before the fix, `(REPO_ROOT / "skills").rglob("SKILL.md")` matched only
+    the spine -- every one of these labels was absent.
+    """
+    labels = {label for label, _ in shipped_documents()}
+    assert "skills/manager/SKILL.md" in labels, sorted(labels)
+    for phase in ("dispatch.md", "handback.md", "merge.md", "release.md", "review.md", "accounting.md"):
+        label = "skills/manager/phases/{}".format(phase)
+        assert label in labels, sorted(labels)
+
+
+def test_a_planted_bad_spelling_in_a_phase_file_is_caught():
+    """Positive control, in the auditor's own shape (#752's own words): a planted
+    `supertool 'totally-fake-op:1'` in SKILL.md was caught; the same plant in a
+    phase file returned nothing, because the file was not in the population at
+    all. Nothing on disk is touched -- the plant is applied to the phase file's
+    own label after reading the real population, so this proves the label a
+    phase file is swept under is one `undeclared_spellings` actually acts on.
+    """
+    documents = shipped_documents()
+    phase_labels = [label for label, _ in documents if label.startswith("skills/manager/phases/")]
+    assert phase_labels, "no phase files found in the swept population"
+    planted = [(phase_labels[0], "supertool 'totally-fake-op:1'\n")]
+    findings = undeclared_spellings(planted, OP_INVENTORY)
+    assert any("totally-fake-op" in f for f in findings), findings
+
+
+def test_an_unreadable_phases_directory_is_not_read_as_an_empty_one(monkeypatch):
+    """The third state: `manager_docs.documents()` distinguishes "no phases
+    directory" from "could not list it" (#571), and `shipped_documents()` must
+    not swallow the second into a narrowed-but-silent population -- silently
+    reporting every phase file's op spellings as declared because none were
+    read is this repository's own defect class landing on the check meant to
+    catch it. Exercised by injecting the exact contract `manager_docs.
+    documents()` promises (a populated `unreadable` list), not by breaking a
+    real directory's permissions -- CLAUDE.md's own permission-fixture bullet
+    warns that root and some filesystems ignore the mode bit, which would make
+    this assertion untested exactly where it claims to be tested.
+    """
+
+    def fake_documents(root=None):
+        spine = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+        return [spine], ["permission denied (simulated)"]
+
+    monkeypatch.setattr(manager_docs, "documents", fake_documents)
+    with pytest.raises(AssertionError, match="could not list"):
+        shipped_documents()
