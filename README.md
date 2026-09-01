@@ -287,7 +287,10 @@ it is told apart by whether it contains a NUL byte, the same signal `git diff`/`
 a file binary: present (a `__pycache__/*.pyc`, on every Python tree) it counts as `skipped_files`,
 reported always and never forcing `could-not-search` on its own; absent, the decode failure is
 genuinely ambiguous -- real source in another encoding fails the same decode -- and it still forces
-`could-not-search`, the conservative answer rather than a guess (#717). The receipt also names
+`could-not-search`, the conservative answer rather than a guess (#717). BOM-less UTF-16 is a
+separate, worse gap the BOM check does not close -- ASCII-content UTF-16 with no mark decodes
+successfully as UTF-8 outright and never reaches the decode-failure branch at all, so it returns a
+silent `not-matched`; left as a documented follow-up rather than fixed here. The receipt also names
 `roots`, the paths actually searched, on every state including `could-not-search`, so the scope
 travels into a brief along with the answer instead of being retyped from memory as a summary (#727).
 

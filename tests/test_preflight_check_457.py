@@ -435,3 +435,26 @@ def test_genuine_binary_with_null_byte_and_no_bom_is_still_skipped_738(tmp_path)
     assert result["state"] == "not-matched"
     assert str(target) in result["skipped_files"]
     assert str(target) not in result["unreadable_files"]
+
+
+def test_bomless_utf16_decodes_as_utf8_and_is_a_documented_unfixed_gap(tmp_path):
+    """Found by review on #738, not fixed by it: ASCII-content UTF-16 with no
+    byte-order mark never reaches the BOM check or the NUL-byte test at all
+    -- every byte (each character plus its paired NUL) is independently a
+    legal single-byte UTF-8 codepoint, so decode succeeds outright. This
+    pins the true, worse-than-documented current behaviour -- a silent
+    not-matched with both skipped_files and unreadable_files empty -- so a
+    future docstring cannot describe it as merely "indistinguishable from
+    binary" without a test contradicting it. Closing this gap is out of
+    scope for #738 (open question: how to detect it without misreading a
+    real NUL byte in legitimate UTF-8)."""
+    target = tmp_path / "bomless_utf16.py"
+    target.write_bytes("marker = 1\n".encode("utf-16-le"))
+    raw = target.read_bytes()
+    assert raw[:2] not in (_UTF16_BOM_LE, _UTF16_BOM_BE)
+    raw.decode("utf-8", errors="strict")  # documents that this does NOT raise
+
+    result = pc.search("marker", [tmp_path])
+    assert result["state"] == "not-matched"
+    assert result["skipped_files"] == []
+    assert result["unreadable_files"] == []

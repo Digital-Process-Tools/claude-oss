@@ -45,14 +45,15 @@ a NUL-byte test alone cannot tell UTF-16 source from a compiled artifact --
 both are all NUL at that resolution, and the v0.17.0 release gate found a
 UTF-16 file containing the searched pattern taking the skipped_files branch
 unconditionally and reporting not-matched. A byte-order mark (`\xff\xfe`
-little-endian, `\xfe\xff` big-endian) is checked first and is unambiguous
-where present -- real UTF-16 text written by any ordinary tool carries one.
-**BOM present:** genuinely ambiguous the same way Latin-1 and cp1252 already
-are, so it falls back to `unreadable_files` and forces could-not-search
-rather than a guess at the content -- this module does not attempt to
-decode and search UTF-16 text, only to stop calling it binary. **BOM
-absent, decode still failed:** a NUL byte is the remaining signal -- the
-same one `git diff` and `grep -I` use to call a file binary, because
+little-endian, `\xfe\xff` big-endian) is checked first and reliably
+identifies the file as UTF-16 where present -- real UTF-16 text written by
+any ordinary tool carries one. **BOM present:** what the file actually
+contains is still genuinely ambiguous, the same way Latin-1 and cp1252
+already are, so it falls back to `unreadable_files` and forces
+could-not-search rather than a guess at the content -- this module does not
+attempt to decode and search UTF-16 text, only to stop calling it binary.
+**BOM absent, decode still failed:** a NUL byte is the remaining signal --
+the same one `git diff` and `grep -I` use to call a file binary, because
 ordinary text in the encodings this check does not already route away
 (Latin-1, cp1252) does not contain one, while a compiled artifact reliably
 does. **Present:** the file is treated as binary and goes to
@@ -66,11 +67,19 @@ could-not-search, the conservative answer rather than a guess. A file this
 process was actually denied (`OSError`) reaches `unreadable_files` the same
 way and forces could-not-search for the original reason, unchanged.
 
-BOM-less UTF-16 (an encoder asked explicitly for `utf-16-le` or `utf-16-be`
-with no mark written) is not caught by this check and is indistinguishable
-from binary by the NUL test above -- stated as a known gap rather than
-silently left uncovered, the same limitation this module already accepts
-for any encoding it has no deterministic signal for.
+BOM-less UTF-16 is a worse, separate gap this fix does not close, found by
+review on this same issue: ASCII-content UTF-16 written without a mark is
+not "indistinguishable from binary by the NUL test above" -- it never
+reaches that test at all. Every byte of ASCII-content UTF-16 (the character
+byte and its paired NUL) is independently a legal single-byte UTF-8
+codepoint, so `raw.decode("utf-8", errors="strict")` succeeds outright, the
+file is read as garbled text with a NUL interleaved between every
+character, the pattern never survives being split by those NULs, and the
+search returns a clean not-matched with `skipped_files` and
+`unreadable_files` both empty -- no signal anything unusual happened.
+Closing it needs a design decision this issue does not make (a heuristic
+for BOM-less UTF-16 risks false positives on legitimate UTF-8 containing a
+genuine NUL) and is filed separately rather than attempted here.
 
 ## What a match means is not this script's to decide
 
