@@ -197,6 +197,17 @@ def test_a_could_not_search_result_still_names_its_roots(tmp_path):
     assert result["roots"] == [str(tmp_path)]
 
 
+def test_a_missing_root_result_also_names_its_roots(tmp_path):
+    """The other early-return could-not-search path (a root that does not
+    exist) must not drop the scope either -- covers the second of the two
+    early exits in search(), the invalid-pattern case above covers the
+    first."""
+    missing = tmp_path / "does-not-exist"
+    result = pc.search("anything", [missing])
+    assert result["state"] == "could-not-search"
+    assert result["roots"] == [str(missing)]
+
+
 def test_one_missing_root_among_several_is_could_not_search_even_with_a_clean_miss_elsewhere(tmp_path):
     """#457's own multi-part/bundle use passes several --path roots in one
     call. If one candidate's path was mistyped or moved, that must not be
