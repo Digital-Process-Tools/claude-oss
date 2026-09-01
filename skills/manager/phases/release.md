@@ -17,7 +17,8 @@ say -- so the absence is stated, never silent.
 
 Trigger, whichever comes first: **N merged PRs since the last tag**, **any user-visible fix plus a
 soak period**, or **immediately for anything in a class the ranking table above marks blocking** —
-`destroys`, `discloses`, `containment (read)`, `containment (write)`, `forges`, `ships-local-state`.
+`destroys`, `discloses`, `executes`, `containment (read)`, `containment (write)`, `forges`,
+`ships-local-state`.
 
 Thresholds live in user config; state them out loud when reporting, because a threshold nobody can
 see arriving is indistinguishable from deciding on a whim.

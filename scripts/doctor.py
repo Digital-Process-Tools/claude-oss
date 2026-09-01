@@ -1642,38 +1642,11 @@ def plugin_supertool_entries(cache_root=None, record=None):
     return found
 
 
-def _supertool_regular_file_version(path):
-    """The version a regular file at that name reports for ``<path> version``, or
-    ``None`` if it would not run or its output did not parse.
-
-    #742: the shape of `_gh_version_text` above, one file over -- a subprocess call
-    whose own failure (not executable, not found, hangs) is caught rather than left to
-    crash a script whose contract is exit 0 always. `check_tool("supertool",
-    ["supertool", "version"])` elsewhere in this file already establishes the output
-    shape parsed here: one line, ``supertool <version>``.
-    """
-    try:
-        completed = subprocess.run(
-            [str(path), "version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0:
-        return None
-    text = completed.stdout.decode("utf-8", "replace")
-    first_line = text.splitlines()[0].strip() if text.splitlines() else ""
-    match = re.match(r"^supertool\s+(\S+)$", first_line)
-    return match.group(1) if match else None
-
-
 def supertool_entry_point(project_dir, cache_root=None, record=None):
     """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
 
-    Thirteen states. Four of them are ways of saying "could not tell", and those are
-    the reason this is a function rather than an ``==``:
+    Eleven states. Three of them are ways of saying "could not tell", and those are the
+    reason this is a function rather than an ``==``:
 
     * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
     * ``own-tree-stranger`` -- a supertool checkout that has one anyway.
@@ -1703,15 +1676,19 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
       ``unknown-plugin-path`` so the message can name which of the two happened, and
       apart from ``other-target`` because falling through to that is precisely the
       accusation this pair exists to avoid.
-    * ``not-a-symlink-ok`` / ``not-a-symlink-mismatch`` / ``not-a-symlink-unknown`` --
-      a regular file at that name, answered by running it (#742) rather than by
-      stat. Every state above this one reads a symlink *target*; a regular file has
-      the identical question to answer -- does calling it reach the tool the briefs
-      mean -- and it is cheaper to answer, because a file can simply be run. Worth
-      keeping apart from the symlink states for one more reason: the *real* shape of
-      this defect (a link pinned to a version directory a plugin update emptied,
-      #289) is itself a symlink and lands in a branch above, so this branch used to
-      be silent about the fault it sits beside and loud about the fix for it.
+    * ``not-a-symlink`` -- a regular file (or something else that is not a
+      symlink) at that name. #742 briefly answered this by running the file as
+      ``<path> version`` and trusting the string it printed -- but that both
+      executes code the inspected repository supplies (#790: doctor is pointed at
+      trees the maintainer did not author, and a tracked, exec-bit `supertool`
+      there ran under the maintainer's own session) and believes a self-report
+      nothing here can verify (#793: the OK it produced claimed "op calls through
+      it reach the tool the briefs mean" on the strength of a string the file
+      itself chose to print, not on any measured identity). Reverted to
+      describing the file rather than asking it to describe itself: a regular
+      file can never be the plugin's own entry point, which only ever creates a
+      symlink, so this state is a WARN naming what is there, with no run and no
+      claim about what op calls through it would reach.
     * ``dangling`` / ``unreadable`` -- present and not usable, each with its own
       remedy, none of them "create one".
     """
@@ -1726,8 +1703,9 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     # readlink/stat failure -- `check_supertool_entry_point`'s catch-all
     # message for that state already reads correctly here too: "so which of
     # present/absent/wrong-target this repo is in is unknown."
+    stat_result = None
     try:
-        os.lstat(str(link))
+        stat_result = os.lstat(str(link))
         present = True
     except (FileNotFoundError, NotADirectoryError):
         # Absence, stated by the exception itself -- nothing is asked twice.
@@ -1743,19 +1721,17 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
         return "own-tree", _display(root, core)
     if not present:
         return "absent", ""
-    if not os.path.islink(str(link)):
-        # #742: measured by running it, not by stat -- see _supertool_regular_file_
-        # version and the docstring bullet above for why this is a run rather than
-        # a comparison against the symlink states' own cache lookup.
-        version = _supertool_regular_file_version(link)
-        active = active_versions([SUPERTOOL_ENTRY], record=record).get(SUPERTOOL_ENTRY)
-        if version is None or active is None:
-            return "not-a-symlink-unknown", _display(project_dir, link)
-        if version == active:
-            return "not-a-symlink-ok", "{} ({})".format(_display(project_dir, link), version)
-        return "not-a-symlink-mismatch", "{} (reports {}, installed {})".format(
-            _display(project_dir, link), version, active
-        )
+    # #790/#793: whether `link` is a symlink is read off the `stat_result` already
+    # in hand, not from a second `os.path.islink(str(link))` call -- `islink` swallows
+    # every `OSError` from its own internal `lstat` and returns `False`, which would
+    # silently misclassify a link this process can no longer read (removed, or an
+    # ancestor gone unreadable, between the lstat above and here) as "a regular
+    # file", the identical swallow this file's own `CLAUDE.md` names elsewhere. A
+    # regular file (or anything else that is not a symlink) is never run: it cannot
+    # be the plugin's own entry point, which only ever creates a symlink, so nothing
+    # is asked of it beyond that it is there.
+    if not stat.S_ISLNK(stat_result.st_mode):
+        return "not-a-symlink", _display(project_dir, link)
 
     try:
         target = os.readlink(str(link))
@@ -1864,26 +1840,15 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "file -- so this is unknown, not wrong. Not reported as a bad target: the "
             "comparison failed, the link did not.".format(detail),
         )
-    elif state == "not-a-symlink-ok":
-        report(
-            "OK",
-            "{} is not a symlink, but running it answers the installed version -- "
-            "op calls through it reach the tool the briefs mean.".format(detail),
-        )
-    elif state == "not-a-symlink-mismatch":
+    elif state == "not-a-symlink":
         report(
             "WARN",
-            "{} is not a symlink, and running it answers a different version than "
-            "the one installed. Same shape as a stale-version link that happens to "
-            "resolve: every op through it runs whatever build this file is, "
-            "silently, until it is replaced.".format(detail),
-        )
-    elif state == "not-a-symlink-unknown":
-        report(
-            "WARN",
-            "{} exists and is not a symlink, and running it with `version` did not "
-            "answer (or the installed version could not be read) -- so whether it "
-            "reaches the tool the briefs mean is unknown, not confirmed.".format(detail),
+            "{} exists and is not a symlink. doctor does not run it to find out what "
+            "it is -- it is code the inspected repository supplies, not this "
+            "plugin's -- so whether op calls through it reach the tool the briefs "
+            "mean is unknown, not confirmed. supertool's session-start hook leaves "
+            "anything already at that name untouched; replace it with the "
+            "plugin's own symlink.".format(detail),
         )
     elif state == "dangling":
         report(

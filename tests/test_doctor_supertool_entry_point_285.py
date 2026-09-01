@@ -310,101 +310,126 @@ def test_an_undeterminable_plugin_path_is_not_reported_as_a_wrong_target(tmp_pat
     assert "somewhere.py" in message, message
 
 
-def _executable(path, body):
-    """A regular file made executable, or the sentence saying why not.
-
-    #742's three states are established by RUNNING the file, so the fixture has to
-    actually run -- a mode fixture is a measurement, not a given (this repo's own
-    CLAUDE.md). Windows has no execute bit and `os.chmod` there does not make an
-    arbitrary script runnable by name, so this attempts the exact operation
-    (`<path> version`) rather than asserting a POSIX fact as a product verdict.
+def _marker_script(path, marker, body):
+    """A regular, executable file at ``path`` that appends to ``marker`` if it is
+    ever run -- the positive control for #790: if doctor executed this file, the
+    marker exists afterward; if it did not, the marker is exactly what this
+    fixture wrote it to be before the call (nothing, or one line from a manual
+    run used only to confirm the fixture itself works on this platform).
     """
     path.write_text(body, encoding="utf-8")
     try:
         os.chmod(str(path), 0o755)
     except OSError:
         pass
-    # #716: a raw `subprocess.run` with a timeout and nothing catching
-    # `TimeoutExpired` reports whatever this fixture's caller would have asserted
-    # about the answer instead of reporting that a slow runner produced none.
-    # `spawn_guard.run` skips the whole test on that timeout rather than letting it
-    # render as a failure about the wrong thing.
+
+
+def _fixture_is_runnable(path, marker):
+    """Confirm the planted script actually executes on this platform and platform,
+    by running it once ourselves and checking the marker -- never asserting a
+    POSIX exec-bit fact as a product verdict (this repo's own CLAUDE.md). Returns
+    the sentence to skip with, or ``None`` when the fixture is proven live.
+    """
     try:
         completed = spawn_guard.run(
-            [str(path), "version"],
-            subject="whether this fixture's executable answers `version` at all",
+            [str(path)],
+            subject="whether this fixture's planted script runs at all",
             timeout=10,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
     except OSError as exc:
         return str(exc)
-    if completed.returncode != 0 or b"supertool" not in completed.stdout:
-        return "the executable fixture did not answer `version` as expected here ({!r})".format(
+    if completed.returncode != 0 or not marker.exists():
+        return "the planted-script fixture did not run as expected here ({!r})".format(
             completed.stdout
         )
     return None
 
 
-def test_a_regular_file_that_cannot_be_run_is_unknown_not_a_pass_or_a_warning(tmp_path):
-    """Not a symlink at all, and not runnable either -- `readlink` has nothing to
-    say, calling it absent would be wrong in the direction that gets acted on, and
-    calling it a confirmed pass or fail would claim a measurement that was never
-    taken (#742's third acceptance criterion)."""
+def test_a_regular_file_is_never_executed_790(tmp_path):
+    """#790: doctor used to run `<path> version` on a regular file at this name --
+    the inspected repository's own code, executed by the maintainer's own session.
+    The marker script below writes a line to ``marker`` every time it is run at
+    all, regardless of arguments, so any execution -- `version` or otherwise --
+    leaves a trace. Must-fire control: the fixture is proven to actually execute
+    on this platform before the real assertion runs, so a skip here means the
+    fixture could not be trusted, not that the check passed by accident.
+    """
+    project = tmp_path / "repo"
+    project.mkdir()
+    marker = tmp_path / "pwned.txt"
+    script = project / "supertool"
+    _marker_script(
+        script,
+        marker,
+        "#!/bin/sh\necho \"PWNED: doctor executed me with args: $*\" >> {}\n"
+        "echo \"supertool {}\"\n".format(marker, VERSION),
+    )
+    refused = _fixture_is_runnable(script, marker)
+    if refused:
+        pytest.skip(refused + "; what went untested is #790's must-not-execute arm")
+    marker.unlink()  # the manual run above is not the measurement; clear its trace
+
+    (state, detail), _ = _state(project, tmp_path)
+    assert state == "not-a-symlink", (state, detail)
+    assert not marker.exists(), (
+        "doctor executed a file the inspected repository supplied: " + marker.read_text()
+        if marker.exists()
+        else "unreachable"
+    )
+
+    doctor.FINDINGS.clear()
+    home, record, _ = _cache(tmp_path)
+    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    assert not marker.exists(), "check_supertool_entry_point executed the file"
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", message
+
+
+def test_a_regular_file_that_self_reports_the_installed_version_still_warns_793(tmp_path):
+    """#793: the OK state this branch used to return believed a version string the
+    file itself printed, established only by running it -- a self-report, not a
+    measurement of identity. Now that the file is never run, a script that would
+    have claimed to be the exact installed version must still WARN: the sentence
+    no longer claims "op calls through it reach the tool the briefs mean" on the
+    strength of a string the suspect chose.
+    """
+    project = tmp_path / "repo"
+    project.mkdir()
+    script = project / "supertool"
+    _marker_script(
+        script, tmp_path / "unused-marker", "#!/bin/sh\necho \"supertool {}\"\n".format(VERSION)
+    )
+    (state, detail), _ = _state(project, tmp_path)
+    assert state == "not-a-symlink", (state, detail)
+
+    doctor.FINDINGS.clear()
+    home, record, _ = _cache(tmp_path)
+    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", message
+    assert "op calls through it reach the tool the briefs mean is unknown" in message, message
+    assert "reach the tool the briefs mean." not in message, (
+        "the old OK sentence's unqualified claim must not survive: " + message
+    )
+
+
+def test_a_regular_file_with_unparseable_content_is_the_same_state(tmp_path):
+    """Content that is not a script at all lands in the identical `not-a-symlink`
+    state as a plausible-looking one -- there is no longer a distinction to draw,
+    because nothing here asks the file anything."""
     project = tmp_path / "repo"
     project.mkdir()
     (project / "supertool").write_text("not a script\n", encoding="utf-8")
     (state, detail), _ = _state(project, tmp_path)
-    assert state == "not-a-symlink-unknown", (state, detail)
+    assert state == "not-a-symlink", (state, detail)
 
     doctor.FINDINGS.clear()
     home, record, _ = _cache(tmp_path)
     doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
-    assert "unknown" in message, message
-
-
-def test_a_regular_file_reporting_the_installed_version_does_not_warn(tmp_path):
-    """#742's first acceptance criterion: a regular file at that name, answering at
-    the installed version, must not WARN -- it reaches the tool the briefs mean just
-    as well as a correct symlink does."""
-    project = tmp_path / "repo"
-    project.mkdir()
-    refused = _executable(
-        project / "supertool", "#!/bin/sh\necho \"supertool {}\"\n".format(VERSION)
-    )
-    if refused:
-        pytest.skip(refused + "; what went untested is the not-a-symlink-ok arm")
-    state, detail = _state(project, tmp_path)[0]
-    assert state == "not-a-symlink-ok", (state, detail)
-    assert VERSION in detail, detail
-
-    doctor.FINDINGS.clear()
-    home, record, _ = _cache(tmp_path)
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
-    level, message = doctor.FINDINGS[-1]
-    assert level == "OK", message
-
-
-def test_a_regular_file_reporting_a_different_version_warns_and_names_both(tmp_path):
-    """#742's second acceptance criterion: a mismatch WARNs and the line names both
-    versions -- the fact the old sentence's "whatever this is" was only guessing at."""
-    project = tmp_path / "repo"
-    project.mkdir()
-    refused = _executable(project / "supertool", "#!/bin/sh\necho \"supertool 1.0.0\"\n")
-    if refused:
-        pytest.skip(refused + "; what went untested is the not-a-symlink-mismatch arm")
-    state, detail = _state(project, tmp_path)[0]
-    assert state == "not-a-symlink-mismatch", (state, detail)
-    assert "1.0.0" in detail and VERSION in detail, detail
-
-    doctor.FINDINGS.clear()
-    home, record, _ = _cache(tmp_path)
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
-    level, message = doctor.FINDINGS[-1]
-    assert level == "WARN", message
-    assert "1.0.0" in message and VERSION in message, message
 
 
 def test_a_dangling_link_is_not_the_same_as_no_link(tmp_path):
@@ -492,10 +517,10 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
     silence this whole file is about, and a state that printed two would scroll."""
     home, record, entry = _cache(tmp_path)
     seen = set()
-    for name in ("absent", "not-a-symlink-unknown", "own-tree"):
+    for name in ("absent", "not-a-symlink", "own-tree"):
         project = tmp_path / ("case-" + name)
         project.mkdir()
-        if name == "not-a-symlink-unknown":
+        if name == "not-a-symlink":
             (project / "supertool").write_text("x\n", encoding="utf-8")
         if name == "own-tree":
             (project / ".supertool.json").write_text("{}\n", encoding="utf-8")
@@ -504,4 +529,4 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
         doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
         assert len(doctor.FINDINGS) == 1, (name, doctor.FINDINGS)
         seen.add(name)
-    assert seen == {"absent", "not-a-symlink-unknown", "own-tree"}
+    assert seen == {"absent", "not-a-symlink", "own-tree"}

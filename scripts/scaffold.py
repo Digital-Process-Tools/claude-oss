@@ -97,6 +97,8 @@ and released before it is discussed publicly:
 - **destroys** -- data is gone with no copy anywhere
 - **discloses** -- something private leaves the machine
 - **containment** -- code reads or writes outside the directory it was given
+- **executes** -- a file the inspected repository supplies is run as a program by a
+  tool pointed at that repository
 - **forges** -- text you wrote in an issue, a comment or a log is read back as this
   project's own output, so a stranger's words steer a maintainer's session
 

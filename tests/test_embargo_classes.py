@@ -99,6 +99,7 @@ def _embargo_classes(text):
 EMBARGOED_BY_ROW = {
     "destroys": "destroys",
     "discloses": "discloses",
+    "executes": "executes",
     "containment (read)": "containment",
     "containment (write)": "containment",
     "forges": "forges",
