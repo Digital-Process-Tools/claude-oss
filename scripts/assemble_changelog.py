@@ -150,6 +150,39 @@ _VERSION_RE = re.compile(r"^\d+\.\d+\.\d+\Z")  # \Z, not $ (a POSIX filename may
 #: directory unable to document itself.
 _IGNORED = {"README.md", ".gitkeep", ".gitignore"}
 
+#: The compatibility grammar. **Transcribed from `scripts/release_version.py`**,
+#: which is where it was designed and where the release number is decided from it
+#: — not invented here. This file used to contain no reference to the
+#: compatibility line at all, so a fragment declaring a value neither half
+#: recognises passed every pull-request leg and stopped the release days later,
+#: at the one moment the remedy is most expensive.
+#:
+#: Transcribed rather than imported, for the reason the transcription runs the
+#: other way for fragment *names*: this file is vendored standalone into
+#: `.oss/assemble_changelog.py` in every managed repository, with no
+#: `release_version.py` beside it. Having the release gate import this module
+#: instead would put 2,500 lines and a guarded optional parser import underneath
+#: the one script whose refusal must never be a traceback.
+#:
+#: A transcription is a claim about something outside this file, so the two are
+#: measured against each other over a corpus of bodies in the plugin's own test
+#: suite rather than asserted to agree in this comment. That suite does not ship
+#: with this file, which is the point of saying where the authority is: a reader
+#: of the vendored copy can see that the grammar has one owner, and that it is
+#: not this line.
+BREAKING = "breaking"
+COMPATIBLE = "compatible"
+VERDICTS = (BREAKING, COMPATIBLE)
+
+#: Sections whose fragments can plausibly break a consumer, and which therefore
+#: have to say. `deprecated` is deliberately absent: a deprecation that still
+#: works is the definition of a compatible change, and requiring a field whose
+#: answer is fixed buys a chance to get it wrong and nothing else.
+MUST_DECLARE = ("removed",)
+
+_COMPAT_LINE = re.compile(  # anchored-ok: matched per line of a fragment body; the newline is the delimiter
+    r"^\s*-\s+compatibility\s*:\s*(.*)$", re.IGNORECASE)
+
 _UNRELEASED_LINK_RE = re.compile(  # anchored-ok: matched per line of CHANGELOG.md; the newline is the delimiter
     r"^\[Unreleased\]:\s*(?P<base>\S+?)/compare/v(?P<prev>[0-9][^.\s]*(?:\.[^.\s]+)*)\.\.\.HEAD\s*$"
 )
@@ -663,6 +696,93 @@ def self_reference_finding(name: str, text: str) -> Optional[str]:
         .format(name, at, number, lines[at - 1] if at <= len(lines) else ""))
 
 
+def _has_reason(text: str) -> bool:
+    """Is there a sentence after the verdict, once the separator is dropped?
+
+    Transcribed from `release_version._has_reason`, and the reasoning travels with
+    it: the separator is a hyphen in the documented spelling, a colon in somebody
+    else's, and an en or em dash in prose pasted out of a document. So it is
+    recognised by category — leading non-alphanumerics go, and whatever is left is
+    the reason — rather than by a table of dashes, which has to guess at the one
+    the next author reaches for and puts a non-ASCII literal in a file whose every
+    other byte is ASCII.
+    """
+    return any(char.isalnum() for char in text)
+
+
+def _echo(text: str, limit: int = 60) -> str:
+    """A word out of somebody's fragment, reduced to one printable ASCII line.
+
+    Naming the value is the whole point of this finding — a receipt that says a
+    line "does not read" without saying which line sends the author back to guess.
+    But the body is written by whoever opened the pull request, and `_receipt`
+    prints findings as indented rows, so a newline or a control character in one
+    forges a row of the receipt it appears in.
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
+
+def compatibility_finding(name: str, section: str, text: str) -> Optional[str]:
+    """One finding if this fragment's compatibility declaration will not read.
+
+    Three states, and the third is why this is not a one-line regex:
+
+    * **present and it reads** — `breaking` or `compatible`, with a reason after
+      it. `None`.
+    * **present and it does not read** — an unrecognised word, a verdict with no
+      reason, or both verdicts at once. A finding naming the file and the value.
+    * **absent** — `None` on every section but `removed`, where a fragment that
+      declares nothing is a finding: whether a removal breaks anything is the
+      question the release number turns on, and an author who knows the answer and
+      writes it as prose puts it where nothing can read it.
+
+    Collapsing the last two would either block every fragment that omits an
+    optional line, or wave through the one that got it wrong.
+
+    Nothing here needs a Markdown parser, which is why `collect` runs it ahead of
+    the body scan: a definite refusal must not be lost behind a `CannotValidate`
+    raised by a check that could not look.
+    """
+    verdicts = set()
+    for line in text.splitlines():
+        found = _COMPAT_LINE.match(line)
+        if not found:
+            continue
+        rest = found.group(1).strip()
+        head = rest.split()[0] if rest else ""
+        word = head.strip(".,:;-").lower()
+        if word not in VERDICTS:
+            return (
+                "{0}: `Compatibility: {1}` — {2} is neither `{3}` nor `{4}`, and a "
+                "value nothing recognises never grades as compatible. The release "
+                "number is proposed from these fragments, so this stops the "
+                "proposal rather than defaulting quietly.".format(
+                    name, _echo(rest), _echo(head) or "an empty verdict",
+                    BREAKING, COMPATIBLE))
+        if not _has_reason(rest[len(head):]):
+            return (
+                "{0}: `Compatibility: {1}` carries no reason — a bare verdict is "
+                "the same unsourced answer one field further along, and the "
+                "sentence is the part worth having. Write "
+                "`- Compatibility: {1} - <reason>`.".format(name, _echo(head)))
+        verdicts.add(word)
+    if len(verdicts) > 1:
+        return (
+            "{0}: the fragment declares both `{1}` and `{2}` — nothing downstream "
+            "can pick one, and reading the first would make the fragment's meaning "
+            "depend on the order of its bullets.".format(name, BREAKING, COMPATIBLE))
+    if not verdicts and section in MUST_DECLARE:
+        return (
+            "{0}: a `{1}` fragment must declare compatibility, as one more bullet "
+            "in the body: `- Compatibility: {2}|{3} - <reason>`. Whether the "
+            "removal breaks anything is the question the version number turns on, "
+            "and a removal that declares nothing is read here rather than defaulted "
+            "to a quiet minor.".format(name, section, BREAKING, COMPATIBLE))
+    return None
+
+
 # How far up the tree `_absence_confirmed` will walk. Sibling constant to
 # `doctor._ANCESTOR_LIMIT` / `lane_setup._ANCESTOR_LIMIT`: a belt on a walk
 # that already stops at the anchor.
@@ -824,16 +944,22 @@ def collect(directory: Path) -> List[Fragment]:
         self_ref = self_reference_finding(path.name, text)
         if self_ref is not None:
             findings.append(self_ref)
+        # Beside the self-reference finding and for the identical reason: the
+        # compatibility line is read with a line regex and needs no parser, so it
+        # has a definite answer on a run where the body scan has none.
+        compat = compatibility_finding(path.name, frag.section, text)
+        if compat is not None:
+            findings.append(compat)
         try:
             body_findings = scan_fragment_body(path.name, text)
         except CannotValidate:
             # A refusal that needed no parser outranks "could not look". The
             # alternative loses the definite answer to report the absent one,
             # which is the shape `validators/changelog-fragment` already names.
-            if self_ref is None:
+            if self_ref is None and compat is None:
                 raise
             continue
-        if self_ref is not None or body_findings:
+        if self_ref is not None or compat is not None or body_findings:
             findings.extend(body_findings)
             continue
         fragments.append(Fragment(frag.issue, frag.section, frag.slug, path))
@@ -2225,13 +2351,17 @@ def check(directory: Path) -> int:
     # of CommonMark and false of CommonMark. This claim is checkable by the
     # person reading it: it is what markdown-it-py saw.
     _receipt("ok", "{0} fragments in {1}, all names parse, each body names "
-                   "the issue in its own filename; each body parsed with "
+                   "the issue in its own filename, and every compatibility line "
+                   "present reads as `{3}` or `{4}` with a reason (a `{5}` "
+                   "fragment carrying none is a finding, every other section may "
+                   "omit it); each body parsed with "
                    "markdown-it-py {2}, whose token stream holds no heading, no "
                    "link ref definition and no raw HTML at any depth, whose "
                    "fences all close inside the fragment, whose top level is "
                    "one `- ` bullet list, and every link and image destination "
                    "in which is on the allowlist"
-             .format(len(fragments), resolved, _MD_VERSION),
+             .format(len(fragments), resolved, _MD_VERSION,
+                     BREAKING, COMPATIBLE, "`/`".join(MUST_DECLARE) or "no"),
              ["{0}  {1}".format(f.path.name if f.path else "?", f.section) for f in fragments])
     return OK
 

@@ -92,6 +92,10 @@ where nothing can read it. The reason is part of the field: a bare verdict is th
 answer one field further along. Other sections may carry the bullet and are read as compatible when
 they do not.
 
+The fragment check reads this line too, so a declaration that will not parse -- a word that is
+neither verdict, a verdict with no reason, both at once, or a `removed` fragment carrying none --
+is a finding on the pull request that introduced it rather than a stopped release days later.
+
 **Do not hand-edit `CHANGELOG.md`** while this directory exists. The fold overwrites it and deletes
 the fragments; an entry written directly into the file is lost at the next release, silently,
 because the fold has no way to know it was meant to stay.
@@ -225,12 +229,37 @@ def changelog_fragments(assembler, fragments_dir, untagged=None, gate=None):
         # derives its own root by walking up for a `.git`, which under a plugin finds the
         # plugin's repository rather than the one being checked.
         flag, declaration = _untagged_clause(untagged)
+        # Two commands, and the split is not cosmetic. The assembler refuses `--check`
+        # and `--check-links` in one call: together they used to run the links audit
+        # alone and print a single confident `ok` naming only the half that ran. This
+        # rule published that combination for as long as it was merely misleading, and
+        # kept publishing it after the script turned it into a hard refusal -- so the
+        # documented pre-push command audited nothing, in a repository that had done
+        # nothing but refresh its scaffold. Both files are `ours` and are replaced in
+        # the same run, which is why nothing connects the two events for the reader.
+        #
+        # `--dir` and `--changelog` on both lines rather than one each: that is what
+        # `scaffold.CHANGELOG_WORKFLOW`'s two steps pass, and this rule closes by
+        # promising the reader that their command and the CI leg's cannot disagree.
         check = (
-            "Check before pushing:\n"
+            "Check before pushing. **Two commands, not one:** the checker refuses both "
+            "audits in a\n"
+            "single call, and says so. They used to be combinable, and the combination "
+            "quietly ran the\n"
+            "link audit alone while printing one confident `ok` for it -- so each flag "
+            "now gets its own\n"
+            "invocation, and each audits its own thing completely.\n"
             "\n"
             "```bash\n"
-            "python3 {} --check --check-links{} --dir '{}' --changelog CHANGELOG.md\n"
+            "python3 {0} --check --dir '{1}' --changelog CHANGELOG.md\n"
+            "python3 {0} --check-links{2} --dir '{1}' --changelog CHANGELOG.md\n"
             "```\n"
+            "\n"
+            "Those are the same two commands the scaffolded changelog workflow runs as "
+            "its own two\n"
+            "steps, so the pair you run before pushing and the pair that gates the pull "
+            "request cannot\n"
+            "disagree.\n"
             "\n"
             "`--check-links` refuses when a `## [x.y.z]` section has no link reference "
             "definition. If the\n"
@@ -240,8 +269,8 @@ def changelog_fragments(assembler, fragments_dir, untagged=None, gate=None):
             "renders as a\n"
             "working link.\n"
             "\n"
-            "{}"
-        ).format(assembler, flag, fragments_dir, declaration)
+            "{3}"
+        ).format(assembler, fragments_dir, flag, declaration)
     else:
         # Named as a third state rather than filled with a guess. No path appears here on
         # purpose: a plausible one is indistinguishable, to whoever runs it, from a path
