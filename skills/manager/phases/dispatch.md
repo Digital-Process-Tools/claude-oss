@@ -123,7 +123,7 @@ than reporting the tick as `filled` because the lane count matched.
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
 correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
-not intersect visibly (#267).** `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --lane PATTERN
+not intersect visibly (#267).** `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN
 [--lane PATTERN ...] --derive-held` is the route: it renders the new lane in canonical form -- a sorted, deduplicated
 list of repo-relative paths, each glob expanded against what is actually on disk -- and derives the
 held side itself, from every open pull request's own files and every live lane record's own files
@@ -189,7 +189,7 @@ of two or three stays two or three fixes, never one: **each issue keeps its own 
 own changelog fragment**, and the pull request closes every issue it carries.
 
 **Never bundle an issue a running lane already touches** —
-check with `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py --lane PATTERN --against PATTERN`, read
+check with `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" --lane PATTERN --against PATTERN`, read
 the other way from the
 disjointness rule above: overlap there means conflict, and overlap here, at selection time, against a
 *candidate's* declared lane rather than a running one, means the two are worth bundling. This is a
@@ -261,7 +261,7 @@ the same lever applied to whatever else a brief hands a lane before it starts wo
 rather than bounded, because nothing here can distinguish a genuinely wide orientation read from
 one that could have waited).
 
-**Run `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --claim` from the clone before writing
+**Run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim` from the clone before writing
 each brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
 them and the moment the dispatched agent does: `main` has moved mid-tick before, and a hand-copied
@@ -280,15 +280,20 @@ Every brief carries these:
 
 1. **Use supertool, as an instruction not a note.** Paste verbatim:
 
-   > Use `supertool` for every file operation — it is on PATH, from any directory. Batch 6-7 ops per
-   > call — `read`, `grep`, `glob`, `map`, `around`, `between`, `tree` — never one Read per file.
-   > Pipe writes in as a TOML payload on stdin, using triple-single-quoted literal strings so escapes
-   > survive; validators run post-write and roll back on a syntax failure. A literal block processes
-   > no escapes, so write what you want on disk. **To change an existing file, `supertool 'edit:@-'`
-   > carrying `path`, `old` and `new`; to create one, `supertool 'paste:@-'` carrying `path` and
-   > `content`** — `edit` needs an `old` and a new file has none, so `paste` is the only route to a
-   > file that does not exist yet, and your changelog fragment is always one. A raw heredoc runs no
-   > validator and rolls nothing back. `supertool 'ops'` lists everything.
+   > Use `supertool` for every write, commit included — it is on PATH, from any directory. Batch
+   > 6-7 ops per call — `read`, `grep`, `glob`, `map`, `around`, `between`, `tree` — never one Read
+   > per file. Pipe writes in as a TOML payload on stdin, using triple-single-quoted literal strings
+   > so escapes survive; validators run post-write and roll back on a syntax failure. A literal block
+   > processes no escapes, so write what you want on disk. **To change an existing file, `supertool
+   > 'edit:@-'` carrying `path`, `old` and `new`; to create one, `supertool 'paste:@-'` carrying
+   > `path` and `content`** — `edit` needs an `old` and a new file has none, so `paste` is the only
+   > route to a file that does not exist yet, and your changelog fragment is always one. A raw
+   > heredoc runs no validator and rolls nothing back. `supertool 'ops'` lists everything.
+   >
+   > **Commit through `supertool 'git-commit:@-'`, never a raw `git commit -m`** — the guard refuses
+   > that on sight and names this op as the remedy, on the one write every lane makes unconditionally
+   > (#729). Its own reach is wider than file writes; `supertool 'ops'` above is the live list, not
+   > the three named here.
    >
    > **Batching** needs `op = "paste"` (or `"edit"`, `"read"`, ...) set inside every `[[ops]]`
    > entry — the shapes above omit it. Omit it and the call fails: `batch op missing 'op' field`

@@ -22,11 +22,15 @@ Scope, stated because a guard that only pins the two lines just fixed reads
 as coverage it does not have: this reaches every `${CLAUDE_PLUGIN_ROOT}`
 occurrence inside the three-call table's own command cells, plus the
 `fleet_label.py` compose line in `dispatch.md` that the table's row must stay
-in parity with. It does **not** sweep every code fence in the whole loop's
-prose for quoting or executable-bit correctness -- SKILL.md and the phase
-files contain many other script mentions and paths that are prose about a
-script rather than a command a session runs verbatim, and telling those
-apart well enough to assert on them is a bigger, separate piece of work.
+in parity with, plus -- since #741 -- every `${CLAUDE_PLUGIN_ROOT}/scripts/`
+reference anywhere in `dispatch.md` (below). It does **not** sweep every code
+fence in the whole loop's prose for quoting or executable-bit correctness --
+SKILL.md and the other phase files contain many other script mentions and
+paths that are prose about a script rather than a command a session runs
+verbatim, and telling those apart well enough to assert on them is a bigger,
+separate piece of work #689 already declined once; #741 found a fifth genuine
+instance outside this file's reach while this widening was being written
+(`skills/manager/phases/handback.md:84`) and it is reported, not fixed here.
 """
 
 from __future__ import annotations
@@ -173,3 +177,57 @@ def test_fleet_label_row_matches_dispatch_md_invocation():
         "SKILL.md and dispatch.md disagree on whether fleet_label.py needs "
         "a python3 prefix: {0!r} vs {1!r}".format(skill_row, dispatch_call.group(0))
     )
+
+
+# ------------------------------------- #741: every plugin-root script reference
+# in dispatch.md, not only the table and the fleet_label.py line
+#
+# #741 found dispatch.md's own --claim line unquoted -- added by #705 in the
+# same diff that added the fleet_label.py row the parity test above checks,
+# so the fourth site sat right beside the third and neither guard above
+# reached it. Sweeping the rest of the file for the same class (CLAUDE.md's
+# own rule: once one instance turns up, sweep the file it came from) found
+# two more the issue never named -- the lane-disjointness check and the
+# lane-bundling check, both quoted correctly in SKILL.md's own table cells but
+# not here. All three are the #689 word-split, not a new mechanism.
+
+_UNQUOTED_ROOT_SCRIPT_RE = re.compile(r'(?<!")\$\{CLAUDE_PLUGIN_ROOT\}/scripts/')
+
+
+def _unquoted_plugin_root_script_refs(text):
+    """[(line number, line text)] for every unquoted ${CLAUDE_PLUGIN_ROOT}/scripts/
+    reference -- #689's word-split, applied to a whole document rather than one
+    table's rows.
+    """
+    return [
+        (i, line.strip())
+        for i, line in enumerate(text.splitlines(), 1)
+        if _UNQUOTED_ROOT_SCRIPT_RE.search(line)
+    ]
+
+
+def test_dispatch_md_quotes_every_plugin_root_script_reference():
+    """Must-not-fire: no unquoted ${CLAUDE_PLUGIN_ROOT}/scripts/... left in dispatch.md."""
+    offenders = _unquoted_plugin_root_script_refs(DISPATCH_MD.read_text(encoding="utf-8"))
+    assert not offenders, (
+        "unquoted ${{CLAUDE_PLUGIN_ROOT}}/scripts/... in dispatch.md -- word-splits "
+        "on a plugin root containing a space: {0}".format(offenders)
+    )
+
+
+def test_unquoted_plugin_root_script_reference_is_detected_when_present():
+    """Must-fire control: the #741 line as it stood before its fix is caught."""
+    bad = (
+        "**Run `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py <issue> --claim` from "
+        "the clone before writing"
+    )
+    assert _unquoted_plugin_root_script_refs(bad) == [(1, bad.strip())]
+
+
+def test_quoted_plugin_root_script_reference_is_not_flagged():
+    """Must-not-fire control: the fixed form is not a false positive."""
+    good = (
+        '**Run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim` from '
+        "the clone before writing"
+    )
+    assert _unquoted_plugin_root_script_refs(good) == []

@@ -62,6 +62,7 @@ OP_INVENTORY = {
     "gh-pr-edit": "github",
     "gh-pr-merge": "github",
     "gh-prs": "github",
+    "git-commit": "git",
     "git-diff": "git",
     "git-worktrees": "git",
     "glob": None,

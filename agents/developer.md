@@ -65,7 +65,7 @@ would be a second copy of a classification the tool already publishes, and the c
 one that goes stale. Anything in the `!` class deserves a second look before you run it at
 all: shared state is not undone by a revert, and nothing records who called it.
 
-## Use supertool for every file operation
+## Use supertool — its guard reaches past file writes
 
 It is on PATH from any directory. Batch 6-7 ops per call — `read`, `grep`, `glob`, `map`, `around`,
 `between`, `tree` — never one read per file. Pipe writes in as a TOML payload on stdin, and **which
@@ -75,11 +75,24 @@ op depends on whether the file already exists**:
 - **Creating one** — `supertool 'paste:@-'` with a heredoc carrying `path` and `content`. `paste`
   creates missing parent directories and rewrites an existing file, so it covers the whole of a
   Write.
+- **Committing** — `supertool 'git-commit:@-'`, never a raw `git commit -m`. This is the one write
+  every lane makes unconditionally, and the raw-command guard refuses the raw form on sight; the
+  refusal names this op, so naming it here saves the round-trip rather than the write (#729).
 
 `edit` needs an `old`, and a file that does not exist has none, so `paste` is the only route to a new
 file. **Your changelog fragment is always a new file**, so every task reaches this at least once. A
 raw `cat > file <<EOF` is not a substitute and does not fail loudly when you use it: it runs no
 post-write validator, cannot roll back, and tells you nothing about what it wrote.
+
+**The guard's own reach is wider than the three ops above, and naming more of them here would be
+the wrong fix.** It refuses any raw invocation an op supersedes — a `gh issue list` as much as a
+`git commit` — not a file write alone, so a heading naming only "file operation" was never the
+guard's real scope (#729). A hand-kept list of the rest is complete until somebody adds a step and
+then wrong silently, the same argument this repository makes about every other list; `supertool
+'ops'`, pointed to below, is the live answer and does not go stale. The asymmetry is worth carrying
+instead: a **named** op that supertool later renames fails at the call, loudly; an **omitted** one
+routes you somewhere that may quietly succeed — #250 is the omission that read as correct for six
+deliveries, which is why `git-commit` is named above rather than left for the refusal to teach.
 
 **Batching several ops in one call needs one more key than the single-op shapes above: `op`.**
 `supertool 'batch:@-'` takes a TOML `[[ops]]` array, and each entry carries its own op's payload
