@@ -64,6 +64,34 @@ module (`import doctor`), never `from doctor import name`, the same convention
 way is always the current value in `doctor`'s own namespace, which is what keeps
 a test's `monkeypatch.setattr(doctor, ...)` reaching this code.
 
+**#739 widens this without reopening the eighteen-word trap, and it is a
+narrow choice made on purpose.** The gap #739 filed is real: the op table
+under `## Which call to make: the op table answers it, row by row` in
+`skills/manager/SKILL.md` is the densest concentration of op names in this
+repository, and every cell in its Op column is written with no `supertool`
+word in front of it -- the column *is* the op, so the word would be noise.
+Two shapes were on the table. A general rule for any backticked op-shaped
+token anywhere under `OP_TEXT_ROOTS` is what this module's own stated
+guarantee ("every op name this plugin's own text spells") actually
+promises, and it is also where the eighteen-word trap lives: `` `base` ``
+and `` `git worktree` `` sit in backticks two cells away from a real op, in
+the Op column itself, and a whole-tree sweep of prose already derived three
+non-ops out of `CHANGELOG.md` once (see above). The narrower choice taken
+here -- `ops_in_op_table` -- parses the table by its own heading, the way
+`scripts/ranking_table.py` parses the ranking table, rather than sweeping
+backticked tokens as text: within the Op column only, a colon-argument
+cell (`` `gh-run:N` ``) is always accepted, and a bare cell with no colon
+(`` `gh-branch` ``) is accepted only when it is compound-shaped -- a hyphen
+or an underscore -- which is what keeps `` `base` `` (a payload field named
+in the same column's prose) out.
+
+**What this leaves uncovered, on purpose.** A bare op-shaped word outside
+the table entirely -- `` `watch` ``, naming the *preset* in
+`commands/doctor.md` and `commands/tick.md` -- is not derived; it happens to
+collide with a real op name and nothing here claims to resolve that
+collision. Widening further is a decision for whoever next measures where
+the false positives actually are, not a default this diff takes for it.
+
 Python 3.9 compatible.
 """
 
@@ -135,6 +163,105 @@ _ROSTER_TOKEN_RE = re.compile(r"\A[a-z][a-z0-9_-]*[*!]?\Z")
 #: carrying supertool's declared safety class. See `_is_op_vocabulary`.
 _COMPOUND_RE = re.compile(r"[-_]|[*!]\Z")
 
+#: The heading that introduces the op table in `skills/manager/SKILL.md`
+#: (#739). Matched wherever it appears in the scanned text, never assumed to
+#: live at a fixed path -- if the heading is not there, `ops_in_op_table`
+#: contributes nothing, the same as a file carrying no supertool calls at all.
+_OP_TABLE_HEADING = "## Which call to make: the op table answers it, row by row"
+
+#: The op table's own header row: two columns, what you need and the op that
+#: answers it.
+_OP_TABLE_HEADER_RE = re.compile(r"\A\|\s*Need\s*\|\s*Op\s*\|\s*\Z")
+
+#: A markdown table divider row -- pipes and cells made only of dashes,
+#: colons and whitespace. Same shape `scripts/ranking_table.py` uses for its
+#: own table.
+_OP_TABLE_DIVIDER_RE = re.compile(r"\A\|(?:[\s:-]+\|)+\s*\Z")
+
+#: One backtick-quoted span in the Op column, matched against the WHOLE span:
+#: an op name, optionally followed by a colon and any argument. `group(2)` is
+#: `None` when the span is the bare name with nothing after it -- anchored
+#: with `\A`/`\Z` rather than `search`, so a span like `git worktree` (a
+#: space, no colon) never partially matches on just `git`.
+_TABLE_OP_RE = re.compile(r"\A([a-z][a-z0-9_-]*)(:.*)?\Z")
+
+
+def _table_row_cells(line):
+    """Cells of one markdown table row, split on `|` outside backtick spans.
+
+    A cell in the op table can carry a literal `|` inside backticks -- the
+    merge row's escaped alternation, `` `gh-pr-merge:N:squash\\|force\\|cleanup` ``
+    -- which is not a column separator and must not be split on.
+    """
+    cells = []
+    current = []
+    in_backtick = False
+    for ch in line.rstrip("\r\n"):
+        if ch == "`":
+            in_backtick = not in_backtick
+            current.append(ch)
+        elif ch == "|" and not in_backtick:
+            cells.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    cells.append("".join(current))
+    if cells and cells[0].strip() == "":
+        cells = cells[1:]
+    if cells and cells[-1].strip() == "":
+        cells = cells[:-1]
+    return cells
+
+
+def ops_in_op_table(text):
+    """Every op name in the Op column of the op table under
+    `_OP_TABLE_HEADING`, wherever that heading appears in `text` (#739) --
+    see the module docstring's #739 paragraph for why this is a second,
+    narrower path rather than a widening of `ops_in_text`.
+
+    A bare cell (`` `gh-branch` ``, no colon) is accepted only when it is
+    compound-shaped -- a hyphen or an underscore -- because the Op column
+    also carries plain-English words in backticks (a payload field, an issue
+    number in a cross-reference), and nothing distinguishes those from a
+    genuine single-word op by shape alone. A colon-argument cell
+    (`` `gh-run:N` ``) is always accepted: the colon is not a shape English
+    prose produces.
+
+    Returns `[]` -- never raises -- when the heading, the header row or the
+    divider is not found: the same "this file contributes nothing" shape
+    `ops_in_text` already has for a file with no supertool calls in it.
+    """
+    heading_at = text.find(_OP_TABLE_HEADING)
+    if heading_at == -1:
+        return []
+    lines = text[heading_at:].splitlines()
+    header_idx = None
+    for i, line in enumerate(lines):
+        if _OP_TABLE_HEADER_RE.match(line.strip()):
+            header_idx = i
+            break
+    if header_idx is None:
+        return []
+    if header_idx + 1 >= len(lines) or not _OP_TABLE_DIVIDER_RE.match(
+        lines[header_idx + 1].strip()
+    ):
+        return []
+    found = []
+    j = header_idx + 2
+    while j < len(lines) and lines[j].strip().startswith("|"):
+        cells = _table_row_cells(lines[j])
+        if len(cells) >= 2:
+            for span in re.findall(r"`([^`\n]*)`", cells[1]):
+                match = _TABLE_OP_RE.match(span)
+                if match is None:
+                    continue
+                name, colon_part = match.group(1), match.group(2)
+                if colon_part is None and not _COMPOUND_RE.search(name):
+                    continue
+                found.append(name)
+        j += 1
+    return found
+
 
 def ops_in_text(text):
     """Every op name named by a `supertool ...` call in `text`, in order."""
@@ -191,6 +318,8 @@ def named_ops(plugin_root=None):
             except ValueError:  # pragma: no cover - path is built from `root`
                 display = path.name
             for op_name in ops_in_text(text):
+                ops.setdefault(op_name, set()).add(display)
+            for op_name in ops_in_op_table(text):
                 ops.setdefault(op_name, set()).add(display)
         if unreadable:
             roots.append((name, "unreadable", doctor._one_line("; ".join(unreadable))))

@@ -147,6 +147,143 @@ def test_prose_naming_an_op_that_is_not_a_call_is_not_derived(tmp_path):
     )
 
 
+# --- the op table's own structured cells (#739) ------------------------------
+
+
+def test_bare_op_table_cells_are_derived_without_a_supertool_word_in_front(tmp_path):
+    """#739: the op table's cells are the densest concentration of op names in
+    the repository and none of them are preceded by the word `supertool` --
+    the column *is* the op. `_CALL_RE` alone therefore misses every one of
+    them; this is the structured-source path #739 asks for, anchored on the
+    table's own heading rather than assumed at a fixed path."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "skills/manager/SKILL.md": (
+                "## Which call to make: the op table answers it, row by row\n"
+                "\n"
+                "| Need | Op |\n"
+                "| --- | --- |\n"
+                "| A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |\n"
+                "| Filing | `gh-issue-create:@FILE` |\n"
+                "\n"
+                "Prose after the table is not part of it.\n"
+            ),
+        },
+    )
+    named, _roots = ops_check.named_ops(root)
+    for op in ("gh-run", "gh-job", "gh-branch", "gh-issue-create"):
+        assert op in named, (
+            "an op-table cell must derive its op name even with no `supertool` "
+            "word in front of it; missing {!r} out of {!r}".format(op, sorted(named))
+        )
+
+
+def test_op_table_prose_column_is_not_swept_for_english_words(tmp_path):
+    """The must-not-fire half in the same fixture: the table's own prose --
+    both after an em dash inside a cell, and a bare word with no hyphen or
+    underscore -- must not be read as an op just because it sits in
+    backticks in the Op column of a real table."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "skills/manager/SKILL.md": (
+                "## Which call to make: the op table answers it, row by row\n"
+                "\n"
+                "| Need | Op |\n"
+                "| --- | --- |\n"
+                "| Opening a pull request | `gh-pr-create:@FILE` "
+                "— a payload file; `base` is required and never defaulted |\n"
+                "| Worktree ownership + merge state | `git-worktrees`, "
+                "`git-worktrees:PATH` — the raw `git worktree` listing is refused |\n"
+                "\n"
+            ),
+        },
+    )
+    named, _roots = ops_check.named_ops(root)
+    assert "gh-pr-create" in named and "git-worktrees" in named, (
+        "positive control: the real op cells in the same rows must still be "
+        "derived, or the assertions below pass over a derivation that found "
+        "nothing at all; got {!r}".format(sorted(named))
+    )
+    for word in ("base", "git"):
+        assert word not in named, (
+            "{!r} is prose in the Op column's own description, not a call; "
+            "got {!r}".format(word, sorted(named))
+        )
+
+
+def test_changelog_shaped_prose_is_still_not_derived_via_the_table_path(tmp_path):
+    """#726's own control, restated for #739's widening: text carrying no
+    op-table heading at all -- the shape of `CHANGELOG.md`, which #726
+    measured deriving `write`, `op1` and `op2` out of a whole-tree scan --
+    must contribute nothing through `ops_in_op_table`."""
+    text = (
+        "The op is `write`, and `op1`/`op2` are placeholders describing a "
+        "payload shape, not a call.\n"
+    )
+    found = ops_check.ops_in_op_table(text)
+    assert found == [], (
+        "prose with no op-table heading must derive nothing through the "
+        "table path; got {!r}".format(found)
+    )
+
+
+def test_an_escaped_pipe_inside_a_backtick_span_is_not_a_column_separator(tmp_path):
+    """A self-review finding on this diff: the real merge row's escaped
+    alternation (`` `gh-pr-merge:N:squash\\|force\\|cleanup` ``) is also
+    derivable through the ordinary call-shaped path elsewhere in this
+    repository's own text, so a fixture built only from the real tree cannot
+    tell a working `_table_row_cells` from a broken one on that row -- the
+    other path would paper over the regression. This fixture uses a made-up
+    op name reachable ONLY through the table's escaped-pipe cell, so a
+    `|`-split that does not respect backticks would truncate the cell here
+    and this test would catch it where the dogfood test cannot."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "skills/manager/SKILL.md": (
+                "## Which call to make: the op table answers it, row by row\n"
+                "\n"
+                "| Need | Op |\n"
+                "| --- | --- |\n"
+                "| Merging | `gh-fake-merge:N:squash\\|force\\|cleanup` "
+                "— see below; without `\\|force` it previews and merges nothing |\n"
+                "\n"
+            ),
+        },
+    )
+    named, _roots = ops_check.named_ops(root)
+    assert "gh-fake-merge" in named, (
+        "the op name before the escaped alternation must survive a naive "
+        "`|`-split that does not track backticks; got {!r}".format(sorted(named))
+    )
+    assert "force" not in named, (
+        "the escaped alternation's own words must not be read as a second op; "
+        "got {!r}".format(sorted(named))
+    )
+
+
+def test_the_real_op_table_in_this_repository_now_derives_its_named_ops():
+    """Dogfood, against the tree this actually ships: every cell #739's issue
+    named as missed must now be derived out of `skills/manager/SKILL.md`'s
+    own op table."""
+    named, _roots = ops_check.named_ops(REPO_ROOT)
+    for op in (
+        "gh-issue-create",
+        "gh-run",
+        "gh-job",
+        "gh-pr",
+        "gh-pr-create",
+        "gh-pr-edit",
+        "gh-pr-merge",
+    ):
+        assert op in named, (
+            "{!r} is a cell of the real op table and must be derived; got "
+            "{!r}".format(op, sorted(named))
+        )
+
+
 @pytest.mark.must_assert_on("linux")
 def test_an_unreadable_source_root_is_reported_as_unreadable_not_as_no_ops(tmp_path):
     """A root the walk could not enter must never render as a root with no calls
