@@ -809,7 +809,10 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
         # no trace anywhere in this payload. Absent on the two shapes that carry
         # no `lanes` sub-dict at all (no config loaded; a hand-built `derived_held`
         # in an older test fixture), which is exactly "nothing pruned", not a
-        # different claim.
+        # different claim. `prune_failed` (#792) is the sibling of that same
+        # side effect gone wrong -- a record the deletion attempt could not
+        # actually remove -- and is surfaced the same way, never folded into
+        # `stale_pruned`.
         result["held_source"] = {
             "state": derived_held["state"],
             "detail": derived_held["detail"],
@@ -1441,6 +1444,15 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
     caller that does not pass it sees age as the only signal, same as before this
     parameter existed.
 
+    #792: the removal itself can fail (a permission error, a concurrent writer) --
+    a record whose branch is confirmed gone is not automatically a record that
+    was actually deleted. `FileNotFoundError` still counts as success (another
+    reader already pruned it) and folds into `stale_pruned`; any other `OSError`
+    lands in `prune_failed` instead, `[]` when none failed -- carrying the
+    issue, branch and exception detail for a record that is demonstrably still
+    on disk. The two lists are always disjoint: a record appears in at most one
+    of them.
+
     **#771: absence from `refs/heads` alone is never trusted as "gone by
     deletion".** `_branch_confirmed_gone`'s own docstring says why: the identical
     absence also describes a lane `--claim` has recorded but whose branch
@@ -1922,8 +1934,11 @@ def compute(
     deletions of records this loop has independent evidence are dead (aged out,
     or the branch a merge already removed), never of a record still legitimately
     held, and both are reported: `lane_report`'s `held_source.stale_pruned` and
-    the receipt's `held :` line name exactly what a `--derive-held` call removed,
-    so this is a write with a trace, not a silent one.
+    the receipt's first `held :` line name what a `--derive-held` call actually
+    removed, so this is a write with a trace, not a silent one. #792: the removal
+    itself can fail -- `held_source.prune_failed` and the receipt's second
+    `held :` line name a record this call tried and failed to remove, which is
+    demonstrably still on disk and never counted in the first line's total.
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
