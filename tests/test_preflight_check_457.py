@@ -254,7 +254,14 @@ def test_main_cli_could_not_search_exits_nonzero(tmp_path, capsys):
 # present). These fixtures write raw invalid-UTF-8 bytes directly, so
 # nothing here depends on chmod semantics or a platform's permission model.
 
-_INVALID_UTF8 = bytes([0xFF, 0xFE, 0x00, 0x01, 0x0D, 0x0D, 0x0A, 0x0A])
+_INVALID_UTF8 = bytes([0x80, 0x81, 0x00, 0x01, 0x0D, 0x0D, 0x0A, 0x0A])
+# Deliberately avoids 0xFF 0xFE / 0xFE 0xFF (the UTF-16 byte-order marks,
+# below) -- the original fixture happened to start with the UTF-16 LE BOM,
+# which meant every "genuine binary garbage" test below was silently also a
+# UTF-16-BOM test. #738 gives the BOM its own branch, so this fixture must
+# not collide with it.
+_UTF16_BOM_LE = b"\xff\xfe"
+_UTF16_BOM_BE = b"\xfe\xff"
 
 
 def test_undecodable_file_alone_is_not_matched_never_could_not_search(tmp_path):
@@ -371,3 +378,60 @@ def test_a_permission_denied_file_still_forces_could_not_search_despite_717(tmp_
         assert str(blocked) not in result["skipped_files"]
     finally:
         os.chmod(blocked, old_mode)
+
+
+# #738: UTF-16-encoded ASCII carries a NUL byte for every character, so the
+# NUL-byte test above cannot tell UTF-16 source from a compiled artifact --
+# every UTF-16 file took the skipped_files branch unconditionally, and a
+# pattern genuinely present in one returned not-matched rather than the
+# honest could-not-search. A byte-order mark is checked before the NUL test
+# and is unambiguous where present, so a UTF-16 file is now routed to
+# unreadable_files -- the same conservative could-not-search answer as
+# Latin-1/cp1252 -- instead of being silently skipped.
+
+
+def test_utf16_source_with_bom_forces_could_not_search_not_silent_miss(tmp_path):
+    """The must-fire half: a UTF-16 file that genuinely contains the pattern
+    must not report not-matched just because it always has a NUL byte per
+    character -- its BOM identifies it before the NUL test ever runs, so the
+    honest answer is could-not-search, paired below with the must-not-fire
+    half that keeps ordinary binary garbage on the skipped_files branch."""
+    target = tmp_path / "b_utf16.py"
+    target.write_text('marker = "present"\n', encoding="utf-16")
+    raw = target.read_bytes()
+    assert raw[:2] in (_UTF16_BOM_LE, _UTF16_BOM_BE)
+    assert b"\x00" in raw
+
+    result = pc.search("marker", [tmp_path])
+    assert result["state"] == "could-not-search"
+    assert result["state"] != "not-matched"
+    assert str(target) in result["unreadable_files"]
+    assert str(target) not in result["skipped_files"]
+    assert result["matches"] == []
+
+
+def test_utf16_bom_big_endian_is_also_caught(tmp_path):
+    target = tmp_path / "be_utf16.py"
+    target.write_bytes(b"\xfe\xff" + "marker = 1\n".encode("utf-16-be"))
+
+    result = pc.search("marker", [tmp_path])
+    assert result["state"] == "could-not-search"
+    assert str(target) in result["unreadable_files"]
+    assert str(target) not in result["skipped_files"]
+
+
+def test_genuine_binary_with_null_byte_and_no_bom_is_still_skipped_738(tmp_path):
+    """The must-not-fire half, paired with the two tests above: the BOM
+    check must not widen to swallow ordinary binary garbage that merely
+    happens to contain a NUL byte and no byte-order mark -- that must stay
+    on the skipped_files branch exactly as #717 left it."""
+    target = tmp_path / "module.pyc"
+    target.write_bytes(_INVALID_UTF8)
+    raw = target.read_bytes()
+    assert raw[:2] not in (_UTF16_BOM_LE, _UTF16_BOM_BE)
+    assert b"\x00" in raw
+
+    result = pc.search("anything", [tmp_path])
+    assert result["state"] == "not-matched"
+    assert str(target) in result["skipped_files"]
+    assert str(target) not in result["unreadable_files"]
