@@ -412,7 +412,7 @@ directory it is standing in.
 The notes are the `## [x.y.z]` section `/oss:changelog` just wrote, everything up to the next
 `## [`. A heading with no body under it is **not** empty notes; it is `could not run`.
 
-Three outcomes, exit codes because a shell reads those and never reads prose:
+Four outcomes, exit codes because a shell reads those and never reads prose:
 
 - **exit 0, `create` / `created`** — the command is buildable, or it ran and the release exists.
 - **exit 4, `skipped`** — `release.create_release` says this repo does not publish, or has not said.
@@ -431,10 +431,19 @@ Three outcomes, exit codes because a shell reads those and never reads prose:
   length, the limit, and the overage, so the remedy is trim `changelog.d` fragments for this version
   (or split the release) and re-run, rather than a maintainer diagnosing a `gh` failure that never
   actually ran.
+- **exit 5, `role-forbidden`** (#697) — this agent's declared role may not publish a release. Checked
+  before anything else, ahead of the config read, so no repository's own policy is ever consulted on
+  a withheld role's behalf (#695). This is not a denial: the script ran to completion and gave a real
+  answer, distinct in both its JSON `state` and its exit code from every other outcome here. It never
+  reads as `could-not-run` — the two are different facts (a role that is not permitted to publish, vs.
+  a run that could not establish enough to try) and a maintainer diagnosing the wrong one wastes the
+  fix. **Tagging is not gated the same way** — `git tag` / `git push origin <tag>` above is a plain
+  shell command with no code-level check, and withholding it from a sub-manager rests on
+  `agents/sub-manager.md`'s prose alone (#696).
 
-Three, because those are the answers a script that ran can give. A call the harness refuses never
-runs, and it is a fourth — *A denied call is a fourth answer* below. **Do not read the list above as
-exhaustive.** Filing a denial under one of these three is the single mistake that section exists to
+Four, because those are the answers a script that ran can give. A call the harness refuses never
+runs, and it is a fifth — *A denied call is a fifth answer* below. **Do not read the list above as
+exhaustive.** Filing a denial under one of these four is the single mistake that section exists to
 prevent, and an enumeration that looks complete is what produces it.
 
 A `.oss.json` that parses but is not an object — `[]`, `"x"`, `null`, `42` — is exit 3 and not exit
@@ -457,7 +466,7 @@ that never chose is told what would change it rather than silently never releasi
 with `latest: true` is refused by the config validator — a draft cannot be Latest, so the pair states
 an outcome no release path can produce.
 
-## A denied call is a fourth answer, and it is none of the three above
+## A denied call is a fifth answer, and it is none of the four above
 
 Supertool's own confirmation gate and its three opt-outs (`|force` per call,
 `SUPERTOOL_NO_PUBLISH_CONFIRM=1` per environment, `no_publish_confirm` per project) are not the only
@@ -474,13 +483,13 @@ The release path is where that costs the most, because the calls most likely to 
 force-push. By then the changelog is folded, the fragments are deleted, the version sites are bumped
 and the commit is made.
 
-**A denial is none of the three outcomes above.** `created`, `skipped` and `could-not-create` are
-verdicts `release_publish.py` earned by running. A call the harness refused never ran: it
-has no exit code, and nothing whatever about the repository was established. Reporting it as
-`could-not-create` — or as the range gate's `could-not-run` — states a fact about the repository that
-nobody measured, which is this plugin's own defect class one layer up from where it usually bites.
-The word already exists in this plugin, at the merge: say the call was **denied**, name it exactly,
-and hand it to the maintainer to run or to permit.
+**A denial is none of the four outcomes above.** `created`, `skipped`, `could-not-create` and
+`role-forbidden` are verdicts `release_publish.py` earned by running. A call the harness refused never
+ran: it has no exit code, and nothing whatever about the repository — or the calling agent's role —
+was established. Reporting it as `could-not-create` — or as the range gate's `could-not-run` — states
+a fact about the repository that nobody measured, which is this plugin's own defect class one layer up
+from where it usually bites. The word already exists in this plugin, at the merge: say the call was
+**denied**, name it exactly, and hand it to the maintainer to run or to permit.
 
 **Do not route around it.** Concretely:
 
