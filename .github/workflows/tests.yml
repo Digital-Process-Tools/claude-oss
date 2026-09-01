@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A dropped push run (#679) has no remedy short of an empty commit to main without
+  # this: `gh workflow run tests.yml` is refused for a workflow with no
+  # workflow_dispatch, and `gh run rerun` needs a run id that does not exist when
+  # nothing was ever created. Deliberately not on changelog.yml -- see
+  # tests/test_workflow_dispatch_679.py for why that would be actively broken rather
+  # than merely unused. Neither job here reads github.event_name or github.event.* --
+  # the matrix is unconditional -- so a dispatch run behaves exactly like a push run.
+  workflow_dispatch:
 
 # Workflow level: both jobs run tests and report, neither writes to the forge, and a job
 # added later inherits read-only instead of the repository default of read/write (#32).
