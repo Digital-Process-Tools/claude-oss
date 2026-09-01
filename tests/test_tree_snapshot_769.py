@@ -222,3 +222,85 @@ def test_cli_compare_with_malformed_before_is_could_not_compare_not_clean(tmp_pa
     done = _run_cli(["compare", "--before", "-", "--root", str(repo)], stdin="not json")
     assert done.returncode == 3, done.stdout + done.stderr
     assert "VERDICT: could-not-compare" in done.stdout
+
+
+# --- review findings on the first commit of this module, both confirmed by ---
+# actually tripping them rather than trusting the reviewer's read of the code.
+
+
+def test_compare_never_crashes_on_a_syntactically_valid_but_non_dict_before(tmp_path):
+    """A reviewer found this by reading, and it reproduces: `--before` can be
+    valid JSON that is not a JSON object (`null`, a list, a bare number) --
+    `_read_before` only checked for a JSON *parse* failure, never that the
+    parsed value is the dict `compare()` assumes. Before the fix this raises
+    `AttributeError` instead of returning `could-not-compare`, and an
+    unhandled crash exits 1 -- the same integer as `EXIT_CODES["mutated"]`,
+    so a caller reading only the exit code could misread a crash as a real
+    mutation. `could-not-compare` must be reached in code, not in a Python
+    traceback."""
+    repo = _real_git_repo(tmp_path)
+    for payload in ("null", "42", '"just a string"', "[]", "true"):
+        verdict = tree_snapshot.compare(
+            __import__("json").loads(payload), tree_snapshot.snapshot(str(repo))
+        )
+        assert verdict["state"] == "could-not-compare", (payload, verdict)
+
+
+def test_read_before_rejects_a_non_dict_json_payload(tmp_path):
+    (tmp_path / "before.json").write_text("null\n")
+    parsed, error = tree_snapshot._read_before(str(tmp_path / "before.json"))
+    assert parsed is None, parsed
+    assert error is not None
+    assert "object" in error.lower() or "dict" in error.lower()
+
+
+def test_cli_compare_with_a_non_dict_before_is_could_not_compare_not_a_crash(tmp_path):
+    repo = _real_git_repo(tmp_path)
+    done = _run_cli(["compare", "--before", "-", "--root", str(repo)], stdin="null")
+    assert done.returncode == 3, done.stdout + done.stderr
+    assert "VERDICT: could-not-compare" in done.stdout
+    assert "Traceback" not in done.stderr, done.stderr
+
+
+def test_cli_snapshot_exits_nonzero_when_the_snapshot_itself_failed(tmp_path):
+    """A second reviewer finding: the `snapshot` subcommand always returned 0,
+    even when `snapshot()`'s own payload carried a non-null `error` -- a
+    check that could not look and a check that looked and found nothing must
+    not render the same way, which is this module's own stated rule turned
+    on its own CLI. The JSON on stdout still carries the `error` field
+    either way, so a caller reading the body rather than the exit code was
+    never misled -- only the exit code was."""
+    missing = tmp_path / "does_not_exist_as_a_repo"
+    done = _run_cli(["snapshot", "--root", str(missing)])
+    assert done.returncode != 0, done.stdout + done.stderr
+    payload = json.loads(done.stdout)
+    assert payload["error"] is not None
+
+
+def test_gitignored_persisting_write_is_a_stated_limit_not_a_silent_promise(tmp_path):
+    """A third reviewer finding, and this one is NOT fixed by adding
+    `--ignored` to the status call: this repository's own `.gitignore`
+    covers exactly the paths a review agent's own tooling writes into while
+    doing permitted work (`.pytest_cache/`, `__pycache__/`, `.coverage`), and
+    turning `--ignored` on would make `compare()` report `mutated` on an
+    ordinary suite run between the two snapshots -- the false-positive noise
+    is worse than the false-negative gap for this tool's actual use, and
+    dogfooding this exact scenario during #769's own development confirmed
+    it (`git status --porcelain=v2 --untracked-files=all --ignored` printed
+    six pre-existing artifacts against a clean repo state). So this is
+    documented as a stated limit -- pinned here so the gap is measured
+    rather than assumed -- the same shape as the self-cleaning limit above,
+    not silently promised away as coverage this tool does not have."""
+    repo = _real_git_repo(tmp_path)
+    (repo / ".gitignore").write_text("*.scratch\n")
+    subprocess.run(["git", "-C", str(repo), "add", ".gitignore"], env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "-m", "gitignore"],
+        env=_git_env(), check=True,
+    )
+    before = tree_snapshot.snapshot(str(repo))
+    (repo / "leftover.scratch").write_text("a persisting write at a gitignored path\n")
+    after = tree_snapshot.snapshot(str(repo))
+
+    verdict = tree_snapshot.compare(before, after)
+    assert verdict["state"] == "clean", verdict

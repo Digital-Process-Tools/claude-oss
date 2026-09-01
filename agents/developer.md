@@ -547,9 +547,9 @@ on luck, and read your own suite figures as possibly contaminated by a concurren
 have one: snapshot the tree before you spawn, and compare after both return.
 
 ```
-BEFORE=$(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py snapshot)
+BEFORE=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot)
 # ... spawn both agents, wait for both final messages ...
-printf '%s' "$BEFORE" | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py compare --before -
+printf '%s' "$BEFORE" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before -
 ```
 
 `clean` (exit 0) means nothing persisted. `mutated` (exit 1) names what changed — restore it

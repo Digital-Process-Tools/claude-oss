@@ -35,9 +35,24 @@ runs.** That is instance 2's own shape, and no before/after comparison taken
 only at the two ends can see a state that returned to identical in between --
 there is nothing on disk left to compare. This is a stated limit, not an
 oversight: `tests/test_tree_snapshot_769.py` pins it directly, so the gap is
-measured rather than assumed. A mutation that persists to the moment the
-`compare` call runs -- a reverted file, a scratch file left behind, HEAD
-moved -- is exactly what this catches, and that is instance 1's shape and
+measured rather than assumed.
+
+**It cannot see a persisting write to a path `.gitignore` covers, either --
+also stated, and deliberately not closed by adding `--ignored`.** A review
+spawn's own permitted work (running the suite, say) leaves artifacts at
+exactly the paths most repositories ignore: `.pytest_cache/`, `__pycache__/`,
+`.coverage`. Turning `--ignored` on would make an ordinary suite run between
+the two snapshots report `mutated` -- measured directly during this module's
+own development: `git status --porcelain=v2 --untracked-files=all --ignored`
+printed six pre-existing artifacts against an otherwise clean repository.
+That false-positive rate would drown the real signal in the one workflow
+this tool has to coexist with, which is worse for this tool's actual use
+than the false-negative it would close. `tests/test_tree_snapshot_769.py`
+pins the current (undetected) behaviour rather than leaving it assumed.
+
+A mutation that persists to the moment the `compare` call runs, at a path
+`.gitignore` does not cover -- a reverted file, a scratch file left behind,
+HEAD moved -- is exactly what this catches, and that is instance 1's shape and
 the harmful one: a lingering change that would otherwise silently sit under
 whatever the lane runs next.
 
@@ -88,6 +103,8 @@ def _run_git(args, root):
             cwd=str(root),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError as exc:
@@ -134,6 +151,17 @@ def _verdict(state, reason, **extra):
 
 def compare(before, after):
     """Sort a before/after pair of `snapshot()` dicts into the three states."""
+    for label, snap in (("before", before), ("after", after)):
+        if not isinstance(snap, dict):
+            # Same finding as `_read_before`'s own shape check, caught again
+            # here for a caller that built (or mangled) a snapshot dict by
+            # hand rather than routing it through `_read_before` -- this
+            # function must not assume its callers already validated.
+            return _verdict(
+                "could-not-compare",
+                "the {0}-snapshot is not a JSON object (got {1}): nothing "
+                "to compare".format(label, type(snap).__name__),
+            )
     if before.get("error"):
         return _verdict(
             "could-not-compare",
@@ -207,9 +235,21 @@ def _read_before(source):
         except OSError as exc:
             return None, "unreadable: {0}".format(exc.strerror or exc.__class__.__name__)
     try:
-        return json.loads(text), None
+        parsed = json.loads(text)
     except json.JSONDecodeError as exc:
         return None, "the before-snapshot is not valid JSON: {0}".format(exc)
+    if not isinstance(parsed, dict):
+        # A reviewer's own finding (#769): valid JSON that is not an object
+        # -- `null`, a bare number, a list -- parsed clean and reached
+        # `compare()`'s `before.get("error")`, which is not a method a
+        # non-dict has. Checking the *shape* here, not only the syntax,
+        # keeps that an AttributeError can never surface as an unhandled
+        # crash whose exit code (1) collides with EXIT_CODES["mutated"].
+        return None, (
+            "the before-snapshot is valid JSON but not a JSON object (got "
+            "{0}): nothing to compare".format(type(parsed).__name__)
+        )
+    return parsed, None
 
 
 def main(argv=None):
@@ -236,8 +276,17 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command == "snapshot":
-        print(json.dumps(snapshot(args.root)))
-        return 0
+        result = snapshot(args.root)
+        print(json.dumps(result))
+        # A reviewer's own finding (#769): this used to return 0 whether or
+        # not `result["error"]` was set, so a failed snapshot and a
+        # successful one were indistinguishable by exit code -- exactly the
+        # collapse `could-not-compare`'s own docstring entry says this
+        # module must never allow. The JSON body already carried `error`
+        # either way, so a caller reading the body was never misled; only
+        # the exit code was, and `compare` still resolves correctly here
+        # because it re-reads that body rather than trusting this exit code.
+        return EXIT_CODES["could-not-compare"] if result["error"] else 0
 
     before, error = _read_before(args.before)
     if error is not None:
