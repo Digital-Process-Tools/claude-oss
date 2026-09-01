@@ -7,7 +7,7 @@ for releases was told. The skill's own section already argued that the tag is no
 the delivery -- so it explained the difference between tagging and shipping, then
 did the first while narrating the second (#58).
 
-Three states, because this is a release path and a quiet failure here leaves a
+Four states, because this is a release path and a quiet failure here leaves a
 maintainer believing something shipped that did not:
 
   create / created         policy asked for it, the notes exist, the command ran
@@ -18,6 +18,9 @@ maintainer believing something shipped that did not:
                            (#483), the call failed, or `.oss.json` is not a JSON
                            object at all and so states no policy. Not a release and
                            not a skip
+  role-forbidden           this agent's declared role may not publish -- checked
+                           before anything else, so no repository's own policy is
+                           ever consulted on a withheld role's behalf (#695/#697)
 
 A `created` release also invalidates the status line's cached `latest` for this
 repo (#549): the publish IS the event that falsifies that cache, and this is the
@@ -34,6 +37,7 @@ Exit codes, because a shell reads those and never reads prose:
   0   the release was created, or the command is buildable (dry run)
   3   could not run / could not create
   4   skipped by policy
+  5   this agent's declared role may not publish a release (#695/#697)
   2   argparse usage error
 
 `--verify-tag` is not optional and is not decoration. Without it `gh release create`
