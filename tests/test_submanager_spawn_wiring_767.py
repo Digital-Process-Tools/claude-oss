@@ -158,6 +158,28 @@ def test_returned_nothing_is_not_read_as_a_clean_idle_tick():
     )
 
 
+def _spawn_block(text):
+    """The fenced code block containing the oss:sub-manager spawn call.
+
+    Scans the whole fence, not just the line the regex matched on -- a
+    single-line scan passes today's one-line call and would miss a `model`
+    override added on a wrapped continuation line if the call were later
+    reformatted to span several lines (review finding, #767's own review
+    round). Falls back to the single line when no enclosing fence can be
+    found, so this never raises on a match outside a fence.
+    """
+    match = _SPAWN_RE.search(text)
+    if match is None:
+        return None
+    fence_start = text.rfind("```", 0, match.start())
+    fence_end = text.find("```", match.end())
+    if fence_start == -1 or fence_end == -1:
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        line_end = text.find("\n", match.end())
+        return text[line_start:line_end if line_end != -1 else len(text)]
+    return text[fence_start:fence_end]
+
+
 def test_the_spawn_call_does_not_override_the_model():
     """#695/#767's explicit constraint: hold the model axis still across the
     cutover, because a model change riding the same diff makes #694's
@@ -166,19 +188,32 @@ def test_the_spawn_call_does_not_override_the_model():
     frontmatter; the spawn call in commands/tick.md must not pass a `model`
     argument that would override that pin.
     """
-    text = _tick_md_text()
-    match = _SPAWN_RE.search(text)
-    assert match is not None
-    # The call is a single line (or a short fenced block); look at the line
-    # containing the match rather than an arbitrary window.
-    line_start = text.rfind("\n", 0, match.start()) + 1
-    line_end = text.find("\n", match.end())
-    line = text[line_start:line_end if line_end != -1 else len(text)]
-    assert "model" not in line, (
-        "the oss:sub-manager spawn call in commands/tick.md passes a `model` "
-        "argument -- this overrides the agent definition's own `model: sonnet` "
-        "pin and breaks #694's before/after measurement: {!r}".format(line)
+    block = _spawn_block(_tick_md_text())
+    assert block is not None
+    assert "model" not in block, (
+        "the oss:sub-manager spawn call's fenced block in commands/tick.md "
+        "mentions `model` -- this overrides the agent definition's own "
+        "`model: sonnet` pin and breaks #694's before/after measurement: "
+        "{!r}".format(block)
     )
+
+
+def test_the_spawn_block_checker_catches_a_multi_line_override():
+    """Positive control for the assertion above: a `model` override wrapped
+    onto its own continuation line inside the same fence must still be
+    caught, or the widened scan bought nothing over the single-line one it
+    replaced.
+    """
+    fixture = (
+        "```\n"
+        'Agent(subagent_type: "oss:sub-manager",\n'
+        '      model: "opus",\n'
+        "      run_in_background: false)\n"
+        "```\n"
+    )
+    block = _spawn_block(fixture)
+    assert block is not None
+    assert "model" in block
 
 
 def test_sub_manager_md_model_pin_is_unchanged_by_this_wiring():

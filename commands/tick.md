@@ -1,6 +1,6 @@
 ---
 description: Run one maintainer tick — read the board, decide, delegate, review, merge on green.
-allowed-tools: Bash, Agent, Skill
+allowed-tools: Bash, Agent
 ---
 
 One pass of the maintainer loop over the repo named in `.oss.json`.
@@ -30,9 +30,14 @@ change riding along with this cutover would make #694's before-and-after measure
 cheaper context apart from a different model (`agents/sub-manager.md` says this and it applies here
 too, not only there).
 
-**Confirmed rather than assumed (#695 point 6): a foreground agent's own `Agent` tool can spawn a
-further agent and get a real result back** — scheduler → sub-manager → developer is two levels of
-agent-spawning-agent, and it works.
+**Reasoned here, not independently re-confirmed for this exact chain (#695 point 6).** That a
+foreground agent's own `Agent` tool can spawn a further agent and get a real result back is
+confirmed — `agents/sub-manager.md` cites a `general-purpose` agent successfully spawning a further
+`Explore` agent — but that is a different pairing from the one this wiring actually creates: this
+session, which is not itself a spawned agent, spawning `oss:sub-manager`, which then spawns a
+developer. Scheduler → sub-manager → developer is two levels of agent-spawning-agent by construction
+of this file; whether the specific chain runs end to end has not been separately observed from this
+diff, and a maintainer who wants that confirmed should watch the first tick this wiring runs.
 
 Then classify what comes back with the tool built for it, rather than reading the prose and guessing
 — the same reasoning `agents/developer.md` already gives for a reviewer's return: a judgment performed
@@ -44,14 +49,17 @@ sub-manager's final message by four spaces, blank lines included, close it with 
 column zero on its own line, and pass the whole thing on stdin:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed -
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'
+    <the sub-manager's final message, exactly as it reached you, every line at this indentation>
+END OF MESSAGE
+MSG
 ```
 
 An unindented message can quote this very code block, terminator included — an ordinary thing for a
 report to contain — and end the stream that carries it. Skipping the framing because a message "looks
 safe" is exactly how that one gets through.
 
-Five answers, not three, and only one of them is the ordinary case:
+Six answers, not three, and only one of them is the ordinary case:
 
 - **`completed`** — read the one paragraph. It says what was dispatched, merged or reviewed this
   tick, or that the tick was idle and found nothing ready to act on — an idle tick is a real, clean
@@ -71,6 +79,11 @@ Five answers, not three, and only one of them is the ordinary case:
 - **`could-not-classify`** — no `TICK:` header, or a declared state missing its companion field.
   Read the raw message yourself and say so in the record rather than guess which of the above it
   meant.
+- **`could-not-read`** — the `--framed` unwrap itself failed: the message never closed with `END OF
+  MESSAGE`, or an earlier line broke the indentation, so nothing was reliably looked at. This is not
+  the same fact as `could-not-classify` — that state means the message was read and could not be
+  sorted; this one means the framing never let the read happen at all. Re-send it framed correctly;
+  read it yourself if it refuses twice.
 
 ## Order of operations
 
@@ -513,7 +526,8 @@ describing the schedule instead of the next action. Waiting on CI is not a reaso
   the list, you are not in this state. Still not an end.
 - **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty. **Your own
   backlog was never somebody else's work**, so an open issue this loop filed is not this state. It
-  ends the tick and arms a long wakeup; step 7 is what says it does not stop the loop.
+  ends the tick; step 7 — the scheduler's own job, reading this declaration back from the handback —
+  is what arms the long wakeup and says this does not stop the loop.
 
 **An unread board is not an empty one.** If either call did not answer, that is `unknown`, it is not
 the third state, and the tick says which call failed and what went unread instead. A tick that
