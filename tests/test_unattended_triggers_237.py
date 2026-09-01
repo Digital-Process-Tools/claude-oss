@@ -41,6 +41,7 @@ Python 3.9 compatible.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -161,17 +162,38 @@ def _own_code_sources():
     Derived from the tree rather than a fixed glob: the previous version of this
     scan was `(REPO_ROOT / "scripts").glob("*.py")`, which missed scripts/*.sh,
     every file under hooks/ and bin/oss-workspace entirely -- planted-call controls
-    for each of those are GUARD SILENT against the old scan (#740). rglob rather
-    than a flat listing so a subdirectory added later under any of these is covered
-    by the commit that adds it, the same reasoning scripts/shell_sources.py gives
-    for reading by shebang as well as by suffix.
+    for each of those are GUARD SILENT against the old scan (#740).
+
+    `git ls-files` rather than a filesystem walk (`base.rglob("*")`, this
+    function's own first draft), for a reason scripts/shell_sources.py's `absent`
+    state exists for on the opposite side of the same coin: a filesystem walk sees
+    every *untracked* file too. This module does `import scaffold` at collection
+    time, and on a standard CPython build with a writable checkout -- an ordinary
+    CI runner, not this repository's own sandboxed local interpreter -- that write
+    a `scripts/__pycache__/scaffold.cpython-3*.pyc` as a completely ordinary side
+    effect (`.gitignore` already expects `__pycache__/` to appear). A raw
+    `rglob("*")` would then walk into it, `read_text(encoding="utf-8")` a binary
+    `.pyc`, and crash every test in this file with `UnicodeDecodeError` instead of
+    failing one assertion cleanly -- reproduced directly: planting an arbitrary
+    binary file under `scripts/` and running the old rglob-based scan raises
+    exactly that. `git ls-files` never returns an untracked, gitignored path, so
+    the class does not exist for this version at all rather than being caught and
+    skipped.
     """
     sources = []
     for dirname in OWN_CODE_DIRS:
         base = REPO_ROOT / dirname
         if not base.is_dir():
             continue
-        for path in sorted(base.rglob("*")):
+        out = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--", dirname],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        ).stdout
+        names = [name for name in out.decode("utf-8", "surrogateescape").split("\0") if name]
+        for name in sorted(names):
+            path = REPO_ROOT / name
             if path.is_file():
                 sources.append((path, path.read_text(encoding="utf-8")))
     return sources
@@ -509,9 +531,14 @@ DOC = "docs/autonomy.md"
 
 NAMED_UNATTENDED_EXCEPTIONS = {}
 for _label in MANUAL_DISPATCH_EXCEPTIONS:
+    # No `del _label` after this loop: MANUAL_DISPATCH_EXCEPTIONS holds exactly
+    # one entry today, but a zero-iteration loop never binds `_label`, and an
+    # unconditional `del` after it would then raise NameError at collection
+    # time -- breaking every test in this file with an opaque error instead of
+    # the one assertion that should fail cleanly if the exception is ever
+    # dropped with nothing to replace it (found in review).
     NAMED_UNATTENDED_EXCEPTIONS[_label.rsplit("/", 1)[-1]] = "workflow_dispatch"
 NAMED_UNATTENDED_EXCEPTIONS[DEPENDABOT.rsplit("/", 1)[-1]] = "clock"
-del _label
 
 
 def _autonomy_doc_text():
@@ -536,6 +563,31 @@ def _yml_paragraphs(text):
         if names:
             out.append((para, names))
     return out
+
+
+# Same-paragraph co-occurrence is not the same claim as "this sentence explains
+# that file": a paragraph naming two .yml files, one genuinely explained and one
+# merely mentioned nearby, satisfies "keyword somewhere in this paragraph" for
+# both (found in review). REASON_WINDOW bounds how far the keyword may sit from
+# the basename it is meant to explain, in characters -- a heuristic, not a parse:
+# the real docs/autonomy.md paragraph carries its nearest keyword occurrence
+# within 25 characters of each basename it explains, comfortably inside this
+# window; the review's own adversarial paragraph -- a file merely mentioned in
+# the same paragraph as an unrelated use of the keyword -- sits roughly twice as
+# far and is correctly rejected by test_docs_autonomy_check_would_catch_a_
+# nearby_but_unrelated_keyword below.
+REASON_WINDOW = 40
+
+
+def _explained_nearby(para, basename, keyword, window=REASON_WINDOW):
+    """True if some occurrence of `keyword` sits within `window` characters of
+    some occurrence of `basename` in `para` -- nearest-pair distance, not mere
+    paragraph membership."""
+    basename_spans = [m.start() for m in re.finditer(re.escape(basename), para)]
+    keyword_spans = [m.start() for m in re.finditer(re.escape(keyword), para)]
+    return any(
+        abs(b - k) <= window for b in basename_spans for k in keyword_spans
+    )
 
 
 def test_docs_autonomy_names_every_unattended_exception_and_no_others():
@@ -577,12 +629,14 @@ def test_docs_autonomy_names_every_unattended_exception_and_no_others():
     )
     for basename, keyword in NAMED_UNATTENDED_EXCEPTIONS.items():
         found_with_reason = any(
-            basename in names and keyword in para for para, names in paragraphs
+            basename in names and _explained_nearby(para, basename, keyword)
+            for para, names in paragraphs
         )
         assert found_with_reason, (
-            "{} is named in {}, but no paragraph naming it also says {!r} -- "
-            "naming the file without naming why it is accounted for is not the "
-            "claim being made (#736).".format(basename, DOC, keyword)
+            "{} is named in {}, but no paragraph naming it also uses {!r} within "
+            "{} characters of it -- naming the file in a paragraph that merely "
+            "happens to use the reason keyword elsewhere is not the claim being "
+            "made (#736).".format(basename, DOC, keyword, REASON_WINDOW)
         )
 
 
@@ -619,7 +673,26 @@ def test_docs_autonomy_check_would_catch_a_name_with_no_reason(monkeypatch):
     monkeypatch.setattr(sys.modules[__name__], "_autonomy_doc_text", lambda: stripped)
     with pytest.raises(AssertionError) as caught:
         test_docs_autonomy_names_every_unattended_exception_and_no_others()
-    assert "also says" in str(caught.value)
+    assert "within" in str(caught.value)
+
+
+def test_docs_autonomy_check_would_catch_a_nearby_but_unrelated_keyword(monkeypatch):
+    """Must-fire control for _explained_nearby (found in review): a paragraph that
+    names a file and separately uses its reason keyword to explain something
+    else entirely must not pass. A whole-paragraph co-occurrence check (this
+    function's own first draft) is satisfied by this fixture; the distance check
+    is not.
+    """
+    adversarial = (
+        "This repository own tests.yml also carries workflow_dispatch, a human "
+        "act, rather than a clock. It is also worth noting we track "
+        ".github/dependabot.yml here for completeness even though this sentence "
+        "explains nothing about it."
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_autonomy_doc_text", lambda: adversarial)
+    with pytest.raises(AssertionError) as caught:
+        test_docs_autonomy_names_every_unattended_exception_and_no_others()
+    assert "within" in str(caught.value) and "dependabot.yml" in str(caught.value)
 
 
 def test_the_document_exists():
