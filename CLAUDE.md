@@ -445,7 +445,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 58,377 B | 64,600 B |
-| `skills/manager/phases/dispatch.md` | 23,729 B | 26,100 B |
+| `skills/manager/phases/dispatch.md` | 26,052 B | 28,700 B |
 | `skills/manager/phases/handback.md` | 18,864 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 10,663 B | 11,700 B |
 | `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
@@ -464,6 +464,17 @@ sessions ever produces. `.gitattributes` (`* text=auto eol=lf`) closes that: eve
 normalizes to LF, so the measured column above is the number on every platform's disk, and
 `budget` is the real ceiling again rather than `budget - line_count`. The checkers were deliberately
 left alone — see #675's own reasoning for why normalizing the measurement instead was rejected.
+
+**`dispatch.md`'s budget was raised again for #725, and this table and `scripts/skill_phases.
+DOCUMENTS` are compared now rather than hand-kept in sync.** The margin had narrowed to 48 B —
+26,052 B measured against the prior 26,100 B ceiling — and a lane in this same tick had already
+been forced to place a new directive in `SKILL.md` instead of here for no reason but that margin.
+A split was weighed and declined: `dispatch.md`'s content is one subject in one section, not two
+phases wearing one name, and a fresh split is a larger, separately-reviewable change #725 does not
+warrant. `tests/test_claude_md_phase_budget_table_725.py` now holds this table against
+`skill_phases.DOCUMENTS` the same way `tests/test_claude_md_budget_table_709.py` already held the
+agent table above against `agent_budgets.BUDGETS` — closing the gap #725 filed: two hand-copied
+tables and nothing that compared either one to its source.
 
 **The total grew: 122,423 B became 142,188 B, +16%.** The spine's directive blocks and each phase
 file's own header are a second, shorter statement of what the phase file then argues at length, and

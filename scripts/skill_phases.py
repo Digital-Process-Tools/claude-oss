@@ -74,7 +74,20 @@ SPINE = "skills/manager/SKILL.md"
 #: budget bytes incl. ~10% headroom, what the file governs).
 DOCUMENTS: dict[str, tuple[int, int, str]] = {
     SPINE: (58377, 64600, "the loop itself: what is decided every tick, and where each phase's rules live"),
-    "skills/manager/phases/dispatch.md": (23729, 26100, "delegating: fleet size, lane disjointness, bundling, what every brief carries"),
+    # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
+    # B of headroom, and a lane in this same tick had already been forced to
+    # place a new directive in SKILL.md instead of here solely because of that
+    # margin (see CLAUDE.md's "The manager skill is a spine plus one file per
+    # phase" section, the paragraph beside this table, for the receipt).
+    # A split was weighed and declined: dispatch.md's content -- fleet size,
+    # lane disjointness, bundling, what every brief carries -- is one subject
+    # in one section, not two phases wearing one name, and a fresh split is a
+    # larger, separately-reviewable change this issue does not warrant.
+    # Re-baselined silently was declined too, per this file's own rule that a
+    # raise carries a sentence about what was weighed. This is the file's
+    # third budget change; the margin should be re-measured at the next one
+    # rather than assumed still adequate.
+    "skills/manager/phases/dispatch.md": (26052, 28700, "delegating: fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
     "skills/manager/phases/review.md": (10348, 11400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),
