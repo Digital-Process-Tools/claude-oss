@@ -1,17 +1,99 @@
 ---
 description: Run one maintainer tick — read the board, decide, delegate, review, merge on green.
-allowed-tools: Bash, Agent, Skill
+allowed-tools: Bash, Agent
 ---
 
 One pass of the maintainer loop over the repo named in `.oss.json`.
 
-Load the loop itself first — it carries the judgment this command only sequences:
+**This session is the scheduler, and the scheduler does not run a tick.** It spawns `oss:sub-manager`,
+which runs every step below in its own context and dies the moment it reports back (#695, #767). That
+is the entire saving #695 measured: a session ticking many times in a row used to pay cache-read on
+every earlier tick's transcript, on every call it made, for the rest of the session — median +31k
+tokens of context per tick, quadratic in the number of ticks. A fresh spawn per tick is `/clear`
+between ticks, fired with nobody at the keyboard to type it. `Skill(manager)` — the judgment this
+command sequences — is loaded by the sub-manager itself, as the first thing it does after declaring
+its role; this session does not load it, because loading it here is exactly the payload the split
+exists to keep out.
+
+## Spawn the sub-manager, then read what it hands back
 
 ```
-Skill(manager)
+Agent(subagent_type: "oss:sub-manager", run_in_background: false)
 ```
+
+Hand it nothing beyond the spawn itself — no board summary, no state-file contents, no prior tick's
+findings pasted in. Re-deriving those from the repo is what step 1 below is for, inside the
+sub-manager's own fresh context; handing it a summary risks handing it something already stale, the
+same reasoning `scripts/lane_setup.py` already carries for a developer's brief. **Do not pass a
+`model` override on this call** — the sub-manager's own frontmatter pins `model: sonnet`, and a model
+change riding along with this cutover would make #694's before-and-after measurement unable to tell a
+cheaper context apart from a different model (`agents/sub-manager.md` says this and it applies here
+too, not only there).
+
+**Reasoned here, not independently re-confirmed for this exact chain (#695 point 6).** That a
+foreground agent's own `Agent` tool can spawn a further agent and get a real result back is
+confirmed — `agents/sub-manager.md` cites a `general-purpose` agent successfully spawning a further
+`Explore` agent — but that is a different pairing from the one this wiring actually creates: this
+session, which is not itself a spawned agent, spawning `oss:sub-manager`, which then spawns a
+developer. Scheduler → sub-manager → developer is two levels of agent-spawning-agent by construction
+of this file; whether the specific chain runs end to end has not been separately observed from this
+diff, and a maintainer who wants that confirmed should watch the first tick this wiring runs.
+
+Then classify what comes back with the tool built for it, rather than reading the prose and guessing
+— the same reasoning `agents/developer.md` already gives for a reviewer's return: a judgment performed
+carefully by a tired agent is still a judgment, and this repository's own defect class is an absence
+rendered as a clean result.
+
+**Frame it first, the same way a reviewer's return is framed (#404).** Indent every line of the
+sub-manager's final message by four spaces, blank lines included, close it with `END OF MESSAGE` at
+column zero on its own line, and pass the whole thing on stdin:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'
+    <the sub-manager's final message, exactly as it reached you, every line at this indentation>
+END OF MESSAGE
+MSG
+```
+
+An unindented message can quote this very code block, terminator included — an ordinary thing for a
+report to contain — and end the stream that carries it. Skipping the framing because a message "looks
+safe" is exactly how that one gets through.
+
+Six answers, not three, and only one of them is the ordinary case:
+
+- **`completed`** — read the one paragraph. It says what was dispatched, merged or reviewed this
+  tick, or that the tick was idle and found nothing ready to act on — an idle tick is a real, clean
+  answer. **Read it for a release trigger too.** A sub-manager never runs the release phase itself —
+  `scripts/agent_role.py` refuses the publish call in code the instant it sees the `sub-manager`
+  marker, and tagging is withheld by `agents/sub-manager.md`'s prose alone, unchanged by this wiring.
+  If the paragraph says a trigger fired, decide from here whether to run `/oss:release` — in this
+  session or by spawning it — never inside the sub-manager that already reported back and is gone.
+- **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
+  names it — the same naming step 7 below always asked of a tick that ends blocked.
+- **`could-not-run`** — the `REASON:` line names why the sub-manager itself never got a tick
+  underway. This is not a clean board; say so, and decide whether to retry now or arm a short wakeup.
+- **`returned-nothing`** — the spawn executed and its context died before it reported anything. Do
+  not read this as an idle, clean tick — that collapse is the exact failure #695 and #767 exist to
+  prevent. One fresh re-spawn, then stop and say so if the second one is empty too — the same rule
+  `agents/developer.md` applies to a reviewer that returns nothing.
+- **`could-not-classify`** — no `TICK:` header, or a declared state missing its companion field.
+  Read the raw message yourself and say so in the record rather than guess which of the above it
+  meant.
+- **`could-not-read`** — the `--framed` unwrap itself failed: the message never closed with `END OF
+  MESSAGE`, or an earlier line broke the indentation, so nothing was reliably looked at. This is not
+  the same fact as `could-not-classify` — that state means the message was read and could not be
+  sorted; this one means the framing never let the read happen at all. Re-send it framed correctly;
+  read it yourself if it refuses twice.
 
 ## Order of operations
+
+**Steps 1 through 6 below, and "What ends a tick", are followed by the sub-manager spawned above, in
+its own context — not by this session.** They stay written here, numbered, rather than duplicated
+into `agents/sub-manager.md`, because this is the file `/oss:tick` documents and the sub-manager's own
+brief already points back to it by name: "follow `commands/tick.md`'s own order of operations …
+phase by phase." **Step 7 is the one exception** — arming the next tick's wakeup — because it belongs
+to whichever session persists long enough to receive the wakeup, and the sub-manager does not: it has
+no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
 
 1. **Read the state file** named by `state_file`, then **`git fetch && git pull --ff-only`**. The
    state file records what was *believed* when it was written. The repo is what is true.
@@ -393,7 +475,10 @@ Skill(manager)
    above. Recording a wait here without step 1 testing it next time is the same failure with the
    test simply never run.
 
-7. **Arm the next tick, and keep working in this one.**
+7. **Arm the next tick, and keep working in this one.** This step is this session's own, not the
+   sub-manager's — it has no `ScheduleWakeup` tool and is gone by the time this runs. Use what the
+   handback said above to decide: spawn another sub-manager right away if there is more to do this
+   session, or arm the wakeup below and stop for now.
 
    ```
    ScheduleWakeup(delaySeconds=…, prompt="/oss:tick", reason="<what specifically is outstanding>")
@@ -427,7 +512,8 @@ Skill(manager)
 
 ## What ends a tick
 
-Not the wakeup. The wakeup is a safety net, and the tell that this went wrong is a closing line
+**This is the sub-manager's own declaration**, made inside the `TICK: completed` paragraph it hands
+back above — the scheduler reads it there rather than re-deriving it. Not the wakeup. The wakeup is a safety net, and the tell that this went wrong is a closing line
 describing the schedule instead of the next action. Waiting on CI is not a reason to stop working.
 
 **And only one of three states is an end.** Say which one, in as many words, as the tick closes
@@ -440,7 +526,8 @@ describing the schedule instead of the next action. Waiting on CI is not a reaso
   the list, you are not in this state. Still not an end.
 - **Nothing left** — `gh-issues` and `gh-prs` both answered, and both came back empty. **Your own
   backlog was never somebody else's work**, so an open issue this loop filed is not this state. It
-  ends the tick and arms a long wakeup; step 7 is what says it does not stop the loop.
+  ends the tick; step 7 — the scheduler's own job, reading this declaration back from the handback —
+  is what arms the long wakeup and says this does not stop the loop.
 
 **An unread board is not an empty one.** If either call did not answer, that is `unknown`, it is not
 the third state, and the tick says which call failed and what went unread instead. A tick that
