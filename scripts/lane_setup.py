@@ -814,6 +814,7 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
             "state": derived_held["state"],
             "detail": derived_held["detail"],
             "stale_pruned": derived_held.get("lanes", {}).get("stale_pruned", []),
+            "prune_failed": derived_held.get("lanes", {}).get("prune_failed", []),
         }
         result["availability"] = availability
     return result
@@ -1465,7 +1466,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
-        return {"state": "unknown", "held": {}, "stale_pruned": [], "detail": "worktree_root is not known."}
+        return {"state": "unknown", "held": {}, "stale_pruned": [], "prune_failed": [], "detail": "worktree_root is not known."}
     try:
         found = os.stat(root)
     except (FileNotFoundError, NotADirectoryError):
@@ -1474,12 +1475,13 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                 "state": "could-not-derive",
                 "held": {},
                 "stale_pruned": [],
+                "prune_failed": [],
                 "detail": "a lane registry may exist at {0} but could not be examined "
                 "-- an ancestor could not be looked at, which is not a confirmed "
                 "absence.".format(root),
             }
         return {
-            "state": "unknown", "held": {}, "stale_pruned": [],
+            "state": "unknown", "held": {}, "stale_pruned": [], "prune_failed": [],
             "detail": "no lane registry at {0}.".format(root),
         }
     except OSError as exc:
@@ -1487,6 +1489,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
             "state": "could-not-derive",
             "held": {},
             "stale_pruned": [],
+            "prune_failed": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     except ValueError as exc:
@@ -1494,11 +1497,12 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
             "state": "could-not-derive",
             "held": {},
             "stale_pruned": [],
+            "prune_failed": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
     if not stat.S_ISDIR(found.st_mode):
         return {
-            "state": "unknown", "held": {}, "stale_pruned": [],
+            "state": "unknown", "held": {}, "stale_pruned": [], "prune_failed": [],
             "detail": "no lane registry at {0}.".format(root),
         }
     try:
@@ -1508,6 +1512,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
             "state": "could-not-derive",
             "held": {},
             "stale_pruned": [],
+            "prune_failed": [],
             "detail": "{0}: {1}".format(type(exc).__name__, exc),
         }
 
@@ -1515,6 +1520,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
     held = {}
     live_count = 0
     stale_pruned = []
+    prune_failed = []
     for name in names:
         if not name.endswith(".json"):
             continue
@@ -1534,6 +1540,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                 "state": "could-not-derive",
                 "held": {},
                 "stale_pruned": stale_pruned,
+                "prune_failed": prune_failed,
                 "detail": "lane record {0} under {1} could not be read.".format(name, root),
             }
         if exclude_issue is not None and str(issue) == str(exclude_issue):
@@ -1551,10 +1558,25 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                     # immediately rather than merely skipped, unlike the
                     # age-based `continue` below: age is a guess about
                     # abandonment, this is a fact about the shared clone.
+                    # #792: `FileNotFoundError` genuinely is success --
+                    # "another reader already pruned it" -- and belongs in
+                    # `stale_pruned` exactly like an `os.remove` this call
+                    # performed itself. Any other `OSError` is a removal
+                    # that actually failed: the record is demonstrably still
+                    # on disk, so it goes in `prune_failed` instead, never
+                    # in `stale_pruned` alongside a release that worked --
+                    # reporting it in both would be worse than either.
                     try:
                         os.remove(entry_path)
-                    except OSError:
-                        pass  # another reader may already have pruned it
+                    except FileNotFoundError:
+                        pass
+                    except OSError as exc:
+                        prune_failed.append({
+                            "issue": issue,
+                            "branch": branch,
+                            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+                        })
+                        continue
                     stale_pruned.append({"issue": issue, "branch": branch})
                     continue
                 # #771: never observed created -- "not found" here is exactly
@@ -1575,6 +1597,7 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                 "state": "could-not-derive",
                 "held": {},
                 "stale_pruned": stale_pruned,
+                "prune_failed": prune_failed,
                 "detail": "live lane record for issue {0} carries no files -- recorded "
                 "without --lane, or by a version of this script that predates #558 -- "
                 "so the held set cannot be trusted complete while that lane is "
@@ -1591,9 +1614,16 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
             "state": "unknown",
             "held": {},
             "stale_pruned": stale_pruned,
+            "prune_failed": prune_failed,
             "detail": "no live lane records under {0} besides the excluded issue.".format(root),
         }
-    return {"state": "resolved", "held": held, "stale_pruned": stale_pruned, "detail": ""}
+    return {
+        "state": "resolved",
+        "held": held,
+        "stale_pruned": stale_pruned,
+        "prune_failed": prune_failed,
+        "detail": "",
+    }
 
 
 def derive_held_set(repo_slug, worktree_root, exclude_issue=None, repo=None):
@@ -2149,6 +2179,22 @@ def receipt(payload):
                         ),
                     )
                 )
+            # #792: a prune this call attempted and failed is a fact just as
+            # load-bearing as one that succeeded -- the record named here is
+            # demonstrably still on disk, never folded into the line above.
+            prune_failed = held_source.get("prune_failed") or []
+            if prune_failed:
+                lines.append(
+                    "  held    : {0} stale record(s) could NOT be released (still on disk): {1}".format(
+                        len(prune_failed),
+                        ", ".join(
+                            "lane #{0} ({1}): {2}".format(
+                                item["issue"], item["branch"], item["detail"]
+                            )
+                            for item in prune_failed
+                        ),
+                    )
+                )
         # #774: `overlap_state` is checked first -- `.get` rather than `[]` so a
         # payload built before this field existed (an older test fixture, or a
         # hand-built dict) still renders the pre-#774 lines below rather than
@@ -2289,9 +2335,26 @@ def main(argv=None):
             pass
 
     if args.release:
-        config, _problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
-        worktree_root = config.get("worktree_root") if config else None
-        result = release_lane(worktree_root, args.issue)
+        config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
+        if config is None:
+            # #791: `config` is None only when the project half of the config
+            # could not be read at all -- absent or malformed -- which is a
+            # different cause than a valid config that genuinely has no
+            # `worktree_root` key (the benign case `release_lane` itself
+            # reports below). `problems` already distinguishes "not found"
+            # from a JSON parse error; carry that sentence through instead of
+            # letting both render as the one line written for the third case.
+            result = {
+                "state": "could-not-release",
+                "path": None,
+                "detail": "worktree_root is not known -- the config could not "
+                "be read: {0}".format(
+                    "; ".join(problems) if problems else "no detail available."
+                ),
+            }
+        else:
+            worktree_root = config.get("worktree_root")
+            result = release_lane(worktree_root, args.issue)
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
