@@ -279,6 +279,16 @@ into the probe.
   size, and a bundle reads exactly as healthy at dispatch whether or not one of its members has
   already shipped. Run it for every candidate before it is added to a bundle, not only for the one
   issue a single-issue lane would have picked.
+  **Quote the probe's scope verbatim in the brief, never a summary of it (#727).** `not-matched`
+  over one file and `not-matched` over the whole tree render identically once retyped as prose — a
+  brief that wrote *"a pre-flight returned not-matched — nothing does this today"* about a probe
+  scoped to one file (`scripts/doctor.py`) sent a lane to build a second mechanism beside one that
+  already existed (`tests/test_shipped_op_spellings.py`), because the sentence carried no scope for
+  the lane to catch. `preflight_check.py`'s receipt names `roots`, the paths actually searched, on
+  every state including `could-not-search` — paste the whole line, `not-matched over 1 file
+  (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
+  every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
+  wearing a repository-wide claim's clothes.
 - **Rank by what cannot be undone**, then by who is walking away:
 
   | Class | Blocks a release? | Embargo when reported upstream? |

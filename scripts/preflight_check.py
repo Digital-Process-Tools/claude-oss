@@ -20,12 +20,29 @@ the tree today.
   matched           -- the pattern was found at least once.
   not-matched        -- the search ran cleanly and found nothing.
   could-not-search    -- the search itself did not happen: an invalid
-                         pattern, a root that does not exist, or a directory
-                         this process could not walk. Must never render as
+                         pattern, a root that does not exist, a directory
+                         this process could not walk, or a file it was
+                         genuinely denied. Must never render as
                          not-matched -- CLAUDE.md's own defect class, applied
                          here: an absence produced by the tool (a broken
                          search) must never be read as an absence in the
                          world (nothing there).
+
+## A file with no text in it is not a file the search was denied (#717)
+
+A file that fails to decode as UTF-8 was read successfully -- it simply has
+no text to search, on this run or any other, regardless of who is asking.
+That is not the same failure as a permission-denied file or an unwalkable
+directory, and treating it as one made every real Python source tree
+(`__pycache__/*.pyc`, present the moment a package is imported or tested
+even once) degrade to could-not-search on precisely the negative answer: the
+unreadable set only downgrades the verdict when there is nothing else to
+report, so a match found elsewhere still returned `matched` with the
+identical undecodable files present. `skipped_files` is the accounting for
+this class -- reported on every result, never suppressed at zero, so the
+count is never silently dropped -- and it never forces could-not-search on
+its own. A file this process was actually denied (`unreadable_files`) still
+does.
 
 ## What a match means is not this script's to decide
 
@@ -37,6 +54,18 @@ alongside the call, in the same three words this module returns:
 still-open / already-shipped / could-not-tell -- could-not-tell is what a
 could-not-search state becomes at the dispatch decision, and it must never
 render as still-open either, for the same reason.
+
+## The scope has to travel with the answer, or it gets retyped as prose (#727)
+
+A `not-matched` over one file and a `not-matched` over the whole tree render identically
+once a human writes the answer into a brief -- `files_searched` was already in the
+receipt, but the paths that produced it were not, so a reader still had to remember the
+`--path` argument separately to quote the scope honestly, and one did not. `roots` closes
+that: the searched paths, verbatim, in the same result the state comes from, on every
+return path including `could-not-search`. Quote it whole -- `not-matched over 1 file
+(scripts/doctor.py)` -- never a summary of it. This is not a demand to sweep the whole
+tree on every pre-flight; a narrow probe is often the right probe, and the defect was a
+narrow probe's answer wearing a repository-wide claim's clothes.
 
 ## Per-part
 
@@ -106,12 +135,14 @@ def search(pattern, roots):
     """Search `pattern` (a regular expression) across every file under each
     of `roots`. Never raises -- every failure mode is a state in the
     returned dict, never an exception the caller has to catch."""
+    root_strs = [str(r) for r in roots]
     try:
         compiled = re.compile(pattern)
     except re.error as exc:
         return {
             "state": STATE_COULD_NOT_SEARCH,
             "pattern": pattern,
+            "roots": root_strs,
             "problem": "invalid pattern: {0}".format(exc),
         }
 
@@ -130,16 +161,37 @@ def search(pattern, roots):
         return {
             "state": STATE_COULD_NOT_SEARCH,
             "pattern": pattern,
+            "roots": root_strs,
             "problem": "root(s) could not be searched: {0}".format(", ".join(missing_roots)),
         }
 
     matches = []
     unreadable_files = []
+    skipped_files = []
     for path in all_files:
         try:
-            text = path.read_text(encoding="utf-8", errors="strict")
-        except (OSError, UnicodeDecodeError) as exc:
+            raw = path.read_bytes()
+        except OSError as exc:
             unreadable_files.append(str(path))
+            continue
+        try:
+            text = raw.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            # #717: a file that cannot decode as UTF-8 was not denied to
+            # this process -- it was read fine, it simply has no text in
+            # it, ever, regardless of who asks. Folding that into
+            # unreadable_files made could-not-search fire on every real
+            # Python tree (__pycache__/*.pyc, present the moment a package
+            # is imported or tested once) and, worse, fire precisely on the
+            # negative answer: the unreadable set only downgrades the
+            # verdict when there is nothing else to report, so a match
+            # elsewhere still returned matched with the identical
+            # undecodable file present. skipped_files is the honest
+            # accounting for this class -- reported always, never
+            # suppressed at zero -- and never forces could-not-search on
+            # its own. A genuinely permission-denied file (OSError, above)
+            # is a different failure and still does.
+            skipped_files.append(str(path))
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             if compiled.search(line):
@@ -152,7 +204,8 @@ def search(pattern, roots):
     # file or subdirectory, or one root among several that does not exist,
     # rendered identically to a clean miss (found by review, #457's own
     # defect one layer down: an absence produced by the tool, read as an
-    # absence in the world).
+    # absence in the world). skipped_files deliberately does not appear in
+    # the condition below -- an undecodable file was read, not denied (#717).
     if matches:
         state = STATE_MATCHED
     elif missing_roots or unreadable_dirs or unreadable_files:
@@ -163,11 +216,13 @@ def search(pattern, roots):
     result = {
         "state": state,
         "pattern": pattern,
+        "roots": root_strs,
         "matches": matches,
         "files_searched": len(all_files),
         "unreadable_files": unreadable_files,
         "unreadable_dirs": unreadable_dirs,
         "missing_roots": missing_roots,
+        "skipped_files": skipped_files,
     }
     if state == STATE_COULD_NOT_SEARCH:
         problems = []
