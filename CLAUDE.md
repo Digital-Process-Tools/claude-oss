@@ -406,7 +406,7 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 75,194 B | 82,800 B |
+| `agents/developer.md` | 83,014 B | 91,300 B |
 | `agents/auditor.md` | 14,329 B | 15,800 B |
 | `agents/release-auditor.md` | 17,857 B | 19,700 B |
 | `agents/triager.md` | 17,702 B | 19,500 B |

@@ -265,6 +265,14 @@ that gestures at findings without stating them, which two rounds of brief langua
 #392) failed to prevent. `agents/developer.md` is where it is actually driven from; the script's own
 docstring has the full mechanism, including why input is framed rather than read raw (#404).
 
+`python3 scripts/tree_snapshot.py snapshot` / `... compare --before -` is the same shape one review
+step over: a receipt across the spawn itself, not just its return value. A reviewer already reverted
+a tracked file in place and a self-cleaning scratch write left no trace, neither with a ref move or a
+reflog entry (#769) -- a brief telling the spawn not to mutate is not a mechanism, so
+`agents/developer.md` snapshots the tree before spawning and compares after, in three states:
+`clean`, `mutated` (names what changed), `could-not-compare`. It cannot see a write created and
+deleted before the `compare` call runs, which is stated in its own docstring rather than assumed.
+
 `scripts/batch_hint.py` is a `PostToolUse` hook (`hooks/hooks.json`) that flags a run of 3 or more
 consecutive single-op read-only supertool calls with one line naming the collapsed form, and only
 that -- it never blocks. It exists because the equivalent instruction in prose, in `agents/
