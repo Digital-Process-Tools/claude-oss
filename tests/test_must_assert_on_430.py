@@ -37,6 +37,16 @@ never ran. See #719 for the full measurement, including the control pair
 that pins the mechanism to the relocated `HOME` rather than to "a different
 binary".
 
+That failure mode is POSIX-specific, and it is worth saying so rather than
+leaving it to be read into the "every platform" sentence above: user-site
+resolution is `os.path.expanduser("~")` on POSIX, which does read `HOME`,
+but CPython's `site._getuserbase()` resolves the Windows user base from
+`%APPDATA%` and never consults `HOME` or `USERPROFILE` at all (reviewer
+finding on this same round). `pytester` relocating both variables is real
+and platform-independent; a relocation actually breaking user-site
+resolution the way this file measures is not established on Windows and is
+not the claim being made for it.
+
 `_run()`, below, is the fix, and it is a **skip**, not a repair of the
 child's environment: reaching into the child interpreter's import path would
 be a second hazard stacked on the one this file exists to catch, is not
