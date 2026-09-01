@@ -7,6 +7,422 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-01
+
+### Added
+
+- `/oss:doctor` now asks whether the supertool that resolves here actually carries the ops this
+  plugin's own `commands/`, `skills/` and `agents/` text names, on a new `supertool op inventory`
+  line (#582). The plugin and the supertool carrying its ops are two separately released artifacts
+  on two clocks, so a version naming an op the installed supertool predates used to fail loudly and
+  only mid-tick, at the step that needed it, with nothing having asked first. Three states, and the
+  third is the point: every named op resolves; one or more do not, named individually with the file
+  that calls each; or the roster could not be read at all -- `could-not-ask`, which never renders as
+  the first. The expected set is derived from the shipped text at call time rather than listed
+  beside the check, so an op added to a command is covered the moment the call exists. Which
+  directories are read is itself a measurement: a whole-tree scan was tried and derived three names
+  that are not ops at all out of `CHANGELOG.md` prose, so the scan is the instruction surfaces an
+  agent actually runs, and each of them reports its own read/absent/unreadable state.
+- `tests/test_shipped_op_spellings.py` no longer reads a word ending in "supertool" as an invocation
+  of it. A regex word boundary is satisfied by a hyphen, so a hyphenated compound followed by a
+  quoted argument was extracted as an op spelling and reported undeclared -- found while adding the
+  check above, which had the identical defect (#582). Narrowing only: every real invocation it
+  matched before it still matches. The new check's own module docstring now names that test as its
+  sibling, and what each of the two answers that the other does not.
+
+### Changed
+
+- The split of `scripts/doctor.py` into per-check `scripts/doctor_check_*.py` modules is a rule
+  with a guard behind it rather than a run of completed moves nobody wrote down (#630). A new
+  `scripts/doctor_modules.py` derives the module set from disk and declares which `check_*`
+  functions are still defined inside `doctor.py`; `tests/test_doctor_check_convention_630.py`
+  compares that declaration against the file in both directions, so a check added to the monolith
+  fails with the module path it belongs in named, and a declaration whose check has moved fails
+  too -- the list can only shrink. `doctor.py` now opens with the convention itself, including when
+  staying in the file is the right answer, so it is a rule with an exception rather than a
+  prohibition to route around.
+- `doctor.py`'s header comment no longer writes down a tally of the modules it has spawned. It
+  opened `#497: five check_* functions moved out` while six existed, and nothing noticed -- a count
+  written beside a set the filesystem already answers goes stale the moment the set moves (#630).
+- `check_mcp_channel_registration`, `mcp_channel_registration_state`, `CHANNEL_SERVER` and
+  `_MCP_ARGS_RE` moved to `scripts/doctor_check_mcp_channel_registration.py`, the first extraction
+  under the stated convention and a pure relocation (#630). `check_channel_consumer_pin` stays in
+  `doctor.py` on purpose, reading the state function through the re-export: it reaches a chain of
+  `doctor.py`'s own version-comparison helpers and is worth its own reviewable change.
+- `scripts/doctor_check_latest_skew.py` is now named by its full path inside `doctor.py`. It never
+  was, having been left out of the hand-written module list in
+  `tests/test_doctor_check_relocation_497.py` when it landed -- the first thing the new guard found
+  (#630).
+
+- The changelog fragment check now reads a fragment's `Compatibility:` line, so a declaration that
+  will not parse is a finding on the pull request that introduced it instead of a stopped release
+  days later (#700). Observed on a managed repository: `- Compatibility: compatible/additive`
+  merged with seventeen green required legs and was caught only by the release gate, which
+  correctly refused to name a version. The scaffolded checker contained no reference to the
+  compatibility line at all, so its `ok` was `ok` from a check that never looked.
+- Three states, kept apart: a line that reads passes, a line that does not read is refused naming
+  the file and the value, and an absent line is legitimate on every section but `removed`, where a
+  removal that declares nothing is what the version number turns on (#700). The grammar is
+  transcribed from `scripts/release_version.py` -- the assembler is vendored standalone with no
+  release module beside it -- and the two are measured against each other over a corpus of bodies
+  rather than asserted to agree in a comment.
+- Compatibility: breaking - a `removed` fragment carrying no compatibility line, and any fragment
+  whose line does not parse, now fails the pull-request gate where it previously passed. Nothing
+  that the release gate already accepted is newly refused.
+
+- `CLAUDE.md`'s Layout block and agent budget table now name the fifth agent
+  definition, `agents/sub-manager.md`, and the three `scripts/` modules that shipped
+  alongside it in #697 (`agent_role.py`, `tick_handback.py`, `ranking_table.py`),
+  which both tables had predated for a full release cycle. A new test,
+  `tests/test_claude_md_budget_table_709.py`, holds the budget table against
+  `scripts/agent_budgets.BUDGETS` directly, so the two numbers cannot drift apart
+  silently again; the Layout block itself stays untested, deliberately, per the
+  issue's own instruction not to bundle a prose-parsing guard into this change
+  (#709).
+
+- `preflight_check.py`'s receipt now names `roots`, the paths actually searched, on every
+  state including `could-not-search` -- a `not-matched` over one file and a `not-matched`
+  over the whole tree rendered identically once a human retyped the answer into a brief as
+  prose, and a probe scoped to `scripts/doctor.py` alone was written up as "nothing does
+  this today", sending a lane to build a second mechanism beside one that already existed.
+  `skills/manager/SKILL.md`'s pre-flight directive now asks for the scope to be quoted
+  verbatim -- `not-matched over 1 file (scripts/doctor.py)` -- rather than summarised. Not
+  a demand to sweep the whole tree on every pre-flight: a narrow probe is often the right
+  probe, and the defect was the narrow probe's answer wearing a repository-wide claim's
+  clothes (#727).
+
+### Fixed
+
+- `.github/workflows/tests.yml` now declares `workflow_dispatch`, so a push run that
+  the forge simply never creates on `main` has a remedy that costs one call and no
+  history rewrite. Before this, the only way to provoke a run was pushing an empty
+  commit to the default branch, and the release gate blocks on `main` being green, so
+  a dropped run (#679) could stall a release with nothing the loop could do about it.
+  `changelog.yml` deliberately does not get the same trigger: its fragment-required
+  step reads `github.event.pull_request.*`, which is absent on a dispatch run, and
+  would fail outright rather than merely do nothing.
+- `docs/autonomy.md`'s central claim -- that nothing this repository runs fires
+  without a human -- is re-derived alongside the trigger above, and
+  `tests/test_unattended_triggers_237.py` gets a named, reasoned
+  `MANUAL_DISPATCH_EXCEPTIONS` for exactly this one workflow rather than a blanket
+  pass on `workflow_dispatch`, so an unrelated future addition of the same trigger
+  elsewhere still reddens the sweep until it is named and argued too.
+
+- Two agent handbacks were damaged in one session through the same write instruction, and one lane
+  misdiagnosed its own moved cwd as a file that had vanished from the shared worktree root. The
+  report validator now names the absolute path it actually read — `at: <path>` under every verdict,
+  including the refusals, and `could-not-resolve` rather than the argument echoed back when it
+  cannot — so "the file is not there" and "I am not where I think I am" stop rendering identically.
+  It also refuses a pull request body more escaped than formatted: a payload hand-built as JSON
+  inside a TOML literal arrived with 30 literal backslash-n sequences against 4 real newlines and
+  would have opened as one enormous line. That check counts only escapes outside code spans, and
+  only those shaped like a line break rather than like a path component, so neither a backticked
+  backslash nor an unbackticked Windows path is refused; it reports a ratio and never reads the
+  prose, which makes a finding strong and a pass weak. Found alongside it and fixed: a report path
+  carrying a NUL byte raised out of the validator's read guard and was reported as the maintainer's
+  own schema being unusable, rather than as a path that could not be read. Both write-route
+  documents now say the cwd move belongs on every write call rather than once at the top, because a
+  shell cwd does not persist between an agent's calls (#685).
+
+- `.oss/README.md`'s "What is here" listed one of the three files `/oss:scaffold` vendors beside
+  it. `statusline.py` — the one of the three a maintainer has to wire up by hand — was named
+  nowhere in the file, and because the directory is replaced wholesale on every run, nobody could
+  fix that in their own repository. The list now names every file the scaffold writes there, says
+  that the status line is inert until a `statusLine` entry points at it and which file that entry
+  lives in, and is checked against the dict `apply()` itself walks so the next vendored file
+  cannot go unmentioned (#693).
+
+- Agent report schema bumped to contract 8 (additive): `forge_payload` now permits
+  `no_close`, the field supertool's `gh-pr-create` reads off a pull request payload to
+  open one that deliberately closes nothing (a Part-of-#N pull request, or unrelated
+  work). Every payload carrying it previously validated `INVALID` under
+  `additionalProperties: false`, so the only way to a clean validation was to delete
+  the key and write a false `Closes #N` instead -- measured on #697, where a
+  Part-of-#695 pull request needed exactly this shape. The on-disk pass also gained one
+  rule, paired with a mutation test: a payload declaring `no_close: true` while its own
+  body still binds a closing keyword is refused, since the two say opposite things
+  about what merging it closes (#698). Compatibility: breaking in one direction, the
+  same shape every prior additive bump here has been -- a version-7 copy of this
+  validator refuses a version-8 payload carrying `no_close`, since the key is unknown
+  to it; every report written against the old contract is still valid under the new
+  one.
+
+- `scripts/assemble_changelog.py --check --check-links` together silently ran only the
+  links audit: the mode dispatch is a chain of `if`/`return`, and `check_links` was
+  tested and returned before `check` was ever reached, so a malformed fragment could
+  sit in the directory next to a fine link table and the whole run printed a single
+  confident `ok` -- naming what it did audit ("N release section(s)"), which read as
+  thorough rather than partial. That combination was exactly what
+  `.claude/jit-context/paths/01-oss/changelog-fragments.md`'s own "Check before
+  pushing" block told a reader to run, so the documented pre-push command was the one
+  invocation that did not check. The two flags together are now refused outright, the
+  same shape as the existing `--untagged`-outside-`--check-links` refusal a few lines
+  below it, naming both separate invocations to run instead (#699).
+
+- `oss_config.py --split` no longer overwrites a correct, already-split `.oss.json` when
+  the only thing missing is this machine's `.oss.local.json` -- the ordinary state of a
+  fresh clone. It now derives `clone`, `worktree_root` and `state_file` from the
+  repository root, writes only the machine half, and leaves the tracked file
+  byte-for-byte untouched, reporting `derived, not configured` rather than a plain `OK`
+  so a guessed value is never mistaken for one a maintainer chose (#608, #701).
+
+- `plugin-currency.md` was in this repository's own jit-context layer and in no part of
+  `scripts/oss_rules.py`, so it had never shipped into a single managed repository and the next
+  `/oss:scaffold --apply` would have deleted it — the layer is removed before it is rewritten. It
+  now ships, and the sync guard that only ever compared one hand-named pair has been generalised:
+  the entry sets on disk and in the generator are compared per dimension in both directions, with
+  a dimension nobody could read reported as its own state rather than as a pass (#702).
+
+- This repository's own `.oss.json` declared `labels.priority` as `[]` while the
+  tracker actually carries `priority-high`, `priority-medium` and `priority-low`. The
+  three measured spellings are now written in (#703).
+
+- Pasted the Compatibility section `/oss:doctor`'s `fragments readme` check requires
+  into this repository's own `changelog.d/README.md`. The warning had been firing on
+  every fresh install since #260's check shipped in #431, with nobody acting on it
+  (#704).
+
+- `scripts/lane_setup.py` wrote a lane record to the worktree-root registry on every
+  call, whether or not the caller was ever going to dispatch that lane. Probing several
+  candidate lanes for disjointness (`--lane`/`--derive-held`, neither of which is a
+  dispatch decision) left phantom records behind -- carrying no files, the one shape
+  `held_from_live_lanes` refuses to trust as complete (#558) -- which then disabled
+  `--derive-held` for every later lane until the 240-minute TTL cleared them. Writing is
+  now gated on a new `--claim` flag: the bare call and every probe (`--lane`,
+  `--against`, `--derive-held`) are read-only and write nothing, and only `--claim`
+  registers a lane, which is now the flag `commands/tick.md` and
+  `skills/manager/phases/dispatch.md` pass at the one call that actually commits to
+  dispatching. The issue's second half -- reaping a record when its lane actually ends,
+  rather than only on the TTL clock -- is a separate mechanism and is not changed here
+  (#705).
+
+- `tick_handback.classify` took the *last* `TICK:` header in a sub-manager's handback
+  message, so quoted untrusted text in a `blocked` or `could-not-run` report -- narrating
+  an earlier attempt, or quoting an issue body or a CI log -- could outrank the real header
+  and classify a blocked tick as `completed`. It now refuses (`could-not-classify`) whenever
+  a message carries more than one `TICK:` header, rather than guessing between the first and
+  the last: a handback naming two outcomes is not a shape `agents/sub-manager.md`'s template
+  can produce (#706).
+
+- `agent_role._git_dir` ran `git rev-parse --git-dir` with `subprocess.run(text=True)` and
+  no explicit `encoding=`, decoding under this platform's own preferred text codec at
+  `errors="strict"`. A byte that codec cannot decode -- reachable from an ordinary accented
+  character in a maintainer's home directory or worktree path under a legacy codepage such
+  as cp1252 -- raised `UnicodeDecodeError`, a `ValueError` neither of the function's
+  `except (OSError, subprocess.SubprocessError)` clause caught, straight out of the
+  no-role-declared release publish path before any of its six documented states were
+  reached. Fixed by dropping `text=True` and decoding the bytes explicitly as UTF-8 --
+  the codec `git` actually writes paths in -- returning `None` on a genuine decode
+  failure rather than substituting with `errors="replace"`, so a path this module goes on
+  to read from or write to is never silently fabricated from replacement characters (#707).
+
+- `release_publish.py` gained a fourth publish-lifecycle outcome, `role-forbidden`
+  (exit 5), when a sub-manager's release authority is withheld (#697) -- and
+  `commands/release.md`'s own "Three outcomes" section, plus the script's own module
+  docstring, still named three. Found by the 0.16.0 release gate's round-two audit,
+  not by any test: two pull requests, each defensible alone, and neither review saw
+  the gap between them (#708). Both documents now name all four, and
+  `tests/test_release_publish_exit_codes_708.py` compares the exit codes
+  `release_publish.py` can actually emit against the ones `commands/release.md` and
+  the module's own docstring document, by computation rather than by eye -- the
+  mechanism the issue itself proposed.
+
+- A release commit made with `git commit --all` swept an untracked `.venv/` into it during the
+  `0.16.0` release -- 1,390 files where 41 were intended, reset before it reached the remote --
+  the same accident `.gitignore` already recorded against the `v0.3.0` release commit, with a
+  different offender. `commands/release.md`'s "Then" section now says explicitly to stage the
+  release's own paths and never `git commit --all`/`-a` or a bare `git add .`/`git add -A`.
+  `.gitignore` also gains the common Python local-state shapes one incident ahead of the next one:
+  `venv/`, `env/`, `.tox/`, `*.egg-info/`, alongside the `.venv/` entry added reactively at
+  `0.16.0` (#710).
+
+- `CLAUDE.md`'s "What is not proven yet" reach probe (`gh repo list Digital-Process-Tools`)
+  enumerates one GitHub organisation, and the section's own closing sentence -- "eleven
+  repositories" and "still not observed: any repository scaffolded by a maintainer who is not the
+  author of this plugin" -- did not say so. A repository outside that org, public or private,
+  rendered identically to one that does not exist: `#705` was filed from `jbkkz/requivo`, a
+  personal-account repository the probe cannot enumerate, which the section's own "not observed"
+  claim was never able to see. Both the reach-probe paragraph and the owned-files-in-the-field
+  table now name the org scope explicitly, so "not observed" reads as a property of the probe
+  rather than of the world (#711).
+
+- `tests/test_oss_rules.py`'s `_ere_matches` now skips the whole test instead of
+  failing when the `awk` spawn it drives times out: a `subprocess.TimeoutExpired`
+  measures nothing about whether the ERE matches, so it must not render as the same
+  outcome a wrong answer does. This reddened the 0.16.0 release commit on
+  `windows-latest`, 12 of 13 legs green, for a diff that never touched the rule, the
+  pattern or the function under test (#712).
+
+- Fifty spawns across the test suite carry a `timeout=`, and thirty-nine of them let a
+  `subprocess.TimeoutExpired` escape: a runner too slow to answer reported whatever the test
+  would have asserted about the answer, rather than reporting that there was none. #712 fixed
+  the one site that had already cost a release; `tests/spawn_guard.py` now carries the shape
+  once — a timeout skips the whole test with the binary, the duration, the platform and the
+  subject that went unmeasured, while a non-zero exit, a `check=True` refusal and an
+  unspawnable binary all still reach the caller unchanged. The same module re-derives the
+  sweep on every run, so the next spawn added to `tests/` arrives guarded or red instead of
+  unnoticed (#716).
+
+- `preflight_check.py` degraded to `could-not-search` on every Python package
+  directory, because a file it could not decode as UTF-8 (`__pycache__/*.pyc`, present
+  the moment a package is imported or tested even once) was folded into the same
+  `unreadable_files` set as a genuinely permission-denied file. The unreadable set only
+  downgrades the verdict when there is nothing else to report, so the third state fired
+  precisely on the negative answer -- a `matched` result with the identical `.pyc` files
+  present still returned `matched` and exit `0`. A file is now told apart by whether it
+  contains a NUL byte -- the same signal `git diff`/`grep -I` use to call a file binary
+  -- rather than by decode failure alone: present, it counts as `skipped_files` and
+  never forces `could-not-search` on its own; absent, the decode failure is genuinely
+  ambiguous (real source in Latin-1/cp1252/UTF-16 fails a strict UTF-8 decode too) and
+  it still forces `could-not-search`, the conservative answer rather than a guess. Both
+  fields are reported on every result, never suppressed at zero. A genuinely
+  permission-denied file still forces `could-not-search` exactly as before (#717).
+
+- `tests/test_must_assert_on_430.py` rendered a harness that could not run as six
+  false failures about the plugin under test. `pytester.runpytest_subprocess()`
+  relocates the child interpreter's `HOME` for the whole fixture, and on a machine
+  where pytest resolves from the Python *user* site-packages -- relative to `HOME`
+  -- the child cannot import pytest at all; its startup failure was indistinguishable
+  from a real `TESTS_FAILED` session. The six cases now go through a wrapper that
+  checks for that specific third state (empty stdout plus a `No module named pytest`
+  stderr line) and skips loudly, naming the reason, instead of asserting a false
+  defect. Two new tests pin the detector itself, both directions, deterministically
+  on every machine including CI (#719).
+
+- The changelog-fragments rule published `assemble_changelog.py --check --check-links` as its
+  "check before pushing" command, and the assembler now refuses that combination outright (#721).
+  The rule and the vendored script are both owned files replaced in the same `/oss:scaffold` run,
+  so a repository that refreshed its scaffold got the new script beside the old rule and a
+  documented pre-push command that exits 2 and audits nothing. It now publishes the two
+  invocations separately -- the same pair the scaffolded changelog workflow already runs as its
+  own two steps, so the check you run and the check that gates the pull request cannot disagree.
+- Every command the rule emits is now handed to the assembler in a fixture and required not to
+  come back refused, rather than being matched against the one spelling that happened to be wrong
+  (#721). `tests/test_oss_rules.py`'s assembler-command helper is plural-aware for the same
+  reason: its `at most one invocation` assertion was a claim about the number of audits, made in a
+  helper whose subject is the path they name, and seven tests inherited it without meaning to.
+
+- `CLAUDE.md`'s manager-skill budget table and `scripts/skill_phases.DOCUMENTS` were two
+  hand-copied statements of the same seven numbers, and nothing compared them -- the
+  sibling gap left after #709 built the identical comparison for the agent-definition
+  table only. A new test, `tests/test_claude_md_phase_budget_table_725.py`, holds the
+  table against `skill_phases.DOCUMENTS` directly. The concrete instance that made this
+  urgent rather than tidy: `skills/manager/phases/dispatch.md` had narrowed to 48 B of
+  headroom against its budget, and a lane in this same tick was already forced to place
+  a new directive in `SKILL.md` instead of here for no reason but that margin. The
+  budget is raised (26,052 B measured, 28,700 B ceiling) rather than split -- splitting
+  `dispatch.md` was weighed and declined as a separately-reviewable change this issue
+  does not warrant -- and the table and the module move together in this commit (#725).
+
+- Both copies of the developer brief's supertool blockquote opened "Use `supertool` for every file
+  operation" and named only the two ops that write files, while the raw-command guard refuses any
+  raw invocation an op supersedes -- so every lane's one unconditional write, its own commit, was
+  discovered by a refused `git commit -m` rather than by the brief (#729). Both copies now name
+  `supertool 'git-commit:@-'` for the commit and say plainly that the guard's own reach is wider than
+  the ops listed, pointing at `supertool 'ops'` for the rest rather than growing the list further --
+  a hand-kept list of every op the guard covers is complete until somebody adds a step, and then
+  wrong silently, the same argument this repository already makes about every other list.
+  `tests/test_content_invariants.py` now fails when either write-route document stops naming the
+  commit op, the same shape as the existing check for the creating op (#250).
+
+- `docs/autonomy.md`'s central-claim paragraph and the `MANUAL_DISPATCH_EXCEPTIONS` /
+  `DEPENDABOT` exceptions recorded in `tests/test_unattended_triggers_237.py` are now checked
+  against each other, in both directions: every exception recorded in code must be named, with
+  its reason, in the document, and the document may name no `.yml` file that is not a recorded
+  exception (#736). Before this, the two were guarded in a cycle that excluded the document's
+  own prose -- workflows were checked against the dict and the dict against the workflows, but
+  nothing checked the document against either -- so dropping an exception from the dict, or the
+  reverse, a fictional exception named only in prose, passed every test in the file.
+- The comparison is paragraph-scoped rather than whole-document: a first draft matched a bare
+  keyword anywhere in the file and passed for the wrong reason, because "schedule" is a
+  substring of "scheduled", which the document uses in an unrelated paragraph about a possible
+  future runtime, nowhere near the dependabot exception it was meant to guard.
+- Paragraph-scoping alone was still not enough: found in review, a paragraph naming two `.yml`
+  files, one genuinely explained and one merely mentioned nearby, satisfied "the reason keyword
+  appears somewhere in this paragraph" for both. The check now requires the keyword within 40
+  characters of the file it explains -- close enough for the genuine case (25 characters in the
+  real document) and too far for the adversarial one that motivated it.
+- Compatibility: compatible - a test-only change; nothing shipped to a managed repository is
+  affected.
+
+- `scripts/preflight_check.py` returned `not-matched` for a UTF-16 source
+  file that genuinely contained the searched pattern (#738). UTF-16-encoded
+  ASCII carries a NUL byte for every character, so the NUL-byte test #717
+  added to tell binary garbage from real non-UTF-8 source always called a
+  UTF-16 file binary, regardless of content, and routed it to
+  `skipped_files` -- the branch that by design never downgrades the
+  verdict. Latin-1 and cp1252 source reached `unreadable_files` and the
+  honest `could-not-search` the same way they always had; UTF-16 did not.
+  A byte-order mark (`\xff\xfe` little-endian, `\xfe\xff` big-endian) is
+  now checked ahead of the NUL-byte test: a UTF-16 file is routed to
+  `unreadable_files` and forces `could-not-search`, the same conservative
+  answer already given to Latin-1/cp1252, rather than a silent miss.
+  BOM-less UTF-16 remains a separate, worse, unfixed gap -- ASCII-content
+  UTF-16 with no mark decodes successfully as UTF-8 outright (every byte is
+  independently a legal codepoint), so it never reaches this check at all
+  and returns a silent `not-matched` with both `skipped_files` and
+  `unreadable_files` empty. Found by review on this same issue, pinned by a
+  regression test, and left for a follow-up rather than attempted here.
+
+- `doctor`'s supertool op inventory check (#582) reported `all 18 op(s) … resolve` while
+  `skills/manager/SKILL.md`'s own op table — the loop's canonical "which call to make" reference —
+  named ops as bare cells the existing call-shaped derivation never matches by design: it requires
+  the literal word `supertool` in front of an argument, and a table cell has no such word in front
+  of it (#726 measured that dropping that requirement instead derives eighteen English words out of
+  ordinary prose). Four ops the table names were genuinely invisible before this fix —
+  `gh-issue-create`, `gh-run`, `gh-job`, `gh-pr` — and the derived count rises from 18 to 22. (#739's
+  own audit reported a broader gap, 21 real roster ops named anywhere in this plugin's shipped text
+  and not derived; that count also includes bare mentions outside the table, such as `watch`, which
+  this fix deliberately leaves uncovered — see below.)
+
+  The table is now parsed as a second, narrower source, anchored on its own heading the way
+  `scripts/ranking_table.py` reads the ranking table out of the same file, rather than swept as free
+  text — a bare cell is only accepted when it is compound-shaped (`gh-branch`), and a
+  colon-argument cell (`gh-run:N`) is always accepted, so a plain word in the same column's own
+  prose (`base`) is not derived as an op. A bare op-shaped word outside the table entirely — such
+  as `watch`, which also names a supertool preset elsewhere in this plugin's own text — is still
+  not derived; this is a deliberately narrow, structured-source widening, not a general sweep for
+  backticked op names (#739).
+
+- `tests/test_unattended_triggers_237.py`'s manual-dispatch exception widened its scan from
+  `scripts/*.py` alone to every tracked file under `scripts/`, `hooks/` and `bin/` -- this
+  plugin's own code -- so a `gh workflow run`/`/dispatches` call planted in `scripts/*.sh`,
+  `hooks/` or `bin/` now reddens the check instead of passing silently (#740). Found by the
+  release gate's round-one audit: the exception's own reason claimed a wider scope --
+  "nothing in this plugin's own scripts, skills, agents or commands" -- than the four-line
+  `scripts/*.py` glob it sat beside actually measured, and a planted call in five of the six
+  directories the reason named went unnoticed.
+- `skills/`, `agents/` and `commands/` are deliberately still outside the scan: they are prose
+  a session reads and acts on under supervision rather than this plugin's own code, and
+  telling an executable directive there apart from a description of one is a harder problem
+  than a substring match, precisely because a workflow comment or a test docstring describing
+  the manual remedy must not trip it either. The reason string and `docs/autonomy.md`'s central
+  claim are both narrowed to say exactly this, rather than widened past what is checked.
+- The first version of this widened scan walked the filesystem (`rglob("*")`), which reads
+  every file under `scripts/`, `hooks/` and `bin/` whether or not git tracks it -- and this same
+  test module does `import scaffold` at collection time, which writes a `scripts/__pycache__/
+  scaffold.cpython-3*.pyc` on a standard, writable CPython checkout (the shape of an ordinary CI
+  runner). A filesystem walk would read that binary file as UTF-8 and crash every test in the
+  file with `UnicodeDecodeError` instead of failing one assertion cleanly -- reproduced directly
+  by planting a binary file under `scripts/` and running the walk. Found in review before this
+  landed; fixed by deriving the scan from `git ls-files` instead, which cannot see an untracked,
+  gitignored path.
+- Compatibility: compatible - a test-only change plus prose narrowed to match what the test
+  measures; nothing shipped to a managed repository is affected.
+
+- `skills/manager/phases/dispatch.md` published three `${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py`
+  invocations unquoted -- the `--claim` line the #705 diff had just edited, plus two more of the
+  same class turned up by sweeping the rest of the file (the lane-disjointness check and the
+  lane-bundling check). All three word-split on a plugin root containing a space, the ordinary shape
+  of a Windows home directory built from a two-word account name, which is #689's own mechanism in
+  the same file family (#741). `tests/test_op_table_commands_687_689.py` now sweeps every
+  `${CLAUDE_PLUGIN_ROOT}/scripts/` reference in `dispatch.md`, not only the three-call table and the
+  `fleet_label.py` compose line, so the two instances the issue never named are covered too. The
+  sweep is scoped to this one file on purpose, not the whole loop's prose -- and while writing it a
+  fifth genuine, still-unquoted instance turned up outside that scope
+  (`skills/manager/phases/handback.md:84`, `rename_changelog_fragment.py`). It is reported to the
+  maintainer rather than fixed here, because `handback.md` is outside this change's file set.
+
 ## [0.16.0] - 2026-08-31
 
 ### Added
@@ -6104,7 +6520,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.14.0
