@@ -86,6 +86,16 @@ is not on this list is just a way of not fixing things.
   is the exact guarantee `|cleanup` runs inside the op instead: `gh-pr-merge:N:squash|force|cleanup`
   is the documented default, and its three deletions run only **after** the op's own `MERGED`
   read-back, never before.
+- **Release the merged issue's own lane record in the same breath.** A live record blocks a
+  follow-up for its full 240-minute TTL regardless of whether its own pull request merged --
+  three recorded instances cost 20-90 minutes of a follow-up wrongly `BLOCKED` on files a merge the
+  loop itself performed and read back had already freed (#734). Once step 1 above verifies
+  `state`/`mergedAt`/`mergeCommit`, run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue>
+  --release --repo <clone>` -- `released` / `not-found` (nothing to do, not a failure) /
+  `could-not-release`. Skipping it is slower, not wrong: `held_from_live_lanes` also prunes a
+  record once its branch is confirmed gone from the shared clone's local `refs/heads`, which
+  `|cleanup`'s branch deletion above causes anyway -- the explicit release just does not wait for
+  a later lane to ask.
 - **Verify the linked issue actually closed.** Write one `Closes #N` per issue — the *keyword*
   repeated, not just the `#`. `Closes #A B` silently references only A, and `Closes #A #B` links
   both and closes only A, so "each number has its own `#`" is not the rule and satisfying it is not
