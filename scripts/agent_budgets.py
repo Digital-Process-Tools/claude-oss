@@ -33,7 +33,15 @@ from pathlib import Path
 # repo-relative path (POSIX, matched by name against agents/*.md on disk) ->
 # (bytes measured when the budget was set, budget bytes incl. ~10% headroom)
 BUDGETS: dict[str, tuple[int, int]] = {
-    "agents/developer.md": (75194, 82800),
+    # Raised for #769: a review agent declared read-only wrote into the
+    # worktree it was auditing, twice in one run, by two different agents,
+    # leaving no ref movement and no reflog trace -- the brief already said
+    # not to, twice, and that was the proof a sentence is not a mechanism.
+    # The fix is a caller-side receipt (scripts/tree_snapshot.py, in the
+    # shape review_return.py already argues for a different silent loss in
+    # the same review step) plus the invocation and the two exit states a
+    # developer lane has to act on, which does not fit the prior headroom.
+    "agents/developer.md": (83014, 91300),
     "agents/auditor.md": (14329, 15800),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
