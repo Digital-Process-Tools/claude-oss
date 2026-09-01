@@ -77,7 +77,8 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
-    # margin (see CLAUDE.md's "What is not proven yet" round for the receipt).
+    # margin (see CLAUDE.md's "The manager skill is a spine plus one file per
+    # phase" section, the paragraph beside this table, for the receipt).
     # A split was weighed and declined: dispatch.md's content -- fleet size,
     # lane disjointness, bundling, what every brief carries -- is one subject
     # in one section, not two phases wearing one name, and a fresh split is a

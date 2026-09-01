@@ -62,6 +62,7 @@ def test_budget_table_names_exactly_the_files_agent_budgets_declares():
 
 def test_budget_table_numbers_match_agent_budgets_exactly():
     rows = _table_rows()
+    assert rows, "no rows matched under the budget table header -- the parser or the table moved"
     mismatches = []
     for path, table_baseline, table_budget in rows:
         real_baseline, real_budget = agent_budgets.BUDGETS.get(path, (None, None))

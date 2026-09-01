@@ -85,6 +85,7 @@ def test_phase_budget_table_names_exactly_the_files_skill_phases_declares():
 
 def test_phase_budget_table_numbers_match_skill_phases_exactly():
     rows = _table_rows()
+    assert rows, "no rows matched under the phase budget table header -- the parser or the table moved"
     module_pairs = _module_pairs()
     mismatches = []
     for path, table_baseline, table_budget in rows:
