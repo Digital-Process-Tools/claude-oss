@@ -67,10 +67,12 @@ Pushing and opening is yours, and it is one read plus one call:
    body has carried a correction to the brief that a re-narration had flattened out.
 3. **Hand the payload path to `gh-pr-create:@FILE`.** Not `gh pr create`, and not a body of your own
    assembled from the report. The op parses the body's closing references with the same reader
-   `gh-pr` uses, so a missing or malformed `Closes #N` is **surfaced** at creation instead of after
-   the squash — when the issue quietly stays open and the board reads clean. **Surfaced, not caught:
-   the pull request is opened and the op exits 0**, printing *No closing keyword in the body, so
-   merging this will close nothing.* Reading that line is yours. See below.
+   `gh-pr` uses, so a missing or malformed `Closes #N` is **caught** at creation, the earliest point
+   anything can see it — never after the squash, when the issue quietly stays open and the board
+   reads clean. **The op refuses: nothing is created**, and the error names the remedy — add a
+   working `Closes #N`, or, when this pull request deliberately closes nothing (a `Part of #N` pull
+   request, unrelated work), set `no_close = true` at the payload's top level and publish anyway. See
+   below.
 4. **If the fragment gets renamed to this pull request's own number, the rename is not
    metadata-only, and it is not a step to remember either.** A lane commits a fragment keyed to the
    issue it was briefed on; a maintainer who then keys it to the pull request number instead runs
@@ -81,7 +83,7 @@ Pushing and opening is yours, and it is one read plus one call:
    The rename and the rewrite are one coupled fact, not two — a fragment keyed to the pull request's
    own number does not exist until the pull request is open, so nothing about it is correct until
    both halves have moved together.
-   `${CLAUDE_PLUGIN_ROOT}/scripts/rename_changelog_fragment.py <old path> <new number>` performs both
+   `"${CLAUDE_PLUGIN_ROOT}/scripts/rename_changelog_fragment.py" <old path> <new number>` performs both
    in one call: it moves the file with `git mv`, rewrites the fragment's own
    self-reference to the new number, and **refuses** rather than leaving behind a fragment
    `assemble_changelog.py --check` would still reject — including when the old body never named
@@ -217,23 +219,24 @@ truncates a long body and an appended section sits at the end, so the cheap read
 that cannot see what it was called to confirm.
 
 **The op also closes the composition that made this worse than a broken command.** `gh-pr-create`
-**reports** a body with no `Closes #N` at creation, the earliest point anything can see it — and
-**reporting is all it does: the pull request is created and the op exits 0.** This document said
-*refuses* until #209, which is the more expensive error of the two, because the sentence that claims
-a guarantee is the sentence that stops anyone checking. Measured on two pull requests in one night,
-both created at `exit=0` with no binding closing reference and repaired by hand before merge; four of
-seven agent payloads across two sessions carried the same defect. **So read the receipt** — it names
-the issues the body links, and *No closing keyword in the body, so merging this will close nothing.*
-is the line that means nobody will. A separate check does refuse: the report validator rejects a
-`pr_body` whose declared `closes` is unmet. That is the payload being validated before it is used,
-not the forge call being blocked, and the two must not be read as one gate. When the
-repair *is* that reference, a silent no-op merges the pull request with the issue still open and the
-board reading clean — the exact failure the merge gates warn about, reached through the tool that was
-supposed to prevent it. `gh-pr-edit` re-parses the published body with the same reader `gh-pr` uses
-before it writes, in three states — the references survived, one was **dropped**, or the body **could
-not be read at all** — and refuses on either of the last two, because those are not the same answer.
-A deliberate re-scope says so with the `unlink` token rather than arriving indistinguishable from an
-accident.
+**refuses** a body with no `Closes #N` at creation, the earliest point anything can see it, rather
+than creating the pull request and leaving the gap for later. This document said *reports, and exits
+0* between #209 and #776 — #209's own reasoning was that the sentence claiming a guarantee is the
+sentence that stops anyone checking, and that argument is still right; it settles in favour of a
+refusal that names its own remedy, not in favour of a silent pass. Measured under the old behaviour,
+on two pull requests in one night: both created with no binding closing reference and repaired by
+hand before merge, and four of seven agent payloads across two sessions carried the same defect — the
+failure the refusal now prevents outright. When this pull request deliberately closes nothing — a
+`Part of #N` pull request, or unrelated work — the refusal is not a false positive to route around
+with a keyword that lies: set `no_close = true` at the payload's top level, and the op opens the pull
+request with a receipt that distinguishes *deliberately closes nothing* from *forgot the keyword*,
+which the old exit-0 behaviour could not. A separate check does refuse in a second place: the report
+validator rejects a `pr_body` whose declared `closes` is unmet. That is the payload being validated
+before it is used, not the forge call being blocked, and the two must not be read as one gate.
+`gh-pr-edit` re-parses the published body with the same reader `gh-pr` uses before it writes, in three
+states — the references survived, one was **dropped**, or the body **could not be read at all** — and
+refuses on either of the last two, because those are not the same answer. A deliberate re-scope says
+so with the `unlink` token rather than arriving indistinguishable from an accident.
 
 What belongs in it is only what the agent could not have written: an independent reproduction or red
 run, a premise of the brief the agent falsified, and your acceptance or rejection of its argued-down
