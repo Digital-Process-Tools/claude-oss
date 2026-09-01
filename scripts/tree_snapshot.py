@@ -275,6 +275,19 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
 
+    # The sibling idiom used by lane_setup.py, release_delta.py, scaffold.py,
+    # checklist_skew.py, ranking_table.py, release_version.py and
+    # rename_changelog_fragment.py (#794): a VERDICT line can carry an
+    # arbitrary git status path or a localised git stderr string, and a
+    # console codepage that cannot encode one of them must not crash this
+    # print -- a UnicodeEncodeError here exits 1, colliding with
+    # EXIT_CODES["mutated"] and destroying could-not-compare (exit 3) too.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
+
     if args.command == "snapshot":
         result = snapshot(args.root)
         print(json.dumps(result))
