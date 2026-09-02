@@ -268,6 +268,20 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
     env = dict(os.environ)
     env["HOME"] = str(home)
     env["USERPROFILE"] = str(home)
+    # `plugin_update.receipt_dir()` (#753) does NOT fall back to HOME on Windows: it
+    # checks LOCALAPPDATA first and only falls back to `~` when that is unset, so an
+    # ambient LOCALAPPDATA -- which every real Windows runner has, inherited by
+    # `env = dict(os.environ)` above exactly like an ambient XDG_CACHE_HOME would be
+    # on POSIX -- makes the receipt-file path immune to the HOME override above and
+    # therefore SHARED across every subprocess this file launches. Two unrelated
+    # invocations landing inside `DEBOUNCE_SECONDS` of each other then read and act
+    # on the same real receipt regardless of what either one's OWN env asked for --
+    # this is what turned three explicit must-not-fire controls in
+    # `tests/test_workspace_auto_update_753.py` into `/oss:doctor` on Windows CI
+    # (#853). Pinning both keys, scoped under this call's own `home`, closes it on
+    # both platforms rather than only the one HOME already covered.
+    env["LOCALAPPDATA"] = str(home / "_localappdata")
+    env["XDG_CACHE_HOME"] = str(home / "_cache")
     # Popped rather than left alone: the developer running this suite may well have
     # one exported, and the derivation under test is the branch that only runs when
     # nothing is. An inherited value would make every derivation assertion pass or

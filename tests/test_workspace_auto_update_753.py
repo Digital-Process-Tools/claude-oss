@@ -113,6 +113,15 @@ def _run_with_stub(repo, before="0.1.0", after="0.1.0", marketplace_exit=0,
     env = dict(os.environ)
     env["HOME"] = str(home)
     env["USERPROFILE"] = str(home)
+    # See tests/test_workspace_launcher.py's `run()` for the full explanation (#853):
+    # `plugin_update.receipt_dir()` reads LOCALAPPDATA first on Windows and does not
+    # fall back to HOME while it is set, so an ambient LOCALAPPDATA -- inherited by
+    # `env = dict(os.environ)` above -- makes the receipt file this whole module is
+    # ABOUT shared across every test in this file rather than scoped to `home`. That
+    # is precisely how a genuine update in one test survived, via debounce, into a
+    # later test's must-not-fire assertion on Windows CI.
+    env["LOCALAPPDATA"] = str(home / "_localappdata")
+    env["XDG_CACHE_HOME"] = str(home / "_cache")
     env.pop("SUPERTOOL_WATCH_NAME", None)
     if no_auto_update:
         env["OSS_NO_AUTO_UPDATE"] = "1"
