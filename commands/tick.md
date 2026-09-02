@@ -518,9 +518,11 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
 
 ## What ends a tick
 
-**This is the sub-manager's own declaration**, made inside the `TICK: completed` paragraph it hands
-back above — the scheduler reads it there rather than re-deriving it. Not the wakeup. The wakeup is a safety net, and the tell that this went wrong is a closing line
-describing the schedule instead of the next action. Waiting on CI is not a reason to stop working.
+**This is the sub-manager's own declaration**, made in the `TICK-ENDS:` field of the `TICK:
+completed` handback above (#773) — the scheduler reads it there rather than re-deriving it or
+parsing the paragraph for it. Not the wakeup. The wakeup is a safety net, and the tell that this
+went wrong is a closing line describing the schedule instead of the next action. Waiting on CI is
+not a reason to stop working.
 
 **And only one of three states is an end.** Say which one, in as many words, as the tick closes
 (#244):
