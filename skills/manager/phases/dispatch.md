@@ -329,32 +329,20 @@ Launch every dispatched lane — bundled or not — in a single message so they 
 
 ### One fan-out, then the lane is resumed, never re-dispatched
 
-**A tick performs exactly one dispatch (#880).** One fan-out of lanes, filled per the axes above,
-and the tick then sees those lanes through to merge — not two fan-outs, not three. A tick that
-dispatches again has started a second tick inside the first one, and it makes the receipt lie: a
-tick that dispatched three lanes and re-dispatched one of them twice records five dispatch events
-for three lanes, so any later count of lanes-per-tick or issues-per-lane measures something other
-than what it names.
+**A tick performs exactly one dispatch (#880).** One fan-out, filled per the axes above, then the
+tick sees those lanes through to merge -- a second fan-out is a second tick inside the first, and
+the receipt lies for it (three lanes, one re-dispatched twice, reads as five).
 
-**When a lane comes back red, or its base moves under it, resume that lane's own agent — do not
-spawn a fresh one at the same issue.** The agent that wrote the diff knows why it wrote it; a fresh
-spawn re-derives the worktree, the issue, the brief and the diff from nothing, paying #695's saving
-back as a cost on the one occasion the context was worth keeping. `SendMessage` is the mechanism and
-it is not new — the scheduler already resumes a paused sub-manager this way (`commands/tick.md`
-step 7, #818), and this loop has resumed a developer lane to fix a red CI leg with the failing job's
-own output quoted back to it. A resumed lane costs the message; a fresh developer spawn measured
-150k-290k tokens on this session's own lanes, so three rounds on one lane at that price is three
-developer agents where one resumed agent would do.
+**A red lane, or one whose base moved, is resumed via `SendMessage` to its own agent -- never
+re-dispatched fresh at the same issue.** The agent that wrote the diff knows why; a fresh spawn
+re-derives everything from nothing, paying #695's saving back as a cost (`commands/tick.md` step 7,
+#818, already resumes a paused sub-manager this way; a resumed lane costs the message against a
+fresh developer spawn's measured 150k-290k tokens).
 
-**A lane's own agent can genuinely be gone, and that is a real third state, not a silent
-re-dispatch.** Its context died, or — the same bar `agents/developer.md` already sets for its own
-review spawns — it was resumed and returned nothing twice. Only then is a fresh spawn at the same
-issue correct, and it is named `agent-unreachable`, distinct from an ordinary `resumed`. A
-re-dispatch carrying neither an attempted resume nor an `agent-unreachable` finding is the defect
-this section exists to stop, and it is what a bare re-dispatch renders as by default. A re-dispatch
-that happened because resuming was impossible and one that happened because nobody thought to
-resume must not render the same — state which one it was in the handback, not only in memory of
-which round it was.
+**A lane's own agent can genuinely be gone -- context died, or resumed and silent twice, the bar
+`agents/developer.md` sets its own review spawns -- and that is its own named state,
+`agent-unreachable`, distinct from `resumed`.** A re-dispatch with neither an attempted resume nor
+that finding is the defect this section stops; state which one applied in the handback.
 
 **Lane length is itself a cost decision, and it is measured after a lane completes, never during
 it (#498).** Cost scales roughly with the square of a lane's own length — turns times the average
