@@ -40,6 +40,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import dispatch_rank as _dispatch_rank  # noqa: E402
+
 MAX_DECISION = 200
 
 # The intake metric: filings the loop made, per pull request it merged.
@@ -128,6 +132,21 @@ LANES_PARTIAL = "partial"
 # override is exactly the accretion #316 was filed about.
 CHOICE_DEFAULT = "default"
 CHOICE_OVERRIDE = "override"
+
+# A dispatched lane's own fill (#852): how many issues it carried, and -- when that is
+# fewer than dispatch_rank.MAX_LANE -- why, from the same closed vocabulary
+# dispatch_rank.SHORT_REASONS declares and dispatch_rank.check_lane already enforces
+# for the dispatch decision itself. Recorded here so the rule commands/tick.md step 5
+# states in prose -- "a lane dispatched with fewer says why" -- has something that can
+# actually detect its own violation, rather than surviving only in free `--decision`
+# prose (#337's own failure, one field over). Same four states as `lanes` above, for
+# the same reason: a tick that dispatched nothing and a tick that recorded nothing
+# about its lanes' fill must not render alike, and a fill nobody could establish must
+# never render as an empty one.
+LANE_FILL_RECORDED = "recorded"
+LANE_FILL_NONE_DISPATCHED = "none-dispatched"
+LANE_FILL_COULD_NOT_ESTABLISH = "could-not-establish"
+LANE_FILL_PARTIAL = "partial"
 
 # A cohort freeze count (#407): a frozen label re-counted right after the writes that
 # made it. GitHub's label filter is an index and it lags the writes that feed it, so a
@@ -1345,6 +1364,233 @@ def lane_model_trend(entries):
     return trend
 
 
+def lane_fill(entries, window, why=None):
+    """One tick's lane fill (#852): how many issues each dispatched lane carried, and
+    why -- when fewer than ``dispatch_rank.MAX_LANE`` -- from the closed vocabulary
+    ``dispatch_rank.SHORT_REASONS`` declares.
+
+    ``entries`` is a list of mappings, each carrying ``primary`` (the lane's primary
+    issue number) and ``count``, plus ``reason`` when the count is short. ``None`` means
+    the fill could not be established, mirroring ``lane_models``'s own ``None`` case --
+    and then ``why`` is required for the identical reason. An empty list means the tick
+    dispatched no developer lane.
+
+    Validation of ``count``/``reason`` together is not reimplemented here: it is the
+    exact call the dispatch decision itself already had to make, so this delegates to
+    ``dispatch_rank.check_lane`` -- a lane of ``count`` issues, checked against a
+    ``reason`` -- rather than re-declaring the ceiling or the closed set a second time
+    in this file. A lane whose fill this function refuses is a lane the dispatcher
+    should have refused to dispatch in the first place.
+    """
+    if not window or not str(window).strip():
+        raise StateError(
+            "a lane fill record needs a window -- what this dispatch was, in words. A "
+            "fill nobody can read against any other tick is not worth recording."
+        )
+    window = str(window).strip()
+
+    if entries is None:
+        if not why or not str(why).strip():
+            raise StateError(
+                "a lane fill that could not be established needs a why. Without it, "
+                "could-not-establish is an absence with no cause, which reads as a "
+                "fill of nothing."
+            )
+        return {
+            "state": LANE_FILL_COULD_NOT_ESTABLISH,
+            "window": window,
+            "lanes": None,
+            "why": str(why).strip(),
+        }
+
+    if not isinstance(entries, list):
+        raise StateError(
+            "lane fill entries must be a list of mappings or None, not {!r}".format(entries)
+        )
+
+    if not entries:
+        return {"state": LANE_FILL_NONE_DISPATCHED, "window": window, "lanes": [], "why": None}
+
+    normalized = []
+    for position, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise StateError("lane fill {} is not a mapping ({!r})".format(position, entry))
+
+        primary = entry.get("primary")
+        primary_blank = primary is None or (isinstance(primary, str) and not primary.strip())
+        if isinstance(primary, bool) or primary_blank:
+            raise StateError(
+                "lane fill {}: primary issue is required and must not be a bool "
+                "({!r})".format(position, primary)
+            )
+
+        count = entry.get("count")
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise StateError(
+                "lane fill {} (issue {}): count must be a whole number, not "
+                "{!r}".format(position, primary, count)
+            )
+        if count < 0:
+            raise StateError(
+                "lane fill {} (issue {}): a count cannot be negative ({})".format(
+                    position, primary, count
+                )
+            )
+
+        reason = entry.get("reason")
+        if reason is not None and count == _dispatch_rank.MAX_LANE:
+            # check_lane() silently drops a reason on a full lane rather than
+            # refusing it -- correct for the dispatch decision, which only cares
+            # whether a short lane was left unexplained. A recorded reason on a
+            # full lane is a different defect: a claim about a constraint that
+            # never bound, landing in the history looking like a measured one.
+            raise StateError(
+                "lane fill {} (issue {}): a full lane of {} needs no reason, but "
+                "{!r} was given".format(position, primary, count, reason)
+            )
+        check = _dispatch_rank.check_lane(list(range(count)), reason)
+        if check["state"] != "ok":
+            raise StateError(
+                "lane fill {} (issue {}): {}".format(position, primary, check["why"])
+            )
+
+        normalized.append({"primary": primary, "count": count, "reason": check["short_reason"]})
+
+    return {"state": LANE_FILL_RECORDED, "window": window, "lanes": normalized, "why": None}
+
+
+def lane_fill_line(record):
+    """One line a tick report can print. Same shape as ``lane_models_line``, one
+    field over -- the state decides the sentence, not the caller."""
+    return _receipt_line(_lane_fill_sentence(record))
+
+
+def _lane_fill_sentence(record):
+    """`lane_fill_line`'s branches. Unfolded on purpose -- it has one caller."""
+    if not isinstance(record, dict):
+        raise StateError("lane_fill_line takes a lane fill record, not {!r}".format(record))
+    state = record.get("state")
+    window = record.get("window") or "an unstated window"
+    head = "lane fill {}: ".format(window)
+
+    if state == LANE_FILL_NONE_DISPATCHED:
+        return head + "dispatched no developer lane"
+    if state == LANE_FILL_COULD_NOT_ESTABLISH:
+        return head + "could not establish ({}) -- this is not zero lanes".format(
+            record.get("why") or "no reason recorded"
+        )
+    if state in (LANE_FILL_RECORDED, LANE_FILL_PARTIAL):
+        lanes = record.get("lanes")
+        if isinstance(lanes, list):
+            counts = {}
+            full = 0
+            for lane in lanes:
+                reason = lane.get("reason") if isinstance(lane, dict) else None
+                if reason:
+                    counts[reason] = counts.get(reason, 0) + 1
+                else:
+                    full += 1
+        else:
+            counts = record.get("counts") or {}
+            full = record.get("full_lanes") or 0
+        parts = ", ".join(
+            "{} {}".format(count, reason) for reason, count in sorted(counts.items())
+        )
+        if full:
+            parts = ", ".join(p for p in (parts, "{} full".format(full)) if p)
+        mix = head + "{}".format(parts or "no lanes")
+        if state == LANE_FILL_PARTIAL:
+            # Deliberately not the recorded sentence with a caveat appended -- same trap
+            # `lane_models_line`'s own PARTIAL arm guards against: a reader skimming for
+            # the mix would take the mix and leave the caveat.
+            return "PARTIAL, " + mix[len(head):] + " -- {}".format(
+                record.get("why") or "some ticks contributed no record"
+            )
+        return mix
+    return head + "unrecognised lane fill state {!r}, so nothing is claimed".format(state)
+
+
+def lane_fill_trend(entries):
+    """Re-add the recorded lane fills across a run of ticks (#852): the direct
+    measure of how often a short lane's reason is ``could-not-tell`` rather than
+    ``board-exhausted``/``no-adjacent`` -- the sibling sweep issue's own skip rate,
+    made visible without needing that sweep to exist.
+
+    Same three-hole shape as ``lane_model_trend``: a tick whose fill could not be
+    established, a tick that dispatched no lane at all (a real zero, counted), and an
+    entry carrying nothing that is a lane fill record. Any hole among the first and
+    third makes the answer ``partial``.
+    """
+    counts = {}
+    lanes_total = 0
+    full_lanes = 0
+    counted = 0
+    uncounted = 0
+    without_record = 0
+
+    for entry in entries or []:
+        detail = entry.get("detail") if isinstance(entry, dict) else None
+        record = detail.get("lane_fill") if isinstance(detail, dict) else None
+        if not isinstance(record, dict) or "state" not in record:
+            without_record += 1
+            continue
+        state = record.get("state")
+        if state == LANE_FILL_RECORDED:
+            for lane in record.get("lanes") or []:
+                if not isinstance(lane, dict):
+                    continue
+                reason = lane.get("reason")
+                lanes_total += 1
+                if reason:
+                    counts[reason] = counts.get(reason, 0) + 1
+                else:
+                    full_lanes += 1
+            counted += 1
+        elif state == LANE_FILL_NONE_DISPATCHED:
+            counted += 1
+        else:
+            uncounted += 1
+
+    trend = {
+        "window": "the ticks in this history",
+        "counts": counts if counted else None,
+        "lanes": lanes_total if counted else None,
+        "full_lanes": full_lanes if counted else None,
+        "why": None,
+        "ticks_counted": counted,
+        "ticks_uncounted": uncounted,
+        "ticks_without_record": without_record,
+    }
+
+    if counted == 0:
+        trend["state"] = LANE_FILL_COULD_NOT_ESTABLISH
+        trend["why"] = (
+            "no tick in this history recorded a lane fill ({} could not "
+            "establish, {} said nothing about their lanes)".format(
+                uncounted, without_record
+            )
+        )
+        return trend
+    if uncounted or without_record:
+        trend["state"] = LANE_FILL_PARTIAL
+        trend["why"] = (
+            "{} of {} ticks contributed no lane fill record, so this sum is real "
+            "and it is not the range's total".format(
+                uncounted + without_record, counted + uncounted + without_record
+            )
+        )
+        return trend
+    if lanes_total == 0:
+        # Every tick that contributed to this sum dispatched no developer lane. A real,
+        # established zero -- not the same rendering as `recorded` with an empty mix,
+        # which would read as a fill nobody took.
+        trend["state"] = LANE_FILL_NONE_DISPATCHED
+        return trend
+
+    trend["state"] = LANE_FILL_RECORDED
+    return trend
+
+
 def cohort_freeze(cohort, counts, why=None):
     """One cohort freeze count (#407): a label's count taken from more than one route.
 
@@ -2075,6 +2321,40 @@ def _lane_argument(text):
     return lane
 
 
+def _lane_fill_argument(text):
+    """A CLI lane fill: ``PRIMARY:COUNT[:REASON]`` (#852).
+
+    Only the shape is checked here -- a primary issue number present, a count that
+    parses as a whole number. Whether the count needs a reason, whether one given is
+    from the closed vocabulary, and whether the count itself is in range is left to
+    ``lane_fill``/``dispatch_rank.check_lane``, the single place that decision is made,
+    at the CLI or from any other caller.
+    """
+    import argparse
+
+    parts = text.split(":", 2)
+    if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
+        raise argparse.ArgumentTypeError(
+            "{!r} is not PRIMARY:COUNT[:REASON]".format(text)
+        )
+    primary_text, count_text = parts[0].strip(), parts[1].strip()
+    try:
+        primary = int(primary_text)
+    except ValueError:
+        primary = primary_text
+    try:
+        count = int(count_text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "{!r}: {!r} is not a whole number".format(text, count_text)
+        )
+    reason = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
+    entry = {"primary": primary, "count": count}
+    if reason is not None:
+        entry["reason"] = reason
+    return entry
+
+
 def _say(text, stream=None):
     """Write one line that cannot die on the console's codepage.
 
@@ -2136,6 +2416,12 @@ def _main(argv=None):
         "--model-trend",
         action="store_true",
         help="print the lane-model mix re-added across the whole history",
+    )
+    group.add_argument(
+        "--lane-fill-trend",
+        action="store_true",
+        help="print the lane-fill reason distribution re-added across the whole "
+        "history (#852) -- makes a run of could-not-tell a visible number",
     )
     group.add_argument(
         "--pending-wait",
@@ -2206,6 +2492,29 @@ def _main(argv=None):
     )
     parser.add_argument(
         "--lane-why", help="why the mix is 'unknown'; required when --lanes unknown is"
+    )
+    parser.add_argument(
+        "--lane-fill",
+        action="append",
+        type=_lane_fill_argument,
+        help="one dispatched lane's fill (#852), PRIMARY:COUNT[:REASON] -- REASON is "
+        "required when COUNT is under dispatch_rank.MAX_LANE and must be one of "
+        "dispatch_rank.SHORT_REASONS; repeatable",
+    )
+    parser.add_argument(
+        "--lane-fills",
+        choices=("none", "unknown"),
+        help="'none' if the tick dispatched no developer lane, 'unknown' if its fill "
+        "could not be established -- use with --lane-fill-why",
+    )
+    parser.add_argument(
+        "--lane-fill-window",
+        help="what this lane dispatch was, in words -- required with "
+        "--lane-fill/--lane-fills",
+    )
+    parser.add_argument(
+        "--lane-fill-why",
+        help="why the fill is 'unknown'; required when --lane-fills unknown is",
     )
     parser.add_argument(
         "--cohort", help="the frozen cohort's label, e.g. cohort-6 -- required with --cohort-count"
@@ -2321,6 +2630,16 @@ def _main(argv=None):
         )
         if value is not None
     ]
+    lane_fill_flags = [
+        name
+        for name, value in (
+            ("--lane-fill", args.lane_fill),
+            ("--lane-fills", args.lane_fills),
+            ("--lane-fill-window", args.lane_fill_window),
+            ("--lane-fill-why", args.lane_fill_why),
+        )
+        if value is not None
+    ]
     cohort_flags = [
         name
         for name, value in (
@@ -2368,6 +2687,7 @@ def _main(argv=None):
     # recorded nothing. (#222, and #316 the same shape one field over)
     pending_intake = None
     pending_lanes = None
+    pending_lane_fill = None
     pending_cohort = None
     pending_wait_record = None
     pending_tick_cost = None
@@ -2394,6 +2714,9 @@ def _main(argv=None):
         if pending_lanes is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + lane_models_line(pending_lanes), sys.stderr)
+        if pending_lane_fill is not None:
+            sys.stdout.flush()
+            _say("NOT RECORDED " + lane_fill_line(pending_lane_fill), sys.stderr)
         if pending_cohort is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
@@ -2412,6 +2735,7 @@ def _main(argv=None):
             or args.trend
             or args.migrate
             or args.model_trend
+            or args.lane_fill_trend
             or args.pending_wait
             # `is not None`, not plain truthiness: an empty string is still a
             # value somebody passed (`--check-plugin-identity ""`), and treating
@@ -2434,6 +2758,12 @@ def _main(argv=None):
             _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(lane_flags))
+            )
+            return 1
+        if reading_mode and lane_fill_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(lane_fill_flags))
             )
             return 1
         if reading_mode and cohort_flags:
@@ -2548,6 +2878,11 @@ def _main(argv=None):
             # Same three-label vocabulary as --trend, one metric over: TREND marks a
             # sum nobody asked to store, computed from a history that already exists.
             _say("TREND " + lane_models_line(trend), sys.stderr)
+            print(json.dumps(trend, indent=2))
+            return 0
+        if args.lane_fill_trend:
+            trend = lane_fill_trend(read(args.path))
+            _say("TREND " + lane_fill_line(trend), sys.stderr)
             print(json.dumps(trend, indent=2))
             return 0
         if args.migrate:
@@ -2678,6 +3013,39 @@ def _main(argv=None):
             pending_lanes = lane_models([], window=args.lane_window)
         elif args.lanes == "unknown":
             pending_lanes = lane_models(None, window=args.lane_window, why=args.lane_why)
+        if args.lane_fill is not None and args.lane_fills is not None:
+            return refuse(
+                "--lane-fill and --lane-fills cannot both be given; use --lane-fill "
+                "for named lanes or --lane-fills none/unknown for the whole tick"
+            )
+        if lane_fill_flags and args.lane_fill is None and args.lane_fills is None:
+            return refuse(
+                "a lane fill record needs --lane-fill or --lane-fills; {} alone "
+                "records nothing".format(", ".join(lane_fill_flags))
+            )
+        if (
+            args.lane_fill is not None or args.lane_fills is not None
+        ) and not args.lane_fill_window:
+            return refuse(
+                "a lane fill record needs --lane-fill-window -- what this dispatch "
+                "was, in words. A fill with no window means nothing six ticks later."
+            )
+        # Built here, same ordering discipline as the lane-model block above: a valid
+        # --lane-fill must not go unreported just because an unrelated, incomplete set
+        # is refused first (#222). lane_fill() itself raises StateError -- caught by
+        # this function's own StateError handler below, which routes to refuse() --
+        # for a short lane with no reason, an invalid reason or an out-of-range count:
+        # the whole --decision call is refused outright, the same shape
+        # --tick-cost-first already uses to refuse rather than silently writing a
+        # false value.
+        if args.lane_fill is not None:
+            pending_lane_fill = lane_fill(args.lane_fill, window=args.lane_fill_window)
+        elif args.lane_fills == "none":
+            pending_lane_fill = lane_fill([], window=args.lane_fill_window)
+        elif args.lane_fills == "unknown":
+            pending_lane_fill = lane_fill(
+                None, window=args.lane_fill_window, why=args.lane_fill_why
+            )
         if args.cohort_count:
             if not args.cohort:
                 return refuse(
@@ -2794,6 +3162,20 @@ def _main(argv=None):
                     "--detail already carries a 'lanes' key; pass one or the other"
                 )
             detail["lanes"] = pending_lanes
+        if pending_lane_fill is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a lane fill record is "
+                    "attached"
+                )
+            if "lane_fill" in detail:
+                return refuse(
+                    "--detail already carries a 'lane_fill' key; pass one or the "
+                    "other"
+                )
+            detail["lane_fill"] = pending_lane_fill
         if pending_cohort is not None:
             if detail is None:
                 detail = {}
@@ -2863,6 +3245,8 @@ def _main(argv=None):
             _say("RECORDED " + intake_line(pending_intake), sys.stderr)
         if pending_lanes is not None:
             _say("RECORDED " + lane_models_line(pending_lanes), sys.stderr)
+        if pending_lane_fill is not None:
+            _say("RECORDED " + lane_fill_line(pending_lane_fill), sys.stderr)
         if pending_cohort is not None:
             _say("RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
         if pending_wait_record is not None:
