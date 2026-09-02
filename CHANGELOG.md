@@ -7,6 +7,260 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-02
+
+### Added
+
+- `scripts/oss_state.py` now has a `tick_cost` metric (#694): per tick, start context, the
+  session's own floor (its first tick's start), what was inherited between them, calls, context
+  carried, and cost as a derived column that always says it is a list-rate computation and never a
+  billed amount. A tick's own dollar cost pointed at the wrong ticks -- ranking 48 measured ticks by
+  cost said twelve were expensive, and ranking the same ticks by context inherited at their start
+  explained why: the work those ticks did was not the variable. Three states, not two: `measured`,
+  `floor-unknown` (the reading was taken but no earlier tick in this session recorded a floor, so
+  `inherited` stays unknown rather than being guessed at from `start_ctx`), and `could-not-measure`
+  (never renders as zero). `commands/tick.md` step 6 wires it in via `--tick-cost-session
+  "$CLAUDE_CODE_SESSION_ID"` -- a real, observable value Claude Code already sets -- but
+  `start_ctx`/`calls`/`context_carried` themselves are recorded `unknown` for now: nothing in this
+  loop currently hands the ticking agent a live token count, and the honest answer is `unknown`
+  rather than a guess.
+
+- `/oss:tick` now spawns a fresh `oss:sub-manager` per tick instead of running every tick's
+  steps inline in whatever session invoked it (#695, #767) -- the mechanism the split proposed,
+  now wired in, not yet an independently measured saving. A session ticking many times in a row
+  used to pay cache-read on every earlier tick's transcript on every call for the rest of the
+  session -- median +31k tokens of context per tick, quadratic in the number of ticks a session
+  ran. Each tick now dies with its own context the moment it reports back through the same five
+  handback states `scripts/tick_handback.py` already classified, and release authority stays
+  withheld from it exactly as before. The before/after cost reading #695's own Verification
+  section asks for is still blocked on a live token-count read `scripts/oss_state.py`'s
+  `tick_cost` fields do not have yet (#694 records `unknown` for `start_ctx`/`calls`/
+  `context_carried` until one exists) -- this closes the design gap #695 was filed to fix, not
+  the separate question of whether the saving is realised in practice.
+
+- `.oss.json` can now declare `labels.filed_by_loop` (#762) -- a label name, alongside
+  `labels.priority` and `labels.lanes`, that the loop attaches to every issue it files through
+  `gh-issue-create` and reads back at counting time. Before this, the intake metric's numerator was
+  whatever the ticking agent remembered filing during its own tick: an issue the loop filed and one
+  the maintainer typed by hand carry the same account and the same auth, and nothing on the tracker
+  told them apart. A repo that has not declared the label gets `could-not-count`, never zero, and an
+  issue filed before the label existed is `unknown` for that window rather than backfilled --
+  guessing provenance after the fact is the identical unverifiable claim this closes.
+  `agents/triager.md` must never write or remove this label, the same restriction `cohort-*` labels
+  already carry.
+
+- `docs/overview.md`: what the plugin does, in one page, and the six things we want it to do next, decided on 2026-09-02 (#795, #798, #799, #765, #245, #608, #609). The ultimate goal is written at the top: someone finds the repo, does the symlink, starts `oss-workspace`, it works.
+
+- **The README names its three sibling plugins near the top** (#795). One block, three
+  links, one marketplace command. Before this each README named the others once or not
+  at all, and the repo strangers reach first (claude-remember) pointed nowhere.
+
+### Fixed
+
+- A lane's own registry record could block a follow-up for up to its full 240-minute TTL after
+  the loop had already merged and read back its pull request -- three recorded instances, 20-90
+  minutes stale (#734). Two closes it: `lane_setup.py --release` lets the merge step release a
+  lane's record the moment `state`/`mergedAt`/`mergeCommit` confirm the merge, wired into
+  `skills/manager/phases/merge.md` right after that read-back; and `held_from_live_lanes` now
+  corroborates every live record's declared branch against the shared clone's local `refs/heads`
+  (no fetch needed -- the loop's own merge cleanup runs `git branch -d` there) and prunes a record
+  whose branch is positively confirmed gone, as a second, independent close for a release call that
+  never ran. Neither ever claims a branch is gone on anything less than a positive local
+  confirmation; a record that cannot be corroborated is still judged on age alone, exactly as
+  before.
+
+- `doctor.py`'s `./supertool exists and is not a symlink` check reported a regular
+  file's existence and stopped, assuming it was arbitrary (#742). A regular file has
+  the same question a symlink target does -- does calling it reach the tool the
+  briefs mean -- and it is cheaper to answer, because a file can simply be run: the
+  check now calls `<path> version` and compares the answer against the version the
+  install record calls active. Matching is `OK`; a different version is `WARN` and
+  names both; unrunnable or unparseable is `WARN` and says so as unknown, never as a
+  pass or a confirmed fault. This also closes the sharper gap #742 named: the *real*
+  shape of this defect -- `./supertool` pinned to a version directory a plugin update
+  emptied (#289) -- is itself a symlink and lands in a branch above this one, so the
+  check used to be silent about the fault it sat beside and loud about the fix for it.
+
+- `doctor.py`'s `jit rule layer` check named its terminal `unknown` state as though
+  it might still clear (#743). Since `claude-jit-context#176` fixed #241 by deleting
+  the fixed layer list this check looks for and replacing it with an unconditional
+  directory glob, `unknown` became the only state a fully up-to-date install can ever
+  reach -- the check's one `OK` condition is a fixed list naming `01-oss`, and the
+  fix removes exactly that. Both terminal lines now say plainly that this does not
+  clear on its own once the dependency's fixed list is gone, and cite #743 so a
+  reader knows the gap is tracked rather than accepted. The state itself is
+  unchanged -- promoting an unconditional glob to a pass was considered and declined
+  here: `#616`'s own tests deliberately keep a bare enumerate-the-directory hook at
+  `could-not-determine`, on the reasoning that seeing the glob shape is not proof the
+  loop's body reads what it visits, and reversing that safely needs the "plant a rule
+  and measure whether the dependency's own hook reads it" mechanism #758 (merged into
+  #743) proposed, which is a larger, separately-reviewable change.
+
+- `skills/manager/phases/handback.md:84` published an unquoted
+  `${CLAUDE_PLUGIN_ROOT}/scripts/rename_changelog_fragment.py <old path> <new number>` invocation
+  (#751) -- a real, argument-bearing command a session runs verbatim, which word-splits into argv
+  on a plugin root containing a space (an ordinary Windows home directory built from a two-word
+  account name). This is the fifth recorded instance of the class in this repository. Quoted, and
+  guarded by a new sweep, `tests/test_phase_files_plugin_root_quoting_751.py`, scoped to
+  `scripts/manager_docs.documents()` -- the spine plus every `skills/manager/phases/*.md` file --
+  rather than to the whole loop's prose: a whole-loop sweep was tried during the investigation and
+  re-admits a false positive at `agents/developer.md:461`, a location-only mention with no
+  arguments and no imperative framing, which is not in this population at all.
+
+- `tests/test_shipped_op_spellings.py` swept `(REPO_ROOT / "skills").rglob("SKILL.md")` for
+  `supertool 'OP...'` spellings -- a literal filename match, so an op spelling introduced in a
+  phase file under `skills/manager/phases/` was never checked at pull-request time (#752). Routed
+  through `scripts/manager_docs.documents()` instead, the same derivation
+  `tests/test_content_invariants.py` already uses for this identical purpose, so a phase file
+  reaches both checks the moment it exists rather than when two globs are remembered in step.
+  Guarded by a population-coverage test naming every phase file and a positive control planting a
+  fake op spelling under a phase file's own label, in the shape the release auditor's own manual
+  check used: caught in `SKILL.md`, silently missed in a phase file, before this fix.
+
+- `doctor.py` reported two lines as `WARN` that are notices, not gaps (#756):
+  `project dir guessed from cwd` (the documented default invocation, not a failed
+  measurement) and `./supertool points at <local checkout>` (whose own sentence
+  already says it names the target rather than judging it, since a deliberate local
+  checkout and a stale link are indistinguishable in principle from here). Both now
+  report `OK`, with the same wording -- only the level was wrong, and a verdict that
+  reads `usable with gaps` on every healthy machine can no longer carry a real
+  warning.
+
+- `lane_setup.py`'s `--lane`/`--against` now refuse a value containing `|` (#766) instead of
+  silently treating an awk/ERE-style alternation (`--lane 'a|b'`) as one literal filename. The
+  value matched no tracked file, the receipt annotated it `(literal)`, and the overlap check then
+  read `none` for a pattern that was never actually resolved -- a disjointness gate rendering
+  "could not be checked" as "checked, clear". The flag's own metavar is `PATTERN` and every other
+  pattern surface this loop's neighbourhood offers *is* an alternation, which is why the mistake is
+  likely rather than exotic; the documented, repeatable form (one `--lane` per file) is unaffected.
+
+- `commands/tick.md` now spawns `oss:sub-manager` and reads its handback through
+  `scripts/tick_handback.py` instead of running every tick's steps 1-6 inline in whatever
+  session invoked `/oss:tick` (#767). Three of the receiving half's four parts were already
+  shipped and tested -- `scripts/tick_handback.py`, `scripts/agent_role.py`, and
+  `agents/sub-manager.md` itself, whose own frontmatter already claimed "Spawned by the
+  scheduler (`/oss:tick`)" -- but nothing spawned it: `grep -c 'sub-manager'
+  commands/tick.md` returned 0. The frontmatter's claim is true now rather than false. Step
+  7 (arm the next tick's wakeup) stays with the scheduler, because the sub-manager has no
+  `ScheduleWakeup` tool and is gone by the time step 7 runs; a fired release trigger is
+  read from the sub-manager's own paragraph and acted on by the scheduler, never by the
+  sub-manager, whose publish call `scripts/agent_role.py` already refuses in code. The
+  spawn call passes no `model` override, holding the model axis still against
+  `agents/sub-manager.md`'s own `model: sonnet` pin so #694's before/after measurement is
+  not confounded by a model change riding the same diff.
+
+- `agents/developer.md` now takes a receipt across its own review spawn instead of relying on
+  the brief alone (#769): a review agent declared read-only wrote into the worktree it was
+  auditing, twice in one run, by two different agents, leaving no ref movement and no reflog
+  trace, and detection depended entirely on the lane happening to run `git diff` at the right
+  moment. `Explore` wrote through a symlink into the real worktree and reverted a tracked file
+  to its parent-commit content in place; `oss:auditor` wrote and deleted a scratch file inside
+  the same tree. The brief already said not to mutate, twice, and both agents did anyway, so a
+  third sentence was not the fix. `scripts/tree_snapshot.py` snapshots the tree before the
+  spawn and compares after, in the same mechanism-independent shape `review_return.py` (#392)
+  already uses for a different silent loss in the same review step -- `clean`, `mutated`
+  (names what changed), or `could-not-compare`, never collapsing a check that could not look
+  into one that looked and found nothing. It cannot see a write created and deleted before the
+  `compare` call runs, which is stated plainly rather than promised away: `oss:auditor`'s own
+  instance is exactly that shape, pinned as a known limit by
+  `tests/test_tree_snapshot_769.py::test_selfcleaned_write_is_not_caught_by_design` rather than
+  left as an assumption. `agents/auditor.md`'s own opening claim ("You write nothing into the
+  repository") is corrected to "You are meant to" for the same reason -- it was false the
+  moment the scratch-file instance happened -- and both agent definitions' prior citation-free
+  narration of "a reviewer has already run a `git checkout` mid-run" now points at #769, so a
+  lane hitting the same shape again can tell a recurrence from a new defect. The self-review
+  spawned against this same fix caught three real bugs in the new script before it shipped: a
+  `--before` payload that is valid JSON but not an object (`null`, a list, a bare number) crashed
+  `compare()` with an unhandled `AttributeError` instead of returning `could-not-compare`, and the
+  `snapshot` subcommand always exited `0` even when its own payload carried a non-null `error`,
+  both now fixed and pinned by new tests; a persisting write at a path `.gitignore` covers (the
+  build-artifact paths a legitimate suite run creates) is a stated limit rather than a silent
+  promise, deliberately not closed by adding `--ignored`, because doing so measurably turns an
+  ordinary suite run between the two snapshots into a false `mutated` report.
+
+- `held_from_live_lanes`'s route-3 backstop (#734) could fail open: a lane record's absence from the
+  shared clone's local `refs/heads` reads identically whether the branch was merged and cleaned up
+  or has simply never been cut yet, and the loop's own documented dispatch order (`--claim`, then
+  `git worktree add`) puts every lane through that second state. Reproduced with no misconfiguration
+  at all -- three lanes claimed back to back, a sibling's `--derive-held` read between each claim
+  and its own `git worktree add`, and the registry pruned every one of the three records (#771). A
+  record's branch is now only pruned once this same record has been positively *observed* present
+  at some earlier read (`branch_confirmed_created`, written the first time a corroborating call sees
+  it) -- a record never yet observed alive falls back to the pre-#734, no-`repo` behaviour (age
+  alone) instead of being read as confirmed gone.
+
+- `lane_setup.py`'s `overlap :` receipt line still read `none` for a refused `--lane`/`--against`
+  pattern -- byte-for-byte the same word a real, checked, disjoint pair also prints, so a
+  disjointness gate rendered "this comparison never ran" identically to "checked, clear" (#774, the
+  wider half of #766 left unbuilt when the narrower half landed). `lane_report` now carries a third
+  `overlap_state` (`resolved` / `n/a` / `could-not-check`) alongside `overlap` itself, and the
+  receipt and `--derive-held` verdict both say `COULD NOT CHECK` instead of folding into `none` or
+  `available` -- `available` was the more dangerous direction, since a real collision hiding behind
+  an unresolved pattern would otherwise read as clear to dispatch on.
+
+- `skills/manager/phases/handback.md` and `skills/manager/SKILL.md` said, twice each and at
+  length, that `gh-pr-create` **reports** a missing or malformed `Closes #N` and still exits 0
+  with the pull request created (#776). The op refuses instead: nothing is created, and the error
+  names `no_close = true` as the payload-level escape hatch for a pull request that deliberately
+  closes nothing (a `Part of #N` pull request, unrelated work) -- a field this document never
+  named. The `#209` reasoning behind the original correction -- that a claimed guarantee is the
+  sentence that stops anyone checking -- survives the edit rather than being deleted with it: the
+  op now refuses *and* names its own remedy, which is a refusal that cannot be mistaken for a
+  silent pass. `tests/test_content_invariants.py`'s guard for this claim is inverted to match --
+  every claim window must now name both `refuses` and `no_close`, not `reports` and `exits 0` --
+  with a positive control for a short, tight false claim and a must-not-fire control for a
+  genuinely unrelated exit-0 mention nearby.
+
+- `scripts/lane_setup.py`'s `--release` arm threw away `oss_config.load`'s problems list, so a
+  malformed config, an absent config and a valid config genuinely lacking `worktree_root` all
+  printed the one benign sentence written for the third case (#791). `main` now checks `config`
+  before falling through to `release_lane`: when the project half of the config could not be read
+  at all, the refusal names the actual problem (config not found, or the JSON parse error) instead
+  of the sentence `derive_worktree`'s own docstring calls the expected, benign state.
+
+- `held_from_live_lanes`'s route-3 prune (#734) wrapped `os.remove` in a bare
+  `except OSError: pass` and appended to `stale_pruned` regardless, so a removal that genuinely
+  failed (a permission error, a concurrent writer) printed the identical "released" line as one
+  that actually succeeded, and the next `--derive-held` re-read a record it had already been told
+  was gone (#792). `FileNotFoundError` still folds into `stale_pruned` -- "another reader already
+  pruned it" really is success -- but every other `OSError` now lands in a new `prune_failed` list
+  the record is demonstrably still on disk for, surfaced in both the JSON payload
+  (`held_source.prune_failed`) and the text receipt, and never counted as released.
+
+- `doctor.py`'s `not-a-symlink-ok` state believed a version string a regular
+  `./supertool` printed about itself, established only by running it -- a
+  self-report, not a measurement of identity. It replaced an unconditional
+  `WARN`, so the delta turned a warned condition into a clean one on the
+  strength of a string the file chose to print, and nothing compared bytes,
+  path or provenance (#793). Sibling of #790, which removes the run this
+  state depended on: a regular file is never executed now, so `not-a-symlink`
+  is the only state left, and it always `WARN`s -- op calls through it may or
+  may not reach the tool the briefs mean, and that is now said as unknown
+  rather than as confirmed either way.
+
+- `scripts/tree_snapshot.py compare` no longer crashes printing its VERDICT line on a console that
+  cannot encode a character in it -- cp1252, Windows' default for a piped stdout, which is how an
+  agent runs it. The crash exited 1, colliding with `EXIT_CODES["mutated"]`, so a clean tree and a
+  `could-not-compare` tree (exit 3) both read back as `mutated` -- destroying the third state this
+  module exists to keep separate. Fixed with the sibling idiom seven other new CLIs already use:
+  reconfigure both streams to `backslashreplace` before the first print. (#794)
+
+### Security
+
+- `doctor.py` no longer executes a regular file it finds at `./supertool` in the
+  inspected repository. #742 had `doctor` run `<path> version` on it to answer
+  whether op calls through it reach the tool the briefs mean -- but that path is
+  reached whenever a session is opened over a repository the maintainer did not
+  author (a clone, a fork, a contributor branch), so a tracked, exec-bit
+  `supertool` there was code the inspected repository supplies, run by the
+  maintainer's own session (#790). The check now describes the file rather than
+  running it: a regular file can never be the plugin's own entry point, which
+  only ever creates a symlink, so the state is a `WARN` naming what is there,
+  with no run and no claim about what op calls through it would reach. Added
+  `executes` to `skills/manager/SKILL.md`'s ranking table -- unconditionally
+  blocking, since the release is the mechanism by which the exec path reaches
+  every install.
+
 ## [0.17.0] - 2026-09-01
 
 ### Added
@@ -6520,7 +6774,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.15.0
