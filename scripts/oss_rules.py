@@ -630,6 +630,46 @@ written to close.
 """
 
 
+
+#: #245 step 1: the "Merge gates" section skills/manager/SKILL.md carried in full on every
+#: tick, keyed instead on the one tool call it actually governs -- a `command` matching
+#: `gh-pr-merge`. `mode: remind` rather than `block`: refusing the merge call outright is
+#: not what this asks for, only surfacing the gates at the moment they apply. The full
+#: argument -- the `|force` opt-outs and their blast radii, the rerun-vs-moved-base trap,
+#: the branch-deletion rules -- stays in `skills/manager/phases/merge.md`, which this rule
+#: points at rather than restates.
+TOOLS_MERGE_GATE = """---
+title: "Before gh-pr-merge: gates, cleanup, and the check that comes after"
+description: "Never-failing checks are not green -- count the legs. gh-pr-merge writes nothing without |force. Cleanup and branch deletion are the op's own |cleanup token, not a second call."
+tool: Bash
+match: ~gh-pr-merge
+mode: remind
+---
+
+Merge only when: CI fully green **at leg level** (the state counts must sum to the number of
+legs; name any leg not `SUCCESS` before merging), the review passed, and the change is a
+bugfix / docs / test / chore. Never auto-merge feature scope, a public API or behaviour
+rename, an external-contributor PR, or anything irreversible.
+
+- **`gh-pr-merge` writes nothing without `|force`.** One call:
+  `supertool 'gh-pr-merge:N:squash|force|cleanup'`, never merge and cleanup as two calls.
+- **Cleanup is gated on the op's own verified `MERGED` read-back**, not a second call. On a
+  fleet-running loop its worktree half reports `skipped: reason` when more than one tree is
+  idle -- correct, not a failure; reap the rest via `git-worktrees`, whose two columns
+  (`cannot tell`, `merge unknown`) are never a yes.
+- **One `Closes #N` per issue, the keyword repeated.** `Closes #A #B` links both and closes
+  only `#A`. Read the whole line; a fragment match cannot audit either failing case.
+- **After merge, check the default branch's own run with `gh-branch`** (GREEN / NOT GREEN /
+  NO RUN / UNKNOWN) -- a green PR is a statement about its merge-base, not about `main` after
+  the squash.
+- **Do not route around a denied merge.** Say the call was denied, name it exactly, and let
+  the maintainer run or permit it.
+
+Full argument, the `|force` opt-outs and their blast radii, the rerun-vs-moved-base trap, and
+the branch-deletion rules: `skills/manager/phases/merge.md`.
+"""
+
+
 def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None, assembler=_DERIVE):
     """dimension -> {filename: body}, rendered for the tree it is going into.
 
@@ -672,6 +712,7 @@ def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None, assemble
         },
         "tools": {
             "supertool-required.md": TOOLS_SUPERTOOL,
+            "merge-gate.md": TOOLS_MERGE_GATE,
             # Not a rule: no `tool:` and no `match:`, so `index_rows()` writes no row and
             # the dependency's builder skips the name outright. It ships so that the
             # recorded decision reaches every managed repo, not just this one -- the layer

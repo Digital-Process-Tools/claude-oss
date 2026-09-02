@@ -582,36 +582,12 @@ and the four-part shape an issue body filed out of a review takes.
 
 ## Merge gates
 
-Merge only when all hold: **CI fully green at leg level, the review passed, and the change is a
-bugfix / docs / test / chore.** Then verify the merge landed -- read `state` / `mergedAt` /
-`mergeCommit` back off the remote, because a zero exit is not a merge.
-
-**Never auto-merge:** feature scope, public API or behaviour renames, external-contributor pull
-requests, anything irreversible. **And do not invent gates** -- parking a real bug as "the owner's
-call" when it is not on this list is a way of not fixing things.
-
-- **"Not failing" is not "green" -- count the checks.** The state counts must sum to the number of
-  legs, and any leg not `SUCCESS` gets named before merging.
-- **Cleanup is gated on the verified merge result**: one call, `gh-pr-merge:N:squash|force|cleanup`,
-  never a second one. On a fleet-running loop its worktree half reports `skipped: reason` and that
-  skip is correct -- reap the rest yourself through `git-worktrees`, whose two columns each have a
-  third state that is never a yes.
-- **Verify the linked issue actually closed.** One `Closes #N` per issue, the keyword repeated. Read
-  the whole line; a check that greps a fragment of it cannot audit either failing case.
-- **The merge is not done when the pull request is green.** A green pull request is a statement about
-  its merge-base. Check the default branch's own run afterwards with `gh-branch`, which is
-  conjunctive over every workflow on the head SHA and states GREEN / NOT GREEN / NO RUN / UNKNOWN
-  apart -- and read that third state here, not only at the release gate.
-
-**Arrange the merge call at setup, not at the merge.** `gh-pr-merge` writes nothing without a
-`|force` suffix, so a loop otherwise reaches the merge step with every gate satisfied and cannot
-merge. Prefer `|force` on the call over the two wider switches. **Do not route around a denied
-merge** -- say the call was denied, name it exactly, and let the maintainer run or permit it.
-
-**Read `skills/manager/phases/merge.md` before the first merge of a new install, and again whenever a
-merge behaves unexpectedly.** It carries the three opt-outs and their blast radii, the exact spelling
-to type and why `Blocked by classifier` is a claim about the command string rather than about the
-action, why a rerun replays the same red against a moved base and what to call instead, and the
+**A jit-context rule carries the gates now, keyed on the tool call that matters: a `command`
+matching `gh-pr-merge`.** It fires the moment that call is about to run --
+`.claude/jit-context/tools/01-oss/merge-gate.md` -- rather than sitting in this spine, paid for
+on every tick whether or not one is reached. Read `skills/manager/phases/merge.md` before the
+first merge of a new install and again whenever a merge behaves unexpectedly: it carries the
+full argument, the opt-outs and their blast radii, the exact spelling to type, and the
 branch-deletion rules `|cleanup` refuses to apply.
 
 ## A green run on your own platform is the weakest evidence available
