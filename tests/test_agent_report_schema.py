@@ -33,6 +33,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import manager_docs  # noqa: E402
 import report_schema  # noqa: E402
 import skip_symlink  # noqa: E402
 
@@ -1361,7 +1362,17 @@ def test_a_schema_that_stopped_defining_the_payload_declines_rather_than_guesses
 # --- the call the skill documents, run rather than read -----------------------
 
 
-SKILL_PATH = REPO_ROOT / "skills" / "manager" / "SKILL.md"
+#: The whole manager loop, not the spine alone. This was
+#: `REPO_ROOT / "skills" / "manager" / "SKILL.md"` until #245 step 3 moved the
+#: `gh-pr-create` argument -- and the fenced call with it -- out of the spine, at
+#: which point a check pinned to the spine found nothing and said so. That the
+#: pattern *could* fail loudly is why this was caught, but the narrowing predates
+#: the move: `skills/manager/phases/handback.md` has carried its own copy of this
+#: call since the #725 phase split, and a guard reading only the spine had already
+#: stopped seeing one of the two places the loop documents it. `manager_docs` is
+#: this repository's one answer to "does the manager loop say X", derived from disk
+#: rather than listed, so a phase file added later is covered when it exists.
+SKILL_PATH = manager_docs.ManagerLoop()
 
 # python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <SOMETHING>
 DOCUMENTED_CALL_RE = re.compile(r"report_schema\.py\"?\s+(<[^>\n]+>)")

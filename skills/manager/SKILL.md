@@ -511,38 +511,13 @@ the brief itself.
 
 ## What comes back, and opening the pull request
 
-**An agent replies with a path and at most two lines.** The work is a JSON report written outside
-every worktree, with a forge-ready pull request payload beside it. Read the fields you need when you
-need them. `schemas/agent-report.schema.json` and `scripts/report_schema.py` are the authority on
-what those fields are -- point a brief at them, never copy the list into one.
-
-Pushing and opening is yours, and it is one read plus one call:
-
-- **Push the agent's branch.**
-- **Read the body before you publish it.** A body published unread is your name on text you have not
-  seen. If it is wrong, argue it or send it back -- do not quietly rewrite it, because the person who
-  did the work writes the record.
-- **Hand the payload path to `gh-pr-create:@FILE`.** Not `gh pr create`, and not a body of your own.
-  The op **refuses** a body with a missing or malformed `Closes #N` — nothing is created — and the
-  error names `no_close` as the remedy for a pull request that deliberately closes nothing.
-- **Spend one call on the check rather than the claim:**
-  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <the report path>` -- the report path,
-  never the payload path. Three answers: `ok`, a finding, and `UNVALIDATABLE` at exit 2, which is a
-  statement about the validator and not about the report.
-- **Release what a lane did not finish.** A lane that ends with no commit, and a pull request that
-  closes without merging, both leave an assignment behind: `gh issue edit <N> --remove-assignee @me`.
-  Three states each, and *could not read the pull request state* must never render as released.
-
-**Do not retype `title`, `head` or `base`.** They arrive filled in and measured right; a hand-written
-value is the only one nothing downstream verifies at all. **Your own verification is a different
-voice** -- append a `## Verified by the maintainer` section with `supertool 'gh-pr-edit:<N>:@<FILE>'`
-at review time, built from the published body read back, never edited into the agent's text.
-
-**Read `skills/manager/phases/handback.md` when the report arrives.** It carries the fragment-rename
-procedure and the tool that performs both halves of it, the three states of `pr_body`, exactly how
-far the validator gets on each field and why that decides where your attention goes, the `gh pr edit`
-failure that leaves a body silently unchanged, and the two ways a body references less than it
-appears to.
+**A jit-context rule carries the retype-nothing and Closes-#N argument now, keyed on the tool call
+that matters: a `command` matching `gh-pr-create`.** It fires the moment that call is about to run --
+`.claude/jit-context/tools/01-oss/pr-create-gate.md` -- rather than sitting in this spine, paid for
+on every tick whether or not a pull request is opened. Read `skills/manager/phases/handback.md` when
+a report arrives and again before publishing: it carries the fragment-rename procedure, the three
+states of `pr_body`, exactly how far the validator gets on each field, the `gh pr edit` failure that
+leaves a body silently unchanged, and the two ways a body references less than it appears to.
 
 ## Reviewing
 
