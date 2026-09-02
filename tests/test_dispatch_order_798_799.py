@@ -41,7 +41,9 @@ Python 3.9 compatible.
 
 import io
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -196,6 +198,29 @@ def test_no_common_prefix_means_no_unrecognised_detection():
     declared_no_prefix = {"priority": ["urgent", "later"], "filed_by_loop": LOOP}
     answer = dispatch_rank.rank(["priority-critical"], declared_no_prefix)
     assert answer["why"] is None, answer
+
+
+def test_a_short_shared_prefix_does_not_flag_an_unrelated_word_838():
+    """#838. `os.path.commonprefix(['p1', 'p2', 'p3'])` is `'p'`, one
+    character -- so before the fix, `_band(['python', 'bug'], ['p1', 'p2',
+    'p3'])` called `python` a probable typo of the declared spellings purely
+    because it starts with the same letter. The bar: would this test still
+    pass if `_band` did nothing? No -- the pre-fix code returns
+    `('low', 'python')` here, which this asserts against directly."""
+    declared_short = {"priority": ["p1", "p2", "p3"], "filed_by_loop": LOOP}
+    answer = dispatch_rank.rank(["python", "bug"], declared_short)
+    assert answer["why"] is None, answer
+
+
+def test_a_plausible_typo_is_still_caught_with_short_spellings_838():
+    """Must-fire control paired with the must-not-fire case above, in the
+    same short-spelling fixture: a label that really does look like a typo
+    of one of the declared short spellings -- same prefix, comparable
+    length -- must still be reported. Otherwise the fix for #838 could have
+    been 'stop detecting typos at all', which would silently regress #826."""
+    declared_short = {"priority": ["p1", "p2", "p3"], "filed_by_loop": LOOP}
+    answer = dispatch_rank.rank(["p9"], declared_short)
+    assert answer["why"] is not None and "p9" in answer["why"], answer
 
 
 def _run_main(issues, capsys, monkeypatch, declared=None):
@@ -496,3 +521,178 @@ def test_the_prose_check_fires_on_a_silent_instruction():
     nothing matches any more."""
     silent = "Run `gh-issue-create:@FILE` to file the finding."
     assert "filed_by_loop" not in silent and "filed-by-loop" not in silent
+
+
+# ---------------------------------------------------------- #834: encoding
+
+
+def _dispatch_rank_script():
+    return str(repo_root() / "scripts" / "dispatch_rank.py")
+
+
+def test_stdout_survives_an_unencodable_character_834():
+    """#834's stdout half. A console codepage that cannot represent a
+    character in an issue's label used to crash this CLI with
+    `UnicodeEncodeError` at the `print` -- after the ranking had already
+    been computed. `tests/test_dispatch_order_798_799.py`'s existing tests
+    drive `main()` in-process with a monkeypatched `StringIO`, whose stdout
+    is always UTF-8 capable and can never exercise this: the bar is 'would
+    this test still pass if the code did nothing', and an in-process test
+    would. This one goes through a real subprocess with
+    `PYTHONIOENCODING=ascii`, which is what a narrow console codepage looks
+    like from Python's point of view, and puts a non-ASCII character in a
+    label that lands in the printed 'unrecognised priority' receipt."""
+    payload = json.dumps({
+        "declared": DECLARED,
+        "issues": [{"number": 1, "labels": ["priority-héllo"]}],
+    })
+    env = dict(os.environ, PYTHONIOENCODING="ascii")
+    result = subprocess.run(
+        [sys.executable, _dispatch_rank_script()],
+        input=payload.encode("utf-8"),
+        capture_output=True,
+        env=env,
+    )
+    stderr = result.stderr.decode("utf-8", errors="backslashreplace")
+    assert result.returncode == 0, (result.returncode, stderr)
+    assert "UnicodeEncodeError" not in stderr, stderr
+
+
+def test_stdout_crashes_without_the_fix_positive_control_834():
+    """Positive control for the test above, run against the file as it
+    stood before #834's fix -- the case that establishes the harness can
+    actually see the crash it is meant to catch, rather than a subprocess
+    invocation that would pass even with the guard removed. Skips rather
+    than asserting on a platform where `ascii` cannot be forced onto
+    stdout, instead of silently passing."""
+    script = repo_root() / "scripts" / "dispatch_rank.py"
+    original = script.read_text(encoding="utf-8")
+    if "backslashreplace" not in original:
+        pytest.skip("fix already absent -- nothing to prove a control against")
+    broken = original.replace(
+        '    for stream in (sys.stdout, sys.stderr):\n'
+        '        try:\n'
+        '            stream.reconfigure(errors="backslashreplace")\n'
+        '        except (AttributeError, ValueError):  # pragma: no cover - very old Python\n'
+        '            pass\n\n',
+        '',
+        1,
+    )
+    assert broken != original, "the reconfigure block was not found to remove"
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".py", delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write(broken)
+        broken_path = fh.name
+    try:
+        payload = json.dumps({
+            "declared": DECLARED,
+            "issues": [{"number": 1, "labels": ["priority-héllo"]}],
+        })
+        env = dict(os.environ, PYTHONIOENCODING="ascii")
+        result = subprocess.run(
+            [sys.executable, broken_path],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            env=env,
+        )
+        stderr = result.stderr.decode("utf-8", errors="backslashreplace")
+        if result.returncode == 0 and "UnicodeEncodeError" not in stderr:
+            pytest.skip(
+                "this platform's ascii codec did not reproduce the crash -- "
+                "UNTESTED here: the encode failure this control exists to show"
+            )
+        assert "UnicodeEncodeError" in stderr, (result.returncode, stderr)
+    finally:
+        os.unlink(broken_path)
+
+
+def test_stdin_is_decoded_as_utf8_regardless_of_console_codepage_834():
+    """#834's stdin half. `json.load(sys.stdin)` used to decode with
+    whatever codepage the console reports. `UnicodeDecodeError` is a
+    `ValueError`, so the existing `except ValueError` around the read
+    caught it and told the caller 'stdin is not JSON' -- false: it was
+    valid JSON, and the reader simply could not decode the bytes with the
+    wrong codec. 'A' (U+00C1) UTF-8-encodes to the two bytes 0xC3 0x81, and
+    0x81 is undefined in cp1252 -- decoding those bytes as cp1252 raises
+    reliably, which is what makes this a real positive control rather than
+    a guess at what might fail. Forcing UTF-8 on stdin regardless of the
+    console codepage is the fix; this must decode cleanly under it."""
+    payload = json.dumps({
+        "declared": DECLARED,
+        "issues": [{"number": 1, "labels": ["priority-Á"]}],
+    }, ensure_ascii=False)
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    result = subprocess.run(
+        [sys.executable, _dispatch_rank_script()],
+        input=payload.encode("utf-8"),
+        capture_output=True,
+        env=env,
+    )
+    out = result.stdout.decode("utf-8", errors="backslashreplace")
+    assert result.returncode == 0, (result.returncode, out, result.stderr)
+    assert "COULD NOT READ" not in out, out
+
+
+def test_stdin_reads_as_malformed_without_the_fix_positive_control_834():
+    """Positive control for the test above: with stdin decoded via the
+    console codepage instead of UTF-8, valid UTF-8 JSON containing the same
+    byte 0x81 that is undefined in cp1252 raises `UnicodeDecodeError`
+    inside `json.load(sys.stdin)`, and the pre-fix `except ValueError` around
+    it renders that as 'stdin is not JSON' -- proving the harness can see
+    the exact defect #834 reports, not merely a plausible-sounding one."""
+    script = repo_root() / "scripts" / "dispatch_rank.py"
+    original = script.read_text(encoding="utf-8")
+    fixed_block = (
+        '    try:\n'
+        '        sys.stdin.reconfigure(encoding="utf-8")\n'
+        '    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper\n'
+        '        pass\n'
+        '\n'
+        '    try:\n'
+        '        payload = json.load(sys.stdin)\n'
+        '    except UnicodeDecodeError as err:\n'
+        '        # UnicodeDecodeError is a ValueError, not a JSON-syntax error -- caught\n'
+        '        # separately so this never renders as "stdin is not JSON" when stdin\n'
+        '        # was JSON and simply could not be decoded (#834).\n'
+        '        print("COULD NOT READ: stdin could not be decoded as UTF-8 ({})".format(err))\n'
+        '        return 2\n'
+        '    except ValueError as err:\n'
+    )
+    pre_fix_block = (
+        '    try:\n'
+        '        payload = json.load(sys.stdin)\n'
+        '    except ValueError as err:\n'
+    )
+    assert fixed_block in original, "the fixed try/except block was not found to remove"
+    broken = original.replace(fixed_block, pre_fix_block, 1)
+    assert broken != original, "the stdin-reconfigure block was not found to remove"
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".py", delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write(broken)
+        broken_path = fh.name
+    try:
+        payload = json.dumps({
+            "declared": DECLARED,
+            "issues": [{"number": 1, "labels": ["priority-Á"]}],
+        }, ensure_ascii=False)
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        result = subprocess.run(
+            [sys.executable, broken_path],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            env=env,
+        )
+        out = result.stdout.decode("utf-8", errors="backslashreplace")
+        if result.returncode != 2 or "COULD NOT READ" not in out:
+            pytest.skip(
+                "this platform's cp1252 decoding did not reproduce the "
+                "defect -- UNTESTED here: the decode failure this control "
+                "exists to show"
+            )
+        assert "not JSON" in out, out
+    finally:
+        os.unlink(broken_path)
