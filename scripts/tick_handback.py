@@ -69,12 +69,20 @@ frame parser is a second place for that bug to recur.
                     completed tick reported in plain prose from one that
                     silently did nothing -- read the message yourself rather
                     than guess. Also the answer when a header is present but
-                    its required companion field (`BLOCKER:` / `REASON:`) is
-                    missing, or when more than one `TICK:` header appears in
-                    the message at all (#706) -- a handback naming two
-                    outcomes is not a shape `agents/sub-manager.md`'s
-                    template can produce, so this refuses to pick one rather
-                    than guessing between the first and the last.
+                    its required companion field (`TICK-ENDS:` / `BLOCKER:` /
+                    `REASON:` / `WAIT-DISPATCH:` / `WAIT-OBSERVABLE:`) is
+                    either missing or matched more than once, or when more
+                    than one `TICK:` header appears in the message at all
+                    (#706) -- a handback naming two outcomes is not a shape
+                    `agents/sub-manager.md`'s template can produce, so this
+                    refuses to pick one rather than guessing between the
+                    first and the last. A second companion-field match is
+                    refused the same way regardless of whether it sits
+                    inside a markdown quote (#847): the pattern that finds
+                    the field cannot tell a quoted excerpt from a real
+                    second declaration, so guessing which one is real would
+                    be exactly the guess the header refusal already
+                    declines to make.
 
 ## What this deliberately does not do
 
@@ -148,6 +156,30 @@ def _verdict(state, reason, **extra):
     return out
 
 
+def _find_field(pattern, tail):
+    """Search ``tail`` for every match of a companion-field pattern and
+    return ``(match, count)``.
+
+    ``match`` is the single match only when exactly one was found;
+    otherwise it is ``None`` and the caller must refuse. A second match is
+    exactly as undecidable as a missing one (#847) -- taking the first, as
+    an earlier version of every caller below silently did via ``.search``,
+    is a guess about which declaration is real. This mirrors ``_TICK``'s
+    own refuse-on-second-match behaviour (#706) rather than inventing a
+    second policy for the fields beside it, and -- like ``_TICK`` -- does
+    not distinguish a quoted match from an unquoted one: both patterns
+    accept the same markdown quote/bullet prefix, so a line legitimately
+    quoted from an earlier attempt is indistinguishable, at the regex
+    level, from a second real declaration. Refusing either shape is the
+    same "read the message yourself rather than guess" policy the module
+    already applies to the header.
+    """
+    matches = list(pattern.finditer(tail))
+    if len(matches) == 1:
+        return matches[0], 1
+    return None, len(matches)
+
+
 def classify(message):
     """Sort one sub-manager final message into the five states above.
 
@@ -203,8 +235,8 @@ def classify(message):
     tail = text[header.end():]
 
     if declared == "completed":
-        match = _TICK_ENDS.search(tail)
-        if not match:
+        match, count = _find_field(_TICK_ENDS, tail)
+        if count == 0:
             return _verdict(
                 "could-not-classify",
                 "TICK: completed with no TICK-ENDS: line -- an omitted field "
@@ -212,6 +244,16 @@ def classify(message):
                 "'not-applicable' would render identically, and the "
                 "scheduler's continue-or-wait decision needs to tell them "
                 "apart",
+                declared="completed",
+                quoted=header_line,
+            )
+        if count > 1:
+            return _verdict(
+                "could-not-classify",
+                "{0} TICK-ENDS: lines found, not one -- a second declaration "
+                "(quoted or not) is exactly as undecidable as a missing one, "
+                "so this refuses to pick between them: read the message "
+                "yourself".format(count),
                 declared="completed",
                 quoted=header_line,
             )
@@ -225,12 +267,22 @@ def classify(message):
         )
 
     if declared == "blocked":
-        match = _BLOCKER.search(tail)
-        if not match:
+        match, count = _find_field(_BLOCKER, tail)
+        if count == 0:
             return _verdict(
                 "could-not-classify",
                 "TICK: blocked with no BLOCKER: line -- an unnamed blocker "
                 "is not a usable blocked state",
+                declared="blocked",
+                quoted=header_line,
+            )
+        if count > 1:
+            return _verdict(
+                "could-not-classify",
+                "{0} BLOCKER: lines found, not one -- a second declaration "
+                "(quoted or not) is exactly as undecidable as a missing one, "
+                "so this refuses to pick between them: read the message "
+                "yourself".format(count),
                 declared="blocked",
                 quoted=header_line,
             )
@@ -244,12 +296,22 @@ def classify(message):
         )
 
     if declared == "could-not-run":
-        match = _REASON.search(tail)
-        if not match:
+        match, count = _find_field(_REASON, tail)
+        if count == 0:
             return _verdict(
                 "could-not-classify",
                 "TICK: could-not-run with no REASON: line -- an unnamed "
                 "reason is not a usable could-not-run state",
+                declared="could-not-run",
+                quoted=header_line,
+            )
+        if count > 1:
+            return _verdict(
+                "could-not-classify",
+                "{0} REASON: lines found, not one -- a second declaration "
+                "(quoted or not) is exactly as undecidable as a missing one, "
+                "so this refuses to pick between them: read the message "
+                "yourself".format(count),
                 declared="could-not-run",
                 quoted=header_line,
             )
@@ -263,22 +325,25 @@ def classify(message):
         )
 
     # declared == "paused" -- the only remaining alternative in _TICK (#818)
-    wait_dispatch_match = _WAIT_DISPATCH.search(tail)
-    wait_observable_match = _WAIT_OBSERVABLE.search(tail)
-    if not wait_dispatch_match or not wait_observable_match:
-        missing = [
-            name
-            for name, m in (
-                ("WAIT-DISPATCH:", wait_dispatch_match),
-                ("WAIT-OBSERVABLE:", wait_observable_match),
+    wait_dispatch_match, wait_dispatch_count = _find_field(_WAIT_DISPATCH, tail)
+    wait_observable_match, wait_observable_count = _find_field(_WAIT_OBSERVABLE, tail)
+    if wait_dispatch_count != 1 or wait_observable_count != 1:
+        problems = [
+            "no {0} line".format(name) if count == 0
+            else "{0} {1} lines, not one".format(count, name)
+            for name, count in (
+                ("WAIT-DISPATCH:", wait_dispatch_count),
+                ("WAIT-OBSERVABLE:", wait_observable_count),
             )
-            if not m
+            if count != 1
         ]
         return _verdict(
             "could-not-classify",
-            "TICK: paused with no {0} line -- work in flight with nothing "
-            "naming what it is waiting on is not a usable paused "
-            "state".format(" and ".join(missing)),
+            "TICK: paused with {0} -- work in flight with an undecidable "
+            "wait state, whether the field is missing or duplicated "
+            "(quoted or not), is not a usable paused state".format(
+                " and ".join(problems)
+            ),
             declared="paused",
             quoted=header_line,
         )
