@@ -221,24 +221,27 @@ def test_835_control_a_lane_with_no_real_collision_still_reads_clear(tmp_path):
     assert report["overlap"] == []
 
 
-# --- #836: a comma is legal inside a real filename ---
+# --- #836/#843: a comma is legal inside a real filename, and needs escaping ---
 
 
-def test_836_comma_in_real_filename_is_kept_as_one_member(tmp_path):
-    """The issue's own repro: a real file containing a comma must resolve as
-    itself, not be split apart into two members that name nothing on disk."""
+def test_836_comma_in_real_filename_needs_escaping_since_843(tmp_path):
+    """#843 replaced #836's stat-based heuristic (auto-detect a whole-string
+    match against the tree) with a lexical escape rule: a real comma in a
+    filename must now be written `\\,` to stay one member. An unescaped
+    comma is always a delimiter, existing file or not -- see
+    test_843_escaped_comma_in_real_filename_is_kept_as_one_member below for
+    the fixed contract's own positive case."""
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "comma,name.md").write_text("x\n")
     resolved = lane_setup.resolve_lane(tmp_path, ["docs/comma,name.md"])
-    assert resolved["files"] == ["docs/comma,name.md"]
-    assert len(resolved["patterns"]) == 1
-    assert resolved["patterns"][0]["state"] == "literal"
+    assert resolved["files"] == ["docs/comma", "name.md"]
+    assert len(resolved["patterns"]) == 2
 
 
 def test_836_control_two_real_files_in_a_comma_list_still_split(tmp_path):
     """Must not fire: an ordinary comma list naming two real files, neither
-    of which exists as the literal unsplit string, must still split into two
-    members -- the #836 fix must not swallow the #809 feature it sits beside."""
+    of which is escaped, must still split into two members -- #843's
+    escaping rule must not swallow the #809 feature it sits beside."""
     (tmp_path / "a.md").write_text("x\n")
     (tmp_path / "b.md").write_text("x\n")
     resolved = lane_setup.resolve_lane(tmp_path, ["a.md,b.md"])
@@ -249,9 +252,9 @@ def test_836_control_two_real_files_in_a_comma_list_still_split(tmp_path):
 def test_836_control_not_yet_existing_comma_joined_member_stays_literal(tmp_path):
     """Must not fire: a comma list joining a real file with a path that does
     not exist yet (a changelog fragment about to be created) must still
-    split and keep the not-yet-existing half `literal` -- #836's fix only
-    keeps a comma-joined raw string whole when the *unsplit* string itself
-    already names something real, never when it does not."""
+    split and keep the not-yet-existing half `literal` -- #843's escaping
+    rule does not touch the filesystem at all, so this is unaffected by
+    whether either half exists."""
     (tmp_path / "a.md").write_text("x\n")
     resolved = lane_setup.resolve_lane(
         tmp_path, ["a.md,changelog.d/835.fixed.md"]

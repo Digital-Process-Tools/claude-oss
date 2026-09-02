@@ -53,6 +53,15 @@ collapsing them by accident:
 `gh run list --commit` and exits 0, which has cost this loop a round already
 (CLAUDE.md, skills/manager/phases/release.md).
 
+**`--suggest-companions` (#851) is a separate mode from everything else in this
+docstring** -- it answers "which other open issues belong in this lane", not
+"what are this lane's own setup facts", and it takes the open board on stdin
+as JSON rather than deriving anything from git or the local worktree, the
+same separation of concerns `dispatch_rank.py` uses for the ranking table.
+See `suggest_companions`'s own docstring for its three states
+(candidates / none / could-not-tell) and `_derive_declared_files`'s for which
+of the issue's own three options this implements and why.
+
 Python 3.9 compatible: no match statements, no `X | Y` annotations.
 """
 
@@ -430,43 +439,83 @@ def _is_existing_directory(p):
     return stat.S_ISDIR(st.st_mode)
 
 
-def _raw_comma_pattern_names_one_existing_path(repo, raw):
-    """Whether an unsplit `--lane` value `raw` -- known to contain a comma
-    -- should be kept as a single member instead of being split on `,`
-    (#836). A glob is never eligible: `_is_lane_glob` characters and a
-    literal comma inside a path do not interact, so a glob is always split
-    as before. Otherwise this is true only when `raw`, taken whole and
-    unsplit, is refused by nothing `_lane_pattern_problem` checks and names
-    a regular file or a directory that actually exists -- the one case a
-    positive answer can be trusted rather than guessed, since a comma-
-    joined value naming something that does not exist yet is exactly as
-    likely to be two not-yet-existing patterns as one not-yet-existing
-    path with a comma in its name, and `resolve_lane`'s `literal` state is
-    documented to permit exactly that ambiguity for a single pattern with
-    no comma at all.
+def _split_lane_value(raw):
+    """Split one raw `--lane`/`--against` value into its comma-separated
+    members (#809: `--lane 'a.md,b.md,c.py'`, the multi-pattern shape a
+    brief's `lane:` line also uses), honouring a literal-comma escape
+    (#843).
 
-    A `stat()` failure other than "not found" -- a `PermissionError` on an
-    unreadable ancestor directory -- also answers False here rather than
-    raising, so this check degrades to the ordinary split branch instead of
-    stopping `resolve_lane` outright. Nothing is silently lost: the same
-    failure is hit again per split member inside `resolve_lane`'s own
-    `_is_existing_directory`/`_match_is_regular_file` calls, each wrapped in
-    its own `except OSError`, so the unreadable member still surfaces as a
-    `refused` entry with the permission detail -- attached to the split
-    (and therefore wrong) pattern text rather than to the real, comma-named
-    path, which a caller comparing `resolve_lane`'s `files` result cannot
-    tell apart from a genuine two-member lane. Known residual gap, same
-    class as the glob case above; not fixed here.
+    #836 through #843: a comma is legal in a filename on every platform
+    this loop's CI runs, and the first fix for that (#836) was a stat-based
+    heuristic -- keep the whole raw string as one member when, unsplit, it
+    already named an existing file or directory. #840's own review of that
+    lane found three residual gaps in it, all the same shape: the heuristic
+    answers by looking at the filesystem, and a filesystem look can be
+    wrong or can fail outright --
+
+      (a) a glob combined with a comma in a directory name was excluded
+          from the whole-string check outright (`_is_lane_glob(raw)`
+          returned early), so `my,dir/*.py` still split into `my` and
+          `dir/*.py` even though `my,dir` is a real directory;
+      (b) a held file that does not exist *yet* -- a changelog fragment
+          about to be created, the ordinary shape of a literal pattern in
+          this function's own contract -- could never pass the existence
+          check no matter how the comma in its name was meant, so it
+          always split;
+      (c) a `PermissionError` on an unreadable ancestor made the heuristic
+          answer False and fall through to the bogus split, this
+          repository's own defect class: a check that could not look,
+          rendering as an answer instead of a third state.
+
+    All three share one root cause: whether a comma is a delimiter or part
+    of a filename is a *lexical* fact about what was typed, and a stat()
+    call cannot supply it -- at best it approximates it for paths that
+    happen to exist yet, which is exactly the population `resolve_lane`'s own
+    `literal` contract (below) explicitly does not require. So #843 replaces the heuristic
+    with a real escaping rule instead of patching a fourth gap into it:
+    `\\,` is a literal comma, `\\\\` is a literal backslash, and any other
+    `,` is a delimiter. This never touches the filesystem, so a member
+    naming something that does not exist yet, a glob, and a `Permission
+    Error`-guarded ancestor are no longer three different code paths --
+    there is only the one lexical scan below, and it always returns an
+    answer. Reverting #827's comma list outright, in favour of repeated
+    `--lane` flags only, was weighed and declined: it would still be true
+    at the call site, but every caller in this loop's own prose --
+    `skills/manager/phases/dispatch.md`'s own `lane:` line included --
+    already writes a lane as one comma-joined string, and losing that
+    shape moves the cost from one function to every one of those call
+    sites instead of removing it.
+
+    This is a breaking change for the narrow case #836 fixed: a comma-named
+    file that used to be auto-detected by existence now needs its comma
+    escaped (`docs/comma\\,name.md`) to stay one member instead of splitting
+    into `docs/comma` and `name.md`. That is the trade: the old heuristic
+    guessed right for one population (existing files) and wrong or not-at-
+    all for three others: this rule is right for all four, at the cost of
+    asking a human who really does have a comma in a filename to say so.
+
+    Whitespace is stripped from each resulting member (#835) after
+    escapes are resolved, matching every other member's contract.
     """
-    if _is_lane_glob(raw) or _lane_pattern_problem(raw) is not None:
-        return False
-    normalized = raw.replace("\\", "/")
-    rel = os.path.normpath(normalized).replace(os.sep, "/")
-    try:
-        target = repo / rel
-        return _match_is_regular_file(target) or _is_existing_directory(target)
-    except OSError:
-        return False
+    members = []
+    current = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch == "\\" and i + 1 < n and raw[i + 1] in (",", "\\"):
+            current.append(raw[i + 1])
+            i += 2
+            continue
+        if ch == ",":
+            members.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    members.append("".join(current))
+    return [member.strip() for member in members]
 
 
 def resolve_lane(repo, patterns):
@@ -479,24 +528,23 @@ def resolve_lane(repo, patterns):
     `patterns` is the raw list of `--lane`/`--against` values, one per flag
     occurrence -- but a single value may itself be a comma-separated list of
     members (#809: `--lane 'a.md,b.md,c.py'`, the multi-pattern shape a
-    brief's `lane:` line also uses). Each value is split on `,` into
-    whitespace-stripped members *before* anything else runs -- except when
-    the whole raw value, unsplit, already names an existing file or
-    directory on disk, in which case it is kept as one member instead
-    (#836: `_raw_comma_pattern_names_one_existing_path`, for a real
-    filename that itself contains a comma) -- and every member is resolved
-    independently through the identical per-pattern pipeline below -- there
-    used to be no split at all, so a comma-joined string was compared as
-    one literal path containing a literal comma, which matched nothing on
-    disk regardless of what its members named, and a lane naming a held
-    file inside a comma-list read `overlap: none`. Splitting first also
-    fixes the
-    collapse #809's third instance measured: one member matching nothing
-    used to zero out every other member's real matches, because the whole
-    joined string shared one `glob-no-match` entry; each member now keeps
-    its own state and its own files, so a non-matching member no longer
-    erases a matching one beside it. A member with no comma in the original
-    value is unaffected -- `"x".split(",")` is `["x"]`.
+    brief's `lane:` line also uses). Each value is run through
+    `_split_lane_value` before anything else -- an escape-based lexical
+    split (#843: `\\,` for a literal comma, `\\\\` for a literal backslash,
+    every other `,` a delimiter), never a filesystem look -- and every
+    resulting member is resolved independently through the identical
+    per-pattern pipeline below. There used to be no split at all, so a
+    comma-joined string was compared as one literal path containing a
+    literal comma, which matched nothing on disk regardless of what its
+    members named, and a lane naming a held file inside a comma-list read
+    `overlap: none`. Splitting first also fixes the collapse #809's third
+    instance measured: one member matching nothing used to zero out every
+    other member's real matches, because the whole joined string shared one
+    `glob-no-match` entry; each member now keeps its own state and its own
+    files, so a non-matching member no longer erases a matching one beside
+    it. A member with no comma (and no backslash) in the original value is
+    unaffected -- see `_split_lane_value`'s own docstring for the escaping
+    rule and the heuristic it replaced.
 
     #267, instance two: `fix/247-244`'s lane was a literal path
     (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob
@@ -534,30 +582,10 @@ def resolve_lane(repo, patterns):
     files = set()
     members = []
     for raw in patterns:
-        if "," in raw and _raw_comma_pattern_names_one_existing_path(repo, raw):
-            # #836: a comma is legal in a filename on every platform this
-            # loop's CI runs, and splitting a real path like
-            # `docs/comma,name.md` apart on `,` breaks it into two members
-            # that name nothing on disk -- the whole raw string already
-            # names something real, so it is kept as one member rather than
-            # guessed apart. Checked only when the *unsplit* raw string
-            # resolves to an existing file or directory, which is the one
-            # case a positive answer can be trusted instead of guessed: a
-            # comma-joined value naming a not-yet-existing path (a
-            # changelog fragment about to be created, joined with a second,
-            # real pattern) still falls through to the split branch below,
-            # unaffected -- `resolve_lane`'s documented `literal` contract
-            # for not-yet-existing paths is preserved.
-            members.append(raw)
-        else:
-            # #835: a member is stripped of surrounding whitespace before
-            # it reaches `_lane_pattern_problem` -- a comma-joined value
-            # typed with a space after the comma (`'a.md, b.md'`, the shape
-            # a human types) used to carry that space into the literal
-            # path itself, so it matched nothing on disk and a lane sharing
-            # the real file printed `overlap: none` for a collision that
-            # was never actually checked.
-            members.extend(member.strip() for member in raw.split(","))
+        # #843: the split (and the whitespace strip -- #835) is now entirely
+        # lexical -- see `_split_lane_value`'s own docstring for the escaping
+        # rule and the stat-based heuristic it replaces.
+        members.extend(_split_lane_value(raw))
     for pattern in members:
         problem = _lane_pattern_problem(pattern)
         if problem is not None:
@@ -661,6 +689,196 @@ def lane_overlap(files_a, files_b):
     maintainer's memory of which glob might touch which path.
     """
     return sorted(set(files_a) & set(files_b))
+
+
+#: A backtick-quoted span in an issue's title or body -- `` `scripts/foo.py` ``,
+#: the shape every issue filed in this repository (including this one's own
+#: sibling, #843) already writes a file path in. `[^`\n]` rather than `.`
+#: alone: a code fence's contents can legitimately contain a backtick-adjacent
+#: character, but never a literal backtick spanning a newline the way this
+#: single-line span is meant to.
+_BACKTICK_SPAN_RE = re.compile(r"`([^`\n]+)`")
+
+
+def _looks_like_a_declared_path(token):
+    """Whether a backtick-quoted `token`, pulled from an issue's title or
+    body, is shaped like a file or glob this lane could touch -- rather than
+    an inline code identifier, a shell command, or a state word this
+    repository's own issues quote constantly (`` `could-not-tell` ``,
+    `` `resolved-to-nothing` ``). Cheap and deliberately conservative: a
+    false negative here just means one candidate path is missed (the issue
+    may still be found through a different backtick span, or not at all,
+    which is `_derive_declared_files`'s own "could not be derived" state,
+    never silently wrong); a false positive would hand `resolve_lane` a
+    string that looks like a path and isn't, reported as `refused` or as a
+    `literal` that matches nothing -- reachable, not something this filter
+    needs to prevent outright.
+    """
+    if not token:
+        return False
+    token = token.strip()
+    if not token or any(ch.isspace() for ch in token):
+        return False
+    if len(token) > 200:
+        return False
+    # A bare word with neither a path separator nor a dot is virtually never
+    # a file this repository tracks (`could-not-tell`, `available`, `main`)
+    # -- excluding it is what keeps this option (1) "cheap" rather than
+    # "matches every backtick span on the board".
+    if "/" not in token and "." not in token:
+        return False
+    return True
+
+
+def _derive_declared_files(repo, title, body):
+    """Every repo-relative path or glob named literally, in backticks, in one
+    issue's `title` and `body` (#851, option 1 of the three the issue itself
+    weighs).
+
+    **Why option 1 over the other two, for this repository specifically.**
+    The issue's own options were (1) literal paths named in the body -- cheap,
+    but "most issues do not name any" on a generic tracker; (2) a grep/
+    identifier pass over the title and body mapped to files -- broader, and
+    needs its own noise-shaped third state; (3) a declared-files convention on
+    the issue itself -- sound, but only for issues filed after the convention
+    exists. Option 1's stated weakness does not hold on *this* tracker: #798's
+    own measurement is that 98% of this repository's issues are filed by this
+    loop, and every filed-by-loop issue this codebase's own CLAUDE.md
+    documents (#851's own body among them) already cites the exact files it is
+    about in backticks -- because the loop that files them reads the code
+    before writing the issue. Option 1 is cheap *and* dense here, which is the
+    combination the issue asks for rather than a compromise. Option 2 was
+    weighed and declined: broader coverage buys little on a tracker where the
+    narrow reading already finds the paths that matter, at the cost of a
+    second, noisier "matched nothing" state on top of this one. Option 3 was
+    declined for the reason the issue itself gives -- it cannot reach a single
+    issue filed before today, which is most of the open board on the day this
+    ships.
+
+    Returns `None` when the title and body together named nothing that
+    survives `_looks_like_a_declared_path` and `_lane_pattern_problem` --
+    the issue's own "could not be derived" case, which a caller must never
+    read as an empty, checked lane (the same distinction
+    `_lane_resolved_to_nothing` draws one level down, for a lane that WAS
+    checked and matched nothing). Otherwise returns `resolve_lane`'s own
+    result over the surviving candidates -- the identical pipeline a
+    `--lane` value goes through, so a declared path that is a directory or a
+    glob expands exactly the same way here as it would on the command line.
+    """
+    text = "{0}\n{1}".format(title or "", body or "")
+    candidates = []
+    seen = set()
+    for match in _BACKTICK_SPAN_RE.finditer(text):
+        token = match.group(1).strip()
+        if not _looks_like_a_declared_path(token):
+            continue
+        if _lane_pattern_problem(token) is not None:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        candidates.append(token)
+    if not candidates:
+        return None
+    return resolve_lane(repo, candidates)
+
+
+def suggest_companions(repo, own_issue, claimed_files, board):
+    """The lane-bundling sweep #851 asks for: given a lane's own issue
+    number and the files it already claims (`resolve_lane(...)["files"]` for
+    whatever `--lane` patterns it was dispatched with), read an open board
+    handed in as `board` and answer, in three states, which OTHER open
+    issues land inside the claimed set.
+
+    `board` is `{"capped": bool, "cap_detail": str, "issues": [{"number": N,
+    "title": ..., "body": ...}, ...]}` -- the shape `main` reads off stdin as
+    JSON, the identical separation of concerns `dispatch_rank.py` already
+    uses for the same reason: this script does not call `gh` itself, so a
+    probe never depends on network access or forge credentials, and the
+    caller (a tick, or a human) controls exactly what population was read.
+
+    Three states, per this repository's own rule that a check which could
+    not look must never render as a check that found nothing:
+
+      candidates   at least one other open issue's declared files overlap
+                   the claimed set -- returned with the overlapping paths,
+                   so a maintainer can see *why* each one lands inside the
+                   lane rather than taking the verdict on faith.
+      none         the board was read in full (not capped), every other
+                   issue's declared files were derived successfully, and
+                   none of them overlaps the claimed set. This is the only
+                   state that means "swept, confirmed clear".
+      could-not-tell   either the board read itself was capped (#593's
+                   `per=` ceiling -- more issues may exist outside the
+                   population this call ever saw), or at least one other
+                   issue's declared files could not be derived at all
+                   (`_derive_declared_files` returned `None` for it). The
+                   second case is deliberately NOT folded into `none`: an
+                   issue this sweep could not read a file set for might
+                   still belong in the lane, and reporting `none` over an
+                   unread population is the exact false negative #851 exists
+                   to stop -- the same reasoning `_lane_resolved_to_nothing`
+                   already applies to a single lane one level down.
+
+    A candidate whose own file set could not be derived is reported by
+    number in the `could-not-tell` detail, never silently dropped -- an
+    absence produced by this tool's own extraction limits must read as
+    "not read", not as "read and clear".
+    """
+    own_issue = int(own_issue)
+    claimed = sorted(set(claimed_files))
+    if board.get("capped"):
+        return {
+            "state": "could-not-tell",
+            "candidates": [],
+            "undetermined": [],
+            "detail": "the board read was capped ({0}) -- more open issues may "
+            "exist outside the population this sweep saw (#593's per= "
+            "ceiling)".format(board.get("cap_detail") or "no detail given"),
+        }
+    issues = board.get("issues") or []
+    candidates = []
+    undetermined = []
+    for item in issues:
+        number = item.get("number")
+        if number is None or int(number) == own_issue:
+            continue
+        resolved = _derive_declared_files(repo, item.get("title"), item.get("body"))
+        if resolved is None:
+            undetermined.append(number)
+            continue
+        overlap = lane_overlap(claimed, resolved["files"])
+        if overlap:
+            candidates.append({"number": number, "files": overlap})
+    if candidates:
+        return {
+            "state": "candidates",
+            "candidates": candidates,
+            "undetermined": undetermined,
+            "detail": "",
+        }
+    if undetermined:
+        return {
+            "state": "could-not-tell",
+            "candidates": [],
+            "undetermined": undetermined,
+            "detail": "{0} of {1} other open issue(s) named no repo-relative path in "
+            "backticks in their title or body, so their file set could not be "
+            "derived: {2}".format(
+                len(undetermined),
+                len(issues),
+                ", ".join("#{0}".format(n) for n in undetermined),
+            ),
+        }
+    return {
+        "state": "none",
+        "candidates": [],
+        "undetermined": [],
+        "detail": "board read in full ({0} other open issue(s)), every one's "
+        "declared files resolved, none lands inside the claimed set".format(
+            len(issues)
+        ),
+    }
 
 
 # #432: a lane's local test command narrows to the files a brief names, and CI then
@@ -889,9 +1107,11 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     and never `blocked`.
 
     `availability` (#558) is a *per-candidate* verdict -- available / blocked /
-    could-not-check / could-not-derive-the-held-set -- computed only when
-    `derived_held` was given, and only for the `lane` side against the derived
-    set: a mechanical question this function can answer on its own. The
+    could-not-check / resolved-to-nothing / could-not-derive-the-held-set (#843:
+    this enumeration itself used to stop at the pre-#809 four, the exact defect
+    #837 fixed one function away in dispatch.md's own prose) -- computed only
+    when `derived_held` was given, and only for the `lane` side against the
+    derived set: a mechanical question this function can answer on its own. The
     tick-level *fill* verdict (filled / under-filled / could-not-tell) that #558
     also names is deliberately NOT computed here: it needs the full list of
     candidate issues under consideration this tick, which is a judgement about
@@ -2494,11 +2714,13 @@ def receipt(payload):
             lines.append("  overlap : none")
         availability = lane.get("availability")
         if availability is not None:
-            # #558: the per-candidate verdict the issue asks for -- available /
-            # blocked / could-not-check / could-not-derive-the-held-set -- never
-            # rendered as `available` or `blocked` when the held set itself
-            # could not be derived, or when the lane side itself could not be
-            # checked (#774: a refused pattern must never render as clear).
+            # #558: the per-candidate verdict the issue asks for -- available,
+            # blocked, could-not-check, resolved-to-nothing, or
+            # could-not-derive-the-held-set (#843: this comment itself still
+            # enumerated only the pre-#809 four) -- never rendered as
+            # `available` or `blocked` when the held set itself could not be
+            # derived, or when the lane side itself could not be checked
+            # (#774: a refused pattern must never render as clear).
             if availability["state"] == "available":
                 lines.append("  verdict : available")
             elif availability["state"] == "blocked":
@@ -2556,6 +2778,33 @@ def receipt(payload):
     return _render(lines)
 
 
+def _receipt_companions_line(result):
+    """One line rendering `suggest_companions`'s own three states -- never
+    folding `could-not-tell` into `none`, the exact fold #851 exists to
+    close for the sweep the way #809/#837 already closed it for a single
+    lane's own availability.
+
+    An issue whose own file set could not be derived is reported by number
+    even on a `candidates` line -- #851's own wording, "never silently
+    dropped": a real candidate found elsewhere on the board must not read
+    as proof the rest of the board was swept clean.
+    """
+    if result["state"] == "candidates":
+        parts = [
+            "#{0} ({1})".format(entry["number"], ", ".join(entry["files"]))
+            for entry in result["candidates"]
+        ]
+        line = "candidates: " + "; ".join(parts)
+        if result["undetermined"]:
+            line += "; also could not derive a file set for {0}".format(
+                ", ".join("#{0}".format(n) for n in result["undetermined"])
+            )
+        return line
+    if result["state"] == "none":
+        return "none -- {0}".format(result["detail"])
+    return "COULD NOT TELL -- {0}".format(result["detail"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description=(
@@ -2564,7 +2813,14 @@ def main(argv=None):
         ),
         epilog="exit 0 = usable; exit 3 = could not run (no usable config, or no base)",
     )
-    parser.add_argument("issue", type=int, help="the issue number this lane implements")
+    parser.add_argument(
+        "issue",
+        type=int,
+        nargs="?",
+        default=None,
+        help="the issue number this lane implements -- omit only together with "
+        "--suggest-companions, which carries its own issue number as its argument",
+    )
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
     parser.add_argument("--remote", default="origin", help="remote to fetch from (default: origin)")
     parser.add_argument("--json", action="store_true", help="emit the payload instead of the receipt")
@@ -2609,7 +2865,43 @@ def main(argv=None):
         "reads this lane as still held. Exits 0 whether or not a record "
         "existed to release; every other flag is ignored when this is given.",
     )
+    parser.add_argument(
+        "--suggest-companions",
+        type=int,
+        default=None,
+        metavar="ISSUE",
+        help="the lane-bundling sweep (#851): given this lane's OWN issue "
+        "number and its claimed --lane set, read an open board handed in as "
+        "JSON on stdin (the dispatch_rank.py idiom -- this call never "
+        "invokes gh itself) and report every OTHER open issue whose title "
+        "or body names a path landing inside the claimed set, in three "
+        "states: candidates / none / could-not-tell. Carries its own issue "
+        "number; the positional issue argument is omitted when this is "
+        "given, and every other mode flag (--claim, --release, "
+        "--derive-held, --against) is refused alongside it.",
+    )
     args = parser.parse_args(argv)
+
+    if args.suggest_companions is not None:
+        if args.issue is not None:
+            parser.error(
+                "--suggest-companions carries its own issue number as its "
+                "argument; drop the positional issue argument"
+            )
+        for flag_name, flag_value in (
+            ("--claim", args.claim),
+            ("--release", args.release),
+            ("--derive-held", args.derive_held),
+            ("--against", bool(args.against)),
+        ):
+            if flag_value:
+                parser.error(
+                    "--suggest-companions and {0} are mutually exclusive -- "
+                    "the sweep answers a different question than any of "
+                    "this file's other modes (#851)".format(flag_name)
+                )
+    elif args.issue is None:
+        parser.error("the issue argument is required unless --suggest-companions is given")
 
     if args.derive_held and args.against:
         parser.error("--derive-held and --against are mutually exclusive (#558)")
@@ -2638,6 +2930,38 @@ def main(argv=None):
             stream.reconfigure(errors="backslashreplace")
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
+
+    if args.suggest_companions is not None:
+        # JSON is UTF-8 by spec (RFC 8259) -- the identical reasoning
+        # dispatch_rank.py's own `main` gives for the same reconfigure, kept
+        # local rather than imported for the same reason lane_setup.py's own
+        # `_one_line` stays local beside release_delta.py's: this is a setup
+        # read, not that module, and neither should have to change because
+        # the other one's contract did.
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper
+            pass
+        try:
+            board = json.load(sys.stdin)
+        except UnicodeDecodeError as err:
+            print("COULD NOT READ: stdin could not be decoded as UTF-8 ({0})".format(err))
+            return EXIT_COULD_NOT_RUN
+        except ValueError as err:
+            print("COULD NOT READ: stdin is not JSON ({0})".format(err))
+            return EXIT_COULD_NOT_RUN
+        claimed = resolve_lane(args.repo, args.lane)["files"] if args.lane else []
+        result = suggest_companions(args.repo, args.suggest_companions, claimed, board)
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            print(
+                "COMPANIONS #{0}: {1}".format(
+                    args.suggest_companions,
+                    _receipt_companions_line(result),
+                )
+            )
+        return EXIT_OK if result["state"] in ("candidates", "none") else EXIT_COULD_NOT_RUN
 
     if args.release:
         config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
