@@ -430,6 +430,45 @@ def _is_existing_directory(p):
     return stat.S_ISDIR(st.st_mode)
 
 
+def _raw_comma_pattern_names_one_existing_path(repo, raw):
+    """Whether an unsplit `--lane` value `raw` -- known to contain a comma
+    -- should be kept as a single member instead of being split on `,`
+    (#836). A glob is never eligible: `_is_lane_glob` characters and a
+    literal comma inside a path do not interact, so a glob is always split
+    as before. Otherwise this is true only when `raw`, taken whole and
+    unsplit, is refused by nothing `_lane_pattern_problem` checks and names
+    a regular file or a directory that actually exists -- the one case a
+    positive answer can be trusted rather than guessed, since a comma-
+    joined value naming something that does not exist yet is exactly as
+    likely to be two not-yet-existing patterns as one not-yet-existing
+    path with a comma in its name, and `resolve_lane`'s `literal` state is
+    documented to permit exactly that ambiguity for a single pattern with
+    no comma at all.
+
+    A `stat()` failure other than "not found" -- a `PermissionError` on an
+    unreadable ancestor directory -- also answers False here rather than
+    raising, so this check degrades to the ordinary split branch instead of
+    stopping `resolve_lane` outright. Nothing is silently lost: the same
+    failure is hit again per split member inside `resolve_lane`'s own
+    `_is_existing_directory`/`_match_is_regular_file` calls, each wrapped in
+    its own `except OSError`, so the unreadable member still surfaces as a
+    `refused` entry with the permission detail -- attached to the split
+    (and therefore wrong) pattern text rather than to the real, comma-named
+    path, which a caller comparing `resolve_lane`'s `files` result cannot
+    tell apart from a genuine two-member lane. Known residual gap, same
+    class as the glob case above; not fixed here.
+    """
+    if _is_lane_glob(raw) or _lane_pattern_problem(raw) is not None:
+        return False
+    normalized = raw.replace("\\", "/")
+    rel = os.path.normpath(normalized).replace(os.sep, "/")
+    try:
+        target = repo / rel
+        return _match_is_regular_file(target) or _is_existing_directory(target)
+    except OSError:
+        return False
+
+
 def resolve_lane(repo, patterns):
     """Render a maintainer-asserted lane -- a mix of literal paths, bare
     directories and glob patterns, exactly what a brief's `lane:` line
@@ -440,13 +479,18 @@ def resolve_lane(repo, patterns):
     `patterns` is the raw list of `--lane`/`--against` values, one per flag
     occurrence -- but a single value may itself be a comma-separated list of
     members (#809: `--lane 'a.md,b.md,c.py'`, the multi-pattern shape a
-    brief's `lane:` line also uses). Each value is split on `,` into members
-    *before* anything else runs, and every member is resolved independently
-    through the identical per-pattern pipeline below -- there used to be no
-    split at all, so a comma-joined string was compared as one literal path
-    containing a literal comma, which matched nothing on disk regardless of
-    what its members named, and a lane naming a held file inside a
-    comma-list read `overlap: none`. Splitting first also fixes the
+    brief's `lane:` line also uses). Each value is split on `,` into
+    whitespace-stripped members *before* anything else runs -- except when
+    the whole raw value, unsplit, already names an existing file or
+    directory on disk, in which case it is kept as one member instead
+    (#836: `_raw_comma_pattern_names_one_existing_path`, for a real
+    filename that itself contains a comma) -- and every member is resolved
+    independently through the identical per-pattern pipeline below -- there
+    used to be no split at all, so a comma-joined string was compared as
+    one literal path containing a literal comma, which matched nothing on
+    disk regardless of what its members named, and a lane naming a held
+    file inside a comma-list read `overlap: none`. Splitting first also
+    fixes the
     collapse #809's third instance measured: one member matching nothing
     used to zero out every other member's real matches, because the whole
     joined string shared one `glob-no-match` entry; each member now keeps
@@ -488,7 +532,32 @@ def resolve_lane(repo, patterns):
     repo = Path(repo)
     entries = []
     files = set()
-    members = [member for raw in patterns for member in raw.split(",")]
+    members = []
+    for raw in patterns:
+        if "," in raw and _raw_comma_pattern_names_one_existing_path(repo, raw):
+            # #836: a comma is legal in a filename on every platform this
+            # loop's CI runs, and splitting a real path like
+            # `docs/comma,name.md` apart on `,` breaks it into two members
+            # that name nothing on disk -- the whole raw string already
+            # names something real, so it is kept as one member rather than
+            # guessed apart. Checked only when the *unsplit* raw string
+            # resolves to an existing file or directory, which is the one
+            # case a positive answer can be trusted instead of guessed: a
+            # comma-joined value naming a not-yet-existing path (a
+            # changelog fragment about to be created, joined with a second,
+            # real pattern) still falls through to the split branch below,
+            # unaffected -- `resolve_lane`'s documented `literal` contract
+            # for not-yet-existing paths is preserved.
+            members.append(raw)
+        else:
+            # #835: a member is stripped of surrounding whitespace before
+            # it reaches `_lane_pattern_problem` -- a comma-joined value
+            # typed with a space after the comma (`'a.md, b.md'`, the shape
+            # a human types) used to carry that space into the literal
+            # path itself, so it matched nothing on disk and a lane sharing
+            # the real file printed `overlap: none` for a collision that
+            # was never actually checked.
+            members.extend(member.strip() for member in raw.split(","))
     for pattern in members:
         problem = _lane_pattern_problem(pattern)
         if problem is not None:
