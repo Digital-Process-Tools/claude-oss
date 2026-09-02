@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 from test_workspace_launcher import (  # noqa: E402
     _consumer_path,
     _mcp_get_output,
+    _mcp_calls,
     _repo,
     run,
 )
@@ -106,6 +107,26 @@ def test_a_failed_census_disarms_the_flag_and_says_unknown(tmp_path):
     assert not any("development-channels" in a for a in argv), argv
     assert "server:oss-channel" not in argv
     assert "unknown" in done.stderr.lower() or "UNKNOWN" in done.stderr
+
+
+def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twice(tmp_path):
+    """Review finding on #810: `bin/oss-workspace` runs the census, then shells
+    out to `doctor.sh`, which runs `check_channel_consumer_census()` again --
+    the identical shape #629 already fixed once for the registration check.
+    `claude mcp list` must be called exactly ONCE across the whole launch, not
+    once per checker."""
+    repo = _repo(tmp_path)
+    consumer = _consumer_path(repo)
+    done, argv = run(
+        repo,
+        with_channel=True,
+        mcp_get=_mcp_get_output(str(consumer)),
+        mcp_list=_own_row(repo),
+        env_extra=_NO_AUTO_UPDATE,
+    )
+    assert any("development-channels" in a for a in argv), (argv, done.stderr)
+    list_calls = [call for call in _mcp_calls(repo) if len(call) > 1 and call[1] == "list"]
+    assert len(list_calls) == 1, (list_calls, done.stderr)
 
 
 def test_a_session_that_never_arms_the_flag_omits_it_and_says_why(tmp_path):

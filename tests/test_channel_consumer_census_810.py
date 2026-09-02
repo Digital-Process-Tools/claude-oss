@@ -189,3 +189,85 @@ def test_check_reports_warn_could_not_ask_never_ok():
     assert len(doctor.FINDINGS) == 1
     assert doctor.FINDINGS[0][0] == "WARN"
     assert "unknown" in doctor.FINDINGS[0][1].lower()
+
+# --------------------------------------------------------- launcher relay (#810 review)
+
+def _crash_run(cmd, **kwargs):
+    raise AssertionError("a relayed report must never fall through to a real ask")
+
+
+def test_a_relayed_collision_report_never_shells_out_again():
+    """The must-fire half: a genuine relay must be trusted, not re-asked --
+    `_crash_run` would fail the test if `claude mcp list` ran a second time."""
+    env = {
+        "OSS_WORKSPACE_CENSUS_CHECKED": "1",
+        "OSS_WORKSPACE_CENSUS_REPORT": "collision\nclaude-channel\noss-channel",
+    }
+    state, detail = mod.channel_consumer_census_state(run=_crash_run, which=lambda x: "/usr/bin/claude", env=env)
+    assert state == "collision"
+    assert detail == ["claude-channel", "oss-channel"]
+
+
+def test_a_relayed_single_report_never_shells_out_again():
+    env = {
+        "OSS_WORKSPACE_CENSUS_CHECKED": "1",
+        "OSS_WORKSPACE_CENSUS_REPORT": "single\noss-channel",
+    }
+    state, detail = mod.channel_consumer_census_state(run=_crash_run, which=lambda x: "/usr/bin/claude", env=env)
+    assert state == "single"
+    assert detail == "oss-channel"
+
+
+def test_a_relayed_none_report_never_shells_out_again():
+    env = {"OSS_WORKSPACE_CENSUS_CHECKED": "1", "OSS_WORKSPACE_CENSUS_REPORT": "none"}
+    state, detail = mod.channel_consumer_census_state(run=_crash_run, which=lambda x: "/usr/bin/claude", env=env)
+    assert state == "none"
+
+
+def test_a_relayed_could_not_ask_report_never_shells_out_again():
+    env = {
+        "OSS_WORKSPACE_CENSUS_CHECKED": "1",
+        "OSS_WORKSPACE_CENSUS_REPORT": "could-not-ask\nclaude mcp list exited 1",
+    }
+    state, detail = mod.channel_consumer_census_state(run=_crash_run, which=lambda x: "/usr/bin/claude", env=env)
+    assert state == "could-not-ask"
+    assert detail == "claude mcp list exited 1"
+
+
+def test_no_relay_flag_falls_through_to_a_real_ask():
+    """The must-not-fire control: without `OSS_WORKSPACE_CENSUS_CHECKED=1`, a
+    stray `OSS_WORKSPACE_CENSUS_REPORT` in the environment must never be
+    trusted -- the real ask always runs."""
+    env = {"OSS_WORKSPACE_CENSUS_REPORT": "collision\na\nb"}
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(ONE_ROW), which=lambda x: "/usr/bin/claude", env=env,
+    )
+    assert state == "single"
+
+
+def test_an_unrecognised_relay_falls_through_to_a_real_ask():
+    env = {"OSS_WORKSPACE_CENSUS_CHECKED": "1", "OSS_WORKSPACE_CENSUS_REPORT": "not-a-real-state"}
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(ONE_ROW), which=lambda x: "/usr/bin/claude", env=env,
+    )
+    assert state == "single"
+
+
+def test_an_empty_relay_report_falls_through_to_a_real_ask():
+    env = {"OSS_WORKSPACE_CENSUS_CHECKED": "1", "OSS_WORKSPACE_CENSUS_REPORT": ""}
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(ONE_ROW), which=lambda x: "/usr/bin/claude", env=env,
+    )
+    assert state == "single"
+
+
+def test_check_channel_consumer_census_threads_env_through():
+    env = {
+        "OSS_WORKSPACE_CENSUS_CHECKED": "1",
+        "OSS_WORKSPACE_CENSUS_REPORT": "collision\nclaude-channel\noss-channel",
+    }
+    doctor.check_channel_consumer_census(run=_crash_run, which=lambda x: "/usr/bin/claude", env=env)
+    assert len(doctor.FINDINGS) == 1
+    assert doctor.FINDINGS[0][0] == "WARN"
+    assert "claude-channel" in doctor.FINDINGS[0][1] and "oss-channel" in doctor.FINDINGS[0][1]
+

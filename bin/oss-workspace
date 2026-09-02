@@ -21,13 +21,23 @@
 #     registered at local scope here. Naming a server that is not registered
 #     refuses the launch outright:
 #         server:oss-channel - no MCP server configured with that name
-#     So the flag is passed ONLY when the registration held. A session with no
-#     channel is worth more than no session.
+#     So the flag is passed ONLY when the registration held AND no second
+#     configured server also resolves to the same consumer script (#810,
+#     below) -- two servers racing one Unix socket is worse than a session
+#     with no board, the same reasoning that already governs registration.
+#     A session with no channel is worth more than no session.
 #   * `claude` reads only its FIRST positional as the prompt, and a variadic
 #     option swallows whatever follows it. The prompt therefore goes FIRST and
 #     the flag LAST; putting the prompt after the flag ends the launch with
 #         --dangerously-load-development-channels entries must be tagged: /oss:tick
 #     which is exactly how this script failed on its first real use.
+#
+# Also not the default, added by #753 and #810 after the above was written:
+# before the setup diagnostic below, this file checks synchronously whether the
+# oss plugin itself is current (switching the opening prompt to /oss:doctor on
+# a genuine update) and repoints its own ~/.local/bin/oss-workspace pin if it
+# is stale, and checks whether a SECOND configured MCP server races oss-channel
+# for the same consumer script before arming the flag mentioned above.
 set -eu
 
 # A user's CDPATH can make `cd relative` land somewhere else entirely and print
@@ -1430,6 +1440,16 @@ CHANNEL_CENSUS
                  "census check crashed, exit status $census_parse_status)." \
                  "Opening WITHOUT the channel flag." >&2
         else
+            # Relayed to doctor.sh's own check a few lines below (#810 review
+            # finding, the identical shape #629 already fixed for the
+            # registration check above): without this, a launcher-opened
+            # session pays for a real `claude mcp list` twice in one
+            # session-open sequence, seconds apart, for an answer that cannot
+            # have changed. `census_report` is exactly the shape
+            # `channel_consumer_census_state`'s own relay parsing expects,
+            # because both sides are the same function.
+            export OSS_WORKSPACE_CENSUS_CHECKED=1
+            export OSS_WORKSPACE_CENSUS_REPORT="$census_report"
             census_state=$(printf '%s\n' "$census_report" | head -n1)
             census_rest=$(printf '%s\n' "$census_report" | tail -n +2)
             case $census_state in
@@ -1715,6 +1735,8 @@ fi
 # repo is named after (see `statusline.py`'s cache history). Unset before the
 # session starts, in every arm above -- ran, skipped, or could not be started.
 unset OSS_WORKSPACE_MCP_CHECKED OSS_WORKSPACE_MCP_STATUS OSS_WORKSPACE_MCP_OUTPUT
+# Same reason, same terms, for the #810 census relay (#629's shape reapplied).
+unset OSS_WORKSPACE_CENSUS_CHECKED OSS_WORKSPACE_CENSUS_REPORT
 
 if [ "$#" -eq 0 ]; then
     # The prompt goes FIRST and the variadic flag LAST. A positional after the

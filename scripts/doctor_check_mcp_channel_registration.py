@@ -329,7 +329,7 @@ def channel_consumer_names(text):
     return names
 
 
-def channel_consumer_census_state(run=None, which=None):
+def channel_consumer_census_state(run=None, which=None, env=None):
     """How many configured MCP servers resolve to the claude-channel consumer
     script, for THIS machine's `claude` -- never assumed from `oss-channel`'s own
     registration alone.
@@ -351,7 +351,39 @@ def channel_consumer_census_state(run=None, which=None):
       at all" told apart from "the one server I expect and nothing else" --
       `check_channel_consumer_census` below folds both into the same OK line, but
       the state itself keeps them separate for a caller that cares which.
+
+    `bin/oss-workspace` already runs THIS exact census, via THIS exact function,
+    a few lines before it shells out to `doctor.sh` -- so a launcher-opened
+    session paid for `claude mcp list` twice in the same session-open sequence
+    (review finding on #810, the identical shape #629 already fixed for
+    `mcp_channel_registration_state` above). When the launcher has already
+    asked, it exports the raw multi-line report (`OSS_WORKSPACE_CENSUS_CHECKED`,
+    `_REPORT` -- the census's own `state` line followed by its `collision`
+    names or `could-not-ask` detail, exactly the shape this function's own
+    embedded-python callers already print) and this reads that instead of
+    shelling out again. This is a relay, not a cache, on the same terms
+    `mcp_channel_registration_state`'s own docstring states: the two calls
+    happen seconds apart inside one session-open sequence, never across an
+    interval this repo's `statusline.py` cache history would call stale. A
+    relayed report this function does not recognise (empty, or an unrecognised
+    first line) falls through to a real ask rather than guessing.
     """
+    env = os.environ if env is None else env
+    relayed = env.get("OSS_WORKSPACE_CENSUS_CHECKED") == "1"
+    if relayed:
+        lines = env.get("OSS_WORKSPACE_CENSUS_REPORT", "").splitlines()
+        state = lines[0].strip() if lines else ""
+        rest = lines[1:]
+        if state == "collision":
+            return "collision", rest
+        if state == "could-not-ask":
+            return "could-not-ask", (rest[0] if rest else "")
+        if state == "single":
+            return "single", (rest[0] if rest else "")
+        if state == "none":
+            return "none", ""
+        # An unrecognised or empty relay is not evidence of anything -- fall
+        # through to a real ask rather than reporting a guess.
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
     if which("claude") is None:
@@ -377,14 +409,19 @@ def channel_consumer_census_state(run=None, which=None):
     return "none", ""
 
 
-def check_channel_consumer_census(run=None, which=None):
+def check_channel_consumer_census(run=None, which=None, env=None):
     """One line: is any OTHER server racing `oss-channel` for the same socket?
 
     Never OK on `could-not-ask` -- an unasked question is not a clean census, and
     rendering it as one would be exactly the absence this repository is named
     after landing on the check written to close a different instance of it.
+
+    `env` threads through to `channel_consumer_census_state` for the launcher
+    relay described there -- passed explicitly rather than only defaulting, the
+    same shape `check_mcp_channel_registration`'s own `precomputed` parameter
+    takes, so a caller can stub the relay independently of the real environment.
     """
-    state, detail = channel_consumer_census_state(run=run, which=which)
+    state, detail = channel_consumer_census_state(run=run, which=which, env=env)
     if state == "could-not-ask":
         doctor.report(
             "WARN",

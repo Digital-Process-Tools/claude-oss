@@ -128,6 +128,47 @@ def test_a_receipt_with_no_numeric_at_does_not_debounce(tmp_path):
     assert "debounced" not in document
 
 
+def test_debouncing_does_not_slide_the_window_forever(tmp_path):
+    """#753 review finding: a debounced return used to stamp `at` with the
+    CURRENT call's `now`, not the original receipt's -- so feeding a debounced
+    document back in as the next call's `receipt` (exactly what `main()` does,
+    call after call) made the window slide forward on every call and never
+    expire. A caller invoked more often than the debounce window is wide would
+    never reach a real check again. `at` must stay pinned to the LAST REAL
+    check throughout a chain of debounced calls, so the window expires
+    `DEBOUNCE_SECONDS` after the real check, not after the last debounce."""
+    runner = _Runner([(True, "")])
+    now = time.time()
+    real_at = now
+    receipt = {"state": "current", "at": real_at, "plugin": "oss", "from": "9.9.9", "to": "9.9.9"}
+    for _ in range(5):
+        now += plugin_update.DEBOUNCE_SECONDS / 10  # 5 hops stay well inside the window
+        receipt = plugin_update.update(
+            root=str(tmp_path),
+            plugin_root=str(_plugin_root(tmp_path)),
+            plugins_root=str(tmp_path / "plugins"),
+            runner=runner,
+            now=now,
+            receipt=receipt,
+        )
+        assert receipt["debounced"] is True
+        assert receipt["at"] == real_at, (
+            "the window slid forward on a debounced call instead of staying "
+            "anchored to the last REAL check"
+        )
+    # Once far enough past the ORIGINAL real check, a real check must fire again.
+    now = real_at + plugin_update.DEBOUNCE_SECONDS + 1
+    receipt = plugin_update.update(
+        root=str(tmp_path),
+        plugin_root=str(_plugin_root(tmp_path)),
+        plugins_root=str(tmp_path / "plugins"),
+        runner=runner,
+        now=now,
+        receipt=receipt,
+    )
+    assert runner.calls, "the window never expired even once past the real check's own age"
+
+
 def test_a_receipt_from_the_future_does_not_debounce(tmp_path):
     """Clock skew must not make a debounce window last forever."""
     now = time.time()

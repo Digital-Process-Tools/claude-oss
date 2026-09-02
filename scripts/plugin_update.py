@@ -657,7 +657,16 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
         at = receipt.get("at")
         if isinstance(at, (int, float)) and 0 <= stamp - at < DEBOUNCE_SECONDS:
             document = dict(receipt)
-            document["at"] = stamp
+            # `at` stays PINNED to the last REAL check, never refreshed to this
+            # call's `stamp` -- self-review finding on this same change. Refreshing
+            # it here made a debounced document, fed back in as the NEXT call's
+            # `receipt` (exactly what a caller invoking this every launch does),
+            # slide the window forward on every call: `main()` writes this
+            # document's `at` back to the receipt file, so a machine opening
+            # sessions more often than DEBOUNCE_SECONDS apart would never reach a
+            # real check again, forever. Leaving `at` untouched means the window
+            # expires DEBOUNCE_SECONDS after the last REAL check regardless of how
+            # many debounced calls happened in between.
             document["debounced"] = True
             document["detail"] = (
                 "a receipt from {:.0f}s ago is inside the {}s debounce window, so "

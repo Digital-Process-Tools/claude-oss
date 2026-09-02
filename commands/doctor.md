@@ -404,8 +404,13 @@ earlier experiment. Two servers racing that script for one Unix socket is invisi
 session: one binds, the harness's connection to the other is refused, and `channel:health` can only
 report `CANNOT DETERMINE` -- it cannot tell which server actually holds the connection (#810).
 `bin/oss-workspace` runs the identical check, via the identical function, before deciding whether to
-arm `--dangerously-load-development-channels`, so this line and the launcher's own arm-or-not
-decision cannot disagree about the count.
+arm `--dangerously-load-development-channels` -- and when it runs first (the ordinary launcher path),
+it relays its own answer into this diagnostic's environment (`OSS_WORKSPACE_CENSUS_CHECKED`,
+`_REPORT`) the same way #629 already relays the registration check just above, rather than this line
+asking `claude mcp list` a second time seconds later. So this line and the launcher's own arm-or-not
+decision are not just parsing the same shape -- on a launcher-opened session they are literally the
+same answer, and cannot disagree about the count. Run standalone (`/oss:doctor` on its own, outside a
+launcher-opened session), no relay is present and this line asks for itself.
 
 - `OK … 0 configured MCP server(s) …` / `OK … 1 configured MCP server(s) …` -- no collision. Zero
   and one are both clean: zero means nothing here resolves to the consumer script at all (which may
