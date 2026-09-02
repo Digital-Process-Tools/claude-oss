@@ -306,12 +306,29 @@ it a second way — grep the new content back — before saying it.
    fragment — measured once already: an entry naming its issue only in the **filename**
    (`274.fixed.md`, body silent) passed a green suite and was refused on the `fragment` leg, because
    the fold consumes the filename and nothing carries the number into `CHANGELOG.md` without it.
-   Locate the assembler at `.oss/assemble_changelog.py` if that file exists, else
-   `scripts/assemble_changelog.py` — the same order this repo's own `oss_rules.assembler_path()`
-   checks — and run `python3 <that path> --check` from inside your worktree. It is a plain read: it
-   derives its own root by walking up for `.git` and needs neither `--dir` nor `--changelog` in this
-   mode, unlike the fold, which refuses without both (`CLAUDE.md`'s `assemble_changelog.py` trap).
-   A refusal names the fragment and the line; fix it and re-run rather than guessing.
+   Locate the assembler the same two places, in the same order, this repo's own
+   `oss_rules.assembler_path()` checks: `.oss/assemble_changelog.py`, else
+   `scripts/assemble_changelog.py`. Found at either: run `python3 <that path> --check` from inside
+   your worktree. It is a plain read: it derives its own root by walking up for `.git` and needs
+   neither `--dir` nor `--changelog` in this mode, unlike the fold, which refuses without both
+   (`CLAUDE.md`'s `assemble_changelog.py` trap). A refusal names the fragment and the line; fix it
+   and re-run rather than guessing.
+
+   **Neither candidate existing is not the same claim as "this repo has no fragment checker."**
+   `assembler_path()` only ever looks at those two canonical locations, so its `None` means "not at
+   either one," not "not wired anywhere" — a repo that keeps the assembler at a third path is a real
+   instance (`.github/scripts/assemble_changelog.py`, #784), can have it wired into CI, and this
+   lookup will never find it. So when neither candidate exists, before you report "no assembler
+   here": grep `.github/workflows/` for an invocation of `assemble_changelog.py`. Nothing there
+   either — that is the genuine no-assembler state, and skipping is correct. A workflow invokes it
+   but you cannot find the script in the tree — that is **could-not-resolve**, not no-assembler: say
+   so in your report, name the workflow and what you searched, and never let it render as the clean
+   skip above. **A clean grep is not proof either** — a composite action or a called/reusable
+   workflow can invoke the script from outside `.github/workflows/`, where this grep cannot see it,
+   the same shape `agents/auditor.md` already names as unreadable from the calling repo. If a
+   workflow references a composite action or a reusable workflow you did not open, say
+   could-not-resolve rather than no-assembler; only report no-assembler once you have actually
+   looked at what every such reference calls.
 
    This is not the only requirement here whose checker `test_command` cannot reach — the report
    itself has one, `report_schema.py`, already named explicitly where the report format is
@@ -903,6 +920,15 @@ can never enter the diff and needs no `.gitignore` entry in the target repo, for
 decoration: a stale note from a previous run of the same branch reads exactly like the current
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.
+
+**Anything you stage before any of this file's destination writes -- this note, the report, the
+pull request payload, all named by branch and timestamp below -- needs the same discriminators.**
+The scratchpad a session works from is shared across every concurrently running lane in a fleet —
+mandated by this loop, not an edge case — so a fixed filename there is a real collision, not a
+hypothetical one: one lane staged an intermediate at a fixed scratchpad path, a second lane on a
+different branch wrote its own to the identical path, and the first lane's file was silently
+overwritten. Name an intermediate with the same branch-or-timestamp discriminators every destination
+path in this file uses, never a bare fixed name under the shared scratchpad.
 
 **Prefix `cd <worktree_root>` to every write call that leaves your branch directory — the note, the
 report and the pull request payload — not once at the top.** A shell cwd does not persist between
