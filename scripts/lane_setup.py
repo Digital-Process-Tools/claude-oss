@@ -941,6 +941,16 @@ def record_lane(worktree_root, issue, branch, path, files=None):
             previous = json.load(fh)
     except (OSError, ValueError, AttributeError):
         previous = None
+    # #804: valid JSON that is not an object (a list, most concretely) loads
+    # fine above -- `json.load` has nothing to raise on -- and only crashes
+    # the moment something calls `.get` on it. #786's review round hoisted
+    # this read out of the `try` above without carrying that case with it, so
+    # both `.get` calls below are guarded again here rather than widening the
+    # `try` back around them: `previous` is only ever untrusted for its
+    # *shape*, not for a read failure the `try` above already turned into
+    # `None`, so a fresh, narrower guard keeps that distinction visible.
+    if not isinstance(previous, dict):
+        previous = None
     files_to_store = sorted(files) if files is not None else None
     if files_to_store is None and previous is not None:
         prev_files = previous.get("files")
@@ -2351,14 +2361,27 @@ def main(argv=None):
 
     if args.release:
         config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
-        if config is None:
-            # #791: `config` is None only when the project half of the config
-            # could not be read at all -- absent or malformed -- which is a
-            # different cause than a valid config that genuinely has no
-            # `worktree_root` key (the benign case `release_lane` itself
-            # reports below). `problems` already distinguishes "not found"
-            # from a JSON parse error; carry that sentence through instead of
-            # letting both render as the one line written for the third case.
+        # #791 fixed the case where `config` is None -- the project half could
+        # not be read at all, absent or malformed. #803: that is not the only
+        # way a real read failure hides in `problems`. `worktree_root` only
+        # ever lives in `.oss.local.json` (`LOCAL_KEYS`), so when the *local*
+        # half is present but unparseable, `oss_config.load` returns a
+        # non-None `config` -- with no `worktree_root` key, since the
+        # unreadable local half was never merged in -- and the parse error
+        # sitting in `problems` right beside advisory findings that fire on
+        # every config missing `worktree_root`, read failure or not (a
+        # "missing required key: worktree_root" entry, chiefly). Gating on
+        # `config is None` alone dropped the local parse error and rendered
+        # it identically to the genuinely benign "no worktree_root configured
+        # here" case `release_lane` reports below; gating on any `problems`
+        # at all would over-correct and swallow that benign case's own
+        # message instead, since it always carries the same advisory entry.
+        # `_read_json_object` (this module's private read for both halves)
+        # spells every read failure with "could not read/decode/parse" --
+        # the one substring none of the advisory sentences use -- so that is
+        # the signal actually being gated on.
+        local_read_failed = any("could not" in problem for problem in problems)
+        if config is None or local_read_failed:
             result = {
                 "state": "could-not-release",
                 "path": None,
