@@ -94,6 +94,10 @@ from manager_docs import ManagerLoop  # noqa: E402
 SKILL_MD = ManagerLoop(REPO_ROOT)
 DEVELOPER_MD = REPO_ROOT / "agents" / "developer.md"
 README_MD = REPO_ROOT / "README.md"
+#: #795 moved the "scaffold is the second step" paragraph out of README.md and
+#: into docs/install.md, along with the rest of the launcher-setup material it
+#: sits beside -- README_FACTS below now reads from there instead.
+INSTALL_DOC = REPO_ROOT / "docs" / "install.md"
 RELEASE_MD = REPO_ROOT / "commands" / "release.md"
 
 # Mentions no command, no settings file and no subject for identity.md.
@@ -875,7 +879,7 @@ CARRIED = (
     + [(TICK_MD,) + fact for fact in TICK_FACTS]
     + [(SKILL_MD,) + fact for fact in SKILL_FACTS]
     + [(DEVELOPER_MD,) + fact for fact in DEVELOPER_FACTS]
-    + [(README_MD,) + fact for fact in README_FACTS]
+    + [(INSTALL_DOC,) + fact for fact in README_FACTS]
     + [(RELEASE_MD,) + fact for fact in RELEASE_FACTS]
 )
 CARRIED_IDS = ["{}: {}".format(entry[0].name, entry[1]) for entry in CARRIED]

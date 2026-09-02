@@ -1,15 +1,18 @@
-"""README documents every field `statusline.render` actually emits (#650).
+"""docs/status-line.md documents every field `statusline.render` actually emits (#650).
 
-Before this issue, `README.md` documented none of the status line's fields --
+Before #650, `README.md` documented none of the status line's fields --
 not even the four that predate #613's `ch` field, which is why #645 (closing
 #613) had nowhere to add the fifth one and handed the whole section to the
-maintainer instead. This does not re-render the line and diff it against the
-README (that would just move the drift into a second copy of the format
-strings); it pins the one thing worth pinning without inventing a fixture no
-future field would naturally show up in -- that every literal prefix
-`render()` actually emits is still named somewhere in the README's status
-line section, so the day a field's own prefix changes and nobody touches
-the doc, this fails instead of nothing noticing.
+maintainer instead. #795 later moved this whole section out of README.md and
+into its own `docs/status-line.md`, alongside the rest of the material README
+carried by issue-number receipt rather than as a pitch and a start -- the fact
+this file pins travels with it rather than staying behind in the trimmed
+README. This does not re-render the line and diff it against the doc (that
+would just move the drift into a second copy of the format strings); it pins
+the one thing worth pinning without inventing a fixture no future field would
+naturally show up in -- that every literal prefix `render()` actually emits is
+still named somewhere in the status line doc, so the day a field's own prefix
+changes and nobody touches the doc, this fails instead of nothing noticing.
 """
 
 import re
@@ -17,15 +20,16 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+STATUS_LINE_DOC = REPO_ROOT / "docs" / "status-line.md"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import statusline  # noqa: E402
 
 
 def _status_line_section():
-    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    match = re.search(r"## Status line\n(.*?)\n## ", text, re.DOTALL)
-    assert match, "README.md has no '## Status line' section"
+    text = STATUS_LINE_DOC.read_text(encoding="utf-8")
+    match = re.search(r"# Status line\n(.*)\Z", text, re.DOTALL)
+    assert match, "docs/status-line.md has no '# Status line' section"
     return match.group(1)
 
 

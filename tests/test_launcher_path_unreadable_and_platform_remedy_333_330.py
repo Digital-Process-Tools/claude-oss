@@ -401,18 +401,19 @@ def test_the_matched_state_prints_no_remedy_on_either_platform(tmp_path):
         assert "Git Bash" not in message, message
 
 
-def test_the_readme_install_line_says_the_command_is_posix_only():
+def test_the_install_line_says_the_command_is_posix_only():
     """#288 kept two README `ln -sf` blocks deliberately identical so #330's caveat would
     reach both audiences. #451 found the duplication itself was the defect -- a second
     copy of the same command, cross-referencing the section it duplicated -- and merged
-    them into one. What #330 actually requires survives that merge: the one remaining
-    block may not stand as an unconditional instruction."""
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    them into one. #795 later moved the whole install step, merged block included, out
+    of README.md and into docs/install.md. What #330 actually requires survives both
+    moves: the one remaining block may not stand as an unconditional instruction."""
+    doc = (REPO_ROOT / "docs" / "install.md").read_text(encoding="utf-8")
     marker = 'ln -sf "$PWD/bin/oss-workspace"'
-    assert readme.count(marker) == 1, (
+    assert doc.count(marker) == 1, (
         "the documented install line moved, or #451's de-duplication regressed; "
         "this guard names it literally"
     )
-    window = readme.split(marker)[1][:700]
+    window = doc.split(marker)[1][:700]
     assert "Windows" in window, window
     assert "Git Bash" in window, window
