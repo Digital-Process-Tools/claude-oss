@@ -376,12 +376,83 @@ def _lane_pattern_problem(pattern):
     return None
 
 
+def _raise_walk_error(exc):
+    """The `onerror` callback `_expand_directory` gives `os.walk` -- its own
+    docstring default is `onerror=None`, meaning "ignore errors and continue
+    the walk", which is `Path.rglob`'s own swallow (CLAUDE.md's trap) reached
+    through a different stdlib entry point rather than avoided by using
+    `os.walk` at all. Measured directly (`chmod 0` on a subdirectory, no
+    exception observed from a bare `os.walk` over it): the swallow is real
+    and the previous version of this function's own docstring claimed the
+    opposite without checking. Passing this re-raises instead, which is what
+    turns an unreadable subtree into the caller's `except OSError` -- a
+    `refused` entry -- rather than a directory that silently reports fewer
+    files than are really there.
+    """
+    raise exc
+
+
+def _expand_directory(repo, rel):
+    """Every regular file under repo-relative directory `rel`, recursively --
+    sorted, repo-relative, POSIX paths. Caller has already confirmed `rel` is
+    a directory; this only enumerates what is under it.
+
+    `os.walk`, not `Path.rglob` -- CLAUDE.md's own trap: `rglob` swallows a
+    `PermissionError` raised mid-walk and simply yields nothing for the
+    unreadable subtree, so a directory this process cannot fully read would
+    render identically to one that is genuinely empty. `os.walk` swallows the
+    identical error by default (`onerror=None`), so `_raise_walk_error` is
+    passed explicitly to re-raise -- the caller's `except OSError` around
+    this call is what turns that into a `refused` entry instead of a silent
+    `[]`.
+    """
+    matches = []
+    for dirpath, _dirnames, filenames in os.walk(repo / rel, onerror=_raise_walk_error):
+        for name in filenames:
+            p = Path(dirpath) / name
+            if _match_is_regular_file(p):
+                matches.append(p.relative_to(repo).as_posix())
+    return sorted(matches)
+
+
+def _is_existing_directory(p):
+    """`p.is_dir()`, but through `stat()` directly -- the same reason
+    `_match_is_regular_file` does not use `Path.is_file()`: the convenience
+    wrapper swallows a version-dependent set of `OSError`s and simply
+    answers False, which here would silently fall a directory this process
+    cannot `stat()` through to the ordinary literal-path branch instead of
+    surfacing the failure.
+    """
+    try:
+        st = p.stat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISDIR(st.st_mode)
+
+
 def resolve_lane(repo, patterns):
-    """Render a maintainer-asserted lane -- a mix of literal paths and glob
-    patterns, exactly what a brief's `lane:` line carries today -- in the one
-    canonical form the issue asks for: a sorted, deduplicated list of
-    repo-relative POSIX paths, so a second brief's lane can be compared to it
-    by `lane_overlap` instead of by eye.
+    """Render a maintainer-asserted lane -- a mix of literal paths, bare
+    directories and glob patterns, exactly what a brief's `lane:` line
+    carries today -- in the one canonical form the issue asks for: a sorted,
+    deduplicated list of repo-relative POSIX paths, so a second brief's lane
+    can be compared to it by `lane_overlap` instead of by eye.
+
+    `patterns` is the raw list of `--lane`/`--against` values, one per flag
+    occurrence -- but a single value may itself be a comma-separated list of
+    members (#809: `--lane 'a.md,b.md,c.py'`, the multi-pattern shape a
+    brief's `lane:` line also uses). Each value is split on `,` into members
+    *before* anything else runs, and every member is resolved independently
+    through the identical per-pattern pipeline below -- there used to be no
+    split at all, so a comma-joined string was compared as one literal path
+    containing a literal comma, which matched nothing on disk regardless of
+    what its members named, and a lane naming a held file inside a
+    comma-list read `overlap: none`. Splitting first also fixes the
+    collapse #809's third instance measured: one member matching nothing
+    used to zero out every other member's real matches, because the whole
+    joined string shared one `glob-no-match` entry; each member now keeps
+    its own state and its own files, so a non-matching member no longer
+    erases a matching one beside it. A member with no comma in the original
+    value is unaffected -- `"x".split(",")` is `["x"]`.
 
     #267, instance two: `fix/247-244`'s lane was a literal path
     (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob
@@ -390,19 +461,35 @@ def resolve_lane(repo, patterns):
     path cannot be intersected by eye. Both forms resolve through here to the
     same shape.
 
-    Three states per pattern, not two: `literal` (asserted, not checked
+    Four states per member, not three: `literal` (asserted, not checked
     against the tree -- the file may not exist yet, such as a changelog
-    fragment about to be created), `glob-resolved` (expanded against files
-    that exist), and `glob-no-match` (the pattern was well-formed and matched
-    nothing -- reported rather than silently folded into an empty result, the
-    same distinction `derive_branch`'s `unknown` state draws elsewhere in this
-    file). A fourth, `refused`, covers a pattern `_lane_pattern_problem` will
-    not resolve at all.
+    fragment about to be created), `dir-expanded` (#809: the member names an
+    existing directory, expanded to the regular files under it, recursively
+    -- the natural thing to type for "everything under this directory", and
+    until this fix compared as a literal path string against a held set of
+    *file* paths, so it could never intersect even when a file inside it was
+    genuinely held, while the equivalent glob correctly reported the
+    collision), `glob-resolved` (expanded against files that exist), and
+    `glob-no-match` (the pattern -- or the directory -- was well-formed and
+    matched nothing, reported rather than silently folded into an empty
+    result, the same distinction `derive_branch`'s `unknown` state draws
+    elsewhere in this file). A fifth, `refused`, covers a member
+    `_lane_pattern_problem` will not resolve at all.
+
+    A lane whose members are *all* well-formed and checked but whose union
+    still names zero files (every member `glob-no-match`, or a lane with no
+    members at all having already returned early elsewhere) is not, on its
+    own, a fact this function states -- callers needing to distinguish "this
+    lane resolved to nothing" from "this lane is genuinely disjoint" read
+    `resolved["files"]` being empty alongside `resolved["patterns"]` being
+    non-empty; `lane_report`'s `_lane_resolved_to_nothing` is where that
+    reading turns into its own availability state.
     """
     repo = Path(repo)
     entries = []
     files = set()
-    for pattern in patterns:
+    members = [member for raw in patterns for member in raw.split(",")]
+    for pattern in members:
         problem = _lane_pattern_problem(pattern)
         if problem is not None:
             entries.append({"pattern": pattern, "state": "refused", "files": [], "detail": problem})
@@ -438,9 +525,64 @@ def resolve_lane(repo, patterns):
             files.update(matches)
         else:
             rel = os.path.normpath(normalized).replace(os.sep, "/")
-            entries.append({"pattern": pattern, "state": "literal", "files": [rel], "detail": ""})
-            files.add(rel)
+            try:
+                is_dir = _is_existing_directory(repo / rel)
+            except OSError as exc:
+                entries.append(
+                    {
+                        "pattern": pattern,
+                        "state": "refused",
+                        "files": [],
+                        "detail": "{0}: {1}".format(type(exc).__name__, exc),
+                    }
+                )
+                continue
+            if is_dir:
+                try:
+                    matches = _expand_directory(repo, rel)
+                except OSError as exc:
+                    entries.append(
+                        {
+                            "pattern": pattern,
+                            "state": "refused",
+                            "files": [],
+                            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+                        }
+                    )
+                    continue
+                state = "dir-expanded" if matches else "glob-no-match"
+                entries.append({"pattern": pattern, "state": state, "files": matches, "detail": ""})
+                files.update(matches)
+            else:
+                entries.append({"pattern": pattern, "state": "literal", "files": [rel], "detail": ""})
+                files.add(rel)
     return {"patterns": entries, "files": sorted(files)}
+
+
+def _lane_resolved_to_nothing(resolved):
+    """True when `resolved` (a `resolve_lane` result) named at least one
+    member and every one of them was well-formed and checked, but the whole
+    lane still names zero files on disk (#809: every member `glob-no-match`,
+    e.g. `formatters/**/*.py` -- `**` is not the recursion this matcher
+    implements -- or a directory with nothing under it).
+
+    A lane in this state is not "genuinely disjoint" -- disjointness is a
+    claim about two sets of real files that happen not to intersect, and
+    there is no set here to have compared. It is "nobody managed to name a
+    file", the issue's own wording, and must not share a verdict with either
+    `available` or `blocked`.
+
+    Returns False for `None` (nothing was asked for) and for a lane whose
+    only members were `refused` -- that already has its own, more specific,
+    `could-not-check` state in `lane_report`, and takes priority: a refused
+    pattern was never read as a pattern at all, which is a different claim
+    from "read, and named nothing".
+    """
+    if resolved is None or not resolved["patterns"]:
+        return False
+    if resolved["files"]:
+        return False
+    return any(entry["state"] != "refused" for entry in resolved["patterns"])
 
 
 def lane_overlap(files_a, files_b):
@@ -772,6 +914,23 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
                         "holders": holders,
                         "detail": "",
                     }
+                elif _lane_resolved_to_nothing(a):
+                    # #809: every member of the lane side was well-formed and
+                    # checked, and the union still names zero files (an empty
+                    # glob, an empty directory, or a mix of the two). `overlap`
+                    # is `[]` here for the same reason it would be for a real,
+                    # disjoint, non-empty lane -- an empty set intersects
+                    # nothing -- so `overlap` alone cannot tell the two apart.
+                    # This must not read `available`: a lane nobody managed to
+                    # name is not a lane confirmed free.
+                    overlap_state = "resolved-to-nothing"
+                    availability = {
+                        "state": "resolved-to-nothing",
+                        "files": [],
+                        "holders": [],
+                        "detail": "this lane names no file on disk, so nothing "
+                        "was compared against the held set (#809)",
+                    }
                 else:
                     availability = {"state": "available", "files": [], "holders": [], "detail": ""}
     else:
@@ -789,6 +948,22 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
         else:
             overlap = lane_overlap(a["files"], b["files"])
             overlap_state = "resolved"
+            if _lane_resolved_to_nothing(a) or _lane_resolved_to_nothing(b):
+                # #809: same reading as the `--derive-held` branch above -- an
+                # empty `overlap` from a side that named no file on disk is not
+                # the same claim as an empty `overlap` from two real, checked,
+                # disjoint sets, so the receipt's `overlap :` line must not
+                # print `none` for both. Checked on *both* sides here, unlike
+                # the `--derive-held` branch: `--against PATTERN` is itself a
+                # maintainer-typed pattern (dispatch.md's own documented
+                # fallback), not a derived held set, so it can resolve to
+                # nothing exactly the way `--lane` can -- an empty `overlap`
+                # from a typo'd or `**`-broken `--against` glob must not read
+                # as "checked, disjoint" either. Plain `--against` mode has no
+                # `availability` verdict to correct (that field only exists
+                # under `--derive-held`), so this is the only render this
+                # branch can carry the distinction on.
+                overlap_state = "resolved-to-nothing"
     # #566: `repo` is threaded through so each guard's `status` is answered against
     # the repository the lane is actually dispatched into, never against claude-oss's
     # own tree by default -- the whole defect this issue is about.
@@ -2226,6 +2401,14 @@ def receipt(payload):
         # raising.
         if lane.get("overlap_state") == "could-not-check":
             lines.append("  overlap : COULD NOT CHECK -- {0}".format(lane.get("overlap_detail", "")))
+        elif lane.get("overlap_state") == "resolved-to-nothing":
+            # #809: the lane side named no file on disk -- an empty `overlap`
+            # here is not the same claim an empty `overlap` from two real,
+            # checked, disjoint sets makes, so it gets its own line rather
+            # than folding into `none`.
+            lines.append(
+                "  overlap : n/a -- lane resolved to zero files on disk, nothing to compare (#809)"
+            )
         elif lane["overlap"] is None:
             # #558 review round: the pre-#558 "only one side given" wording is
             # wrong when `held_source` is present and no --lane was given -- that
@@ -2258,6 +2441,15 @@ def receipt(payload):
             elif availability["state"] == "could-not-check":
                 lines.append(
                     "  verdict : COULD NOT CHECK -- {0}".format(availability["detail"])
+                )
+            elif availability["state"] == "resolved-to-nothing":
+                # #809: third state, same shape as everywhere else in this
+                # loop -- `available`, `BLOCKED`, and "this lane names no
+                # file on disk, so nothing was compared". Never folded into
+                # `available`, the dangerous direction: a lane that resolved
+                # to nothing is not confirmed free, it is unnamed.
+                lines.append(
+                    "  verdict : RESOLVED TO NOTHING -- {0}".format(availability["detail"])
                 )
             else:
                 lines.append(
@@ -2352,6 +2544,25 @@ def main(argv=None):
 
     if args.derive_held and args.against:
         parser.error("--derive-held and --against are mutually exclusive (#558)")
+
+    if args.claim and not args.lane and not args.release:
+        # #788: the documented dispatch-time call used to be `--claim` with no
+        # `--lane` at all, which writes a fileless lane record -- indistinguishable
+        # at write time from a well-formed one, and indistinguishable from every
+        # OTHER live lane's record once written. `derive_held_set` then has to
+        # treat the held set as untrustworthy while that record is live (its own
+        # `held_from_live_lanes` detail names the cause: "recorded without
+        # --lane"), which poisons every later --derive-held call this tick, not
+        # just this one's own probe -- the fallback #558 exists to retire. Refuse
+        # the write instead of the state it produces, the same shape
+        # `fleet_label.py` already refuses an incomplete label bundle rather than
+        # composing one from a missing piece.
+        parser.error(
+            "--claim requires --lane (#788) -- a claim with no files writes a "
+            "fileless lane record, which poisons every later --derive-held call "
+            "this tick; pass --lane once per file this lane touches, the same "
+            "patterns already used to probe this candidate"
+        )
 
     for stream in (sys.stdout, sys.stderr):
         try:

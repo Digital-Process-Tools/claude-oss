@@ -299,8 +299,8 @@ the same lever applied to whatever else a brief hands a lane before it starts wo
 rather than bounded, because nothing here can distinguish a genuinely wide orientation read from
 one that could have waited).
 
-**Run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim` from the clone before writing
-each brief, rather than typing
+**Run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane PATTERN [--lane
+PATTERN ...]` from the clone before writing each brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
 them and the moment the dispatched agent does: `main` has moved mid-tick before, and a hand-copied
 worktree list has already flattened `cannot tell` to `idle` once, which is how `fix/313` and
@@ -313,6 +313,13 @@ the pointer, not a second copy of that explanation.
 **`--claim` belongs only here, never on a probe above** (#705): every call used to record this
 lane unconditionally, so probing several candidates before picking one left phantom records that
 blocked `--derive-held` for hours. The probe forms above are now read-only; only `--claim` writes.
+
+**`--claim` refuses without `--lane` (#788).** `<issue> --claim` alone used to write a fileless lane
+record, indistinguishable at write time from a well-formed one — and every later `--derive-held`
+call this tick then had to treat the whole held set as untrustworthy while that record stayed live,
+for every candidate probed after it, not just this one's own. Pass the same patterns this candidate
+was already probed with above; this is the one call that writes, so it is also the one call the
+files must be named on.
 
 Every brief carries these:
 
