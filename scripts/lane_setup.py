@@ -941,6 +941,16 @@ def record_lane(worktree_root, issue, branch, path, files=None):
             previous = json.load(fh)
     except (OSError, ValueError, AttributeError):
         previous = None
+    # #804: valid JSON that is not an object (a list, most concretely) loads
+    # fine above -- `json.load` has nothing to raise on -- and only crashes
+    # the moment something calls `.get` on it. #786's review round hoisted
+    # this read out of the `try` above without carrying that case with it, so
+    # both `.get` calls below are guarded again here rather than widening the
+    # `try` back around them: `previous` is only ever untrusted for its
+    # *shape*, not for a read failure the `try` above already turned into
+    # `None`, so a fresh, narrower guard keeps that distinction visible.
+    if not isinstance(previous, dict):
+        previous = None
     files_to_store = sorted(files) if files is not None else None
     if files_to_store is None and previous is not None:
         prev_files = previous.get("files")
@@ -2351,14 +2361,42 @@ def main(argv=None):
 
     if args.release:
         config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
-        if config is None:
-            # #791: `config` is None only when the project half of the config
-            # could not be read at all -- absent or malformed -- which is a
-            # different cause than a valid config that genuinely has no
-            # `worktree_root` key (the benign case `release_lane` itself
-            # reports below). `problems` already distinguishes "not found"
-            # from a JSON parse error; carry that sentence through instead of
-            # letting both render as the one line written for the third case.
+        # #791 fixed the case where `config` is None -- the project half could
+        # not be read at all, absent or malformed. #803: that is not the only
+        # way a real read failure hides in `problems`. `worktree_root` only
+        # ever lives in `.oss.local.json` (`LOCAL_KEYS`), so when the *local*
+        # half is present but unparseable, `oss_config.load` returns a
+        # non-None `config` -- with no `worktree_root` key, since the
+        # unreadable local half was never merged in -- and the parse error
+        # sitting in `problems` right beside advisory findings that fire on
+        # every config missing `worktree_root`, read failure or not (a
+        # "missing required key: worktree_root" entry, chiefly). Gating on
+        # `config is None` alone dropped the local parse error and rendered
+        # it identically to the genuinely benign "no worktree_root configured
+        # here" case `release_lane` reports below.
+        #
+        # A first version of this fix scanned `problems` for the substring
+        # "could not", reasoning that `_read_json_object`'s own read-failure
+        # messages ("could not read/decode/parse") were the only ones that
+        # used it. That reasoning was never checked against the rest of
+        # `oss_config.py` and was wrong: `test_command_problem`'s own
+        # advisory ("...or null when the probe could not tell; got ...")
+        # contains the same substring, so a config with a perfectly readable,
+        # perfectly known `worktree_root` and an unrelated malformed
+        # `test_command` field was blocked from releasing at all (found in
+        # this diff's own review round). Ask the one question this arm
+        # actually needs answered instead of inferring it from prose
+        # elsewhere in the list: did *the local file itself* fail to parse?
+        # Re-read it with the exact primitive `load()` uses internally for
+        # both halves, so this stays one read failure, one fact, rather than
+        # a second implementation of JSON/encoding error handling that could
+        # drift from `oss_config`'s own.
+        local_read_problem = None
+        if config is not None:
+            _, local_read_problem = oss_config._read_json_object(
+                oss_config.local_config_path(Path(args.repo) / CONFIG_NAME)
+            )
+        if config is None or local_read_problem is not None:
             result = {
                 "state": "could-not-release",
                 "path": None,
