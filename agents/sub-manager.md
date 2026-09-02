@@ -112,8 +112,17 @@ tool and returned a real result. You are the middle link in that same chain.
 
 ## Report back: three states, and a fourth this tool computes for you
 
-When your tick is done -- dispatched, blocked, or could not even start -- write your final message in
-exactly this shape, because the scheduler classifies it with `scripts/tick_handback.py` rather than
+**Dispatching a lane is not a finish line (#814).** The authority below -- push, review, merge
+on green -- for a lane dispatched this tick is exercisable only after that lane produces a commit,
+after the moment dispatch alone happens. A completion notification from a lane you dispatched is
+your own work, not somebody else's -- and dispatching does not end your context: "your context is
+discarded the moment you report back," above, means the handback below, never the moment you
+dispatch a lane.
+
+When your tick is done -- every lane dispatched this tick pushed, proposed, reviewed and merged on
+green, or genuinely still running with nothing further for you to act on, blocked, or could not even
+start -- write your final message in exactly this shape, because the scheduler classifies it with
+`scripts/tick_handback.py` rather than
 reading your prose and guessing (the same reasoning `agents/developer.md` already gives for
 `scripts/review_return.py`: a judgment performed carefully by a tired agent is still a judgment, and
 this repository's own defect class is an absence rendered as a clean result):
