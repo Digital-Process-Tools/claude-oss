@@ -362,6 +362,24 @@ separately rather than one list.
   now reads the table's own cells and checks quoting and exec-bit agreement for whatever script
   each cell names, scoped to that one table and to `dispatch.md`'s matching compose line -- not a
   sweep of every code fence in the loop's prose, which is a larger, separate piece of work.
+- **A fix for one Windows-only mechanism can silently break a second, unrelated Windows-only
+  mechanism, and reasoning from the source is not the same as measuring it.** `fix/753` (#853,
+  closing #753 and #810) took four CI rounds, the last three all Windows-only. Round two was a real
+  defect: `shutil.which()` resolves `claude` to `claude.cmd` via `PATHEXT`, but
+  `subprocess.run(..., shell=False)` does not perform that search itself, so three call sites asked
+  `which()` for the answer and then handed `run()` the bare, unresolved name anyway. Round three
+  pushed that fix reasoned rather than measured -- Windows CI is the only thing that exercises the
+  mechanism and it could not be reproduced locally -- and it over-fired, breaking a different
+  Windows-only mechanism it never touched (`argv` always resolving to `/oss:doctor` instead of the
+  expected prompt), a fix that was plausible and passed two spawned agents' review before CI showed
+  otherwise. Three of the six new failures were explicit must-not-fire controls in
+  `tests/test_workspace_auto_update_753.py`; those controls are what made the over-fire visible at
+  all. Round four measured instead: reading `scripts/plugin_update.py`'s `receipt_dir()` directly
+  found `LOCALAPPDATA` checked before `HOME` on Windows, so the test helpers' `HOME`/`USERPROFILE`
+  isolation was silently a no-op there and every subprocess shared one real, machine-scoped receipt
+  file across tests within the same CI job -- fixed by pinning `LOCALAPPDATA`/`XDG_CACHE_HOME` per
+  test invocation, and it shipped clean on the first try. The round that measured the mechanism
+  landed; the round that reasoned from it plausibly did not (#854).
 
 ## Layout
 

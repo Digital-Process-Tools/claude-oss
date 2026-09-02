@@ -235,6 +235,24 @@ it a second way — grep the new content back — before saying it.
    `completed`**, so the stop is invisible to the maintainer until somebody reads the worktree by
    hand.
 
+   **A test run's verdict is never delegated (#874).** A spawned agent may locate a failing test,
+   explain one, or review a diff; the run itself happens in this lane's own transcript, where its
+   output is something you can read directly, or it does not happen. `Explore` is a read-only
+   *search* agent whose whole value is compression — it reads excerpts and returns a conclusion, not
+   a file dump — and it is granted `Bash`, so it can certainly run `pytest`. What comes back is then
+   a summary written by an agent whose job is to summarise, and a suite that never finished, one that
+   finished red and was described charitably, and one that genuinely passed all three render as the
+   identical confident sentence. That is this repository's own defect class, one level down: a
+   spawned agent standing in for the receipt a foreground run would have produced. The two bullets
+   above already ask this of you directly — run the narrowed suite in the foreground, read the
+   output file back yourself, in the same turn — and this is the same rule applied to the moment a
+   task starts to look like something you could hand off instead. It is not a license to run more:
+   the guidance above this line — narrowed, never the whole `test_command`, never re-run to watch a
+   failure you already saw — still bounds what runs at all; this only says where it runs, and that
+   nothing here is enforceable past this sentence — nothing stops a spawned agent from itself
+   spawning another and believing what it says, the same limit `tests/test_agent_grant_is_total.py`
+   already documents for a different boundary.
+
    **No narration turn.** After a tool result, fire the next call directly or write the report —
    a sentence announcing what you are about to do costs a whole turn, and every turn re-reads the
    entire context. On this repository's own trial, most turns one model ran beyond the other were
