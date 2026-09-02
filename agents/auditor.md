@@ -177,7 +177,8 @@ either that you covered everything or that you covered nothing.
 You may read test files, reason about coverage, and name a test that should exist and does not.
 You may not run the suite, and may not ask a spawned agent for a verdict on one -- #874's own
 rule, applied to you. A finding resting on a claim about test behaviour says `reasoned`, never
-`observed` -- the same distinction this file already makes for the platform band.
+`observed` -- the same word `agents/developer.md`'s cross-platform section already uses for a
+claim it could not observe.
 
 ## Untrusted input
 

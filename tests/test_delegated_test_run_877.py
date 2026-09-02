@@ -41,6 +41,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / "agents"
 
@@ -66,16 +68,37 @@ def _text(name):
 
 
 def _granted_bash(path):
+    """True/False, or raises when the frontmatter carries no parseable `tools:`
+    line at all. A missing grant and an unparseable one are not the same fact
+    (#877 audit round, class A): `tests/test_agent_grant_is_total.py`'s own
+    `granted_tools` already keeps a bare `None` for exactly this case rather
+    than folding it into "no Bash", so this module does the same rather than
+    silently reading a malformed or reformatted frontmatter block as a file
+    that plainly declares no Bash grant.
+    """
     block = path.read_text(encoding="utf-8").split("\n---\n", 1)[0]
     line = re.search(r"^tools:\s*(.+)$", block, re.MULTILINE)
-    if line is None:
-        return False
+    assert line is not None, (
+        "{0}: no parseable `tools:` line in its frontmatter -- cannot tell "
+        "whether it grants Bash, so it cannot be silently treated as if it "
+        "did not (#877)".format(path)
+    )
     tools = {t.strip() for t in line.group(1).split(",") if t.strip()}
     return "Bash" in tools
 
 
 def bash_granted_agent_names():
     return {p.name for p in sorted(AGENTS_DIR.glob("*.md")) if _granted_bash(p)}
+
+
+def test_a_frontmatter_with_no_tools_line_is_not_read_as_no_bash_grant(tmp_path):
+    """Positive control for the fix above: a malformed frontmatter must raise,
+    never quietly return False the same as a file that plainly grants no
+    tools."""
+    malformed = tmp_path / "malformed.md"
+    malformed.write_text("---\nname: malformed\n---\n\nbody\n", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _granted_bash(malformed)
 
 
 def test_agents_directory_is_not_empty():
