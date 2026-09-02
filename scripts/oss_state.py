@@ -1313,12 +1313,24 @@ def lane_models(lanes, window, why=None):
     # so only DISPATCHED entries are counted. Refused outright, the same shape
     # `lane_fill` already refuses an unreasoned short lane in -- the receipt is the
     # check, not a repeated read of the prose this rule is stated in.
+    # Keyed on str(issue), not the raw value (found by review): --lane's own CLI
+    # parser converts an issue token to int when it can and leaves it a string
+    # otherwise, so a caller building lane dicts directly -- a test fixture, a
+    # future non-CLI caller -- can hand this function 880 and "880" for the same
+    # issue, and a dict keyed on the unconverted value would count them as two
+    # different issues and silently accept the exact re-dispatch #880 exists to
+    # catch. The display side already treated int/str as equivalent (the
+    # pre-existing `key=str` on the sort below); the counting side did not.
     dispatched_counts = {}
+    dispatched_display = {}
     for lane in normalized:
         if lane["dispatch_state"] == DISPATCH_STATE_DISPATCHED:
-            dispatched_counts[lane["issue"]] = dispatched_counts.get(lane["issue"], 0) + 1
+            key = str(lane["issue"])
+            dispatched_counts[key] = dispatched_counts.get(key, 0) + 1
+            dispatched_display.setdefault(key, lane["issue"])
     redispatched = sorted(
-        (issue for issue, count in dispatched_counts.items() if count > 1), key=str
+        (dispatched_display[key] for key, count in dispatched_counts.items() if count > 1),
+        key=str,
     )
     if redispatched:
         raise StateError(
@@ -2195,13 +2207,34 @@ def last_triage(path):
         detail = entry.get("detail")
         if not isinstance(detail, dict):
             continue
-        triage = detail.get("triage")
+        if "triage" not in detail:
+            continue
+        # Stop at the FIRST entry (scanning backward) that carries a triage key at
+        # all -- even a malformed one -- rather than skipping past it to an older,
+        # valid record behind it (found by review): this is `_last_wait`'s own
+        # discipline, stated in its docstring, and this function's docstring
+        # already claimed to follow it without actually doing so. Falling through
+        # to an older valid record would render a stale answer as the freshest
+        # one, which is a subtler instance of the exact silent-absence defect
+        # this repository is named after -- not "nothing was found" but "the
+        # wrong thing was found and called current".
+        triage = detail["triage"]
         if isinstance(triage, dict) and triage.get("recorded_at"):
             return {
                 "state": TRIAGE_RECORDED,
                 "recorded_at": triage["recorded_at"],
                 "why": None,
             }
+        return {
+            "state": TRIAGE_COULD_NOT_READ,
+            "recorded_at": None,
+            "why": (
+                "the most recent triage record ({!r}) is malformed -- not a "
+                "mapping with a non-empty recorded_at -- and reading past it to "
+                "an older, valid one would render a stale answer as the current "
+                "one".format(triage)
+            ),
+        }
     return {"state": TRIAGE_NEVER, "recorded_at": None, "why": None}
 
 

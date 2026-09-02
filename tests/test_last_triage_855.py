@@ -97,6 +97,32 @@ def test_last_triage_with_no_sweep_entry_anywhere_is_never():
     assert record["state"] == oss_state.TRIAGE_NEVER
 
 
+def test_last_triage_does_not_fall_back_to_an_older_valid_record_behind_a_malformed_one():
+    """Found by review: the freshest triage entry in history is malformed (no
+    recorded_at) with a genuinely older, valid one behind it. The scan must
+    stop at the freshest statement -- even though it is unusable -- rather
+    than silently reading past it to the stale valid one, which would render
+    an out-of-date answer as though it were current. This is `_last_wait`'s
+    own stated discipline; `last_triage`'s docstring claims to follow it and
+    initially did not."""
+    entries = [
+        {
+            "at": "2026-08-01T00:00:00Z",
+            "detail": {"triage": {"recorded_at": "2026-08-01T00:00:00Z"}},
+        },
+        {"at": "2026-09-01T00:00:00Z", "detail": {"triage": {"recorded_at": ""}}},
+    ]
+    original_read = oss_state.read
+    try:
+        oss_state.read = lambda path: entries
+        record = oss_state.last_triage("unused")
+    finally:
+        oss_state.read = original_read
+    assert record["state"] == oss_state.TRIAGE_COULD_NOT_READ
+    assert record["recorded_at"] is None
+    assert record["state"] != oss_state.TRIAGE_RECORDED
+
+
 def test_last_triage_could_not_read_is_distinct_from_never(tmp_path):
     """The load-bearing distinction #855 asks for: an unreadable state file
     must never render the same as a history that was read and found empty."""

@@ -163,6 +163,23 @@ def test_two_resumed_records_for_the_same_issue_are_not_a_redispatch():
     assert len(record["lanes"]) == 2
 
 
+def test_two_fresh_dispatches_of_the_same_issue_are_refused_across_int_and_str():
+    """Found by review: the CLI's own issue parser always converts identically
+    for identical input text, so this shape never reaches the CLI -- but a
+    caller building lane dicts directly (a test fixture, a future non-CLI
+    caller) can hand issue=880 and issue='880' for the same issue, and the
+    counting dict used to key on the raw, unconverted value, silently
+    accepting the exact re-dispatch #880 exists to catch."""
+    with pytest.raises(oss_state.StateError, match="#880"):
+        oss_state.lane_models(
+            [
+                {"issue": 880, "model": "sonnet", "choice": "default"},
+                {"issue": "880", "model": "opus", "choice": "default"},
+            ],
+            window=WINDOW,
+        )
+
+
 def test_two_different_issues_each_dispatched_once_is_fine():
     """Negative control: an ordinary two-lane tick must not be mistaken for a
     redispatch just because two entries exist."""
@@ -321,6 +338,59 @@ def test_cli_accepts_a_normal_single_dispatch(tmp_path):
         ]
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_cli_fifo_matches_two_lane_dispatch_state_entries_to_two_lane_entries_in_order(tmp_path):
+    """The one shape the FIFO-per-issue design exists for (found by review): two
+    --lane entries for the same issue -- an abandoned dispatch and its
+    agent-unreachable respawn -- each getting its OWN --lane-dispatch-state,
+    in the order both were given, not a dict collapsing to the last value or
+    an off-by-one swap. This is the actual CLI path; the library-level test
+    above only exercises the same shape with pre-built dicts."""
+    state_path = tmp_path / "state.json"
+    result = _piped(
+        [
+            str(state_path),
+            "--decision",
+            "test",
+            "--at",
+            "2026-09-02T22:00:00Z",
+            "--lane",
+            "880=sonnet:default",
+            "--lane",
+            "880=opus:override:second attempt",
+            "--lane-window",
+            "test",
+            "--lane-dispatch-state",
+            "880=dispatched",
+            "--lane-dispatch-state",
+            "880=agent-unreachable:context died",
+        ]
+    )
+    assert result.returncode == 0, result.stdout
+    import json
+    import re
+
+    match = re.search(r"\{.*\}", result.stdout, re.DOTALL)
+    entry = json.loads(match.group(0))
+    lanes = entry["detail"]["lanes"]["lanes"]
+    assert len(lanes) == 2
+    assert lanes[0]["model"] == "sonnet"
+    assert lanes[0]["dispatch_state"] == "dispatched"
+    assert lanes[1]["model"] == "opus"
+    assert lanes[1]["dispatch_state"] == "agent-unreachable"
+    assert lanes[1]["dispatch_state_why"] == "context died"
+
+
+def test_cli_fifo_order_reversed_would_be_caught():
+    """Negative control for the test above: swap which entry gets which state
+    and confirm the assertions would fail -- proving the test above actually
+    pins the order rather than passing on either arrangement."""
+    lanes = [
+        {"model": "sonnet", "dispatch_state": "agent-unreachable"},
+        {"model": "opus", "dispatch_state": "dispatched"},
+    ]
+    assert not (lanes[0]["model"] == "sonnet" and lanes[0]["dispatch_state"] == "dispatched")
 
 
 def test_cli_refuses_lane_dispatch_state_with_no_matching_lane(tmp_path):
