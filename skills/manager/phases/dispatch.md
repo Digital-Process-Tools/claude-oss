@@ -45,6 +45,17 @@ review that only looks like one.
 Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
 the deliverable is a diff or a label.
 
+**Spawn with the literal string, not the definition's name** -- `commands/tick.md` spells its own
+`oss:sub-manager` spawn out in full, and this step must do the same for the two it composes:
+
+    Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false)
+    Agent(subagent_type: "oss:triager", run_in_background: false)
+
+The only other place `agents/` demonstrates the `subagent_type: "..."` form is
+`agents/developer.md`'s own review spawns -- inside the file a sub-manager never reads -- so
+leaving the string to inference here is how #862 dispatched a lane as `general-purpose` and lost
+every rule written into `agents/developer.md`.
+
 **A spawn whose `subagent_type` does not resolve is `could not run`, and the fallback is to brief
 `general-purpose` with a pointer to the definition file.** A newly written agent file not
 registering until a fresh session is the benign case and it clears itself. The one that does not is
@@ -74,7 +85,12 @@ red run is claimed rather than shown; or the brief is taken at face value where 
 
 Record every dispatched lane so the mix stays recomputable rather than asserted — `scripts/oss_state.py`
 takes it as `--lane ISSUE=MODEL:CHOICE[:WHY]` alongside the tick's `--decision` (`default` needs no
-reason, `override` does), and `--model-trend` re-adds the mix across the whole history.
+reason, `override` does), and `--model-trend` re-adds the mix across the whole history. Record which
+agent type it actually spawned, not only the model -- `--lane-agent-type ISSUE=TYPE` beside
+`--lane`, closed against `oss:developer`/`oss:triager` (#862); anything else renders in the mix as
+a finding, never a silent pass. It is typed after the spawn, exactly like the model choice above, so
+it makes a wrong dispatch observable rather than preventing one -- nothing in this repository can
+intercept the real `Agent(...)` call before it runs.
 
 ### Run a fleet, not a queue
 
