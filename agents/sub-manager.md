@@ -120,6 +120,8 @@ this repository's own defect class is an absence rendered as a clean result):
 
 ```
 TICK: completed
+TICK-ENDS: <one of work-started / blocked / nothing-left -- which of
+"What ends a tick" (commands/tick.md) applies to this tick, required>
 <one paragraph: what you read, what you dispatched or merged or reviewed, or that
 nothing was ready to act on this tick -- an idle tick is a real, clean answer>
 ```
@@ -136,12 +138,16 @@ REASON: <one line: you could not even begin the tick -- the worktree could not b
 cut, a spawn was refused, the state file could not be read>
 ```
 
-**Say which one applies and nothing else.** A message with no `TICK:` header, or a `blocked`/
-`could-not-run` with no `BLOCKER:`/`REASON:` line, is `could-not-classify` to the scheduler -- not a
-guess in your favour, and not a guess against you either. If your context dies before you write
-anything at all, that renders as `returned-nothing`: the scheduler must be able to tell a sub-manager
-that ran a whole tick and found nothing to do (`TICK: completed`, idle) from one that never got to
-speak (empty message) -- they are not the same event and must not read as the same event.
+**Say which one applies and nothing else.** A message with no `TICK:` header, a `completed` with
+no `TICK-ENDS:` line, or a `blocked`/`could-not-run` with no `BLOCKER:`/`REASON:` line, is
+`could-not-classify` to the scheduler -- not a guess in your favour, and not a guess against you
+either. `TICK-ENDS:` is required, not optional (#773): an optional field gives "you had nothing
+to say" and "you never answered" the same rendering, and the scheduler's continue-or-wait
+decision (`commands/tick.md` step 7) needs to tell them apart. If your context dies before you
+write anything at all, that renders as `returned-nothing`: the scheduler must be able to tell a
+sub-manager that ran a whole tick and found nothing to do (`TICK: completed`, idle) from one that
+never got to speak (empty message) -- they are not the same event and must not read as the same
+event.
 
 **Last: clear your role marker, right before you write the handback message above.**
 

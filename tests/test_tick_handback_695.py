@@ -54,6 +54,7 @@ def test_whitespace_only_message_is_returned_nothing():
 def test_an_idle_but_completed_tick_is_not_returned_nothing():
     verdict = tick_handback.classify(
         "TICK: completed\n"
+        "TICK-ENDS: nothing-left\n"
         "Read the board. Nothing was ready to dispatch this tick; no lane "
         "was opened."
     )
@@ -63,16 +64,20 @@ def test_an_idle_but_completed_tick_is_not_returned_nothing():
 
 def test_died_and_idle_do_not_render_identically():
     died = tick_handback.classify("")
-    idle = tick_handback.classify("TICK: completed\nnothing to dispatch")
+    idle = tick_handback.classify(
+        "TICK: completed\nTICK-ENDS: nothing-left\nnothing to dispatch"
+    )
     assert died["state"] != idle["state"]
 
 
 def test_completed_with_summary():
     verdict = tick_handback.classify(
-        "TICK: completed\nDispatched fix/701 and fix/702, merged fix/699 on green."
+        "TICK: completed\nTICK-ENDS: work-started\n"
+        "Dispatched fix/701 and fix/702, merged fix/699 on green."
     )
     assert verdict["state"] == "completed"
     assert verdict["declared"] == "completed"
+    assert verdict["ends"] == "work-started"
 
 
 def test_blocked_names_the_blocker():
@@ -152,6 +157,7 @@ def test_positive_control_the_same_message_with_only_one_header_classifies():
     every message unconditionally."""
     message = (
         "TICK: completed\n"
+        "TICK-ENDS: work-started\n"
         "Actually dispatched two lanes this tick. For context, an earlier "
         "attempt this same tick was refused for an unrelated reason.\n"
     )
@@ -191,7 +197,7 @@ def test_a_stale_companion_line_before_the_real_header_is_not_used_as_detail():
 def test_framed_round_trip_via_module_reuse():
     import review_return
 
-    raw = "TICK: completed\nnothing to do this tick"
+    raw = "TICK: completed\nTICK-ENDS: nothing-left\nnothing to do this tick"
     framed = "\n".join(
         review_return.FRAME_INDENT + line for line in raw.split("\n")
     ) + "\n" + review_return.FRAME_END + "\n"
@@ -212,7 +218,7 @@ def _run(stdin_text, extra_args=()):
 
 
 def test_cli_exit_code_completed_is_zero():
-    result = _run("TICK: completed\nall clear")
+    result = _run("TICK: completed\nTICK-ENDS: nothing-left\nall clear")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "VERDICT: completed" in result.stdout
 

@@ -61,13 +61,17 @@ safe" is exactly how that one gets through.
 
 Six answers, not three, and only one of them is the ordinary case:
 
-- **`completed`** — read the one paragraph. It says what was dispatched, merged or reviewed this
-  tick, or that the tick was idle and found nothing ready to act on — an idle tick is a real, clean
-  answer. **Read it for a release trigger too.** A sub-manager never runs the release phase itself —
-  `scripts/agent_role.py` refuses the publish call in code the instant it sees the `sub-manager`
-  marker, and tagging is withheld by `agents/sub-manager.md`'s prose alone, unchanged by this wiring.
-  If the paragraph says a trigger fired, decide from here whether to run `/oss:release` — in this
-  session or by spawning it — never inside the sub-manager that already reported back and is gone.
+- **`completed`** — read the `TICK-ENDS:` line first: `work-started` / `blocked` / `nothing-left`,
+  the same three states *What ends a tick* below names, now structured rather than left inside the
+  paragraph's free prose (#773). It is required — a `completed` with no `TICK-ENDS:` line classifies
+  as `could-not-classify`, not `completed`, the same way a `blocked` with no `BLOCKER:` line does.
+  Then read the paragraph: what was dispatched, merged or reviewed this tick, or that the tick was
+  idle and found nothing ready to act on — an idle tick is a real, clean answer. **Read it for a
+  release trigger too.** A sub-manager never runs the release phase itself — `scripts/agent_role.py`
+  refuses the publish call in code the instant it sees the `sub-manager` marker, and tagging is
+  withheld by `agents/sub-manager.md`'s prose alone, unchanged by this wiring. If the paragraph says
+  a trigger fired, decide from here whether to run `/oss:release` — in this session or by spawning
+  it — never inside the sub-manager that already reported back and is gone.
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.
 - **`could-not-run`** — the `REASON:` line names why the sub-manager itself never got a tick
@@ -478,7 +482,9 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
 7. **Arm the next tick, and keep working in this one.** This step is this session's own, not the
    sub-manager's — it has no `ScheduleWakeup` tool and is gone by the time this runs. Use what the
    handback said above to decide: spawn another sub-manager right away if there is more to do this
-   session, or arm the wakeup below and stop for now.
+   session, or arm the wakeup below and stop for now. On a `completed` handback the decision reads
+   the `TICK-ENDS:` field directly (#773) rather than parsing the paragraph for it: `work-started`
+   keeps working, `blocked` and `nothing-left` both arm the wakeup below.
 
    ```
    ScheduleWakeup(delaySeconds=…, prompt="/oss:tick", reason="<what specifically is outstanding>")
@@ -512,9 +518,11 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
 
 ## What ends a tick
 
-**This is the sub-manager's own declaration**, made inside the `TICK: completed` paragraph it hands
-back above — the scheduler reads it there rather than re-deriving it. Not the wakeup. The wakeup is a safety net, and the tell that this went wrong is a closing line
-describing the schedule instead of the next action. Waiting on CI is not a reason to stop working.
+**This is the sub-manager's own declaration**, made in the `TICK-ENDS:` field of the `TICK:
+completed` handback above (#773) — the scheduler reads it there rather than re-deriving it or
+parsing the paragraph for it. Not the wakeup. The wakeup is a safety net, and the tell that this
+went wrong is a closing line describing the schedule instead of the next action. Waiting on CI is
+not a reason to stop working.
 
 **And only one of three states is an end.** Say which one, in as many words, as the tick closes
 (#244):

@@ -917,7 +917,15 @@ def _session_tick_cost_floor(path, session):
     return, but scanning only for a floor let a later, falsely-first-claiming tick in
     that SAME session go unrefused, because nothing told `tick_cost` this session
     already had history at all.
+
+    ``session`` is stripped here, the same way `tick_cost` strips it before writing --
+    found by audit (#805): the write side already normalises whitespace, but this
+    lookup used to compare against the caller's raw, unstripped id, so a session id
+    differing only in surrounding whitespace found no matching history and
+    `has_prior` read `False` even though a record for the "same" session already
+    existed. That silently defeated the very refusal `has_prior` exists to drive.
     """
+    session = str(session).strip()
     floor = None
     has_prior = False
     for entry in read(path):
