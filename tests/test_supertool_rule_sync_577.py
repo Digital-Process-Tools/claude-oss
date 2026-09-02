@@ -71,15 +71,23 @@ def test_the_md_file_is_readable_and_substantial():
     """Half of the positive control: a sameness assertion also passes when both
     files are empty or unreadable, so this pins that the file this test reads from is
     neither -- a genuine multi-paragraph rule body, not a placeholder.
+
+    #757 trimmed this file to under 1 KB on purpose -- its whole body re-injects on
+    every refused Read/Edit/Write/Glob/Grep call, so its size is a per-refusal cost --
+    so the old 1000-byte floor (which assumed the file still carried the narrowing
+    rationale that #757 moved to 00-README.md) is no longer the right lower bound.
+    400 is still well above what an empty-or-placeholder file could reach while
+    leaving room under the 1024-byte ceiling `tests/test_supertool_rule_size_757.py`
+    pins.
     """
     body = RULE_MD.read_text(encoding="utf-8")
-    assert len(body) > 1000, "the rule body is suspiciously short: {} bytes".format(len(body))
+    assert len(body) > 400, "the rule body is suspiciously short: {} bytes".format(len(body))
     assert "supertool" in body
 
 
 def test_tools_supertool_constant_is_substantial():
     """The other half: `TOOLS_SUPERTOOL` itself is not empty or trivially short."""
-    assert len(oss_rules.TOOLS_SUPERTOOL) > 1000
+    assert len(oss_rules.TOOLS_SUPERTOOL) > 400
     assert "supertool" in oss_rules.TOOLS_SUPERTOOL
 
 

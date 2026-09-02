@@ -36,9 +36,23 @@ import oss_rules  # noqa: E402
 
 RULE = "supertool-required.md"
 
+#: #757 trimmed the injected rule down to the five op substitutions plus the
+#: `supertool 'ops'` triage line, on the reasoning that a `mode: block` row on
+#: `match: ~.*` re-injects its whole body on every refused call, with no `once`
+#: marker available -- so this narrative, read at most once by a reader who lacks
+#: `supertool`, moved to `00-README.md` (unindexed, reachable via plain `cat` since
+#: only Read/Edit/Write/Glob/Grep are blocked, not Bash). The facts this file pins
+#: still have to be SAID somewhere a reader can reach; which of the two files is
+#: what moved.
+README = "00-README.md"
+
 
 def _body():
     return oss_rules.RULES["tools"][RULE]
+
+
+def _readme_body():
+    return oss_rules.RULES["tools"][README]
 
 
 def test_the_rule_declares_requires_supertool():
@@ -51,14 +65,18 @@ def test_the_rule_declares_requires_supertool():
 
 
 def test_the_rule_says_the_field_is_now_honoured():
-    body = _body()
+    """#757 moved this narrative out of the per-refusal injected body and into
+    `00-README.md`, which is what this now reads -- see the module-level comment
+    on `README` for why that split is not the same as deleting the fact.
+    """
+    body = _readme_body()
     assert "203" in body, (
-        "the rule does not point a reader at the upstream issue that shipped the "
+        "neither file points a reader at the upstream issue that shipped the "
         "reader half of this fix -- without it there is no way to tell whether the "
         "degrade this field promises is live"
     )
     assert "570" in body, (
-        "the rule does not point a reader at the issue that caught the prose going "
+        "neither file points a reader at the issue that caught the prose going "
         "stale (#570) -- the same class can recur and needs the same trail"
     )
     # Anchored on a phrase from the NEW paragraph itself, not on words ("not", "read")
@@ -66,7 +84,7 @@ def test_the_rule_says_the_field_is_now_honoured():
     # sentences -- an earlier version of this exact mistake passed against the OLD
     # body verbatim and pinned nothing, caught in review (#524).
     assert "**It is honoured.**" in body, (
-        "the rule no longer says in as many words that the requires: field is read "
+        "no longer says in as many words that the requires: field is read "
         "by a shipped claude-jit-context release -- it shipped in 0.6.0 (#570), and "
         "prose still describing it as inert would read as done what is not, or as "
         "undone what is now live"
@@ -75,9 +93,15 @@ def test_the_rule_says_the_field_is_now_honoured():
         "No shipped `claude-jit-context` release reads a `requires:` field"
         not in body
     ), (
-        "the rule still carries the retired #524 sentence claiming nothing reads "
+        "still carries the retired #524 sentence claiming nothing reads "
         "requires: -- that became false the moment 0.6.0 shipped the reader (#570)"
     )
+    # The retired sentence must not have survived by staying in the injected rule
+    # either -- #757 trimmed it out of there on purpose, not by accident.
+    assert (
+        "No shipped `claude-jit-context` release reads a `requires:` field"
+        not in _body()
+    ), "the retired #524 sentence is still in the per-refusal injected rule body"
 
 
 def test_the_block_mode_is_unchanged_by_adding_the_field():

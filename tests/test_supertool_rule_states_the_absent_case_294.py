@@ -65,9 +65,25 @@ RETRACTED = "already carries"
 OPS = ("read:", "edit:", "paste:", "glob:", "grep:")
 
 
+#: #757 trimmed the two-command triage the assertions below still check for
+#: staying in the per-refusal injected body, but moved the prose explaining what
+#: each answer MEANS to `00-README.md` in the same "tools" dimension -- unindexed
+#: (`oss_rules.JIT_ENTRY_SKIP`-equivalent naming), so it costs nothing per refusal,
+#: and still reachable by a reader with no `supertool` at all: only
+#: Read/Edit/Write/Glob/Grep are blocked here, not Bash, so `cat 00-README.md`
+#: still works for exactly the reader #294 is about.
+README = "00-README.md"
+
+
 def _body():
     body = oss_rules.RULES["tools"].get(RULE)
     assert body, "the tools layer ships no {}".format(RULE)
+    return body
+
+
+def _readme_body():
+    body = oss_rules.RULES["tools"].get(README)
+    assert body, "the tools layer ships no {}".format(README)
     return body
 
 
@@ -90,14 +106,17 @@ def test_the_rule_hands_the_reader_commands_that_tell_the_situations_apart():
         "reachable. It fires identically whether it is or not and cannot probe, so the "
         "discriminator has to be handed to the reader (#294)."
     )
-    assert "not installed" in body, (
-        "the rule never says in as many words that supertool may simply not be here"
+    # #757 moved the interpretation of each probe's answer out of the per-refusal
+    # injected body and into 00-README.md -- see the module-level README comment.
+    readme = _readme_body()
+    assert "not installed" in readme, (
+        "neither file says in as many words that supertool may simply not be here"
     )
-    assert "marketplace" in body, (
-        "the rule names no route to getting supertool, for a reader who has never heard "
-        "of it. Anchored on `marketplace` rather than on `install`, which is a substring "
-        "of the `not installed` asserted just above -- that assertion could not fail "
-        "while this one passed, so it pinned nothing."
+    assert "marketplace" in readme, (
+        "neither file names a route to getting supertool, for a reader who has never "
+        "heard of it. Anchored on `marketplace` rather than on `install`, which is a "
+        "substring of the `not installed` asserted just above -- that assertion could "
+        "not fail while this one passed, so it pinned nothing."
     )
 
 
@@ -116,12 +135,15 @@ def test_the_rule_keeps_a_missing_entry_point_apart_from_a_missing_binary():
         "the rule probes only the binary on PATH, so it cannot see a clone whose "
         "gitignored ./supertool has not been created yet"
     )
-    assert "gitignored" in body, (
-        "the rule does not say why ./supertool is absent from a fresh clone, so its "
+    # #757 moved the interpretation of the entry-point-vs-binary distinction out of
+    # the per-refusal injected body and into 00-README.md.
+    readme = _readme_body()
+    assert "gitignored" in readme, (
+        "neither file says why ./supertool is absent from a fresh clone, so its "
         "absence reads as a broken installation rather than as the designed state"
     )
-    assert "Nothing is missing from your installation" in body, (
-        "the rule does not tell the entry-point reader that their installation is fine, "
+    assert "Nothing is missing from your installation" in readme, (
+        "neither file tells the entry-point reader that their installation is fine, "
         "which is the whole difference between that outcome and the one below it"
     )
 
