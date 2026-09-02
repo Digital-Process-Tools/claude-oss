@@ -76,7 +76,7 @@ def test_parse_channel_report_the_must_not_fire_control_empty_and_garbage():
 def test_channel_status_reports_each_real_state_when_fresh_and_attributable():
     now = 1_000.0
     for state in statusline.CHANNEL_STATES.values():
-        result = statusline.channel_status(state, True, now - 10, now)
+        result = statusline.channel_status(state, "derivation", now - 10, now)
         assert result["state"] == state
 
 
@@ -85,7 +85,7 @@ def test_channel_status_the_must_fire_control_not_attributable_is_cannot_determi
     never be attributed to this repository's fleet, however fresh or however
     real the state itself is."""
     now = 1_000.0
-    result = statusline.channel_status("forwarding", False, now - 10, now)
+    result = statusline.channel_status("forwarding", "not-attributable", now - 10, now)
     assert result["state"] == "cannot_determine"
     assert result["reason"] == "not-attributable"
 
@@ -103,7 +103,7 @@ def test_channel_status_a_stale_reading_is_cannot_determine_not_a_false_state():
     the real (and possibly now-false) state it once carried."""
     now = 1_000.0
     result = statusline.channel_status(
-        "forwarding", True, now - statusline.CHANNEL_REFRESH_AFTER - 1, now
+        "forwarding", "derivation", now - statusline.CHANNEL_REFRESH_AFTER - 1, now
     )
     assert result["state"] == "cannot_determine"
     assert result["reason"] == "stale"
@@ -116,14 +116,14 @@ def test_channel_status_the_must_not_fire_control_a_fresh_reading_is_real():
     the staleness guard cannot and does not claim to catch that, on purpose."""
     now = 1_000.0
     result = statusline.channel_status(
-        "not_delivering", True, now - (statusline.CHANNEL_REFRESH_AFTER - 5), now
+        "not_delivering", "derivation", now - (statusline.CHANNEL_REFRESH_AFTER - 5), now
     )
     assert result["state"] == "not_delivering"
 
 
 def test_channel_status_an_unrecognized_raw_state_is_cannot_determine():
     now = 1_000.0
-    result = statusline.channel_status("something_nobody_wrote_down", True, now - 1, now)
+    result = statusline.channel_status("something_nobody_wrote_down", "derivation", now - 1, now)
     assert result["state"] == "cannot_determine"
     assert result["reason"] == "unrecognized"
 
@@ -196,7 +196,7 @@ def test_gather_a_stale_channel_reading_renders_cannot_determine(tmp_path, monke
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "channel": {"raw_state": "forwarding", "attributable": True},
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
         "channel_fetched_at": now - statusline.CHANNEL_REFRESH_AFTER - 1,
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
@@ -216,7 +216,7 @@ def test_gather_the_must_not_fire_control_a_fresh_but_possibly_wrong_reading_is_
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "channel": {"raw_state": "not_delivering", "attributable": True},
+        "channel": {"raw_state": "not_delivering", "attribution": "derivation"},
         "channel_fetched_at": now - 5,
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
@@ -229,7 +229,7 @@ def test_gather_reports_no_channel_field_when_off_in_config(tmp_path, monkeypatc
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "channel": {"raw_state": "forwarding", "attributable": True},
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
         "channel_fetched_at": now - 5,
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
@@ -244,7 +244,7 @@ def test_gather_the_must_fire_control_on_by_default_with_no_key_at_all(tmp_path,
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "channel": {"raw_state": "forwarding", "attributable": True},
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
         "channel_fetched_at": now - 5,
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
@@ -309,7 +309,9 @@ def test_watch_preset_declared_runs_the_health_check(tmp_path, monkeypatch):
     assert raw_state == "forwarding"
 
 
-def test_attribution_is_true_only_when_the_env_name_matches_this_repos_own(tmp_path, monkeypatch):
+def test_attribution_is_derivation_only_when_the_env_name_matches_this_repos_own(
+    tmp_path, monkeypatch
+):
     (tmp_path / ".supertool.json").write_text(
         json.dumps({"presets": ["watch"]}), encoding="utf-8"
     )
@@ -318,16 +320,168 @@ def test_attribution_is_true_only_when_the_env_name_matches_this_repos_own(tmp_p
     expected = statusline._expected_watch_name("owner/repo")
 
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, expected)
-    _, attributable = statusline._channel_reading(tmp_path, config)
-    assert attributable is True
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "derivation"
 
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "some-other-projects-fleet")
-    _, attributable = statusline._channel_reading(tmp_path, config)
-    assert attributable is False
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "not-attributable"
 
     monkeypatch.delenv(statusline.WATCH_NAME_ENV, raising=False)
-    _, attributable = statusline._channel_reading(tmp_path, config)
-    assert attributable is False
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "not-attributable"
+
+
+# ------------------------------------------------------- attribution by declaration (#754)
+
+
+def test_attribution_is_declaration_when_a_short_declared_name_matches_the_env(
+    tmp_path, monkeypatch
+):
+    """#754's own case: a repo whose derived name exceeds supertool's 32-char cap
+    MUST declare a shorter one, which makes derivation permanently unsatisfiable --
+    so a name THIS repo's own tracked .supertool.json declares, that also matches
+    what is actually exported, is attributable by a second, independent route."""
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"presets": ["watch"], "ops": {"radar": {"watch_name": "dpt-claude-jit-context"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    # A repo/name combination whose derivation genuinely does not fit -- so the only
+    # way this test can pass through "derivation" is if the fix leaked into the wrong
+    # branch, which is exactly what a must-fire control for a SEPARATE route needs.
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "declaration"
+
+
+def test_attribution_the_must_not_fire_control_declared_name_not_exported_stays_not_attributable(
+    tmp_path, monkeypatch
+):
+    """A name declared in .supertool.json that is NOT what is actually exported must
+    not be attributed -- declaration is evidence only when it matches reality, the
+    same as doctor.py's own "agree" check requires."""
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"presets": ["watch"], "ops": {"radar": {"watch_name": "dpt-claude-jit-context"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "some-other-projects-fleet")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "not-attributable"
+
+
+def test_attribution_the_must_not_fire_control_two_declared_names_stays_not_attributable(
+    tmp_path, monkeypatch
+):
+    """Mirrors doctor.py's own `conflict` state: more than one distinct declared
+    name is not a single fact to attribute against, even if one of them happens
+    to match what is exported."""
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({
+            "presets": ["watch"],
+            "ops": {
+                "radar": {"watch_name": "dpt-claude-jit-context"},
+                "other": {"watch_name": "a-second-name"},
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "not-attributable"
+
+
+def test_attribution_is_declaration_unreadable_when_supertool_json_cannot_be_parsed(
+    tmp_path, monkeypatch
+):
+    """The fourth answer #754 asks for: a declaration file that is there and
+    broken must not render identically to a channel that genuinely belongs to
+    someone else's fleet -- this repo's own defect class, reproduced in the fix
+    for it, is precisely what this test guards against."""
+    (tmp_path / ".supertool.json").write_text("not json{{{", encoding="utf-8")
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "declaration-unreadable"
+
+
+def test_attribution_is_declaration_unreadable_when_supertool_json_is_not_an_object(
+    tmp_path, monkeypatch
+):
+    (tmp_path / ".supertool.json").write_text("[1, 2, 3]", encoding="utf-8")
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "declaration-unreadable"
+
+
+def test_attribution_the_must_not_fire_control_no_supertool_json_is_not_attributable_not_unreadable(
+    tmp_path, monkeypatch
+):
+    """Absence is a real, common answer (no file at all) and must stay distinct
+    from a file that is there and broken -- folding the two together would send
+    a maintainer chasing a permissions problem that does not exist."""
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "not-attributable"
+
+
+def test_declared_watch_names_reads_ops_watch_name_values(tmp_path):
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"ops": {"radar": {"watch_name": "dpt-claude-jit-context"}}}),
+        encoding="utf-8",
+    )
+    names, problem = statusline._declared_watch_names(tmp_path)
+    assert names == {"dpt-claude-jit-context"}
+    assert problem is None
+
+
+def test_declared_watch_names_absent_file_is_empty_not_a_problem(tmp_path):
+    names, problem = statusline._declared_watch_names(tmp_path)
+    assert names == set()
+    assert problem is None
+
+
+def test_declared_watch_names_unreadable_and_malformed_are_distinct_problems(tmp_path):
+    (tmp_path / ".supertool.json").write_text("not json{{{", encoding="utf-8")
+    names, problem = statusline._declared_watch_names(tmp_path)
+    assert names == set()
+    assert problem == "unreadable"
+
+    (tmp_path / ".supertool.json").write_text("[1, 2, 3]", encoding="utf-8")
+    names, problem = statusline._declared_watch_names(tmp_path)
+    assert names == set()
+    assert problem == "malformed"
+
+
+# ------------------------------------------------------- channel_status (#754)
+
+
+def test_channel_status_the_must_fire_control_declaration_attribution_is_real():
+    now = 1_000.0
+    result = statusline.channel_status("forwarding", "declaration", now - 10, now)
+    assert result["state"] == "forwarding"
+    assert result["reason"] is None
+
+
+def test_channel_status_declaration_unreadable_is_its_own_reason_not_not_attributable():
+    """#754's own ask: a declaration file that could not be read is a fourth
+    answer, not folded into `not-attributable` -- this repo's own defect class,
+    landing in the fix written for a bug about exactly that class."""
+    now = 1_000.0
+    result = statusline.channel_status("forwarding", "declaration-unreadable", now - 10, now)
+    assert result["state"] == "cannot_determine"
+    assert result["reason"] == "declaration-unreadable"
+    assert result["reason"] != "not-attributable"
 
 
 def test_refresh_carries_the_channel_reading_forward_when_not_due(tmp_path, monkeypatch):
@@ -349,7 +503,7 @@ def test_refresh_carries_the_channel_reading_forward_when_not_due(tmp_path, monk
     now = 1_000.0
     previous = {
         "fetched_at": now - 5,
-        "channel": {"raw_state": "not_delivering", "attributable": True},
+        "channel": {"raw_state": "not_delivering", "attribution": "derivation"},
         "channel_fetched_at": now - 5,  # well inside CHANNEL_REFRESH_AFTER
     }
     statusline.cache_path("owner/repo").parent.mkdir(parents=True, exist_ok=True)
