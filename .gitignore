@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 .coverage
 .pytest_cache/
+# Scratch directories tests/test_durations_recorded_881.py creates to run a
+# stub pytest invocation from inside the repo tree (required for pyproject.toml
+# discovery). Cleaned up on every run; ignored in case cleanup is interrupted.
+_durprobe_881_*/
 .DS_Store
 .max/
 .remember/

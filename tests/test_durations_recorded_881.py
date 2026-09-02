@@ -94,9 +94,12 @@ def _run_stub_test(addopts_override=None):
         )
         return result.stdout + result.stderr
     finally:
-        # shutil.rmtree, not unlink()+rmdir(): pytest's own cache plugin writes
-        # a .pytest_cache/ directory inside the target directory during the run,
-        # so a bare rmdir() (which requires an empty directory) raises here.
+        # shutil.rmtree, not unlink()+rmdir(): running the stub test compiles
+        # test_stub.py, leaving a __pycache__/ directory inside stub_dir, so a
+        # bare rmdir() (which requires an empty directory) raises here. Measured
+        # directly rather than assumed: .pytest_cache/ itself lands at REPO_ROOT,
+        # not inside stub_dir -- it is the bytecode cache, not pytest's own cache,
+        # that makes rmdir() fail.
         shutil.rmtree(stub_dir, ignore_errors=True)
 
 
