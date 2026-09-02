@@ -309,7 +309,12 @@ it a second way — grep the new content back — before saying it.
    either — that is the genuine no-assembler state, and skipping is correct. A workflow invokes it
    but you cannot find the script in the tree — that is **could-not-resolve**, not no-assembler: say
    so in your report, name the workflow and what you searched, and never let it render as the clean
-   skip above.
+   skip above. **A clean grep is not proof either** — a composite action or a called/reusable
+   workflow can invoke the script from outside `.github/workflows/`, where this grep cannot see it,
+   the same shape `agents/auditor.md` already names as unreadable from the calling repo. If a
+   workflow references a composite action or a reusable workflow you did not open, say
+   could-not-resolve rather than no-assembler; only report no-assembler once you have actually
+   looked at what every such reference calls.
 
    This is not the only requirement here whose checker `test_command` cannot reach — the report
    itself has one, `report_schema.py`, already named explicitly where the report format is
@@ -902,13 +907,14 @@ decoration: a stale note from a previous run of the same branch reads exactly li
 one, and without something that tells them apart the maintainer greps last week's evidence for
 this week's claim.
 
-**Anything you stage before that destination write needs the same discriminators.** The scratchpad
-a session works from is shared across every concurrently running lane in a fleet — mandated by this
-loop, not an edge case — so a fixed filename there is a real collision, not a hypothetical one: one
-lane staged an intermediate at a fixed scratchpad path, a second lane on a different branch wrote
-its own to the identical path, and the first lane's file was silently overwritten. Name an
-intermediate with the same branch-or-timestamp discriminators the destination path above already
-uses, never a bare fixed name under the shared scratchpad.
+**Anything you stage before any of this file's destination writes -- this note, the report, the
+pull request payload, all named by branch and timestamp below -- needs the same discriminators.**
+The scratchpad a session works from is shared across every concurrently running lane in a fleet —
+mandated by this loop, not an edge case — so a fixed filename there is a real collision, not a
+hypothetical one: one lane staged an intermediate at a fixed scratchpad path, a second lane on a
+different branch wrote its own to the identical path, and the first lane's file was silently
+overwritten. Name an intermediate with the same branch-or-timestamp discriminators every destination
+path in this file uses, never a bare fixed name under the shared scratchpad.
 
 **Prefix `cd <worktree_root>` to every write call that leaves your branch directory — the note, the
 report and the pull request payload — not once at the top.** A shell cwd does not persist between
