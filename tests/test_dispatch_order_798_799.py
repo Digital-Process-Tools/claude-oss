@@ -223,6 +223,51 @@ def test_a_plausible_typo_is_still_caught_with_short_spellings_838():
     assert answer["why"] is not None and "p9" in answer["why"], answer
 
 
+def test_a_single_declared_spelling_still_catches_a_close_typo_838():
+    """Found by review (#834/#838 self-review round): a repository declaring
+    exactly one priority spelling has a prefix equal to that whole spelling,
+    so its own suffix length is 0. An earlier version of the fix compared a
+    candidate's suffix length against the *longest* declared suffix, which
+    for a single spelling is that same 0 -- and 0 can never be exceeded by
+    any candidate that reaches this code (every candidate here already has
+    a non-empty suffix, by construction), so typo detection was silently
+    disabled for every single-spelling repository. This is a must-fire
+    control: a close typo of the one declared spelling must still be
+    reported."""
+    declared_one = {"priority": ["urgent"], "filed_by_loop": LOOP}
+    answer = dispatch_rank.rank(["urgentx"], declared_one)
+    assert answer["why"] is not None and "urgentx" in answer["why"], answer
+
+
+def test_a_single_declared_spelling_does_not_flag_an_implausible_suffix_838():
+    """Must-not-fire control paired with the test above, in the same
+    single-spelling fixture: a label that shares the prefix but is far
+    longer than the one declared spelling is not a plausible typo of it,
+    and must not be reported -- otherwise the fix for the case above could
+    have been 'always flag anything sharing the prefix', which is #838 all
+    over again with an even shorter effective floor."""
+    declared_one = {"priority": ["urgent"], "filed_by_loop": LOOP}
+    answer = dispatch_rank.rank(["urgentlyneeded"], declared_one)
+    assert answer["why"] is None, answer
+
+
+def test_mixed_length_declared_spellings_do_not_let_a_short_one_over_match_838():
+    """Found by review: comparing a candidate's suffix length against the
+    *longest* declared suffix (rather than the nearest one) reintroduces
+    #838's own defect the moment the declared spellings vary in length. With
+    `p1` (suffix length 1) declared alongside a much longer spelling, the
+    long spelling's suffix used to set a floor generous enough to let
+    `python` back in -- the exact false positive #838 was filed against,
+    now reachable through a second declared spelling rather than a short
+    one alone."""
+    declared_mixed = {
+        "priority": ["p1", "priority-extremely-long-spelling-here"],
+        "filed_by_loop": LOOP,
+    }
+    answer = dispatch_rank.rank(["python", "bug"], declared_mixed)
+    assert answer["why"] is None, answer
+
+
 def _run_main(issues, capsys, monkeypatch, declared=None):
     """`main()` over a board on stdin, returning `(exit_code, stdout)`.
 

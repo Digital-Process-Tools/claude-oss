@@ -107,18 +107,42 @@ def _plausible_priority_typo(label, prefix, priority_spellings):
     docstring).
 
     What is derived instead is a plausible *suffix length*, from the
-    declared spellings themselves: `label`'s own suffix past the shared
-    prefix must not be wildly longer than the longest suffix any declared
-    spelling actually has. `'critical'` (8 characters past `'priority-'`) is
-    a plausible typo of `'medium'` (6 characters past it); `'ython'` (5
-    characters past `'p'`) is not a plausible typo of `'1'`, `'2'` or `'3'`
-    (1 character past it) -- it is a different word that happens to start
-    with the same letter. The factor of two is generous on purpose: a typo
-    or rename should stay in the same ballpark as what it replaces, not
-    merely shorter than infinity.
+    declared spellings themselves -- and it is compared against the
+    *nearest* declared spelling's own suffix, not the longest one. An
+    earlier version of this function compared against the single longest
+    suffix among all declared spellings, which reintroduces #838's own
+    over-match the moment the declared spellings vary in length: with
+    `p1` (suffix length 1) declared alongside a long spelling (suffix
+    length 38), the long spelling's suffix set the floor and let `python`
+    (suffix length 5, past `'p'`) back in, exactly the false positive this
+    function exists to refuse. Matching against the *nearest* suffix length
+    instead means a candidate is only judged against the declared spelling
+    it most resembles in length, so one long spelling can no longer vouch
+    for an implausible match to a short one.
+
+    The floor of `1` handles the other edge that version missed: a
+    repository declaring exactly one priority spelling has a prefix equal
+    to that whole spelling, so its own suffix length is `0` -- and a
+    zero-length floor can never be exceeded by any real candidate (every
+    candidate that reaches this function already has a non-empty suffix,
+    by construction), which silently disabled typo detection entirely for
+    a single-spelling repository. `max(nearest, 1)` keeps a `'urgentx'`
+    close enough to `'urgent'` to be flagged, while a wildly longer
+    `'urgentlyneeded'` still is not.
+
+    `'critical'` (8 characters past `'priority-'`) lands nearest `'medium'`
+    (6 characters past it) among `high`/`medium`/`low`, and 8 is within
+    double of 6 -- a plausible typo. `'ython'` (5 characters past `'p'`)
+    lands nearest `'1'`/`'2'`/`'3'` (1 character past it), and 5 is not
+    within double of 1 -- not plausible, regardless of what else is
+    declared alongside those short spellings. The factor of two is
+    generous on purpose: a typo or rename should stay in the same ballpark
+    as what it replaces, not merely shorter than infinity.
     """
-    longest_suffix = max(len(s) - len(prefix) for s in priority_spellings)
-    return len(label) - len(prefix) <= 2 * longest_suffix
+    candidate_suffix = len(label) - len(prefix)
+    suffix_lengths = [len(s) - len(prefix) for s in priority_spellings]
+    nearest = min(suffix_lengths, key=lambda n: abs(n - candidate_suffix))
+    return candidate_suffix <= 2 * max(nearest, 1)
 
 
 def _band(labels, priority_spellings):
