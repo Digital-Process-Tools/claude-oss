@@ -658,6 +658,12 @@ def _fully_configured(root):
                     "allow": [
                         "Bash(./supertool 'gh-pr-merge:*')",
                         "Bash(./supertool:*)",
+                        # #787: gh-pr-merge's own |cleanup falls back to these two
+                        # hand commands on a refused reap -- a fully-configured
+                        # fixture needs both rules or the WARN they exist to
+                        # produce would fire here.
+                        "Bash(git worktree remove:*)",
+                        "Bash(git branch -D:*)",
                     ]
                 }
             }
@@ -731,8 +737,13 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # "clear" rather than "could not ask" -- and "could not ask" is a WARN, correctly,
     # so a fixture claiming to be genuinely clean has to be a real git repo for that
     # check to have anything to say OK about.
+    # #763: `-b main` -- not left to the machine's own `init.defaultBranch`
+    # (this machine's own default is `master`) -- so the new `check_clone_head`
+    # sees the fixture on the SAME branch `_config` declares as `default_branch`
+    # ("main"), rather than a WARN this "fully configured, everything clean"
+    # fixture has no business producing.
     done = subprocess.run(
-        ["git", "init", "--quiet", str(tmp_path)],
+        ["git", "init", "--quiet", "-b", "main", str(tmp_path)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
@@ -848,6 +859,13 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # no POSIX shell); this stub removes the real-receipt one so this test's
     # only remaining machine-dependence is the one it already measures.
     monkeypatch.setattr(doctor, "check_auto_update", lambda *a, **kw: doctor.report("OK", "auto-update"))
+    # #759: a real `gh api` call against `owner/name` (this fixture's `_config`
+    # repo), which answers about GitHub's own state for a repo that does not
+    # exist, not about this fixture's tree -- stubbed the same way check_gh_binary
+    # and check_latest_skew are, for the identical reason.
+    monkeypatch.setattr(
+        doctor, "check_branch_protection", lambda *a, **kw: doctor.report("OK", "branch protection")
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about

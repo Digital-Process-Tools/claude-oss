@@ -426,6 +426,38 @@ launcher-opened session), no relay is present and this line asks for itself.
   not on PATH, `claude mcp list` did not run, or it exited non-zero. Never relayed as "exactly one
   server": a crashed or refused census is not evidence of a clean one.
 
+## The `branch protection`, `clone HEAD`, and `worktree-reap permission` lines
+
+Three checks, one paragraph each, all report-only -- no `--apply`, no write.
+
+**`branch protection` (#759)** asks whether `default_branch` is actually protected on the
+forge, not whether `.oss.json` merely claims it should be. Three states: `protected` /
+`not protected` / `could not tell`. `could not tell` covers `gh` missing from PATH, a
+malformed `repo`/`default_branch`, and a `gh api` call that returned neither a clean
+success nor a classifiable 404 -- a 403 (no permission to read the setting) is folded into
+`could not tell` rather than into `not protected`, because a permission-limited read that
+cannot see a ruleset must never be reported the same as a ruleset confirmed absent. Classic
+branch protection and repository rulesets are both checked; rulesets are filtered to
+`enforcement=active` only, since a disabled or evaluate-only ruleset protects nothing today.
+
+**`clone HEAD` (#763)** asks whether the clone's own HEAD sits on `default_branch` or has
+drifted onto a stale or already-merged branch -- the shape left behind by a
+`gh-pr-merge:N:squash|force|cleanup` reap that was declined and never finished by hand.
+Two informative states: `on-default` (names the branch and how far ahead/behind it is), and
+`on-other` (names the branch and whether its remote ref still `exists`, is `gone` -- the
+signature of a merged, reaped branch -- or is `unknown`); plus `could not tell` when `git`
+is missing, `default_branch` is unset, or `HEAD` is detached.
+
+**`worktree-reap permission` (#787)** mirrors the existing merge-permission check one level
+down: `gh-pr-merge`'s own cleanup falls back to `git worktree remove --force` and
+`git branch -D` by hand when it declines a reap, and both are commonly denied by the
+Claude Code auto-mode classifier by default. Two independent checks, since a settings rule
+granting one command says nothing about the other. Same four states as the merge-permission
+check -- `present` / `denied` / `absent` / `unknown` -- and the same convention: a settings
+file is read for whether a rule exists, counted and named by file, never quoted, and an
+unreadable settings file answers `unknown` rather than `absent`, so a maintainer is never
+sent to add a rule they may already have.
+
 ## The `dependency diagnostic` lines
 
 `declared_dependencies()` already reports a version per dependency elsewhere in this run — that

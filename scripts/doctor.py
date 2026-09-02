@@ -2570,6 +2570,33 @@ from doctor_check_merge_permission import (
     supertool_permission_state,
     check_supertool_permission,
 )
+# #787: sibling to the import above, for the two hand commands gh-pr-merge's own
+# |cleanup falls back to on a refused reap -- see
+# scripts/doctor_check_worktree_reap_permission.py for the check and why it is
+# two checks rather than one.
+from doctor_check_worktree_reap_permission import (
+    WORKTREE_REMOVE_OP,
+    BRANCH_DELETE_OP,
+    REAP_RULE_FILE,
+    worktree_remove_permission_state,
+    branch_delete_permission_state,
+    check_worktree_remove_permission,
+    check_branch_delete_permission,
+)
+# #763: a new check, written directly into its own module per the per-check
+# module convention (#497, #630) rather than added here -- see
+# scripts/doctor_check_clone_head.py.
+from doctor_check_clone_head import (
+    clone_head_state,
+    check_clone_head,
+)
+# #759: same convention, same reason -- see
+# scripts/doctor_check_branch_protection.py.
+from doctor_check_branch_protection import (
+    SETTINGS_PAGE_URL,
+    branch_protection_state,
+    check_branch_protection,
+)
 
 
 # #582: does the supertool that resolves here carry the ops this plugin's own
@@ -8124,11 +8151,24 @@ def main(argv=None):
         "worktree_root", config.get("worktree_root") if found else None, config_found=found,
         origin=local_states.get("worktree_root"),
     )
+    # #763: the clone check above reports the configured PATH and stops -- it
+    # never asks whether the clone's actual HEAD is where .oss.json's own
+    # default_branch says it should be, which is exactly the shape gh-pr-merge's
+    # own declined cleanup leaves behind.
+    if found:
+        check_clone_head(project_dir, config)
+    else:
+        unmeasured("clone HEAD")
     check_state_file(project_dir, config, origin=local_states.get("state_file"))
     check_fragments_readme(project_dir, config)
     # Visible before the tag step rather than at it -- same reason #421 put the
     # merge-call check here.
     check_release_authority(project_dir, config)
+    # #759: "merge on green" is only a real guarantee if the default branch
+    # actually requires green checks. Same local gating as check_label_vocabulary
+    # (gh on PATH, repo/origin resolvable), report-only -- see check_branch_
+    # protection's own docstring for why a 403 must never render as unprotected.
+    check_branch_protection(project_dir, config)
     check_statusline(project_dir)
     check_auto_update(project_dir)
     # The weakest of the two "am I current" checks, deliberately last of the pair:
@@ -8166,6 +8206,12 @@ def main(argv=None):
     # check because it is the same question about the same files, one call
     # earlier in a session's life than the merge ever is.
     check_supertool_permission(project_dir)
+    # #787: the same question one op over -- gh-pr-merge's own |cleanup falls
+    # back to these two hand commands on a refused reap, and both are commonly
+    # denied by the auto mode classifier by default. Placed right beside the
+    # two checks above for the same reason they are placed beside each other.
+    check_worktree_remove_permission(project_dir)
+    check_branch_delete_permission(project_dir)
     # Same reason, one layer down: an allowlist rule can exist and the merge
     # can still refuse for want of |force (#421). Needs no config either --
     # both live in supertool's file and this process's environment.
