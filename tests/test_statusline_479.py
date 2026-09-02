@@ -350,6 +350,10 @@ def _facts(**overrides):
         # one more field, exactly the gap #547 instance 2 fixed for
         # `default_branch`/`release`.
         "channel": {"state": "forwarding", "reason": None},
+        # #856: `render()` reads `facts.get("default_branch_state")` to glue a
+        # marker onto `repo_name`. Same reason as `channel` above -- absent here
+        # and the hostile-leaf walk below never reaches it.
+        "default_branch_state": "green",
     }
     facts.update(overrides)
     return facts

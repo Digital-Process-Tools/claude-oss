@@ -10,7 +10,7 @@ Left to right:
 | field | example | means |
 | --- | --- | --- |
 | model · context | `Opus · 42%` | Claude Code's own session facts, passed straight through. |
-| repo | `claude-oss main v0.15.0` | repo name, then branch (only when it is not the declared default) and the tracked version. |
+| repo | `claude-oss✓ main v0.15.0` | repo name, glued to a glyph for whether the *default branch's own head commit* is currently green (`✓`/`✗`/`⋯`/`?`; `#856`), then the current branch (only when it is not the declared default) and the tracked version. |
 | board | `4pr 2ok 1x 1... 0? · 23is / 2eis` | open pull requests, then a CI breakdown (green/red/running/unknown, every group shown even at zero), then open issues and how many of those arrived from outside repository membership. |
 | release | `rel 4/17` | commits banked since the last release, over what a release here usually costs. Either half is `?` on its own when only one could be measured. |
 | tick | `tick 4m` / `tick due` / `tick off` / `tick -` / `tick ?` | when the next maintainer tick fires, if one is armed at all. |
@@ -20,3 +20,13 @@ Left to right:
 
 Colour, where the terminal supports it, adds a second signal on top of the marker shape rather
 than replacing it — every state above is told apart by its glyph alone, in monochrome.
+
+The `repo` field's marker maps `gh-branch`'s own four states down to `_symbols`' four glyphs:
+`✓` for GREEN, `✗` only when a leg on the head commit has actually failed, and `⋯` for both
+"still running" and NO RUN — nothing has concluded yet, including the moment right after a
+merge, when the branch has a fresh commit and no run against it at all. `?` covers UNKNOWN and
+a reading older than its own refresh interval, folded the same way `plug`'s own `behind`/`ahead`
+comparison folds a stale one (#550) — a stale `✓` about a commit that may no longer be green is
+worse than an honest `?`. The marker is absent entirely, not `?`, when `.oss.json` declares no
+`default_branch` to compare against — a deliberate absence of the question, the same convention
+`ch`'s own off switch above uses.
