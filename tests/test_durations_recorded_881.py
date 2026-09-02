@@ -35,11 +35,20 @@ Every assertion is paired with a positive or negative control per CLAUDE.md's
 (current `pyproject.toml`, one real test run), and does not appear when `addopts`
 is invoked without it (the pre-#881 string, explicitly), proving the probe would
 have caught the exact silent-drop failure #881 names.
+
+The one subprocess spawn here (`_run_stub_test`) goes through `tests/spawn_guard.run`
+rather than bare `subprocess.run`, so a runner too slow to answer within the
+timeout skips (naming the binary, the timeout and what went unmeasured) instead
+of reporting a real assertion failure about a durations header that nothing
+actually observed (#716) -- a test whose whole subject is timing is exactly the
+shape #716 exists to keep off the guard's own blind side, and both `run()`
+outcomes (a real answer, and a genuine no-answer) still return or skip
+identically for every caller here, so the guard changes nothing the controls
+themselves assert.
 """
 
 import re
 import shutil
-import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -47,6 +56,14 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Routed through spawn_guard.run rather than bare subprocess.run so that a
+# runner too slow to answer skips (naming what went unmeasured) instead of
+# reporting a real assertion failure about durations reporting that nothing
+# actually observed (#716) -- caught by tests/spawn_guard.py's own static
+# sweep on this file's first CI run, on all four ubuntu legs.
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+import spawn_guard  # noqa: E402
 
 _ADDOPTS_LINE = re.compile(r'(?m)^addopts\s*=\s*"([^"]*)"')
 # `--durations=N` (N > 0) prints "slowest N durations"; `--durations=0` (show all)
@@ -85,12 +102,13 @@ def _run_stub_test(addopts_override=None):
         args = [sys.executable, "-m", "pytest", "-q", str(stub_path)]
         if addopts_override is not None:
             args += ["-o", "addopts=" + addopts_override]
-        result = subprocess.run(
+        result = spawn_guard.run(
             args,
+            subject="whether pytest's durations-summary header appears for this stub run",
+            timeout=60,
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
-            timeout=60,
         )
         return result.stdout + result.stderr
     finally:
