@@ -2,8 +2,10 @@
 
 The issue is explicit that release (tag, publish) authority must not reach
 the per-tick sub-manager, and that the withholding must be "in the code, not
-only in prose": #696 files the releaser agent separately, and until it
-lands, nothing may let a sub-manager spawn reach a publish call.
+only in prose": #696 files the releaser agent separately -- now built as
+`agents/releaser.md` -- and nothing may let a sub-manager spawn reach a
+publish call, regardless of whether a releaser agent exists to run one
+instead.
 
 Prose in `agents/sub-manager.md` says the sub-manager never runs the release
 phase. This module is what makes that a fact `release_publish.py` checks for

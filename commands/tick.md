@@ -71,7 +71,20 @@ Seven answers, not three, and only one of them is the ordinary case:
   refuses the publish call in code the instant it sees the `sub-manager` marker, and tagging is
   withheld by `agents/sub-manager.md`'s prose alone, unchanged by this wiring. If the paragraph says
   a trigger fired, decide from here whether to run `/oss:release` — in this session or by spawning
-  it — never inside the sub-manager that already reported back and is gone.
+  it — never inside the sub-manager that already reported back and is gone. **Spawning it means a
+  dedicated agent, not another sub-manager reused for the job (#696):**
+
+  ```
+  Agent(subagent_type: "oss:releaser", run_in_background: false)
+  ```
+
+  Hand it nothing beyond the spawn itself — the same reasoning `agents/sub-manager.md` gives for its
+  own fresh context: re-deriving the release state (the trigger, the config, the range) from the
+  repo is what a releaser's own first step is for, and handing it a summary this session already
+  holds risks handing it something already stale by the time it reads it. `agents/releaser.md`
+  reports one of three states — `RELEASE: released` / `refused` / `could-not-run` — never a
+  `TICK:` handback, so read it directly rather than through `scripts/tick_handback.py`, which
+  classifies a sub-manager's report and knows nothing about a releaser's.
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.
 - **`paused`** — the `WAIT-DISPATCH:` and `WAIT-OBSERVABLE:` lines name what this tick set in motion
