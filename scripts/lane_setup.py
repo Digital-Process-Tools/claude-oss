@@ -1344,6 +1344,57 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     return result
 
 
+#: `linked_worktree_state`'s own return values -- a repository's ordinary
+#: working tree, a linked worktree `git worktree add` cut, or "git did not
+#: answer either call" (never folded into `WORKTREE_MAIN`, which would let
+#: #865 back in through the one case this function exists to catch).
+WORKTREE_MAIN = "main"
+WORKTREE_LINKED = "linked"
+WORKTREE_COULD_NOT_TELL = "could-not-tell"
+
+
+def linked_worktree_state(repo):
+    """Is `repo`'s working tree a linked worktree (cut by `git worktree add`)
+    rather than the repository's own main tree -- `(state, detail)` (#865).
+
+    `.oss.local.json` is git-excluded, so it is absent from every worktree
+    this loop cuts, by construction. `derive_worktree`'s `unknown` branch used
+    to be the only documented consequence, but #608's own repository-root
+    derivation (`oss_config._derive_local_config`) means `worktree_root`
+    rarely reaches that branch any more: standing inside a worktree, it
+    derives `<this worktree's own path>-wt` instead -- a value, not an
+    absence, and a *wrong* one, sibling to the one worktree that asked rather
+    than to the clone every other lane reads. Reproduced directly: a
+    `--claim` call from inside a real linked worktree recorded into
+    `<worktree>-wt/.oss-lanes`, invisible to `--derive-held` runs from
+    anywhere else.
+
+    Detecting "standing inside a linked worktree" needs a fact this module
+    cannot derive from a path alone -- `worktree_root`'s own convention names
+    nothing that distinguishes a clone from a worktree, and guessing from a
+    directory name would be exactly the hardcoded-fact failure `CLAUDE.md`
+    forbids. Git already carries the fact: `--git-common-dir` and `--git-dir`
+    resolve to the same path for an ordinary working tree and differ for a
+    linked one (`--git-dir` points at `<common>/.git/worktrees/<name>` from
+    inside it) -- measured directly here (`git version 2.55.0`, darwin),
+    reused rather than reasoned about.
+
+    Three states, not two: `could-not-tell` when git did not answer either
+    call (not on PATH, the repo unreadable) must never render as `main` --
+    that fold is the exact defect this function exists to close, one call
+    away from where it bit.
+    """
+    common_code, common_out, common_err = _git(repo, "rev-parse", "--git-common-dir")
+    git_code, git_out, git_err = _git(repo, "rev-parse", "--git-dir")
+    if common_code != 0 or git_code != 0 or not common_out or not git_out:
+        return WORKTREE_COULD_NOT_TELL, _one_line(common_err or git_err or "git did not answer")
+    common_path = Path(repo, common_out).resolve()
+    git_path = Path(repo, git_out).resolve()
+    if common_path == git_path:
+        return WORKTREE_MAIN, ""
+    return WORKTREE_LINKED, ""
+
+
 def derive_worktree(config, issue, origin=None):
     """The worktree path for `issue`, from `worktree_root` in `.oss.local.json`.
 
@@ -2557,9 +2608,31 @@ def compute(
     # `derive_held_set` call can read them back -- computed here, after `lane_report`,
     # rather than calling `resolve_lane` a second time for the same patterns.
     lane_files = lane["lane"]["files"] if lane and lane.get("lane") is not None else None
+
+    # #865: a claim standing inside a linked worktree derives `worktree_root`
+    # from THAT worktree's own path (#608), not the clone's -- a value, not
+    # an absence, and a wrong one: the registry it would write into is a
+    # sibling of the one worktree that asked, invisible to every other lane.
+    # Checked only when a claim was actually requested -- every probe form
+    # above is read-only and this must never refuse one of those.
+    #
+    # Review round: `linked_worktree_state`'s own docstring says its
+    # `could-not-tell` state must never render as `main` -- comparing only
+    # against `WORKTREE_LINKED` here let a `could-not-tell` reading (git
+    # itself failed to answer one of the two rev-parse calls) fall through
+    # to a claim proceeding exactly as if it had been verified safe. Refusing
+    # on anything other than a confirmed `WORKTREE_MAIN` closes that: the
+    # only way to write is a positive, checked answer, never an unchecked one.
+    standing_in = linked_worktree_state(repo) if claim else (WORKTREE_MAIN, "")
+    claim_worktree_state = standing_in[0] if claim else None
+    claim_refused = claim and claim_worktree_state != WORKTREE_MAIN
+    # Nothing is written when the claim cannot be trusted -- refusing loudly
+    # and still writing into the wrong registry would be strictly worse than
+    # refusing and writing nothing at all.
+    effective_claim = claim and not claim_refused
     lanes = lanes_snapshot(
         config.get("worktree_root"), issue, branch.get("name"), worktree.get("path"),
-        files=lane_files, claim=claim,
+        files=lane_files, claim=effective_claim,
     )
 
     return {
@@ -2572,14 +2645,36 @@ def compute(
         "board": board,
         "lanes": lanes,
         "lane": lane,
+        "claim": claim,
+        # #865: None when no claim was requested (nothing to refuse); the
+        # worktree state that caused the refusal ('linked' or
+        # 'could-not-tell') when one was and the claim could not be trusted;
+        # 'main' when a claim was requested and genuinely went through.
+        "claim_worktree_state": claim_worktree_state,
+        "claim_refused": claim_refused,
     }
 
 
 def blocked(payload):
-    """True when there is not enough here to cut a lane from."""
+    """True when there is not enough here to cut a lane from.
+
+    #865: a `--claim` that could not record is folded in here too, not only
+    "not enough to cut a lane from" -- a claim standing inside a linked
+    worktree writes into a registry no other lane reads, which is worse than
+    writing nothing, and letting it exit 0 identically to a real claim is
+    exactly the defect this repository is named after: an absence produced
+    by the tool, read as an absence in the world. `claim_refused` covers
+    both ways the worktree check can fail to vouch for the claim -- a
+    confirmed linked worktree AND a plain could-not-tell -- because only a
+    confirmed `WORKTREE_MAIN` reading is grounds to trust it (review round:
+    an earlier version compared only against `WORKTREE_LINKED`, so a
+    could-not-tell reading silently proceeded as if verified safe).
+    """
     if payload["config"]["state"] != "ok":
         return True
-    return payload["base"]["state"] == "could-not-resolve"
+    if payload["base"]["state"] == "could-not-resolve":
+        return True
+    return bool(payload.get("claim_refused"))
 
 
 def _row(label, value):
@@ -2706,7 +2801,30 @@ def receipt(payload):
         else:
             lines.append(_row("lanes", "{0} -- {1}".format(count["state"].upper(), count["detail"])))
         record = lanes["record"]
-        if record["state"] != "recorded":
+        if payload.get("claim_refused"):
+            # #865: --claim was requested and could not be trusted -- either a
+            # confirmed linked worktree, or git itself could not answer the
+            # check (could-not-tell, never read as safe). Nothing was written
+            # (`effective_claim` was forced False in `compute`), so the
+            # underlying record always reads `not-claimed` here -- but THAT
+            # state's own generic detail ("this call did not pass --claim")
+            # is written for #705's genuine probing case and is false for
+            # this one: the call plainly did pass --claim. Review round: an
+            # earlier version printed the generic line unedited beside the
+            # #865 line below, contradicting it. Replaced with the real
+            # cause instead of reusing a sentence built for a different one.
+            if payload.get("claim_worktree_state") == WORKTREE_LINKED:
+                lines.append(
+                    "  CLAIM REFUSED: standing inside a linked worktree, not the "
+                    "clone -- run --claim from the clone instead (#865)"
+                )
+            else:
+                lines.append(
+                    "  CLAIM REFUSED: could not tell whether this is a linked "
+                    "worktree or the clone -- git did not answer, so the claim "
+                    "was not trusted (#865)"
+                )
+        elif record["state"] != "recorded":
             lines.append("  this lane not recorded: {0} -- {1}".format(
                 record["state"], record["detail"]
             ))

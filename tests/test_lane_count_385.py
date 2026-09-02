@@ -36,6 +36,7 @@ cannot be done.
 import builtins
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -172,6 +173,16 @@ def test_record_lane_with_no_worktree_root_is_unknown_not_could_not_write(tmp_pa
 def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
+    # #865 review round: `compute(..., claim=True)` now checks
+    # `linked_worktree_state(repo)`, and a bare directory with no `.git` at
+    # all answers `could-not-tell` -- measured directly, not a real linked
+    # worktree -- and is refused for the identical reason a genuine one is.
+    # This fixture stands in for an ordinary clone (every other
+    # git-dependent call below is monkeypatched specifically so this test
+    # needs no real remote or history), so it needs a real, ordinary --
+    # non-worktree -- git identity for that one check to answer truthfully.
+    # `git init` alone is sufficient; no commit is needed.
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     worktree_root = tmp_path / "worktrees"
 
     config = {
