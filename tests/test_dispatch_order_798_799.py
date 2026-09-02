@@ -39,6 +39,9 @@ ceiling, and a lane dispatched short says why in one of three words.
 Python 3.9 compatible.
 """
 
+import io
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -148,6 +151,108 @@ def test_two_priority_labels_on_one_issue_take_the_stronger():
     real state, and taking the stronger is the safe direction -- the alternative
     is an issue silently sinking because somebody added a lower label."""
     assert _rank([HIGH, MEDIUM])["rank"] == _rank([HIGH])["rank"]
+
+
+def test_an_unrecognised_priority_spelling_is_distinguished_from_no_priority():
+    """#826. A label sharing the declared spellings' own prefix -- 'priority-'
+    for this board -- but matching none of them is a renamed or mistyped
+    priority label, not the absence of one. The two must not produce the same
+    receipt, or a maintainer has no way to tell a typo from an unlabelled
+    issue without re-deriving the board by hand."""
+    unlabelled = _rank([])
+    typo = _rank(["priority-critical"])
+    assert typo != unlabelled, (unlabelled, typo)
+    # Still usable for ordering -- the trap #826 names explicitly is a fix
+    # that stops ranking the issue at all.
+    assert typo["state"] == "ranked", typo
+    assert typo["rank"] == unlabelled["rank"], typo
+    assert typo["band"] == "low", typo
+    assert typo["why"] is not None and "priority-critical" in typo["why"], typo
+
+
+def test_the_genuinely_unprioritised_case_still_ranks_low():
+    """Paired control for the assertion above: the fix must not become
+    'refuse everything'. An issue that truly carries no priority label keeps
+    the old, quiet answer."""
+    answer = _rank([])
+    assert answer["state"] == "ranked", answer
+    assert answer["band"] == "low", answer
+    assert answer["why"] is None, answer
+
+
+def test_an_unrelated_label_is_not_mistaken_for_an_unrecognised_priority():
+    """Must-not-fire control: a label that shares no prefix with any declared
+    priority spelling is not a priority label at all, and must not be
+    reported as an unrecognised one."""
+    answer = _rank(["bug"])
+    assert answer["why"] is None, answer
+
+
+def test_no_common_prefix_means_no_unrecognised_detection():
+    """If the declared spellings share no prefix, guessing that some other
+    label is an unrecognised priority would be the same hardcoded-fact
+    failure this module already refuses elsewhere -- there is no signal, so
+    none is invented."""
+    declared_no_prefix = {"priority": ["urgent", "later"], "filed_by_loop": LOOP}
+    answer = dispatch_rank.rank(["priority-critical"], declared_no_prefix)
+    assert answer["why"] is None, answer
+
+
+def _run_main(issues, capsys, monkeypatch, declared=None):
+    """`main()` over a board on stdin, returning `(exit_code, stdout)`.
+
+    Reaches the CLI rather than the library call on purpose: the two
+    reviewers of #826 both found that `rank()` computed the unrecognised
+    priority signal and `main()` then dropped it, so a test that only calls
+    `rank()` cannot see the seam. Nothing in this file exercised `main()`
+    before -- a scoped coverage run reported its whole body uncovered."""
+    payload = {"declared": declared if declared is not None else DECLARED,
+               "issues": issues}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    code = dispatch_rank.main([])
+    return code, capsys.readouterr().out
+
+
+def test_the_cli_receipt_names_an_unrecognised_priority_label(capsys, monkeypatch):
+    """#826, found by review. The receipt a maintainer actually reads is
+    `main()`'s stdout -- the documented invocation in
+    `skills/manager/phases/dispatch.md` pipes a board through it. Computing
+    the signal in `rank()` and printing nothing is this repository's own
+    defect class moved one layer out: the typo and the silence render
+    identically to the only surface anybody looks at."""
+    code, out = _run_main([{"number": 123, "labels": ["priority-critical"]}],
+                          capsys, monkeypatch)
+    assert code == 0, out
+    assert "#123" in out, out
+    assert "priority-critical" in out, out
+
+
+def test_the_cli_receipt_stays_quiet_for_a_genuinely_unprioritised_issue(
+    capsys, monkeypatch
+):
+    """Paired must-not-fire control for the assertion above: the fix must
+    add a line to the receipt only for the unrecognised case, not decorate
+    every ordinary issue."""
+    code, out = _run_main([{"number": 124, "labels": []}], capsys, monkeypatch)
+    assert code == 0, out
+    assert "#124" in out, out
+    assert "--" not in out.split("\n")[0], out
+
+
+def test_the_cli_still_distinguishes_could_not_rank_from_a_ranked_issue(
+    capsys, monkeypatch
+):
+    """The `could-not-rank` branch already printed its `why` and must keep
+    doing so -- the new `why` on a ranked line must not have merged the two
+    renderings into one."""
+    code, out = _run_main(
+        [{"number": 125, "labels": []}],
+        capsys,
+        monkeypatch,
+        declared={"priority": [], "filed_by_loop": LOOP},
+    )
+    assert "?" in out and "could not rank" in out, out
+    assert code == 0, out
 
 
 def test_order_is_stable_within_a_rank():
@@ -280,19 +385,98 @@ def test_every_filing_instruction_names_the_label():
     )
 
 
-def test_the_spine_and_dispatch_state_the_same_order():
-    """Two documents carrying one rule is how this repository's briefs drift
-    (#673). Both must name the same six rows, and the check compares them
-    against each other rather than each against a floor."""
+#: One markdown table row: a rank digit, then `human` or `loop`, then a
+#: priority cell. Anchored per-line rather than across the whole table, so it
+#: finds a row wherever one sits rather than assuming a fixed block shape.
+_TABLE_ROW_RE = re.compile(
+    r"^\s*\|\s*(\d+)\s*\|\s*(human|loop)\s*\|\s*([^|]+?)\s*\|\s*$",
+    re.MULTILINE,
+)
+
+
+def _normalize_band(cell_text):
+    """'low, or no priority label' -> 'low'. `None` for a cell that names none
+    of `dispatch_rank.BANDS`, so a caller can tell a real row from a stray
+    table elsewhere in the document that happens to match the row shape."""
+    lowered = cell_text.strip().lower()
+    for band in dispatch_rank.BANDS:
+        if lowered.startswith(band):
+            return band
+    return None
+
+
+def _extract_dispatch_table_rows(text):
+    """Every table row in `text` shaped like the dispatch table, as
+    `((rank, (author, band)), ...)` -- the same shape `dispatch_rank.ROWS`
+    is in, so the two can be compared directly rather than through a second
+    translation that could itself disagree with either one."""
+    rows = []
+    for match in _TABLE_ROW_RE.finditer(text):
+        band = _normalize_band(match.group(3))
+        if band is None:
+            continue
+        rows.append((int(match.group(1)), (match.group(2), band)))
+    return tuple(rows)
+
+
+def test_the_spine_states_the_table_dispatch_rank_computes():
+    """#825. The six-row table in `SKILL.md` is a transcription of
+    `dispatch_rank.ROWS` -- the module is the source, the table is prose
+    copied from it -- and a transcription that drifts from its source is
+    exactly what this can catch and a reader skimming the table cannot.
+
+    This replaces `test_the_spine_and_dispatch_state_the_same_order`, which
+    asserted only that the words 'human' and 'loop' occur somewhere in two
+    thousand-word documents -- true of nearly any edit to either file, so it
+    could not fail for the defect it claimed to guard against."""
     root = repo_root()
     spine = root.joinpath(*manager_docs.SPINE_REL).read_text(encoding="utf-8")
-    dispatch = (root / "skills/manager/phases/dispatch.md").read_text(encoding="utf-8")
-    for token in ("human", "loop"):
-        assert token in spine.lower(), token
-        assert token in dispatch.lower(), token
-    assert "dispatch_rank.py" in spine or "dispatch_rank.py" in dispatch, (
-        "neither document names the module that computes the rank, so the "
-        "order stays a thing an agent feels rather than one it can call"
+    rows = _extract_dispatch_table_rows(spine)
+    assert len(rows) == len(dispatch_rank.ROWS), rows
+    assert rows == dispatch_rank.ROWS, rows
+    assert "dispatch_rank.py" in spine, (
+        "the spine table no longer names the module that computes it, so the "
+        "order reads as a thing an agent feels rather than one it can call"
+    )
+
+
+def test_the_table_extractor_catches_a_table_that_disagrees_with_the_module():
+    """Positive control for the assertion above. Without this, a comparison
+    that always saw two empty tuples would look identical to one that
+    genuinely compared six rows -- the same shape #825 filed against the
+    check this replaces."""
+    contradicting = (
+        "| Rank | Who filed | Priority |\n"
+        "| --- | --- | --- |\n"
+        "| 1 | human | high |\n"
+        "| 2 | loop | high |\n"
+        "| 3 | human | medium |\n"
+        "| 4 | human | low, or no priority label |\n"
+        "| 5 | loop | medium |\n"
+        "| 6 | loop | medium |\n"
+    )
+    rows = _extract_dispatch_table_rows(contradicting)
+    assert len(rows) == len(dispatch_rank.ROWS), rows
+    assert rows != dispatch_rank.ROWS, rows
+
+
+def test_dispatch_md_points_at_the_table_rather_than_restating_it():
+    """The design the issue found sound: `SKILL.md` carries the table,
+    `dispatch.md` deliberately does not restate it (#673, #547 -- a second
+    copy is the copy that drifts). Asserting that absence is the real
+    regression to guard, not a parity check between two copies that were
+    never meant to both exist."""
+    dispatch = (repo_root() / "skills/manager/phases/dispatch.md").read_text(
+        encoding="utf-8"
+    )
+    rows = _extract_dispatch_table_rows(dispatch)
+    assert not rows, (
+        "dispatch.md now carries its own copy of the dispatch table -- that "
+        "recreates the drift #673/#547 exist to avoid; point at the spine "
+        "instead of restating it: {}".format(rows)
+    )
+    assert "dispatch_rank.py" in dispatch, (
+        "dispatch.md must still name the module that computes the order"
     )
 
 

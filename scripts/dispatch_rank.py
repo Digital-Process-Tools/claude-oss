@@ -43,6 +43,7 @@ Python 3.9 compatible.
 
 import argparse
 import json
+import os
 import sys
 
 
@@ -74,8 +75,25 @@ SHORT_REASONS = ("board-exhausted", "no-adjacent", "could-not-tell")
 MAX_LANE = 3
 
 
+def _priority_prefix(priority_spellings):
+    """The longest string every declared priority spelling starts with --
+    `priority-high`, `priority-medium`, `priority-low` share `priority-`.
+
+    This is the only signal this module has for "looks like it was meant to
+    be a priority label but is not one of the declared ones": there is no
+    generic way to tell a priority label from an unrelated one by name alone,
+    and inventing one would be the hardcoded-fact failure `rank()` already
+    refuses one axis over. Returns `''` when the declared spellings share
+    nothing -- `priority-high` and `urgent` share no prefix -- and an empty
+    prefix means no label can ever be read as an unrecognised priority, on
+    purpose: guessing from no signal is worse than reporting none.
+    """
+    return os.path.commonprefix(list(priority_spellings))
+
+
 def _band(labels, priority_spellings):
-    """Which band these labels sit in, strongest first.
+    """Which band these labels sit in, strongest first, and the unrecognised
+    priority-shaped label if one was found -- `(band, unrecognised)`.
 
     An issue carrying two priority labels takes the stronger. That is a real
     state rather than a hypothetical: a triage sweep and a second writer both
@@ -84,13 +102,32 @@ def _band(labels, priority_spellings):
     because somebody added a weaker label beside its real one.
 
     No priority label at all is `low`, per the table's rows 4 and 6, never a
-    band of its own and never `medium`.
+    band of its own and never `medium` -- and `unrecognised` is `None`, because
+    there is nothing to name (#826).
+
+    A label that shares the declared spellings' own prefix but matches none of
+    them exactly -- a typo, a rename the repo's `.oss.json` was never updated
+    for -- is a different fact from carrying no priority label at all, even
+    though both fall into the same `low` band for ordering purposes: the
+    issue is still rankable on the author axis, so refusing to rank it would
+    be the trap #826 names explicitly. `unrecognised` names the one spelling
+    found, so a caller can tell a typo from silence without re-deriving
+    anything.
     """
     present = set(labels)
     for index, spelling in enumerate(priority_spellings):
         if spelling in present:
-            return BANDS[index] if index < len(BANDS) else BANDS[-1]
-    return "low"
+            return (BANDS[index] if index < len(BANDS) else BANDS[-1]), None
+    prefix = _priority_prefix(priority_spellings)
+    if prefix:
+        unrecognised = sorted(
+            label
+            for label in present
+            if label.startswith(prefix) and label not in priority_spellings
+        )
+        if unrecognised:
+            return "low", unrecognised[0]
+    return "low", None
 
 
 def rank(labels, declared):
@@ -131,13 +168,23 @@ def rank(labels, declared):
             ),
         }
     author = "loop" if loop_label in set(labels) else "human"
-    band = _band(labels, priority)
+    band, unrecognised = _band(labels, priority)
+    why = None
+    if unrecognised is not None:
+        why = (
+            "{!r} looks like a priority label but matches none of the "
+            "declared spellings ({}) -- ranked as {} so the issue still "
+            "dispatches, but the priority read is unreliable and the label "
+            "should be checked for a typo or a rename".format(
+                unrecognised, ", ".join(priority), band
+            )
+        )
     return {
         "state": "ranked",
         "rank": _BY_PAIR[(author, band)],
         "author": author,
         "band": band,
-        "why": None,
+        "why": why,
     }
 
 
@@ -249,9 +296,15 @@ def main(argv=None):
             print("  ?  #{}  could not rank -- {}".format(
                 item.get("number"), answer["why"]))
         else:
-            print("  {}  #{}  {} / {}".format(
+            # `why` is non-None on a *ranked* issue only for #826's
+            # unrecognised-priority case. Dropping it here would compute the
+            # one signal #826 exists to surface and then render it
+            # identically to silence -- which is the whole defect, moved one
+            # layer out into the receipt a maintainer actually reads.
+            print("  {}  #{}  {} / {}{}".format(
                 answer["rank"], item.get("number"),
-                answer["author"], answer["band"]))
+                answer["author"], answer["band"],
+                "" if not answer["why"] else "  -- " + answer["why"]))
     print("{} issue(s), {} unrankable".format(len(ranked), unrankable))
     return 0
 
