@@ -717,10 +717,10 @@ cohort burn-down a triage sweep feeds counts a set the release has already stopp
 "re-count after the last label write, never before it" discipline the accounting phase already
 applies to the freeze count itself).
 
-**Keep the freeze and the sweep apart.** The cohort freeze, above, is the maintainer's own act, by
-hand, in the same minute as the tag -- the triager must never write a `cohort-*` label. The triage
-sweep is a separate step that follows the freeze, run over the tracker's priority and lane labels,
-never over cohorts.
+**Keep the freeze and the sweep apart.** The cohort freeze -- defined below, under *Closing a
+tick: the drain and the fill* -- is the maintainer's own act, by hand, in the same minute as the tag;
+the triager must never write a `cohort-*` label. The triage sweep is a separate step that follows the
+freeze, run over the tracker's priority and lane labels, never over cohorts.
 
 **This is prose, not a mechanism, and it should say so rather than imply otherwise.** Nothing in the
 loop today records when a sweep last ran or reports how much of the open board carries no priority

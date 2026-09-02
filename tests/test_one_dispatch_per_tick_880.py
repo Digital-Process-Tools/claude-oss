@@ -49,9 +49,16 @@ def test_every_document_states_resume_over_redispatch():
     assert not missing, "these files do not pair resume against re-dispatch: {0}".format(missing)
 
 
-def test_every_document_names_sendmessage_as_the_resume_mechanism():
-    missing = [name for name, text in DOCS.items() if "SendMessage" not in text]
-    assert not missing, "these files never name SendMessage as the resume mechanism: {0}".format(missing)
+def test_every_document_names_sendmessage_as_the_resume_mechanism_near_880():
+    """`SendMessage` alone is too weak a check: agents/sub-manager.md and
+    commands/tick.md already named it once each, pre-#880, for the
+    unrelated paused-sub-manager mechanism -- so a bare substring check
+    would pass for those two files even if #880's own text had never been
+    added (found by review). Anchor it to the #880 citation instead, within
+    a window generous enough to span the paragraph that names both."""
+    pattern = re.compile(r"SendMessage.{0,600}#880|#880.{0,600}SendMessage", re.IGNORECASE | re.DOTALL)
+    missing = [name for name, text in DOCS.items() if not pattern.search(text)]
+    assert not missing, "these files do not name SendMessage near the #880 citation: {0}".format(missing)
 
 
 def test_every_document_names_the_agent_unreachable_third_state():
