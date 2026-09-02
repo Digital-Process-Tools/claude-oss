@@ -59,7 +59,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # the claim and recording the choice as a judgement, plus the
     # measurement-hazard note for whoever wires the scheduler, are the
     # maintainer's own decision made legible rather than left silent.
-    "agents/sub-manager.md": (11714, 12900),
+    # Raised for #818: a fourth handback shape (`TICK: paused` +
+    # `WAIT-DISPATCH:`/`WAIT-OBSERVABLE:`) for a sub-manager reaching a CI
+    # wait with none of the loop's three waiting mechanisms available to it.
+    # Nothing in the existing three states was safe to cut to pay for a
+    # correctness addition -- a design decision this repo's own conventions
+    # ask to be written down, not trimmed to fit.
+    "agents/sub-manager.md": (13998, 15400),
 }
 
 

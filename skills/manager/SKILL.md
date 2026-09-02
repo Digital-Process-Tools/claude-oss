@@ -702,7 +702,13 @@ silent total outage.
   it yourself rather than resuming a large-context agent for a push.
 - **A permission block on a git step is correct agent behaviour.** Do the step yourself rather than
   telling it to retry.
-- **Agents must not poll CI.** Watching checks is the orchestrator's job.
+- **Agents must not poll CI. Watching checks is the scheduler's job, and "the orchestrator" now
+  names two roles (#818).** A developer or reviewer never polls. A sub-manager is the orchestrator
+  for its own tick's phases, but it is not the scheduler: it holds no `ScheduleWakeup` and cannot
+  receive channel events (measured on #816 — six events reached the scheduler, zero reached a
+  concurrently-running subagent). It hands back `TICK: paused`, naming what it waits on, rather than
+  polling itself or blocking on a watch — `commands/tick.md`'s seven answers and
+  `scripts/tick_handback.py` read and act on that state.
 - **A diagnosis is not a repair.** A red leg is red whether or not the cause is understood. Check the
   board, not the narrative.
 
@@ -848,7 +854,10 @@ it separately from the cross-tick identity comparison above, because the two are
 and folding them together would answer neither question honestly.
 
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
-describes the schedule instead of the next action. Waiting on CI is not a reason to stop working.
+describes the schedule instead of the next action. Waiting on CI is not a reason to stop working —
+**a wait is not an act, and it does not outrank dispatch (#820)**, the same rule `commands/tick.md`
+step 3 states where dispatch is decided: everything that can run concurrently with a wait is started
+before the wait, not after.
 
 **What ends a tick, and only one of these three does. None of them stops the loop.** That distinction
 was being conflated, and the conflation is half of #209: these three states say how *this tick*
