@@ -15,6 +15,7 @@ separate mechanism and is not touched here.
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,6 +28,19 @@ import lane_setup  # noqa: E402
 def _configured_repo(tmp_path, worktree_root):
     repo = tmp_path / "repo"
     repo.mkdir()
+    # #865 review round: `compute(..., claim=True)` now checks
+    # `linked_worktree_state(repo)` before trusting a claim, and a bare
+    # directory with no `.git` at all answers `could-not-tell` -- measured
+    # directly, not a real linked worktree, and refused for the identical
+    # reason a genuine one is (git could not vouch for it). This fixture is
+    # meant to stand in for an ordinary clone (every other git-dependent
+    # call here -- resolve_base, branch_occupancy, read_board -- is
+    # monkeypatched below specifically so the test does not need a real
+    # remote or history), so it needs a real, ordinary -- non-worktree --
+    # git identity for that one check to answer truthfully. `git init` alone
+    # is sufficient: `git rev-parse --git-common-dir`/`--git-dir` answer
+    # without any commit.
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     config = {
         "repo": "example/example",
         "default_branch": "main",
