@@ -159,6 +159,20 @@ to fix: `--against` and `--derive-held` are mutually exclusive, so hand-typing t
 that the automated check could not vouch for it -- never dispatch on a bare `could-not-check` read as
 though it were `available`.
 
+**A fifth state, `resolved-to-nothing` (#809, #837), is not a sixth row beside `filled` /
+`under-filled` / `could-not-tell` above -- it is a reason `could-not-tell` carries, folded in rather
+than counted, and it must never read as `filled`.** It means every member of a candidate lane was
+individually well-formed and checked, and the whole lane still named zero files on disk -- a glob
+that matched nothing, a directory with nothing under it. `overlap` renders `[]` for exactly the same
+reason a real, disjoint, non-empty lane would, so `overlap` alone cannot tell the two apart;
+`lane_report` marks it separately (`availability.state` and `overlap_state` both
+`"resolved-to-nothing"`) and the receipt prints `verdict : RESOLVED TO NOTHING` /
+`overlap : n/a -- lane resolved to zero files on disk, nothing to compare (#809)` rather than
+folding it into either `available` or `COULD NOT CHECK`. A candidate that named nothing has not been
+confirmed free -- counting it toward `filled` is the exact fold this loop is named for catching, so
+it is reported the same way `could-not-tell` is reported above: the candidate and the pattern that
+resolved to nothing, not silence.
+
 None of this touches the other side of the check -- naming which further open issues could join an
 already-claimed lane (above). An issue's own files are still not derivable from its body (#267), so
 naming the candidate issue to check stays yours, not the script's.
