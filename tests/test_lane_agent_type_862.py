@@ -149,3 +149,57 @@ def test_cli_lane_agent_type_refuses_without_a_matching_lane(tmp_path):
     )
     assert result.returncode != 0
     assert "999" in result.stdout
+
+
+def test_lane_model_trend_carries_the_anomaly_across_a_history():
+    """Review finding on #862's own fix: `lane_model_trend`'s `lanes` is a count, not
+    a list, so the single-tick anomaly scan in `_lane_models_sentence` never sees it
+    for `--model-trend` -- the aggregate view most likely to be read for a pattern
+    across ticks. `lane_model_trend` must carry the anomaly forward on its own, and
+    `lane_models_line` must render it for a trend record the same way it does for a
+    single tick's.
+    """
+    entries = [
+        {
+            "at": "2026-09-02T00:00:00Z",
+            "decision": "delegate",
+            "detail": {
+                "lanes": oss_state.lane_models(
+                    [
+                        {
+                            "issue": 851,
+                            "model": "sonnet",
+                            "choice": "default",
+                            "agent_type": "general-purpose",
+                        }
+                    ],
+                    window=WINDOW,
+                )
+            },
+        }
+    ]
+    trend = oss_state.lane_model_trend(entries)
+    line = oss_state.lane_models_line(trend)
+    assert "#851" in line
+    assert "general-purpose" in line
+    assert "not oss:developer/oss:triager" in line
+
+
+def test_lane_model_trend_does_not_flag_an_ordinary_history():
+    """Positive control: a trend built entirely from lanes with no agent_type opinion
+    at all must not read as anomalous.
+    """
+    entries = [
+        {
+            "at": "2026-09-02T00:00:00Z",
+            "decision": "delegate",
+            "detail": {
+                "lanes": oss_state.lane_models(
+                    [{"issue": 1, "model": "sonnet", "choice": "default"}], window=WINDOW
+                )
+            },
+        }
+    ]
+    trend = oss_state.lane_model_trend(entries)
+    line = oss_state.lane_models_line(trend)
+    assert "not oss:developer/oss:triager" not in line

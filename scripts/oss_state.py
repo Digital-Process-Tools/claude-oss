@@ -1297,6 +1297,11 @@ def _lane_models_sentence(record):
         else:
             counts = record.get("counts") or {}
             overrides = record.get("overrides") or 0
+            # #862: the trend shape (`lane_model_trend`'s own dict) carries its own
+            # already-collected `unexpected` list, since `lanes` here is a count, not
+            # the list this branch's own per-lane scan above needs.
+            for issue, agent_type in record.get("unexpected") or []:
+                unexpected.append((issue, agent_type))
         parts = ", ".join(
             "{} {}".format(count, model) for model, count in sorted(counts.items())
         )
@@ -1304,9 +1309,10 @@ def _lane_models_sentence(record):
             parts or "no lanes", overrides, "" if overrides == 1 else "s"
         )
         if unexpected:
-            mix += " -- {} dispatched as {}, not oss:developer/oss:triager".format(
+            mix += " -- {} dispatched as {}, not {}".format(
                 ", ".join("#{}".format(issue) for issue, _ in unexpected),
                 "/".join(sorted(set(agent_type for _, agent_type in unexpected))),
+                "/".join(KNOWN_AGENT_TYPES),
             )
         if state == LANES_PARTIAL:
             # Deliberately not the recorded sentence with a caveat appended -- a reader
@@ -1335,6 +1341,13 @@ def lane_model_trend(entries):
     counted = 0
     uncounted = 0
     without_record = 0
+    # #862: unexpected agent_type sightings, carried across the whole history rather
+    # than dropped -- `_lane_models_sentence`'s single-tick anomaly check only ever
+    # sees a list of lanes, and a trend's own `lanes` is a count, not a list, so
+    # without this the finding "a lane was dispatched outside oss:developer/
+    # oss:triager" was visible on the one tick that recorded it and invisible on the
+    # aggregate view (--model-trend) most likely to be read for a pattern across ticks.
+    unexpected = []
 
     for entry in entries or []:
         detail = entry.get("detail") if isinstance(entry, dict) else None
@@ -1353,6 +1366,9 @@ def lane_model_trend(entries):
                 lanes_total += 1
                 if lane.get("choice") == CHOICE_OVERRIDE:
                     overrides += 1
+                agent_type = lane.get("agent_type")
+                if agent_type and agent_type not in KNOWN_AGENT_TYPES:
+                    unexpected.append((lane.get("issue"), agent_type))
             counted += 1
         elif state == LANES_NONE_DISPATCHED:
             counted += 1
@@ -1364,6 +1380,7 @@ def lane_model_trend(entries):
         "counts": counts if counted else None,
         "lanes": lanes_total if counted else None,
         "overrides": overrides if counted else None,
+        "unexpected": unexpected,
         "why": None,
         "ticks_counted": counted,
         "ticks_uncounted": uncounted,
@@ -3099,13 +3116,11 @@ def _main(argv=None):
             # issue number, refusing rather than silently dropping one that names an
             # issue --lane never mentioned -- an unattached agent_type is not a lane
             # record at all, and dropping it silently would be this repo's own
-            # defect class one field over.
-            if not args.lane:
-                return refuse(
-                    "--lane-agent-type needs a matching --lane for the same "
-                    "issue(s) -- a recorded subagent_type with no lane to attach "
-                    "to records nothing"
-                )
+            # defect class one field over. `args.lane is None` is already refused
+            # above, before this point, so nothing here re-checks it -- a second
+            # `if not args.lane` here would be dead code (argparse's own
+            # `action="append"` never produces an empty list, only `None` or a
+            # populated one, and `None` already returned).
             by_issue = {}
             for entry in args.lane_agent_type:
                 by_issue[entry["issue"]] = entry["agent_type"]
