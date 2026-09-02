@@ -1734,8 +1734,22 @@ else
                 # The prompt this session opens with, not merely a stderr
                 # line: what doctor found would otherwise reach the human and
                 # never the agent that is about to act on the repo (#764).
-                echo "oss-workspace: routing this session into /oss:doctor at its first turn, so the agent that is about to act on $repo_root starts with what the diagnostic found rather than re-deriving it by hand." >&2
-                prompt="/oss:doctor"
+                #
+                # Gated on `$prompt` already being `/oss:tick` -- a repo with
+                # no `.oss.json` at all reports `VERDICT: not usable` too
+                # (missing config is a FAIL), and `/oss:setup` is already the
+                # more specific next step for that repo (see the comment
+                # above this script's own `prompt=` assignment): overriding
+                # it with `/oss:doctor` would send a brand-new clone through
+                # an extra hop the setup comment explicitly says not to take.
+                # Self-review finding (#764): the first cut of this route
+                # clobbered `/oss:setup` unconditionally.
+                if [ "$prompt" = "/oss:tick" ]; then
+                    echo "oss-workspace: routing this session into /oss:doctor at its first turn, so the agent that is about to act on $repo_root starts with what the diagnostic found rather than re-deriving it by hand." >&2
+                    prompt="/oss:doctor"
+                else
+                    echo "oss-workspace: not routing into /oss:doctor -- this session was already opening with $prompt, chosen for a more specific reason (e.g. no .oss.json yet), and a WARN/FAIL diagnostic does not override that." >&2
+                fi
                 ;;
             "could not run"*)
                 echo "oss-workspace: the setup diagnostic reported VERDICT: could not run, which says nothing at all about $repo_root -- its state is UNKNOWN rather than fine. Its whole output follows. Opening the session anyway." >&2

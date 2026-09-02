@@ -180,6 +180,20 @@ def channel_health_agreement_state(census_state, census_detail, health_raw_state
     return "disagree", "census: {}. channel:health: {}.".format(census_words, health_words)
 
 
+def _preset_disabled(project_dir):
+    """`True` only when `.supertool.json` was actually read and explicitly does
+    NOT declare the `watch` preset -- the one `could-not-compare` cause that is
+    structurally permanent rather than transient. `None`/`False` from
+    `_watch_preset_declared` (no file, unreadable, or genuinely enabled) must
+    never be read as "disabled"; only its own `False` answers that."""
+    if statusline is None:
+        return False
+    try:
+        return statusline._watch_preset_declared(project_dir) is False
+    except OSError:
+        return False
+
+
 def check_channel_health_agreement(project_dir, run=None, which=None, env=None,
                                     allow_probe=None, now=None, probe=None):
     """One line: does doctor's own channel census agree with `channel:health`?
@@ -188,6 +202,17 @@ def check_channel_health_agreement(project_dir, run=None, which=None, env=None,
     defaulted to `agree`, which #860's own issue calls load-bearing: the
     `watch` preset may simply not be enabled, in which case there is nothing
     to compare and this must say so.
+
+    That last case gets its own render level, NOTICE rather than WARN
+    (self-review finding on this same change): a repo whose `.supertool.json`
+    plainly does not enable `watch` can never produce a `channel:health`
+    reading to compare against, by construction, until somebody edits that
+    file -- the identical "structurally unable to ever answer" shape #764
+    created NOTICE for two other doctor.py checks to stop rendering as a
+    permanent, unresolvable WARN. Every OTHER could-not-compare cause
+    (`claude mcp list` failing, a stale or absent cache) stays WARN: each is
+    an environment or timing fact that can clear on its own without a config
+    edit.
     """
     env = os.environ if env is None else env
     if allow_probe is None:
@@ -207,6 +232,14 @@ def check_channel_health_agreement(project_dir, run=None, which=None, env=None,
             "WARN",
             "channel census vs channel:health: disagree, and neither is assumed "
             "right -- {}".format(detail),
+        )
+        return
+    if health_source in (None, "cached-stale") and _preset_disabled(project_dir):
+        doctor.report(
+            "NOTICE",
+            "channel census vs channel:health: could not compare -- the `watch` "
+            "preset is not enabled in .supertool.json, so channel:health has "
+            "nothing to answer with until that changes -- {}".format(detail),
         )
         return
     doctor.report(

@@ -481,6 +481,26 @@ def test_a_failure_verdict_also_routes(tmp_path):
     assert "/oss:doctor" in argv, argv
 
 
+def test_a_bad_verdict_on_a_repo_with_no_config_does_not_clobber_setup(tmp_path):
+    """Self-review finding (#764): a repo with no `.oss.json` at all also
+    produces `VERDICT: not usable` (missing config is a FAIL), and the first
+    cut of this route sent that repo to /oss:doctor instead of /oss:setup --
+    directly against the launcher's own reasoning a few lines above the
+    prompt assignment ("a guessed default branch merges into the wrong place
+    confidently"). The route is gated on the prompt already being
+    /oss:tick so /oss:setup is never overridden."""
+    body = (
+        "echo 'FAIL .oss.json not found'\n"
+        "echo 'VERDICT: not usable -- 1 failure(s), 0 warning(s)'\n"
+    )
+    root, _ = _plugin(tmp_path, body)
+    done, argv = run(_repo(tmp_path / "repo", with_config=False), root)
+    assert argv, done.stderr
+    assert "/oss:setup" in argv, argv
+    assert "/oss:doctor" not in argv, argv
+    assert "not routing into /oss:doctor" in done.stderr, done.stderr
+
+
 def test_could_not_run_neither_routes_nor_silently_skips(tmp_path):
     """The third state for the route itself (#764): a diagnostic that ran and
     said it could not look must not be routed as though it found a real
