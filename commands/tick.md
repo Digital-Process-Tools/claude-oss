@@ -430,7 +430,8 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    state, `agent-unreachable`, and not a silent excuse to spawn again. The full argument, the cost
    comparison and the exact state names are in `skills/manager/phases/dispatch.md`; a re-dispatch
    with neither an attempted resume nor an `agent-unreachable` finding behind it is the defect this
-   note exists to stop.
+   note exists to stop. **Record it, at step 6's own `--decision` call, with `--lane-dispatch-state
+   ISSUE=STATE[:WHY]`** -- it refuses the whole call outright rather than only being read.
 
    **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
    commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and

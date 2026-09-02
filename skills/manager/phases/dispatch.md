@@ -344,6 +344,12 @@ fresh developer spawn's measured 150k-290k tokens).
 `agent-unreachable`, distinct from `resumed`.** A re-dispatch with neither an attempted resume nor
 that finding is the defect this section stops; state which one applied in the handback.
 
+**This is enforced, not only stated.** `scripts/oss_state.py --lane-dispatch-state
+ISSUE=STATE[:WHY]` (repeatable, matched to `--lane` by issue) refuses the whole `--decision` call
+outright when the same issue is recorded a fresh dispatch more than once in it -- the shape
+`--lane-fill` already refuses an unreasoned short lane in. `resumed` needs no reason;
+`agent-unreachable` requires one. Omit the flag for an ordinary single dispatch.
+
 **Lane length is itself a cost decision, and it is measured after a lane completes, never during
 it (#498).** Cost scales roughly with the square of a lane's own length — turns times the average
 context across those turns, and the context itself grows with the turns — so five lanes out of 612

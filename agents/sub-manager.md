@@ -119,7 +119,7 @@ resumed via `SendMessage` to its own agent, never re-dispatched fresh at the sam
 argument, and the `agent-unreachable` third state for when resuming genuinely fails (context gone,
 or silent twice, the bar `agents/developer.md` sets its own review spawns), are in
 `skills/manager/phases/dispatch.md`. A re-dispatch with neither an attempted resume nor that finding
-is the defect this rule stops; state which one applied in your handback.
+is the defect this rule stops; record it via `--lane-dispatch-state` at your own state entry.
 
 ## Report back: four states, and two more this tool computes for you
 

@@ -60,14 +60,17 @@ def test_accounting_points_at_the_cadence_from_the_cluster_consuming_step():
     assert re.search(r"after the previous release", window, re.IGNORECASE)
 
 
-def test_skill_states_the_missing_mechanism_rather_than_implying_one_exists():
-    """#855's own point: today this is prose, not a checkable receipt --
-    the section must say that plainly rather than reading as though a
-    `last triaged` field already exists."""
+def test_skill_names_the_enforced_and_unbuilt_halves_of_the_mechanism_separately():
+    """#855's own point, updated once the last-triaged half actually shipped
+    (#880/#855 lane, oss_state.py): the section must say which half is a real
+    receipt and which is still prose, never let the built half's existence
+    imply the whole thing is done."""
     idx = SKILL.find("## Cadence")
     assert idx != -1
     window = SKILL[idx:idx + 2000]
-    assert re.search(r"not a mechanism", window, re.IGNORECASE)
+    assert "--last-triage" in window
+    assert "--triage-recorded" in window
+    assert re.search(r"is not\b.{0,40}#855|is still unbuilt", window, re.IGNORECASE)
 
 
 # --------------------------------------------------------- negative controls

@@ -722,13 +722,13 @@ tick: the drain and the fill* -- is the maintainer's own act, by hand, in the sa
 the triager must never write a `cohort-*` label. The triage sweep is a separate step that follows the
 freeze, run over the tracker's priority and lane labels, never over cohorts.
 
-**This is prose, not a mechanism, and it should say so rather than imply otherwise.** Nothing in the
-loop today records when a sweep last ran or reports how much of the open board carries no priority
-label, so a tick dispatching against months-old priorities and one dispatching against fresh ones
-close on identical records -- this repository's own defect class, one level up, applied to its own
-cadence. `#855` tracks the mechanism -- a recorded `last triaged: <ISO> / never / could-not-read`,
-or a reported label-coverage number -- which needs `scripts/oss_state.py`, held elsewhere at the
-time this section was written.
+**The last-triaged half is enforced, the label-coverage half is not (#855).** `scripts/oss_state.py
+--triage-recorded AT`, run whenever a sweep completes, and `--last-triage`, which any tick can call
+to read `last triaged: <ISO> / never / could-not-read` back -- `never` is a real, established absence
+and `could-not-read` is not the same fact, the same distinction every other reader in that file
+draws. Reporting how much of the open board carries no priority label at all -- so "the board is
+triaged" is a measurement rather than a memory -- is still unbuilt; that half stays this repository's
+own defect class, one level up, applied to its own cadence, until somebody takes it.
 
 ## Closing a tick: the drain and the fill
 
