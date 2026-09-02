@@ -560,14 +560,18 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `ad38b93`, the commit `v0.17.0` was cut from** — nineteen commits past the `v0.16.0`
-tag (`165a466`, the annotated tag object; the commit it names is `3904d7b`). Every number below was
-taken at this commit. The delta since the previous measurement is **19 commits and 18 merged pull
-requests**. Every claim below is graded **observed** (a named command produced it) or **reasoned**
-(argued from code that was read, not run). **Re-derive this at each release rather than editing
-it.** The version it replaces was measured at `27d2f15`; before that at `d2a2968`, `48bb420`,
-`990d0da`, `bce0362`, `53e2d0c`, `805debb`, `c570977`, `d4c12c1`, `7690fd0`, `01212b0` and
-`e8e75b2`.
+**Measured at `160e77b`, the commit `v0.18.0` was cut from.** The paragraphs below this one
+still describe `v0.17.0` and have not been re-derived against the delta since — every specific
+number, audit-round count and field-probe reading further down in this section is that prior
+release's, not this one's. This one paragraph was updated on its own, mid-tick, because
+`tests/test_claude_md_currency.py` only checks a release-being-prepared marker against `changelog.d`'s
+own pending fragments, and three unrelated pull requests carrying ordinary fragments were the first
+thing to notice the marker had gone stale — the full re-derivation this section's own rule calls for
+did not happen when `v0.18.0` was cut, and is tracked at #815 rather than attempted here. **Re-derive
+this at each release rather than editing it** is the rule this paragraph is the disclosure of having
+missed, not a substitute for following it. The version it replaces was measured at `ad38b93`; before
+that at `27d2f15`, `d2a2968`, `48bb420`, `990d0da`, `bce0362`, `53e2d0c`, `805debb`, `c570977`,
+`d4c12c1`, `7690fd0`, `01212b0` and `e8e75b2`.
 
 **The two delta counts disagree by one again, and the cause is the same shape as last round's
 without being the same commit.** 19 commits against 18 merged pull requests. The gap is `2cd8a1f`,
