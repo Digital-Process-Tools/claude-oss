@@ -1585,10 +1585,17 @@ def _gh_default_branch_state(repo, branch):
     a different and less urgent claim. `total == 0` means nothing has reported,
     regardless of what `state` says about an empty rollup.
 
-    `error` is read the same as `failure` -- GitHub's own docs give both as
-    distinct spellings for "a context did not pass" -- so both land on `"bad"`,
-    the one state this module treats as an actual finding rather than "not
-    settled yet".
+    `error` is read the same as `failure`. GitHub's own docs give the COMBINED
+    summary's top-level `state` a three-value enum -- `failure`/`pending`/`success`
+    -- so this is a defensive extra rather than a documented fourth value: `error`
+    is the spelling an INDIVIDUAL entry in the legacy `statuses[]` array can carry,
+    one level below what this function's own `--jq` filter reads. Kept anyway,
+    because a top-level `state` outside its documented enum is exactly the shape
+    an undocumented API change would take, and reading it as `"bad"` -- rather
+    than falling through to the `None` below, which this module's own callers
+    read as "no answer" and would then fold into the very "not settled yet"
+    `unk`/`run` glyphs this branch exists to tell apart from an actual failure --
+    is the conservative direction to guess wrong in.
     """
     if not repo or not branch:
         return None

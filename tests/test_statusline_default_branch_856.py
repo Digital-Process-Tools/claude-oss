@@ -43,8 +43,12 @@ def test_failure_is_bad(monkeypatch):
 
 
 def test_error_state_is_also_bad(monkeypatch):
-    """GitHub's combined-status endpoint spells a broken context `error`, distinct
-    from `failure` -- both mean a leg is not passing, so both are `bad`."""
+    """`error` is not a documented value of the COMBINED endpoint's top-level
+    `state` (that enum is failure/pending/success) -- it is the per-entry
+    spelling one level below what this function reads. This pins the
+    defensive extra branch: an undocumented top-level `error` still reads as
+    `bad` rather than falling through to `None`, the conservative direction
+    to guess wrong in."""
     monkeypatch.setattr(
         statusline, "_run",
         lambda *a, **k: json.dumps({"state": "error", "total": 1}),
