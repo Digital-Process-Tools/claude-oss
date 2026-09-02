@@ -516,6 +516,25 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    **The three states below say how this tick closes, not whether the loop stops. None of them stops
    the loop.**
 
+   **A lane-level watch-channel event that arrives here is situational awareness, not a trigger
+   (#816).** `pr_opened`, `checks_failed` and anything else about a pull request the running tick
+   opened land in this session because a subagent has no MCP transport of its own to receive them
+   on — not because this session is who should act. The scheduler does not diagnose it, does not
+   push, does not comment on the pull request, and does not relay it into the sub-manager: the
+   running tick already owns that lane and is already polling it for the same fact, and two writers
+   on one branch is worse than one slower writer. **Board-level events stay the scheduler's to
+   act on** — the default branch going red, a release published, anything no running tick is
+   already watching.
+
+   **One narrow exception.** Probe the running sub-manager for plain status — a message, not an
+   event relay — when this session's own independent board read contradicts the assumption that
+   the tick is still progressing: pull requests red for an extended period with no process activity
+   in the lane worktree and no index movement. Asking costs one message and cannot collide with the
+   tick's work; assuming progress and being wrong is what stranded lane branches in #814. This is
+   not a list of event types to keep in sync — the split is by subject, board-level against
+   lane-level, and a list of event names goes stale the way #242 already records for the same shape
+   of rule.
+
 ## What ends a tick
 
 **This is the sub-manager's own declaration**, made in the `TICK-ENDS:` field of the `TICK:
