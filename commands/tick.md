@@ -376,7 +376,7 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    derived branch and worktree, and the condensed board back, freshly re-derived rather than pasted:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane <pattern> [--lane <pattern> ...]
    ```
 
    Run from the clone, before `git worktree add` — that is where `.oss.local.json` is present and
@@ -388,6 +388,11 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    **`--claim` registers this lane in the worktree-root registry (#705); omit it for any earlier
    disjointness probe on a candidate that might not be dispatched** — a probe that carries `--claim`
    leaves a phantom record behind that can block a later `--derive-held` call for hours.
+
+   **`--claim` refuses without `--lane` (#788)** — a fileless claim used to poison every later
+   `--derive-held` call this tick, for every other candidate probed after it, because the held set
+   could no longer be trusted complete while a lane with no known files was live. Pass the same
+   `--lane` patterns this candidate was already probed with.
 
    **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
    suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the
