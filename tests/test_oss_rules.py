@@ -364,18 +364,31 @@ def test_tools_index_row_is_the_seven_column_shape():
     it). The seventh column was added by #665: `requires` was declared in frontmatter by
     #570 and read by claude-jit-context 0.6.0's `jit_missing_requires()`, but nothing
     here ever emitted it, so the shipped index disagreed with the rule body it indexes.
+
+    Per-row expectations are keyed by filename, not asserted blanket across every row --
+    the tools dimension carries two indexed rules since #245 (`supertool-required.md` and
+    `merge-gate.md`), and a blanket assertion here would fail on a correctly built index
+    with a second row, which is this test's own defect wearing the opposite sign from the
+    "Named, not positional" fix a few tests below.
     """
     rows = oss_rules.index_rows("tools", oss_rules.RULES["tools"])
     assert rows
+    by_filename = {}
     for row in rows:
         fields = row.split("\t")
         assert len(fields) == 7, row
         tool, match, filename, mode, require, forbid, requires = fields
-        assert tool == "Read|Edit|Write|Glob|Grep", tool
         assert match, "empty match -- the row would refuse to load"
-        assert filename == "supertool-required.md", filename
-        assert mode == "block", mode
-        assert requires == "supertool", requires
+        by_filename[filename] = (tool, mode, requires)
+
+    assert by_filename["supertool-required.md"] == (
+        "Read|Edit|Write|Glob|Grep",
+        "block",
+        "supertool",
+    ), by_filename["supertool-required.md"]
+    assert by_filename["merge-gate.md"] == ("Bash", "remind", ""), by_filename[
+        "merge-gate.md"
+    ]
 
 
 def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():
