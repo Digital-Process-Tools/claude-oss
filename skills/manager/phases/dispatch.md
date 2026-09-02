@@ -141,6 +141,24 @@ default route it used to be. `--derive-held` and `--against` are mutually exclus
 refuses both together, because a derived exclusion and a hand-typed one beside it is exactly the
 ambiguity #558 exists to close.
 
+**A fourth state, `could-not-check` (#774), is not the same failure and does not take the same
+fallback.** `could-not-derive-the-held-set` means the *derivation itself* broke -- `gh`, a timeout, a
+missing record -- and retyping the held set by hand genuinely substitutes for it. `could-not-check`
+means the derivation ran and a specific pattern was refused by `_lane_pattern_problem` for cause:
+empty, drive-prefixed or leading-`/`, a `..` traversal, or a literal `|` (the repeatable-flag form
+spelled wrong, #766). Read `overlap_detail` (or the `overlap : COULD NOT CHECK -- N of N lane
+pattern(s) refused: PATTERN` receipt line) for which pattern and why, before doing anything else.
+
+If the refused pattern is on **your own `--lane` side**, retyping the identical string as `--against`
+gets refused identically -- the string is what is wrong, not the flag. Fix the pattern (correct the
+typo, drop the leading `/` or the `..`, split a `|`-joined value into one `--lane` per file) and
+re-run `--derive-held`. If the refused pattern is on the **derived-held side** -- a real git-tracked
+file whose own name trips the same refusal, such as a literal `|` in a filename -- there is no flag
+to fix: `--against` and `--derive-held` are mutually exclusive, so hand-typing that one file as
+`--against` refuses it the same way. Read that file's overlap by eye instead, and say in the record
+that the automated check could not vouch for it -- never dispatch on a bare `could-not-check` read as
+though it were `available`.
+
 None of this touches the other side of the check -- naming which further open issues could join an
 already-claimed lane (above). An issue's own files are still not derivable from its body (#267), so
 naming the candidate issue to check stays yours, not the script's.

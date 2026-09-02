@@ -811,20 +811,30 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_dependency_diagnostics",
         lambda *a, **kw: doctor.report("OK", "dependency diagnostics"),
     )
+    # #808: `check_auto_update` reads THIS machine's real SessionStart-updater
+    # receipt (via `plugin_update.read_receipt`), not this fixture's tree --
+    # exactly the same reason `check_mcp_channel_registration`,
+    # `check_supertool_ops` and `check_dependency_diagnostics` are stubbed
+    # above rather than measured here. Left unstubbed, this test spuriously
+    # failed on any machine where the receipt happened to say `updated`
+    # (fired recently, by this plugin or a declared dependency) -- confirmed
+    # independently by three separate lanes in the 0.18.0 cycle. The
+    # `sh_here`-derived `expected` list below already covers the *other*
+    # `check_auto_update` gap (the no-`sh` no-receipt WARN on a machine with
+    # no POSIX shell); this stub removes the real-receipt one so this test's
+    # only remaining machine-dependence is the one it already measures.
+    monkeypatch.setattr(doctor, "check_auto_update", lambda *a, **kw: doctor.report("OK", "auto-update"))
     doctor.main()
     out = capsys.readouterr().out
-    # #495 self-review: whether either of the two Windows gaps below is real is a
-    # question about THIS machine, never a table keyed on `os.name` alone -- a
-    # `windows-latest` runner ships Git Bash, and whether that puts `sh` on PATH for
-    # the process this test runs in is exactly what went unmeasured in the CI
-    # failure this replaces. Both checks (`_statusline_windows_gap`,
-    # `check_auto_update`'s no-receipt arm) key on the identical `shutil.which("sh")`
-    # signal in production, so the expected warning count is built from measuring it
-    # once here too, rather than asserting either count as a given.
+    # #495 self-review: whether the Windows gap below is real is a question about
+    # THIS machine, never a table keyed on `os.name` alone -- a `windows-latest`
+    # runner ships Git Bash, and whether that puts `sh` on PATH for the process
+    # this test runs in is exactly what went unmeasured in the CI failure this
+    # replaces. `_statusline_windows_gap` keys on the same `shutil.which("sh")`
+    # signal in production, so the expected warning count is built from measuring
+    # it once here too, rather than asserting it as a given.
     sh_here = shutil.which("sh") is not None
     expected = []
-    if not sh_here:
-        expected.append("WARN auto-update:")
     if os.name == "nt" and not sh_here:
         expected.append("WARN statusline:")
     if expected:
@@ -833,11 +843,8 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
             assert prefix in out, out
         if "WARN statusline:" in expected:
             assert "%CLAUDE_PROJECT_DIR%" in out, out
-        if "WARN auto-update:" in expected:
-            assert "not resolvable" in out, out
     else:
-        # The must-not-fire control: `sh` resolvable (every machine observed so far,
-        # including `windows-latest`'s Git Bash) means neither gap applies, and the
+        # The must-not-fire control: no Windows-no-sh gap applies, and the
         # fully-scaffolded fixture is genuinely clean.
         assert "VERDICT: ok" in out, out
 
