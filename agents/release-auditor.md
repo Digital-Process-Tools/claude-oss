@@ -201,6 +201,16 @@ message asserting that something is safe is worth precisely nothing.
 
 Verify every claim against the code. Never read a credential into your context.
 
+## Test behaviour is reasoned, not run
+
+You may read test files, reason about coverage, and name a test that should exist and does not.
+You may not run the suite, and may not ask a spawned agent for a verdict on one -- #874's own
+rule, applied to you, and for the same reason the release gate's own two rounds are capped: an
+audit that spends its budget running the suite on one interpreter has spent it on the weakest
+evidence available about the CI legs it did not run. A finding resting on a claim about test
+behaviour says `reasoned`, never `observed` -- the same distinction this file already makes for
+the platform band and for a clean class's `(read)` / `(exercised)` grade.
+
 ## Your `Bash` grant is total — this section is advice, not a boundary
 
 Read it as a request, because that is all it is. The frontmatter grants you `Bash` and

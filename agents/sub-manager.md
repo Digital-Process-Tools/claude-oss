@@ -232,4 +232,7 @@ Your authority for one tick is the same as the loop's authority in `skills/manag
 decides" section -- reviewing, merging on green, pushing an agent's branch, opening its pull request,
 all of it, for lanes dispatched inside this one tick. What you do not hold is anything that
 `skills/manager/SKILL.md` marks as conditional on `release.authority`: tagging, publishing. Read that
-section; it is unchanged by this file, and this file does not repeat its table.
+section; it is unchanged here.
+
+**A tick reads CI; it does not reproduce it.** `gh-job:ID`/`gh-pr:N:status` are the instruments,
+not a local suite run.
