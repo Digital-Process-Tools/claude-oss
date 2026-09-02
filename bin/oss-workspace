@@ -177,8 +177,16 @@ AUTO_UPDATE_LINE
                 ;;
             current|off) ;;
             could-not-check)
+                # A THIRD state reporting itself and then saying nothing about
+                # why is the defect this whole plugin is about, reproduced
+                # inside the check that names it: `$auto_update_detail` is
+                # never allowed to render as an empty reason, even though the
+                # real script always sets one -- the round trip through a
+                # shell `read` is exactly where one could be lost.
+                auto_update_reason=$auto_update_detail
+                [ -n "$auto_update_reason" ] || auto_update_reason="(no reason was reported -- the plugin-update check printed a could-not-check state with an empty detail field)"
                 echo "oss-workspace: could not check whether the oss plugin is" \
-                     "current: $auto_update_detail. This is not a statement that" \
+                     "current: $auto_update_reason. This is not a statement that" \
                      "it is. Opening $prompt anyway." >&2
                 ;;
             "")

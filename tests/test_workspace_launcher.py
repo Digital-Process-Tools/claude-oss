@@ -72,6 +72,29 @@ def _require_git():
 def _executable(path, text):
     path.write_text(text, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    if os.name == "nt" and BASH is not None:
+        # `bin/oss-workspace` runs under BASH (Git Bash), which launches this
+        # extensionless `#!/bin/sh` stub directly -- shebang execution is a
+        # shell feature, not something native Windows process creation has at
+        # all. But three call sites (#753/#810) shell out to `claude` from
+        # PYTHON instead, via `subprocess.run(shell=False)`, which uses plain
+        # Windows process creation with no shebang support and no PATHEXT
+        # search for a bare name either -- the exact mismatch fixed in
+        # `scripts/plugin_update.py`'s `_run()` and in
+        # `scripts/doctor_check_mcp_channel_registration.py`'s `which()`-then-
+        # `run()` calls. Those fixes resolve `claude` via `shutil.which()`,
+        # which on Windows only ever matches a PATHEXT-suffixed name (`.cmd`,
+        # `.bat`, `.exe`, ...) -- never the bare extensionless file this stub
+        # already is. A real Windows `claude` install ships as `claude.cmd`
+        # for the identical reason, so a `.cmd` sibling that forwards to the
+        # real (bash-launchable) stub is what makes this fixture resolvable
+        # the same way a genuine install would be, rather than a Windows-only
+        # gap nothing here could ever exercise.
+        cmd_path = path.with_name(path.name + ".cmd")
+        cmd_path.write_text(
+            '@echo off\r\n"{}" "{}" %*\r\n'.format(BASH, path),
+            encoding="utf-8",
+        )
     return path
 
 

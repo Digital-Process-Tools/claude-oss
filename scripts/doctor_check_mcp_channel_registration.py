@@ -133,11 +133,18 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     if precomputed:
         text = env.get("OSS_WORKSPACE_MCP_OUTPUT", "")
     else:
-        if which("claude") is None:
+        # The RESOLVED path, not the bare name (#753/#810's own Windows CI
+        # failure): `which()` performs the PATHEXT search that turns `claude`
+        # into `claude.cmd`, but `subprocess.run(shell=False)` on Windows does
+        # not -- it needs the extension already in hand. Asking `which()` and
+        # then still handing `run()` the bare name gets exactly the "not
+        # found" failure `which()` was called to rule out.
+        claude_bin = which("claude")
+        if claude_bin is None:
             return "could-not-ask", "claude is not on PATH"
         try:
             completed = run(
-                ["claude", "mcp", "get", server],
+                [claude_bin, "mcp", "get", server],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=20,
@@ -386,11 +393,16 @@ def channel_consumer_census_state(run=None, which=None, env=None):
         # through to a real ask rather than reporting a guess.
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
-    if which("claude") is None:
+    # The RESOLVED path, not the bare name -- see the identical comment and
+    # incident in `mcp_channel_registration_state` above; both functions had
+    # the same mismatch (ask `which()`, then still hand `run()` the bare
+    # name), and both are fixed the same way.
+    claude_bin = which("claude")
+    if claude_bin is None:
         return "could-not-ask", "claude is not on PATH"
     try:
         completed = run(
-            ["claude", "mcp", "list"],
+            [claude_bin, "mcp", "list"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=20,
