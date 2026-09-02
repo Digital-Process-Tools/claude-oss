@@ -39,6 +39,8 @@ ceiling, and a lane dispatched short says why in one of three words.
 Python 3.9 compatible.
 """
 
+import io
+import json
 import re
 import sys
 from pathlib import Path
@@ -194,6 +196,63 @@ def test_no_common_prefix_means_no_unrecognised_detection():
     declared_no_prefix = {"priority": ["urgent", "later"], "filed_by_loop": LOOP}
     answer = dispatch_rank.rank(["priority-critical"], declared_no_prefix)
     assert answer["why"] is None, answer
+
+
+def _run_main(issues, capsys, monkeypatch, declared=None):
+    """`main()` over a board on stdin, returning `(exit_code, stdout)`.
+
+    Reaches the CLI rather than the library call on purpose: the two
+    reviewers of #826 both found that `rank()` computed the unrecognised
+    priority signal and `main()` then dropped it, so a test that only calls
+    `rank()` cannot see the seam. Nothing in this file exercised `main()`
+    before -- a scoped coverage run reported its whole body uncovered."""
+    payload = {"declared": declared if declared is not None else DECLARED,
+               "issues": issues}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    code = dispatch_rank.main([])
+    return code, capsys.readouterr().out
+
+
+def test_the_cli_receipt_names_an_unrecognised_priority_label(capsys, monkeypatch):
+    """#826, found by review. The receipt a maintainer actually reads is
+    `main()`'s stdout -- the documented invocation in
+    `skills/manager/phases/dispatch.md` pipes a board through it. Computing
+    the signal in `rank()` and printing nothing is this repository's own
+    defect class moved one layer out: the typo and the silence render
+    identically to the only surface anybody looks at."""
+    code, out = _run_main([{"number": 123, "labels": ["priority-critical"]}],
+                          capsys, monkeypatch)
+    assert code == 0, out
+    assert "#123" in out, out
+    assert "priority-critical" in out, out
+
+
+def test_the_cli_receipt_stays_quiet_for_a_genuinely_unprioritised_issue(
+    capsys, monkeypatch
+):
+    """Paired must-not-fire control for the assertion above: the fix must
+    add a line to the receipt only for the unrecognised case, not decorate
+    every ordinary issue."""
+    code, out = _run_main([{"number": 124, "labels": []}], capsys, monkeypatch)
+    assert code == 0, out
+    assert "#124" in out, out
+    assert "--" not in out.split("\n")[0], out
+
+
+def test_the_cli_still_distinguishes_could_not_rank_from_a_ranked_issue(
+    capsys, monkeypatch
+):
+    """The `could-not-rank` branch already printed its `why` and must keep
+    doing so -- the new `why` on a ranked line must not have merged the two
+    renderings into one."""
+    code, out = _run_main(
+        [{"number": 125, "labels": []}],
+        capsys,
+        monkeypatch,
+        declared={"priority": [], "filed_by_loop": LOOP},
+    )
+    assert "?" in out and "could not rank" in out, out
+    assert code == 0, out
 
 
 def test_order_is_stable_within_a_rank():

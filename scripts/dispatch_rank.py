@@ -296,9 +296,15 @@ def main(argv=None):
             print("  ?  #{}  could not rank -- {}".format(
                 item.get("number"), answer["why"]))
         else:
-            print("  {}  #{}  {} / {}".format(
+            # `why` is non-None on a *ranked* issue only for #826's
+            # unrecognised-priority case. Dropping it here would compute the
+            # one signal #826 exists to surface and then render it
+            # identically to silence -- which is the whole defect, moved one
+            # layer out into the receipt a maintainer actually reads.
+            print("  {}  #{}  {} / {}{}".format(
                 answer["rank"], item.get("number"),
-                answer["author"], answer["band"]))
+                answer["author"], answer["band"],
+                "" if not answer["why"] else "  -- " + answer["why"]))
     print("{} issue(s), {} unrankable".format(len(ranked), unrankable))
     return 0
 
