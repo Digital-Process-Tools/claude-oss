@@ -193,13 +193,33 @@ triage permission — so this mechanism claims for the maintainer's own loop onl
 contributor uses to claim an issue is a separate decision (#460); it must land somewhere this same
 selection step reads, not in a channel of its own that renders an actually-claimed issue as free.
 
-**Look for one or two companions before naming a single-issue lane.** Measured across 237 lanes in
+**The lane's top issue is the best-ranked one, by the dispatch order in `SKILL.md`'s "Deciding what
+to build" (#798).** Author before priority within a band: a human ask outranks loop work of the same
+or lower band, and a blocking-class defect the loop found still outranks an ordinary ask. Compute it
+with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` rather than reading the table and
+judging, and report a `could-not-rank` rather than treating it as the bottom of the board.
+**Companions are chosen by file adjacency to that top issue, whatever their own rank** — the saving a
+bundle buys is a shared worktree, and ranking companions again would break up the bundles worth having.
+
+**Three issues per lane is the default, not the ceiling (#799).** Measured across 237 lanes in
 this repository's own transcripts (#499): a lane's cost is dominated by fixed overhead paid once
 regardless of how much work it carries — a turn-1 baseline, an orientation phase, two self-review
 spawns, a full suite run — so three issues in one lane cost 16% less per issue than one issue alone,
-and four or more is a cliff at 141 median turns and 68% worse per issue. When an issue is selected,
-check whether one or two others on the board touch the same file or module and, if so, dispatch them
-as one lane: **cap at three, never four.** This is a bundle, not a cluster — `agents/triager.md`
+and four or more is a cliff at 141 median turns and 68% worse per issue. The number was already
+right and the default was wrong: the loop picked one issue and then went looking for companions, so
+most lanes ended up carrying one. Fill to three. **Cap at three, never four**, and
+`dispatch_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
+spawn the cost is already committed.
+
+**A lane dispatched with fewer than three says why, in the handback, in one of three words.**
+`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — candidates
+exist, none shares a file or module with the top issue. `could-not-tell` — adjacency could not be
+computed. **A short lane with no reason is a defect in the tick**, and the three are a closed set on
+purpose: a free-text reason is unreadable by anything but a person, which is the defect #773 filed
+against a handback state carrying only prose. The third word earns its place — a board never measured
+for adjacency and one measured and found to have none are different facts.
+
+**A bundle is not a cluster** — `agents/triager.md`
 correctly refuses to cluster on a shared file, because a cluster claims one change fixes several
 issues and needs a shared failure to back that; a bundle claims only that the fixes share a
 worktree, and the file each one reads is exactly the right evidence for that weaker claim. A bundle

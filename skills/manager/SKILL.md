@@ -184,7 +184,7 @@ label that does not exist on the repo.
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
 | Worktree ownership + merge state | `git-worktrees`, `git-worktrees:PATH` — the raw `git worktree` listing is refused |
-| Filing | `gh-issue-create:@FILE` |
+| Filing | `gh-issue-create:@FILE` — the payload carries `labels.filed_by_loop`'s label, every time (#762, #798) |
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Correcting a published body | `gh-pr-edit:N:@FILE` — same payload shape; refuses a dropped `Closes #N` and verifies the write landed |
 | Merging | `gh-pr-merge:N:squash\|force\|cleanup` — see below; without `\|force` it previews and merges nothing |
@@ -289,6 +289,34 @@ into the probe.
   (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
   every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
   wearing a repository-wide claim's clothes.
+- **Select in the dispatch order, and compute it rather than feel it (#798).** Two axes, author
+  before priority within a band. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the
+  one place the table lives; call it rather than re-deriving it here.
+
+  | Rank | Who filed | Priority |
+  | --- | --- | --- |
+  | 1 | human | high |
+  | 2 | loop | high |
+  | 3 | human | medium |
+  | 4 | human | low, or no priority label |
+  | 5 | loop | medium |
+  | 6 | loop | low, or no priority label |
+
+  **"Loop" is an issue carrying `labels.filed_by_loop`'s label; an issue without it is a human
+  issue.** This replaces priority-only ordering rather than layering over it. The reason is a
+  measurement, not a preference: 476 issues in 20 days on this repository, 98% of them filed by the
+  loop, 68% closed the same day — so a maintainer's ask sat behind the loop's own backlog, and the
+  two maintainers no longer knew what the tool was doing.
+
+  **The order does not put every human issue above every loop one**, and rank 2 is why: a
+  blocking-class defect the loop found still beats an ordinary ask. The severity table below decides
+  what blocks a release; this decides what gets picked up first among everything that does not.
+
+  **`could-not-rank` is a real answer and must never render as rank 4.** With no declared
+  `labels.filed_by_loop`, every issue on the board is unlabelled, and reading that as "all human"
+  would promote the loop's entire backlog. The module refuses instead, and an unrankable issue sorts
+  last rather than first — the absence of a reading is not evidence of value.
+
 - **Rank by what cannot be undone**, then by who is walking away:
 
   | Class | Blocks a release? | Embargo when reported upstream? |
