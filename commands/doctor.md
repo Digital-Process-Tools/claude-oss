@@ -443,9 +443,10 @@ branch protection and repository rulesets are both checked; rulesets are filtere
 **`clone HEAD` (#763)** asks whether the clone's own HEAD sits on `default_branch` or has
 drifted onto a stale or already-merged branch -- the shape left behind by a
 `gh-pr-merge:N:squash|force|cleanup` reap that was declined and never finished by hand.
-Two informative states, `on-default` /
-`on-other` (naming the branch and how far ahead/behind it is), plus `could not tell` when
-`git` is missing, `default_branch` is unset, or `HEAD` is detached.
+Two informative states: `on-default` (names the branch and how far ahead/behind it is), and
+`on-other` (names the branch and whether its remote ref still `exists`, is `gone` -- the
+signature of a merged, reaped branch -- or is `unknown`); plus `could not tell` when `git`
+is missing, `default_branch` is unset, or `HEAD` is detached.
 
 **`worktree-reap permission` (#787)** mirrors the existing merge-permission check one level
 down: `gh-pr-merge`'s own cleanup falls back to `git worktree remove --force` and
