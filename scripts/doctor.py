@@ -2583,8 +2583,9 @@ from doctor_check_worktree_reap_permission import (
     check_worktree_remove_permission,
     check_branch_delete_permission,
 )
-# #763: moved straight into its own module per the per-check module convention
-# (#497, #630) -- see scripts/doctor_check_clone_head.py.
+# #763: a new check, written directly into its own module per the per-check
+# module convention (#497, #630) rather than added here -- see
+# scripts/doctor_check_clone_head.py.
 from doctor_check_clone_head import (
     clone_head_state,
     check_clone_head,

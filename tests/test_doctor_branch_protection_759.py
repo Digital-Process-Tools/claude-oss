@@ -103,12 +103,43 @@ def test_ruleset_covers_it_when_classic_protection_404s(tmp_path):
     `not-protected`."""
     run = _run_sequence([
         (1, "", "gh: Branch not protected (HTTP 404)"),
-        (0, '[{"id": 1, "name": "main-guard"}]', ""),
+        (0, '[{"id": 1, "name": "main-guard", "enforcement": "active"}]', ""),
     ])
     state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "protected"
     assert "ruleset" in detail
     assert len(run.calls) == 2
+
+
+def test_a_disabled_ruleset_does_not_count_as_protection(tmp_path):
+    """Self-review finding: `rulesets` list entries carry their own `enforcement`
+    field (`active` / `disabled` / `evaluate`), and a ruleset saved as disabled or
+    still in evaluate mode enforces nothing -- so a repo whose only ruleset is not
+    `active` is exactly as unprotected as one with no rulesets at all. Reading the
+    list's mere non-emptiness as `protected` would collapse those two cases the
+    same way the issue itself warns against for the 403 case, one level down.
+    Must-fire pair for the active-ruleset positive control above."""
+    run = _run_sequence([
+        (1, "", "gh: Branch not protected (HTTP 404)"),
+        (0, '[{"id": 1, "name": "draft-guard", "enforcement": "disabled"}]', ""),
+    ])
+    state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
+    assert state == "not-protected"
+    assert "main" in detail
+
+
+def test_a_mix_of_disabled_and_active_rulesets_is_still_protected(tmp_path):
+    """Not every ruleset entry has to be active -- only one does."""
+    run = _run_sequence([
+        (1, "", "gh: Branch not protected (HTTP 404)"),
+        (
+            0,
+            '[{"id": 1, "enforcement": "disabled"}, {"id": 2, "enforcement": "active"}]',
+            "",
+        ),
+    ])
+    state, _detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
+    assert state == "protected"
 
 
 # --------------------------------------------------------------- not protected

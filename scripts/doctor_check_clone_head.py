@@ -1,6 +1,11 @@
-"""#763: moved out of scripts/doctor.py per the per-check module convention
-(#497, #630) -- see the convention block at the top of doctor.py for the rule
-and scripts/doctor_modules.py for the ratchet that enforces it.
+"""#763: written directly into its own module, per the per-check module
+convention (#497, #630) that a new check does not go into `doctor.py` at all
+-- see the convention block at the top of doctor.py for the rule and
+scripts/doctor_modules.py for the ratchet that enforces it. (This is a new
+check, not a relocation of pre-existing inline code -- self-review finding:
+an earlier draft of this docstring said "moved out of scripts/doctor.py",
+which was true of `doctor_check_merge_permission.py`'s own move and false
+here.)
 
 Is the clone's current HEAD on `.oss.json`'s `default_branch`? The existing
 `clone` check (`check_directory`, still in doctor.py) only ever reports the

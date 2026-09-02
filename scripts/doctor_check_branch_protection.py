@@ -1,6 +1,11 @@
-"""#759: moved out of scripts/doctor.py per the per-check module convention
-(#497, #630) -- see the convention block at the top of doctor.py for the rule
-and scripts/doctor_modules.py for the ratchet that enforces it.
+"""#759: written directly into its own module, per the per-check module
+convention (#497, #630) that a new check does not go into `doctor.py` at all
+-- see the convention block at the top of doctor.py for the rule and
+scripts/doctor_modules.py for the ratchet that enforces it. (This is a new
+check, not a relocation of pre-existing inline code -- self-review finding:
+an earlier draft of this docstring said "moved out of scripts/doctor.py",
+which was true of `doctor_check_merge_permission.py`'s own move and false
+here.)
 
 Is the default branch actually protected, or is "merge on green" advisory?
 Gated on the same local facts `check_label_vocabulary` (still in doctor.py)
@@ -163,15 +168,29 @@ def branch_protection_state(project_dir, config=None, run=None):
         return "could-not-tell", "rulesets response for {} did not parse as JSON".format(slug)
     if not isinstance(rulesets, list):
         return "could-not-tell", "rulesets response for {} was not a list".format(slug)
-    if rulesets:
+    # Self-review finding: the list endpoint's own entries carry an
+    # `enforcement` field ("active" / "disabled" / "evaluate"), and a ruleset
+    # saved as disabled or still in evaluate mode enforces nothing -- so
+    # counting the list's mere non-emptiness as "protected" would read a repo
+    # whose only ruleset is a draft exactly like one that is genuinely covered,
+    # the same collapse this function already refuses for the 403 case, one
+    # level down. Entries that are not a dict, or omit `enforcement` entirely,
+    # are NOT counted as active -- an unrecognised shape earns no benefit of
+    # the doubt here, the same asymmetry `_classify_gh_api_status` applies to
+    # an HTTP status this function cannot place.
+    active = [
+        item for item in rulesets
+        if isinstance(item, dict) and item.get("enforcement") == "active"
+    ]
+    if active:
         return (
             "protected",
-            "{} ruleset(s) apply to {} (classic branch protection is not enabled, "
-            "but a ruleset covers it)".format(len(rulesets), branch),
+            "{} active ruleset(s) apply to {} (classic branch protection is not "
+            "enabled, but a ruleset covers it)".format(len(active), branch),
         )
     return (
         "not-protected",
-        "{} has no classic branch protection and no rulesets are configured".format(branch),
+        "{} has no classic branch protection and no active rulesets".format(branch),
     )
 
 
