@@ -7,6 +7,278 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-02
+
+### Added
+
+- **The loop selects issues in a dispatch order with two axes, author before priority within a band, rather than by priority alone** ([#798](https://github.com/Digital-Process-Tools/claude-oss/issues/798)). A human ask now outranks loop work of the same or lower band, while a blocking-class defect the loop found still outranks an ordinary ask. The reason is a measurement rather than a preference: 476 issues in 20 days on this repository, 98% of them filed by the loop and 68% closed the same day, so a maintainer's ask waited behind the loop's own backlog. `scripts/dispatch_rank.py` is the one place the six-row table lives, so the order is computed rather than felt, and `skills/manager/SKILL.md`, `skills/manager/phases/dispatch.md` and `commands/tick.md` all point at it rather than restating it. Every filing instruction in the loop's prose now names `labels.filed_by_loop`, and a test reads the shipped documents and fails when one omits it -- an unlabelled issue is a human issue under this rule, so a silent filing instruction would rank the loop's own findings above the maintainer's. `rank` refuses outright when a repository declares no `labels.filed_by_loop` or no `labels.priority`, because on such a board every issue is unlabelled and reading them all as human would promote the entire backlog confidently and wrongly; an unrankable issue sorts last rather than first, since the absence of a reading is not evidence of value.
+
+- **A developer lane carries three issues by default instead of filling up to three by accident, and a short lane says why** ([#799](https://github.com/Digital-Process-Tools/claude-oss/issues/799)). The cap was already right and the default was wrong: the loop picked one issue and then went looking for companions, so most lanes carried one. Measured across 237 lanes (#499), three issues in a lane cost 16% less per issue than one alone, and four or more is a cliff at 141 median turns and 68% worse per issue. `dispatch_rank.check_lane` refuses a fourth issue before the spawn rather than after, because past the spawn the cost is already committed, and it refuses an empty lane as its own state rather than calling it short. A lane dispatched with fewer than three now names one of `board-exhausted`, `no-adjacent` or `could-not-tell`; a short lane with no reason is a defect in the tick. The three reasons are a closed set, because a free-text reason is unreadable by anything but a person, and the third is kept separate on purpose -- a board never measured for adjacency and one measured and found to have none are different facts. Companions are still chosen by file adjacency to the lane's top issue whatever their own rank, since the saving a bundle buys is a shared worktree.
+
+- A sub-manager reaching a CI wait had none of the loop's three waiting
+  mechanisms: no `ScheduleWakeup`, no channel-event delivery (measured on
+  #816: 6/6 events reached the scheduler, 0/6 reached a concurrently-running
+  subagent), and an ambiguous "agents must not poll CI" rule that did not say
+  whether it bound the sub-manager, which is also the orchestrator for its
+  own tick. Two sub-managers resolved that gap in opposite directions on the
+  same day. `scripts/tick_handback.py` now has a fourth handback state,
+  `TICK: paused` with `WAIT-DISPATCH:`/`WAIT-OBSERVABLE:` lines reusing
+  `--wait-dispatch`/`--wait-observable`'s vocabulary (#337) -- distinct from
+  `blocked`, which reads as ending the tick's work rather than mid-merge. The
+  scheduler waits on the channel event or a short poll-timer wakeup and
+  resumes the same sub-manager with `SendMessage`, rather than spawning a
+  fresh one that has to re-derive the tick's context (#818).
+
+### Changed
+
+- `.claude/jit-context/tools/01-oss/supertool-required.md` -- the `mode: block` rule
+  on `Read|Edit|Write|Glob|Grep` that re-injects its whole body on every refused call,
+  with no `once` marker available for a block rule -- is trimmed from 90 lines / 5719
+  bytes to under 1 KB (960 bytes). It now carries only the five op substitutions and
+  the `./supertool 'ops'` / `supertool 'ops'` triage line; the `requires:` internals
+  explanation and the #524/#570 narrowing rationale moved to `00-README.md` in the
+  same layer, which the rule engine's index builder skips and which stays reachable
+  via plain `cat` (only the five file tools are blocked, not `Bash`) for exactly the
+  reader without `supertool` who needs it. `match`, `mode` and the other
+  enforcement-governing frontmatter are unchanged; `scripts/oss_rules.py`'s
+  `TOOLS_SUPERTOOL` and `TOOLS_AGENT_RULE_DECISION` constants -- what gets written
+  into every scaffolded repository -- were updated to match both files exactly (#757).
+
+- **A developer lane no longer runs the repository's whole `test_command` locally; it runs the tests for the files it changed and CI is the merge gate** ([#765](https://github.com/Digital-Process-Tools/claude-oss/issues/765)). The brief used to offer the full suite as optional-with-criteria, and the criteria were the defect rather than the wording: a lane complying with them spent 27m36s on one platform and wrote failures CI did not have into a pull request body as facts about the default branch, which was green on all three operating systems at that commit. Two lanes did it independently in one afternoon. A green local run is also not evidence about the gate a branch is merged against -- in one managed repository `test_command` covers at most 4 of 7 CI legs, and the leg that caught a real defect is not in `test_command` at all. Speed is explicitly not the argument, because it is false: the Windows leg ran over 30 minutes against that 27m36s local run. Two bounds are preserved rather than swept along. The targeted run stays mandatory, since red-before-fix is the one claim CI is structurally unable to produce. And `tests.full`'s three states are unchanged, with `could-not-run` still never folding into `not-run` -- what changed is which value a lane should report: `not-run` is now expected and a `ran` is a finding for the manager to ask about rather than a receipt to credit. The rebase clause is removed with the rest, deliberately: CI runs the rebased branch, so the gate is covered, and what the local run bought was finding it before the push rather than after.
+
+- The manager loop's own dispatch prose (`skills/manager/phases/dispatch.md`,
+  `skills/manager/SKILL.md`) now names `lane_setup.py`'s fourth
+  `availability` state, `could-not-check` (#774) -- a refused pattern, not a
+  broken derivation -- and says why it does not take the same hand-typed
+  `--against` fallback as `could-not-derive-the-held-set` does (#807).
+
+- `commands/tick.md` now states what the scheduler does with a lane-level
+  watch-channel event (`pr_opened`, `checks_failed`, anything about a pull
+  request a running tick opened) that arrives while a tick is live: it is
+  situational awareness only. The scheduler does not diagnose it, push,
+  comment on the pull request, or relay it to the sub-manager, because the
+  running tick already owns that lane and is already polling it for the
+  same fact. Board-level events (the default branch going red, a release
+  published) stay the scheduler's to act on. One narrow exception: the
+  scheduler may probe a running sub-manager for plain status when its own
+  independent board read contradicts the assumption that the tick is still
+  progressing (#816).
+
+- `skills/manager/phases/dispatch.md` now names the `resolved-to-nothing`
+  lane verdict `lane_report` has produced since #809: a candidate lane every
+  member of which was well-formed and checked, yet whose union still names
+  zero files on disk. It is documented as a reason `could-not-tell` carries
+  at the fill-count level -- never counted toward `filled` -- alongside the
+  four availability states this file already named. A new guard,
+  `tests/test_lane_verdict_docs_837.py`, extracts every verdict
+  `lane_report` can produce and fails when one of them is not named, in
+  backticks, anywhere in `dispatch.md` (#837).
+
+### Fixed
+
+- The status line's watch-channel indicator no longer renders a permanent `ch?`
+  for a repository whose derived channel name exceeds supertool's 32-character
+  cap and must therefore declare a shorter one in its own tracked
+  `.supertool.json`. Attribution now has two independent routes -- derived
+  from `.oss.json`'s `repo` (the original route), or declared in
+  `.supertool.json` and matching what is actually exported (the same evidence
+  `doctor.py` already accepts) -- kept as separate, readable reasons rather
+  than folded into one `not-attributable`, plus a fourth answer,
+  `declaration-unreadable`, for a `.supertool.json` that is there and could
+  not be read or parsed, so that case no longer renders identically to a
+  channel that genuinely belongs to someone else's fleet. A `.supertool.json`
+  whose `ops` key is present and is not an object now reads
+  `declaration-unreadable` too, matching `doctor.py`'s own split between a
+  repository that declares nothing and a file somebody edited and broke (#754).
+
+- `scripts/tick_handback.py`'s `TICK: completed` state now requires a
+  `TICK-ENDS:` line naming which of *What ends a tick*'s three states applied
+  -- `work-started`, `blocked` or `nothing-left` -- the same way `TICK: blocked`
+  already requires `BLOCKER:` and `TICK: could-not-run` already requires
+  `REASON:`. Before this, the tick-ending state the scheduler's continue-or-wait
+  decision (`commands/tick.md` step 7) reads lived inside `completed`'s free
+  paragraph or nowhere; a `completed` with no `TICK-ENDS:` line is now
+  `could-not-classify` rather than a silent, unstructured default (#773).
+
+- `agents/developer.md`'s changelog-fragment assembler lookup now says a
+  genuine third state at the point it used to have only two: neither
+  `.oss/assemble_changelog.py` nor `scripts/assemble_changelog.py` existing is
+  not the same claim as "this repository has no fragment checker" --
+  `oss_rules.assembler_path()` only ever looks at those two canonical
+  locations, and a repository that wires the assembler somewhere else (a
+  real instance: `.github/scripts/assemble_changelog.py`) has one running in
+  CI that this lookup will never find. The brief now tells the agent to grep
+  `.github/workflows/` for an invocation before concluding no-assembler, and
+  names a distinct could-not-resolve state for "a workflow invokes it but the
+  script cannot be found in the tree" so that case is reported rather than
+  silently rendered as a clean skip (#784).
+
+- `agents/developer.md`'s destination rule for the report and pull request
+  payload now says the same discriminators (branch, timestamp) are required
+  for any staged intermediate too. The scratchpad a session works from is
+  shared across every concurrently running lane in a fleet -- mandated by
+  this loop, not an edge case -- so a fixed filename there is a real
+  collision: one lane's staged intermediate was silently overwritten by a
+  second lane writing to the same fixed scratchpad path, caught only because
+  a downstream schema validator rejected the wrong content's shape (#785).
+
+- `lane_setup.py --claim` now refuses when called without `--lane`, the same
+  shape `fleet_label.py` already uses to refuse an incomplete label bundle.
+  The documented dispatch-time call used to write a fileless lane record,
+  indistinguishable at write time from a well-formed one, which then made
+  every later `--derive-held` call this tick unable to trust the held set
+  complete while that record stayed live. `commands/tick.md` and
+  `skills/manager/phases/dispatch.md` now pass `--lane` on the dispatch
+  claim (#788).
+
+- `commands/release.md` gate 3 now resolves the installed plugin root the same
+  way `commands/tick.md` step 1 already does for `doctor.py`, and passes it
+  explicitly as `--plugin-root` to `checklist_skew.py` and `ranking_table.py`.
+  The bare `${CLAUDE_PLUGIN_ROOT}` interpolation the recipe used before left
+  both scripts to fall back to `os.environ.get("CLAUDE_PLUGIN_ROOT")`
+  internally -- a real shell variable that can be unset even in a session that
+  just substituted the literal path into the command text -- degrading
+  `checklist_skew.py` to `could-not-tell` where `not-applicable` (or the true
+  state) was one flag away (#789).
+
+- `scripts/lane_setup.py`'s `--release` arm dropped `oss_config.load`'s `problems` list in exactly
+  the case #791 did not fix (#803). `worktree_root` only ever lives in `.oss.local.json`, so a
+  present-but-unparseable local config still returns a non-None `config` -- with the real parse
+  error sitting in `problems` -- and the old `else` arm dropped that list the same way the
+  pre-#791 code did, rendering the benign "no registry to release from" sentence over a genuine
+  read failure. `main` now re-reads `.oss.local.json` directly to ask the one question this arm
+  needs answered -- did the local file itself fail to parse -- rather than scanning the merged
+  `problems` list for read-failure prose: an earlier version of this fix did exactly that and
+  false-positived on an unrelated project-config advisory (`test_command_problem`'s own message)
+  that happens to share the substring "could not", blocking a release whose `worktree_root` was
+  perfectly known.
+
+- `scripts/lane_setup.py`'s `record_lane` crashed with `AttributeError: 'list' object has no
+  attribute 'get'` on a registry file holding valid JSON that is not an object -- a regression
+  introduced by #786's own review round, which hoisted the previous record's read out of its
+  `try`/`except` guard without carrying the one case that guard covered (#804). Restored: a record
+  whose previous read is not a dict is now treated the same as a read that failed outright, and
+  `record_lane` returns its documented three-state receipt instead of a traceback.
+
+- `oss_state.py`'s `--tick-cost-first` refusal now recognises a session id that
+  differs only in surrounding whitespace: `tick_cost` already normalised the
+  session before writing a record, but `_session_tick_cost_floor`'s history
+  lookup compared against the caller's raw, unstripped `--tick-cost-session`
+  value, so a whitespace-padded session id found no matching history and a
+  resumed session (or a copy-pasted `--tick-cost-first`) could manufacture a
+  false cost floor with the refusal silently not firing (#805).
+
+- `scripts/tree_snapshot.py`'s `VERDICT:` line no longer lets a multi-line
+  `git` stderr string (an ambiguous `rev-parse HEAD` on a repo with no
+  commits appends a `Use '--' to separate...` hint on its own line) land a
+  second raw line at column 0 of the receipt `agents/developer.md` reads.
+  Reasons are folded to one line the same way `oss_state._receipt_line`
+  and `lane_setup._one_line` already fold theirs (#806).
+
+- `tests/test_doctor_inprocess.py`'s must-not-fire control now stubs
+  `check_auto_update` the same way its three neighbors already are, so the
+  test no longer spuriously fails on a machine whose real SessionStart
+  auto-update receipt happens to say `updated` (#808).
+
+- `lane_setup.py`'s disjointness check no longer reports `available` for three
+  false-negative shapes: a bare directory literal (`presets/gitlab/`) is now
+  expanded to the files under it before comparing, the same way a glob is
+  (`(dir-expanded)` beside `(literal)`/`(glob-resolved)` in the receipt); a
+  lane that resolves to zero files (an empty glob, `**` not being the
+  recursion this matcher implements, or an empty directory) now reads its own
+  `resolved-to-nothing` verdict instead of sharing `available` with a lane
+  genuinely checked and found disjoint; and a comma-separated multi-pattern
+  `--lane` value is now split into members and each one resolved
+  independently, so one non-matching member no longer collapses every other
+  member's real matches to nothing (#809).
+
+- `agents/sub-manager.md`'s report-back trigger no longer names dispatching a
+  lane, by itself, as a state that ends a tick -- it contradicted
+  `commands/tick.md`'s "What ends a tick" section, which says the opposite
+  ("the tick continues; do not arm a wakeup and wait on it"), and following
+  the wrong instruction left three lane branches committed locally with no
+  remote ref and no open pull request. The brief now states the rule
+  positively: the push, review and merge-on-green authority it grants for a
+  lane dispatched this tick is unchanged by having already dispatched it, and
+  "your context is discarded the moment you report back" is reconciled to
+  mean the handback, never the moment a lane is dispatched (#814).
+
+- A sub-manager could read `commands/tick.md` step 3's "finishing beats
+  starting" as outranking `skills/manager/SKILL.md`'s "waiting on CI is not a
+  reason to stop working," and block its own turn on `gh run watch` before
+  dispatching developer lanes it had already selected -- burning a whole CI
+  run's duration with zero developer agents running. Step 3 now says
+  explicitly that a wait is not an act and does not outrank dispatch:
+  everything that can run concurrently with a wait is started before the
+  wait, and polling is preferred over a blocking `gh run watch` (#820).
+
+- `tests/test_the_spine_and_dispatch_state_the_same_order` searched for the
+  words "human" and "loop" anywhere in two whole documents rather than
+  comparing the dispatch table's own content, so it could not fail for the
+  drift it claimed to guard against. It is replaced by a test that extracts
+  `skills/manager/SKILL.md`'s six-row table and asserts it against
+  `dispatch_rank.ROWS`, the module the table transcribes, with a positive
+  control fixture proving the comparison has teeth, and a companion test that
+  `skills/manager/phases/dispatch.md` still points at the spine rather than
+  restating the table (#825).
+
+- `dispatch_rank._band` used to read an unrecognised priority label -- a
+  typo, or a label renamed on the tracker without `.oss.json` following it --
+  identically to an issue carrying no priority label at all, both landing on
+  `band: low` with `why: None`. An issue whose label shares the repository's
+  declared priority spellings' own prefix but matches none of them now
+  ranks the same as before (still the weakest band, still fully rankable on
+  the author axis) but carries a non-`None` `why` naming the unrecognised
+  spelling, so a maintainer can tell a typo from silence without re-deriving
+  the board -- and `dispatch_rank.py`'s own CLI receipt, the surface the
+  documented `skills/manager/phases/dispatch.md` invocation actually pipes a
+  board through, now prints that `why` beside the ranked line rather than
+  computing it and dropping it. A label sharing no such prefix, and a board
+  whose declared spellings share no prefix at all, are both left alone --
+  there is no signal to read the second case from, and inventing one would
+  be exactly the hardcoded-fact failure this module already refuses elsewhere (#826).
+
+- `dispatch_rank.py`'s CLI no longer crashes on Windows when an issue's label or
+  title carries a character the console's codepage cannot encode: stdout and
+  stderr now fall back to `backslashreplace` the same way every other CLI under
+  `scripts/` does, instead of raising `UnicodeEncodeError` after the ranking has
+  already been computed. Separately, stdin is now read as UTF-8 regardless of
+  the console codepage -- `json.load(sys.stdin)` used to decode with it, so a
+  valid UTF-8 payload containing a non-ASCII character could raise
+  `UnicodeDecodeError`, which the existing `except ValueError` folded into "stdin
+  is not JSON" even though the input was JSON and simply misread. That case now
+  reports its own "could not be decoded as UTF-8" reason instead (#834).
+
+- `lane_setup.py`'s comma-separated `--lane` values now strip whitespace from
+  each split member. A human-typed list like `a.md, b.md` used to carry the
+  space after the comma straight into the literal path (`' b.md'`), so it
+  matched nothing on disk and a sibling lane holding the same file printed
+  `overlap: none` for a collision that was never actually checked (#835).
+
+- `lane_setup.py`'s comma-separated `--lane` values no longer split a real
+  filename that itself contains a comma. A path like `docs/comma,name.md` is
+  legal on every platform this loop's CI runs, and used to be split apart
+  into two members naming nothing on disk; the unsplit raw value is now kept
+  as one member whenever it already names an existing file or directory,
+  and only split otherwise -- preserving the comma-list convenience for
+  paths that do not exist yet (#836).
+
+- `dispatch_rank.py`'s unrecognised-priority-label detection no longer flags an
+  unrelated label as a probable typo of a declared spelling just because it
+  shares a very short common prefix -- with spellings like `p1`/`p2`/`p3`,
+  `os.path.commonprefix` returns `'p'`, and any word starting with `p` (e.g.
+  `python`) was reported as a mistyped priority. A candidate now also has to
+  have a plausible suffix length, derived from the declared spellings
+  themselves rather than a fixed constant, before it is reported (#838).
+
+- `agents/sub-manager.md`'s report-back heading said "three states, and a
+  fourth this tool computes for you" while the body under it has named four
+  producible shapes (`completed`, `blocked`, `could-not-run`, `paused`)
+  since #831 added `paused`. `commands/tick.md` was updated to "Seven
+  answers, not three" in the same release; only this file's heading was
+  missed. Now reads "four states, and a fifth this tool computes for you"
+  (#839).
+
 ## [0.18.0] - 2026-09-02
 
 ### Added
@@ -6774,7 +7046,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.19.0
 [0.18.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.16.0

@@ -560,89 +560,109 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `160e77b`, the commit `v0.18.0` was cut from.** The paragraphs below this one
-still describe `v0.17.0` and have not been re-derived against the delta since — every specific
-number, audit-round count and field-probe reading further down in this section is that prior
-release's, not this one's. This one paragraph was updated on its own, mid-tick, because
-`tests/test_claude_md_currency.py` only checks a release-being-prepared marker against `changelog.d`'s
-own pending fragments, and three unrelated pull requests carrying ordinary fragments were the first
-thing to notice the marker had gone stale — the full re-derivation this section's own rule calls for
-did not happen when `v0.18.0` was cut, and is tracked at #815 rather than attempted here. **Re-derive
-this at each release rather than editing it** is the rule this paragraph is the disclosure of having
-missed, not a substitute for following it. The version it replaces was measured at `ad38b93`; before
-that at `27d2f15`, `d2a2968`, `48bb420`, `990d0da`, `bce0362`, `53e2d0c`, `805debb`, `c570977`,
-`d4c12c1`, `7690fd0`, `01212b0` and `e8e75b2`.
+**Measured at `e241c5c`, the commit `v0.19.0` was cut from — but only in part, and the part is
+named.** The delta counts, the two audit rounds and the lane findings below were re-derived against
+`v0.18.0..e241c5c` in the session that cut this release. **Everything from `### The reach probe`
+onward was not** — the field probe, the owned-files table, the two installs and the `doctor` run are
+still `v0.17.0`'s readings, carried unchanged through two releases now, and each of those headings
+says so where it stands. That is a smaller gap than `v0.18.0` shipped with, which re-derived nothing
+and disclosed it in this paragraph alone (#815, still open and now two releases old). **Re-derive
+this at each release rather than editing it** remains the rule; this paragraph is a disclosure of
+following half of it. The version it replaces was measured at `160e77b`; before that at `ad38b93`,
+`27d2f15`, `d2a2968`, `48bb420`, `990d0da`, `bce0362`, `53e2d0c`, `805debb`, `c570977`, `d4c12c1`,
+`7690fd0`, `01212b0` and `e8e75b2`.
 
-**The two delta counts disagree by one again, and the cause is the same shape as last round's
-without being the same commit.** 19 commits against 18 merged pull requests. The gap is `2cd8a1f`,
-`CLAUDE.md: name v0.16.0 in the currency marker's own paragraph` — a direct push with no pull
-request behind it. **Every trailing `(#N)` in the range was checked against the issues API rather
-than read as a pull request number**: 18 of 18 returned `pull_request != null`, and **zero** were
-issues. That check exists because the previous round found one that was — `#679`, cited in a commit
-message — and reconciled it by hand. This round the same check came back clean, which is the answer
-it is supposed to give most of the time and is worth recording as such.
+**The two delta counts agree exactly, for the first time in three rounds.** 17 commits against 17
+merged pull requests, and `gh-prs:merged-since=v0.18.0` reports the count `[EXACT]` with its own
+cross-check `RAN and AGREED` on 17 PR references in the range. The previous two rounds each
+disagreed by one, both times on a direct push to `main` that carried no pull request — and both
+times that push was an edit to this very section's currency marker. This round the marker was edited
+inside the release commit instead, which is why there is nothing to reconcile: the fix for a
+recurring one-commit discrepancy was to stop making the commit that caused it.
 
-`git rev-list --count --merges v0.16.0..HEAD` returns `0`, unchanged: this repository squash-merges,
+**Every trailing `(#N)` in the range was checked against the issues API rather than read as a pull
+request number**: 17 of 17 returned `pull_request != null`, **zero** were issues. That check exists
+because a round two releases ago found one that was — `#679`, cited in a commit message — and
+reconciled it by hand. Clean again, recorded as such rather than passed over.
+
+`git rev-list --count --merges v0.18.0..HEAD` returns `0`, unchanged: this repository squash-merges,
 so a merged pull request is an ordinary single commit and no merge commit exists to intersect
 against.
 
 ### This release was gated twice, and both rounds are on the record
 
-Unlike `v0.16.0`, whose round accounting was got wrong mid-flight, this one ran both rounds in one
-session with honest tokens: **round one under `rel-0170-a03e1f5eb8`**, **round two under
-`rel-0170-r2-f8452585e3`**. The second token says `r2`. The previous release's said `r1` for a
-round-two audit and was deliberately not reissued, on the reasoning that an identifier which changes
-mid-flight breaks the attribution check it exists to serve — that reasoning was right and the cost
-of it was a misleading string in the record, which is what this round avoided by minting the second
-token before the second dispatch rather than reusing the first.
+Both rounds ran in one session with distinct tokens: **round one under `rel-0190-a4131fc593`**,
+**round two under `rel-0190-r2-fde40b4075`**. Both completions echoed their own token, so both were
+attributed; neither arm for an unattributed or duplicated completion was reached.
 
-- **Round one: 4 findings, none in a blocking row, `0 of 4 classes read but not exercised`.** Filed
-  as `#738`, `#739`, `#740`, `#741`. Round-one findings stop the tag, so they did: all four were
-  fixed and merged — `#745`, `#747`, `#749`, `#750` — before round two was dispatched.
-- **Round two: 1 finding, not in a blocking row, `0 of 4 classes read but not exercised`.** Filed as
-  `#752`; the tag moved over it, which is what round two is for.
+- **Round one: 6 findings, all ranked `misreports`, none in a blocking row,
+  `0 of 4 classes read but not exercised`.** Filed as `#834`-`#839`. Round-one findings stop the tag,
+  so they did: all six were fixed in three file-disjoint lanes and merged — `#840`, `#841`, `#842` —
+  before round two was dispatched.
+- **Round two: 2 findings, both `misreports`, `0 of 4 classes read but not exercised`.** Filed as
+  `#846` and `#847`; the tag moved over them, which is what round two is for.
 
-**`0 of 4` twice in one release, and three times running counting the previous release's round
-two.** The brief asked for controls rather than reads in both rounds, and both delivered. That is
-now a practice rather than an observation — but it is a practice held up by the brief, not by
-anything in the checklist, so it survives exactly as long as somebody keeps asking for it.
+**`0 of 4` twice in one release, and four rounds running.** Still held up by the brief asking for
+controls rather than reads, and still by nothing in the checklist — so it survives exactly as long as
+somebody keeps asking for it, which is now a longer streak resting on the same single thread.
 
-**The audit's blast radius was bounded by measurement rather than by the version number, in both
-rounds.** `checklist_skew.py` reported `differs` (installed `0.15.0`, this tree `0.16.0`) throughout,
-and both auditors resolved it the same way: `agents/auditor.md` and `agents/release-auditor.md` were
-hashed across the copies and found byte-identical, so the checklist that ran was this tree's. Round
-two went further and re-hashed `agents/developer.md`'s platform-band section, because `#750` had
-edited that file **after** round one took the same measurement — the brief asked for it and the
-answer was still identical (`0c68da7f`, 2,039 B). A measurement inherited across a diff that touched
-its subject is the shape that was avoided there.
+**Round two's ranking of its second finding is the better record of this gate working than either
+count.** `tick_handback.py` lets a second `TICK-ENDS:` win silently where the sibling `TICK:` header
+refuses two. The auditor considered **`forges`** — which blocks a release unconditionally — and
+declined it, because it could not establish a route by which somebody else's text reaches a
+handback, only the mechanism that would carry it. It ranked `misreports`, said so, and named the one
+fact that would move it into the blocking row. A gate that stretches a finding into the nearest row
+that will take it is a gate that has stopped ranking; this is the opposite, on the round where
+ranking it upward would have stopped the tag.
 
-### The lanes found more than the audit did, and two of the three were defects in the audit's own fixes
+**The audit's blast radius was bounded by measurement, and round two refused an inherited one.**
+`checklist_skew.py` read `matches` (installed `0.18.0`, this tree `0.18.0`), with three `differs`
+rows underneath it — `skills/manager/SKILL.md`, `agents/developer.md` and
+`skills/manager/phases/dispatch.md` — which is why the state name alone is never the answer. Both
+auditor definitions hashed byte-identical across the copies, and `ranking_table.py` extracted
+byte-identical output (1,563 B) from both roots, so the table ranked against was this tree's. Round
+two then re-took the whole measurement rather than reading round one's, because `5d86881` had edited
+`dispatch.md` **inside the range** after round one hashed it — and re-anchored the platform band by
+content rather than by line number, since the line numbers had moved under it. That is the same
+discipline the previous release recorded, applied without being asked twice.
 
-Three issues were filed from the four fix lanes' own review spawns rather than from either audit
-round: `#746`, `#748`, `#751`. Two of them are defects **inside the round-one fixes**, caught before
-CI saw them:
+### A lane's own reviewer caught the fix for a finding reintroducing that finding
 
-- **`#746`** is the sharpest. `#745` added a byte-order-mark check ahead of the NUL test so a UTF-16
-  file stops being called binary. Its own auditor then measured that **BOM-less UTF-16 decodes clean
-  as UTF-8** — every byte of ASCII-content UTF-16, character and paired NUL alike, is independently a
-  legal single-byte codepoint — so it reaches neither the new BOM check nor the NUL test, and returns
-  `not-matched` with `skipped_files` **and** `unreadable_files` both empty. Worse than the case being
-  closed, which at least left the path visible in one list. The fix's own prose had claimed
-  otherwise; the lane corrected the prose and pinned the real behaviour with a test.
-- **`#748`** is this repository's defect class landing inside the fix for this repository's defect
-  class: `ops_in_op_table` returns `[]` both for a file with no op table and for a heading constant
-  that has drifted, so a reworded heading silently narrows the derived set from 22 back to 18 and the
-  check still reports `present`.
-- **`#751`** is the fifth instance of the unquoted-`${CLAUDE_PLUGIN_ROOT}` class, found by the `#741`
-  lane sweeping past its own file into `handback.md`.
+The sharpest thing in this release is inside `#842`, the lane fixing round one's `#838`
+(`os.path.commonprefix` over declared priority spellings calling an unrelated label a probable typo).
+Its first commit replaced the constant with a floor derived from the **longest** declared suffix. Its
+own spawned reviewer then measured two defects in that:
 
-**That is the argument for the two-layer arrangement, stated from one release's evidence rather than
-from principle.** The release auditor reads the delta as a whole and found what no per-PR review saw;
-the lanes' own spawns read one diff each, deeply, and found what the audit's breadth could not reach.
-Neither layer subsumes the other, and this round is the first where that can be said with counts:
-**5 findings from two audit rounds, 3 from four lane reviews.**
+- a repository declaring exactly **one** priority spelling has a suffix length of 0 for it, so the
+  floor could never be exceeded and typo detection was **silently disabled entirely** — the filed
+  defect's own class, one layer down, in the fix for it;
+- declared spellings of very different lengths let a long spelling's suffix set a floor generous
+  enough to flag `python` again, which is **`#838` reappearing inside `#838`'s fix**, reached through
+  a second declared spelling.
+
+Both were fixed in a second commit comparing against the **nearest** declared spelling with a floor
+of 1, red and green shown for each.
+
+`#843` was filed from two lanes at once, and that is the other half of the argument. `#840`'s
+reviewer found the disk-state heuristic in `#836`'s fix has a residual — a glob plus a comma, a
+not-yet-existing path, and a `PermissionError` degrading into a bogus split rather than into a third
+state. `#841`'s reviewer, working an entirely different pair of files, found the same class one
+function away: two enumerations in `lane_setup.py` that still predate `resolved-to-nothing`. It
+declined to widen its lane to fix them and reported them instead, which is why they were not lost.
+One issue, because one mechanism.
+
+**The two-layer arrangement, stated from this release's counts:** **8 findings from two audit rounds,
+3 from three lane reviews** — and two of the three lane findings were defects *in the audit's own
+fixes*, caught before CI saw them. The release auditor reads the whole delta and sees composition; a
+lane's reviewer reads one diff and sees depth. Neither subsumes the other, and this is the second
+release running where the lanes found defects the audit had just created.
 
 ### The reach probe: eleven repositories, fifty-five probes, and the field did not move at all
+
+> **NOT RE-DERIVED for `v0.19.0`.** Every number in this subsection, and in the three that follow it,
+> was measured at `ad38b93` for `v0.17.0` and has now been carried through two tags without being
+> re-run. It is a reading, and it is a reading with a date on it — not a statement about the field
+> today. `#815` is where re-deriving it is tracked. Read nothing here as current.
 
 `gh repo list Digital-Process-Tools --limit 100` returns **eleven** repositories **in that one
 GitHub organisation**, unchanged, and each of five artifacts was probed in every one — **55 probes**,
@@ -720,11 +740,12 @@ rather than on a repo somebody maintains through it. That stood at `v0.3.0` and 
 since, and it is re-earned rather than inherited here. **The surface is thin because it has barely
 been run, not because it is sound.**
 
-What changed since the previous round: this is the first release cut with both audit rounds run in
-one session under correct tokens; the first where the fix lanes found more defects in the audit's own
-fixes than the second audit round found in the whole delta; the field did not move in any of sixteen
-cells while two of our renders did; and `#289` returned by the mechanism the previous round predicted
-for it.
+What changed since the previous round: the delta counts agreed exactly for the first time in three
+rounds, because the direct push that used to cause the discrepancy was folded into the release commit;
+round two re-took a provenance measurement rather than inheriting one across a diff that had touched
+its subject; a lane's own reviewer caught the fix for a round-one finding reintroducing that finding;
+and this section was re-derived in half, with the un-re-derived half marked where it stands rather
+than disclosed only at the top.
 
 `tests/test_claude_md_currency.py` still cannot check that a claim above is true, and still does not
 try — and at the moment this section was rewritten it reported that in as many words, skipping with
