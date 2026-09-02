@@ -14,6 +14,16 @@
 
 ---
 
+## From the same workshop
+
+Four plugins, one team, each does one thing. This one and three siblings:
+
+- [claude-remember](https://github.com/Digital-Process-Tools/claude-remember): memory across sessions. Saves, compresses through Haiku, reloads at the next start.
+- [claude-jit-context](https://github.com/Digital-Process-Tools/claude-jit-context): project knowledge that loads only when the prompt, the file or the tool matches it.
+- [claude-supertool](https://github.com/Digital-Process-Tools/claude-supertool): batched file and tracker ops. One call instead of seven, and a refusal instead of a wrong answer.
+
+All four install from one marketplace: `/plugin marketplace add Digital-Process-Tools/claude-marketplace`.
+
 ## The problem
 
 A maintainer loop written as prose gets copied between repos, and the copies drift. Fixing a triage
