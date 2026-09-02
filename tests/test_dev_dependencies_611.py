@@ -32,6 +32,9 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "tests.yml"
 README = REPO_ROOT / "README.md"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
+#: #795 moved the Development section -- install line and test command together --
+#: out of README.md and into docs/development.md.
+DEVELOPMENT_DOC = REPO_ROOT / "docs" / "development.md"
 
 _COMMENT_OR_BLANK = re.compile(r"\A\s*(#.*)?\Z")
 _PACKAGE_NAME = re.compile(r"\A([A-Za-z0-9][A-Za-z0-9._-]*)")
@@ -103,12 +106,15 @@ def test_declared_set_covers_everything_ci_actually_installs():
 
 
 def test_readme_states_the_install_line_beside_the_test_command():
-    body = README.read_text(encoding="utf-8")
+    """#795 moved this whole section to docs/development.md; the proximity fact
+    travels with it rather than staying pinned to README.md."""
+    body = DEVELOPMENT_DOC.read_text(encoding="utf-8")
     assert "requirements-dev.txt" in body
     install_at = body.index("requirements-dev.txt")
     command_at = body.index("python3 -m pytest tests/ -q")
     assert abs(body.count("\n", 0, install_at) - body.count("\n", 0, command_at)) <= 5, (
-        "the install line and the test command are not near each other in README.md"
+        "the install line and the test command are not near each other in "
+        "docs/development.md"
     )
 
 

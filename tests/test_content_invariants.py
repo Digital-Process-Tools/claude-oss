@@ -1624,34 +1624,40 @@ def _reload_unmet(text):
     return {name for name, anchor in RELOAD_ANCHORS if anchor not in folded}
 
 
-def test_the_readme_install_step_names_the_reload():
-    readme = REPO_ROOT / "README.md"
-    assert readme.is_file(), "README.md is gone -- this check would vacuously pass"
-    unmet = _reload_unmet(readme.read_text(encoding="utf-8"))
-    assert not unmet, "README.md's install step does not carry the reload: " + repr(sorted(unmet))
+# #795 moved the install step -- reload sentence, #140 receipt and all -- out of
+# README.md and into docs/install.md, alongside the rest of the install material it
+# sits beside. The reload block itself is unchanged; only which file carries it is.
+INSTALL_DOC = REPO_ROOT / "docs" / "install.md"
+
+
+def test_the_install_step_names_the_reload():
+    doc = INSTALL_DOC
+    assert doc.is_file(), "docs/install.md is gone -- this check would vacuously pass"
+    unmet = _reload_unmet(doc.read_text(encoding="utf-8"))
+    assert not unmet, "docs/install.md's install step does not carry the reload: " + repr(sorted(unmet))
 
 
 RELOAD_BLOCK_START = "**Then run `/reload-plugins`"
 RELOAD_BLOCK_END = "Installing pulls in"
 
 
-def test_the_reload_check_fires_on_the_readme_with_the_new_block_removed():
+def test_the_reload_check_fires_on_the_install_doc_with_the_new_block_removed():
     """Positive control against the real file, not a fabricated line.
 
     A one-line "before" fixture cannot show that an anchor is carried by the new text
-    rather than by something else already in README.md -- and one of these anchors was
+    rather than by something else already in the doc -- and one of these anchors was
     a bare "agent", which the unfixed README satisfied twice over. Cutting the added
     block out of the current file and requiring every anchor to go unmet is the claim
     that actually matters: the install step is where this lives, and deleting it is
     visible.
     """
-    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    text = INSTALL_DOC.read_text(encoding="utf-8")
     start = text.index(RELOAD_BLOCK_START)
     end = text.index(RELOAD_BLOCK_END, start)
     without = text[:start] + text[end:]
     assert _reload_unmet(without) == {name for name, _ in RELOAD_ANCHORS}, (
         "an anchor survives deleting the whole install-step block, so it is satisfied "
-        "by prose elsewhere in README.md and checks nothing"
+        "by prose elsewhere in the install doc and checks nothing"
     )
     # Must-fire half: prose carrying every anchor comes back clean, so the assertion
     # above is about the text rather than about a matcher that matches nothing.

@@ -20,6 +20,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / "README.md"
+INSTALL_DOC = REPO_ROOT / "docs" / "install.md"
+COMMANDS_DOC = REPO_ROOT / "docs" / "commands.md"
 
 
 def _read():
@@ -29,18 +31,34 @@ def _read():
 # --------------------------------------------------------------------------- #
 # The install command appears once
 # --------------------------------------------------------------------------- #
+#
+# #795 moved the launcher install material -- including this command -- out of
+# README.md and into docs/install.md, to stop the README from carrying every
+# decision's own receipt. The "appears once" guard travels with it: the command
+# still must not be duplicated, just no longer in this file. README.md itself
+# is checked for zero occurrences, so the command cannot quietly leak back into
+# the trimmed file the way #451 originally found it duplicated.
 
 def _ln_sf_count(text):
     return len(re.findall(r"ln -sf", text))
 
 
-def test_the_install_command_appears_once_in_the_real_file():
-    text = _read()
-    assert README.is_file(), "README.md is gone -- this check would vacuously pass"
+def test_the_install_command_appears_once_in_docs_install():
+    assert INSTALL_DOC.is_file(), "docs/install.md is gone -- this check would vacuously pass"
+    text = INSTALL_DOC.read_text(encoding="utf-8")
     count = _ln_sf_count(text)
     assert count == 1, (
-        "README.md contains {} occurrence(s) of `ln -sf`, not 1 -- the launcher install "
-        "command is meant to appear exactly once (#451).".format(count)
+        "docs/install.md contains {} occurrence(s) of `ln -sf`, not 1 -- the launcher "
+        "install command is meant to appear exactly once (#451).".format(count)
+    )
+
+
+def test_the_install_command_does_not_leak_back_into_the_trimmed_readme():
+    count = _ln_sf_count(_read())
+    assert count == 0, (
+        "README.md contains {} occurrence(s) of `ln -sf` -- #795 moved the launcher "
+        "install command to docs/install.md; it should not reappear in the trimmed "
+        "README.".format(count)
     )
 
 
@@ -159,8 +177,12 @@ def _doctor_cell(text):
     return match.group(1).strip() if match else None
 
 
+# #795 moved the whole Commands table out of README.md and into
+# docs/commands.md, so the table these two checks read now lives there.
+
 def test_the_doctor_row_is_found_at_all():
-    cell = _doctor_cell(_read())
+    assert COMMANDS_DOC.is_file(), "docs/commands.md is gone -- this check would vacuously pass"
+    cell = _doctor_cell(COMMANDS_DOC.read_text(encoding="utf-8"))
     assert cell is not None, "the /oss:doctor row was not found -- this check would vacuously pass"
 
 
@@ -170,7 +192,7 @@ def test_the_doctor_cell_is_no_longer_a_release_note():
     just its mechanism. The bar is that the ~4600-byte, ~700-word cell #451 was filed
     against is gone; the detailed mechanism lives in `commands/doctor.md`.
     """
-    cell = _doctor_cell(_read())
+    cell = _doctor_cell(COMMANDS_DOC.read_text(encoding="utf-8"))
     assert cell is not None
     assert len(cell) < 1200, (
         "the /oss:doctor cell is {} bytes; #451 was filed against one nearly 4x that. "
