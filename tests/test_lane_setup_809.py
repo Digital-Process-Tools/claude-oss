@@ -205,3 +205,62 @@ def test_control_plain_against_mode_real_disjoint_pair_still_reads_resolved(tmp_
     report = lane_setup.lane_report(tmp_path, ["commands/tick.md"], ["scripts/lane_setup.py"])
     assert report["overlap_state"] == "resolved"
     assert report["overlap"] == []
+
+
+# --- _expand_directory must not silently swallow an unreadable subtree ----------
+
+
+def test_expand_directory_raises_rather_than_swallowing_an_unreadable_subtree(tmp_path):
+    """os.walk with no onerror silently skips a PermissionError'd subtree by
+    default -- the identical swallow CLAUDE.md's own trap warns Path.rglob
+    commits, just via a different stdlib entry point. _expand_directory must
+    re-raise so the caller's `except OSError` turns this into `refused`
+    rather than a false `glob-no-match`/`dir-expanded` reporting fewer files
+    than are really there."""
+    root = tmp_path
+    (root / "guarded").mkdir()
+    (root / "guarded" / "denied").mkdir()
+    (root / "guarded" / "denied" / "secret.py").write_text("x\n")
+    import os as _os
+    _os.chmod(root / "guarded" / "denied", 0)
+    try:
+        st = (root / "guarded" / "denied" / "secret.py").stat if False else None
+        # Confirm the deny actually takes on this platform/filesystem before
+        # asserting on it -- root, some filesystems, and Windows chmod all
+        # ignore or only partially honour this bit (CLAUDE.md's own
+        # permission-fixture rule).
+        try:
+            list((root / "guarded" / "denied").iterdir())
+            took = False
+        except PermissionError:
+            took = True
+        except OSError:
+            took = False
+        if not took:
+            import pytest
+            pytest.skip(
+                "chmod 0 did not deny listing on this platform/filesystem/user -- "
+                "cannot measure the swallow here"
+            )
+        raised = False
+        try:
+            lane_setup._expand_directory(root, "guarded")
+        except OSError:
+            raised = True
+        assert raised, (
+            "os.walk must be given an onerror that re-raises, or an unreadable "
+            "subtree silently vanishes instead of surfacing as 'refused'"
+        )
+    finally:
+        _os.chmod(root / "guarded" / "denied", 0o755)
+
+
+def test_plain_against_mode_broken_against_pattern_also_reports_resolved_to_nothing(tmp_path):
+    """Review-round finding: the fix above only checked the `--lane` side (a);
+    the identical false negative existed, unfixed, on the `--against` side
+    (b) -- a maintainer-typed `--against PATTERN` (dispatch.md's own
+    documented fallback) that resolves to zero files must not read
+    `overlap: none` as if genuinely checked and disjoint either."""
+    _make_tree(tmp_path)
+    report = lane_setup.lane_report(tmp_path, ["scripts/lane_setup.py"], ["formatters/**/*.py"])
+    assert report["overlap_state"] == "resolved-to-nothing"

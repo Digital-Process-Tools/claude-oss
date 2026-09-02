@@ -376,6 +376,22 @@ def _lane_pattern_problem(pattern):
     return None
 
 
+def _raise_walk_error(exc):
+    """The `onerror` callback `_expand_directory` gives `os.walk` -- its own
+    docstring default is `onerror=None`, meaning "ignore errors and continue
+    the walk", which is `Path.rglob`'s own swallow (CLAUDE.md's trap) reached
+    through a different stdlib entry point rather than avoided by using
+    `os.walk` at all. Measured directly (`chmod 0` on a subdirectory, no
+    exception observed from a bare `os.walk` over it): the swallow is real
+    and the previous version of this function's own docstring claimed the
+    opposite without checking. Passing this re-raises instead, which is what
+    turns an unreadable subtree into the caller's `except OSError` -- a
+    `refused` entry -- rather than a directory that silently reports fewer
+    files than are really there.
+    """
+    raise exc
+
+
 def _expand_directory(repo, rel):
     """Every regular file under repo-relative directory `rel`, recursively --
     sorted, repo-relative, POSIX paths. Caller has already confirmed `rel` is
@@ -384,13 +400,14 @@ def _expand_directory(repo, rel):
     `os.walk`, not `Path.rglob` -- CLAUDE.md's own trap: `rglob` swallows a
     `PermissionError` raised mid-walk and simply yields nothing for the
     unreadable subtree, so a directory this process cannot fully read would
-    render identically to one that is genuinely empty. `os.walk` is given no
-    `onerror`, so an unreadable subtree still raises here rather than
-    vanishing -- the caller's `except OSError` around this call is what turns
-    that into a `refused` entry instead of a silent `[]`.
+    render identically to one that is genuinely empty. `os.walk` swallows the
+    identical error by default (`onerror=None`), so `_raise_walk_error` is
+    passed explicitly to re-raise -- the caller's `except OSError` around
+    this call is what turns that into a `refused` entry instead of a silent
+    `[]`.
     """
     matches = []
-    for dirpath, _dirnames, filenames in os.walk(repo / rel):
+    for dirpath, _dirnames, filenames in os.walk(repo / rel, onerror=_raise_walk_error):
         for name in filenames:
             p = Path(dirpath) / name
             if _match_is_regular_file(p):
@@ -931,12 +948,18 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
         else:
             overlap = lane_overlap(a["files"], b["files"])
             overlap_state = "resolved"
-            if _lane_resolved_to_nothing(a):
+            if _lane_resolved_to_nothing(a) or _lane_resolved_to_nothing(b):
                 # #809: same reading as the `--derive-held` branch above -- an
-                # empty `overlap` from a lane that named no file on disk is not
+                # empty `overlap` from a side that named no file on disk is not
                 # the same claim as an empty `overlap` from two real, checked,
                 # disjoint sets, so the receipt's `overlap :` line must not
-                # print `none` for both. Plain `--against` mode has no
+                # print `none` for both. Checked on *both* sides here, unlike
+                # the `--derive-held` branch: `--against PATTERN` is itself a
+                # maintainer-typed pattern (dispatch.md's own documented
+                # fallback), not a derived held set, so it can resolve to
+                # nothing exactly the way `--lane` can -- an empty `overlap`
+                # from a typo'd or `**`-broken `--against` glob must not read
+                # as "checked, disjoint" either. Plain `--against` mode has no
                 # `availability` verdict to correct (that field only exists
                 # under `--derive-held`), so this is the only render this
                 # branch can carry the distinction on.
