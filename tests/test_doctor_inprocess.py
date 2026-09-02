@@ -788,6 +788,18 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # #646: reads THIS machine's real MCP registration too (its own `claude mcp
     # get` call, independent of the stub above), for the same reason.
     monkeypatch.setattr(doctor, "check_channel_consumer_pin", lambda **kw: None)
+    # #810: `check_channel_consumer_census` shells out to `claude mcp list` on
+    # THIS machine, independent of both stubs above -- exactly the same reason
+    # `check_mcp_channel_registration` and `check_channel_consumer_pin` are
+    # stubbed rather than measured here. Left unstubbed, this test spuriously
+    # WARNed on any machine (including CI runners) where `claude` is not on
+    # PATH, which is the census's own `could-not-ask` state working as designed
+    # and not a fact this "fully configured, everything clean" fixture is about.
+    monkeypatch.setattr(
+        doctor,
+        "check_channel_consumer_census",
+        lambda **kw: doctor.report("OK", "channel MCP consumer census"),
+    )
     # #582: a real `supertool ops:roster` subprocess. Its answer is a fact about
     # the supertool installed on THIS machine AND about the `.supertool.json`
     # presets resolving from the fixture directory -- which carries none, so the
