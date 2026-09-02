@@ -376,7 +376,7 @@ agents/sub-manager.md       one tick, then dies with its context; never tags, ne
 commands/*.md               /oss:tick setup scaffold triage changelog release doctor
 scripts/oss_config.py       read, validate and derive .oss.json
 scripts/agent_role.py       the code-level half of withholding release authority from a sub-manager
-scripts/tick_handback.py    a sub-manager's handback: completed / blocked / could-not-run / returned-nothing / could-not-classify
+scripts/tick_handback.py    a sub-manager's handback: completed / blocked / paused / could-not-run / returned-nothing / could-not-classify
 scripts/ranking_table.py    the ranking table's own bytes out of SKILL.md, not a retype: found / not-found / could-not-read
 scripts/release_delta.py    the release gate's range: delta / first-release / could-not-run
 scripts/release_publish.py  the GitHub Release: created / skipped by policy / could-not-create / role-forbidden
@@ -410,7 +410,7 @@ from being invisible.
 | `agents/auditor.md` | 14,329 B | 15,800 B |
 | `agents/release-auditor.md` | 17,857 B | 19,700 B |
 | `agents/triager.md` | 17,702 B | 19,500 B |
-| `agents/sub-manager.md` | 11,714 B | 12,900 B |
+| `agents/sub-manager.md` | 14,032 B | 15,400 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes

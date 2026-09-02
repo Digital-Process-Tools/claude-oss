@@ -44,6 +44,24 @@ frame parser is a second place for that bug to recur.
                     refusal, a worktree it could not cut, a permission
                     denial before any tick work began). Missing `REASON:` is
                     `could-not-classify`, for the same reason as `blocked`.
+  paused            `TICK: paused` with `WAIT-DISPATCH:` and
+                    `WAIT-OBSERVABLE:` lines naming, respectively, what was
+                    set in motion this tick and what clears it -- the same
+                    two facts `scripts/oss_state.py`'s
+                    `--wait-dispatch`/`--wait-observable` already carry for a
+                    tick closing blocked (#337), reused rather than
+                    reinvented. This is #818's resolution 2: a sub-manager
+                    has no `ScheduleWakeup` and cannot receive channel
+                    events, so it hands back what it is waiting on instead
+                    of polling itself or blocking on a watch, and the
+                    scheduler -- which holds both -- waits and resumes the
+                    same sub-manager with `SendMessage`. It is deliberately
+                    not `blocked`: `blocked` reads as ending the tick's
+                    work, and a paused tick is mid-merge, with a lane pushed
+                    and a pull request open. Missing either line is
+                    `could-not-classify`, the same way a `blocked` with no
+                    `BLOCKER:` line is -- work in flight with nothing naming
+                    what it is waiting on is not a usable paused state.
   returned-nothing  empty, or whitespace only. This is the "died" case: the
                     spawn executed and its conclusions, if any existed, are
                     lost. It must never be read as `completed`.
@@ -77,6 +95,7 @@ Because a shell reads those and never reads prose:
   5   returned-nothing
   6   could-not-classify
   7   could-not-read (unreadable source, or `--framed` could not unframe it)
+  8   paused
   2   argparse usage error
 """
 
@@ -92,11 +111,16 @@ import review_return as _rr  # noqa: E402
 # A header at the start of a line, tolerating light markdown wrapping the
 # same way review_return.py's own header pattern does.
 _TICK = re.compile(
-    r"^[ \t>*_#]*TICK:[ \t]*(completed|blocked|could-not-run)\b",
+    r"^[ \t>*_#]*TICK:[ \t]*(completed|blocked|could-not-run|paused)\b",
     re.MULTILINE | re.IGNORECASE,
 )
 _BLOCKER = re.compile(r"^[ \t>*_#]*BLOCKER:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 _REASON = re.compile(r"^[ \t>*_#]*REASON:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
+# #818: the two facts a `paused` tick must name, reusing the field names
+# scripts/oss_state.py's --wait-dispatch/--wait-observable already give a
+# tick closing blocked (#337) rather than inventing a second vocabulary.
+_WAIT_DISPATCH = re.compile(r"^[ \t>*_#]*WAIT-DISPATCH:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
+_WAIT_OBSERVABLE = re.compile(r"^[ \t>*_#]*WAIT-OBSERVABLE:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 # #773: which of "What ends a tick"'s three states (skills/manager/SKILL.md) this
 # completed tick is in -- required, not optional, for the same reason BLOCKER:/
 # REASON: are required on their own states: an *optional* field gives "absent" and
@@ -117,6 +141,8 @@ def _verdict(state, reason, **extra):
         "detail": None,
         "quoted": None,
         "ends": None,
+        "wait_dispatch": None,
+        "wait_observable": None,
     }
     out.update(extra)
     return out
@@ -217,22 +243,53 @@ def classify(message):
             quoted=header_line,
         )
 
-    # declared == "could-not-run" -- the only remaining alternative in _TICK
-    match = _REASON.search(tail)
-    if not match:
+    if declared == "could-not-run":
+        match = _REASON.search(tail)
+        if not match:
+            return _verdict(
+                "could-not-classify",
+                "TICK: could-not-run with no REASON: line -- an unnamed "
+                "reason is not a usable could-not-run state",
+                declared="could-not-run",
+                quoted=header_line,
+            )
+        detail = _rr.fold_to_one_ascii_line(match.group(1))
         return _verdict(
-            "could-not-classify",
-            "TICK: could-not-run with no REASON: line -- an unnamed "
-            "reason is not a usable could-not-run state",
+            "could-not-run",
+            "could not run: {0}".format(detail),
             declared="could-not-run",
+            detail=detail,
             quoted=header_line,
         )
-    detail = _rr.fold_to_one_ascii_line(match.group(1))
+
+    # declared == "paused" -- the only remaining alternative in _TICK (#818)
+    wait_dispatch_match = _WAIT_DISPATCH.search(tail)
+    wait_observable_match = _WAIT_OBSERVABLE.search(tail)
+    if not wait_dispatch_match or not wait_observable_match:
+        missing = [
+            name
+            for name, m in (
+                ("WAIT-DISPATCH:", wait_dispatch_match),
+                ("WAIT-OBSERVABLE:", wait_observable_match),
+            )
+            if not m
+        ]
+        return _verdict(
+            "could-not-classify",
+            "TICK: paused with no {0} line -- work in flight with nothing "
+            "naming what it is waiting on is not a usable paused "
+            "state".format(" and ".join(missing)),
+            declared="paused",
+            quoted=header_line,
+        )
+    wait_dispatch = _rr.fold_to_one_ascii_line(wait_dispatch_match.group(1))
+    wait_observable = _rr.fold_to_one_ascii_line(wait_observable_match.group(1))
     return _verdict(
-        "could-not-run",
-        "could not run: {0}".format(detail),
-        declared="could-not-run",
-        detail=detail,
+        "paused",
+        "paused: {0} (clears on: {1})".format(wait_dispatch, wait_observable),
+        declared="paused",
+        wait_dispatch=wait_dispatch,
+        wait_observable=wait_observable,
         quoted=header_line,
     )
 
@@ -244,6 +301,7 @@ EXIT_CODES = {
     "returned-nothing": 5,
     "could-not-classify": 6,
     "could-not-read": 7,
+    "paused": 8,
 }
 
 
@@ -293,6 +351,10 @@ def main(argv=None):
         print("  detail: {0}".format(verdict["detail"]))
     if verdict["ends"]:
         print("  ends: {0}".format(verdict["ends"]))
+    if verdict["wait_dispatch"]:
+        print("  wait_dispatch: {0}".format(verdict["wait_dispatch"]))
+    if verdict["wait_observable"]:
+        print("  wait_observable: {0}".format(verdict["wait_observable"]))
     if verdict["quoted"]:
         print("  quoted: {0}".format(verdict["quoted"]))
     return EXIT_CODES[verdict["state"]]

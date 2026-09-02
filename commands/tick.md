@@ -59,7 +59,7 @@ An unindented message can quote this very code block, terminator included — an
 report to contain — and end the stream that carries it. Skipping the framing because a message "looks
 safe" is exactly how that one gets through.
 
-Six answers, not three, and only one of them is the ordinary case:
+Seven answers, not three, and only one of them is the ordinary case:
 
 - **`completed`** — read the `TICK-ENDS:` line first: `work-started` / `blocked` / `nothing-left`,
   the same three states *What ends a tick* below names, now structured rather than left inside the
@@ -74,6 +74,12 @@ Six answers, not three, and only one of them is the ordinary case:
   it — never inside the sub-manager that already reported back and is gone.
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.
+- **`paused`** — the `WAIT-DISPATCH:` and `WAIT-OBSERVABLE:` lines name what this tick set in motion
+  and what clears it. This is #818's resolution: a sub-manager reaching a CI wait has no
+  `ScheduleWakeup` and cannot receive channel events, so it hands the wait back to this session rather
+  than polling itself or blocking its own turn on a watch. It is not `blocked` — the tick is mid-merge,
+  not stuck. Step 7 below is where this session does the actual waiting and resumes the same
+  sub-manager.
 - **`could-not-run`** — the `REASON:` line names why the sub-manager itself never got a tick
   underway. This is not a clean board; say so, and decide whether to retry now or arm a short wakeup.
 - **`returned-nothing`** — the spawn executed and its context died before it reported anything. Do
@@ -292,6 +298,16 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
    starting.
 
+   **A wait is not an act, and it does not outrank dispatch (#820).** The three examples above are
+   all work — verifying a merge, fixing a red branch, finishing an agent's uncommitted work. Watching
+   CI go green is not: the run concludes at the same moment whether or not anybody is looking at it.
+   Dispatch every lane that is ready to run before starting any wait — a lane runs concurrently with
+   CI and with every other lane, so one started before the wait is free and one started after it pays
+   the wait's whole duration on top of its own. Prefer polling (`gh-pr:N:status`, `gh-branch`) over a
+   blocking `gh run watch`, which spends the whole turn watching and leaves nothing free to act on a
+   handback that lands mid-run — sharper still given #818: a sub-manager cannot receive channel
+   events, so the gaps between polls are the only responsiveness it has.
+
 4. **Take the handback, then push and open the pull request.** An agent replies with a path. Push its
    branch, read the report's fields as you need them, **read the pull request body it wrote**, then
    hand that path over — one call, no body of your own:
@@ -499,6 +515,16 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    session, or arm the wakeup below and stop for now. On a `completed` handback the decision reads
    the `TICK-ENDS:` field directly (#773) rather than parsing the paragraph for it: `work-started`
    keeps working, `blocked` and `nothing-left` both arm the wakeup below.
+
+   **On `paused` (#818), this session does the waiting the sub-manager could not.** It holds the two
+   things a `paused` handback names as missing — the channel connection and `ScheduleWakeup` — so wait
+   on the channel event this tick's own dispatch already arms a poller for (step 2's heal), or arm a
+   short poll-timer wakeup for the `WAIT-OBSERVABLE:` field if no poller covers it. Either way, do not
+   spawn a fresh sub-manager: **resume the same one** with `SendMessage`, addressed to the sub-manager
+   that reported `paused` — measured on #818: the scheduler resumed a running sub-manager this way twice
+   and got a full, context-intact reply both times — so the tick's own
+   context, worktree state and everything dispatched this tick survive the wait rather than being
+   re-derived from scratch by a stranger.
 
    ```
    ScheduleWakeup(delaySeconds=…, prompt="/oss:tick", reason="<what specifically is outstanding>")

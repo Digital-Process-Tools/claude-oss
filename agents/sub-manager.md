@@ -1,6 +1,6 @@
 ---
 name: sub-manager
-description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler until the releaser agent (#696) exists. Reports one of three handback states.
+description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler until the releaser agent (#696) exists. Reports one of the handback states scripts/tick_handback.py classifies.
 model: sonnet
 color: blue
 tools: Bash,TodoWrite,Skill,Agent
@@ -147,16 +147,34 @@ REASON: <one line: you could not even begin the tick -- the worktree could not b
 cut, a spawn was refused, the state file could not be read>
 ```
 
+**A fourth shape, for a CI wait (#818).** You have no `ScheduleWakeup` and cannot receive channel
+events (measured on #816: zero of six events reached a concurrently-running subagent while all six
+reached the scheduler) -- so when this tick's own work is mid-merge and the only thing left is
+waiting on CI, hand the wait back rather than polling yourself or blocking your own turn on
+`gh run watch`:
+
+```
+TICK: paused
+WAIT-DISPATCH: <one line: what this tick set in motion -- a PR number, a branch>
+WAIT-OBSERVABLE: <one line: what clears it -- checks green, a leg failing, a merge>
+```
+
+This is not `TICK: blocked` -- `blocked` reads as this tick's work having stopped, and a paused
+tick has a lane pushed and a pull request open with something concrete expected to change it. The
+scheduler waits on the event or arms a short poll-timer wakeup, then resumes *you*, the same
+sub-manager, with `SendMessage` -- so wait passively rather than spawning anything to watch it
+yourself, and rather than ending your own context assuming the tick is over.
+
 **Say which one applies and nothing else.** A message with no `TICK:` header, a `completed` with
-no `TICK-ENDS:` line, or a `blocked`/`could-not-run` with no `BLOCKER:`/`REASON:` line, is
-`could-not-classify` to the scheduler -- not a guess in your favour, and not a guess against you
-either. `TICK-ENDS:` is required, not optional (#773): an optional field gives "you had nothing
-to say" and "you never answered" the same rendering, and the scheduler's continue-or-wait
-decision (`commands/tick.md` step 7) needs to tell them apart. If your context dies before you
-write anything at all, that renders as `returned-nothing`: the scheduler must be able to tell a
-sub-manager that ran a whole tick and found nothing to do (`TICK: completed`, idle) from one that
-never got to speak (empty message) -- they are not the same event and must not read as the same
-event.
+no `TICK-ENDS:` line, a `blocked`/`could-not-run` with no `BLOCKER:`/`REASON:` line, or a `paused`
+with no `WAIT-DISPATCH:`/`WAIT-OBSERVABLE:` line, is `could-not-classify` to the scheduler -- not a
+guess in your favour, and not a guess against you either. `TICK-ENDS:` is required, not optional
+(#773): an optional field gives "you had nothing to say" and "you never answered" the same
+rendering, and the scheduler's continue-or-wait decision (`commands/tick.md` step 7) needs to tell
+them apart. If your context dies before you write anything at all, that renders as
+`returned-nothing`: the scheduler must be able to tell a sub-manager that ran a whole tick and
+found nothing to do (`TICK: completed`, idle) from one that never got to speak (empty message) --
+they are not the same event and must not read as the same event.
 
 **Last: clear your role marker, right before you write the handback message above.**
 
