@@ -133,6 +133,15 @@ LANES_PARTIAL = "partial"
 CHOICE_DEFAULT = "default"
 CHOICE_OVERRIDE = "override"
 
+# #862: the two agent definitions a dispatch is actually allowed to spawn as. This is
+# not the model roster above -- there are only two of these in the whole plugin, they
+# are named in this repository's own files, and a lane recorded outside the set is
+# exactly the defect #862 was filed for (a lane dispatched as `general-purpose`, so the
+# whole developer brief -- #765's rule included -- was simply absent for it). Recording
+# `agent_type` is typed after the spawn, the same way the model choice above is: it
+# makes a wrong dispatch observable, and does not, by itself, stop one from happening.
+KNOWN_AGENT_TYPES = ("oss:developer", "oss:triager")
+
 # A dispatched lane's own fill (#852): how many issues it carried, and -- when that is
 # fewer than dispatch_rank.MAX_LANE -- why, from the same closed vocabulary
 # dispatch_rank.SHORT_REASONS declares and dispatch_rank.check_lane already enforces
@@ -1221,8 +1230,17 @@ def lane_models(lanes, window, why=None):
         else:
             lane_why = str(lane_why).strip() if lane_why and str(lane_why).strip() else None
 
+        agent_type = lane.get("agent_type")
+        agent_type = str(agent_type).strip() if agent_type and str(agent_type).strip() else None
+
         normalized.append(
-            {"issue": issue, "model": str(model).strip(), "choice": choice, "why": lane_why}
+            {
+                "issue": issue,
+                "model": str(model).strip(),
+                "choice": choice,
+                "why": lane_why,
+                "agent_type": agent_type,
+            }
         )
 
     return {"state": LANES_RECORDED, "window": window, "lanes": normalized, "why": None}
@@ -1257,6 +1275,7 @@ def _lane_models_sentence(record):
         )
     if state in (LANES_RECORDED, LANES_PARTIAL):
         lanes = record.get("lanes")
+        unexpected = []
         if isinstance(lanes, list):
             counts = {}
             overrides = 0
@@ -1266,15 +1285,35 @@ def _lane_models_sentence(record):
                     counts[model] = counts.get(model, 0) + 1
                 if isinstance(lane, dict) and lane.get("choice") == CHOICE_OVERRIDE:
                     overrides += 1
+                # #862: an agent_type recorded outside the closed set is the exact
+                # shape that issue was filed for -- a lane dispatched as
+                # `general-purpose`, never `oss:developer`/`oss:triager`. `None`
+                # (nobody recorded one) is deliberately not an anomaly: that is the
+                # third state, "not recorded", and flagging it here would make an
+                # ordinary lane read as a finding.
+                agent_type = lane.get("agent_type") if isinstance(lane, dict) else None
+                if agent_type and agent_type not in KNOWN_AGENT_TYPES:
+                    unexpected.append((lane.get("issue"), agent_type))
         else:
             counts = record.get("counts") or {}
             overrides = record.get("overrides") or 0
+            # #862: the trend shape (`lane_model_trend`'s own dict) carries its own
+            # already-collected `unexpected` list, since `lanes` here is a count, not
+            # the list this branch's own per-lane scan above needs.
+            for issue, agent_type in record.get("unexpected") or []:
+                unexpected.append((issue, agent_type))
         parts = ", ".join(
             "{} {}".format(count, model) for model, count in sorted(counts.items())
         )
         mix = head + "{} ({} override{})".format(
             parts or "no lanes", overrides, "" if overrides == 1 else "s"
         )
+        if unexpected:
+            mix += " -- {} dispatched as {}, not {}".format(
+                ", ".join("#{}".format(issue) for issue, _ in unexpected),
+                "/".join(sorted(set(agent_type for _, agent_type in unexpected))),
+                "/".join(KNOWN_AGENT_TYPES),
+            )
         if state == LANES_PARTIAL:
             # Deliberately not the recorded sentence with a caveat appended -- a reader
             # skimming for the mix would take the mix and leave the caveat, which is a
@@ -1302,6 +1341,13 @@ def lane_model_trend(entries):
     counted = 0
     uncounted = 0
     without_record = 0
+    # #862: unexpected agent_type sightings, carried across the whole history rather
+    # than dropped -- `_lane_models_sentence`'s single-tick anomaly check only ever
+    # sees a list of lanes, and a trend's own `lanes` is a count, not a list, so
+    # without this the finding "a lane was dispatched outside oss:developer/
+    # oss:triager" was visible on the one tick that recorded it and invisible on the
+    # aggregate view (--model-trend) most likely to be read for a pattern across ticks.
+    unexpected = []
 
     for entry in entries or []:
         detail = entry.get("detail") if isinstance(entry, dict) else None
@@ -1320,6 +1366,9 @@ def lane_model_trend(entries):
                 lanes_total += 1
                 if lane.get("choice") == CHOICE_OVERRIDE:
                     overrides += 1
+                agent_type = lane.get("agent_type")
+                if agent_type and agent_type not in KNOWN_AGENT_TYPES:
+                    unexpected.append((lane.get("issue"), agent_type))
             counted += 1
         elif state == LANES_NONE_DISPATCHED:
             counted += 1
@@ -1331,6 +1380,7 @@ def lane_model_trend(entries):
         "counts": counts if counted else None,
         "lanes": lanes_total if counted else None,
         "overrides": overrides if counted else None,
+        "unexpected": unexpected,
         "why": None,
         "ticks_counted": counted,
         "ticks_uncounted": uncounted,
@@ -2326,6 +2376,37 @@ def _lane_argument(text):
     return lane
 
 
+def _lane_agent_type_argument(text):
+    """#862: which `subagent_type` a `--lane` issue was actually dispatched as.
+
+    ``ISSUE=TYPE`` -- a separate flag from ``--lane`` rather than a fourth
+    colon-delimited field on it, because ``WHY`` already absorbs everything after its
+    own colon (``rest.split(":", 2)`` above) and a fourth field there would be
+    ambiguous with a WHY that happens to contain a colon. Only the shape is checked
+    here; whether TYPE is one of the two known agent definitions is
+    ``lane_models_line``'s question, not this parser's -- an unrecognised type is the
+    exact thing #862 needs recorded, not refused at the CLI.
+    """
+    import argparse
+
+    if "=" not in text:
+        raise argparse.ArgumentTypeError("{!r} is not ISSUE=TYPE".format(text))
+    issue_text, _, type_text = text.partition("=")
+    if not issue_text.strip():
+        raise argparse.ArgumentTypeError(
+            "{!r}: an issue number is required before '='".format(text)
+        )
+    if not type_text.strip():
+        raise argparse.ArgumentTypeError(
+            "{!r}: a subagent_type is required after '='".format(text)
+        )
+    try:
+        issue = int(issue_text.strip())
+    except ValueError:
+        issue = issue_text.strip()
+    return {"issue": issue, "agent_type": type_text.strip()}
+
+
 def _lane_fill_argument(text):
     """A CLI lane fill: ``PRIMARY:COUNT[:REASON]`` (#852).
 
@@ -2484,6 +2565,13 @@ def _main(argv=None):
         action="append",
         type=_lane_argument,
         help="one dispatched lane, ISSUE=MODEL:CHOICE[:WHY]; repeatable",
+    )
+    parser.add_argument(
+        "--lane-agent-type",
+        action="append",
+        type=_lane_agent_type_argument,
+        help="#862: the subagent_type a --lane issue was actually dispatched as, "
+        "ISSUE=TYPE; repeatable, needs a matching --lane for the same issue",
     )
     parser.add_argument(
         "--lanes",
@@ -2986,6 +3074,17 @@ def _main(argv=None):
                 why=args.tick_cost_why,
                 rate=args.tick_cost_rate,
             )
+        if args.lane_agent_type and args.lane is None:
+            # #862: give this its own message, naming the issue(s), ahead of the
+            # generic "--lane-window alone" refusal below -- that one never sees
+            # which issue a recorded subagent_type was orphaned from.
+            return refuse(
+                "--lane-agent-type named issue(s) {} with no matching --lane "
+                "entry -- a recorded subagent_type with no lane to attach to "
+                "records nothing".format(
+                    ", ".join(str(entry["issue"]) for entry in args.lane_agent_type)
+                )
+            )
         if args.lane is not None and args.lanes is not None:
             return refuse(
                 "--lane and --lanes cannot both be given; use --lane for named lanes "
@@ -3012,6 +3111,32 @@ def _main(argv=None):
         # lane record is built ahead of the intake "missing flags" check for exactly that
         # reason: a valid `--lane` must not go unreported just because an unrelated,
         # incomplete `--filings`/`--merged-prs`/`--window` set is refused first.
+        if args.lane_agent_type:
+            # #862: attach each recorded subagent_type to its own --lane entry by
+            # issue number, refusing rather than silently dropping one that names an
+            # issue --lane never mentioned -- an unattached agent_type is not a lane
+            # record at all, and dropping it silently would be this repo's own
+            # defect class one field over. `args.lane is None` is already refused
+            # above, before this point, so nothing here re-checks it -- a second
+            # `if not args.lane` here would be dead code (argparse's own
+            # `action="append"` never produces an empty list, only `None` or a
+            # populated one, and `None` already returned).
+            by_issue = {}
+            for entry in args.lane_agent_type:
+                by_issue[entry["issue"]] = entry["agent_type"]
+            known_issues = {lane["issue"] for lane in args.lane}
+            unmatched = sorted(
+                (str(issue) for issue in by_issue if issue not in known_issues),
+                key=str,
+            )
+            if unmatched:
+                return refuse(
+                    "--lane-agent-type named issue(s) with no matching --lane "
+                    "entry: {}".format(", ".join(unmatched))
+                )
+            for lane in args.lane:
+                if lane["issue"] in by_issue:
+                    lane["agent_type"] = by_issue[lane["issue"]]
         if args.lane is not None:
             pending_lanes = lane_models(args.lane, window=args.lane_window)
         elif args.lanes == "none":

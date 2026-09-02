@@ -316,6 +316,7 @@ def test_the_cli_records_lanes_and_receipts_them_after_the_write(tmp_path, capsy
         "model": "sonnet",
         "choice": "override",
         "why": "mechanical scope, strict brief",
+        "agent_type": None,
     }
     # It lands on disk, not only in the printed entry.
     assert json.loads(Path(path).read_text(encoding="utf-8"))[0]["detail"]["lanes"]
