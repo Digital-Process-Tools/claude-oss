@@ -133,11 +133,18 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     if precomputed:
         text = env.get("OSS_WORKSPACE_MCP_OUTPUT", "")
     else:
-        if which("claude") is None:
+        # The RESOLVED path, not the bare name (#753/#810's own Windows CI
+        # failure): `which()` performs the PATHEXT search that turns `claude`
+        # into `claude.cmd`, but `subprocess.run(shell=False)` on Windows does
+        # not -- it needs the extension already in hand. Asking `which()` and
+        # then still handing `run()` the bare name gets exactly the "not
+        # found" failure `which()` was called to rule out.
+        claude_bin = which("claude")
+        if claude_bin is None:
             return "could-not-ask", "claude is not on PATH"
         try:
             completed = run(
-                ["claude", "mcp", "get", server],
+                [claude_bin, "mcp", "get", server],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=20,
@@ -261,3 +268,199 @@ def check_mcp_channel_registration(server=None, run=None, which=None, env=None, 
         "consumer starts, that bun is on PATH, or that anything is listening on "
         "the socket.".format(label, detail),
     )
+
+# --- pre-launch channel-consumer census (#810) --------------------------------
+#
+# `check_mcp_channel_registration` above answers whether THIS project's own
+# `oss-channel` entry is registered and resolvable. It has nothing to say about
+# whether some OTHER configured MCP server -- another project-scope `.mcp.json`,
+# another local-scope registration nobody remembers making -- ALSO resolves to
+# `notifiers/claude-channel/channel.ts`, the one script every claude-channel
+# server runs. Two servers racing for that script's Unix socket is invisible from
+# inside a session: one binds, the harness's connection to the other is refused,
+# and `channel:health` can only report `CANNOT DETERMINE` -- `claude mcp get`
+# cannot tell which server the harness actually holds a connection to. The
+# launcher is the only place this is both visible (`claude mcp list` enumerates
+# every configured server, regardless of which file declared it) and avoidable
+# (before the flag that starts the race is armed). This mirrors that census so
+# `/oss:doctor` reports the same collision without opening a session, per the
+# issue's own step 3 -- the launcher and this diagnostic read `claude mcp list`
+# through the SAME parser (`channel_consumer_names`, immediately below) so the
+# two cannot disagree about the count.
+
+#: Matches a claude-channel consumer's own script inside an MCP server's
+#: command/args, on either separator: `claude mcp list` is read from THIS
+#: machine's own claude installation, and a Windows entry stores backslashes
+#: where a POSIX one stores forward slashes -- CLAUDE.md's own long-running
+#: warning about reading a platform's separators out of one literal.
+#:
+#: NOT anchored at end-of-line ($) -- measured against a real `claude mcp
+#: list` (2.1.219) rather than the issue's own illustrative example: every row
+#: carries a trailing ` - <connection status>` after the args
+#: (`... channel.ts - Failed to connect`), so an end-anchored version matched
+#: zero rows against the actual shape this launcher runs against every day,
+#: while passing every test built only from the issue's own clean example.
+#: Matched instead by what follows the path: end of string, or whitespace --
+#: never mid-word, so a path merely CONTAINING this fragment as a substring of
+#: a longer filename cannot false-positive.
+_CHANNEL_CONSUMER_SUFFIX_RE = re.compile(
+    r"(?:/|\\)notifiers(?:/|\\)claude-channel(?:/|\\)channel\.ts(?:[ \t\r]|$)"
+)
+
+#: `claude mcp list` prints one server per line, `name:` then whitespace then its
+#: command and args -- `oss-channel:    bun /path/to/channel.ts`, padded so the
+#: colons line up, which is why this is `[ \t]+` rather than a single space.
+_MCP_LIST_LINE_RE = re.compile(r"^([^\s:][^:]*):[ \t]+(.*)$")
+
+
+def channel_consumer_names(text):
+    """Every MCP server name in `claude mcp list` output whose command/args end in
+    the claude-channel consumer script (#810).
+
+    A line that does not match the `name: rest` shape at all -- a continuation
+    line, a blank line, a banner -- is skipped rather than guessed at; this is a
+    census of what CAN be counted, not a best-effort parse of everything `claude
+    mcp list` might ever print. Order is preserved and names are not deduplicated:
+    two rows naming the same server would be a `claude mcp list` defect worth
+    seeing in the count, not something to paper over here.
+    """
+    names = []
+    for raw in text.splitlines():
+        line = raw.rstrip("\r")
+        match = _MCP_LIST_LINE_RE.match(line)
+        if match is None:
+            continue
+        name, rest = match.group(1).strip(), match.group(2)
+        if _CHANNEL_CONSUMER_SUFFIX_RE.search(rest.rstrip("\r")):
+            names.append(name)
+    return names
+
+
+def channel_consumer_census_state(run=None, which=None, env=None):
+    """How many configured MCP servers resolve to the claude-channel consumer
+    script, for THIS machine's `claude` -- never assumed from `oss-channel`'s own
+    registration alone.
+
+    Returns ``(state, detail)``. Three states, and the third is the one the issue
+    names explicitly as never collapsing into the first: `claude mcp list` failing
+    to run, timing out, or exiting non-zero must read as `could-not-ask`, never as
+    "exactly one server" -- a crashed or refused probe is not evidence of a clean
+    census, and reading it as one would silently arm a collision this check exists
+    to catch.
+
+    * ``could-not-ask`` -- `claude` is not on PATH, the call itself did not run, or
+      it exited non-zero. `detail` says which.
+    * ``collision`` -- two or more servers resolve to the consumer script. `detail`
+      is the list of their names, in the order `claude mcp list` printed them.
+    * ``single`` -- exactly one. `detail` is that one name.
+    * ``none`` -- zero. `detail` is empty. Distinct from `single` because a caller
+      deciding whether it is safe to arm a channel flag needs "nothing configured
+      at all" told apart from "the one server I expect and nothing else" --
+      `check_channel_consumer_census` below folds both into the same OK line, but
+      the state itself keeps them separate for a caller that cares which.
+
+    `bin/oss-workspace` already runs THIS exact census, via THIS exact function,
+    a few lines before it shells out to `doctor.sh` -- so a launcher-opened
+    session paid for `claude mcp list` twice in the same session-open sequence
+    (review finding on #810, the identical shape #629 already fixed for
+    `mcp_channel_registration_state` above). When the launcher has already
+    asked, it exports the raw multi-line report (`OSS_WORKSPACE_CENSUS_CHECKED`,
+    `_REPORT` -- the census's own `state` line followed by its `collision`
+    names or `could-not-ask` detail, exactly the shape this function's own
+    embedded-python callers already print) and this reads that instead of
+    shelling out again. This is a relay, not a cache, on the same terms
+    `mcp_channel_registration_state`'s own docstring states: the two calls
+    happen seconds apart inside one session-open sequence, never across an
+    interval this repo's `statusline.py` cache history would call stale. A
+    relayed report this function does not recognise (empty, or an unrecognised
+    first line) falls through to a real ask rather than guessing.
+    """
+    env = os.environ if env is None else env
+    relayed = env.get("OSS_WORKSPACE_CENSUS_CHECKED") == "1"
+    if relayed:
+        lines = env.get("OSS_WORKSPACE_CENSUS_REPORT", "").splitlines()
+        state = lines[0].strip() if lines else ""
+        rest = lines[1:]
+        if state == "collision":
+            return "collision", rest
+        if state == "could-not-ask":
+            return "could-not-ask", (rest[0] if rest else "")
+        if state == "single":
+            return "single", (rest[0] if rest else "")
+        if state == "none":
+            return "none", ""
+        # An unrecognised or empty relay is not evidence of anything -- fall
+        # through to a real ask rather than reporting a guess.
+    which = shutil.which if which is None else which
+    run = subprocess.run if run is None else run
+    # The RESOLVED path, not the bare name -- see the identical comment and
+    # incident in `mcp_channel_registration_state` above; both functions had
+    # the same mismatch (ask `which()`, then still hand `run()` the bare
+    # name), and both are fixed the same way.
+    claude_bin = which("claude")
+    if claude_bin is None:
+        return "could-not-ask", "claude is not on PATH"
+    try:
+        completed = run(
+            [claude_bin, "mcp", "list"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "could-not-ask", "`claude mcp list` did not run ({})".format(exc)
+    if completed.returncode != 0:
+        return "could-not-ask", "`claude mcp list` exited {}".format(completed.returncode)
+    stdout = completed.stdout
+    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+    names = channel_consumer_names(text)
+    if len(names) >= 2:
+        return "collision", names
+    if len(names) == 1:
+        return "single", names[0]
+    return "none", ""
+
+
+def check_channel_consumer_census(run=None, which=None, env=None):
+    """One line: is any OTHER server racing `oss-channel` for the same socket?
+
+    Never OK on `could-not-ask` -- an unasked question is not a clean census, and
+    rendering it as one would be exactly the absence this repository is named
+    after landing on the check written to close a different instance of it.
+
+    `env` threads through to `channel_consumer_census_state` for the launcher
+    relay described there -- passed explicitly rather than only defaulting, the
+    same shape `check_mcp_channel_registration`'s own `precomputed` parameter
+    takes, so a caller can stub the relay independently of the real environment.
+    """
+    state, detail = channel_consumer_census_state(run=run, which=which, env=env)
+    if state == "could-not-ask":
+        doctor.report(
+            "WARN",
+            "channel MCP consumer census: {}, so whether a second configured MCP "
+            "server also resolves to the claude-channel consumer script is "
+            "unknown -- not the same as a census that found none.".format(detail),
+        )
+        return
+    if state == "collision":
+        doctor.report(
+            "WARN",
+            "channel MCP consumer census: {} configured MCP servers resolve to "
+            "notifiers/claude-channel/channel.ts ({}) -- a session opened with the "
+            "channel flag would race two servers for one Unix socket, and one is "
+            "silently refused (channel:health degrades to CANNOT DETERMINE with no "
+            "error surfaced). bin/oss-workspace already declines to arm the flag "
+            "when it sees this. Deleting or editing whichever config declared the "
+            "extra one is not this diagnostic's call to make -- it names both and "
+            "stops, per this repo's own ownership contract.".format(
+                len(detail), ", ".join(detail)
+            ),
+        )
+        return
+    doctor.report(
+        "OK",
+        "channel MCP consumer census: {} configured MCP server(s) resolve to "
+        "notifiers/claude-channel/channel.ts, so no socket collision to "
+        "declare.".format(1 if state == "single" else 0),
+    )
+

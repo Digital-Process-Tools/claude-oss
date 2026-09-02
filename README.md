@@ -139,6 +139,25 @@ gate. **`/oss:scaffold` is the second step**, because it writes tracked files th
 a diff and a review -- and setup ends by relaying scaffold's own read-only plan, so the gap is a
 measured list rather than something you have to remember to check.
 
+Before the doctor diagnostic and before the session opens, the launcher also checks whether the
+`oss` plugin itself is current -- synchronously, the same trade the diagnostic already makes,
+because an update that lands mid-session was invisible until somebody happened to run
+`/oss:doctor` by hand (#753). A genuine update selects `/oss:doctor` as the opening prompt instead
+of the ordinary `/oss:tick`/`/oss:setup` choice, so the new copy diagnoses the tree it just moved
+to; nothing else changes the opening prompt. The `OSS_NO_AUTO_UPDATE` / `auto_update: false`
+opt-out already covers this exactly as it covers the SessionStart hook below. A `claude` started
+by hand never reaches the launcher at all, so `hooks/session-start-update.sh` still runs the same
+check in the background on every `SessionStart` -- `scripts/plugin_update.py` debounces the two
+against each other, so the hook firing seconds after the launcher already checked does no
+redundant network work.
+
+The launcher also repoints `~/.local/bin/oss-workspace` itself when it is pinned at a superseded
+install (#753/#289) -- read from `installed_plugins.json`'s own record for this project, never
+from the symlink's current target, because a stale link is exactly the case where the *old*
+launcher would otherwise keep re-pointing itself at its own stale target forever. It repoints
+silently on success and says so on stderr; if it cannot tell or cannot write, it says that and
+leaves the link untouched rather than guessing.
+
 Before the session starts working, the launcher runs `/oss:doctor`'s diagnostic over the repo it
 just resolved and relays anything short of a clean pass -- see the `/oss:doctor` row below for
 what it covers. It never refuses to open a session over a broken repo; a maintainer whose config
@@ -167,7 +186,7 @@ one run of measurements; re-measure rather than trust this past its own date.
 | `/oss:triage` | One triage sweep — priority, lane, milestone, the clusters one change would fix, the cohort burn-down with the limit it was counted under, and what the board is lying about. |
 | `/oss:changelog` | Checks changelog fragments, or folds them for a release. |
 | `/oss:release` | Gates, version sites, tag, and — where `.oss.json` says so — the GitHub Release, notes and all. |
-| `/oss:doctor` | Config, dependencies, clone, worktree root, state file, which watch channel and radar board this repo resolves to, whether a `pre-push` hook's push budget was ever raised above supertool's 300s default, and whether the merge call can skip supertool's publish-confirm gate. Also reports which copy of this plugin answered the invocation (compared by content and by declared schema version, not by manifest version alone), where a defect in this plugin itself would get filed, whether `./supertool` points at this plugin's own checkout, whether the supertool that answers here carries the ops this plugin's own commands and briefs actually name — with `could not ask` kept distinct from `they are all there` — and three lines about the machine itself — interpreter architecture, CPU topology, worker sizing. Exits 0 always; see `commands/doctor.md` for what each line means. |
+| `/oss:doctor` | Config, dependencies, clone, worktree root, state file, which watch channel and radar board this repo resolves to, whether a `pre-push` hook's push budget was ever raised above supertool's 300s default, and whether the merge call can skip supertool's publish-confirm gate. Also reports which copy of this plugin answered the invocation (compared by content and by declared schema version, not by manifest version alone), where a defect in this plugin itself would get filed, whether `./supertool` points at this plugin's own checkout, whether the supertool that answers here carries the ops this plugin's own commands and briefs actually name — with `could not ask` kept distinct from `they are all there` — whether a SECOND configured MCP server also resolves to the claude-channel consumer script (a socket collision `channel:health` can only report as `CANNOT DETERMINE` from inside a session, never diagnose — #810), and three lines about the machine itself — interpreter architecture, CPU topology, worker sizing. Exits 0 always; see `commands/doctor.md` for what each line means. |
 | `/oss:install-audit` | Is this install complete — the plugin, its declared dependencies, and what the human still has to do, answerable with no `.oss.json` in hand: is it present, valid, *and committed*; do declared dependencies resolve at a version this plugin's scripts can read; does the label vocabulary the triager needs exist; would re-scaffolding change the owned files. Exits 0 always; see `commands/install-audit.md`. |
 
 ## Status line

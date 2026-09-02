@@ -627,3 +627,55 @@ def test_the_guards_fire_against_a_mutated_module(tmp_path, monkeypatch):
         runner=ran,
     )
     assert ran.calls, "with opt_out neutered the calls happen -- so honouring it is what stops them"
+
+
+def test_run_hands_subprocess_the_resolved_path_not_the_bare_name(monkeypatch):
+    """#753/#810's own Windows CI regression, one call site over from the two
+    already pinned in `doctor_check_mcp_channel_registration.py`'s own test
+    suite: `subprocess.run(shell=False)` performs no PATHEXT search on
+    Windows, so a bare `"claude"` never resolves to a real Windows install's
+    `claude.cmd` -- only `shutil.which()` does that search. `_run()` must
+    hand the RESOLVED path to `subprocess.run`, not the bare name it was
+    given, or this exact regression is silently reintroduced."""
+    calls = []
+
+    def fake_which(name):
+        return "/resolved/" + name + ".cmd"
+
+    class _FakeCompleted:
+        returncode = 0
+        stdout = b"ok"
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return _FakeCompleted()
+
+    monkeypatch.setattr(plugin_update.shutil, "which", fake_which)
+    monkeypatch.setattr(plugin_update.subprocess, "run", fake_run)
+
+    ok, output = plugin_update._run(["claude", "plugin", "marketplace", "update"])
+    assert ok is True, output
+    assert calls and calls[0][0] == "/resolved/claude.cmd", calls
+    assert calls[0][1:] == ["plugin", "marketplace", "update"], calls
+
+
+def test_run_falls_back_to_the_bare_name_when_which_cannot_resolve_it(monkeypatch):
+    """The must-not-fire control: a name `which()` cannot resolve at all is
+    left as-is, so the eventual failure still names the exact string that
+    was tried, rather than a fabricated `None`."""
+    calls = []
+
+    def fake_which(name):
+        return None
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        raise FileNotFoundError(2, "no such file")
+
+    monkeypatch.setattr(plugin_update.shutil, "which", fake_which)
+    monkeypatch.setattr(plugin_update.subprocess, "run", fake_run)
+
+    ok, output = plugin_update._run(["claude", "mcp", "list"])
+    assert ok is False
+    assert calls and calls[0] == ["claude", "mcp", "list"], calls
+    assert "FileNotFoundError" in output, output

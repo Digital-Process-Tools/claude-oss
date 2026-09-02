@@ -3175,6 +3175,14 @@ from doctor_check_mcp_channel_registration import (
     _MCP_ARGS_RE,
     mcp_channel_registration_state,
     check_mcp_channel_registration,
+    # #810: a second question beside the registration above -- not whether OUR
+    # entry resolves, but whether some OTHER configured server also resolves to
+    # the same consumer script and would race it for one socket. Imported back
+    # here on the same terms as the four names above, so `main()` can call it as
+    # one of this file's own checks.
+    channel_consumer_names,
+    channel_consumer_census_state,
+    check_channel_consumer_census,
 )
 
 
@@ -8098,6 +8106,12 @@ def main(argv=None):
     # made the ask run even when a caller had stubbed the OTHER check
     # specifically to avoid it (self-review finding on this same change).
     check_channel_consumer_pin()
+    # #810: neither check above asks whether some OTHER configured MCP server
+    # also resolves to the claude-channel consumer script -- `bin/oss-workspace`
+    # runs the identical census before arming the channel flag, and this mirrors
+    # it so /oss:doctor reports the same collision without opening a session.
+    # Needs no config: `claude mcp list` reads claude's own configuration.
+    check_channel_consumer_census()
     # Needs no config either: the hook lives under .git/hooks and the budget
     # lives in supertool's file. Structural only -- it never runs the hook.
     check_git_push_budget(project_dir)

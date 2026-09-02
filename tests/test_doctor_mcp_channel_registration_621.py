@@ -302,6 +302,26 @@ def test_no_handoff_present_asks_normally():
     assert calls, "the real subprocess call was skipped with no handoff present"
 
 
+def test_run_is_handed_the_resolved_path_not_the_bare_name():
+    """#753/#810's own Windows CI regression: `which()` was already called to
+    check PATH membership, but `run()` was still handed the bare `"claude"`
+    string instead of `which()`'s own resolved, extension-qualified answer --
+    which `subprocess.run(shell=False)` cannot turn back into `claude.cmd` on
+    Windows. Pin the argv `run` actually receives, not just the state it
+    returns, so a regression back to the bare name is caught here rather than
+    only on a windows-latest CI leg nobody can run locally."""
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        return _FakeCompleted(1, b"")
+
+    doctor.mcp_channel_registration_state(
+        which=lambda name: "/resolved/claude.cmd", run=run, env={}
+    )
+    assert calls and calls[0][0] == "/resolved/claude.cmd", calls
+
+
 def test_could_not_ask_when_the_stored_path_carries_an_embedded_null(tmp_path):
     """Self-review finding: `os.stat` raises `ValueError`, not `OSError`, for a
     path carrying an embedded null byte -- the exact class `_dir_state`'s own

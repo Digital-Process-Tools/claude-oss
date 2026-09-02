@@ -395,6 +395,37 @@ breaking that independence.
 The pinned version is read from the registered install's own manifest, found by walking up from the
 registered path, rather than matched out of a path segment that happens to look like a version.
 
+## The `channel MCP consumer census` line
+
+The registration line above confirms THIS session's own `oss-channel` entry; it says nothing about
+whether some OTHER configured MCP server also resolves to the claude-channel consumer script
+(`notifiers/claude-channel/channel.ts`) -- a stray project `.mcp.json`, a local-scope entry from an
+earlier experiment. Two servers racing that script for one Unix socket is invisible from inside a
+session: one binds, the harness's connection to the other is refused, and `channel:health` can only
+report `CANNOT DETERMINE` -- it cannot tell which server actually holds the connection (#810).
+`bin/oss-workspace` runs the identical check, via the identical function, before deciding whether to
+arm `--dangerously-load-development-channels` -- and when it runs first (the ordinary launcher path),
+it relays its own answer into this diagnostic's environment (`OSS_WORKSPACE_CENSUS_CHECKED`,
+`_REPORT`) the same way #629 already relays the registration check just above, rather than this line
+asking `claude mcp list` a second time seconds later. So this line and the launcher's own arm-or-not
+decision are not just parsing the same shape -- on a launcher-opened session they are literally the
+same answer, and cannot disagree about the count. Run standalone (`/oss:doctor` on its own, outside a
+launcher-opened session), no relay is present and this line asks for itself.
+
+- `OK … 0 configured MCP server(s) …` / `OK … 1 configured MCP server(s) …` -- no collision. Zero
+  and one are both clean: zero means nothing here resolves to the consumer script at all (which may
+  simply mean the registration line above found nothing to register either), one means only THIS
+  session's own registration does.
+- `WARN … configured MCP servers resolve to …` -- two or more, with every server's NAME listed
+  (what `claude mcp list` itself names each one, not where each is declared -- a separate
+  `claude mcp get <name>` per name would be needed for that, and neither this diagnostic nor the
+  launcher's own arm-or-not check pays it). Deleting or editing whichever config declared the extra
+  one is not this diagnostic's call to make -- see `CLAUDE.md`'s ownership contract for `.mcp.json`
+  specifically.
+- `WARN … so whether a second configured MCP server also resolves to … is unknown` -- `claude` is
+  not on PATH, `claude mcp list` did not run, or it exited non-zero. Never relayed as "exactly one
+  server": a crashed or refused census is not evidence of a clean one.
+
 ## The `dependency diagnostic` lines
 
 `declared_dependencies()` already reports a version per dependency elsewhere in this run — that

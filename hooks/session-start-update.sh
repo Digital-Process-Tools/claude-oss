@@ -9,6 +9,17 @@
 # Nothing is printed on the happy path. A SessionStart hook's stdout is injected into the
 # session, and a line printed on every start whatever happened is the line nobody reads.
 # The receipt is what carries the answer, and `/oss:doctor` is what reads it out.
+#
+# THE FALLBACK, NOT THE PRIMARY PATH, as of #753. `bin/oss-workspace` now calls
+# scripts/plugin_update.py SYNCHRONOUSLY, before `exec claude`, for every session it
+# opens: an update that lands before the session starts has no reload/restart window
+# to be silent about, which is what this hook's own SessionStart timing could never
+# fix -- the update lands AFTER the session has already resolved its plugins. This
+# hook still exists because it is the only thing that ever runs for a `claude` started
+# by hand, which never reaches the launcher at all. scripts/plugin_update.py's own
+# debounce means that when the launcher DID just run this, this hook's call a few
+# seconds later finds a receipt too fresh to re-check and stands down without
+# touching the network again.
 
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
 python="python3"
