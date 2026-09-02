@@ -823,6 +823,16 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_channel_consumer_census",
         lambda **kw: doctor.report("OK", "channel MCP consumer census"),
     )
+    # #860: `check_channel_health_agreement` reads THIS machine's real
+    # `claude mcp list` census (via the census stub's own subject) and, absent
+    # an explicit opt-in, a cached `channel:health` reading from THIS machine's
+    # statusline cache -- neither is a fact about this fixture's tree, exactly
+    # the same reason the census stub immediately above exists.
+    monkeypatch.setattr(
+        doctor,
+        "check_channel_health_agreement",
+        lambda *a, **kw: doctor.report("OK", "channel census vs channel:health"),
+    )
     # #582: a real `supertool ops:roster` subprocess. Its answer is a fact about
     # the supertool installed on THIS machine AND about the `.supertool.json`
     # presets resolving from the fixture directory -- which carries none, so the

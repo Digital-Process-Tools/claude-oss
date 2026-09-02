@@ -275,8 +275,10 @@ def test_a_link_to_something_else_is_distinct_from_absent(tmp_path):
     level, message = doctor.FINDINGS[-1]
     # #756: named, not judged -- the two states this cannot tell apart (a
     # deliberate local checkout, a stale link) are indistinguishable in
-    # principle, so this stopped being a WARN. The target is still the point.
-    assert level == "OK"
+    # principle, so this stopped being a WARN. #764 moves it once more, from
+    # OK to NOTICE: this is not a pass, it is the structurally-unanswerable
+    # state NOTICE exists for. The target is still the point.
+    assert level == "NOTICE"
     assert "elsewhere.py" in message, message
 
 

@@ -1696,11 +1696,18 @@ else
         if [ -n "$doctor_out" ]; then
             printf '%s\n' "$doctor_out" >&2
         fi
+        # #764: a diagnostic that never started cannot have said whether a
+        # real WARN exists, so the /oss:doctor route is neither armed nor
+        # silently skipped -- it is undecidable, and that is said out loud.
+        echo "oss-workspace: whether to route into /oss:doctor could not be decided either -- the diagnostic never started." >&2
     elif [ -z "$doctor_verdict" ]; then
         echo "oss-workspace: the setup diagnostic ran, exited 0 and printed no VERDICT line, so it started and never reached its own report. Its whole output follows. Whether $repo_root is configured is UNKNOWN -- an empty search for a verdict looks identical on a clean run, which is why this is said rather than assumed. Opening the session anyway." >&2
         if [ -n "$doctor_out" ]; then
             printf '%s\n' "$doctor_out" >&2
         fi
+        # #764: same reasoning as the COULD NOT BE STARTED arm above -- no
+        # VERDICT line means no answer to gate the route on, not a clean one.
+        echo "oss-workspace: whether to route into /oss:doctor could not be decided either -- no VERDICT line was printed." >&2
     else
         case $doctor_verdict in
             ok)
@@ -1719,10 +1726,26 @@ else
                 # because a healthy launch does not reach here.
                 echo "oss-workspace: setup diagnostic: VERDICT: $doctor_verdict. Its whole output follows; the session opens regardless, because a repo that needs fixing needs a session to fix it in." >&2
                 printf '%s\n' "$doctor_out" >&2
+                # #764: a NOTICE-only run reads `VERDICT: ok` (see doctor.py's
+                # own verdict arithmetic) and never reaches this arm, so
+                # landing here means at least one real, actionable WARN (or a
+                # FAIL) is present -- exactly the case an auto-route is
+                # readable for, rather than firing on every launch forever.
+                # The prompt this session opens with, not merely a stderr
+                # line: what doctor found would otherwise reach the human and
+                # never the agent that is about to act on the repo (#764).
+                echo "oss-workspace: routing this session into /oss:doctor at its first turn, so the agent that is about to act on $repo_root starts with what the diagnostic found rather than re-deriving it by hand." >&2
+                prompt="/oss:doctor"
                 ;;
             "could not run"*)
                 echo "oss-workspace: the setup diagnostic reported VERDICT: could not run, which says nothing at all about $repo_root -- its state is UNKNOWN rather than fine. Its whole output follows. Opening the session anyway." >&2
                 printf '%s\n' "$doctor_out" >&2
+                # #764: a diagnostic that ran and said it could not look is not
+                # a clean run and must not be routed as one -- but whether a
+                # real WARN exists is equally unknown, so the route is not
+                # armed either. Said explicitly rather than left implicit,
+                # per the issue's own third state for the route itself.
+                echo "oss-workspace: whether to route into /oss:doctor could not be decided either -- the diagnostic did not answer, so there is nothing to gate the route on." >&2
                 ;;
             *)
                 # A verdict word this launcher has never heard of. Falling through
@@ -1730,6 +1753,10 @@ else
                 # outcome none of the arms above is allowed to produce.
                 echo "oss-workspace: the setup diagnostic reported VERDICT: $doctor_verdict, which this launcher does not recognise, so what it means for $repo_root is UNKNOWN. Its whole output follows. Opening the session anyway." >&2
                 printf '%s\n' "$doctor_out" >&2
+                # #764: an unrecognised verdict is not a known-clean one, so
+                # routing on it (or silently skipping the route) would both be
+                # guesses this launcher has no basis for.
+                echo "oss-workspace: whether to route into /oss:doctor could not be decided either -- this verdict word is not one this launcher knows how to gate the route on." >&2
                 ;;
         esac
     fi

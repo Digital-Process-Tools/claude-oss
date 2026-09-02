@@ -59,12 +59,14 @@ def test_prints_the_plugin_version_even_when_everything_else_fails(tmp_path):
     assert manifest["version"] in run(tmp_path).stdout
 
 
-def test_every_line_is_one_of_three_states(tmp_path):
+def test_every_line_is_one_of_four_states(tmp_path):
+    """#764 added NOTICE beside OK/WARN/FAIL -- a check that already knows, in
+    its own text, that it is structurally unable to ever answer."""
     out = run(tmp_path).stdout
     body = [ln for ln in out.splitlines() if ln.strip() and not ln.startswith("VERDICT")]
     assert body, "doctor printed no findings"
     for line in body:
-        assert line.split()[0] in ("OK", "WARN", "FAIL"), line
+        assert line.split()[0] in ("OK", "NOTICE", "WARN", "FAIL"), line
 
 
 def test_ends_on_exactly_one_verdict_line(tmp_path):

@@ -127,6 +127,14 @@ def _run_with_stub(repo, before="0.1.0", after="0.1.0", marketplace_exit=0,
         env["OSS_NO_AUTO_UPDATE"] = "1"
     else:
         env.pop("OSS_NO_AUTO_UPDATE", None)
+    # #764: the setup diagnostic now routes the prompt to /oss:doctor on any
+    # real WARN it finds, and a minimal fixture like `_repo()` below genuinely
+    # carries some (no settings rule names gh-pr-merge, and the like) -- a
+    # fact about this fixture's tree, not about the auto-update prompt switch
+    # this whole file is testing. Skipped so the two mechanisms stay isolated
+    # from each other, the same reason `test_workspace_launcher.py`'s own
+    # `run()` defaults OSS_NO_AUTO_UPDATE on for tests that are not about it.
+    env["OSS_WORKSPACE_SKIP_DOCTOR"] = "1"
     env["PATH"] = os.pathsep.join(
         [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
     )
