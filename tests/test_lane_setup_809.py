@@ -189,6 +189,80 @@ def test_control_a_pattern_with_no_comma_is_unaffected(tmp_path):
     assert resolved["patterns"][0]["pattern"] == "presets/gitlab/*.py"
 
 
+# --- #835: whitespace after the comma is carried into the literal path ---
+
+
+def test_835_whitespace_after_comma_is_stripped_from_each_member(tmp_path):
+    """The auditor's own repro: a human-typed comma list with a space after
+    the comma used to carry that space straight into the literal path, so
+    `' b.md'` -- not `'b.md'` -- was the member actually resolved."""
+    resolved = lane_setup.resolve_lane(tmp_path, ["a.md, b.md"])
+    assert resolved["files"] == ["a.md", "b.md"]
+    patterns = [entry["pattern"] for entry in resolved["patterns"]]
+    assert " b.md" not in patterns
+    assert "b.md" in patterns
+
+
+def test_835_lane_report_overlap_detects_collision_hidden_by_whitespace(tmp_path):
+    """Must fire: a lane holding `b.md` inside a spaced comma list collides
+    with a sibling lane that also holds `b.md` -- before this fix, the
+    untrimmed member `' b.md'` never matched and this printed `overlap: []`."""
+    report = lane_setup.lane_report(tmp_path, ["a.md, b.md"], ["b.md"])
+    assert report["overlap_state"] == "resolved"
+    assert report["overlap"] == ["b.md"]
+
+
+def test_835_control_a_lane_with_no_real_collision_still_reads_clear(tmp_path):
+    """Must not fire: a spaced comma list that genuinely shares nothing with
+    the against side still reports an empty, *resolved* overlap -- stripping
+    whitespace must not manufacture a collision that was never there."""
+    report = lane_setup.lane_report(tmp_path, ["a.md, b.md"], ["c.md"])
+    assert report["overlap_state"] == "resolved"
+    assert report["overlap"] == []
+
+
+# --- #836: a comma is legal inside a real filename ---
+
+
+def test_836_comma_in_real_filename_is_kept_as_one_member(tmp_path):
+    """The issue's own repro: a real file containing a comma must resolve as
+    itself, not be split apart into two members that name nothing on disk."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "comma,name.md").write_text("x\n")
+    resolved = lane_setup.resolve_lane(tmp_path, ["docs/comma,name.md"])
+    assert resolved["files"] == ["docs/comma,name.md"]
+    assert len(resolved["patterns"]) == 1
+    assert resolved["patterns"][0]["state"] == "literal"
+
+
+def test_836_control_two_real_files_in_a_comma_list_still_split(tmp_path):
+    """Must not fire: an ordinary comma list naming two real files, neither
+    of which exists as the literal unsplit string, must still split into two
+    members -- the #836 fix must not swallow the #809 feature it sits beside."""
+    (tmp_path / "a.md").write_text("x\n")
+    (tmp_path / "b.md").write_text("x\n")
+    resolved = lane_setup.resolve_lane(tmp_path, ["a.md,b.md"])
+    assert resolved["files"] == ["a.md", "b.md"]
+    assert len(resolved["patterns"]) == 2
+
+
+def test_836_control_not_yet_existing_comma_joined_member_stays_literal(tmp_path):
+    """Must not fire: a comma list joining a real file with a path that does
+    not exist yet (a changelog fragment about to be created) must still
+    split and keep the not-yet-existing half `literal` -- #836's fix only
+    keeps a comma-joined raw string whole when the *unsplit* string itself
+    already names something real, never when it does not."""
+    (tmp_path / "a.md").write_text("x\n")
+    resolved = lane_setup.resolve_lane(
+        tmp_path, ["a.md,changelog.d/835.fixed.md"]
+    )
+    assert len(resolved["patterns"]) == 2
+    by_pattern = {e["pattern"]: e for e in resolved["patterns"]}
+    assert by_pattern["a.md"]["state"] == "literal"
+    assert by_pattern["changelog.d/835.fixed.md"]["state"] == "literal"
+    assert by_pattern["changelog.d/835.fixed.md"]["files"] == ["changelog.d/835.fixed.md"]
+
+
 # --- plain --against mode also distinguishes resolved-to-nothing from a real disjoint pair ---
 
 
