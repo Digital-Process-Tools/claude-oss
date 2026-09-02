@@ -175,19 +175,64 @@ def test_the_project_half_wins_when_the_local_half_contradicts_it(tmp_path):
     assert oss_config.LOCAL_CONFIG_NAME in joined
 
 
-def test_a_clone_with_no_local_half_is_told_which_file_to_write(tmp_path):
-    """The second maintainer, exactly as the issue describes them: they cloned, so they
-    have the project half and nothing else. `missing required key: clone` is true and
-    useless -- it reads as a broken config rather than as an un-run setup.
+def test_a_clone_with_no_local_half_is_derived_rather_than_failed(tmp_path):
+    """The second maintainer, exactly as the issue describes them: they cloned, so
+    they have the project half and nothing else. #608: `missing required key: clone`
+    used to be the answer, true and useless -- it reads as a broken config rather
+    than as an un-run setup, and blocks the very first thing the loop does (cutting a
+    lane). Cloning must not be a broken state: the three machine keys are derived
+    from the repository root instead, and `load()` reports no problem for it.
     """
     project, _ = oss_config.split(_combined(tmp_path))
     path = tmp_path / oss_config.CONFIG_NAME
     path.write_text(json.dumps(project), encoding="utf-8")
 
     config, problems = oss_config.load(path)
-    joined = "\n".join(problems)
-    assert oss_config.LOCAL_CONFIG_NAME in joined
-    assert "/oss:setup" in joined
+    assert problems == []
+    assert config["clone"] == str(tmp_path.resolve())
+    assert config["worktree_root"] == "{}-wt".format(tmp_path.resolve())
+    assert config["state_file"] == ".max/name-watch.json"
+
+
+def test_local_key_states_distinguishes_configured_from_derived(tmp_path):
+    """#608's acceptance condition, in the same fixture per CLAUDE.md's rule on
+    negative assertions: a repo root with no `.oss.local.json` (derived) paired with
+    the ordinary split repo (configured), so a run that only exercised the
+    already-passing case cannot pass as covering both.
+    """
+    combined_path = _write_split(tmp_path)
+    configured = oss_config.local_key_states(combined_path)
+    for key in oss_config.LOCAL_KEYS:
+        state, value, reason = configured[key]
+        assert state == oss_config.LOCAL_STATE_CONFIGURED, key
+        assert value == _combined(tmp_path)[key]
+        assert reason is None
+
+    project, _ = oss_config.split(_combined(tmp_path))
+    no_local_dir = tmp_path / "no-local"
+    no_local_dir.mkdir()
+    no_local_path = no_local_dir / oss_config.CONFIG_NAME
+    no_local_path.write_text(json.dumps(project), encoding="utf-8")
+
+    derived = oss_config.local_key_states(no_local_path)
+    for key in oss_config.LOCAL_KEYS:
+        state, value, reason = derived[key]
+        assert state == oss_config.LOCAL_STATE_DERIVED, key
+        assert value is not None
+        assert reason is None
+    assert derived["clone"][1] == str(no_local_dir.resolve())
+    assert derived["worktree_root"][1] == "{}-wt".format(no_local_dir.resolve())
+
+
+def test_local_key_states_could_not_derive_when_the_local_half_is_unreadable(tmp_path):
+    path = _write_split(tmp_path)
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text("{ broken", encoding="utf-8")
+    states = oss_config.local_key_states(path)
+    for key in oss_config.LOCAL_KEYS:
+        state, value, reason = states[key]
+        assert state == oss_config.LOCAL_STATE_COULD_NOT_DERIVE, key
+        assert value is None
+        assert reason is not None
 
 
 def test_an_unreadable_local_half_is_a_named_problem_not_a_silent_project_only_load(tmp_path):

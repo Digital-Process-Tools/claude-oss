@@ -34,8 +34,15 @@ def _cli(tmp_path, issue, *extra_args):
 
 
 def test_release_with_absent_config_names_the_absence(tmp_path):
-    """Control: a valid config genuinely lacking worktree_root -- the benign case
-    `derive_worktree`'s own docstring calls expected inside a worktree."""
+    """A committed config with no `.oss.local.json` at all -- #608: `worktree_root`
+    used to be simply absent here, and the benign case this test used to pin was
+    `derive_worktree`'s "genuinely no worktree_root configured" arm. `oss_config.load`
+    now DERIVES `worktree_root` from the repository root instead of leaving it out, so
+    this shape no longer reaches that arm at all: the release proceeds against the
+    derived path, finds no record there (nothing was ever written to a directory that
+    has never existed), and reports the ordinary not-found outcome -- benign in a
+    different, and now more useful, way.
+    """
     (tmp_path / ".oss.json").write_text(
         json.dumps(
             {
@@ -54,9 +61,8 @@ def test_release_with_absent_config_names_the_absence(tmp_path):
     )
     done = _cli(tmp_path, 999, "--release")
     payload = json.loads(done.stdout)
-    assert payload["state"] == "could-not-release"
+    assert payload["state"] == "not-found", payload
     valid_missing_detail = payload["detail"]
-    assert "no registry" in valid_missing_detail
 
     no_config_dir = tmp_path / "no-config"
     no_config_dir.mkdir()
