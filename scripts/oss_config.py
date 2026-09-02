@@ -1708,6 +1708,22 @@ def validate(config):
                         "labels.filed_by_loop: expected a label name (string) or null "
                         "for 'not declared', got {!r}".format(filed_by_loop)
                     )
+            # #844: a maintainer-side reservation is a fourth fact dispatch
+            # selection cannot read off assignees alone -- an issue nobody has
+            # claimed that the maintainer is deliberately holding open. Same
+            # opt-in shape as filed_by_loop directly above: optional, null
+            # means "not declared yet", not a typo.
+            if "reserved" in labels:
+                reserved = labels["reserved"]
+                if reserved is not None and (
+                    isinstance(reserved, bool)
+                    or not isinstance(reserved, str)
+                    or not reserved.strip()
+                ):
+                    problems.append(
+                        "labels.reserved: expected a label name (string) or null "
+                        "for 'not declared', got {!r}".format(reserved)
+                    )
 
     for field in ("version_sites", "docs_targets"):
         if field in config and not isinstance(config[field], list):

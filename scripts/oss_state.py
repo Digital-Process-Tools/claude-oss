@@ -1499,18 +1499,32 @@ def lane_fill(entries, window, why=None):
                 "lane fill {} (issue {}): a full lane of {} needs no reason, but "
                 "{!r} was given".format(position, primary, count, reason)
             )
+        candidates = entry.get("candidates")
+        if candidates is not None and (isinstance(candidates, bool) or not isinstance(candidates, int)):
+            raise StateError(
+                "lane fill {} (issue {}): candidates must be a whole number, not "
+                "{!r}".format(position, primary, candidates)
+            )
+
         # `range(count)`, not `list(range(count))`: check_lane() only ever calls
         # len() on its argument (see its own docstring/body), and a range's len() is
         # O(1) with no allocation -- materializing the list first meant an over-cap
         # count was still refused correctly, but only after building a list that
         # size first (#852, found by review).
-        check = _dispatch_rank.check_lane(range(count), reason)
+        #
+        # `candidates` (#871) is threaded straight through -- this is the exact
+        # call the dispatch decision itself already had to make, and `check_lane`
+        # is the single place a claimed 'board-exhausted' is checked against a
+        # measured candidate count rather than merely typed.
+        check = _dispatch_rank.check_lane(range(count), reason, candidates=candidates)
         if check["state"] != "ok":
             raise StateError(
                 "lane fill {} (issue {}): {}".format(position, primary, check["why"])
             )
 
-        normalized.append({"primary": primary, "count": count, "reason": check["short_reason"]})
+        normalized.append({
+            "primary": primary, "count": count, "reason": check["short_reason"],
+        })
 
     return {"state": LANE_FILL_RECORDED, "window": window, "lanes": normalized, "why": None}
 
@@ -2481,10 +2495,10 @@ def _lane_fill_argument(text):
     """
     import argparse
 
-    parts = text.split(":", 2)
+    parts = text.split(":", 3)
     if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
         raise argparse.ArgumentTypeError(
-            "{!r} is not PRIMARY:COUNT[:REASON]".format(text)
+            "{!r} is not PRIMARY:COUNT[:REASON[:CANDIDATES]]".format(text)
         )
     primary_text, count_text = parts[0].strip(), parts[1].strip()
     try:
@@ -2501,6 +2515,20 @@ def _lane_fill_argument(text):
     entry = {"primary": primary, "count": count}
     if reason is not None:
         entry["reason"] = reason
+    # #871: the fourth, optional field -- how many file-disjoint candidates
+    # the caller found still open on the board, so a claimed 'board-exhausted'
+    # can be checked rather than merely typed. Only meaningful shaped here;
+    # dispatch_rank.check_lane is where it is actually judged against the
+    # reason, the same division of labour this function already keeps for
+    # REASON itself (see its own docstring).
+    if len(parts) > 3 and parts[3].strip():
+        candidates_text = parts[3].strip()
+        try:
+            entry["candidates"] = int(candidates_text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                "{!r}: {!r} is not a whole number".format(text, candidates_text)
+            )
     return entry
 
 

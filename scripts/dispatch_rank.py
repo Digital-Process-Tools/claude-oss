@@ -244,6 +244,32 @@ def rank(labels, declared):
     }
 
 
+def reserved(labels, declared):
+    """Is this issue reserved by the maintainer (#844) -- a fourth fact
+    dispatch selection cannot read off assignees alone.
+
+    A contributor without write access cannot self-assign (GitHub restricts
+    assignment to write/triage permission), so an empty assignee field on a
+    public repository means only "no maintainer lane holds this" -- not "the
+    maintainer is willing to have it taken". A reservation the maintainer
+    made off the tracker -- in a session handoff, from memory -- is
+    structurally invisible to a sub-manager spawned fresh into the
+    repository with nothing (#695): it can only read what is on the tracker.
+
+    `declared` is the repo's own `labels` block; `labels.reserved` is an
+    optional label name, the same opt-in shape `labels.filed_by_loop`
+    already is (#762) -- derivable from the tracker by anyone, rather than
+    recalled from a handoff nothing later can see. A repository that has not
+    declared a spelling is read as never reserving anything, not as a third
+    state the way author/priority are: there is no ambiguity to report when
+    no candidate spelling was ever named, only an opt-in nobody took yet.
+    """
+    spelling = (declared or {}).get("reserved")
+    if not spelling or not isinstance(spelling, str):
+        return False
+    return spelling in set(labels or [])
+
+
 def order(issues, declared):
     """The issues, best first, stable within a rank.
 
@@ -262,7 +288,7 @@ def order(issues, declared):
     return sorted(issues, key=key)
 
 
-def check_lane(issues, short_reason):
+def check_lane(issues, short_reason, candidates=None):
     """Is this a lane that may be dispatched, and has a short one said why?
 
     Three issues is the normal case, not the ceiling: the fixed overhead of a
@@ -273,6 +299,24 @@ def check_lane(issues, short_reason):
     for it: past the spawn the cost is already committed. A lane of zero is
     refused too, and deliberately not called short -- naming it short would
     invite a reason for something that should never have been dispatched at all.
+
+    `candidates` (#871) is the number of file-disjoint candidate issues the
+    caller found still open on the board -- `lane_setup.py`'s own
+    `resolve_lane`/`lane_overlap`, run across every other open, dispatchable
+    issue, never something this function derives on its own (an issue's files
+    are not derivable from its body, #267, so naming candidate lanes stays the
+    caller's job). Every refusal on this path used to check the reason's
+    *shape* only -- one of the three declared words -- and never whether it was
+    *true*: a lane could write `board-exhausted` with 35 issues open and satisfy
+    every gate, because a lane that was correctly short and one that was lazily
+    short render identically. When `short_reason` is `'board-exhausted'` and
+    `candidates` is given, the claim is checked against it: at or above
+    `MAX_LANE` candidates, the board plainly was not exhausted, and the reason
+    is refused rather than recorded. `candidates=None` (the default) leaves this
+    exactly as it was before #871 -- the caller named no board to check against,
+    which is a fact for the caller's own receipt to carry, not something this
+    function should guess at. `no-adjacent` and `could-not-tell` are untouched:
+    a candidate count says nothing about either.
     """
     size = len(issues)
     if size == 0:
@@ -306,6 +350,21 @@ def check_lane(issues, short_reason):
                 "anything but a person".format(size, ", ".join(SHORT_REASONS))
             ),
         }
+    if (
+        short_reason == "board-exhausted"
+        and candidates is not None
+        and candidates >= MAX_LANE
+    ):
+        return {
+            "state": "board-not-exhausted",
+            "size": size,
+            "short_reason": None,
+            "why": (
+                "board-exhausted was claimed but {} file-disjoint candidate(s) "
+                "remain on the board -- at or above the {}-issue lane size, so "
+                "the board was not exhausted (#871)".format(candidates, MAX_LANE)
+            ),
+        }
     return {"state": "ok", "size": size, "short_reason": short_reason, "why": None}
 
 
@@ -325,6 +384,15 @@ def main(argv=None):
         help="check a lane of these issue numbers instead of ranking a board",
     )
     parser.add_argument("--short-reason", default=None, choices=SHORT_REASONS)
+    parser.add_argument(
+        "--candidates",
+        type=int,
+        default=None,
+        metavar="N",
+        help="file-disjoint candidates found still open on the board (#871) -- "
+        "checked against a 'board-exhausted' --short-reason; omit when the "
+        "board was not measured",
+    )
     args = parser.parse_args(argv)
 
     # The sibling idiom used by lane_setup.py, tree_snapshot.py, ranking_table.py,
@@ -341,7 +409,7 @@ def main(argv=None):
             pass
 
     if args.lane is not None:
-        answer = check_lane(args.lane, args.short_reason)
+        answer = check_lane(args.lane, args.short_reason, candidates=args.candidates)
         print("{}: {} issue(s){}".format(
             answer["state"].upper(),
             answer["size"],
@@ -376,23 +444,33 @@ def main(argv=None):
     issues = payload.get("issues") or []
     ranked = order(issues, declared)
     unrankable = 0
+    reserved_count = 0
     for item in ranked:
         answer = rank(item.get("labels") or [], declared)
+        is_reserved = reserved(item.get("labels") or [], declared)
+        if is_reserved:
+            reserved_count += 1
+        # #844: a reservation is a fourth fact selection cannot read off
+        # assignees alone -- printed on every row, ranked or not, because an
+        # unrankable issue can be reserved too and dropping the marker there
+        # would silently let it back onto a candidate list.
+        marker = "  [RESERVED]" if is_reserved else ""
         if answer["rank"] is None:
             unrankable += 1
-            print("  ?  #{}  could not rank -- {}".format(
-                item.get("number"), answer["why"]))
+            print("  ?  #{}  could not rank -- {}{}".format(
+                item.get("number"), answer["why"], marker))
         else:
             # `why` is non-None on a *ranked* issue only for #826's
             # unrecognised-priority case. Dropping it here would compute the
             # one signal #826 exists to surface and then render it
             # identically to silence -- which is the whole defect, moved one
             # layer out into the receipt a maintainer actually reads.
-            print("  {}  #{}  {} / {}{}".format(
+            print("  {}  #{}  {} / {}{}{}".format(
                 answer["rank"], item.get("number"),
                 answer["author"], answer["band"],
-                "" if not answer["why"] else "  -- " + answer["why"]))
-    print("{} issue(s), {} unrankable".format(len(ranked), unrankable))
+                "" if not answer["why"] else "  -- " + answer["why"], marker))
+    print("{} issue(s), {} unrankable, {} reserved".format(
+        len(ranked), unrankable, reserved_count))
     return 0
 
 

@@ -235,6 +235,17 @@ triage permission — so this mechanism claims for the maintainer's own loop onl
 contributor uses to claim an issue is a separate decision (#460); it must land somewhere this same
 selection step reads, not in a channel of its own that renders an actually-claimed issue as free.
 
+**A fourth fact the assignee field cannot carry at all: the maintainer deliberately holding an issue
+open (#844).** An empty assignee field on a public repository means only "no maintainer lane holds
+this" — never "nobody wants it" and never "the maintainer is willing to have it taken". A reservation
+made off the tracker — in a session handoff, from memory — is structurally invisible to a sub-manager
+spawned fresh into the repository with nothing (#695): it can only read what is on the tracker.
+`labels.reserved` in `.oss.json` is the fix, the same opt-in shape `labels.filed_by_loop` already is
+(#762) — derivable from the tracker by anyone rather than recalled — and `dispatch_rank.reserved`
+reads it back, printing `[RESERVED]` beside every issue that carries it when ranking the board. A
+repository that has not declared a spelling reads every issue as unreserved, never as `could-not-tell`
+— there is nothing ambiguous about a label field with no candidate spelling to look for.
+
 **The lane's top issue is the best-ranked one, by the dispatch order in `SKILL.md`'s "Deciding what
 to build" (#798).** Author before priority within a band: a human ask outranks loop work of the same
 or lower band, and a blocking-class defect the loop found still outranks an ordinary ask. Compute it
@@ -260,6 +271,17 @@ computed. **A short lane with no reason is a defect in the tick**, and the three
 purpose: a free-text reason is unreadable by anything but a person, which is the defect #773 filed
 against a handback state carrying only prose. The third word earns its place — a board never measured
 for adjacency and one measured and found to have none are different facts.
+
+**`board-exhausted` is now checked against the board, not merely typed (#871).** Every refusal on this
+path used to be a *shape* refusal — one of the three declared words — and never asked whether the
+reason was *true*: a one-issue lane could write `board-exhausted` and satisfy every gate while 35
+issues sat open. `--lane-fill PRIMARY:COUNT:board-exhausted:CANDIDATES` carries the fourth,
+optional field — the file-disjoint candidate count the same `resolve_lane`/`lane_overlap` sweep above
+already produces — and `oss_state.py --decision` now refuses the whole call when `CANDIDATES` is at
+or above three, the same way an unsupported reason word already was. Omit it and nothing changes;
+name it and a lazy `board-exhausted` is refused at the one place a lane record already exists to
+attach the refusal to, the way #866's advisory check could not for a declined dispatch with no record
+of its own.
 
 **A bundle is not a cluster** — `agents/triager.md`
 correctly refuses to cluster on a shared file, because a cluster claims one change fixes several
@@ -362,6 +384,15 @@ call this tick then had to treat the whole held set as untrustworthy while that 
 for every candidate probed after it, not just this one's own. Pass the same patterns this candidate
 was already probed with above; this is the one call that writes, so it is also the one call the
 files must be named on.
+
+**When a dispatched lane's own brief tells it to run `--claim` as its own first call, that call must
+run from the clone, before the `git worktree add` (or equivalent `cd`) the brief also asks for — not
+after (#865).** `.oss.local.json` is git-excluded from every worktree this loop cuts, by construction,
+so `--claim` standing inside one derives `worktree_root` from that worktree's own path rather than
+the clone's (#608's own repository-root fallback, reached from the wrong root) and would write into a
+registry sibling to that one worktree, invisible to every other lane's `--derive-held`. `lane_setup.py`
+now refuses the call outright when it detects this — exit non-zero, nothing written, a `CLAIM REFUSED`
+line naming the cause — rather than degrading quietly into a claim that looks recorded and is not.
 
 Every brief carries these:
 
