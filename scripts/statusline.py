@@ -253,13 +253,31 @@ def _declared_watch_names(root):
         return set(), "unreadable"
     if not isinstance(doc, dict):
         return set(), "malformed"
+    # Absent and malformed are not the same answer, and this asymmetry is the
+    # one both review spawns on #754 caught in #754's own fix. `ops` missing
+    # entirely is a repository that declares nothing -- real, common, and not a
+    # problem. `ops` present and the wrong shape is a file somebody edited and
+    # broke, and folding that into the first renders it as `not-attributable`
+    # one caller down: identical to a channel that genuinely belongs to another
+    # project's fleet, which is precisely the fold #754 exists to end.
+    # doctor.py's own copy has split these since #216; this one had dropped the
+    # branch while its docstring above claimed parity with it.
+    if "ops" not in doc:
+        return set(), None
     ops = doc.get("ops")
     if not isinstance(ops, dict):
-        return set(), None
+        return set(), "malformed"
+    # The empty-string filter is doctor.py's, kept here rather than dropped: a
+    # block declaring `"watch_name": ""` declares no name, and counting it would
+    # push a file that also declares one real name to len(declared) == 2 and so
+    # to `not-attributable` -- a second, quieter way for a broken file to read
+    # as somebody else's fleet.
     return {
         block["watch_name"]
         for block in ops.values()
-        if isinstance(block, dict) and isinstance(block.get("watch_name"), str)
+        if isinstance(block, dict)
+        and isinstance(block.get("watch_name"), str)
+        and block["watch_name"]
     }, None
 
 
@@ -1915,6 +1933,16 @@ def gather(payload, root, now=None):
     channel = None
     if config.get("watch_channel") is not False:
         raw_channel = (cache or {}).get("channel") or {}
+        # `attribution` (a 4-valued string, #754) replaced `attributable` (a
+        # bool, #613) in the cache document. A cache written by the older code
+        # carries only the old key, so this `.get` falls to its default and one
+        # refresh interval's worth of readings render `ch?` on the single
+        # upgrade that crosses #754 -- self-healing at the next `refresh()`,
+        # which rewrites the whole entry. Written down rather than migrated:
+        # translating the old bool would mean asserting WHICH route attributed
+        # a reading this code did not take, and `derivation` was only ever true
+        # by inference. Naming a bounded, self-healing window beats inventing a
+        # provenance for a value that no longer has one.
         channel = channel_status(
             raw_channel.get("raw_state"),
             raw_channel.get("attribution", "not-attributable"),

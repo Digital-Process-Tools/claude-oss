@@ -265,6 +265,44 @@ def test_gather_never_asked_is_cannot_determine_distinct_from_not_delivering(tmp
     assert facts["channel"]["state"] != "not_delivering"
 
 
+def test_gather_an_old_shape_cache_renders_cannot_determine_and_self_heals(
+    tmp_path, monkeypatch
+):
+    """#754 renamed the cache's `attributable` bool to a 4-valued `attribution`
+    string, so a cache written by the older code renders `ch?` for one refresh
+    interval. Pinned rather than migrated (the reasoning is at gather()'s own
+    call site) -- and paired with its must-not-fire control below, which proves
+    the very next refresh rewrites the entry and the window closes."""
+    _rig(monkeypatch, tmp_path)
+    now = 100_000.0
+    cache = {
+        "fetched_at": now - 10,
+        "channel": {"raw_state": "forwarding", "attributable": True},  # OLD shape
+        "channel_fetched_at": now - 5,  # fresh by its own interval
+    }
+    statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
+    facts = statusline.gather({}, str(tmp_path), now=now)
+    assert facts["channel"]["state"] == "cannot_determine"
+    assert facts["channel"]["reason"] == "not-attributable"
+
+
+def test_gather_the_must_not_fire_control_a_new_shape_cache_renders_the_real_state(
+    tmp_path, monkeypatch
+):
+    """The control the test above needs: the identical reading in the NEW shape
+    renders the real state, so the `ch?` above is the old key and nothing else."""
+    _rig(monkeypatch, tmp_path)
+    now = 100_000.0
+    cache = {
+        "fetched_at": now - 10,
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
+        "channel_fetched_at": now - 5,
+    }
+    statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
+    facts = statusline.gather({}, str(tmp_path), now=now)
+    assert facts["channel"]["state"] == "forwarding"
+
+
 # ---------------------------------------------------------------------- refresh
 
 
@@ -461,6 +499,65 @@ def test_declared_watch_names_unreadable_and_malformed_are_distinct_problems(tmp
     names, problem = statusline._declared_watch_names(tmp_path)
     assert names == set()
     assert problem == "malformed"
+
+
+def test_declared_watch_names_a_present_but_wrongly_shaped_ops_is_malformed(tmp_path):
+    """Both review spawns on this issue found the same hole in its own fix: the
+    first version returned `(set(), None)` -- "declares nothing", a real and
+    common state -- for a document whose `ops` key is present and is not an
+    object. That is #754's own fold, reproduced inside the fix for #754: a file
+    somebody hand-edited and broke rendering identically to a channel that
+    genuinely belongs to another project's fleet. doctor.py's own copy has split
+    these two since #216 and says so in a comment; this copy had dropped the
+    branch while its docstring claimed parity."""
+    for broken in ([1, 2, 3], "not-a-dict", 7):
+        (tmp_path / ".supertool.json").write_text(
+            json.dumps({"presets": ["watch"], "ops": broken}), encoding="utf-8"
+        )
+        names, problem = statusline._declared_watch_names(tmp_path)
+        assert names == set()
+        assert problem == "malformed", broken
+
+
+def test_declared_watch_names_the_must_not_fire_control_ops_absent_is_not_a_problem(tmp_path):
+    """The positive control the branch above needs: `ops` MISSING ENTIRELY is a
+    repo that declares nothing, which is a real state and must stay `None` --
+    if this also reported `malformed`, the split above would be a check that
+    fires on everything, which is no check at all."""
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"presets": ["watch"]}), encoding="utf-8"
+    )
+    names, problem = statusline._declared_watch_names(tmp_path)
+    assert names == set()
+    assert problem is None
+
+
+def test_declared_watch_names_drops_an_empty_declared_name(tmp_path):
+    """doctor.py's own copy filters these; dropping the filter here would let a
+    block declaring `""` count toward the len(declared) == 1 test and push a
+    file that DOES declare one real name to `not-attributable`."""
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"ops": {"a": {"watch_name": ""}, "b": {"watch_name": "real-name"}}}),
+        encoding="utf-8",
+    )
+    names, problem = statusline._declared_watch_names(tmp_path)
+    assert names == {"real-name"}
+    assert problem is None
+
+
+def test_attribution_is_declaration_unreadable_when_ops_is_present_and_broken(
+    tmp_path, monkeypatch
+):
+    """The same hole, at the level a reader of the status line actually sees it."""
+    (tmp_path / ".supertool.json").write_text(
+        json.dumps({"presets": ["watch"], "ops": [1, 2, 3]}), encoding="utf-8"
+    )
+    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    config = {"repo": "Digital-Process-Tools/claude-jit-context"}
+    monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
+    _, attribution = statusline._channel_reading(tmp_path, config)
+    assert attribution == "declaration-unreadable"
+    assert attribution != "not-attributable"
 
 
 # ------------------------------------------------------- channel_status (#754)
