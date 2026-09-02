@@ -69,6 +69,35 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    an unbounded "findings, therefore stop" makes every release hostage to diminishing returns. After
    round two, file the rest against the next milestone and ship.
 
+   **Resolve the plugin root once for this gate, the same way `commands/tick.md` step 1 already does
+   for `doctor.py` (#789).** `${CLAUDE_PLUGIN_ROOT}` in this file's own command text is a
+   version-pinned path substituted once when the command was injected — it only locates the script
+   file to run. `checklist_skew.py` and `ranking_table.py` each *also* fall back internally to
+   `os.environ.get("CLAUDE_PLUGIN_ROOT")` for their own `--plugin-root` default, a real shell
+   environment variable that can be unset even in the same session that just substituted the literal
+   path above. Left to that fallback, `checklist_skew.py` degrades to `could-not-tell` — a real,
+   well-formed answer that reads as a legitimate unknown where a measurement (`not-applicable`, or
+   whatever the true state is) was one flag away — and `ranking_table.py` degrades to
+   `could-not-read`. Resolve once, name the route, and pass it explicitly to both:
+
+   ```bash
+   RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
+     --print-resolved-root --root . 2>/dev/null)"
+   if [ -n "$RESOLVED_ROOT" ] && [ -d "$RESOLVED_ROOT" ]; then
+     GATE3_ROOT="$RESOLVED_ROOT"
+     GATE3_ROOT_ROUTE="resolved-install"
+   else
+     GATE3_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     GATE3_ROOT_ROUTE="pinned-root"
+   fi
+   ```
+
+   Record `GATE3_ROOT_ROUTE` in the release report alongside the checklist-skew payload — it names
+   which route produced the root that was passed in, not a fourth state of `checklist_skew.py`'s own
+   answer. `release_delta.py` takes no `--plugin-root` at all (confirmed by its own `--help`): its
+   only use of `${CLAUDE_PLUGIN_ROOT}` is to locate the script file, the same substituted-once path
+   as everywhere else in this document, so it needs no change here.
+
    **Except a finding in a row the ranking table marks blocking, which is not carry-forward
    material.** It stops the tag in either round. Each finding comes back carrying its row, so this is
    a read rather than a judgement — and without it the cap outranks the table by being later in the
@@ -92,7 +121,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      by running the extractor, never by retyping it**:
 
      ```bash
-     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py" --plugin-root "$GATE3_ROOT"
      ```
 
      **#688: a hand transcription of this table once dropped the embargo prose off two of its rows**
@@ -175,7 +204,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    all (#538). It is computed instead:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --json
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --plugin-root "$GATE3_ROOT" --json
    ```
 
    It reads the version out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and out of this
