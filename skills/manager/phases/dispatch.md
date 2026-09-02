@@ -143,7 +143,10 @@ assignee, `gh-prs` showing the PR holding the files. Checkable by shape, not by 
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --check-decline-reason "TEXT"`
 reports `CITED` when the text carries a backtick-quoted call and `UNCITED` otherwise. An inherited or
 freehand reason with no such citation is not a reason, even a true one -- dispatch the issue instead
-of parking it on a stale handoff.
+of parking it on a stale handoff. **This check is advisory, not enforced** -- unlike `--lane-fill`,
+which refuses `--decision` outright on an unreasoned short lane, there is no lane record for an issue
+that was never dispatched to attach a refusal to. Run it and put `UNCITED` in the tick's own report;
+nothing currently blocks the call the way a short lane is blocked.
 
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix

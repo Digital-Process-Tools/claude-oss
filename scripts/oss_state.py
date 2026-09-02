@@ -1567,12 +1567,31 @@ def _lane_fill_sentence(record):
 
 
 #: #866: a citation-shaped token inside a declined-dispatch reason -- a
-#: backtick-quoted op string (`gh-issue:844`) or a script invocation
-#: (`lane_setup.py --lane ...`). Deliberately shape-only: this cannot tell a
-#: true citation from a fabricated one, only that *something callable* is
-#: named, which is the same bar the issue itself states as "checkable" --
-#: the citation either names a call or it does not.
-_DECLINE_CITATION_RE = re.compile(r"`[^`\s]+(?::[^`\s]+|\.py\b[^`]*)`")
+#: backtick-quoted op string (`gh-issue:844`, `gh-prs`) or a script invocation
+#: (`lane_setup.py --lane ...`). Three findings from two rounds of review
+#: shaped this pattern, in order:
+#:
+#: 1. A hyphen or a colon is required, not either alone -- `gh-prs` (hyphen,
+#:    no colon) and `gh-issue:844` (both) are the two worked examples this
+#:    repository's own docs and changelog cite, and a colon-only first draft
+#:    missed the first of them: `decline_reason_state("`gh-prs` shows the
+#:    PR")` returned `uncited` against its own documented example.
+#: 2. The pre-delimiter token must start with a letter, so a bare timestamp
+#:    (`14:32`) or a ratio (`3:1`) inside backticks does not read as a
+#:    citation just because it contains a colon.
+#: 3. A colon immediately followed by `//` does not count on its own -- an
+#:    ordinary URL scheme (`https://...`) is not a call, even wrapped in
+#:    backticks, unless it also carries a hyphen somewhere in the token.
+#:
+#: What remains is a real, stated limit rather than a closed one: this
+#: cannot tell a true citation from a fabricated one, only that
+#: *something callable-shaped* is named -- the same bar the issue itself
+#: states as "checkable". `gh-pr-merge:1208:squash` and `todo-fixme` both
+#: still read as cited; nothing here verifies the cited call was run, or
+#: that it says what the reason claims.
+_DECLINE_CITATION_RE = re.compile(
+    r"`[a-zA-Z][^`\s]*(?:-[^`\s]*|:(?!//)[^`\s]*)`|`[^`\s]*\.py\b[^`]*`"
+)
 
 
 def decline_reason_state(reason):
@@ -2591,8 +2610,12 @@ def _main(argv=None):
         help="#866: classify a reason for declining to dispatch an issue, or for "
         "shrinking a lane below the default fill -- CITED when it names the op "
         "or script invocation this tick ran to establish it, UNCITED otherwise, "
-        "which means it is not a reason and the issue dispatches. Takes no "
-        "state file reading; path is still required but unused",
+        "which means it is not a reason and the issue dispatches. Advisory only "
+        "(found by review): unlike --lane-fill, nothing here refuses --decision "
+        "on an UNCITED reason -- there is no lane record for an issue that was "
+        "never dispatched to attach a refusal to. Run it and report the result; "
+        "the tick's own report is what makes an uncited decline visible. Takes "
+        "no state file reading; path is still required but unused",
     )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
