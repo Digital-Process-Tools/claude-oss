@@ -4,6 +4,16 @@ One sentence: it runs a public GitHub repo as its maintainer, from a Claude Code
 
 The loop is: read the board, decide what is worth building, delegate it to an agent, review the result, merge on green, release. Everything repo-specific (default branch, labels, test command, version sites) lives in `.oss.json`, written once by probing the repo. The prose never carries a fact about a repo.
 
+## The problem
+
+A maintainer loop written as prose gets copied between repos, and the copies drift. Fixing a triage
+rule means editing it in three places and remembering the third. Repos that never got the copy run
+no loop at all.
+
+This packages the loop once: one skill, the agents it delegates to, a handful of commands.
+Everything that differs between repos — default branch, label spellings, version sites, test
+command — lives in a config file the plugin writes by probing the repo, not in the prose.
+
 ## The pieces
 
 | Piece | Count | What it is |

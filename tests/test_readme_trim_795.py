@@ -82,6 +82,7 @@ DOCS_TARGETS = {
     "docs/status-line.md": ["watch_channel"],
     "docs/development.md": ["pytest-cov", "#303"],
     "docs/status.md": ["Tested, not proven", "#293"],
+    "docs/overview.md": ["packages the loop once", "copies drift"],
 }
 
 
