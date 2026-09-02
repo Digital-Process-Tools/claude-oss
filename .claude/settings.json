@@ -8,5 +8,13 @@
   "statusLine": {
     "type": "command",
     "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/statusline.py"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(supertool:*)",
+      "Bash(./supertool:*)",
+      "Bash(git *)",
+      "Agent"
+    ]
   }
 }

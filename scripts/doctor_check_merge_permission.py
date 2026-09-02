@@ -21,6 +21,7 @@ and `doctor.py`'s own import of this module keeps that reference valid.
 """
 
 import json
+import re
 from pathlib import Path
 
 import doctor
@@ -73,8 +74,8 @@ def _entry_count(count, key, path):
     )
 
 
-def merge_permission_state(project_dir, home=None):
-    """Is there a settings rule naming the merge op? Four answers, not two.
+def _permission_rule_state(project_dir, matches_entry, home=None):
+    """Is there a settings rule matching ``matches_entry``? Four answers, not two.
 
     `present` / `denied` / `absent` / `unknown`, and the last one is the reason
     this is not a boolean. A settings file that could not be parsed produces no
@@ -90,6 +91,11 @@ def merge_permission_state(project_dir, home=None):
     contributor-writable file the ability to write this script's own output
     lines. Counts and paths answer the question and carry nothing chosen by the
     tree being diagnosed except a path it already had to be told about.
+
+    Shared by `merge_permission_state` (substring match on `MERGE_OP`) and
+    `supertool_permission_state` (a spelling-anchored regex) -- #609. The only
+    thing that varies between the two checks is which entries count, never how
+    the settings files are read or how the four states are decided.
     """
     unreadable = []
     allowed = []
@@ -114,7 +120,7 @@ def merge_permission_state(project_dir, home=None):
             unreadable.append(str(path))
             continue
         for key, found in (("allow", allowed), ("deny", denied)):
-            matches = [e for e in _permission_entries(data, key) if MERGE_OP in e]
+            matches = [e for e in _permission_entries(data, key) if matches_entry(e)]
             if matches:
                 found.append(_entry_count(len(matches), key, path))
     # Every candidate is read before anything is decided, and deny wins. Returning
@@ -128,6 +134,13 @@ def merge_permission_state(project_dir, home=None):
     if unreadable:
         return "unknown", "; ".join(unreadable)
     return "absent", ""
+
+
+def merge_permission_state(project_dir, home=None):
+    """Is there a settings rule naming the merge op? See `_permission_rule_state`
+    for the four answers and why an unreadable neighbour never wins over a
+    rule that was actually read."""
+    return _permission_rule_state(project_dir, lambda e: MERGE_OP in e, home=home)
 
 
 def check_merge_permission(project_dir, home=None):
@@ -169,4 +182,71 @@ def check_merge_permission(project_dir, home=None):
         "Add one to {} (machine scope, untracked) before the first tick. A rule is not "
         "the only thing that can allow or deny this call, so this is not a prediction "
         "that the merge will fail.".format(MERGE_OP, MERGE_RULE_FILE),
+    )
+
+
+# #609: every read this loop makes goes through supertool via Bash -- CLAUDE.md
+# records that no agent here is granted Read, Grep or Glob -- so unlike
+# MERGE_OP above (needed roughly once a tick), this permission is needed on
+# the very first tool call of every session. A bare substring match on
+# "supertool" is too promiscuous for that: this repository's own local
+# settings carry entries such as
+# `Bash(python3 -m pytest tests/test_supertool_entry_point_unreadable_341.py -q)`,
+# which name a test file and grant nothing about invoking supertool itself.
+# So this is anchored to the spellings that actually grant the call --
+# `Bash(supertool:...)`, `Bash(./supertool:...)`, or an absolute-path form
+# ending the same way -- at the start of the entry, right after `Bash(`.
+SUPERTOOL_OP = "supertool"
+SUPERTOOL_RULE_FILE = ".claude/settings.json"
+SUPERTOOL_ENTRY_RE = re.compile(r"^Bash\((?:\./|/\S+/)?supertool:")
+
+
+def supertool_permission_state(project_dir, home=None):
+    """Is there a settings rule naming the supertool call itself? See
+    `_permission_rule_state` for the four answers and why an unreadable
+    neighbour never wins over a rule that was actually read."""
+    return _permission_rule_state(
+        project_dir, lambda e: bool(SUPERTOOL_ENTRY_RE.match(e)), home=home
+    )
+
+
+def check_supertool_permission(project_dir, home=None):
+    """Report the rule, and never more than the rule -- same caveat as
+    `check_merge_permission`, carried over verbatim (#609): this is a file
+    read, not a probe of the harness, and it must never claim more than the
+    gh-pr-merge line above it does.
+    """
+    state, detail = supertool_permission_state(project_dir, home=home)
+    if state == "present":
+        doctor.report(
+            "OK",
+            "a settings rule names {} ({}). This is a file read, not a probe of the "
+            "harness: it says the rule exists, not that the call will be "
+            "permitted.".format(SUPERTOOL_OP, detail),
+        )
+        return
+    if state == "denied":
+        doctor.report(
+            "WARN",
+            "the only settings rule naming {} is a deny rule ({}). Every read this "
+            "loop makes goes through supertool via Bash, so the very first tool call "
+            "of a session will stop there.".format(SUPERTOOL_OP, detail),
+        )
+        return
+    if state == "unknown":
+        doctor.report(
+            "WARN",
+            "could not read {}, so whether a {} rule exists is unknown -- not answered "
+            "as absent, because that would send you to add a rule you may already "
+            "have.".format(detail, SUPERTOOL_OP),
+        )
+        return
+    doctor.report(
+        "WARN",
+        "no settings rule names {}, so every read this loop makes -- every agent here "
+        "is denied Read, Grep and Glob, and goes through supertool via Bash instead -- "
+        "prompts until one is added. Add one to {} (tracked, portable) or "
+        "{} (machine scope, untracked). A rule is not the only thing that can allow or "
+        "deny this call, so this is not a prediction that a call will be "
+        "denied.".format(SUPERTOOL_OP, SUPERTOOL_RULE_FILE, MERGE_RULE_FILE),
     )
