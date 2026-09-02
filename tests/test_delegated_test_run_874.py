@@ -93,10 +93,21 @@ def test_states_the_enforceability_limit_rather_than_implying_it():
     standing as tests/test_agent_grant_is_total.py's subject. A version of
     this rule that omits that limit overstates what a content check can do."""
     text = _text()
-    assert "test_agent_grant_is_total.py" in text.split("verdict is never delegated")[1][:2000], (
+    assert "verdict is never delegated" in text, (
+        "agents/developer.md's delegated-test-run rule is missing entirely "
+        "-- nothing to check the enforceability limit against (#874)"
+    )
+    scoped = text.split("verdict is never delegated", 1)[1][:2000]
+    assert "test_agent_grant_is_total.py" in scoped, (
         "agents/developer.md's delegated-test-run rule does not point at "
         "the precedent for its own unenforceability (#874)"
     )
+    # Negative control: delete the cross-reference alone and the same
+    # assertion must fail, not just the presence check above.
+    without_it = text.replace("tests/test_agent_grant_is_total.py", "<removed>")
+    assert without_it != text, "fixture construction did not remove the target text -- control is void"
+    without_scoped = without_it.split("verdict is never delegated", 1)[1][:2000]
+    assert "test_agent_grant_is_total.py" not in without_scoped
 
 
 def test_full_suite_guidance_is_not_duplicated_or_contradicted():
@@ -104,6 +115,10 @@ def test_full_suite_guidance_is_not_duplicated_or_contradicted():
     statement of *what* runs. The existing '#765' guidance (narrowed, never
     the whole test_command) must still be the only place that scope is set."""
     text = _text()
+    assert "verdict is never delegated" in text and "No narration turn" in text, (
+        "agents/developer.md is missing the delegated-test-run rule or its "
+        "following section heading -- nothing to bound a section against (#874)"
+    )
     assert text.count("Do not run the repo's whole `test_command` (#765)") == 1
     # The new rule references but does not restate the scope rule -- it
     # should not itself contain a second `test_command` scoping sentence.
@@ -115,3 +130,7 @@ def test_full_suite_guidance_is_not_duplicated_or_contradicted():
         "rule's imperative instead of pointing at it -- two documents "
         "drifting is #673's own class"
     )
+    # Negative control: a section that restates the imperative must fail the
+    # same assertion, or the check above is not testing anything.
+    injected_section = section + "\nDo not run the repo's whole `test_command` here too."
+    assert "Do not run the repo's whole" in injected_section, "fixture construction failed -- control is void"
