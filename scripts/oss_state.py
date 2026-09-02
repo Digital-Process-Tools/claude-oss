@@ -1448,7 +1448,12 @@ def lane_fill(entries, window, why=None):
                 "lane fill {} (issue {}): a full lane of {} needs no reason, but "
                 "{!r} was given".format(position, primary, count, reason)
             )
-        check = _dispatch_rank.check_lane(list(range(count)), reason)
+        # `range(count)`, not `list(range(count))`: check_lane() only ever calls
+        # len() on its argument (see its own docstring/body), and a range's len() is
+        # O(1) with no allocation -- materializing the list first meant an over-cap
+        # count was still refused correctly, but only after building a list that
+        # size first (#852, found by review).
+        check = _dispatch_rank.check_lane(range(count), reason)
         if check["state"] != "ok":
             raise StateError(
                 "lane fill {} (issue {}): {}".format(position, primary, check["why"])

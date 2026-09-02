@@ -85,6 +85,25 @@ def test_a_count_of_zero_is_refused():
         oss_state.lane_fill([{"primary": 852, "count": 0}], window=WINDOW)
 
 
+def test_an_absurd_count_is_refused_without_materializing_a_list():
+    """Found by review (#852): lane_fill() used to build list(range(count)) before
+    dispatch_rank.check_lane ever compares it against MAX_LANE -- an over-cap count
+    was still refused correctly, but only after allocating a list of that size. A
+    caller passing an unbounded numeral hangs on the allocation rather than being
+    refused in O(1). 10**8 takes ~1.9s to materialize as a list and microseconds as
+    a bare range(), so a generous 1s budget is well clear of ordinary noise while
+    still catching the list-materializing regression this guards against."""
+    import time
+
+    start = time.time()
+    with pytest.raises(oss_state.StateError, match="over the cap"):
+        oss_state.lane_fill([{"primary": 852, "count": 10**8}], window=WINDOW)
+    elapsed = time.time() - start
+    assert elapsed < 1.0, "refusal took {:.2f}s -- looks like a list got materialized".format(
+        elapsed
+    )
+
+
 def test_no_lanes_dispatched_is_not_the_same_state_as_no_record():
     dispatched_none = oss_state.lane_fill([], window=WINDOW)
     assert dispatched_none["state"] == oss_state.LANE_FILL_NONE_DISPATCHED
