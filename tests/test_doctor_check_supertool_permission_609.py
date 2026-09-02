@@ -74,6 +74,31 @@ def test_supertool_permission_state_present_for_absolute_path_spelling(tmp_path)
     assert state == "present"
 
 
+def test_supertool_permission_state_present_for_a_windows_absolute_path_spelling(tmp_path):
+    """#609 audit finding: the absolute-path spelling has to match a Windows-native
+    path (backslash separators, drive letter) too, not only a POSIX one -- a
+    Windows contributor's own settings.local.json is written with backslashes,
+    never with forward slashes."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=[r"Bash(C:\Users\name\claude-oss\supertool:*)"],
+    )
+    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "present"
+
+
+def test_supertool_permission_state_present_for_an_absolute_path_with_a_space(tmp_path):
+    """#609 audit finding: a space in the path -- the ordinary shape of a Windows
+    account-name home directory this repo's own CLAUDE.md already documents --
+    must not defeat the match either."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(/Users/flor ian/claude-oss/supertool:*)"],
+    )
+    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    assert state == "present"
+
+
 def test_supertool_permission_state_absent_for_a_one_off_test_file_entry(tmp_path):
     """A pytest-path allow entry mentioning "supertool" only in a test file's
     name must not be read as granting the call -- it grants running one pytest

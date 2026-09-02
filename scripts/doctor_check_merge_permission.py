@@ -1,23 +1,29 @@
 """``check_merge_permission`` -- moved out of ``scripts/doctor.py`` (#497).
+``check_supertool_permission`` -- added here, not moved, by #609.
 
 `doctor.py` keeps `main()`, the check registry and the shared contract (exit 0
-always, one VERDICT line, `report()` / `unmeasured()`); this module holds one
-check, its own private helpers and constants, and nothing else. Every shared
-name -- `report` -- is reached through `doctor` imported as a module
-(`import doctor`), never `from doctor import name`, the same reason spelled
-out in full in `scripts/doctor_check_statusline.py`: a name looked up this
-way is always the current value in `doctor`'s own namespace, which is what
-keeps a test's `monkeypatch.setattr(doctor, ...)` reaching code that used to
-be inline in `doctor.py`.
+always, one VERDICT line, `report()` / `unmeasured()`); this module holds two
+settings-permission checks, their shared scanning helper
+(`_permission_rule_state`), their own private helpers and constants, and
+nothing else. Every shared name -- `report` -- is reached through `doctor`
+imported as a module (`import doctor`), never `from doctor import name`, the
+same reason spelled out in full in `scripts/doctor_check_statusline.py`: a
+name looked up this way is always the current value in `doctor`'s own
+namespace, which is what keeps a test's `monkeypatch.setattr(doctor, ...)`
+reaching code that used to be inline in `doctor.py`.
 
-`doctor.py` imports `check_merge_permission` back out of this module
-immediately after this docstring's own code is defined, so
-`doctor.check_merge_permission` keeps answering exactly as it did before the
-move -- a pure relocation, not a rewrite; see #497. `MERGE_OP` moves with it:
-`doctor.py` still needs the name after the move (it feeds
-`PUBLISH_OP_PRESETS`, which stays in `doctor.py` beside `check_publish_confirm`
-and `check_watch_channel` -- not self-contained enough to move in this lane),
-and `doctor.py`'s own import of this module keeps that reference valid.
+`doctor.py` imports `check_merge_permission` and `check_supertool_permission`
+back out of this module immediately after this docstring's own code is
+defined, so `doctor.check_merge_permission` keeps answering exactly as it did
+before the move -- a pure relocation, not a rewrite; see #497 -- and
+`doctor.check_supertool_permission` answers the sibling question #609 adds:
+does any settings rule name the `supertool` call itself, the one thing every
+agent here needs on its very first tool call rather than roughly once a
+tick. `MERGE_OP` moves with it: `doctor.py` still needs the name after the
+move (it feeds `PUBLISH_OP_PRESETS`, which stays in `doctor.py` beside
+`check_publish_confirm` and `check_watch_channel` -- not self-contained
+enough to move in this lane), and `doctor.py`'s own import of this module
+keeps that reference valid.
 """
 
 import json
@@ -196,9 +202,20 @@ def check_merge_permission(project_dir, home=None):
 # So this is anchored to the spellings that actually grant the call --
 # `Bash(supertool:...)`, `Bash(./supertool:...)`, or an absolute-path form
 # ending the same way -- at the start of the entry, right after `Bash(`.
+#
+# The absolute-path branch has to accept a Windows-native spelling too, not
+# only a POSIX one -- a Windows contributor's own settings.local.json is
+# written with backslashes and a drive letter (C:\Users\...\supertool:),
+# never forward slashes (self-review finding, #609) -- and it has to survive
+# a space inside the path, the ordinary shape of a Windows account-name home
+# directory this repo's own CLAUDE.md already documents. `[/\\].*[/\\]`
+# matches either separator on either side of an arbitrary (space-tolerant)
+# middle, and `(?:[A-Za-z]:)?` accepts an optional leading drive letter.
 SUPERTOOL_OP = "supertool"
 SUPERTOOL_RULE_FILE = ".claude/settings.json"
-SUPERTOOL_ENTRY_RE = re.compile(r"^Bash\((?:\./|/\S+/)?supertool:")
+SUPERTOOL_ENTRY_RE = re.compile(
+    r"^Bash\((?:\./|(?:[A-Za-z]:)?[/\\].*[/\\])?supertool:"
+)
 
 
 def supertool_permission_state(project_dir, home=None):
