@@ -431,3 +431,58 @@ def test_cli_a_resumed_session_falsely_claiming_first_tick_is_refused(tmp_path):
     assert second.returncode == 1, second.stdout
     assert "FAIL" in second.stdout
     assert len(oss_state.read(path)) == 1, "the bogus first-tick claim must not land"
+
+
+def test_the_first_tick_conflict_control_fires_on_an_exact_session_repeat(tmp_path):
+    """Control for the whitespace case below: an exact repeat of the same session id
+    must already be refused, unconditionally on any stripping. If this ever stops
+    firing, the whitespace test below would prove nothing about the fix."""
+    path = tmp_path / "state.json"
+    first = _piped(
+        [str(path), "--decision", "tick 1", "--at", STAMP] + TICK_COST_ARGV
+    )
+    assert first.returncode == 0, first.stdout
+
+    control = _piped(
+        [str(path), "--decision", "control", "--at", "2026-08-28T10:00:00Z"]
+        + TICK_COST_ARGV
+    )
+    assert control.returncode == 1, control.stdout
+    assert "FAIL" in control.stdout
+    assert "asserted as session" in control.stdout
+    assert len(oss_state.read(path)) == 1
+
+
+def test_a_session_id_differing_only_by_surrounding_whitespace_is_still_refused(tmp_path):
+    """Found by audit (#805): `tick_cost` strips ``session`` before writing a record
+    (around line 776), but `_session_tick_cost_floor` used to compare against the
+    caller's RAW, unstripped ``--tick-cost-session`` value when looking up prior
+    history -- so a session id differing only in surrounding whitespace found no
+    matching history, and a resumed session (or a copy-pasted `--tick-cost-first`)
+    could manufacture a false floor a second time with the refusal above silently
+    not firing. Session ids here are deliberately NOT identical strings -- 's1' vs
+    ' s1' -- and the refusal must fire on both."""
+    path = tmp_path / "state.json"
+    base = [
+        "--tick-cost-window", WINDOW,
+        "--tick-cost-start-ctx", "50000",
+        "--tick-cost-calls", "1",
+        "--tick-cost-context-carried", "0",
+    ]
+    first = _piped(
+        [str(path), "--decision", "tick 1", "--at", STAMP,
+         "--tick-cost-session", "s1", "--tick-cost-first"] + base
+    )
+    assert first.returncode == 0, first.stdout
+
+    finding = _piped(
+        [str(path), "--decision", "whitespace-padded resume", "--at",
+         "2026-08-28T11:00:00Z", "--tick-cost-session", " s1",
+         "--tick-cost-first"] + base
+    )
+    assert finding.returncode == 1, finding.stdout
+    assert "FAIL" in finding.stdout
+    assert "asserted as session" in finding.stdout
+    assert len(oss_state.read(path)) == 1, (
+        "a whitespace-padded session id must not be treated as a new session"
+    )

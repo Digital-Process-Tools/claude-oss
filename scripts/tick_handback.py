@@ -20,11 +20,21 @@ frame parser is a second place for that bug to recur.
 
 ## The states
 
-  completed        `TICK: completed`, optionally followed by a summary.
-                    A tick that read the board and dispatched nothing is
-                    `completed`, not a lesser state -- an idle tick is a
-                    real, clean answer, and #695 is explicit that this must
-                    not collapse onto the died case below.
+  completed        `TICK: completed` followed by a `TICK-ENDS:` line naming
+                    which of `skills/manager/SKILL.md`'s *What ends a tick*
+                    three states applied -- `work-started`, `blocked` or
+                    `nothing-left` -- then a summary paragraph. A tick that
+                    read the board and dispatched nothing is `completed`,
+                    not a lesser state -- an idle tick is a real, clean
+                    answer, and #695 is explicit that this must not collapse
+                    onto the died case below. A `completed` with no
+                    `TICK-ENDS:` line is `could-not-classify`, the same way
+                    a `blocked` with no `BLOCKER:` line is (#773) -- an
+                    *optional* field would give "the sub-manager had
+                    nothing to say" and "the sub-manager never answered"
+                    the same rendering, and the scheduler's continue-or-wait
+                    decision (`commands/tick.md` step 7) needs to tell them
+                    apart.
   blocked           `TICK: blocked` with a `BLOCKER:` line naming what. A
                     `blocked` with no `BLOCKER:` line is undecidable and is
                     `could-not-classify`, not `blocked` -- an unnamed blocker
@@ -87,6 +97,16 @@ _TICK = re.compile(
 )
 _BLOCKER = re.compile(r"^[ \t>*_#]*BLOCKER:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 _REASON = re.compile(r"^[ \t>*_#]*REASON:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
+# #773: which of "What ends a tick"'s three states (skills/manager/SKILL.md) this
+# completed tick is in -- required, not optional, for the same reason BLOCKER:/
+# REASON: are required on their own states: an *optional* field gives "absent" and
+# "not-applicable" the same rendering, and the scheduler's step 7 continue-or-wait
+# decision cannot then tell a tick that had nothing to say from one that never
+# answered the question at all.
+_TICK_ENDS = re.compile(
+    r"^[ \t>*_#]*TICK-ENDS:[ \t]*(work-started|blocked|nothing-left)\b",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 def _verdict(state, reason, **extra):
@@ -96,6 +116,7 @@ def _verdict(state, reason, **extra):
         "declared": None,
         "detail": None,
         "quoted": None,
+        "ends": None,
     }
     out.update(extra)
     return out
@@ -156,10 +177,24 @@ def classify(message):
     tail = text[header.end():]
 
     if declared == "completed":
+        match = _TICK_ENDS.search(tail)
+        if not match:
+            return _verdict(
+                "could-not-classify",
+                "TICK: completed with no TICK-ENDS: line -- an omitted field "
+                "is not a usable completed state: 'absent' and "
+                "'not-applicable' would render identically, and the "
+                "scheduler's continue-or-wait decision needs to tell them "
+                "apart",
+                declared="completed",
+                quoted=header_line,
+            )
+        ends = match.group(1).lower()
         return _verdict(
             "completed",
-            "TICK: completed",
+            "TICK: completed ({0})".format(ends),
             declared="completed",
+            ends=ends,
             quoted=header_line,
         )
 
@@ -256,6 +291,8 @@ def main(argv=None):
         print("  declared: {0}".format(verdict["declared"]))
     if verdict["detail"]:
         print("  detail: {0}".format(verdict["detail"]))
+    if verdict["ends"]:
+        print("  ends: {0}".format(verdict["ends"]))
     if verdict["quoted"]:
         print("  quoted: {0}".format(verdict["quoted"]))
     return EXIT_CODES[verdict["state"]]
