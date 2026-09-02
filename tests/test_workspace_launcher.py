@@ -75,7 +75,8 @@ def _executable(path, text):
     return path
 
 
-def _stub_claude(bindir, argv_log, mcp_get=None):
+def _stub_claude(bindir, argv_log, mcp_get=None, mcp_list=None, mcp_list_exit=0,
+                  plugin_marketplace_exit=0):
     """A `claude` that records argv and exits 0, so exec is observable.
 
     `claude mcp ...` is answered rather than recorded in the argv log: those calls
@@ -88,14 +89,29 @@ def _stub_claude(bindir, argv_log, mcp_get=None):
     `mcp_get` is the text `claude mcp get` prints. None makes it exit non-zero the
     way it does when nothing is registered yet, so the first-registration path is
     the one under test.
+
+    `mcp_list` / `mcp_list_exit` (#810): what `claude mcp list` prints and exits.
+    None prints nothing and exits 0 -- an ordinary empty census, not a probe
+    failure -- which is what every EXISTING caller of this stub gets unchanged,
+    since none of them are about the census. `plugin_marketplace_exit` (#753)
+    governs `claude plugin marketplace update`, called by the REAL
+    scripts/plugin_update.py this launcher now shells out to synchronously; a
+    caller that leaves auto-update on but never names this gets the ordinary
+    success path.
     """
     mcp_log = bindir / "mcp.txt"
     get_file = bindir / "mcp_get.txt"
+    list_file = bindir / "mcp_list.txt"
     if mcp_get is None:
         if get_file.exists():
             get_file.unlink()
     else:
         get_file.write_text(mcp_get, encoding="utf-8")
+    if mcp_list is None:
+        if list_file.exists():
+            list_file.unlink()
+    else:
+        list_file.write_text(mcp_list, encoding="utf-8")
     return _executable(
         bindir / "claude",
         '#!/bin/sh\n'
@@ -107,7 +123,14 @@ def _stub_claude(bindir, argv_log, mcp_get=None):
         '        cat "' + str(get_file) + '"\n'
         '        exit 0\n'
         '    fi\n'
+        '    if [ "${2:-}" = "list" ]; then\n'
+        '        [ -f "' + str(list_file) + '" ] && cat "' + str(list_file) + '"\n'
+        '        exit ' + str(mcp_list_exit) + '\n'
+        '    fi\n'
         '    exit 0\n'
+        'fi\n'
+        'if [ "${1:-}" = "plugin" ]; then\n'
+        '    exit ' + str(plugin_marketplace_exit) + '\n'
         'fi\n'
         'printf "%s" "${SUPERTOOL_WATCH_NAME-}" > "' + str(bindir / "watch_name.txt") + '"\n'
         'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
@@ -191,13 +214,17 @@ def _with_channel_consumer(home, bindir, naming=None):
 
 
 def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
-        watch_name_env=None, launcher=None, naming=None, env_extra=None):
+        watch_name_env=None, launcher=None, naming=None, env_extra=None,
+        mcp_list=None, mcp_list_exit=0, plugin_marketplace_exit=0):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
     argv_log = Path(cwd) / "argv.txt"
     if with_claude:
-        _stub_claude(bindir, argv_log, mcp_get=mcp_get)
+        _stub_claude(
+            bindir, argv_log, mcp_get=mcp_get, mcp_list=mcp_list,
+            mcp_list_exit=mcp_list_exit, plugin_marketplace_exit=plugin_marketplace_exit,
+        )
 
     # HOME is pinned for the same reason PATH is: the consumer is looked up under
     # the user's real ~/.claude, so an unpinned HOME decides the channel assertions
@@ -218,6 +245,18 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
     env.pop("SUPERTOOL_WATCH_NAME", None)
     if watch_name_env is not None:
         env["SUPERTOOL_WATCH_NAME"] = watch_name_env
+    # Off by default (#753): the launcher now shells out to `scripts/plugin_update.py`
+    # synchronously, against the REAL module, before every launch. Left on, that call
+    # reaches the stub `claude` for a marketplace-refresh and a per-plugin-update call
+    # that no test here is about, adding a subprocess round-trip to every one of the
+    # ~100 launcher tests in this file for a behaviour none of them assert on.
+    # `tests/test_workspace_auto_update_753.py` and
+    # `tests/test_workspace_channel_census_810.py` are the tests that ARE about it, and
+    # they opt back in explicitly via `env_extra={"OSS_NO_AUTO_UPDATE": ""}` -- an empty
+    # string, not an absent key, because `opt_out` reads "set to anything non-empty
+    # means off" and `env.update` below runs AFTER this default, so an explicit empty
+    # value is what overrides it rather than merely failing to set it.
+    env.setdefault("OSS_NO_AUTO_UPDATE", "1")
     # `env_extra` is deliberately narrow rather than a general escape hatch: #271 is
     # about what a STRICT stdout does to a declared name, and PYTHONIOENCODING is the
     # only lever that establishes a strict stdout in a child interpreter. A test that

@@ -65,6 +65,22 @@ OPT_OUT_ENV = "OSS_NO_AUTO_UPDATE"
 #: Config key, in either half of the config. Absent means on.
 OPT_OUT_KEY = "auto_update"
 
+#: A receipt written this recently means a run just happened -- most likely
+#: `bin/oss-workspace`'s own synchronous call, moments before this same session's
+#: SessionStart hook fires `hooks/session-start-update.sh` (and this module) again
+#: in the background (#753). `update()` stands down entirely rather than repeating
+#: the marketplace refresh and every per-plugin update for a result that cannot
+#: have changed in this short a window.
+#:
+#: Deliberately well under `statusline.REFRESH_AFTER` (60s, the board cache) and
+#: nowhere near `statusline.LATEST_REFRESH_AFTER` (3600s): this answers a narrower
+#: question than either -- "did a run already happen a moment ago", not "is this
+#: reading current enough to trust" -- and is sized against the doctor diagnostic's
+#: own worst-case per-dependency network timeout (25s) plus the channel
+#: registration calls ahead of it in the launcher, so a slow diagnostic between the
+#: launcher's call and the hook's does not make the hook repeat the check anyway.
+DEBOUNCE_SECONDS = 120
+
 
 def receipt_dir():
     if os.name == "nt":
@@ -607,7 +623,8 @@ def _update_one(name, root, plugins_root, runner, scope_fallback):
     }
 
 
-def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None):
+def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None,
+           now=None, receipt=None):
     """Refresh the marketplace, update this plugin and its declared dependencies (#605).
 
     The marketplace refresh comes first and its failure is fatal to the run: without it
@@ -618,9 +635,37 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
     whole run now that the run covers the dependencies too, and it stays exactly one
     call: one index serves every name in the manifest, so refreshing per plugin would
     scale the network cost with the dependency list for nothing.
+
+    `receipt` is the previous run's document, or ``None`` -- this function never reads
+    it off disk itself (#753). Debouncing here on an implicit `read_receipt()` would
+    make every EXISTING test in this file, which calls `update()` directly with no
+    knowledge of debouncing at all, flaky against whatever this machine's real
+    `~/.cache/oss-statusline/auto-update.json` happens to hold. So debouncing is
+    opt-in per call: only `main()` reads the real receipt and threads it through,
+    which is also the only place a stale caller could double-pay for a check that
+    just ran. A `receipt` recorded within `DEBOUNCE_SECONDS` of `now` is returned
+    as-is, `debounced` marked `True` and `at` refreshed to this call's `now`, and
+    `runner` is never invoked -- no marketplace refresh, no per-plugin update, and
+    the opt-out itself is not even re-read, because the answer this debounce stands
+    down on already reflects it. A `receipt` with no numeric `at`, or one from the
+    future (clock skew), falls through to a real run rather than being read as
+    fresh -- this repository's own defect class, landing on its own debounce.
     """
     runner = _run if runner is None else runner
-    stamp = time.time()
+    stamp = time.time() if now is None else now
+    if isinstance(receipt, dict):
+        at = receipt.get("at")
+        if isinstance(at, (int, float)) and 0 <= stamp - at < DEBOUNCE_SECONDS:
+            document = dict(receipt)
+            document["at"] = stamp
+            document["debounced"] = True
+            document["detail"] = (
+                "a receipt from {:.0f}s ago is inside the {}s debounce window, so "
+                "nothing was re-checked; last result: {}".format(
+                    stamp - at, DEBOUNCE_SECONDS, receipt.get("detail", "")
+                )
+            )
+            return document
     status, where = opt_out(root, env)
     if status == "off":
         return {"state": "off", "at": stamp, "detail": "switched off by {}".format(where)}
@@ -724,10 +769,40 @@ def main(argv=None):
         # identical reason; this follows it rather than inventing a second one.
         sys.stdout.write(resolved.as_posix())
         return 0
-    document = update(root=root)
+    # Read once, threaded into `update()` as `receipt=` -- see that function's own
+    # docstring for why this is the ONLY place that reads the real receipt for
+    # debounce purposes, and why `update()` itself never does (#753). A broken
+    # receipt is not a fresh one: `ReceiptUnreadable` means something is there and
+    # cannot be trusted, which is the opposite of "a run just happened cleanly", so
+    # it is never handed through as though it were a dict.
+    prior = read_receipt()
+    if isinstance(prior, ReceiptUnreadable):
+        prior = None
+    document = update(root=root, receipt=prior)
     write_receipt(document)
     if "--print" in argv:
         sys.stdout.write(json.dumps(document, indent=2))
+    if "--print-state" in argv:
+        # `bin/oss-workspace` calls this synchronously, before deciding which
+        # opening prompt to use (#753), and parses the result with a plain shell
+        # `read`. ONE line, four tab-separated fields -- state, from, to, detail --
+        # with any tab/newline/CR already in each collapsed to a space so none of
+        # them can forge an extra field or a second line. `from`/`to` travel
+        # separately from `detail` because the launcher's own message for
+        # `updated` is NOT `detail` verbatim: `detail` is written for the
+        # SessionStart hook's audience ("this session is still on the old copy,
+        # run /reload-plugins") and is actively wrong read as a synchronous,
+        # pre-exec update -- there is no old session to reload, a fresh one is
+        # about to start. The launcher composes its own sentence from the raw
+        # versions instead.
+        def _flat(value):
+            return str(value if value is not None else "").replace("\t", " ").replace("\n", " ").replace("\r", " ")
+        sys.stdout.write("{}\t{}\t{}\t{}\n".format(
+            _flat(document.get("state")),
+            _flat(document.get("from")),
+            _flat(document.get("to")),
+            _flat(document.get("detail")),
+        ))
     return 0
 
 

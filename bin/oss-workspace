@@ -44,6 +44,13 @@ CHANNEL_SERVER="oss-channel"
 
 # `dirname "$0"` on a symlink gives the link's directory, not the checkout.
 # `readlink -f` is not portable to macOS's stock readlink, so walk it.
+#
+# `entry_path` is `$0` BEFORE the walk below mutates `self` -- kept for #753's
+# symlink-repoint block, further down: what may need repointing is the symlink
+# this launcher was INVOKED through (typically ~/.local/bin/oss-workspace), and
+# `self` after the walk is already wherever that symlink points, which cannot
+# say whether the symlink itself is stale.
+entry_path=$0
 self=$0
 while [ -L "$self" ]; do
     link=$(readlink "$self")
@@ -110,6 +117,172 @@ if [ -z "$python_bin" ]; then
          "neither the channel name nor the consumer path could be read. This" \
          "session opens without a channel." >&2
 fi
+# --- keep this plugin current, synchronously, before deciding what to open (#753) --
+#
+# hooks/session-start-update.sh forks scripts/plugin_update.py and returns, by
+# design: a SessionStart hook cannot wait on a network call without slowing every
+# session start to the speed of the slowest registry. This launcher already makes
+# a different trade for the setup diagnostic further down -- a synchronous,
+# network-touching wait before exec, with OSS_WORKSPACE_SKIP_DOCTOR as its named
+# opt-out -- and #753's own measurement (an update that landed mid-session,
+# invisible until /oss:doctor happened to be run by hand, minutes later, for an
+# unrelated reason) is what makes that trade the right one here too: a session
+# that resolves its plugins BEFORE it starts working never has a stale-copy
+# window to be silent about.
+#
+# hooks/session-start-update.sh stays: it is the fallback for a hand-started
+# `claude`, which never reaches this file. scripts/plugin_update.py's own
+# debounce (#753) means that hook firing a few seconds after this call finds a
+# receipt too fresh to re-check and stands down, so this is not a second network
+# round-trip on the path that matters.
+#
+# OSS_NO_AUTO_UPDATE / `auto_update: false` -- the existing opt-out -- governs
+# this exactly as it governs the hook: `update()` reads it first and returns
+# immediately without touching the network, so an opted-out machine pays nothing
+# extra by this running here instead of in the background.
+if [ -n "$python_bin" ]; then
+    auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
+        --root "$repo_root" --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
+    if [ "$auto_update_status" -ne 0 ]; then
+        echo "oss-workspace: could not check whether the oss plugin is current" \
+             "(exit status $auto_update_status). Opening the session anyway;" \
+             "hooks/session-start-update.sh will try again in the background." >&2
+        if [ -n "$auto_update_line" ]; then
+            printf '%s\n' "$auto_update_line" >&2
+        fi
+    else
+        auto_update_tab=$(printf '\t')
+        IFS="$auto_update_tab" read -r auto_update_state auto_update_from \
+            auto_update_to auto_update_detail <<AUTO_UPDATE_LINE
+$auto_update_line
+AUTO_UPDATE_LINE
+        case $auto_update_state in
+            updated)
+                echo "oss-workspace: the oss plugin was updated from" \
+                     "$auto_update_from to $auto_update_to before this session" \
+                     "started, so there is no stale-copy window to reload or" \
+                     "restart out of. Opening with /oss:doctor instead of" \
+                     "$prompt, to diagnose the tree it just moved to." >&2
+                prompt="/oss:doctor"
+                ;;
+            current|off) ;;
+            could-not-check)
+                echo "oss-workspace: could not check whether the oss plugin is" \
+                     "current: $auto_update_detail. This is not a statement that" \
+                     "it is. Opening $prompt anyway." >&2
+                ;;
+            "")
+                echo "oss-workspace: the plugin update check printed nothing" \
+                     "this launcher could parse, so whether the oss plugin is" \
+                     "current is UNKNOWN. Opening $prompt anyway." >&2
+                ;;
+            *)
+                echo "oss-workspace: the plugin update check reported a state" \
+                     "this launcher does not recognise ($auto_update_state), so" \
+                     "whether the oss plugin is current is UNKNOWN. Opening" \
+                     "$prompt anyway." >&2
+                ;;
+        esac
+    fi
+else
+    echo "oss-workspace: no working python was found, so the oss plugin could" \
+         "not be checked for an update here. hooks/session-start-update.sh" \
+         "still covers it once the session is running." >&2
+fi
+
+# --- repoint this launcher's own symlink at the currently installed copy (#753) ---
+#
+# ~/.local/bin/oss-workspace is what this file's own header tells a maintainer to
+# create once; nothing re-points it on a later release, and #289's own history is
+# eight consecutive rounds where it silently pinned a superseded copy. The source
+# of truth is installed_plugins.json's record for THIS project, read the same way
+# `--print-resolved-root` already reads it for #677 -- and NEVER `$plugin_root` or
+# `$entry_path`'s own resolved target: a stale link is exactly the case where the
+# OLD launcher is the one running, so a repoint derived from "wherever I was
+# invoked from" would rewrite the link to the stale target it already names,
+# every launch, forever.
+#
+# Three outcomes, and only two are worth a line: matched (nothing to say), and
+# repointed (say so, naming both). `entry_path` not being a symlink at all is the
+# ordinary case for a checkout run directly rather than through the documented
+# pin, and is left silent -- there is no pin to report on. Once it IS a symlink,
+# every OTHER way this can fail to resolve -- the registry unreadable, no record
+# for this project, the resolved directory missing its own bin/oss-workspace, the
+# link unwritable -- is reported and left untouched, never repointed on a guess.
+if [ -n "$python_bin" ] && [ -L "$entry_path" ]; then
+    launcher_resolved_root=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
+        --print-resolved-root --root "$repo_root" 2>/dev/null) || launcher_resolved_root=""
+    if [ -z "$launcher_resolved_root" ] || [ ! -d "$launcher_resolved_root" ]; then
+        echo "oss-workspace: $entry_path is a symlink, but the installed copy for" \
+             "$repo_root could not be resolved from installed_plugins.json, so" \
+             "whether it is pinned correctly could not be checked. Left" \
+             "untouched." >&2
+    else
+        launcher_repoint_out=$("$python_bin" - "$entry_path" "$launcher_resolved_root" <<'LAUNCHER_REPOINT'
+import os
+import sys
+
+link_path, resolved_root = sys.argv[1], sys.argv[2]
+
+
+def done(state, detail=""):
+    sys.stdout.write(state + "\n" + detail)
+    raise SystemExit(0)
+
+
+try:
+    current_target = os.path.realpath(link_path)
+except OSError as exc:
+    done("unwritable", str(exc))
+
+resolved_dir = os.path.realpath(resolved_root)
+current_dir = os.path.dirname(os.path.dirname(current_target))
+if os.path.normcase(os.path.normpath(current_dir)) == os.path.normcase(os.path.normpath(resolved_dir)):
+    done("matched")
+
+new_target = os.path.join(resolved_root, "bin", "oss-workspace")
+if not os.path.isfile(new_target):
+    done("unwritable", "the resolved install has no bin/oss-workspace at %s" % new_target)
+
+tmp = link_path + ".oss-repoint-tmp"
+try:
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    os.symlink(new_target, tmp)
+    os.replace(tmp, link_path)
+except OSError as exc:
+    done("unwritable", str(exc))
+
+done("repointed", "%s -> %s" % (current_target, new_target))
+LAUNCHER_REPOINT
+) && launcher_repoint_status=0 || launcher_repoint_status=$?
+        if [ "$launcher_repoint_status" -eq 0 ]; then
+            launcher_repoint_state=$(printf '%s\n' "$launcher_repoint_out" | head -n1)
+            launcher_repoint_detail=$(printf '%s\n' "$launcher_repoint_out" | tail -n +2)
+            case $launcher_repoint_state in
+                repointed)
+                    echo "oss-workspace: $entry_path was pinned stale" \
+                         "($launcher_repoint_detail) -- repointed at the" \
+                         "currently installed copy, so the next launch through" \
+                         "it runs current code." >&2
+                    ;;
+                matched) ;;
+                *)
+                    echo "oss-workspace: $entry_path could not be repointed at" \
+                         "the currently installed copy: $launcher_repoint_detail." \
+                         "Left untouched; run ln -sf" \
+                         "\"$launcher_resolved_root/bin/oss-workspace\"" \
+                         "\"$entry_path\" by hand." >&2
+                    ;;
+            esac
+        else
+            echo "oss-workspace: could not check whether $entry_path is pinned" \
+                 "correctly (the check crashed, exit status" \
+                 "$launcher_repoint_status). Left untouched." >&2
+        fi
+    fi
+fi
+
 
 # The flag makes this session ABLE to receive channel events. It does not create a
 # board: `radar` reads its tiers from this repo's own .supertool.json, and a fresh
@@ -1194,6 +1367,103 @@ else
         echo "oss-workspace: could not register the MCP server $CHANNEL_SERVER, so" \
              "this session has no channel consumer. Opening without the flag;" \
              "supertool 'channel:health' says the same from inside." >&2
+    fi
+fi
+
+# --- pre-launch channel-consumer census: anything ELSE racing for the socket? (#810) --
+#
+# Every arm above verifies THIS session's own oss-channel registration and stops
+# there -- it has nothing to say about whether some OTHER configured MCP server
+# (a stray project .mcp.json, a local-scope entry from an earlier experiment)
+# ALSO resolves to notifiers/claude-channel/channel.ts, the one script every
+# claude-channel server runs. Two servers racing that script for one Unix socket
+# is invisible from inside a session: one binds, the other is silently refused,
+# and channel:health can only report CANNOT DETERMINE. This is the only place the
+# collision is both visible (claude mcp list enumerates every configured server,
+# whichever file declared it) and avoidable (before the flag that starts the race
+# is armed) -- "a board that cannot be verified is not a board that is armed" is
+# the same reasoning the arms above already use, on the same subject one layer
+# out.
+#
+# `channel_consumer_census_state` -- the exact function
+# scripts/doctor_check_mcp_channel_registration.py's own `/oss:doctor` mirror
+# calls (#810's own step 3) -- is called HERE too, rather than this launcher
+# running `claude mcp list` a second time and parsing it separately: two
+# independent parsers of the same prose is how a launcher and a diagnostic end
+# up disagreeing about a count neither of them is wrong about on its own terms.
+#
+# Only worth asking when the flag is about to be armed: a session that already
+# opens WITHOUT it has nothing this census could take away.
+if [ "$channel_ready" -eq 1 ]; then
+    if [ -z "$python_bin" ]; then
+        channel_ready=0
+        echo "oss-workspace: no working python was found, so whether a second" \
+             "MCP server also resolves to the claude-channel consumer script" \
+             "could not be checked. Opening WITHOUT the channel flag." >&2
+    else
+        census_report=$("$python_bin" - "$plugin_root/scripts" <<'CHANNEL_CENSUS'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+# `import doctor` FIRST, never `import doctor_check_mcp_channel_registration`
+# directly -- that module's own top-level does `import doctor`, which in turn
+# imports names BACK out of it (the re-export convention every moved check in
+# this family uses). Importing it first here, mid-initialisation, is a
+# circular import: `doctor`'s own `from doctor_check_mcp_channel_registration
+# import (...)` runs while this module's later names have not been defined yet,
+# and the whole call crashes before it can answer anything.
+import doctor
+
+state, detail = doctor.channel_consumer_census_state()
+print(state)
+if state == "collision":
+    for name in detail:
+        print(name)
+elif state == "could-not-ask":
+    print(str(detail).replace("\n", " "))
+CHANNEL_CENSUS
+) && census_parse_status=0 || census_parse_status=$?
+        if [ "$census_parse_status" -ne 0 ]; then
+            channel_ready=0
+            echo "oss-workspace: could not determine whether a second MCP server" \
+                 "also resolves to the claude-channel consumer script (the" \
+                 "census check crashed, exit status $census_parse_status)." \
+                 "Opening WITHOUT the channel flag." >&2
+        else
+            census_state=$(printf '%s\n' "$census_report" | head -n1)
+            census_rest=$(printf '%s\n' "$census_report" | tail -n +2)
+            case $census_state in
+                single|none) ;;
+                could-not-ask)
+                    channel_ready=0
+                    echo "oss-workspace: could not tell whether a second MCP" \
+                         "server also resolves to the claude-channel consumer" \
+                         "script: $census_rest -- never read as \"exactly one" \
+                         "server\". Opening WITHOUT the channel flag: a board" \
+                         "that cannot be verified is not a board that is" \
+                         "armed." >&2
+                    ;;
+                collision)
+                    channel_ready=0
+                    census_names_joined=$(printf '%s\n' "$census_rest" | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+                    echo "oss-workspace: more than one configured MCP server" \
+                         "resolves to notifiers/claude-channel/channel.ts" \
+                         "($census_names_joined) -- a session opened with the" \
+                         "channel flag would race them for one socket, and one" \
+                         "is silently refused. Opening WITHOUT the channel" \
+                         "flag; deleting or editing whichever config declared" \
+                         "the extra one is not this launcher's call to make." >&2
+                    ;;
+                *)
+                    channel_ready=0
+                    echo "oss-workspace: the channel-consumer census reported a" \
+                         "state this launcher does not recognise" \
+                         "($census_state), so whether a second MCP server also" \
+                         "resolves to the claude-channel consumer script is" \
+                         "UNKNOWN. Opening WITHOUT the channel flag." >&2
+                    ;;
+            esac
+        fi
     fi
 fi
 
