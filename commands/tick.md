@@ -422,6 +422,16 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    already refuses rather than writing a false value. `--lane-fill-trend` re-adds the reason
    distribution across the whole history, so a run of `could-not-tell` becomes a visible number.
 
+   **This step is this tick's one dispatch, not the first of however many rounds a red lane takes
+   (#880).** One fan-out here, filled per the rules above, and the tick then sees those lanes
+   through to merge. A lane that comes back red, or whose base moves under it, is resumed via
+   `SendMessage` to its own agent -- never re-dispatched fresh at the same issue -- unless that
+   agent is genuinely gone (context died, or resumed and silent twice), which is its own named
+   state, `agent-unreachable`, and not a silent excuse to spawn again. The full argument, the cost
+   comparison and the exact state names are in `skills/manager/phases/dispatch.md`; a re-dispatch
+   with neither an attempted resume nor an `agent-unreachable` finding behind it is the defect this
+   note exists to stop.
+
    **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
    commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and
    the moment the dispatched agent does — `main` has moved mid-tick before, and a hand-copied worktree
