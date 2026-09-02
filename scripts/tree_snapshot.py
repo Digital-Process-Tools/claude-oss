@@ -143,6 +143,22 @@ def snapshot(root="."):
     }
 
 
+def _one_line(text, limit=2000):
+    """One printed line, folded so a multi-line reason cannot land a second
+    line at column 0 of the VERDICT receipt `agents/developer.md:552` reads
+    (#806).
+
+    `_run_git`'s error strings embed git's own stderr verbatim, and git's
+    stderr is routinely multi-line -- an ambiguous `rev-parse HEAD` on a
+    repo with no commits appends a `Use '--' to separate...` hint on its
+    own line. Same shape as `lane_setup._one_line` and
+    `oss_state._receipt_line`, kept local rather than imported: this is a
+    standalone CLI module and neither of those two should have to change
+    because this one's contract did.
+    """
+    return " ".join(str(text).split())[:limit]
+
+
 def _verdict(state, reason, **extra):
     out = {"state": state, "reason": reason, "added": [], "removed": [], "head_moved": False}
     out.update(extra)
@@ -311,7 +327,7 @@ def main(argv=None):
     else:
         verdict = compare(before, snapshot(args.root))
 
-    print("VERDICT: {0} -- {1}".format(verdict["state"], verdict["reason"]))
+    print("VERDICT: {0} -- {1}".format(verdict["state"], _one_line(verdict["reason"])))
     if verdict["head_moved"]:
         print("  HEAD moved: yes")
     if verdict["added"]:
