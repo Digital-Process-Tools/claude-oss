@@ -2373,15 +2373,30 @@ def main(argv=None):
         # "missing required key: worktree_root" entry, chiefly). Gating on
         # `config is None` alone dropped the local parse error and rendered
         # it identically to the genuinely benign "no worktree_root configured
-        # here" case `release_lane` reports below; gating on any `problems`
-        # at all would over-correct and swallow that benign case's own
-        # message instead, since it always carries the same advisory entry.
-        # `_read_json_object` (this module's private read for both halves)
-        # spells every read failure with "could not read/decode/parse" --
-        # the one substring none of the advisory sentences use -- so that is
-        # the signal actually being gated on.
-        local_read_failed = any("could not" in problem for problem in problems)
-        if config is None or local_read_failed:
+        # here" case `release_lane` reports below.
+        #
+        # A first version of this fix scanned `problems` for the substring
+        # "could not", reasoning that `_read_json_object`'s own read-failure
+        # messages ("could not read/decode/parse") were the only ones that
+        # used it. That reasoning was never checked against the rest of
+        # `oss_config.py` and was wrong: `test_command_problem`'s own
+        # advisory ("...or null when the probe could not tell; got ...")
+        # contains the same substring, so a config with a perfectly readable,
+        # perfectly known `worktree_root` and an unrelated malformed
+        # `test_command` field was blocked from releasing at all (found in
+        # this diff's own review round). Ask the one question this arm
+        # actually needs answered instead of inferring it from prose
+        # elsewhere in the list: did *the local file itself* fail to parse?
+        # Re-read it with the exact primitive `load()` uses internally for
+        # both halves, so this stays one read failure, one fact, rather than
+        # a second implementation of JSON/encoding error handling that could
+        # drift from `oss_config`'s own.
+        local_read_problem = None
+        if config is not None:
+            _, local_read_problem = oss_config._read_json_object(
+                oss_config.local_config_path(Path(args.repo) / CONFIG_NAME)
+            )
+        if config is None or local_read_problem is not None:
             result = {
                 "state": "could-not-release",
                 "path": None,

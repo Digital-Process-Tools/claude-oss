@@ -125,3 +125,33 @@ def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
     assert payload["state"] == "could-not-release"
     assert "no registry" in payload["detail"]
     assert "could not" not in payload["detail"]
+
+
+def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_release(tmp_path):
+    """Must-not-fire control found in review: a fully-parseable, fully-known
+    .oss.local.json (worktree_root genuinely present and known) must let a real
+    release proceed even when the tracked .oss.json independently carries an
+    unrelated validation problem whose own prose contains the substring "could
+    not" -- `oss_config.test_command_problem`'s non-string-value message ("...or
+    null when the probe could not tell; got ...") is exactly such a case. A
+    naive substring scan over the whole merged `problems` list for "could not"
+    cannot tell that advisory apart from a genuine local-file read failure, and
+    would have blocked a release that has everything it needs."""
+    registry_dir = tmp_path / "registry"
+    project = dict(PROJECT_CONFIG)
+    project["test_command"] = 123  # triggers test_command_problem's "could not tell" text
+    (tmp_path / ".oss.json").write_text(json.dumps(project))
+    (tmp_path / ".oss.local.json").write_text(
+        json.dumps(
+            {
+                "clone": "/tmp/does-not-matter",
+                "worktree_root": str(registry_dir),
+                "state_file": "/tmp/does-not-matter-state.json",
+            }
+        )
+    )
+
+    payload = _release(tmp_path)
+
+    assert payload["state"] == "not-found", payload
+    assert "worktree_root is not known" not in payload["detail"]
