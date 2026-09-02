@@ -91,6 +91,60 @@ def _priority_prefix(priority_spellings):
     return os.path.commonprefix(list(priority_spellings))
 
 
+def _plausible_priority_typo(label, prefix, priority_spellings):
+    """Does `label` look like a typo or rename of a *declared* priority
+    spelling, rather than merely starting with the same one or two
+    characters as every declared spelling happens to (#838)?
+
+    A short shared prefix over-matches. With spellings `p1`/`p2`/`p3` the
+    commonprefix is a single character, `'p'` -- so an unrelated label like
+    `python` shares it and `_band` would report it as a mistyped priority.
+    There is no fixed floor on prefix length that is right for every repo: a
+    floor long enough to exclude `python` would also exclude a genuine
+    one-letter-spelling repo's real typos, and a repo's spellings are never
+    known in advance -- the whole reason this module reads them from
+    `.oss.json` rather than hardcoding `priority-high` (see the module
+    docstring).
+
+    What is derived instead is a plausible *suffix length*, from the
+    declared spellings themselves -- and it is compared against the
+    *nearest* declared spelling's own suffix, not the longest one. An
+    earlier version of this function compared against the single longest
+    suffix among all declared spellings, which reintroduces #838's own
+    over-match the moment the declared spellings vary in length: with
+    `p1` (suffix length 1) declared alongside a long spelling (suffix
+    length 38), the long spelling's suffix set the floor and let `python`
+    (suffix length 5, past `'p'`) back in, exactly the false positive this
+    function exists to refuse. Matching against the *nearest* suffix length
+    instead means a candidate is only judged against the declared spelling
+    it most resembles in length, so one long spelling can no longer vouch
+    for an implausible match to a short one.
+
+    The floor of `1` handles the other edge that version missed: a
+    repository declaring exactly one priority spelling has a prefix equal
+    to that whole spelling, so its own suffix length is `0` -- and a
+    zero-length floor can never be exceeded by any real candidate (every
+    candidate that reaches this function already has a non-empty suffix,
+    by construction), which silently disabled typo detection entirely for
+    a single-spelling repository. `max(nearest, 1)` keeps a `'urgentx'`
+    close enough to `'urgent'` to be flagged, while a wildly longer
+    `'urgentlyneeded'` still is not.
+
+    `'critical'` (8 characters past `'priority-'`) lands nearest `'medium'`
+    (6 characters past it) among `high`/`medium`/`low`, and 8 is within
+    double of 6 -- a plausible typo. `'ython'` (5 characters past `'p'`)
+    lands nearest `'1'`/`'2'`/`'3'` (1 character past it), and 5 is not
+    within double of 1 -- not plausible, regardless of what else is
+    declared alongside those short spellings. The factor of two is
+    generous on purpose: a typo or rename should stay in the same ballpark
+    as what it replaces, not merely shorter than infinity.
+    """
+    candidate_suffix = len(label) - len(prefix)
+    suffix_lengths = [len(s) - len(prefix) for s in priority_spellings]
+    nearest = min(suffix_lengths, key=lambda n: abs(n - candidate_suffix))
+    return candidate_suffix <= 2 * max(nearest, 1)
+
+
 def _band(labels, priority_spellings):
     """Which band these labels sit in, strongest first, and the unrecognised
     priority-shaped label if one was found -- `(band, unrecognised)`.
@@ -123,7 +177,9 @@ def _band(labels, priority_spellings):
         unrecognised = sorted(
             label
             for label in present
-            if label.startswith(prefix) and label not in priority_spellings
+            if label.startswith(prefix)
+            and label not in priority_spellings
+            and _plausible_priority_typo(label, prefix, priority_spellings)
         )
         if unrecognised:
             return "low", unrecognised[0]
@@ -271,6 +327,19 @@ def main(argv=None):
     parser.add_argument("--short-reason", default=None, choices=SHORT_REASONS)
     args = parser.parse_args(argv)
 
+    # The sibling idiom used by lane_setup.py, tree_snapshot.py, ranking_table.py,
+    # checklist_skew.py, release_delta.py, release_version.py, scaffold.py and
+    # rename_changelog_fragment.py (#794, #834): a receipt line can carry an
+    # arbitrary issue label or title, and a console codepage that cannot encode
+    # one of them must not crash this print -- a UnicodeEncodeError here used to
+    # exit 1 after the ranking was already computed, indistinguishable from a
+    # genuine refusal.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
+
     if args.lane is not None:
         answer = check_lane(args.lane, args.short_reason)
         print("{}: {} issue(s){}".format(
@@ -280,8 +349,26 @@ def main(argv=None):
         ))
         return 0 if answer["state"] == "ok" else 2
 
+    # JSON is UTF-8 by spec (RFC 8259); decoding stdin with whatever the
+    # console's codepage happens to be is itself the bug, not a fact to route
+    # around -- on a cp1252 console it fails to decode a perfectly valid UTF-8
+    # payload the moment a label or title carries a non-ASCII character.
+    # Forcing UTF-8 here makes the tool accept what it is documented to
+    # accept, on every platform, rather than merely explaining a decode
+    # failure caused by reading it wrong in the first place.
+    try:
+        sys.stdin.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper
+        pass
+
     try:
         payload = json.load(sys.stdin)
+    except UnicodeDecodeError as err:
+        # UnicodeDecodeError is a ValueError, not a JSON-syntax error -- caught
+        # separately so this never renders as "stdin is not JSON" when stdin
+        # was JSON and simply could not be decoded (#834).
+        print("COULD NOT READ: stdin could not be decoded as UTF-8 ({})".format(err))
+        return 2
     except ValueError as err:
         print("COULD NOT READ: stdin is not JSON ({})".format(err))
         return 2
