@@ -235,6 +235,48 @@ def test_local_key_states_could_not_derive_when_the_local_half_is_unreadable(tmp
         assert reason is not None
 
 
+def test_local_key_states_reports_a_mis_scoped_committed_key_as_configured_not_derived(
+    tmp_path,
+):
+    """Self-review round (#608): a machine-scoped key left in the committed
+    `.oss.json` -- `_scope_problems` already flags this as a scope violation on its
+    own -- is a real value someone chose, not a guess this script made up. With no
+    `.oss.local.json` on disk at all, `_local_key_states` used to fall straight to
+    `derived, not configured` for it and report a value computed from the repository
+    root that DIFFERS from the real one `load()` actually uses (`config = dict
+    (project)` keeps the committed value). Paired against the ordinary derived case
+    in the same fixture: a sibling key with no committed value at all still derives
+    normally, so this is not a blanket "everything is configured now" regression.
+    """
+    combined = _combined(tmp_path)
+    mis_scoped_path = tmp_path / oss_config.CONFIG_NAME
+    mis_scoped_path.write_text(json.dumps(combined), encoding="utf-8")  # nothing split out
+
+    config, _problems = oss_config.load(mis_scoped_path)
+    states = oss_config.local_key_states(mis_scoped_path)
+
+    for key in oss_config.LOCAL_KEYS:
+        state, value, reason = states[key]
+        assert state == oss_config.LOCAL_STATE_CONFIGURED, key
+        assert value == combined[key], key
+        assert value == config[key], key
+        assert reason is None
+
+    # Must-fire control: a project half with the machine keys genuinely absent, in
+    # a fresh directory of its own, still derives -- this fix must not have made
+    # everything "configured" unconditionally.
+    project_only, _local = oss_config.split(combined)
+    derived_dir = tmp_path / "derived"
+    derived_dir.mkdir()
+    derived_path = derived_dir / oss_config.CONFIG_NAME
+    derived_path.write_text(json.dumps(project_only), encoding="utf-8")
+    derived_states = oss_config.local_key_states(derived_path)
+    for key in oss_config.LOCAL_KEYS:
+        state, _value, reason = derived_states[key]
+        assert state == oss_config.LOCAL_STATE_DERIVED, key
+        assert reason is None
+
+
 def test_an_unreadable_local_half_is_a_named_problem_not_a_silent_project_only_load(tmp_path):
     path = _write_split(tmp_path)
     (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text("{ broken", encoding="utf-8")

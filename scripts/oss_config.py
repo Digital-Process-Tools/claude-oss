@@ -1501,6 +1501,14 @@ def _local_key_states(project, local, local_problem, path):
     every key straight to `could-not-derive`: a real file with a real problem must
     never be silently swapped for a guess, which is a stronger and more surprising
     thing to do than merely failing to read it.
+
+    **A machine-scoped key left in the committed `.oss.json` (self-review round,
+    found by this diff's own spawned reviewer) is `configured`, not derived, even
+    with no `.oss.local.json` on disk.** `_scope_problems` already flags that shape
+    as a scope violation on its own; what this function must not do on top of it is
+    relabel the maintainer's own real value as a guess. `load()`'s own precedence is
+    local wins over a mis-scoped project value when both are present -- `local` is
+    checked before `project` below for the identical reason.
     """
     states = {}
     derived = None
@@ -1515,6 +1523,8 @@ def _local_key_states(project, local, local_problem, path):
             states[key] = (LOCAL_STATE_COULD_NOT_DERIVE, None, local_problem)
         elif local is not None and key in local:
             states[key] = (LOCAL_STATE_CONFIGURED, local[key], None)
+        elif key in project:
+            states[key] = (LOCAL_STATE_CONFIGURED, project[key], None)
         elif derived is not None:
             states[key] = (LOCAL_STATE_DERIVED, derived[key], None)
         else:
@@ -1590,8 +1600,12 @@ def load(path):
         else:
             config[key] = value
 
-    if local_problem is not None:
-        local = None
+    # `local` is already None whenever `local_problem is not None` -- every failure
+    # branch of `_read_json_object` returns `(None, "...")` -- so `_scope_problems`
+    # below sees the right thing without a reset here. (Self-review round: an
+    # earlier version of this function re-set `local = None` at this exact point,
+    # a no-op left over from moving the original reset past the derivation block
+    # above; removed rather than kept as misleading dead code.)
     problems.extend(_scope_problems(project, local, local_exists))
     problems.extend(validate(config))
     return config, problems
