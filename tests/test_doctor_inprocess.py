@@ -648,8 +648,20 @@ def _fully_configured(root):
     # than left to the real home directory: a check whose OK depends on whose laptop
     # the suite runs on is not a check.
     (root / ".claude").mkdir(parents=True, exist_ok=True)
+    # #609: the same file also has to carry a rule naming the supertool call
+    # itself, or the fully-scaffolded fixture below is not actually clean --
+    # every read this loop makes goes through supertool via Bash.
     (root / ".claude" / "settings.local.json").write_text(
-        json.dumps({"permissions": {"allow": ["Bash(./supertool 'gh-pr-merge:*')"]}}),
+        json.dumps(
+            {
+                "permissions": {
+                    "allow": [
+                        "Bash(./supertool 'gh-pr-merge:*')",
+                        "Bash(./supertool:*)",
+                    ]
+                }
+            }
+        ),
         encoding="utf-8",
     )
     rules = root / ".claude" / "jit-context"

@@ -2496,6 +2496,10 @@ from doctor_check_merge_permission import (
     _entry_count,
     merge_permission_state,
     check_merge_permission,
+    SUPERTOOL_OP,
+    SUPERTOOL_RULE_FILE,
+    supertool_permission_state,
+    check_supertool_permission,
 )
 
 
@@ -8079,6 +8083,12 @@ def main(argv=None):
     # The merge permission is settled here or it is settled at the merge step,
     # with the whole review already spent.
     check_merge_permission(project_dir)
+    # #609: needed on the very first tool call of a session, not once a tick --
+    # every agent here is denied Read, Grep and Glob, so every read goes
+    # through supertool via Bash. Placed right beside the merge-permission
+    # check because it is the same question about the same files, one call
+    # earlier in a session's life than the merge ever is.
+    check_supertool_permission(project_dir)
     # Same reason, one layer down: an allowlist rule can exist and the merge
     # can still refuse for want of |force (#421). Needs no config either --
     # both live in supertool's file and this process's environment.
