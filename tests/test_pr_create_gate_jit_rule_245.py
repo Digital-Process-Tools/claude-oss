@@ -210,3 +210,43 @@ def test_skill_md_pull_request_section_is_a_short_pointer():
     assert "skills/manager/phases/handback.md" in section, (
         "the trimmed section drops the pointer to the phase file's full argument"
     )
+
+
+# --- 5. the call this rule now carries a copy of -----------------------------------
+
+
+#: The same pattern tests/test_agent_report_schema.py uses over the manager loop's own
+#: prose: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <SOMETHING>
+DOCUMENTED_CALL_RE = re.compile(r'report_schema\.py"?\s+(<[^>\n]+>)')
+
+
+def test_the_rule_documents_the_report_path_and_not_the_payload_path():
+    """The rule carries a third copy of the maintainer's one verification call, and a
+    copy nothing checks is a copy that drifts.
+
+    `tests/test_agent_report_schema.py` runs the validator against whichever of the two
+    files a finished run leaves that the loop's own prose names -- and pins that a call
+    aimed at the *payload* exits 1 with a seventeen-line diagnostic about a file with
+    nothing wrong with it. That guard reads the manager loop's documents; this rule is
+    not one of them, so the same drift here would be caught by nothing. Asserted at the
+    level this file can afford: the placeholder names the report, never the payload.
+    """
+    body = _rule_body()
+    placeholders = DOCUMENTED_CALL_RE.findall(body)
+    assert placeholders, (
+        "the pr-create-gate rule documents no report_schema.py invocation -- either it "
+        "stopped carrying the check, or this pattern no longer matches how it writes "
+        "it, and a pattern that matched nothing has checked nothing"
+    )
+    for placeholder in placeholders:
+        lowered = placeholder.lower()
+        assert "report" in lowered, (
+            "the rule documents {} -- a report_schema.py call must name the report "
+            "path".format(placeholder)
+        )
+        assert "payload" not in lowered and "pr_body" not in lowered, (
+            "the rule documents {} -- pointed at the payload this call exits 1 on a "
+            "correct run, which is the defect the loop's own copy of it pins".format(
+                placeholder
+            )
+        )
