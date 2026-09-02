@@ -91,9 +91,16 @@ def _executable(path, text):
         # the same way a genuine install would be, rather than a Windows-only
         # gap nothing here could ever exercise.
         cmd_path = path.with_name(path.name + ".cmd")
-        cmd_path.write_text(
-            '@echo off\r\n"{}" "{}" %*\r\n'.format(BASH, path),
-            encoding="utf-8",
+        # `write_text()` opens in text mode with `newline=None`, which
+        # translates every `\n` it writes to `os.linesep` -- CRLF on the one
+        # platform this branch runs on. The literal `\r\n`s already in this
+        # string would each pick up a SECOND `\r` from that translation
+        # (`\r\n` -> `\r` + translate(`\n`) = `\r\r\n`), the exact class of
+        # bug this repo's own `tests/test_doctor_plugin_copy.py` documents
+        # and `scripts/ranking_table.py`/`scripts/assemble_changelog.py`
+        # avoid by writing bytes. `write_bytes()` here for the same reason.
+        cmd_path.write_bytes(
+            '@echo off\r\n"{}" "{}" %*\r\n'.format(BASH, path).encode("utf-8")
         )
     return path
 

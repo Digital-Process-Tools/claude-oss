@@ -157,6 +157,26 @@ def test_a_crashed_probe_is_could_not_ask_not_a_crash():
     assert state == "could-not-ask"
 
 
+def test_run_is_handed_the_resolved_path_not_the_bare_name():
+    """#753/#810's own Windows CI regression: `which()` was already called to
+    check PATH membership, but `run()` was still handed the bare `"claude"`
+    string instead of `which()`'s own resolved, extension-qualified answer --
+    which `subprocess.run(shell=False)` cannot turn back into `claude.cmd` on
+    Windows. Pin the argv `run` actually receives, not just the state it
+    returns, so a regression back to the bare name is caught here rather than
+    only on a windows-latest CI leg nobody can run locally."""
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        return _FakeCompleted(0, ONE_ROW.encode("utf-8"))
+
+    mod.channel_consumer_census_state(
+        run=run, which=lambda name: "/resolved/claude.cmd"
+    )
+    assert calls and calls[0][0] == "/resolved/claude.cmd", calls
+
+
 # --------------------------------------------------------- check_channel_consumer_census
 
 def test_check_reports_warn_on_collision():
