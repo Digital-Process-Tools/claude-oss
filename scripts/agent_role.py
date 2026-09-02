@@ -3,8 +3,9 @@
 #695 splits the manager into a scheduler that never holds a tick's payload
 and a sub-manager that runs exactly one tick and dies with its context. The
 issue is explicit that tag-and-publish authority must stay with the
-scheduler -- filed separately as the releaser agent, #696 -- and that the
-withholding has to be "in the code, not only in prose".
+scheduler -- filed separately as the releaser agent, #696, since built and
+wired as `agents/releaser.md` -- and that the withholding has to be "in the
+code, not only in prose".
 
 Prose alone was already tried and named as insufficient for a related
 boundary in this repository: `CLAUDE.md`'s section on agent tool grants
@@ -384,9 +385,9 @@ def release_refusal(action: str, role: str | None = None, root: str = ".") -> di
         "role": resolved_role,
         "reason": (
             "role {0!r} may not {1}: release (tag, publish) authority is "
-            "withheld from the per-tick sub-manager by #695 and stays with "
-            "the scheduler until #696 (the releaser agent) gives it a "
-            "spawn of its own".format(resolved_role, action)
+            "permanently withheld from the per-tick sub-manager by #695 "
+            "and stays with the scheduler, which may spawn agents/"
+            "releaser.md (#696) for it".format(resolved_role, action)
         ),
         "marker_state": marker_state,
     }
