@@ -1933,11 +1933,25 @@ def test_the_short_sha_check_fires_on_the_gate_as_it_was():
     )
 
 
-# ------------------- the full suite is optional, the targeted red-green is not (#141)
+# ------------------- the full suite is not run at all, the targeted red-green is (#141, #765)
+#
+# This block used to assert the opposite of what it asserts now, and the reversal
+# is the whole of #765. The old rule offered the full local `test_command` as an
+# option with criteria, plus a rebase clause that made it mandatory. Two lanes
+# complying with those criteria on one afternoon each reported failures CI did
+# not have as facts about the default branch, which was green on all three
+# operating systems at that commit. So the criteria were the defect, not the
+# wording, and the decision (2026-09-02, docs/overview.md want 6) removed the
+# option rather than rephrasing it.
+#
+# The two anchors that survive the reversal are the point of keeping this block
+# rather than deleting it: the targeted run stays mandatory, because CI cannot
+# produce a red-before-fix, and a failure already seen is still not re-run.
 
 SUITE_RULE_ANCHORS = [
-    ("the-full-suite-is-optional", ("full suite is optional",)),
-    ("a-rebase-makes-it-mandatory", ("after a rebase",)),
+    ("do-not-run-the-whole-suite", ("do not run the repo's whole `test_command`",)),
+    ("ci-is-the-gate", ("ci is the merge gate",)),
+    ("the-targeted-run-stays-mandatory", ("targeted run is not optional",)),
     ("never-re-run-to-re-read-a-failure", ("failure you have already seen",)),
 ]
 
@@ -1951,29 +1965,48 @@ def _suite_rule_unmet(text):
     }
 
 
-def test_the_developer_states_when_the_full_suite_is_worth_the_wall_clock():
-    """The optional half without the rebase clause reads as permission to skip the run
-    that has caught the most: three pull requests went red the same day on a defect
-    only the full suite on a rebased tree could see.
+def test_the_developer_does_not_run_the_whole_suite_and_still_runs_the_targeted_one():
+    """#765. Removing the full run without saying so would leave a lane to decide
+    for itself, which is the state that produced two false pull request bodies --
+    so the brief has to say not to run it, name CI as the gate, and keep the
+    targeted run mandatory, which is the one claim CI cannot produce.
     """
     unmet = _suite_rule_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
     assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
 
 
 def test_the_suite_rule_check_fires_on_the_instruction_it_replaces():
+    """Two controls, and the second is the one this reversal needed.
+
+    The first is the pre-#141 text, which meets none of the anchors. The second
+    is the wording #765 actually replaced -- it satisfied the *old* anchors
+    completely, so a check that still passed on it would be asserting nothing
+    about the change just made.
+    """
     before = (
         "Test first, and watch it fail. Run the repo's test_command. A test written "
         "after the fix asserts what the code happens to do. Report the red output and "
         "the green output separately, as the shortest decisive lines."
     )
     assert _suite_rule_unmet(before) == {name for name, _ in SUITE_RULE_ANCHORS}
-    assert (
-        _suite_rule_unmet(
-            "The full suite is optional, and mandatory after a rebase onto the "
-            "default branch. Never re-run it to watch a failure you have already seen."
-        )
-        == set()
+
+    replaced = (
+        "The full suite is optional -- the repo's whole `test_command` -- and the "
+        "criteria are the point, and mandatory after a rebase onto the default "
+        "branch. Never re-run it to watch a failure you have already seen."
     )
+    assert _suite_rule_unmet(replaced) == {
+        "do-not-run-the-whole-suite",
+        "ci-is-the-gate",
+        "the-targeted-run-stays-mandatory",
+    }
+
+    after = (
+        "Do not run the repo's whole `test_command`. CI is the merge gate and the "
+        "authority for the whole matrix. The targeted run is not optional. Never "
+        "re-run it to watch a failure you have already seen."
+    )
+    assert _suite_rule_unmet(after) == set()
 
 
 # ------------------- the tooling friction the agent is the only one who can see (#141)

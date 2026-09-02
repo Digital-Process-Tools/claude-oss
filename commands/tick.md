@@ -368,6 +368,15 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    holding more than one idle tree gets `skipped: reason` on the worktree half of that token and
    reaps the rest separately, and the default branch's own run gets checked after the squash.
 
+   **Select in the dispatch order, and carry 1 to 3 issues per lane, never 4 (#798, #799).** The
+   order is two axes — author before priority within a band, so a human ask outranks loop work of
+   the same or lower band while a blocking-class defect the loop found still outranks an ordinary
+   ask. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the one place that table
+   lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
+   says how a lane is filled from it. Three issues is the default rather than the ceiling, and a
+   lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent` or
+   `could-not-tell`. A short lane with no reason is a defect in the tick.
+
    **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
    commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and
    the moment the dispatched agent does — `main` has moved mid-tick before, and a hand-copied worktree

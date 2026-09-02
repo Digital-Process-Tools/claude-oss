@@ -157,24 +157,38 @@ it a second way — grep the new content back — before saying it.
    after, and **the red output and the green output reported separately**, as the shortest decisive
    lines. The bar: *would this test still pass if the code did nothing?*
 
-   **The full suite is optional — the repo's whole `test_command` — and the criteria are the
-   point.** Worth the wall-clock when the change is in the core, or in a shared helper, fixture or
-   conftest, or something was deleted or renamed, or you genuinely do not know what else reads the
-   code — and
-   **mandatory after a rebase onto the default branch**, without exception. That last one is not
-   symmetry: the failure a rebase introduces is by construction one your branch alone cannot show
-   you, and three pull requests went red on a single day on exactly that, so a rule that leaves the
-   full run optional without this clause reads as permission to skip the run that catches the most.
-   Not worth it when the change is confined to one module whose own tests are green and nothing
-   moved underneath it.
+   **Do not run the repo's whole `test_command` (#765).** Run the tests for the files you changed,
+   commit, hand back. **CI is the merge gate and the authority for the whole matrix**, and your one
+   platform is not a weaker version of it — it is a different environment that can fail for reasons
+   CI does not have. Two lanes on one afternoon each wrote a local-only failure into a pull request
+   body as a fact about the default branch; the default branch was green on all three operating
+   systems at that commit. A reader who trusts such a body now believes something false about a
+   branch nobody has broken.
 
-   **Whatever you decide, say so in `tests.full` on the report (#632) — three states, the same
-   could-not-look-is-not-clean shape as everything else here.** `ran` carries the result, the
-   wall-clock, the platform and the interpreter; `not-run` carries which criterion above applied;
-   `could-not-run` is the harness itself failing, never folded into `not-run`. This is not a request
-   to run it more often — the manager never reproduces the suite itself and reads CI as the source of
-   truth for the whole matrix — it is the field that lets the manager learn whether your own local run
-   happened at all, and on what one platform, without re-running anything to find out.
+   **And a green local run is not evidence about the gate you will be merged against.** In one
+   managed repository `test_command` covers at most 4 of 7 CI legs, and the leg that caught a real
+   defect — shellcheck, on a variable assigned in a sourced helper — is not in `test_command` at all.
+   The lane spent half an hour covering a strict subset and missed the finding. Speed is not the
+   argument here and asserting it would be wrong: CI is broader, free and mandatory, not faster.
+
+   **The targeted run stays mandatory and is not what this removes.** Red-before-fix is the one
+   claim CI is structurally unable to produce, because it only ever runs the branch as proposed with
+   the fix already present.
+
+   **The rebase clause is removed with the rest, deliberately.** It was argued on the grounds that a
+   rebase introduces failures your branch alone cannot show — true, and CI runs the rebased branch,
+   so the gate is covered. What the local run bought was finding it before the push rather than
+   after, which is not worth a full local suite you have been told not to trust on one platform.
+
+   **`tests.full` on the report is now a finding, not a receipt (#632, #765).** Its three states are
+   unchanged and `could-not-run` still never folds into `not-run` — what changed is which value a
+   lane should report. `not-run` is the expected value. A `ran` is something the manager should ask
+   about rather than credit.
+
+   **If you run it anyway and see failures your diff cannot explain, they are a finding about the
+   environment, not about the branch.** Check them against CI on the same commit before writing them
+   into a pull request body as pre-existing. Two lanes independently failed to, which makes it
+   systemic rather than one agent's slip.
 
    **A narrowed run can be green while a guard it never touched fails on CI (#432).** Some tests are
    keyed to *what your diff does* rather than to a module it renames — a new call site of
@@ -1010,8 +1024,9 @@ The fields, their enumerations and a worked example are in
 `${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
 this section would otherwise duplicate and drift from. What the old prose report asked for has not
 changed, only where it goes: files → `files`, red and green → `tests.red` / `tests.green`, whether the
-full suite ran → `tests.full` (optional; absent is fine on an older schema copy but not on a run that
-made a decision about it and did not record it), review →
+full suite ran → `tests.full` (absent is fine on an older schema copy but not on a run that made a
+decision about it and did not record it; since #765 the expected value is `not-run`, and a `ran` is a
+finding for the manager to ask about rather than a receipt to credit), review →
 `review`, platform claims → `claims`, every `docs_targets` path with what happened to it — updated,
 read and still true, or not opened — → `docs`, unfiled findings → `adjacent`, the note path →
 `note_path`.

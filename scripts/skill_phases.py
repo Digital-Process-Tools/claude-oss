@@ -87,7 +87,22 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # raise carries a sentence about what was weighed. This is the file's
     # third budget change; the margin should be re-measured at the next one
     # rather than assumed still adequate.
-    "skills/manager/phases/dispatch.md": (26052, 28700, "delegating: fleet size, lane disjointness, bundling, what every brief carries"),
+    # Raised again (#798, #799): measured 29,456 B against the prior 28,700 B
+    # budget. Two maintainer decisions land in this one file -- the dispatch
+    # order's selection rule and the three-issue lane default -- and both belong
+    # where a lane is actually assembled rather than in the spine, which is
+    # where the previous raise's own margin had already forced one directive to
+    # go. Paid for partly by cutting: two sentences of this addition were
+    # trimmed as restating principles CLAUDE.md already argues at length, which
+    # recovered 240 B of the 996 B overage. The rest is new argument -- the six
+    # rows' rationale, why companions are not re-ranked, and the three short-lane
+    # reasons -- and trimming further would have removed the reasoning rather
+    # than the words. A split was weighed and declined again for #725's reason:
+    # this is still one subject, and a fresh phase file plus its spine directive
+    # block is a larger change than either decision warrants. Fourth budget
+    # change; #725 asked for the margin to be re-measured rather than assumed,
+    # and this is that measurement -- ~10% headroom over the new size.
+    "skills/manager/phases/dispatch.md": (29456, 32400, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
     "skills/manager/phases/review.md": (11637, 12800, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),

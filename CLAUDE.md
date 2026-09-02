@@ -445,7 +445,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 58,377 B | 64,600 B |
-| `skills/manager/phases/dispatch.md` | 26,052 B | 28,700 B |
+| `skills/manager/phases/dispatch.md` | 29,456 B | 32,400 B |
 | `skills/manager/phases/handback.md` | 18,864 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 15,093 B | 16,600 B |
 | `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
@@ -489,7 +489,7 @@ moved by the same #762: one paragraph, naming where the filing-time label attach
 10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
 trimming something else in the same file to absorb, so it was raised too.
 
-**The total grew: 122,423 B became 150,230 B, +22.7%** — re-derived here rather than trusted from
+**The total grew: 122,423 B became 153,634 B, +25.5%** — re-derived here rather than trusted from
 a prior edit of this sentence, which read 142,188 B / +16% and had already gone stale by the time the
 two rows above it moved, with nothing checking it against the table (found by review, this round: no
 test ties this sentence's numbers to the table's own column, only the per-file rows). Sum the table's
