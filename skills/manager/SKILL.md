@@ -295,6 +295,7 @@ into the probe.
   | --- | --- | --- |
   | `destroys` — data gone, no copy anywhere | yes, unconditionally | yes |
   | `discloses` — a secret or a private path leaves the machine | yes, unconditionally | yes |
+  | `executes` — a file supplied by the repository under inspection is run as a program by a tool pointed at that repository | yes, unconditionally | yes |
   | `containment (read)` — an argument slot treated as a path, or code reaching outside the project | yes, unconditionally | yes |
   | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally | yes |
   | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally | yes — the attacker's delivery channel *is* a public tracker, so the writeup is the payload |
@@ -339,6 +340,16 @@ into the probe.
   `ships-local-state` blocks for a reason the other rows do not share: **the release is the mechanism
   by which it takes effect.** Before the tag it is a file edit. After the tag it is on every machine
   that installs the artifact and needs another release to undo.
+
+  `executes` blocks for the identical reason (#790): the exec path itself only reaches every install
+  once a release ships it, so before the tag it is a local defect and after the tag it is a working
+  recipe on every machine that updates. Kept apart from `containment (read)`, whose fix is "refuse the
+  path" — the path here is legitimately the project directory, and refusing it removes nothing — and
+  from `splices`, since the value reaches argv as **argv[0]**, not an operand an option parser
+  reinterprets. The fix this row sends a reviewer to make is "do not run a program the repository
+  under inspection supplies", which neither of those rows' fixes would produce. Embargo yes, for the
+  same reason `forges` is: before a fix ships, the writeup is a working recipe against installed
+  users, and disclosure before then hands out the exploit.
 
   **The rows are a record of what has already gone wrong, never a partition of what can.** So do not
   tune a brief toward the table, and do not stretch a finding into the nearest row that will take it.
