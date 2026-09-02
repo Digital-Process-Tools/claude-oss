@@ -472,12 +472,24 @@ It is measured against the hook scripts of the installed version, not inferred f
 number — and **against the hooks the runtime actually executes**, which is narrower than the files
 under its install root and is the distinction the check turns on. A layer list living in the
 dependency's own test fixtures satisfies nothing: it would read the same whether the hooks
-enumerated `01-oss` or not, which is how this line came to be right by accident (#241). Four things
+enumerated `01-oss` or not, which is how this line came to be right by accident (#241). Five things
 it can say:
 
 - **`… names 01-oss in its layer list …`**, at `OK` — the rules are reachable. The list was found in
   a hook the dependency declares in its `hooks/hooks.json`, or in a file one of those `source`s.
   Anywhere else under the install root is not this state.
+- **`… enumerates layers by directory glob rather than by naming them in a fixed list …`**, at `OK`
+  — the same conclusion from different evidence, and the line says which it has (#743). A `for d in
+  "$base"/*/` over the dimension base visits every directory under it, `01-oss` included, by
+  construction. This is the state the upstream fix produces: `claude-jit-context#176` fixed #119 by
+  **deleting** the fixed list, so the list-shaped `OK` above and an up-to-date dependency became
+  mutually exclusive, and `unknown` was the terminal state for every current install — a third state
+  that is the only reachable state has stopped being a third state. What #241 bought is untouched:
+  the glob still has to be found in a hook the runtime executes, and one in a test fixture answers
+  nothing. What it does not establish, and says so: what the loop's body then does with each
+  directory it visits. A **filter** narrowing the glob to literal layer names, none of them ours,
+  sends this back to `WARN … could not be determined` rather than to a gap — a filter this cannot
+  see the whole of is a reason to withhold the answer, not evidence of one.
 - **`… enumerates layers from a fixed list that does not include 01-oss …`**, at `WARN` — a real
   gap with a real consequence. Treat every rule in that layer as inert until an installed version
   fixes it. The fix belongs to `claude-jit-context`, not here, so there is nothing to run: this is

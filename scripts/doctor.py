@@ -5681,6 +5681,29 @@ JIT_LAYER_DIR_GLOB = re.compile(
     r"""\bfor\s+[A-Za-z_]\w*\s+in\s+\S*\*/["']?\s*(?:;|$)"""
 )
 
+#: A *per-layer name filter* -- a comparison against a literal layer name, which is what
+#: turns "this hook globs the dimension base" back into "this hook enumerates a fixed
+#: set with extra steps" (#743). Only ever read inside a script that already matched
+#: `JIT_LAYER_DIR_GLOB`, and only to *withhold* the glob's answer, never to produce one.
+#:
+#: Anchored on a comparison operator rather than on the token alone, and that is the
+#: whole design. The installed 0.6.0's `common.sh` carries `00-index.tsv` and
+#: `01-paths.tsv` outside comments -- index filenames that are layer-shaped up to the
+#: dot -- so a detector keyed on "a layer-shaped token appears in this file" answers
+#: `could-not-determine` for exactly the dependency version #743 was filed about: the
+#: fix reporting the defect it fixes. The trailing lookahead rejects the extension for
+#: the same reason.
+#:
+#: What it does NOT match, stated rather than left to be discovered: a `case` pattern
+#: list, a filter comparing against a variable, and a filter in a file the hook set does
+#: not reach. Each of those leaves the glob's `OK` standing. That is a real limit and it
+#: fails toward the permissive answer -- accepted because the alternative measured worse:
+#: every widening tried against the real tree matched an index filename and put every
+#: up-to-date install back into the permanent `unknown` this issue exists to end.
+JIT_LAYER_NAME_FILTER = re.compile(
+    r"""(?:==?|!=|=~)\s*["']?(\d\d-[A-Za-z0-9][A-Za-z0-9-]*)["']?(?![\w.-])"""
+)
+
 #: Where a Claude Code plugin declares the scripts the runtime executes. The manifest is
 #: what separates a hook from a file that merely sits in the same tree (#241): the
 #: installed 0.4.0 answered this check off `tests/test-layer-enumeration.sh`, the
@@ -5715,6 +5738,7 @@ JIT_SCRIPT_BASENAME = re.compile(r"""([\w.+-]+\.sh)""")
 #: lost is the injection, which is an improvement not a dependency.
 JIT_LAYER_LEVELS = {
     "reads": "OK",
+    "reads-by-glob": "OK",
     "no-layer": "OK",
     "unread": "WARN",
     "could-not-determine": "WARN",
@@ -6102,6 +6126,11 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
 
     unreadable = []
     naming, omitting, globbing = [], [], []
+    # (site, name) for every literal layer name a hook compares against. Read only to
+    # withhold the glob arm's answer below -- never to produce one. See
+    # `JIT_LAYER_NAME_FILTER` for why this is anchored on the comparison and not on the
+    # token, and for what it deliberately does not match.
+    filters = []
     for path in scripts:
         try:
             text = path.read_text(encoding="utf-8")
@@ -6123,6 +6152,10 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
                 (naming if layer in listed.split() else omitting).append(site)
             if JIT_LAYER_DIR_GLOB.search(line):
                 globbing.append(_one_line("{}:{}".format(path.name, number)))
+            for filtered in JIT_LAYER_NAME_FILTER.findall(line):
+                filters.append(
+                    (_one_line("{}:{}".format(path.name, number)), filtered)
+                )
 
     if naming:
         # A positive answer stands on its own evidence: one enumeration naming the layer
@@ -6167,6 +6200,46 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             ),
         )
 
+    if globbing:
+        # #743. The check's only OK condition used to be a fixed list naming the layer,
+        # and `claude-jit-context#176` fixed #119 by deleting the fixed list -- so the
+        # OK condition and the upstream fix became mutually exclusive, and `unknown` was
+        # the terminal state for every up-to-date install. A third state that is the only
+        # reachable state has stopped being a third state.
+        #
+        # A glob over the dimension base enumerates every directory under it, ours
+        # included, by construction. What #241 bought was *reject a fixture*, not *refuse
+        # to read a glob*, and the hook-set membership test that enforces #241 is the
+        # `scripts` set this loop walked -- untouched by this arm.
+        excluding = [site for site, name in filters if name != layer]
+        including = [name for _, name in filters if name == layer]
+        if excluding and not including:
+            # A glob narrowed by a name filter is a fixed set with extra steps. Answered
+            # `could-not-determine` rather than `unread`: a filter this cannot see the
+            # whole of -- one branch of several, a variable rather than a literal -- is a
+            # reason to withhold the answer, not evidence of a gap.
+            return (
+                "could-not-determine",
+                "{} hook line(s) of {} enumerate a directory by glob ({}), but {} line(s) "
+                "then filter what is visited by literal layer name and none of them names "
+                "{} ({}), so the glob does not establish that {} is reached".format(
+                    len(globbing), named, ", ".join(globbing[:3]), len(excluding),
+                    layer, ", ".join(excluding[:3]), layer,
+                ),
+            )
+        return (
+            "reads-by-glob",
+            "{} enumerates layers by directory glob rather than by naming them in a fixed "
+            "list ({}), so the {} dimension(s) under {}/*/{}/ are reachable -- every "
+            "directory under the dimension base is visited, and no filter narrowing that "
+            "to a set of literal layer names was found in the hook set{}".format(
+                named, ", ".join(globbing[:3]), len(dimensions), JIT_RULES_DIR, layer,
+                ". This is the glob's own evidence, not a layer list: it establishes "
+                "what the hooks enumerate, not what the loop body then does with each "
+                "directory it visits",
+            ),
+        )
+
     outside, unwalkable = _jit_layer_lists_outside(roots, scripts)
     partial = (
         " {} path(s) under it could not be walked or read ({}), so this did not see the "
@@ -6185,20 +6258,6 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         if globbing
         else ""
     )
-    # #743: both returns below used to read as "not yet determined", which a fixed
-    # dependency can never satisfy any other way -- this check's only OK condition
-    # is a fixed list naming `layer`, and the upstream fix (claude-jit-context#176)
-    # removes exactly that. Left unsaid, the line invites a reader to expect it to
-    # clear on its own on the next dependency release; it will not, for as long as
-    # this check requires a list. Stated once and appended to both, rather than
-    # left to the reader to infer from "consistent with the upstream fix" two
-    # sentences earlier -- that phrase describes evidence, not durability.
-    durable_note = (
-        " This state does not clear on its own once the dependency's fixed list is "
-        "gone for good (#743): the only OK condition this check has is a fixed "
-        "list naming {}, so a fully up-to-date {} stays unknown here, not "
-        "temporarily unmeasured.".format(layer, JIT_PLUGIN)
-    )
     if outside:
         # The judgement call in #241, taken the honest way: a layer list in a file the
         # runtime never executes is *reported as the reason this is unknown*, not
@@ -6211,9 +6270,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "only layer list(s) found are outside the hook set ({}) -- files the runtime "
             "never executes, typically that plugin's own test fixtures, which name {} "
             "whether or not anything enumerates it. So this is unknown, not a pass: a "
-            "fixture answered this check for a whole release (#241).{}{}{}".format(
+            "fixture answered this check for a whole release (#241).{}{}".format(
                 len(scripts), named, ", ".join(outside[:3]), layer, partial, glob_note,
-                durable_note,
             ),
         )
 
@@ -6222,8 +6280,8 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
         "{} hook script(s) of {} were read and none carries a fixed layer list, so "
         "whether {} is read could not be determined from the hooks on disk. That is "
         "what an enumerate-the-directory implementation looks like -- the shape the "
-        "upstream fix takes -- which is why this is unknown rather than a gap.{}{}{}".format(
-            len(scripts), named, layer, partial, glob_note, durable_note
+        "upstream fix takes -- which is why this is unknown rather than a gap.{}{}".format(
+            len(scripts), named, layer, partial, glob_note
         ),
     )
 
