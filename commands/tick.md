@@ -391,7 +391,12 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
    says how a lane is filled from it. Three issues is the default rather than the ceiling, and a
    lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent` or
-   `could-not-tell`. A short lane with no reason is a defect in the tick.
+   `could-not-tell`. A short lane with no reason is a defect in the tick -- and now one this loop
+   can detect rather than only state: record every dispatched lane's fill with `--lane-fill
+   PRIMARY:COUNT[:REASON]` on the same `oss_state.py --decision` call (#852), which refuses the
+   whole call outright when a short lane arrives with no reason, the same way `--tick-cost-first`
+   already refuses rather than writing a false value. `--lane-fill-trend` re-adds the reason
+   distribution across the whole history, so a run of `could-not-tell` becomes a visible number.
 
    **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
    commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and
