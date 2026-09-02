@@ -26,9 +26,12 @@ test below fabricates. Since #241 a hook is what the runtime executes: a script 
 four entry points under `scripts/` and puts its enumerator in `scripts/common.sh`, which it
 declares nowhere and every hook sources, beside four more scripts nothing wires to an event.
 
-Four states, and the third and fourth are the point:
+Five states, and the third and fourth are the point:
 
   reads                 a hook's layer enumeration names our layer
+  reads-by-glob         a hook enumerates the dimension base by directory glob, so every
+                        layer under it is visited -- the shape the upstream fix took, and
+                        `OK` since #743 rather than the permanent `unknown` it had become
   unread                every enumeration found in the hook set omits it -- a real gap, WARN
   could-not-determine   nothing was measured: the dependency is not installed, its
                         tree was not found, it carries no hook manifest so nothing
@@ -42,7 +45,10 @@ Four states, and the third and fourth are the point:
 `could-not-determine` covers the case that matters most for durability. The upstream
 fix (`claude-jit-context#176`) removes the fixed list, so a check keyed on today's
 spelling would report `unread` forever after it is fixed -- the same defect inverted.
-When no fixed enumeration is found the answer is *unknown*, never *unread*.
+When no fixed enumeration is found the answer is *unknown*, never *unread* -- and when a
+directory glob is found in the hook set, it is `reads-by-glob` rather than either (#743):
+holding out for a fixed list after upstream deleted the fixed list made `unknown` terminal,
+which costs the verdict line its discrimination the same way a permanent WARN does.
 
 Every hook set below is fabricated. A test that only passes when a particular
 dependency version happens to be installed on the runner is a test CI cannot run
@@ -215,14 +221,21 @@ def test_the_positive_answer_counts_what_it_says_it_counts(tmp_path):
     assert "{} dimension(s)".format(dimensions) in detail, detail
 
 
-def test_hooks_that_enumerate_at_runtime_are_unknown_not_unread(tmp_path):
-    """The durability case: the upstream fix must not read as a permanent failure."""
+def test_hooks_that_enumerate_at_runtime_are_not_unread(tmp_path):
+    """The durability case: the upstream fix must not read as a permanent failure.
+
+    This asserted `could-not-determine` until #743, which is the state the upstream fix
+    made terminal rather than transitional. The assertion that carries the durability
+    argument is the one below -- `unread` is what a hook set enumerating off disk must
+    never produce -- and it holds unchanged across that promotion.
+    """
     cache, record = _cache(tmp_path, {"pre-tool-hook.sh": ENUMERATED})
     finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "could-not-determine"
+    assert finding["state"] != "unread", finding
+    assert finding["state"] == "reads-by-glob", finding
     # Discriminating, not decorative: the `unread` arm says "a fixed list that does not
     # include", so this phrase cannot be reached from the state this test must not see.
-    assert "none carries a fixed layer list" in finding["detail"]
+    assert "fixed list" in finding["detail"]
 
 
 def test_a_directory_glob_in_the_hook_set_is_named_not_only_the_absence_of_a_list(tmp_path):
@@ -241,7 +254,7 @@ def test_a_directory_glob_in_the_hook_set_is_named_not_only_the_absence_of_a_lis
     """
     cache, record = _cache(tmp_path, {"pre-tool-hook.sh": ENUMERATED})
     finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "could-not-determine", finding
+    assert finding["state"] == "reads-by-glob", finding
     assert "glob" in finding["detail"], finding["detail"]
     assert "pre-tool-hook.sh" in finding["detail"], finding["detail"]
 
@@ -264,7 +277,7 @@ def test_the_glob_shape_does_not_require_a_same_line_semicolon(tmp_path):
         tmp_path, {"pre-tool-hook.sh": 'for d in "$base"/*/\ndo\n  echo "$d"\ndone\n'}
     )
     finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "could-not-determine", finding
+    assert finding["state"] == "reads-by-glob", finding
     assert "glob" in finding["detail"], finding["detail"]
 
 
@@ -307,7 +320,7 @@ def test_a_layer_list_only_outside_the_hook_set_is_the_reason_it_is_unknown(tmp_
     """
     cache, record = _cache(
         tmp_path,
-        {"pre-tool-hook.sh": ENUMERATED},
+        {"pre-tool-hook.sh": NEITHER},
         extra={"tests/test-layer-enumeration.sh": FIXTURE},
     )
     finding = _one(_project(tmp_path), cache, record)
@@ -317,20 +330,23 @@ def test_a_layer_list_only_outside_the_hook_set_is_the_reason_it_is_unknown(tmp_
 
     # Must-fire half: the identical string, in a file the manifest declares.
     cache, record = _cache(
-        tmp_path / "control", {"pre-tool-hook.sh": ENUMERATED, "pre-path-hook.sh": FIXTURE}
+        tmp_path / "control", {"pre-tool-hook.sh": NEITHER, "pre-path-hook.sh": FIXTURE}
     )
     assert _one(_project(tmp_path), cache, record)["state"] == "reads"
 
 
-def test_the_outside_fixture_case_also_names_the_glob_seen_in_the_hook_set(tmp_path):
-    """#616's exact reproduction: a stale fixture *and* a real glob-shaped hook.
+def test_a_glob_in_the_hook_set_outranks_a_fixed_list_outside_it(tmp_path):
+    """#616's tree, re-asserted under #743's answer rather than under its old ambiguity.
 
-    This is the tree the issue reports: the only fixed layer list left anywhere is the
-    dependency's own test fixture (outside the hook set, per #241), while the hook set
-    itself already enumerates by directory glob. The `outside the hook set` sentence
-    alone -- what this check said before #616 -- gives no way to tell that apart from a
-    hook set with no enumeration evidence in it at all. The glob must be named in the
-    same detail.
+    This is the tree #616 reported and the tree the installed 0.6.0 actually is: the
+    only fixed layer list left anywhere is the dependency's own test fixture, outside
+    the hook set per #241, while the hook set itself enumerates by directory glob.
+    #616 could only make the two `unknown`s distinguishable in prose. #743 answers it:
+    the glob is evidence from inside the hook set and the fixture is evidence from
+    outside it, so the fixture does not withhold what the glob establishes.
+
+    Paired with the must-not-fire half in the same fixture shape: with the glob moved
+    out of the hook set, the same fixture leaves the question open again.
     """
     cache, record = _cache(
         tmp_path,
@@ -338,10 +354,17 @@ def test_the_outside_fixture_case_also_names_the_glob_seen_in_the_hook_set(tmp_p
         extra={"tests/test-layer-enumeration.sh": FIXTURE},
     )
     finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "could-not-determine", finding
-    assert "outside the hook set" in finding["detail"], finding["detail"]
+    assert finding["state"] == "reads-by-glob", finding
     assert "glob" in finding["detail"], finding["detail"]
     assert "pre-tool-hook.sh" in finding["detail"], finding["detail"]
+
+    cache, record = _cache(
+        tmp_path / "control",
+        {"pre-tool-hook.sh": NEITHER},
+        extra={"tests/test-layer-enumeration.sh": FIXTURE, "vendor/helper.sh": ENUMERATED},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
 
 
 def test_a_helper_the_hooks_source_is_part_of_the_hook_set(tmp_path):
@@ -363,7 +386,7 @@ def test_a_helper_the_hooks_source_is_part_of_the_hook_set(tmp_path):
     # Same two files, same directory, same manifest -- the hook no longer sources it.
     cache, record = _cache(
         tmp_path / "control",
-        {"pre-tool-hook.sh": ENUMERATED, "common.sh": OMITS},
+        {"pre-tool-hook.sh": NEITHER, "common.sh": OMITS},
         declare=["pre-tool-hook.sh"],
     )
     finding = _one(_project(tmp_path), cache, record)
@@ -530,7 +553,7 @@ def test_a_subtree_that_cannot_be_walked_is_reported_not_swallowed(tmp_path, req
     does not stop a listing. The exact operation `os.walk` performs is attempted, and the
     test skips with what went untested when it did not take.
     """
-    hooks = {"pre-tool-hook.sh": ENUMERATED}
+    hooks = {"pre-tool-hook.sh": NEITHER}
     fixture = {"vendor/test-layer-enumeration.sh": FIXTURE}
 
     # Must-fire half, readable: the site is found and named.
@@ -801,56 +824,8 @@ def test_a_repo_without_the_layer_has_nothing_to_read(tmp_path):
     assert finding["state"] == "no-layer"
 
 
-def test_the_terminal_unknown_states_say_they_will_not_clear_on_their_own(tmp_path):
-    """#743: `unknown` here used to read as "not yet determined", and the upstream
-    fix (claude-jit-context#176) means it never will be, for as long as this
-    check's only OK condition is a fixed list. #743 does not attempt the promotion
-    a fixed dependency would need to clear this WARN -- the existing fixtures
-    above are exactly the reason: #616's own tests pin `could-not-determine` for a
-    bare enumerate-the-directory hook, on purpose, because seeing the glob shape is
-    not proof the loop's body reads what it visits. What #743 asks for instead is
-    that the terminal line says plainly it is terminal, so a reader is not left
-    expecting the next dependency release to clear it.
-
-    Both `could-not-determine` call sites that can be reached with NO fixed list
-    anywhere in the tree carry the note; the two call sites that DO have a fixed
-    list (`reads`, `unread`) must not, which is the must-not-fire half.
-    """
-    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": ENUMERATED})
-    finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "could-not-determine", finding
-    assert "does not clear on its own" in finding["detail"], finding["detail"]
-    assert "#743" in finding["detail"], finding["detail"]
-
-    # The sibling terminal branch: a fixed list exists, but only outside the hook
-    # set (#241's own fixture case) -- still no evidence inside the hooks, so this
-    # is durable the same way.
-    cache, record = _cache(
-        tmp_path / "outside",
-        {"pre-tool-hook.sh": ENUMERATED},
-        extra={"tests/test-layer-enumeration.sh": FIXTURE},
-    )
-    finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "could-not-determine", finding
-    assert "does not clear on its own" in finding["detail"], finding["detail"]
-
-    # Must-not-fire controls, same fixture shapes as the tests above: a state that
-    # DOES have durable evidence -- a fixed list, naming or omitting the layer --
-    # must not carry a sentence about never clearing, because it already has an
-    # answer rather than a durable non-answer.
-    cache, record = _cache(tmp_path / "reads", {"pre-tool-hook.sh": NAMES})
-    finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "reads", finding
-    assert "does not clear on its own" not in finding["detail"], finding["detail"]
-
-    cache, record = _cache(tmp_path / "unread", {"pre-tool-hook.sh": OMITS})
-    finding = _one(_project(tmp_path), cache, record)
-    assert finding["state"] == "unread", finding
-    assert "does not clear on its own" not in finding["detail"], finding["detail"]
-
-
 def test_every_state_this_check_emits_has_a_level(tmp_path):
-    """Vacuity guard: the four states are asserted to have been *seen*, not assumed.
+    """Vacuity guard: the five states are asserted to have been *seen*, not assumed.
 
     A level table checked against an empty set of observed states is trivially
     complete, which is the failure this whole file is about.
@@ -860,6 +835,7 @@ def test_every_state_this_check_emits_has_a_level(tmp_path):
         ({"pre-tool-hook.sh": NAMES}, LAYER),
         ({"pre-tool-hook.sh": OMITS}, LAYER),
         ({"pre-tool-hook.sh": ENUMERATED}, LAYER),
+        ({"pre-tool-hook.sh": NEITHER}, LAYER),
         ({"pre-tool-hook.sh": OMITS}, "00-manual"),
     ]
     for index, (hooks, layer) in enumerate(cases):
@@ -869,12 +845,15 @@ def test_every_state_this_check_emits_has_a_level(tmp_path):
             doctor.jit_layer_readers(project, record=record, cache_root=cache)[0]["state"]
         )
 
-    assert seen == {"reads", "unread", "could-not-determine", "no-layer"}
+    assert seen == {
+        "reads", "reads-by-glob", "unread", "could-not-determine", "no-layer",
+    }
     assert seen <= set(doctor.JIT_LAYER_LEVELS)
     assert set(doctor.JIT_LAYER_LEVELS.values()) <= {"OK", "WARN", "FAIL"}
     assert doctor.JIT_LAYER_LEVELS["unread"] == "WARN"
     assert doctor.JIT_LAYER_LEVELS["could-not-determine"] == "WARN"
     assert doctor.JIT_LAYER_LEVELS["reads"] == "OK"
+    assert doctor.JIT_LAYER_LEVELS["reads-by-glob"] == "OK"
     assert doctor.JIT_LAYER_LEVELS["no-layer"] == "OK"
 
 
@@ -923,3 +902,108 @@ def test_the_doctor_run_reports_the_layer(tmp_path, monkeypatch):
     doctor.main([])
     messages = [message for _, message in doctor.FINDINGS]
     assert any(message.startswith("jit rule layer:") for message in messages), messages
+
+
+#: #743's subject: the hook globs, and then narrows what it visits to a fixed set of
+#: names. A glob alone would say "every directory under the base is enumerated"; this
+#: line is what makes that false, and it is the one shape that must not reach `OK`.
+GLOB_THEN_FILTERS_US_OUT = (
+    'for d in "$JIT_BASE/$dim"/*/; do\n'
+    '  name="${d##*/}"\n'
+    '  [ "$name" = "00-manual" ] || continue\n'
+    '  echo "$name"\n'
+    'done\n'
+)
+#: The positive control for it: the same filter, naming our layer instead of excluding it.
+GLOB_THEN_FILTERS_US_IN = GLOB_THEN_FILTERS_US_OUT.replace('"00-manual"', '"01-oss"')
+#: A glob beside an ordinary filename that merely *looks* layer-shaped. Measured against
+#: the installed 0.6.0's `common.sh`, which is the tree this check has to answer about:
+#: the only two-digit-prefixed tokens in it outside comments are `00-index.tsv` and
+#: `01-paths.tsv`, index filenames rather than layer names. A filter detector that
+#: matched those would send every up-to-date install straight back to `unknown` -- the
+#: state #743 exists to leave -- so this is the must-not-fire half of the filter check.
+GLOB_BESIDE_AN_INDEX_FILENAME = (
+    'for d in "$JIT_BASE/$dim"/*/; do\n'
+    '  for tsv in "$d/00-index.tsv" "$d/01-paths.tsv"; do\n'
+    '    tsv="$base/$layer/00-index.tsv"\n'
+    '  done\n'
+    'done\n'
+)
+
+
+def test_a_hook_that_enumerates_layers_by_glob_reads_ours_743(tmp_path):
+    """#743: the check's only OK condition was a fixed list, and the upstream fix
+    (claude-jit-context#176) deleted the fixed list. The two were mutually exclusive,
+    so `unknown` had become the terminal state for every up-to-date install -- which
+    is not a third state at all once it is the only reachable one.
+
+    A glob over the dimension base enumerates every directory under it, ours included,
+    by construction. What #241 bought was *reject a fixture*, not *refuse to read a
+    glob*, and the hook-set membership test that enforces #241 is untouched here.
+    """
+    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": ENUMERATED})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "reads-by-glob", finding
+    assert doctor.JIT_LAYER_LEVELS["reads-by-glob"] == "OK"
+    # It must say the conclusion came from a glob rather than from a named layer --
+    # the two are different evidence and a reader is entitled to know which they have.
+    assert "glob" in finding["detail"], finding["detail"]
+    assert "pre-tool-hook.sh" in finding["detail"], finding["detail"]
+    # Must-not-fire: the `reads` arm's own phrase cannot be reached from here.
+    assert "in its layer list" not in finding["detail"], finding["detail"]
+
+
+def test_a_glob_outside_the_hook_set_is_still_not_an_answer_743(tmp_path):
+    """#241 must not regress through the new arm. A glob in a file the runtime never
+    executes is the same class of evidence as a layer list in one: a fixture.
+
+    Paired with the positive control in the same fixture shape, so this cannot pass
+    against a scanner that stopped matching globs entirely.
+    """
+    cache, record = _cache(
+        tmp_path,
+        {"pre-tool-hook.sh": NEITHER},
+        extra={"tests/test-layer-enumeration.sh": ENUMERATED},
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+
+    cache, record = _cache(tmp_path / "control", {"pre-tool-hook.sh": ENUMERATED})
+    assert _one(_project(tmp_path), cache, record)["state"] == "reads-by-glob"
+
+
+def test_a_glob_narrowed_by_a_name_filter_that_excludes_us_is_not_ok_743(tmp_path):
+    """The third acceptance criterion, and the one that keeps the new arm honest.
+
+    A hook that globs the base and then keeps only names on a list is enumerating a
+    fixed set with extra steps. Answered `could-not-determine` rather than `unread`:
+    a filter this cannot see the whole of -- one branch of several, a variable rather
+    than a literal -- is a reason not to claim an answer, not evidence of a gap.
+    """
+    cache, record = _cache(tmp_path, {"pre-tool-hook.sh": GLOB_THEN_FILTERS_US_OUT})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "could-not-determine", finding
+    assert "then filter what is visited" in finding["detail"], finding["detail"]
+
+    # Positive control, same shape one token different: a filter that names our layer
+    # is not a reason to withhold the answer.
+    cache, record = _cache(tmp_path / "in", {"pre-tool-hook.sh": GLOB_THEN_FILTERS_US_IN})
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "reads-by-glob", finding
+
+
+def test_an_index_filename_is_not_a_layer_filter_743(tmp_path):
+    """The must-not-fire half of the filter check, measured against the real tree.
+
+    `00-index.tsv` and `01-paths.tsv` are the only two-digit-prefixed tokens outside
+    comments in the installed 0.6.0's `common.sh`. A filter detector keyed on "a
+    layer-shaped token appears somewhere in the file" matches both, and would answer
+    `could-not-determine` for exactly the dependency version #743 was filed about --
+    the fix reporting the defect it fixes.
+    """
+    cache, record = _cache(
+        tmp_path, {"pre-tool-hook.sh": GLOB_BESIDE_AN_INDEX_FILENAME}
+    )
+    finding = _one(_project(tmp_path), cache, record)
+    assert finding["state"] == "reads-by-glob", finding
+    assert "then filter what is visited" not in finding["detail"], finding["detail"]
