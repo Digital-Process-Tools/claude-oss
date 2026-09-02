@@ -51,7 +51,29 @@ markers = [
 # inside the subprocess, so the subprocess suite alone reported 0% for a file it
 # exercises thoroughly. That is this plugin's own defect class -- a measurement
 # claiming absence -- so both routes exist on purpose.
-addopts = "-rs --cov=scripts --cov-report=term-missing --cov-fail-under=85"
+#
+# `--durations=25` is #881 step 1: nothing here could say which tests are slow --
+# every CI leg reported one total and a pass count, and a 4-second test and a
+# 4-millisecond test were indistinguishable in every artifact CI produces. This
+# is the whole of that step, deliberately: no test was touched, no optimisation
+# made, no pytest-xdist added. Putting the flag here rather than as a workflow-only
+# `pytest --durations=25` means every leg's CI log carries the slowest tests for
+# every OS and every interpreter, AND a contributor running the documented
+# `python3 -m pytest tests/ -q` locally gets the same visibility for free -- the
+# same reasoning `CLAUDE.md` already applies to `-rs`.
+#
+# A CI log is retained the same way an uploaded artifact would be (default 90
+# days per repository setting), so it already satisfies "readable after the fact,
+# for any past run within that window" -- the maintainer's own bar -- without a
+# second artifact. A JUnit-XML route (`--junitxml=`, uploaded, plus a summary
+# script) was considered and rejected for this step: nothing in this repository
+# produces a junit.xml today and no post-processing script exists, so that route
+# is a second, larger issue (a new script, a new workflow step, an upload-artifact
+# call) rather than the one line #881 step 1 asks for. If per-test timings need to
+# survive past the log retention window, or be machine-comparable across runs,
+# that is exactly the kind of decision step 3 says to make from real numbers --
+# not before they exist.
+addopts = "-rs --cov=scripts --cov-report=term-missing --cov-fail-under=85 --durations=25"
 
 [tool.coverage.run]
 # assemble_changelog.py came from claude-supertool, where it carries its own suite.

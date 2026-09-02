@@ -90,3 +90,9 @@ travels into a brief along with the answer instead of being retyped from memory 
 against a measured 140-turn threshold and `decile_bytes`/`first_fifth_byte_share`, the two lane-cost
 findings #498 measured across 612 transcripts -- read after a lane completes, never surfaced to the
 one running.
+
+`pyproject.toml`'s `addopts` carries `--durations=25` (#881), so every invocation of
+`python3 -m pytest tests/ -q` -- CI's or a contributor's -- ends with the 25 slowest tests and their
+wall time. Before this, every CI leg reported one total and a pass count, and a 4-second test and a
+4-millisecond test were indistinguishable in every artifact CI produced. This is step 1 of #881 only
+-- making the question answerable -- not an optimisation; no test was changed to get here.
