@@ -89,6 +89,18 @@ LOCAL_CONFIG_NAME = ".oss.local.json"
 
 LOCAL_KEYS = {"clone", "worktree_root", "state_file"}
 
+# #608: the three states every consumer of a LOCAL_KEYS value must report, never just
+# a value. `configured` -- read from .oss.local.json. `derived, not configured` -- no
+# such file, or no such key in it; computed from the repository root instead, same
+# convention `_derive_local_config` below has always used. `could-not-derive` --
+# neither, with a reason. A value someone chose and a value this script guessed must
+# never render the same way to whoever reads the receipt (#608's own acceptance
+# condition) -- so every one of these three spellings is a distinct, greppable string,
+# not a boolean a caller has to pair with prose of its own.
+LOCAL_STATE_CONFIGURED = "configured"
+LOCAL_STATE_DERIVED = "derived, not configured"
+LOCAL_STATE_COULD_NOT_DERIVE = "could-not-derive"
+
 # What a repo does when it releases differs, so it is configured. What must NEVER be
 # configured is the gate list -- default branch green at leg level, nothing mid-review,
 # security audit passed, every version site bumped, the tag verified on the remote. A
@@ -1461,15 +1473,83 @@ def _scope_problems(project, local, local_exists):
                 "project fact that differs per machine is how two maintainers cut two "
                 "different releases from one repo.".format(key, LOCAL_CONFIG_NAME)
             )
-    elif not local_exists and (LOCAL_KEYS - set(project)):
-        problems.append(
-            "{} is missing, so this machine has no {}. Run /oss:setup here -- the "
-            "committed config is the project's half and never carries these.".format(
-                LOCAL_CONFIG_NAME, ", ".join(sorted(LOCAL_KEYS - set(project)))
-            )
-        )
+    # The "local half missing" case used to be reported here as a FAIL-shaped problem
+    # ("... is missing, so this machine has no clone, worktree_root, state_file. Run
+    # /oss:setup here"). #608: that read a fresh clone -- the ordinary state of every
+    # checkout that has never run setup -- as broken, and blocked every lane cut on a
+    # file /oss:setup's own migration path (`split_config_file`, below) already knows
+    # how to live without. `load()` now derives the three values from the repository
+    # root instead of failing, and reports which of `configured` / `derived, not
+    # configured` / `could-not-derive` produced each one through `local_key_states`
+    # rather than through this problems list -- a successful derivation is not a
+    # problem, and rendering it as one would be exactly the defect class this
+    # repository is named after, aimed at the fix for it.
 
     return problems
+
+
+def _local_key_states(project, local, local_problem, path):
+    """The per-key provenance `load()` uses to fill `config`, and every consumer of a
+    LOCAL_KEYS value reports from directly (`local_key_states` below is the same
+    computation, for a caller that has not already read `project`/`local` itself).
+
+    Returns ``{key: (state, value, reason)}`` for every key in `LOCAL_KEYS`. `value`
+    is the value to use when `state` is not `LOCAL_STATE_COULD_NOT_DERIVE`; `reason`
+    is None except then.
+
+    `local_problem` (the local half was present and unreadable/unparseable) takes
+    every key straight to `could-not-derive`: a real file with a real problem must
+    never be silently swapped for a guess, which is a stronger and more surprising
+    thing to do than merely failing to read it.
+
+    **A machine-scoped key left in the committed `.oss.json` (self-review round,
+    found by this diff's own spawned reviewer) is `configured`, not derived, even
+    with no `.oss.local.json` on disk.** `_scope_problems` already flags that shape
+    as a scope violation on its own; what this function must not do on top of it is
+    relabel the maintainer's own real value as a guess. `load()`'s own precedence is
+    local wins over a mis-scoped project value when both are present -- `local` is
+    checked before `project` below for the identical reason.
+    """
+    states = {}
+    derived = None
+    derive_error = None
+    if local_problem is None:
+        try:
+            derived = _derive_local_config(project, Path(path).parent)
+        except OSError as exc:
+            derive_error = "{}".format(exc)
+    for key in sorted(LOCAL_KEYS):
+        if local_problem is not None:
+            states[key] = (LOCAL_STATE_COULD_NOT_DERIVE, None, local_problem)
+        elif local is not None and key in local:
+            states[key] = (LOCAL_STATE_CONFIGURED, local[key], None)
+        elif key in project:
+            states[key] = (LOCAL_STATE_CONFIGURED, project[key], None)
+        elif derived is not None:
+            states[key] = (LOCAL_STATE_DERIVED, derived[key], None)
+        else:
+            states[key] = (LOCAL_STATE_COULD_NOT_DERIVE, None, derive_error)
+    return states
+
+
+def local_key_states(path):
+    """`_local_key_states` for a caller that only has the committed config's path --
+    `doctor.py` and `lane_setup.py`, neither of which has already parsed `project`
+    and `local` the way `load()` has. Re-reads both halves; a caller that already
+    holds them (`load()` itself) uses `_local_key_states` directly instead.
+
+    ``path`` not a file, or unreadable/unparseable, folds every key to
+    `could-not-derive` naming that problem -- there is no repository root to derive
+    from without a readable committed config.
+    """
+    path = Path(path)
+    project, problem = _read_json_object(path)
+    if project is None:
+        reason = problem or "{}: not found".format(path)
+        return {key: (LOCAL_STATE_COULD_NOT_DERIVE, None, reason) for key in sorted(LOCAL_KEYS)}
+    local_path = local_config_path(path)
+    local, local_problem = _read_json_object(local_path)
+    return _local_key_states(project, local, local_problem, path)
 
 
 def load(path):
@@ -1480,6 +1560,14 @@ def load(path):
     fact about storage. It is None only when the project half could not be read.
 
     Problems are sentences, not codes -- they are printed to a human by `doctor`.
+
+    #608: when `.oss.local.json` is absent, or missing one of the three machine
+    keys, the missing ones are DERIVED from the repository root rather than left out
+    of `config` -- the ordinary state of a fresh clone must not read as a broken one.
+    `local_key_states` (or `_local_key_states`, used here directly since `project` and
+    `local` are already in hand) is the one place that decides `configured` /
+    `derived, not configured` / `could-not-derive` per key; a caller that needs to
+    report WHICH happened, rather than just use the value, calls it directly.
     """
     path = Path(path)
     if not path.is_file():
@@ -1495,13 +1583,29 @@ def load(path):
     problems = []
     if local_problem is not None:
         problems.append(local_problem)
-        local = None
 
     config = dict(project)
     for key, value in sorted((local or {}).items()):
         if not _is_project_scoped(key):
             config[key] = value
 
+    states = _local_key_states(project, local, local_problem, path)
+    for key in sorted(LOCAL_KEYS - set(config)):
+        state, value, reason = states[key]
+        if state == LOCAL_STATE_COULD_NOT_DERIVE:
+            problems.append(
+                "{}: could not derive {} from the repository root ({}). Run "
+                "/oss:setup here.".format(LOCAL_CONFIG_NAME, key, reason)
+            )
+        else:
+            config[key] = value
+
+    # `local` is already None whenever `local_problem is not None` -- every failure
+    # branch of `_read_json_object` returns `(None, "...")` -- so `_scope_problems`
+    # below sees the right thing without a reset here. (Self-review round: an
+    # earlier version of this function re-set `local = None` at this exact point,
+    # a no-op left over from moving the original reset past the derivation block
+    # above; removed rather than kept as misleading dead code.)
     problems.extend(_scope_problems(project, local, local_exists))
     problems.extend(validate(config))
     return config, problems

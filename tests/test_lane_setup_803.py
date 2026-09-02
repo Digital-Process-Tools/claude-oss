@@ -14,16 +14,19 @@ Three arms, matching the issue body:
   A  .oss.local.json present and malformed -- must surface the parse error.
   B  .oss.json malformed -- already correct pre-#803 (this is the control that
      proves the fix does not touch the already-working path).
-  C  no local file at all -- stays the benign "no registry" sentence, and must
-     read differently from arm A's (arm C genuinely has nothing to report; arm A
-     has a concrete parse error).
+  C  no local file at all -- must read differently from arm A's (arm C genuinely
+     has nothing to report; arm A has a concrete parse error). #608: `worktree_root`
+     used to be simply absent for arm C, rendering the benign "no registry"
+     sentence; `oss_config.load` now DERIVES it from the repository root instead,
+     so arm C reaches the ordinary `not-found` outcome -- still benign, still
+     distinct from arm A, reached a different way.
 
-A naive "gate on any `problems`" over-corrects: `oss_config.load` always adds a
-"missing required key: worktree_root" advisory to `problems` whenever `worktree_root`
-is absent, read failure or not, which is exactly arm C's own ordinary case -- so a
-fourth control below (a syntactically valid `.oss.local.json` that simply omits
-`worktree_root`) pins that the benign sentence still renders even though `problems`
-is non-empty for that config.
+A naive "gate on any `problems`" over-corrects: pre-#608, `oss_config.load` always
+added a "missing required key: worktree_root" advisory to `problems` whenever
+`worktree_root` was absent, read failure or not, which was exactly arm C's own
+ordinary case -- so a fourth control below (a syntactically valid `.oss.local.json`
+that simply omits `worktree_root`) pins that the benign outcome still holds even
+where that advisory would have fired.
 """
 
 import json
@@ -96,12 +99,17 @@ def test_arm_b_malformed_project_config_control(tmp_path):
 
 
 def test_arm_c_no_local_file_stays_benign_and_differs_from_arm_a(tmp_path):
+    """#608: this arm's `worktree_root` used to be simply absent, and the "benign"
+    outcome pinned here was the "no registry" sentence. `oss_config.load` now
+    DERIVES it from the repository root instead, so the release proceeds against a
+    real (if empty) path and reports `not-found` -- still benign, and still clearly
+    distinct from arm A's genuine parse error.
+    """
     (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
 
     payload = _release(tmp_path)
 
-    assert payload["state"] == "could-not-release"
-    assert "no registry" in payload["detail"]
+    assert payload["state"] == "not-found", payload
 
     malformed_dir = tmp_path.parent / (tmp_path.name + "-arm-a")
     malformed_dir.mkdir()
@@ -109,21 +117,24 @@ def test_arm_c_no_local_file_stays_benign_and_differs_from_arm_a(tmp_path):
     (malformed_dir / ".oss.local.json").write_text("{not json")
     arm_a_payload = _release(malformed_dir)
 
+    assert arm_a_payload["state"] == "could-not-release"
     assert arm_a_payload["detail"] != payload["detail"]
 
 
 def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
     """Must-not-fire control for the naive "gate on any problems" fix: a
-    syntactically valid .oss.local.json that simply has no worktree_root key
-    still produces a "missing required key" advisory in `problems`, and that
-    advisory alone must not be read as a read failure."""
+    syntactically valid .oss.local.json that simply has no worktree_root key must
+    not be read as a read failure. #608: that key is now DERIVED from the
+    repository root rather than left missing, so `problems` carries no advisory
+    about it at all any more, and the release proceeds to the ordinary not-found
+    outcome instead of the old "no registry" sentence.
+    """
     (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
     (tmp_path / ".oss.local.json").write_text(json.dumps({"clone": "/tmp/does-not-matter"}))
 
     payload = _release(tmp_path)
 
-    assert payload["state"] == "could-not-release"
-    assert "no registry" in payload["detail"]
+    assert payload["state"] == "not-found", payload
     assert "could not" not in payload["detail"]
 
 

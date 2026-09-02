@@ -597,6 +597,26 @@ def check_gitignore_hides_config(project_dir):
         )
 
 
+def _local_key_states_for(project_dir):
+    """`oss_config.local_key_states`, resolved the same way `check_config` finds
+    `.oss.json` -- from an enclosing clone when `project_dir` is a git worktree
+    (#53). Redoes the search rather than reusing `check_config`'s own (unexposed)
+    resolution, the same trade `check_gitignore_hides_config` above already makes
+    for the identical reason.
+
+    Returns ``{}`` when `.oss.json` itself could not be found -- there is nothing to
+    derive a repository root FROM, and the caller already reports that absence
+    through `check_config` (`{}` here means "nothing to add", not "checked, clean").
+    """
+    if oss_config is None:
+        return {}
+    search, _widened = config_search_path(project_dir)
+    _config, _problems, _origin, resolved = oss_config.load_from(search)
+    if resolved is None:
+        return {}
+    return oss_config.local_key_states(resolved)
+
+
 # ENOENT. Apple's own documented reading of `sysctl.proc_translated` is that the
 # sysctl being ABSENT means this system has no translation layer at all -- so it is
 # the third valid answer to the probe, not a failed probe.
@@ -2353,19 +2373,50 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
         )
 
 
-def check_directory(label, value, config_found=True):
+def _local_origin_suffix(origin):
+    """` (derived, not configured -- ...)` or similar, appended to a receipt line so
+    a value someone chose in `.oss.local.json` and a value this script GUESSED from
+    the repository root never render the same way (#608's own acceptance condition).
+
+    `origin` is None when the caller has none to report (every pre-#608 call site,
+    and every existing test of `check_directory`/`check_state_file` that does not
+    pass one) -- empty string, unchanged from before this existed. Otherwise a
+    `(state, value, reason)` triple from `oss_config.local_key_states`; `reason` is
+    used by the caller directly for the could-not-derive case, not here, because that
+    case does not reach a value line at all (see the `not value` branches below).
+    """
+    if origin is None or oss_config is None:
+        return ""
+    state = origin[0]
+    if state == oss_config.LOCAL_STATE_DERIVED:
+        return (
+            " (derived, not configured -- no .oss.local.json here, or no such key "
+            "in it; guessed from the repository root)"
+        )
+    return ""
+
+
+def check_directory(label, value, config_found=True, origin=None):
     if not config_found:
         unmeasured(label)
         return
     if not value:
-        report("WARN", "{}: not set in config; cannot check it".format(label))
+        if origin is not None and oss_config is not None and origin[0] == oss_config.LOCAL_STATE_COULD_NOT_DERIVE:
+            report(
+                "WARN",
+                "{}: could not derive from the repository root ({}); not set in "
+                "config".format(label, origin[2]),
+            )
+        else:
+            report("WARN", "{}: not set in config; cannot check it".format(label))
         return
     path = Path(os.path.expanduser(str(value)))
     state, detail = _dir_state(path)
+    suffix = _local_origin_suffix(origin)
     if state == "dir":
-        report("OK", "{}: {}".format(label, path))
+        report("OK", "{}: {}{}".format(label, path, suffix))
     elif state == "absent":
-        report("WARN", "{}: {} does not exist".format(label, path))
+        report("WARN", "{}: {} does not exist{}".format(label, path, suffix))
     else:
         # #363: an unreadable *parent* of `path` must not read as a confident
         # "does not exist" with a remedy telling the reader to create
@@ -2373,7 +2424,7 @@ def check_directory(label, value, config_found=True):
         report(
             "WARN",
             "{}: {} could not be checked -- {} -- so whether it exists is "
-            "unknown, not confirmed absent.".format(label, path, detail),
+            "unknown, not confirmed absent.{}".format(label, path, detail, suffix),
         )
 
 
@@ -2383,7 +2434,7 @@ NO_STATE_MODULE = (
 )
 
 
-def check_state_file(project_dir, config):
+def check_state_file(project_dir, config, origin=None):
     """Is the named state file readable *by the script that will write it*?
 
     Present was the old question and it is the wrong one (#149). A repo that ran a
@@ -2395,28 +2446,46 @@ def check_state_file(project_dir, config):
     Nothing here raises. `oss_state.describe` answers in three states and swallows
     nothing into a fourth, so an unreadable file cannot arrive as a traceback through
     doctor's *exit 0 always, one VERDICT line* contract.
+
+    `origin` -- #608, same convention as `check_directory` -- is `.oss.local.json`'s
+    own three-state receipt for `state_file` (`oss_config.local_key_states`), None
+    when the caller has none to report.
     """
     if config is None:
         unmeasured("state_file")
         return
     value = config.get("state_file")
     if not value:
-        report("WARN", "state_file: not set in config")
+        if origin is not None and oss_config is not None and origin[0] == oss_config.LOCAL_STATE_COULD_NOT_DERIVE:
+            report(
+                "WARN",
+                "state_file: could not derive from the repository root ({})".format(origin[2]),
+            )
+        else:
+            report("WARN", "state_file: not set in config")
         return
     path = project_dir / str(value)
     if oss_state is None:
         unmeasured("state_file", NO_STATE_MODULE)
         return
     found = oss_state.describe(path)
+    suffix = _local_origin_suffix(origin)
     if found["state"] == oss_state.STATE_OK:
-        report("OK", "state_file: {} ({} entries)".format(path, len(found["entries"])))
+        report(
+            "OK", "state_file: {} ({} entries){}".format(path, len(found["entries"]), suffix)
+        )
     elif found["state"] == oss_state.STATE_ABSENT:
-        report("WARN", "state_file: {} not written yet (first tick will create it)".format(path))
+        report(
+            "WARN",
+            "state_file: {} not written yet (first tick will create it){}".format(
+                path, suffix
+            ),
+        )
     else:
         report(
             "WARN",
-            "state_file: {} is there and /oss:tick cannot use it -- {}".format(
-                path, found["reason"]
+            "state_file: {} is there and /oss:tick cannot use it -- {}{}".format(
+                path, found["reason"], suffix
             ),
         )
 
@@ -8043,11 +8112,19 @@ def main(argv=None):
     # Passed through even when the config is None: each of these prints its own
     # "not checked" line, and skipping the call would restore the silence #62 is about.
     found = config is not None
-    check_directory("clone", config.get("clone") if found else None, config_found=found)
+    # #608: WHERE each of clone/worktree_root/state_file came from -- configured,
+    # derived, or could-not-derive -- so a value someone chose and a value this
+    # script guessed from the repository root never print the same OK shape.
+    local_states = _local_key_states_for(project_dir) if found else {}
     check_directory(
-        "worktree_root", config.get("worktree_root") if found else None, config_found=found
+        "clone", config.get("clone") if found else None, config_found=found,
+        origin=local_states.get("clone"),
     )
-    check_state_file(project_dir, config)
+    check_directory(
+        "worktree_root", config.get("worktree_root") if found else None, config_found=found,
+        origin=local_states.get("worktree_root"),
+    )
+    check_state_file(project_dir, config, origin=local_states.get("state_file"))
     check_fragments_readme(project_dir, config)
     # Visible before the tag step rather than at it -- same reason #421 put the
     # merge-call check here.

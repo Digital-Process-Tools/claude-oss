@@ -31,10 +31,15 @@ collapsing them by accident:
              could-not-resolve (neither answered; nothing to brief a lane from).
   branch     resolved (derived from `branch_pattern`) or unknown (no `{issue}`
              placeholder in the pattern -- every issue would get the same branch).
-  worktree   resolved, unknown (`.oss.local.json` carries no `worktree_root` --
-             expected and absent-by-construction inside every worktree this loop
-             cuts, present only in the maintainer's main clone), or invalid (the
-             derived path escapes the configured root).
+  worktree   resolved, unknown (`worktree_root` could not be derived at all --
+             #608 made this the rare case: `oss_config.load` now derives
+             `worktree_root` from the repository root whenever `.oss.local.json`
+             is absent or missing the key, so `unknown` fires only when even
+             that derivation fails), or invalid (the derived path escapes the
+             configured root). `resolved` carries its own `origin`
+             (`configured` -- read from `.oss.local.json` -- or `derived, not
+             configured` -- guessed from the repository root) so a value someone
+             chose and a value this script guessed never render the same way.
   occupancy  a separate three-state beside the one above, for whether anything
              already sits at the derived path: already exists, free, or unknown
              when the path could not be looked at. #373: it used `os.path.exists`,
@@ -1339,7 +1344,7 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
     return result
 
 
-def derive_worktree(config, issue):
+def derive_worktree(config, issue, origin=None):
     """The worktree path for `issue`, from `worktree_root` in `.oss.local.json`.
 
     Absent by construction inside every worktree this loop cuts -- `.oss.local.json`
@@ -1347,21 +1352,39 @@ def derive_worktree(config, issue):
     main clone) will always land here. That is a real third state, not a bug in this
     function: `doctor` measured a fresh worktree at 4 failures for exactly this reason
     (CLAUDE.md, "Dogfooding still finds what the suite cannot").
+
+    #608: `worktree_root` used to be simply absent on a fresh clone that has never
+    written `.oss.local.json` -- `oss_config.load()` now derives it from the
+    repository root instead, so this function's `unknown` branch fires only when
+    derivation itself could not run. `origin` -- `oss_config.local_key_states(...)
+    ["worktree_root"]`, a `(state, value, reason)` triple -- is optional, and every
+    existing caller that does not pass one keeps this function's prior wording. When
+    given, the returned dict carries an `origin` field (`configured` /
+    `derived, not configured` / None when the caller passed none) so a reader of the
+    condensed board can tell a value someone chose from one this script guessed --
+    #608's own acceptance condition, reached here from the "no lane can be cut" side.
     """
     root = config.get("worktree_root")
+    origin_state = origin[0] if origin is not None else None
     if not root:
-        return {
-            "state": "unknown",
-            "root": None,
-            "path": None,
-            "detail": ".oss.local.json carries no worktree_root in this tree -- expected "
-            "if this is running inside a worktree rather than the main clone.",
-        }
+        if origin_state == oss_config.LOCAL_STATE_COULD_NOT_DERIVE:
+            detail = "worktree_root could not be derived from the repository root ({}).".format(
+                origin[2]
+            )
+        else:
+            detail = (
+                ".oss.local.json carries no worktree_root in this tree -- expected "
+                "if this is running inside a worktree rather than the main clone."
+            )
+        return {"state": "unknown", "root": None, "path": None, "detail": detail, "origin": origin_state}
     try:
         path = oss_config.resolve_worktree(root, str(issue))
     except oss_config.ContainmentError as exc:
-        return {"state": "invalid", "root": root, "path": None, "detail": _one_line(str(exc))}
-    return {"state": "resolved", "root": root, "path": str(path), "detail": ""}
+        return {
+            "state": "invalid", "root": root, "path": None, "detail": _one_line(str(exc)),
+            "origin": origin_state,
+        }
+    return {"state": "resolved", "root": root, "path": str(path), "detail": "", "origin": origin_state}
 
 
 def lane_registry_dir(worktree_root):
@@ -2511,7 +2534,12 @@ def compute(
         branch["exists_local"] = None
         branch["exists_remote"] = None
 
-    worktree = derive_worktree(config, issue)
+    # #608: which of configured / derived, not configured / could-not-derive
+    # produced `worktree_root` -- computed once here, from the same `config_path`
+    # `oss_config.load` above already used, so this call and that one can never
+    # disagree about which file each read.
+    worktree_origin = oss_config.local_key_states(config_path).get("worktree_root")
+    worktree = derive_worktree(config, issue, origin=worktree_origin)
     worktree["exists"] = worktree_occupancy(worktree.get("path"))
 
     board = read_board(repo)
@@ -2647,7 +2675,18 @@ def receipt(payload):
         exists_text = (
             "already exists" if exists is True else "free" if exists is False else "unknown"
         )
-        lines.append(_row("worktree", "{0} [{1}]".format(worktree["path"], exists_text)))
+        # #608: a `worktree_root` this call GUESSED from the repository root (no
+        # .oss.local.json here, or none carrying the key) must not read the same as
+        # one a maintainer configured -- the acceptance condition this issue was
+        # filed with.
+        origin_note = (
+            " (derived, not configured)"
+            if worktree.get("origin") == oss_config.LOCAL_STATE_DERIVED
+            else ""
+        )
+        lines.append(
+            _row("worktree", "{0} [{1}]{2}".format(worktree["path"], exists_text, origin_note))
+        )
 
     board = payload["board"]
     lines.append("board     :")
