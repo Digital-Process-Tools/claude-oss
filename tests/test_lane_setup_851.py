@@ -173,7 +173,7 @@ def test_candidates_found_still_reports_an_undetermined_sibling_rather_than_drop
         REPO_ROOT, 851, ["scripts/lane_setup.py"], board
     )
     assert result["state"] == "candidates"
-    assert result["undetermined"] == [300]
+    assert [e["number"] for e in result["undetermined"]] == [300]
     line = lane_setup._receipt_companions_line(result)
     assert "#300" in line
 
@@ -185,6 +185,88 @@ def test_no_other_open_issues_reads_none_not_could_not_tell():
         REPO_ROOT, 851, ["scripts/lane_setup.py"], _board([])
     )
     assert result["state"] == "none"
+
+
+# --- the audit's own finding: a declared path that could not be READ ------------
+
+
+def test_a_declared_path_that_could_not_be_read_is_undetermined_not_silently_clear(
+    tmp_path,
+):
+    """Found by this lane's own auditor, and it is this repository's defect
+    class inside the tool written to close it: `_derive_declared_files`
+    returns non-`None` when a candidate token survived the static filter and
+    then failed to RESOLVE against disk (a `PermissionError` on an unreadable
+    ancestor -- `resolve_lane` reports it as a `refused` pattern with an empty
+    `files` list). The first version of `suggest_companions` routed only a
+    bare `None` into `undetermined`, so this issue fell through
+    `lane_overlap(claimed, [])` -> `[]` and was excluded from BOTH lists --
+    indistinguishable in the receipt from an issue genuinely checked and found
+    disjoint.
+
+    Skips, rather than asserting blind, when the platform/filesystem/user does
+    not honour the deny (CLAUDE.md's own permission-fixture rule)."""
+    import os
+    import pytest
+
+    guarded = tmp_path / "guarded"
+    guarded.mkdir()
+    (guarded / "secret.py").write_text("x\n")
+    os.chmod(guarded, 0)
+    try:
+        try:
+            (guarded / "secret.py").stat()
+            took = False
+        except PermissionError:
+            took = True
+        except OSError:
+            took = False
+        if not took:
+            pytest.skip(
+                "chmod 0 did not deny stat on this platform/filesystem/user -- "
+                "cannot produce an unreadable declared path here; UNTESTED here: "
+                "whether an unresolvable declaration reads as undetermined"
+            )
+        board = _board(
+            [{"number": 200, "title": "see `guarded/secret.py`", "body": ""}]
+        )
+        result = lane_setup.suggest_companions(
+            tmp_path, 851, ["scripts/lane_setup.py"], board
+        )
+        assert result["state"] == "could-not-tell", result
+        assert [e["number"] for e in result["undetermined"]] == [200]
+        assert "guarded/secret.py" in result["undetermined"][0]["why"]
+    finally:
+        os.chmod(guarded, 0o755)
+
+
+def test_control_a_readable_declared_path_that_simply_misses_still_reads_none(tmp_path):
+    """Control for the test above: an issue whose declared path resolves
+    cleanly and simply does not overlap must still read `none` -- the fix
+    must distinguish "could not read the declaration" from "read it, it does
+    not overlap", not collapse both into could-not-tell."""
+    (tmp_path / "readable").mkdir()
+    (tmp_path / "readable" / "other.py").write_text("x\n")
+    board = _board(
+        [{"number": 200, "title": "see `readable/other.py`", "body": ""}]
+    )
+    result = lane_setup.suggest_companions(
+        tmp_path, 851, ["scripts/lane_setup.py"], board
+    )
+    assert result["state"] == "none"
+
+
+def test_undetermined_entries_say_which_of_the_two_reasons_applies():
+    """The two ways a file set goes underivable are different facts and must
+    not share one sentence: nothing path-shaped was named at all, versus
+    something was named and could not be read."""
+    board = _board([{"number": 300, "title": "vague", "body": "no paths anywhere"}])
+    result = lane_setup.suggest_companions(
+        REPO_ROOT, 851, ["scripts/lane_setup.py"], board
+    )
+    assert result["state"] == "could-not-tell"
+    assert result["undetermined"][0]["number"] == 300
+    assert "named no repo-relative path" in result["undetermined"][0]["why"]
 
 
 # --- the CLI wrapper ------------------------------------------------------------
@@ -252,6 +334,34 @@ def test_cli_refuses_combination_with_against():
     done = _run_cli(["--suggest-companions", "851", "--against", "x"])
     assert done.returncode == 2
     assert "--against" in done.stderr
+
+
+def test_cli_refuses_a_sweep_with_no_lane_at_all():
+    """Found by this lane's own reviewer: with no --lane, the claimed set is
+    empty, every issue's overlap against it is empty, and the sweep reported
+    a confident `none` -- "board read in full ... none lands inside the
+    claimed set" -- for a claimed set that was never named. That is this
+    repository's own defect class inside the tool written to close it, so
+    the call is refused rather than answered."""
+    board_json = json.dumps(
+        _board([{"number": 100, "title": "t", "body": "`scripts/lane_setup.py`"}])
+    )
+    done = _run_cli(["--suggest-companions", "851"], stdin_text=board_json)
+    assert done.returncode == 2, done.stdout
+    assert "--lane" in done.stderr
+
+
+def test_control_cli_with_a_lane_still_answers():
+    """Control: the refusal above must fire on a missing --lane only -- the
+    same call carrying one still answers normally."""
+    board_json = json.dumps(
+        _board([{"number": 100, "title": "t", "body": "`scripts/lane_setup.py`"}])
+    )
+    done = _run_cli(
+        ["--suggest-companions", "851", "--lane", "scripts/lane_setup.py"],
+        stdin_text=board_json,
+    )
+    assert done.returncode == 0, done.stderr
 
 
 def test_cli_requires_positional_issue_in_ordinary_mode():

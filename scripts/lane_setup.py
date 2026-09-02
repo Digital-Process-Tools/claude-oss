@@ -811,19 +811,40 @@ def suggest_companions(repo, own_issue, claimed_files, board):
       could-not-tell   either the board read itself was capped (#593's
                    `per=` ceiling -- more issues may exist outside the
                    population this call ever saw), or at least one other
-                   issue's declared files could not be derived at all
-                   (`_derive_declared_files` returned `None` for it). The
-                   second case is deliberately NOT folded into `none`: an
-                   issue this sweep could not read a file set for might
-                   still belong in the lane, and reporting `none` over an
-                   unread population is the exact false negative #851 exists
-                   to stop -- the same reasoning `_lane_resolved_to_nothing`
-                   already applies to a single lane one level down.
+                   issue's declared files could not be derived. That second
+                   case has two distinct causes and `undetermined` names
+                   which one applies per issue rather than sharing one
+                   sentence: the title and body named nothing path-shaped at
+                   all (`_derive_declared_files` returned `None`), or they
+                   named something and it could not be READ -- a declared
+                   path under an unreadable ancestor, which `resolve_lane`
+                   reports as a `refused` pattern with an empty `files` list
+                   (`_refused_patterns`, #774). The second one was found by
+                   this lane's own auditor and is the sharper of the two: it
+                   returns a non-`None` result, so a version of this function
+                   checking only for `None` let it fall through
+                   `lane_overlap(claimed, [])` and vanish from both lists.
+                   Neither is folded into `none`: an issue this sweep could
+                   not read a file set for might still belong in the lane,
+                   and reporting `none` over an unread population is the
+                   exact false negative #851 exists to stop -- the same
+                   reasoning `_lane_resolved_to_nothing` already applies to a
+                   single lane one level down.
 
-    A candidate whose own file set could not be derived is reported by
-    number in the `could-not-tell` detail, never silently dropped -- an
-    absence produced by this tool's own extraction limits must read as
-    "not read", not as "read and clear".
+    `undetermined` is a list of `{"number": N, "why": "..."}`, reported in
+    the `could-not-tell` detail AND on a `candidates` line, never silently
+    dropped -- an absence produced by this tool's own extraction or read
+    limits must read as "not read", not as "read and clear". An issue that
+    IS a candidate is not also listed there: an overlap found is a positive
+    fact about it, and it is going to be looked at anyway.
+
+    `claimed_files` being empty is a caller error this function cannot
+    distinguish from a real answer, and it is refused at the CLI boundary
+    rather than here: every issue's overlap against the empty set is empty,
+    so an empty claimed set produces a confident `none` about a lane nobody
+    named -- found by this lane's own reviewer, and the same shape #788
+    already refuses for a fileless `--claim`. A library caller passing `[]`
+    gets that `none`; `main` will not let a command line produce it.
     """
     own_issue = int(own_issue)
     claimed = sorted(set(claimed_files))
@@ -845,11 +866,39 @@ def suggest_companions(repo, own_issue, claimed_files, board):
             continue
         resolved = _derive_declared_files(repo, item.get("title"), item.get("body"))
         if resolved is None:
-            undetermined.append(number)
+            undetermined.append(
+                {
+                    "number": number,
+                    "why": "title and body named no repo-relative path in backticks",
+                }
+            )
             continue
         overlap = lane_overlap(claimed, resolved["files"])
         if overlap:
             candidates.append({"number": number, "files": overlap})
+            continue
+        # Found by this lane's own auditor: a candidate token CAN survive the
+        # static filter and then fail to resolve against disk -- a
+        # `PermissionError` on an unreadable ancestor, which `resolve_lane`
+        # reports as a `refused` pattern with an empty `files` list, exactly
+        # the state `_refused_patterns` (#774) already exists to separate from
+        # a checked `glob-no-match`. `_derive_declared_files` returns non-None
+        # for that, so routing only a bare `None` into `undetermined` let this
+        # issue fall through `lane_overlap(claimed, []) -> []` and vanish from
+        # both lists -- a declaration nothing could read, rendering as a
+        # declaration read and found clear. That is the fold this whole
+        # function's docstring promises not to make, one layer below where it
+        # was being checked.
+        refused = _refused_patterns(resolved)
+        if refused:
+            undetermined.append(
+                {
+                    "number": number,
+                    "why": "declared path(s) could not be read: {0}".format(
+                        ", ".join(refused)
+                    ),
+                }
+            )
     if candidates:
         return {
             "state": "candidates",
@@ -862,12 +911,15 @@ def suggest_companions(repo, own_issue, claimed_files, board):
             "state": "could-not-tell",
             "candidates": [],
             "undetermined": undetermined,
-            "detail": "{0} of {1} other open issue(s) named no repo-relative path in "
-            "backticks in their title or body, so their file set could not be "
-            "derived: {2}".format(
+            "detail": "{0} of {1} other open issue(s) could not have a file set "
+            "derived, so the absence of a candidate among them is not a "
+            "swept-clear reading: {2}".format(
                 len(undetermined),
                 len(issues),
-                ", ".join("#{0}".format(n) for n in undetermined),
+                "; ".join(
+                    "#{0} ({1})".format(entry["number"], entry["why"])
+                    for entry in undetermined
+                ),
             ),
         }
     return {
@@ -2797,7 +2849,10 @@ def _receipt_companions_line(result):
         line = "candidates: " + "; ".join(parts)
         if result["undetermined"]:
             line += "; also could not derive a file set for {0}".format(
-                ", ".join("#{0}".format(n) for n in result["undetermined"])
+                ", ".join(
+                    "#{0}".format(entry["number"])
+                    for entry in result["undetermined"]
+                )
             )
         return line
     if result["state"] == "none":
@@ -2875,10 +2930,10 @@ def main(argv=None):
         "JSON on stdin (the dispatch_rank.py idiom -- this call never "
         "invokes gh itself) and report every OTHER open issue whose title "
         "or body names a path landing inside the claimed set, in three "
-        "states: candidates / none / could-not-tell. Carries its own issue "
-        "number; the positional issue argument is omitted when this is "
-        "given, and every other mode flag (--claim, --release, "
-        "--derive-held, --against) is refused alongside it.",
+        "states: candidates / none / could-not-tell. Requires at least one "
+        "--lane, carries its own issue number (the positional issue argument "
+        "is omitted when this is given), and refuses every other mode flag "
+        "(--claim, --release, --derive-held, --against) alongside it.",
     )
     args = parser.parse_args(argv)
 
@@ -2900,6 +2955,23 @@ def main(argv=None):
                     "the sweep answers a different question than any of "
                     "this file's other modes (#851)".format(flag_name)
                 )
+        if not args.lane:
+            # Found by this lane's own reviewer, and it is this repository's
+            # own defect class inside the tool written to close it: with no
+            # --lane there is no claimed set, every issue's overlap against
+            # the empty set is empty, and `suggest_companions` then returns a
+            # confident `none` -- "board read in full ... none lands inside
+            # the claimed set" -- about a claimed set nobody ever named. The
+            # sweep has no third state for "you did not tell me what this
+            # lane holds", because that is a usage error rather than a
+            # measurement, so it is refused at the boundary the way --claim
+            # already refuses a fileless claim (#788).
+            parser.error(
+                "--suggest-companions requires --lane (#851) -- with no claimed "
+                "file set the sweep compares every issue against nothing and "
+                "reports a confident `none` about a lane that was never named; "
+                "pass --lane once per file this lane holds"
+            )
     elif args.issue is None:
         parser.error("the issue argument is required unless --suggest-companions is given")
 
