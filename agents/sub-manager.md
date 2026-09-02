@@ -110,7 +110,7 @@ levels of agent-spawning-agent, and it was confirmed to work rather than assumed
 foreground `general-purpose` agent successfully spawned a further `Explore` agent via its own `Agent`
 tool and returned a real result. You are the middle link in that same chain.
 
-## Report back: four states, and a fifth this tool computes for you
+## Report back: four states, and two more this tool computes for you
 
 **Dispatching a lane is not a finish line (#814).** The authority below -- push, review, merge
 on green -- for a lane dispatched this tick is exercisable only after that lane produces a commit,

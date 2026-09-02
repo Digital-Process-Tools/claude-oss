@@ -1,7 +1,7 @@
 """#837: every `lane_report` availability/overlap verdict `lane_setup.py` can
 produce must be named, in backticks, by `skills/manager/phases/dispatch.md` --
 the document where a maintainer reads what a lane's verdict means before
-dispatching on it. #827 added `resolved-to-nothing` to the script and nothing
+dispatching on it. #809 added `resolved-to-nothing` to the script and nothing
 consumed it: `grep -rn "resolved-to-nothing" commands/ skills/ agents/`
 returned nothing until this issue's own fix. This guard is the one that would
 have caught that silently, and the fixture below proves it fires on the real
@@ -87,7 +87,7 @@ def test_every_availability_state_is_named_in_dispatch_md():
 def test_control_fires_on_the_real_shape_of_the_defect():
     """Red: a state added to the script and never carried to the doc.
 
-    Simulates #827 landing `resolved-to-nothing` with nothing updated in
+    Simulates #809 landing `resolved-to-nothing` with nothing updated in
     dispatch.md, by extracting the real function's states and checking them
     against a doc snippet that is missing that one word -- the exact silence
     #837 reported.
