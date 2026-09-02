@@ -69,6 +69,26 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    an unbounded "findings, therefore stop" makes every release hostage to diminishing returns. After
    round two, file the rest against the next milestone and ship.
 
+   **Resolve the plugin root at the point of use, the same way `commands/tick.md` step 1 already does
+   for `doctor.py` (#789).** `${CLAUDE_PLUGIN_ROOT}` in this file's own command text is a
+   version-pinned path substituted once when the command was injected — it only locates the script
+   file to run. `checklist_skew.py` and `ranking_table.py` each *also* fall back internally to
+   `os.environ.get("CLAUDE_PLUGIN_ROOT")` for their own `--plugin-root` default, a real shell
+   environment variable that can be unset even in the same session that just substituted the literal
+   path above. Left to that fallback, `checklist_skew.py` degrades to `could-not-tell` — a real,
+   well-formed answer that reads as a legitimate unknown where a measurement (`not-applicable`, or
+   whatever the true state is) was one flag away — and `ranking_table.py` degrades to
+   `could-not-read`. **The resolution and the call it feeds belong in the same fenced block, never
+   split across two**: a shell variable does not survive between separate command invocations — only
+   `cd` does — so a block that assigns a root and a later, separate block that reads it are not
+   guaranteed to share anything, and an unset variable there is silently read as empty rather than as
+   an error. `commands/tick.md`'s own `DOCTOR_ROOT` block keeps its assignment and its one use site
+   together for exactly this reason; each of the two call sites below now resolves and consumes its
+   own root inline, rather than sharing one resolution across three separate blocks. `release_delta.py`
+   takes no `--plugin-root` at all (confirmed by its own `--help`): its only use of
+   `${CLAUDE_PLUGIN_ROOT}` is to locate the script file, the same substituted-once path as everywhere
+   else in this document, so it needs no change here.
+
    **Except a finding in a row the ranking table marks blocking, which is not carry-forward
    material.** It stops the tag in either round. Each finding comes back carrying its row, so this is
    a read rather than a judgement — and without it the cap outranks the table by being later in the
@@ -92,7 +112,16 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      by running the extractor, never by retyping it**:
 
      ```bash
-     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"
+     RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
+       --print-resolved-root --root . 2>/dev/null)"
+     if [ -n "$RESOLVED_ROOT" ] && [ -d "$RESOLVED_ROOT" ]; then
+       GATE3_ROOT="$RESOLVED_ROOT"
+       GATE3_ROOT_ROUTE="resolved-install"
+     else
+       GATE3_ROOT="${CLAUDE_PLUGIN_ROOT}"
+       GATE3_ROOT_ROUTE="pinned-root"
+     fi
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py" --plugin-root "$GATE3_ROOT"
      ```
 
      **#688: a hand transcription of this table once dropped the embargo prose off two of its rows**
@@ -175,10 +204,22 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    all (#538). It is computed instead:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --json
+   RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
+     --print-resolved-root --root . 2>/dev/null)"
+   if [ -n "$RESOLVED_ROOT" ] && [ -d "$RESOLVED_ROOT" ]; then
+     GATE3_ROOT="$RESOLVED_ROOT"
+     GATE3_ROOT_ROUTE="resolved-install"
+   else
+     GATE3_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     GATE3_ROOT_ROUTE="pinned-root"
+   fi
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --plugin-root "$GATE3_ROOT" --json
    ```
 
-   It reads the version out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and out of this
+   Record `GATE3_ROOT_ROUTE` in the release report alongside the checklist-skew payload -- it names
+   which route produced the root that was passed in, not a fourth state of `checklist_skew.py`'s own
+   answer. It reads the version out of `$GATE3_ROOT/.claude-plugin/plugin.json` -- the resolved root
+   just passed via `--plugin-root`, not the literal `${CLAUDE_PLUGIN_ROOT}` text -- and out of this
    repository's own `.claude-plugin/plugin.json`, when this repository is the one that ships the
    definitions being audited — most repos this plugin manages are not that repository and carry no
    such file, which is itself one of the four states below rather than an error. Pass the payload
