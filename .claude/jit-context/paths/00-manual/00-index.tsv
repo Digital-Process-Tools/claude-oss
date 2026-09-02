@@ -1,0 +1,2 @@
+(^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
+(^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md

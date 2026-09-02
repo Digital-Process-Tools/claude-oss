@@ -84,42 +84,17 @@ separately rather than one list.
 
 ## Traps that cost time here
 
-- **`${0%/*}` strips nothing under Git Bash**, where `$0` is `D:\a\repo\scripts\doctor.sh`. Both
-  `scripts/doctor.sh` and `bin/oss-workspace` strip either separator. This failed all four Windows
-  legs while every POSIX leg was green.
 - **Tests must pin `PATH`.** With the stub absent, the launcher found the real `claude` and executed
   it — a suite starting live agent sessions in temp directories.
-- **A trailing `|| true` on a shell command can be doing two jobs, and replacing it with a captured
-  status only removes one.** Under `set -eu`, `|| true` on a bare simple command inside an `if` body
-  both swallows the exit status AND suppresses errexit for that command. #573 replaced
-  `bin/oss-workspace`'s `ASK_CONSUMER` heredoc opener's `|| true` with `ask_consumer_status=$?`
-  captured on the line after the heredoc closed — which restored the first job and left the second
-  undone, since a crashed probe now killed the whole script via errexit before that capture line, or
-  the 34-line reporting arm past it, ever ran (#588). The fix is to attach the status capture to the
-  command itself — `<<'HEREDOC' && status=0 || status=$?` on the opener line, the idiom
-  `bin/oss-workspace`'s doctor-diagnostic call already used before this fix — not to a line after
-  it, which errexit never lets execution reach. The harness that shipped alongside #573's fix could not see this: it ran the extracted block
-  under a bare `sh`, never turning `set -eu` on, so a script that dies from errexit and a script that
-  runs to completion look identical to it.
-- **`assemble_changelog.py` derives its root by walking up for a `.git`** — since #590, from the
-  **caller's current working directory**, not from the script's own install location. It used to
-  walk from `__file__`: under a plugin that walk finds **the plugin's own repository** regardless of
-  where the caller stands, so a fold given neither `--dir` nor `--changelog` rewrote this repo's
-  `CHANGELOG.md` and deleted this repo's fragments, and said it worked — it did find a repo, just
-  never the caller's. **Since #67 the fold refuses instead**, exits `2` and prints the invocation to
-  run — that refusal is unconditional across both copies on purpose: which repository the caller
-  *meant* is not on disk, so a detector would be guessing, and a wrong guess writes to a repository
-  nobody named. Still pass both, on every mode. The read-only modes (`--check`, `--count`,
-  `--check-links`) used to keep the `__file__`-derived default unconditionally, on the reasoning
-  that they only read — which held for the vendored `.oss/` copy (stored inside the repo it serves,
-  so the two roots always agreed) and did not hold for the plugin's own copy, which reported a clean
-  `ok` about its own fragments no matter which repo, or non-repo, the caller ran it from (#590). Now
-  they derive from the caller's cwd and refuse the same way the fold does when no `.git` is found
-  above it, and the `ok`/`skipped` receipts name the resolved directory so the answer's subject is
-  never implicit. This trap said `.github/scripts/` and a fixed parent count until #65; the
-  derivation changed and the warning beside it did not, so `commands/changelog.md` carried the fix
-  for one shape of the bug and the description of another — the reason this bullet gets rewritten
-  rather than appended to every time the derivation moves again.
+- **Two shell portability traps found in `scripts/doctor.sh` and `bin/oss-workspace` already cost a
+  round each** — `${0%/*}` stripping nothing under Git Bash, and a trailing `|| true` on a heredoc
+  opener silently suppressing `errexit` as well as the exit status. Both are general POSIX-shell
+  mistakes, not facts about those two files alone, so the jit rule this moved to (#245) is scoped
+  to every file under `bin/` and every `.sh` under `scripts/`, not just the two it was found on:
+  `.claude/jit-context/paths/00-manual/posix-shell-portability.md`.
+- **`assemble_changelog.py` derives its root from the caller's cwd, not from where it lives.** Moved
+  (#245) to a jit rule that fires when that file is touched:
+  `.claude/jit-context/paths/00-manual/assemble-changelog-root.md`.
 - **A vendored file is a document about the repository it came from, and it keeps being one after
   you copy it.** `scripts/coverage_gate.py` was a verbatim copy of claude-supertool's coverage gate,
   wired into nothing here for its whole life. Every claim in it was true — *there*. Its enforced
