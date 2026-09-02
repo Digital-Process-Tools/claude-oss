@@ -327,6 +327,29 @@ above applies here for the same reason.
 
 Launch every dispatched lane — bundled or not — in a single message so they run concurrently.
 
+### One fan-out, then the lane is resumed, never re-dispatched
+
+**A tick performs exactly one dispatch (#880).** One fan-out, filled per the axes above, then the
+tick sees those lanes through to merge -- a second fan-out is a second tick inside the first, and
+the receipt lies for it (three lanes, one re-dispatched twice, reads as five).
+
+**A red lane, or one whose base moved, is resumed via `SendMessage` to its own agent -- never
+re-dispatched fresh at the same issue.** The agent that wrote the diff knows why; a fresh spawn
+re-derives everything from nothing, paying #695's saving back as a cost (`commands/tick.md` step 7,
+#818, already resumes a paused sub-manager this way; a resumed lane costs the message against a
+fresh developer spawn's measured 150k-290k tokens).
+
+**A lane's own agent can genuinely be gone -- context died, or resumed and silent twice, the bar
+`agents/developer.md` sets its own review spawns -- and that is its own named state,
+`agent-unreachable`, distinct from `resumed`.** A re-dispatch with neither an attempted resume nor
+that finding is the defect this section stops; state which one applied in the handback.
+
+**This is enforced, not only stated.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py"
+<state_file> --lane-dispatch-state ISSUE=STATE[:WHY]` (repeatable, matched to `--lane` by issue)
+refuses the whole `--decision` call outright when the same issue is recorded a fresh dispatch more
+than once in it -- the shape `--lane-fill` already refuses an unreasoned short lane in. `resumed`
+needs no reason; `agent-unreachable` requires one. Omit the flag for an ordinary single dispatch.
+
 **Lane length is itself a cost decision, and it is measured after a lane completes, never during
 it (#498).** Cost scales roughly with the square of a lane's own length — turns times the average
 context across those turns, and the context itself grows with the turns — so five lanes out of 612

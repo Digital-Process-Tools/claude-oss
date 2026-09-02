@@ -113,6 +113,13 @@ issue, move each sibling's substance into a checklist line on it, close the sibl
 A proposed cluster nobody acts on is the board lying with extra steps -- the duplication was seen,
 written down, and kept.
 
+**The sweep that produced those clusters is expected to have run after the previous release, not at
+some unspecified time (#855).** The spine's *Cadence* section states the order -- ticks, release,
+triage, ticks -- and the reason: triage lands immediately before the next run of ticks so the
+priorities `dispatch_rank.py` reads are as fresh as they can be, and the cohort it counts against
+has already stopped being edited by the freeze. If this step is consuming clusters from a sweep that
+predates the last release, say so rather than treating the clusters as current.
+
 **The number is not a target and it is not inert.** No threshold may be claimed from one sample — the
 paragraph below, unchanged. But a ratio climbing across a run of ticks is a finding about the loop:
 ask whether the numerator is filings that cost somebody something or filings that cost nobody

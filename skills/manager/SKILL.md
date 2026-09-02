@@ -706,6 +706,31 @@ site is touched. What the spine holds is the part that decides whether the loop 
 `commands/release.md` is the wired form of this phase, and remains the single source for gate 3's
 mechanics; the phase file restates it rather than redefining it.
 
+## Cadence
+
+**Three to four ticks, then a release, then a triage sweep, then three to four more ticks.**
+Stated by the maintainer 2026-09-02, and nowhere else in this loop's prose until now (#855). The
+ordering matters and is not the one the documents used to imply: triage lands **immediately before**
+the next run of ticks, not at the end of the one that just closed, so `dispatch_rank.py` reads
+priority labels that are as fresh as they can be at the moment it actually consumes them, and the
+cohort burn-down a triage sweep feeds counts a set the release has already stopped editing (the same
+"re-count after the last label write, never before it" discipline the accounting phase already
+applies to the freeze count itself).
+
+**Keep the freeze and the sweep apart.** The cohort freeze -- defined below, under *Closing a
+tick: the drain and the fill* -- is the maintainer's own act, by hand, in the same minute as the tag;
+the triager must never write a `cohort-*` label. The triage sweep is a separate step that follows the
+freeze, run over the tracker's priority and lane labels, never over cohorts.
+
+**The last-triaged half is enforced, the label-coverage half is not (#855).**
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded AT`, run
+whenever a sweep completes, and `--last-triage`, which any tick can call to read `last triaged: <ISO>
+/ never / could-not-read` back -- `never` is a real, established absence and `could-not-read` is not
+the same fact, the same distinction every other reader in that file draws. Reporting how much of the
+open board carries no priority label at all -- so "the board is triaged" is a measurement rather than
+a memory -- is still unbuilt; that half stays this repository's own defect class, one level up,
+applied to its own cadence, until somebody takes it.
+
 ## Closing a tick: the drain and the fill
 
 **The backlog needs a terminating condition.** At each release tag, label everything then-open as a

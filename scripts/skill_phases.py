@@ -106,7 +106,19 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # the citation requirement for a declined dispatch is a correctness addition
     # with nothing safe to cut to pay for it in the same diff, the same reasoning
     # every prior raise in this file gives. Fifth budget change.
-    "skills/manager/phases/dispatch.md": (33036, 36400, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
+    # Raised again (#880): measured 37,253 B against the prior 36,400 B budget --
+    # #878 landed between this lane's own measurement and its rebase, consuming
+    # almost all of the file's remaining headroom (33,036 -> 36,104 B) before
+    # #880's own addition (the one-dispatch-per-tick rule, trimmed twice to
+    # 923 B) pushed it over by 853 B. Not paid for by cutting: nothing in this
+    # file's existing argument was judged safe to trim without a separate,
+    # reviewed decision about which paragraph to shorten. This raise desyncs
+    # CLAUDE.md's own budget table (tests/test_claude_md_phase_budget_table_725.py)
+    # until CLAUDE.md -- held by open PR #883 at the time of this raise -- is
+    # free to receive the matching row; that test is expected to be red on this
+    # branch and is reported as such rather than silently left unexplained.
+    # Sixth budget change.
+    "skills/manager/phases/dispatch.md": (37253, 41000, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
     "skills/manager/phases/review.md": (11637, 12800, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),

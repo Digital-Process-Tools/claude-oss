@@ -24,25 +24,19 @@ merges -- same authority for the phases a tick covers as the scheduler would hav
 the one tick you were spawned to run.
 
 **Not the same model.** This file's frontmatter pins `model: sonnet`; the scheduler runs whatever
-model the maintainer's own top-level session runs, which may be a different one. A reader relying on
-"same model" being true here would be relying on something this file does not actually do.
+model the maintainer's own top-level session runs, which may differ.
 
-**That choice is a judgement, not a measurement, and it is worth saying so out loud rather than
-leaving it silent next to `color: blue` as though it were presentation.** Nothing has measured whether
-Sonnet is sufficient for a tick. A tick reviews diffs, judges audit findings, decides merges and
-handles untrusted issue text -- a harder seat than the developer lane, where a spec and a test suite
-say when the work is wrong and a weaker model's mistakes are caught mechanically before they land.
-Here there is no such backstop for a bad call. The maintainer chose Sonnet on cost, with that
-untested, and the choice is revisitable -- this is **reasoned, not observed**, the same grading this
-repository applies to every other cross-platform or unmeasured claim it makes about itself.
+**That is a judgement, not a measurement -- worth saying next to `color: blue` rather than left as
+presentation.** Nothing has measured whether Sonnet suffices for a tick: reviewing diffs, judging
+audit findings, deciding merges and handling untrusted text is a harder seat than the developer
+lane, where a spec and a test suite catch a weaker model's mistakes before they land; here there is
+no such backstop. The maintainer chose Sonnet on cost, untested, and it is revisitable --
+**reasoned, not observed**, this repository's own grading for every unmeasured self-claim.
 
-**This is a hazard for whoever wires the scheduler side of this split, not only a note about this
-file.** #695's saving is attributed to the per-tick context reset. If the eventual scheduler cutover
-ships a model change in the same diff -- deciding, say, that the scheduler itself should also run
-Sonnet, or that the sub-manager should run something else -- #694's before-and-after measurement
-cannot separate the two effects: cheaper and different work, with no way to attribute either to the
-context reset this issue is actually about. Hold the model axis still across that cutover, or account
-for it explicitly if it must move, so the measurement #694 is meant to produce still means something.
+**Hazard for whoever wires the scheduler side:** #695's saving is attributed to the per-tick
+context reset. A scheduler cutover that also changes the model in the same diff breaks #694's
+before-and-after measurement, which cannot then separate cheaper-and-different work from the reset
+itself. Hold the model axis still across that cutover, or account for the change explicitly.
 
 ## First: declare your role, before anything else
 
@@ -118,6 +112,14 @@ or `could-not-tell` in the handback, and a short lane with none of those is a de
 `oss_state.py --decision` call `commands/tick.md` step 6 already makes -- it refuses the whole call
 when a short lane arrives unreasoned, so the receipt is the check, not a repeated read of this
 paragraph.
+
+**One dispatch per tick, then resume rather than re-dispatch (#880).** Your fan-out above is the
+whole of your dispatching this tick. A lane that comes back red, or whose base moves under it, is
+resumed via `SendMessage` to its own agent, never re-dispatched fresh at the same issue -- the
+argument, and the `agent-unreachable` third state for when resuming genuinely fails (context gone,
+or silent twice, the bar `agents/developer.md` sets its own review spawns), are in
+`skills/manager/phases/dispatch.md`. A re-dispatch with neither an attempted resume nor that finding
+is the defect this rule stops; record it via `--lane-dispatch-state` at your own state entry.
 
 ## Report back: four states, and two more this tool computes for you
 

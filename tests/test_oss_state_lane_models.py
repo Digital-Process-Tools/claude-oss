@@ -317,6 +317,10 @@ def test_the_cli_records_lanes_and_receipts_them_after_the_write(tmp_path, capsy
         "choice": "override",
         "why": "mechanical scope, strict brief",
         "agent_type": None,
+        # #880: every lane carries a dispatch_state, defaulting to dispatched
+        # when the caller (as here) named none.
+        "dispatch_state": oss_state.DISPATCH_STATE_DISPATCHED,
+        "dispatch_state_why": None,
     }
     # It lands on disk, not only in the printed entry.
     assert json.loads(Path(path).read_text(encoding="utf-8"))[0]["detail"]["lanes"]

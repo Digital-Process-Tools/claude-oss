@@ -143,6 +143,23 @@ CHOICE_OVERRIDE = "override"
 # makes a wrong dispatch observable, and does not, by itself, stop one from happening.
 KNOWN_AGENT_TYPES = ("oss:developer", "oss:triager")
 
+# #880: a tick performs exactly one dispatch. A lane's own agent is resumed via
+# SendMessage on a red run or a moved base, never re-dispatched fresh at the same
+# issue, unless that agent is genuinely gone -- context died, or resumed and silent
+# twice, the same bar agents/developer.md sets its own review spawns. `dispatched` is
+# the default (an ordinary fresh dispatch, and the value every entry recorded before
+# this constant existed is read as); `resumed` records that this issue needed a
+# mid-tick resume without representing a second dispatch event; `agent-unreachable` is
+# the one state under which a second fresh spawn at the same issue is correct.
+# `lane_models` refuses a `--decision` call in which the same issue is recorded
+# `dispatched` more than once -- the receipt for the defect this issue was filed for --
+# and requires `why` on `agent-unreachable`, because "the agent is gone" with no
+# account of which of the two ways is indistinguishable from an excuse.
+DISPATCH_STATE_DISPATCHED = "dispatched"
+DISPATCH_STATE_RESUMED = "resumed"
+DISPATCH_STATE_AGENT_UNREACHABLE = "agent-unreachable"
+DISPATCH_STATES = (DISPATCH_STATE_DISPATCHED, DISPATCH_STATE_RESUMED, DISPATCH_STATE_AGENT_UNREACHABLE)
+
 # A dispatched lane's own fill (#852): how many issues it carried, and -- when that is
 # fewer than dispatch_rank.MAX_LANE -- why, from the same closed vocabulary
 # dispatch_rank.SHORT_REASONS declares and dispatch_rank.check_lane already enforces
@@ -202,6 +219,18 @@ COHORT_COULD_NOT_COUNT = "could-not-count"
 WAIT_HOLDS = "holds"
 WAIT_CLEARED = "cleared"
 WAIT_COULD_NOT_EVALUATE = "could-not-evaluate"
+
+# #855: when a triage sweep last completed, read back from history the same way
+# `_last_wait` re-derives a wait -- scanning backward past any entry that recorded
+# something else, never just the last entry in the file. Three states, the same
+# shape every other reader in this file uses: `recorded` (an ISO timestamp really is
+# on record), `never` (a real, established absence -- this history has never once
+# recorded a sweep), and `could-not-read` (the state file itself could not be read,
+# which must never render the same as `never`: one is a measurement, the other is no
+# measurement at all).
+TRIAGE_RECORDED = "recorded"
+TRIAGE_NEVER = "never"
+TRIAGE_COULD_NOT_READ = "could-not-read"
 
 # A plugin identity comparison (#477): what a tick recorded about the install
 # it ran under, read back against what THIS tick reads, so "has the version
@@ -1234,6 +1263,35 @@ def lane_models(lanes, window, why=None):
         agent_type = lane.get("agent_type")
         agent_type = str(agent_type).strip() if agent_type and str(agent_type).strip() else None
 
+        # #880: `dispatch_state` is optional and defaults to DISPATCH_STATE_DISPATCHED
+        # -- every entry recorded before this field existed is read as an ordinary
+        # fresh dispatch, which is the only honest default for history this field
+        # cannot retroactively ask a question of.
+        dispatch_state = lane.get("dispatch_state")
+        if dispatch_state is None:
+            dispatch_state = DISPATCH_STATE_DISPATCHED
+        elif dispatch_state not in DISPATCH_STATES:
+            raise StateError(
+                "lane {} (issue {}): dispatch_state must be one of {}, not "
+                "{!r}".format(position, issue, ", ".join(DISPATCH_STATES), dispatch_state)
+            )
+
+        dispatch_why = lane.get("dispatch_state_why")
+        if dispatch_state == DISPATCH_STATE_AGENT_UNREACHABLE:
+            if not dispatch_why or not str(dispatch_why).strip():
+                raise StateError(
+                    "lane {} (issue {}): dispatch_state agent-unreachable needs a "
+                    "dispatch_state_why -- context died, or resumed and silent twice, "
+                    "are different facts and must not render the same way".format(
+                        position, issue
+                    )
+                )
+            dispatch_why = str(dispatch_why).strip()
+        else:
+            dispatch_why = (
+                str(dispatch_why).strip() if dispatch_why and str(dispatch_why).strip() else None
+            )
+
         normalized.append(
             {
                 "issue": issue,
@@ -1241,7 +1299,47 @@ def lane_models(lanes, window, why=None):
                 "choice": choice,
                 "why": lane_why,
                 "agent_type": agent_type,
+                "dispatch_state": dispatch_state,
+                "dispatch_state_why": dispatch_why,
             }
+        )
+
+    # #880: a tick performs exactly one dispatch. The whole of a tick's lane mix is
+    # recorded in one call (commands/tick.md step 6), so a genuine re-dispatch of an
+    # issue this same tick already dispatched shows up here as the same issue number
+    # appearing more than once with dispatch_state DISPATCHED -- `resumed` and
+    # `agent-unreachable` are not fresh dispatches (a resume needs no new --lane entry
+    # at all, and agent-unreachable is the one state a second one is correct under),
+    # so only DISPATCHED entries are counted. Refused outright, the same shape
+    # `lane_fill` already refuses an unreasoned short lane in -- the receipt is the
+    # check, not a repeated read of the prose this rule is stated in.
+    # Keyed on str(issue), not the raw value (found by review): --lane's own CLI
+    # parser converts an issue token to int when it can and leaves it a string
+    # otherwise, so a caller building lane dicts directly -- a test fixture, a
+    # future non-CLI caller -- can hand this function 880 and "880" for the same
+    # issue, and a dict keyed on the unconverted value would count them as two
+    # different issues and silently accept the exact re-dispatch #880 exists to
+    # catch. The display side already treated int/str as equivalent (the
+    # pre-existing `key=str` on the sort below); the counting side did not.
+    dispatched_counts = {}
+    dispatched_display = {}
+    for lane in normalized:
+        if lane["dispatch_state"] == DISPATCH_STATE_DISPATCHED:
+            key = str(lane["issue"])
+            dispatched_counts[key] = dispatched_counts.get(key, 0) + 1
+            dispatched_display.setdefault(key, lane["issue"])
+    redispatched = sorted(
+        (dispatched_display[key] for key, count in dispatched_counts.items() if count > 1),
+        key=str,
+    )
+    if redispatched:
+        raise StateError(
+            "issue(s) {} recorded as a fresh dispatch more than once in this tick "
+            "(#880) -- a tick performs exactly one dispatch; resume the lane's own "
+            "agent instead (dispatch_state resumed), or record dispatch_state "
+            "agent-unreachable with why if it is genuinely gone".format(
+                ", ".join(str(issue) for issue in redispatched)
+            )
         )
 
     return {"state": LANES_RECORDED, "window": window, "lanes": normalized, "why": None}
@@ -1295,9 +1393,25 @@ def _lane_models_sentence(record):
                 agent_type = lane.get("agent_type") if isinstance(lane, dict) else None
                 if agent_type and agent_type not in KNOWN_AGENT_TYPES:
                     unexpected.append((lane.get("issue"), agent_type))
+            # #880: resumed/agent-unreachable are worth surfacing in the sentence for
+            # the same reason overrides already are -- a mix that reads as an ordinary
+            # tick while quietly carrying a lane that needed a resume, or one whose
+            # agent went unreachable, is exactly the silent absence this repository is
+            # named after.
+            resumed = sum(
+                1 for lane in lanes
+                if isinstance(lane, dict) and lane.get("dispatch_state") == DISPATCH_STATE_RESUMED
+            )
+            unreachable = sum(
+                1 for lane in lanes
+                if isinstance(lane, dict)
+                and lane.get("dispatch_state") == DISPATCH_STATE_AGENT_UNREACHABLE
+            )
         else:
             counts = record.get("counts") or {}
             overrides = record.get("overrides") or 0
+            resumed = record.get("resumed") or 0
+            unreachable = record.get("unreachable") or 0
             # #862: the trend shape (`lane_model_trend`'s own dict) carries its own
             # already-collected `unexpected` list, since `lanes` here is a count, not
             # the list this branch's own per-lane scan above needs.
@@ -1309,6 +1423,8 @@ def _lane_models_sentence(record):
         mix = head + "{} ({} override{})".format(
             parts or "no lanes", overrides, "" if overrides == 1 else "s"
         )
+        if resumed or unreachable:
+            mix += " ({} resumed, {} agent-unreachable)".format(resumed, unreachable)
         if unexpected:
             mix += " -- {} dispatched as {}, not {}".format(
                 ", ".join("#{}".format(issue) for issue, _ in unexpected),
@@ -1339,6 +1455,8 @@ def lane_model_trend(entries):
     counts = {}
     lanes_total = 0
     overrides = 0
+    resumed_total = 0
+    unreachable_total = 0
     counted = 0
     uncounted = 0
     without_record = 0
@@ -1367,6 +1485,10 @@ def lane_model_trend(entries):
                 lanes_total += 1
                 if lane.get("choice") == CHOICE_OVERRIDE:
                     overrides += 1
+                if lane.get("dispatch_state") == DISPATCH_STATE_RESUMED:
+                    resumed_total += 1
+                elif lane.get("dispatch_state") == DISPATCH_STATE_AGENT_UNREACHABLE:
+                    unreachable_total += 1
                 agent_type = lane.get("agent_type")
                 if agent_type and agent_type not in KNOWN_AGENT_TYPES:
                     unexpected.append((lane.get("issue"), agent_type))
@@ -1381,6 +1503,8 @@ def lane_model_trend(entries):
         "counts": counts if counted else None,
         "lanes": lanes_total if counted else None,
         "overrides": overrides if counted else None,
+        "resumed": resumed_total if counted else None,
+        "unreachable": unreachable_total if counted else None,
         "unexpected": unexpected,
         "why": None,
         "ticks_counted": counted,
@@ -2039,6 +2163,102 @@ def _wait_sentence(record):
     return head + "unrecognised wait state {!r}, so nothing is claimed".format(state)
 
 
+def triage_recorded(at):
+    """Record that a triage sweep completed at this tick (#855).
+
+    A receipt for the spine's own Cadence section, which asks a tick to be able to
+    say when the last sweep ran rather than assume it is fresh: three to four ticks,
+    then a release, then a triage sweep, then three to four more -- and nothing
+    before this recorded which of those a given tick was standing in.
+    """
+    if not at or not str(at).strip():
+        raise StateError(
+            "a triage record needs an ISO timestamp for when the sweep completed, "
+            "not read from a clock in here -- the same reason every other recorder "
+            "in this file takes ``at`` as an argument rather than calling one."
+        )
+    return {"recorded_at": str(at).strip()}
+
+
+def last_triage(path):
+    """The most recent triage sweep this history recorded (#855), in three states.
+
+    ``(state, recorded_at, why)`` would spread one fact across three return values for
+    no reason the callers of every other reader in this file need -- returns a mapping,
+    the same shape ``_last_wait``'s caller builds by hand today and every other checker
+    in this file returns directly.
+
+    Scans backward past any entry that recorded something else -- a lane record, a
+    cohort freeze, a plain intake -- the same shape ``_last_wait`` already uses,
+    because the last entry in the history and the last entry that recorded a triage
+    sweep are not the same entry in general. ``never`` is a real, established absence
+    (this history has never once recorded a sweep) and must not render the same as
+    ``could-not-read`` (the state file itself could not be read at all) -- an absence
+    this process could not observe is not the same fact as one it looked for and did
+    not find, the defect class this whole repository is named after, one reader over.
+    """
+    try:
+        entries = read(path)
+    except StateError as exc:
+        return {"state": TRIAGE_COULD_NOT_READ, "recorded_at": None, "why": str(exc)}
+    for entry in reversed(entries):
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        if "triage" not in detail:
+            continue
+        # Stop at the FIRST entry (scanning backward) that carries a triage key at
+        # all -- even a malformed one -- rather than skipping past it to an older,
+        # valid record behind it (found by review): this is `_last_wait`'s own
+        # discipline, stated in its docstring, and this function's docstring
+        # already claimed to follow it without actually doing so. Falling through
+        # to an older valid record would render a stale answer as the freshest
+        # one, which is a subtler instance of the exact silent-absence defect
+        # this repository is named after -- not "nothing was found" but "the
+        # wrong thing was found and called current".
+        triage = detail["triage"]
+        if isinstance(triage, dict) and triage.get("recorded_at"):
+            return {
+                "state": TRIAGE_RECORDED,
+                "recorded_at": triage["recorded_at"],
+                "why": None,
+            }
+        return {
+            "state": TRIAGE_COULD_NOT_READ,
+            "recorded_at": None,
+            "why": (
+                "the most recent triage record ({!r}) is malformed -- not a "
+                "mapping with a non-empty recorded_at -- and reading past it to "
+                "an older, valid one would render a stale answer as the current "
+                "one".format(triage)
+            ),
+        }
+    return {"state": TRIAGE_NEVER, "recorded_at": None, "why": None}
+
+
+def triage_line(record):
+    """One line a tick report can print. The state decides the sentence, not the caller."""
+    return _receipt_line(_triage_sentence(record))
+
+
+def _triage_sentence(record):
+    """`triage_line`'s branches. Unfolded on purpose -- it has one caller."""
+    if not isinstance(record, dict):
+        raise StateError("triage_line takes a triage record, not {!r}".format(record))
+    state = record.get("state")
+    if state == TRIAGE_RECORDED:
+        return "last triaged: {}".format(record.get("recorded_at") or "an unstated time")
+    if state == TRIAGE_NEVER:
+        return "last triaged: never"
+    if state == TRIAGE_COULD_NOT_READ:
+        return "last triaged: could not read ({})".format(
+            record.get("why") or "no reason recorded"
+        )
+    return "unrecognised triage state {!r}, so nothing is claimed".format(state)
+
+
 def plugin_identity_check(current, prior, current_route=None, prior_route=None):
     """Compare this tick's plugin identity against the prior tick's recorded one (#477).
 
@@ -2484,6 +2704,48 @@ def _lane_agent_type_argument(text):
     return {"issue": issue, "agent_type": type_text.strip()}
 
 
+def _lane_dispatch_state_argument(text):
+    """#880: which of the three dispatch states a `--lane` issue is in --
+    ``ISSUE=STATE[:WHY]``.
+
+    A separate flag from `--lane`, matched by issue number, the same shape
+    `--lane-agent-type` already uses and for the same reason: `WHY` on `--lane`
+    already absorbs everything after its own colon, so a fifth colon-delimited field
+    there would be ambiguous with a lane WHY that happens to contain a colon. Only the
+    shape is checked here -- STATE present, ISSUE present; whether STATE is one of the
+    three declared words and whether `agent-unreachable` actually carries a WHY is
+    `lane_models`'s question, the single place that decision is made.
+    """
+    import argparse
+
+    if "=" not in text:
+        raise argparse.ArgumentTypeError("{!r} is not ISSUE=STATE[:WHY]".format(text))
+    issue_text, _, rest = text.partition("=")
+    if not issue_text.strip():
+        raise argparse.ArgumentTypeError(
+            "{!r}: an issue number is required before '='".format(text)
+        )
+    if not rest.strip():
+        raise argparse.ArgumentTypeError(
+            "{!r}: a dispatch state is required after '='".format(text)
+        )
+    parts = rest.split(":", 1)
+    state = parts[0].strip()
+    if not state:
+        raise argparse.ArgumentTypeError(
+            "{!r}: a dispatch state is required after '='".format(text)
+        )
+    why = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
+    try:
+        issue = int(issue_text.strip())
+    except ValueError:
+        issue = issue_text.strip()
+    entry = {"issue": issue, "dispatch_state": state}
+    if why is not None:
+        entry["dispatch_state_why"] = why
+    return entry
+
+
 def _lane_fill_argument(text):
     """A CLI lane fill: ``PRIMARY:COUNT[:REASON[:CANDIDATES]]`` (#852, #871).
 
@@ -2610,6 +2872,14 @@ def _main(argv=None):
         "wait' if it was cleared or none was ever recorded",
     )
     group.add_argument(
+        "--last-triage",
+        action="store_true",
+        help="#855: print when the last triage sweep completed -- recorded "
+        "<ISO>, never (this history has never once recorded one, a real "
+        "established absence), or could-not-read (the state file itself "
+        "could not be read, never the same as never)",
+    )
+    group.add_argument(
         "--check-plugin-identity",
         metavar="IDENTITY",
         help="compare this tick's plugin identity (doctor.plugin_identity(PLUGIN_ROOT)) "
@@ -2678,6 +2948,16 @@ def _main(argv=None):
         type=_lane_agent_type_argument,
         help="#862: the subagent_type a --lane issue was actually dispatched as, "
         "ISSUE=TYPE; repeatable, needs a matching --lane for the same issue",
+    )
+    parser.add_argument(
+        "--lane-dispatch-state",
+        action="append",
+        type=_lane_dispatch_state_argument,
+        help="#880: which of dispatched/resumed/agent-unreachable a --lane issue is "
+        "in, ISSUE=STATE[:WHY]; repeatable, needs a matching --lane for the same "
+        "issue. Omit for an ordinary fresh dispatch -- dispatched is the default. "
+        "The whole --decision call is refused if the same issue is recorded "
+        "dispatched more than once in it.",
     )
     parser.add_argument(
         "--lanes",
@@ -2766,6 +3046,12 @@ def _main(argv=None):
         "the entry, for the NEXT tick's comparison). A route mismatch between "
         "the current and prior readings is its own state, never folded into "
         "changed/unchanged",
+    )
+    parser.add_argument(
+        "--triage-recorded",
+        help="#855: attach that a triage sweep completed at this tick, as an ISO "
+        "timestamp, to the entry made by --decision. --last-triage re-derives it "
+        "on a later tick",
     )
     parser.add_argument(
         "--tick-cost-session",
@@ -2864,6 +3150,11 @@ def _main(argv=None):
         for name, value in (("--plugin-identity", args.plugin_identity),)
         if value is not None
     ]
+    triage_flags = [
+        name
+        for name, value in (("--triage-recorded", args.triage_recorded),)
+        if value is not None
+    ]
     tick_cost_flags = [
         name
         for name, value in (
@@ -2936,6 +3227,7 @@ def _main(argv=None):
             or args.model_trend
             or args.lane_fill_trend
             or args.pending_wait
+            or args.last_triage
             # `is not None`, not plain truthiness: an empty string is still a
             # value somebody passed (`--check-plugin-identity ""`), and treating
             # it as absent used to fall all the way through to the --decision
@@ -2992,6 +3284,12 @@ def _main(argv=None):
             _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(plugin_identity_flags))
+            )
+            return 1
+        if reading_mode and triage_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(triage_flags))
             )
             return 1
         if reading_mode and tick_cost_flags:
@@ -3077,6 +3375,11 @@ def _main(argv=None):
                 print(json.dumps(record, indent=2))
             else:
                 print("no pending wait")
+            return 0
+        if args.last_triage:
+            record = last_triage(args.path)
+            _say(triage_line(record), sys.stderr)
+            print(json.dumps(record, indent=2))
             return 0
         if args.model_trend:
             trend = lane_model_trend(read(args.path))
@@ -3197,6 +3500,16 @@ def _main(argv=None):
                     ", ".join(str(entry["issue"]) for entry in args.lane_agent_type)
                 )
             )
+        if args.lane_dispatch_state and args.lane is None:
+            # #880: same shape as the --lane-agent-type check above, ahead of the
+            # generic "--lane-window alone" refusal for the same reason.
+            return refuse(
+                "--lane-dispatch-state named issue(s) {} with no matching --lane "
+                "entry -- a recorded dispatch state with no lane to attach to "
+                "records nothing".format(
+                    ", ".join(str(entry["issue"]) for entry in args.lane_dispatch_state)
+                )
+            )
         if args.lane is not None and args.lanes is not None:
             return refuse(
                 "--lane and --lanes cannot both be given; use --lane for named lanes "
@@ -3249,6 +3562,41 @@ def _main(argv=None):
             for lane in args.lane:
                 if lane["issue"] in by_issue:
                     lane["agent_type"] = by_issue[lane["issue"]]
+        if args.lane_dispatch_state:
+            # #880: same attach-by-issue shape as --lane-agent-type above, with one
+            # difference -- an issue can legitimately have more than one --lane entry
+            # (a dispatched entry an agent-unreachable spawn replaced), so this is a
+            # FIFO queue per issue rather than a dict: the Nth --lane-dispatch-state
+            # naming an issue is attached to the Nth --lane entry for that issue, in
+            # the order both were given, rather than the last one silently winning.
+            queues = {}
+            for entry in args.lane_dispatch_state:
+                queues.setdefault(entry["issue"], []).append(entry)
+            known_issues = {lane["issue"] for lane in args.lane}
+            unmatched = sorted(
+                (str(issue) for issue in queues if issue not in known_issues), key=str
+            )
+            if unmatched:
+                return refuse(
+                    "--lane-dispatch-state named issue(s) with no matching --lane "
+                    "entry: {}".format(", ".join(unmatched))
+                )
+            for lane in args.lane:
+                queue = queues.get(lane["issue"])
+                if queue:
+                    entry = queue.pop(0)
+                    lane["dispatch_state"] = entry["dispatch_state"]
+                    if "dispatch_state_why" in entry:
+                        lane["dispatch_state_why"] = entry["dispatch_state_why"]
+            leftover = sorted(
+                (str(issue) for issue, queue in queues.items() if queue), key=str
+            )
+            if leftover:
+                return refuse(
+                    "--lane-dispatch-state named issue(s) {} more times than they "
+                    "appear in --lane -- each occurrence needs its own --lane entry "
+                    "to attach to".format(", ".join(leftover))
+                )
         if args.lane is not None:
             pending_lanes = lane_models(args.lane, window=args.lane_window)
         elif args.lanes == "none":
@@ -3465,6 +3813,18 @@ def _main(argv=None):
                         "pass one or the other"
                     )
                 detail["plugin_identity_route"] = args.plugin_identity_route
+        if args.triage_recorded is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a triage record is attached"
+                )
+            if "triage" in detail:
+                return refuse(
+                    "--detail already carries a 'triage' key; pass one or the other"
+                )
+            detail["triage"] = triage_recorded(args.triage_recorded)
         if pending_tick_cost is not None:
             if detail is None:
                 detail = {}
@@ -3504,6 +3864,11 @@ def _main(argv=None):
                     + _receipt_line(args.plugin_identity_route),
                     sys.stderr,
                 )
+        if args.triage_recorded is not None:
+            _say(
+                "RECORDED triage sweep at " + _receipt_line(args.triage_recorded),
+                sys.stderr,
+            )
         if pending_tick_cost is not None:
             _say("RECORDED " + tick_cost_line(pending_tick_cost), sys.stderr)
         print(json.dumps(entry, indent=2))
