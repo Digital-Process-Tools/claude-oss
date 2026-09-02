@@ -65,7 +65,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing in the existing three states was safe to cut to pay for a
     # correctness addition -- a design decision this repo's own conventions
     # ask to be written down, not trimmed to fit.
-    "agents/sub-manager.md": (13998, 15400),
+    "agents/sub-manager.md": (14032, 15400),
 }
 
 

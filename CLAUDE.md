@@ -410,7 +410,7 @@ from being invisible.
 | `agents/auditor.md` | 14,329 B | 15,800 B |
 | `agents/release-auditor.md` | 17,857 B | 19,700 B |
 | `agents/triager.md` | 17,702 B | 19,500 B |
-| `agents/sub-manager.md` | 13,998 B | 15,400 B |
+| `agents/sub-manager.md` | 14,032 B | 15,400 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes

@@ -6,8 +6,8 @@
 for (a fresh, `/clear`d context every tick instead of one session's context growing
 quadratically across ticks) was never realised. This module pins the wiring #767 asked for:
 an actual `Agent(subagent_type: "oss:sub-manager", ...)` spawn in `commands/tick.md`, a read
-of the handback through `scripts/tick_handback.py` naming all five of its states (not a
-narrowed two- or three-way collapse), and the model axis held still across the cutover
+of the handback through `scripts/tick_handback.py` naming all six of its declarable
+states (not a narrowed two- or three-way collapse), and the model axis held still across the cutover
 (#695's own explicit constraint -- a model change riding the same diff would make #694's
 before-and-after measurement meaningless).
 
@@ -47,9 +47,13 @@ Skill(manager)
 _SPAWN_RE = re.compile(r'Agent\(subagent_type:\s*"oss:sub-manager"')
 _TICK_HANDBACK_RE = re.compile(r"tick_handback\.py")
 
+#: `could-not-read` is deliberately absent: it is a property of the source the
+#: CLI was pointed at, not a state a sub-manager can declare, so a scheduler
+#: branching on the handback's own vocabulary has nothing to say about it.
 HANDBACK_STATES = (
     "`completed`",
     "`blocked`",
+    "`paused`",
     "`could-not-run`",
     "`returned-nothing`",
     "`could-not-classify`",
@@ -127,20 +131,23 @@ def test_commands_tick_md_reads_the_handback_through_tick_handback_py():
     )
 
 
-def test_all_five_handback_states_are_named_not_collapsed():
+def test_all_handback_states_are_named_not_collapsed():
     """#695's own constraint: 'the three handback states must not collapse to
-    two.' scripts/tick_handback.py actually has five (completed, blocked,
-    could-not-run, returned-nothing, could-not-classify) once returned-nothing
-    and could-not-classify are counted alongside the three #695 named -- and a
-    scheduler that only branches on two or three of them silently drops the
-    other one back into a single undifferentiated bucket.
+    two.' scripts/tick_handback.py actually has six declarable ones (completed,
+    blocked, paused, could-not-run, returned-nothing, could-not-classify) once
+    returned-nothing and could-not-classify are counted alongside the three
+    #695 named and #818's `paused` alongside those -- and a scheduler that only
+    branches on some of them silently drops the rest back into a single
+    undifferentiated bucket. The count is not written into this test's name any
+    more, for the reason #818 demonstrated: the name said `five` while the tuple
+    beside it had grown, and a name cannot be checked against anything.
     """
     text = _tick_md_text()
     missing = [state for state in HANDBACK_STATES if state not in text]
     assert not missing, (
         "commands/tick.md does not name these tick_handback.py states, so a "
-        "scheduler reading it would collapse them into fewer than five: "
-        "{}".format(missing)
+        "scheduler reading it would collapse them into fewer than "
+        "{}: {}".format(len(HANDBACK_STATES), missing)
     )
 
 

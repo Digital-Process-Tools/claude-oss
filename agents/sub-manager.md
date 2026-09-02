@@ -1,6 +1,6 @@
 ---
 name: sub-manager
-description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler until the releaser agent (#696) exists. Reports one of three handback states.
+description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler until the releaser agent (#696) exists. Reports one of the handback states scripts/tick_handback.py classifies.
 model: sonnet
 color: blue
 tools: Bash,TodoWrite,Skill,Agent
