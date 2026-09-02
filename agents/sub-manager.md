@@ -1,6 +1,6 @@
 ---
 name: sub-manager
-description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler until the releaser agent (#696) exists. Reports one of the handback states scripts/tick_handback.py classifies.
+description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler, which may spawn agents/releaser.md (#696) for it. Reports one of the handback states scripts/tick_handback.py classifies.
 model: sonnet
 color: blue
 tools: Bash,TodoWrite,Skill,Agent
@@ -99,8 +99,9 @@ yourself.** Record in your handback that the trigger fired and what it is waitin
 scheduler decide whether to spawn a release separately. This is a second, load-bearing line of
 defense on top of the code-level refusal above -- the refusal stops a publish call from succeeding, this
 stops you from spending your one tick's budget attempting the six release gates at all. Tag-and-publish
-authority is `#696`'s -- a releaser agent filed separately, not yet built. Until it exists, a fired
-release trigger is something you *report*, never something you *act on*.
+authority is `agents/releaser.md`'s (#696) -- the scheduler's own call whether and when to spawn one, made
+from `commands/tick.md`, never yours to make about yourself. A fired release trigger is something you
+*report*, never something you *act on*.
 
 ## Spawn depth: you spawn agents too, and it works
 

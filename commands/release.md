@@ -3,6 +3,13 @@ description: Cut a release — gates first, then version sites, tag, and the sur
 allowed-tools: Bash, Agent, Skill
 ---
 
+**Two callers follow this file, and neither is a fork of it.** A maintainer's own session runs it
+directly when invoking `/oss:release`; `agents/releaser.md` (#696) follows it identically when the
+scheduler spawns a dedicated releaser for a trigger fired mid-tick, with tag-and-publish authority
+stated in its own definition rather than here. This file is the single source for the six gates
+either way — nothing below is restated in `agents/releaser.md`, on purpose, per the lesson #673
+already recorded about two documents describing one procedure.
+
 Read `.oss.json`'s `release` block for what this repo does: `tag_pattern`, `commit_subject`,
 `merge_method`, `triggers`. It is the tracked half of the config, so it is the same block for every
 maintainer; the git-excluded `.oss.local.json` beside it holds only this machine's paths and nothing

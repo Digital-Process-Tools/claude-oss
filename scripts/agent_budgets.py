@@ -66,6 +66,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # correctness addition -- a design decision this repo's own conventions
     # ask to be written down, not trimmed to fit.
     "agents/sub-manager.md": (14032, 15400),
+    # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
+    # authority, delegating the six gates to commands/release.md rather than
+    # restating them (per #673's lesson about two documents drifting).
+    "agents/releaser.md": (8691, 9560),
 }
 
 

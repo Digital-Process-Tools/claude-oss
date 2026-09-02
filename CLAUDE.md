@@ -373,6 +373,7 @@ agents/triager.md           labels only; Bash and TodoWrite, nothing else
 agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
+agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
 commands/*.md               /oss:tick setup scaffold triage changelog release doctor
 scripts/oss_config.py       read, validate and derive .oss.json
 scripts/agent_role.py       the code-level half of withholding release authority from a sub-manager
@@ -411,6 +412,7 @@ from being invisible.
 | `agents/release-auditor.md` | 17,857 B | 19,700 B |
 | `agents/triager.md` | 17,702 B | 19,500 B |
 | `agents/sub-manager.md` | 14,032 B | 15,400 B |
+| `agents/releaser.md` | 8,691 B | 9,560 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
