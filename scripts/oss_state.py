@@ -35,6 +35,7 @@ Python 3.9 compatible.
 
 import json
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -1565,6 +1566,49 @@ def _lane_fill_sentence(record):
     return head + "unrecognised lane fill state {!r}, so nothing is claimed".format(state)
 
 
+#: #866: a citation-shaped token inside a declined-dispatch reason -- a
+#: backtick-quoted op string (`gh-issue:844`) or a script invocation
+#: (`lane_setup.py --lane ...`). Deliberately shape-only: this cannot tell a
+#: true citation from a fabricated one, only that *something callable* is
+#: named, which is the same bar the issue itself states as "checkable" --
+#: the citation either names a call or it does not.
+_DECLINE_CITATION_RE = re.compile(r"`[^`\s]+(?::[^`\s]+|\.py\b[^`]*)`")
+
+
+def decline_reason_state(reason):
+    """#866: a tick may decline to dispatch an issue, or shrink a lane below the
+    default fill, only on a reason re-derived this tick -- not one carried
+    forward from an earlier handoff or a prior tick's report. Checkable by
+    shape rather than by trusting the prose: a reason naming the op or script
+    invocation that established it this tick is ``cited``; a reason with no
+    such citation is ``uncited``, even when it later turns out to be true --
+    a true fact and a measured one are not the same claim, and only the
+    second licenses declining to dispatch.
+
+    This does not verify the cited call was actually run, or that it says
+    what the reason claims -- it verifies only that a citation exists at
+    all, the same limit ``review_return.py``'s classifier states for its own
+    sentinel-shaped check.
+    """
+    if reason is None or not str(reason).strip():
+        raise StateError(
+            "a declined dispatch needs a reason to classify -- an empty reason "
+            "is not cited and not uncited, it is nothing to check"
+        )
+    text = str(reason)
+    cited = bool(_DECLINE_CITATION_RE.search(text))
+    return {"state": "cited" if cited else "uncited", "reason": text}
+
+
+def decline_reason_line(record):
+    """One line a tick report can print, same shape as `lane_fill_line`."""
+    if not isinstance(record, dict) or record.get("state") not in ("cited", "uncited"):
+        raise StateError("decline_reason_line takes a decline_reason_state record, not {!r}".format(record))
+    if record["state"] == "cited":
+        return "CITED -- names a call made this tick; the decline stands"
+    return "UNCITED -- no call cited; this is not a reason, the issue dispatches"
+
+
 def lane_fill_trend(entries):
     """Re-add the recorded lane fills across a run of ticks (#852): the direct
     measure of how often a short lane's reason is ``could-not-tell`` rather than
@@ -2541,6 +2585,15 @@ def _main(argv=None):
         "if no snapshot was recorded (or one was already consumed). Consumes the "
         "snapshot -- answers for one tick only",
     )
+    group.add_argument(
+        "--check-decline-reason",
+        metavar="TEXT",
+        help="#866: classify a reason for declining to dispatch an issue, or for "
+        "shrinking a lane below the default fill -- CITED when it names the op "
+        "or script invocation this tick ran to establish it, UNCITED otherwise, "
+        "which means it is not a reason and the issue dispatches. Takes no "
+        "state file reading; path is still required but unused",
+    )
     parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
     parser.add_argument(
@@ -2838,6 +2891,7 @@ def _main(argv=None):
             or args.check_plugin_identity is not None
             or args.record_plugin_root is not None
             or args.check_plugin_root is not None
+            or args.check_decline_reason is not None
         )
         if reading_mode and intake_flags:
             # Accepting and dropping them would discard a count somebody took, at exit
@@ -2922,6 +2976,11 @@ def _main(argv=None):
         if args.check_plugin_root is not None:
             record = check_plugin_root(args.path, args.check_plugin_root)
             _say(plugin_root_line(record), sys.stderr)
+            print(json.dumps(record, indent=2))
+            return 0
+        if args.check_decline_reason is not None:
+            record = decline_reason_state(args.check_decline_reason)
+            _say(decline_reason_line(record), sys.stderr)
             print(json.dumps(record, indent=2))
             return 0
         if args.pending_wait:

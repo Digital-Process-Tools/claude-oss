@@ -102,7 +102,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # block is a larger change than either decision warrants. Fourth budget
     # change; #725 asked for the margin to be re-measured rather than assumed,
     # and this is that measurement -- ~10% headroom over the new size.
-    "skills/manager/phases/dispatch.md": (29456, 32400, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
+    # Raised again (#866): measured 33,036 B against the prior 32,400 B budget --
+    # the citation requirement for a declined dispatch is a correctness addition
+    # with nothing safe to cut to pay for it in the same diff, the same reasoning
+    # every prior raise in this file gives. Fifth budget change.
+    "skills/manager/phases/dispatch.md": (33036, 36400, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
     "skills/manager/phases/review.md": (11637, 12800, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),

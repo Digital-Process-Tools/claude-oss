@@ -136,6 +136,15 @@ smaller count. When every remaining dispatchable issue routes through files a ru
 holds, that is itself the receipt: say which file, and which issues are queued behind it, rather
 than reporting the tick as `filled` because the lane count matched.
 
+**A declined dispatch cites the call that established it, made this tick, or it is not a reason
+(#866).** `under-filled`'s reason -- on either axis, and whether it parks a whole issue or shrinks a
+lane's count -- names the op or script invocation run this tick: `gh-issue:844` showing a non-empty
+assignee, `gh-prs` showing the PR holding the files. Checkable by shape, not by trusting the prose:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --check-decline-reason "TEXT"`
+reports `CITED` when the text carries a backtick-quoted call and `UNCITED` otherwise. An inherited or
+freehand reason with no such citation is not a reason, even a true one -- dispatch the issue instead
+of parking it on a stale handoff.
+
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
 correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
