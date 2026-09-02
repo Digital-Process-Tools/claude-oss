@@ -94,3 +94,42 @@ def test_claim_from_inside_a_real_worktree_fails_loudly(clone, tmp_path):
     # worktree itself -- must not exist after the refusal.
     phantom = Path(str(worktree) + "-wt") / ".oss-lanes"
     assert not phantom.exists(), "wrote into the phantom registry {}".format(phantom)
+
+
+import sys as _sys
+from pathlib import Path as _Path
+
+_sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import lane_setup  # noqa: E402
+
+
+def test_could_not_tell_refuses_the_claim_too(clone, monkeypatch):
+    """#865 review round: `linked_worktree_state`'s own docstring says its
+    `could-not-tell` state must never render as `main` -- but the call site
+    only ever compared against `WORKTREE_LINKED`, so a `could-not-tell`
+    reading (git itself failed to answer one of the two rev-parse calls)
+    silently fell through to `effective_claim = True`, indistinguishable
+    from a claim genuinely verified safe. Refusing on `LINKED` alone is not
+    enough; `could-not-tell` must refuse too, for the identical reason this
+    repository states everywhere else: an absence produced by the tool must
+    never read as an absence in the world."""
+    monkeypatch.setattr(
+        lane_setup, "linked_worktree_state",
+        lambda repo: (lane_setup.WORKTREE_COULD_NOT_TELL, "git would not answer"),
+    )
+    payload = lane_setup.compute(str(clone), 999, claim=True, lane_patterns=["README.md"])
+    assert lane_setup.blocked(payload), payload
+    assert payload["lanes"]["record"]["state"] != "recorded", payload
+
+
+def test_the_claim_refusal_receipt_does_not_blame_705(clone, tmp_path):
+    """Review round: the generic 'not-claimed' line -- built for a call that
+    genuinely never passed --claim (#705's own probing convention) -- was
+    printed unedited beside the #865 refusal, telling the reader the call
+    'did not pass --claim' when it plainly did. The receipt must not carry
+    that contradiction."""
+    worktree = tmp_path / "wt-865b"
+    _git(clone, "worktree", "add", "-q", "-b", "fix/865b", str(worktree), "main")
+    result = _run(["865", "--claim", "--lane", "README.md"], cwd=worktree)
+    assert "did not pass --claim" not in result.stdout, result.stdout
+    assert "CLAIM REFUSED" in result.stdout, result.stdout

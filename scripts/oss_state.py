@@ -2485,11 +2485,13 @@ def _lane_agent_type_argument(text):
 
 
 def _lane_fill_argument(text):
-    """A CLI lane fill: ``PRIMARY:COUNT[:REASON]`` (#852).
+    """A CLI lane fill: ``PRIMARY:COUNT[:REASON[:CANDIDATES]]`` (#852, #871).
 
     Only the shape is checked here -- a primary issue number present, a count that
-    parses as a whole number. Whether the count needs a reason, whether one given is
-    from the closed vocabulary, and whether the count itself is in range is left to
+    parses as a whole number, and a fourth field (#871) that parses as one too when
+    given. Whether the count needs a reason, whether one given is from the closed
+    vocabulary, whether the count itself is in range, and whether ``CANDIDATES``
+    contradicts a claimed ``board-exhausted`` is left to
     ``lane_fill``/``dispatch_rank.check_lane``, the single place that decision is made,
     at the CLI or from any other caller.
     """
