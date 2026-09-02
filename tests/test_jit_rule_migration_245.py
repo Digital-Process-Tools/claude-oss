@@ -57,7 +57,8 @@ def test_both_rule_files_exist_with_frontmatter():
         assert "match:" in text
 
 
-# --- 2. the shell-portability rule fires on the two files it is about, and only them -
+# --- 2. the shell-portability rule fires on the two files it was found on, on any --
+# ---    other shell script in the same two directories, and on nothing else --------
 
 
 def test_shell_portability_rule_fires_on_doctor_sh_and_oss_workspace():
@@ -68,13 +69,26 @@ def test_shell_portability_rule_fires_on_doctor_sh_and_oss_workspace():
     assert re.search(pattern, "/Users/x/claude-oss-wt/245/scripts/doctor.sh")
 
 
+def test_shell_portability_rule_fires_on_a_future_shell_script_it_was_not_found_on():
+    """A reviewer finding on this rule's first draft (#245): scoping the match to only
+    the two files the traps were discovered on would leave a THIRD shell script that
+    repeats either mistake with no warning at all, even though both traps are general
+    POSIX-shell mistakes and not facts about those two files specifically. Widened to
+    every file under bin/ and every .sh under scripts/ -- this is the must-fire proof
+    for a file that did not exist when the rule was written."""
+    pattern = _frontmatter_match(SHELL_RULE.read_text(encoding="utf-8"))
+    assert re.search(pattern, "scripts/some_new_helper.sh")
+    assert re.search(pattern, "bin/some-new-launcher")
+
+
 def test_shell_portability_rule_does_not_fire_on_an_unrelated_file():
-    """Must-not-fire control, paired with the must-fire case above so a pattern that
+    """Must-not-fire control, paired with the must-fire cases above so a pattern that
     matches everything cannot pass this rule's proof by accident."""
     pattern = _frontmatter_match(SHELL_RULE.read_text(encoding="utf-8"))
     assert not re.search(pattern, "scripts/oss_config.py")
     assert not re.search(pattern, "scripts/doctor.py")
     assert not re.search(pattern, "notes/doctor.sh.md")
+    assert not re.search(pattern, "scripts/sub/doctor.sh")
 
 
 # --- 3. the assemble_changelog.py rule fires on both known locations, and only them --

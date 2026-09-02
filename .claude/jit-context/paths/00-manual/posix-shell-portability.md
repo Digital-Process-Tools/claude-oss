@@ -1,8 +1,13 @@
 ---
-title: "scripts/doctor.sh and bin/oss-workspace: two shell portability traps that already cost a round each"
+title: "Any shell script here: two portability traps that already cost a round each"
 description: "${0%/*} strips nothing under Git Bash. || true on a heredoc opener under set -eu can swallow errexit as well as the exit status -- attach the status capture to the command itself."
-match: (^|/)(bin/oss-workspace|scripts/doctor\.sh)$
+match: (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$
 ---
+
+**Scoped to every file under `bin/` and every `.sh` under `scripts/`, not just the two files where
+these were first found** -- both traps are general POSIX-shell-writing mistakes, and a rule keyed
+only on `scripts/doctor.sh` and `bin/oss-workspace` would stay silent for a third shell script that
+repeats either one.
 
 - **`${0%/*}` strips nothing under Git Bash**, where `$0` is `D:\a\repo\scripts\doctor.sh`. Both
   `scripts/doctor.sh` and `bin/oss-workspace` strip either separator. This failed all four Windows

@@ -86,10 +86,11 @@ separately rather than one list.
 
 - **Tests must pin `PATH`.** With the stub absent, the launcher found the real `claude` and executed
   it — a suite starting live agent sessions in temp directories.
-- **`scripts/doctor.sh` and `bin/oss-workspace` carry two shell portability traps that already cost a
+- **Two shell portability traps found in `scripts/doctor.sh` and `bin/oss-workspace` already cost a
   round each** — `${0%/*}` stripping nothing under Git Bash, and a trailing `|| true` on a heredoc
-  opener silently suppressing `errexit` as well as the exit status. Moved (#245) to a jit rule that
-  fires when either file is touched:
+  opener silently suppressing `errexit` as well as the exit status. Both are general POSIX-shell
+  mistakes, not facts about those two files alone, so the jit rule this moved to (#245) is scoped
+  to every file under `bin/` and every `.sh` under `scripts/`, not just the two it was found on:
   `.claude/jit-context/paths/00-manual/posix-shell-portability.md`.
 - **`assemble_changelog.py` derives its root from the caller's cwd, not from where it lives.** Moved
   (#245) to a jit rule that fires when that file is touched:
