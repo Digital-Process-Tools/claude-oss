@@ -444,6 +444,19 @@ def _raw_comma_pattern_names_one_existing_path(repo, raw):
     path with a comma in its name, and `resolve_lane`'s `literal` state is
     documented to permit exactly that ambiguity for a single pattern with
     no comma at all.
+
+    A `stat()` failure other than "not found" -- a `PermissionError` on an
+    unreadable ancestor directory -- also answers False here rather than
+    raising, so this check degrades to the ordinary split branch instead of
+    stopping `resolve_lane` outright. Nothing is silently lost: the same
+    failure is hit again per split member inside `resolve_lane`'s own
+    `_is_existing_directory`/`_match_is_regular_file` calls, each wrapped in
+    its own `except OSError`, so the unreadable member still surfaces as a
+    `refused` entry with the permission detail -- attached to the split
+    (and therefore wrong) pattern text rather than to the real, comma-named
+    path, which a caller comparing `resolve_lane`'s `files` result cannot
+    tell apart from a genuine two-member lane. Known residual gap, same
+    class as the glob case above; not fixed here.
     """
     if _is_lane_glob(raw) or _lane_pattern_problem(raw) is not None:
         return False
@@ -466,13 +479,18 @@ def resolve_lane(repo, patterns):
     `patterns` is the raw list of `--lane`/`--against` values, one per flag
     occurrence -- but a single value may itself be a comma-separated list of
     members (#809: `--lane 'a.md,b.md,c.py'`, the multi-pattern shape a
-    brief's `lane:` line also uses). Each value is split on `,` into members
-    *before* anything else runs, and every member is resolved independently
-    through the identical per-pattern pipeline below -- there used to be no
-    split at all, so a comma-joined string was compared as one literal path
-    containing a literal comma, which matched nothing on disk regardless of
-    what its members named, and a lane naming a held file inside a
-    comma-list read `overlap: none`. Splitting first also fixes the
+    brief's `lane:` line also uses). Each value is split on `,` into
+    whitespace-stripped members *before* anything else runs -- except when
+    the whole raw value, unsplit, already names an existing file or
+    directory on disk, in which case it is kept as one member instead
+    (#836: `_raw_comma_pattern_names_one_existing_path`, for a real
+    filename that itself contains a comma) -- and every member is resolved
+    independently through the identical per-pattern pipeline below -- there
+    used to be no split at all, so a comma-joined string was compared as
+    one literal path containing a literal comma, which matched nothing on
+    disk regardless of what its members named, and a lane naming a held
+    file inside a comma-list read `overlap: none`. Splitting first also
+    fixes the
     collapse #809's third instance measured: one member matching nothing
     used to zero out every other member's real matches, because the whole
     joined string shared one `glob-no-match` entry; each member now keeps
