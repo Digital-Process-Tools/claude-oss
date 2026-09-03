@@ -1,2 +1,11 @@
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
+(^|/)scripts/(oss_config|scaffold)\.py$	config-value-validation.md
+(^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
+(^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
+(^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
+(^|/)scripts/oss_rules\.py$	rules-layer-symlinks.md
+(^|/)(bin/[^/]+|scripts/shell_sources\.py|tests/test_unwired_scripts_253\.py)$	shell-sources-survey.md
+(^|/)scripts/statusline\.py$	statusline-cache-staleness.md
+(^|/)tests/	test-fixture-pitfalls.md
+(^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md
