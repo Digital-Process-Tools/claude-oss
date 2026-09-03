@@ -42,6 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import oss_config  # noqa: E402
+import oss_config  # noqa: E402
 import scaffold  # noqa: E402
 
 #: One backslash, spelled without one, so this file carries no escape a reader has
@@ -103,9 +104,18 @@ def _template_column0():
                 prefixes.append(head)
             continue
         fixed.add(line)
-    # The one column-0 line a substitution site may legitimately produce that is
-    # not in the template: the paragraph written when `test_command` is null.
+    # The column-0 lines a substitution site may legitimately produce that are not
+    # in the template. Both are scaffold's own constants and neither interpolates a
+    # config value, which is the property that matters here -- this guard exists to
+    # stop a value out of `.oss.json` from forging prose at column 0, not to stop
+    # scaffold from having more than one paragraph. Registering a constant that DID
+    # carry a config value would defeat it, so keep that the bar.
     fixed.add(scaffold.TEST_COMMAND_NOT_DETECTED)
+    # Multi-line, unlike the one above, so every line it emits is registered rather
+    # than the block as a whole (#932).
+    for line in scaffold.TEST_MEASUREMENT_RECOMMENDATION.splitlines():
+        if line and not line.startswith(" "):
+            fixed.add(line)
     return fixed, tuple(prefixes)
 
 
@@ -199,6 +209,16 @@ def _pre_fix_render(config):
         repo=config["repo"],
         default_branch=config["default_branch"],
         test_line=test_line,
+        # Not part of the #180 defect being reproduced -- this site takes no
+        # config value at all (#932) -- so the control renders it the way the
+        # fixed function does, leaving `test_command` and `default_branch` as
+        # the only two values reaching the template unescaped here.
+        measurement_line=(
+            scaffold.TEST_MEASUREMENT_RECOMMENDATION
+            if oss_config.names_pytest(config.get("test_command"))
+            and config.get("test_command")
+            else ""
+        ),
     )
 
 
@@ -461,7 +481,10 @@ def test_claude_md_has_no_unenumerated_placeholder():
     is what makes that list a measurement of the template rather than of the test.
     """
     placeholders = set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", scaffold.CLAUDE_MD))
-    assert placeholders == {"repo", "default_branch", "test_line"}, (
+    # `measurement_line` (#932) is enumerated here like the rest, and takes no
+    # config value -- it is one of two scaffold-owned constants, chosen by a
+    # predicate over `test_command`. The value itself never reaches the template.
+    assert placeholders == {"repo", "default_branch", "test_line", "measurement_line"}, (
         "CLAUDE.md has a substitution site this test does not cover: {}".format(
             sorted(placeholders)
         )

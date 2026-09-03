@@ -19,7 +19,8 @@ check's advice is pytest-specific, so a *set* `test_command` that plainly
 names a different runner short-circuits straight to `OK: not applicable`
 before any of the three states below are reached. An absent/empty
 `test_command` is not evidence either way and falls through to them exactly
-as before -- see `_looks_pytest_shaped`.
+as before -- see `_looks_pytest_shaped`, which delegates to
+`oss_config.names_pytest` so scaffold's template asks the same question.
 
 Three states below that, following CLAUDE.md's own three-state rule -- ok /
 finding / unknown, never collapsed:
@@ -46,6 +47,7 @@ Python 3.9 compatible.
 from pathlib import Path
 
 import doctor
+import oss_config
 
 #: Files that could carry pytest's own config. Not pytest's real resolution
 #: order (`pytest.ini` always wins there over the others) -- this only needs
@@ -79,35 +81,19 @@ def _pytest_config_file(repo_root):
 
 
 def _looks_pytest_shaped(test_command):
-    """Is `test_command` evidence this repo runs pytest, or at least not
-    evidence against it (#946 review finding on #932)?
+    """One question, one home: `oss_config.names_pytest` (#932/#946).
 
-    This check's advice -- `--durations`, `--cov`, `pyproject.toml`'s
-    `addopts` -- is pytest-specific, but `.oss.json`'s `test_command` is
-    documented (`scripts/oss_config.py`) as an arbitrary shell command:
-    `npm test`, `go test ./...`, `cargo test` are all valid values, and for
-    any of those this check firing pytest advice is simply wrong for that
-    project -- CLAUDE.md's own governing rule (a fact about one repository,
-    or here one *language*, baked into shared code) one level down.
+    This used to carry its own copy of the predicate. `scripts/scaffold.py`
+    then needed the identical question for the identical reason -- its
+    CLAUDE.md template carries the same pytest-specific advice -- and a second
+    copy of a rule about what counts as a pytest command is exactly the drift
+    CLAUDE.md's governing rule forbids. The wrapper stays so this module's own
+    name for the question survives, and so a test may patch it.
 
-    An absent or empty `test_command` is not evidence either way -- it means
-    nobody has probed it, not that the repo isn't Python -- so it stays
-    pytest-shaped by default and this check keeps firing exactly as it did
-    before this function existed. Only a *set* `test_command` that plainly
-    names a different runner turns this off.
-
-    `test_command` is documented as a string or null (`oss_config.
-    test_command_problem`), but a malformed `.oss.json` naming e.g. an int
-    or a list is a schema PROBLEM that `check_config` reports -- it does not
-    strip the bad value out of the config dict this function receives. A
-    non-string, truthy value is therefore treated the same as absent: not
-    evidence against pytest, so the existing behavior keeps firing rather
-    than this raising `AttributeError` on `.lower()` and taking the whole
-    diagnostic run down with it (#946).
+    Note the two callers read the shared True-on-absent answer differently, and
+    that difference is stated where the predicate lives, not here.
     """
-    if not test_command or not isinstance(test_command, str):
-        return True
-    return "pytest" in test_command.lower()
+    return oss_config.names_pytest(test_command)
 
 
 def check_test_measurement(project_dir, config):

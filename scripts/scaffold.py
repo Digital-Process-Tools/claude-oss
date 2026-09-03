@@ -50,13 +50,7 @@ would be stale by next week.
 ## Running the tests
 
 {test_line}
-
-Recommended: make sure that command measures what it runs -- `--durations=N` (so a
-slow test is visible without CI archaeology) and a coverage flag (e.g. `--cov`),
-typically set once in `pyproject.toml`'s `[tool.pytest.ini_options] addopts` (or
-`pytest.ini` / `setup.cfg`). Once both are in place, set
-`"test_measurement_configured": true` in `.oss.json` so `doctor` stops flagging it.
-
+{measurement_line}
 ## Before you open a pull request
 
 - **Test first, and watch it fail.** A test written after the fix asserts what the code
@@ -498,6 +492,21 @@ def _code_span(text):
 #: column-0 lines of a rendered CLAUDE.md that the template itself does not contain,
 #: and `tests/test_claude_md_injection.py` has to be able to tell it from a line a
 #: config value put there. A copy in the test would go stale silently.
+#: The pytest-specific half of the "Running the tests" section, rendered only when
+#: `test_command` is set AND names pytest -- see `oss_config.names_pytest` for why
+#: those are two conditions and why this file's answer is stricter than doctor's.
+#: Every flag named here is pytest's own; a repo running `go test ./...` or
+#: `npm test` gets nothing rather than advice about somebody else's language.
+TEST_MEASUREMENT_RECOMMENDATION = (
+    "\nRecommended: make sure that command measures what it runs -- `--durations=N` "
+    "(so a\nslow test is visible without CI archaeology) and a coverage flag (e.g. "
+    "`--cov`),\ntypically set once in `pyproject.toml`'s `[tool.pytest.ini_options] "
+    "addopts` (or\n`pytest.ini` / `setup.cfg`). Once both are in place, set\n"
+    '`"test_measurement_configured": true` in `.oss.json` so `doctor` stops '
+    "flagging it.\n"
+)
+
+
 TEST_COMMAND_NOT_DETECTED = (
     "The test command was **not detected** when this file was generated. "
     "Find it and replace this paragraph -- a guess here becomes an instruction."
@@ -510,10 +519,20 @@ def _render_claude_md(config):
         test_line = _fenced(command)
     else:
         test_line = TEST_COMMAND_NOT_DETECTED
+    # Both conditions, not one. `oss_config.names_pytest` answers True for an
+    # absent command -- correct for doctor, which can keep asking a maintainer,
+    # and wrong here: this paragraph is written once into another repository and
+    # stays there, so an unprobed repo gets no runner named at all. That is the
+    # same standard TEST_COMMAND_NOT_DETECTED directly above holds itself to.
+    if command and oss_config.names_pytest(command):
+        measurement_line = TEST_MEASUREMENT_RECOMMENDATION
+    else:
+        measurement_line = ""
     return CLAUDE_MD.format(
         repo=repo_slug(config),
         default_branch=_code_span(default_branch_name(config)),
         test_line=test_line,
+        measurement_line=measurement_line,
     )
 
 

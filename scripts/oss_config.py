@@ -372,6 +372,38 @@ _CONTROLS = frozenset(chr(point) for point in range(0x20) if point != 0x09) | {"
 _TEST_COMMAND_FORBIDDEN = frozenset(LINE_BREAKS) | _CONTROLS
 
 
+def names_pytest(value):
+    """Does this `test_command` name pytest, or at least not name something else?
+
+    `test_command` is an arbitrary shell command -- `npm test`, `go test ./...`,
+    `cargo test` are all valid values -- so any advice that is pytest-specific
+    (`--durations`, `--cov`, `pyproject.toml`'s `[tool.pytest.ini_options]
+    addopts`) has to ask this before it fires. CLAUDE.md's own governing rule,
+    one level down from a repository to a language: a fact about one project
+    baked into shared code arrives with the authority of a measured one.
+
+    **Absent, empty, or not a string answers True**, and the two callers read
+    that answer differently on purpose:
+
+    * `doctor_check_test_measurement` keeps asking. Nobody probed the command,
+      which is not evidence the repo is not Python, and a maintainer reading a
+      diagnostic can answer the question in a second.
+    * `scaffold` does not write the advice. Its output is a paragraph placed
+      once into somebody else's repository, permanently, in the file every
+      session there reads first -- so it gates on a command that is both set
+      and pytest-shaped, the same standard the "not detected" paragraph
+      directly above it already holds itself to.
+
+    A non-string is a schema PROBLEM `check_config` reports; it is not stripped
+    out of the config dict a caller holds, so it is answered here rather than
+    raising `AttributeError` on `.lower()` and taking a whole diagnostic run
+    down with it (#946).
+    """
+    if not value or not isinstance(value, str):
+        return True
+    return "pytest" in value.lower()
+
+
 def test_command_problem(value):
     """Why this `test_command` cannot be used, or None when it is fine.
 

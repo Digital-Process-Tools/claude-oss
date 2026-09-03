@@ -52,3 +52,41 @@ def test_it_is_a_recommendation_not_an_instruction_to_set_it_to_a_fixed_value():
         "scaffold recommends the key in prose; it must never invent the value "
         "in .oss.json itself -- that is a maintainer attestation (#932)"
     )
+
+
+def test_a_repo_whose_runner_is_not_pytest_gets_no_pytest_advice():
+    """The paragraph is pytest-specific -- `--durations`, `--cov`,
+    `pyproject.toml`'s `addopts` -- and `.oss.json`'s `test_command` is an
+    arbitrary shell command. #946's finding on doctor's own half of #932 is
+    the same finding here, one file over: a Go repo told to configure
+    `[tool.pytest.ini_options]` has been handed a fact about somebody else's
+    language, permanently, in a file it will read on every session.
+    """
+    text = scaffold.render("CLAUDE.md", _config(test_command="go test ./..."))
+    assert "pytest" not in text, (
+        "scaffold wrote pytest advice into a repo whose test_command plainly "
+        "names another runner"
+    )
+    assert "test_measurement_configured" not in text
+
+
+def test_an_undetected_test_command_gets_no_pytest_advice():
+    """Scaffold's predicate is deliberately NOT doctor's. An absent
+    `test_command` is not evidence against pytest, so doctor keeps asking --
+    a maintainer can answer it. This paragraph is written once into somebody
+    else's repository and stays, and the template's own rule for the line
+    directly above it is that a guess here becomes an instruction, so an
+    unprobed repo gets no runner named at all.
+    """
+    text = scaffold.render("CLAUDE.md", _config(test_command=None))
+    assert "not detected" in text
+    assert "pytest" not in text
+
+
+def test_a_pytest_repo_still_gets_the_advice():
+    """The positive control for both must-not-fire assertions above: with a
+    pytest-shaped command the paragraph is present, so a template that simply
+    stopped rendering it would fail here rather than pass all three."""
+    text = scaffold.render("CLAUDE.md", _config(test_command="python -m pytest tests/"))
+    assert "test_measurement_configured" in text
+    assert "--durations" in text

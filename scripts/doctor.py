@@ -2598,8 +2598,11 @@ from doctor_check_fragments_readme import (
     check_fragments_readme,
 )
 
-# #932: a maintainer attestation that this repo's pytest run measures test
-# duration and coverage -- its own module per the #497/#630 convention.
+# scripts/doctor_check_test_measurement.py (#932): a maintainer attestation
+# that this repo's pytest run measures test duration and coverage -- its own
+# module per the #497/#630 convention. The full path is named here because
+# tests/test_unwired_scripts_253.py and test_doctor_check_convention_630.py
+# both read doctor.py for it; an import name alone reads as unwired.
 from doctor_check_test_measurement import check_test_measurement
 
 
