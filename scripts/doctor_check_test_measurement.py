@@ -12,8 +12,17 @@ verified" into a second kind of drift the moment somebody spells a flag this
 parser does not recognise, and deriving it would also make the check silently
 narrower than the next flag pytest grows.
 
-Three states, following CLAUDE.md's own three-state rule -- ok / finding /
-unknown, never collapsed:
+Checked before any of the three states below: is `test_command` even
+pytest-shaped (#946)? `.oss.json`'s `test_command` is an arbitrary shell
+command -- `npm test`, `go test ./...`, `cargo test` are all valid -- and this
+check's advice is pytest-specific, so a *set* `test_command` that plainly
+names a different runner short-circuits straight to `OK: not applicable`
+before any of the three states below are reached. An absent/empty
+`test_command` is not evidence either way and falls through to them exactly
+as before -- see `_looks_pytest_shaped`.
+
+Three states below that, following CLAUDE.md's own three-state rule -- ok /
+finding / unknown, never collapsed:
 
 * `true`, and some pytest-config-shaped file in this repo can actually be
   read -- OK. This is a minimal sanity floor, not a content check: it answers

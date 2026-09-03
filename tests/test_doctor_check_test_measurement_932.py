@@ -10,6 +10,12 @@ answers, none of them content-checked:
   absent or false                                          -> WARN (finding)
   true, but no pytest-config-shaped file is readable here  -> WARN (unknown --
                                                                never silently OK)
+
+A fourth, earlier-checked state (#946): a *set* `test_command` that does not
+look pytest-shaped (e.g. `npm test`, `go test ./...`, `cargo test`) short-
+circuits to `OK: not applicable` before any of the three above are reached,
+because this check's advice is pytest-specific and `test_command` is an
+arbitrary shell command.
 """
 
 import sys
@@ -87,8 +93,12 @@ def test_non_pytest_test_command_is_not_applicable_npm(tmp_path, monkeypatch):
     seen = _capture(monkeypatch)
     check.check_test_measurement(str(tmp_path), {"test_command": "npm test"})
     assert seen[0][0] == "OK", seen
-    assert "pytest" not in seen[0][1].split("not applicable")[-1].lower() or "pytest-shaped" in seen[0][1]
     assert "not applicable" in seen[0][1], seen
+    # The message must never carry the finding-branch's remedy sentence
+    # ("pytest is not attested ... Add `--durations=25`") -- only the coarse
+    # "does not look pytest-shaped" line the not-applicable branch produces.
+    assert "is not attested" not in seen[0][1], seen
+    assert "Add `--durations" not in seen[0][1], seen
 
 
 def test_non_pytest_test_command_is_not_applicable_go(tmp_path, monkeypatch):
