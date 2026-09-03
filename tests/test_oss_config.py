@@ -6,9 +6,12 @@ than one that finds none, because an invented label reads as a measurement.
 """
 
 import json
+import os
+import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -479,6 +482,44 @@ def test_a_slow_command_times_out_rather_than_hanging_setup(tmp_path):
     result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
     assert result["state"] == "timeout"
     assert "unverified" in result["detail"].lower()
+
+
+def test_a_timeout_kills_the_whole_process_tree_not_just_the_shell(tmp_path):
+    """subprocess.run's own TimeoutExpired handling kills only the immediate child.
+    Everything that child spawns in turn keeps running -- and on Windows, keeps holding
+    the stdout pipe open, so communicate() blocks for the leaked grandchild's own
+    duration rather than the requested timeout (#937). This spawns a real grandchild
+    that the shell's own child does not wait for, and asserts it never gets to finish --
+    not merely that verify_test_command returned within timeout, which the old
+    single-pid kill already did while leaving this exact grandchild running loose.
+    """
+    marker = tmp_path / "leaked.marker"
+    script = tmp_path / "spawn_and_detach.py"
+    script.write_text(
+        """import subprocess, sys
+subprocess.Popen([sys.executable, "-c",
+    "import time, sys; time.sleep(2); open(sys.argv[1], 'w').write('leaked')",
+    sys.argv[1]])
+"""
+    )
+    # This command runs through shell=True, and on POSIX that means /bin/sh -c, whose
+    # quoting rules differ from cmd.exe's -- list2cmdline (used elsewhere in this file for
+    # the executable path alone) is the wrong construction here on POSIX for anything with
+    # a shell-metacharacter in it, even though it happens to work for a plain tmp_path with
+    # none.
+    args = [sys.executable, str(script), str(marker)]
+    if os.name == "nt":
+        command = subprocess.list2cmdline(args)
+    else:
+        command = " ".join(shlex.quote(a) for a in args)
+
+    result = oss_config.verify_test_command(command, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+
+    # The grandchild sleeps 2s and verify_test_command returned after ~1s; give it the
+    # rest of that window plus margin. If it survived the timeout it would write by now.
+    time.sleep(3)
+    assert not marker.exists(), "grandchild outlived the timeout and wrote its marker"
 
 
 def test_a_null_command_is_nothing_to_verify(tmp_path):
@@ -1101,3 +1142,96 @@ def test_no_accepted_slug_derives_a_name_that_is_a_traversal(value):
     assert problem is None
     assert "/" in value and "/" not in name
     assert name not in (".", "..")
+
+
+# --- the Windows tree-kill wiring, testable off Windows -----------------------
+#
+# The kill itself needs Windows; which call is REACHED does not, and that is what
+# went wrong: the first fix reached `taskkill /T`, which cannot see a grandchild
+# whose parent has already exited, and nothing off Windows noticed because nothing
+# off Windows exercised the branch at all.
+
+
+def test_the_job_object_helper_answers_for_this_platform():
+    """Two platforms, two opposite correct answers, and asserting either one
+    everywhere is how this test failed its first CI round.
+
+    On Windows a job object is exactly what must come back, and a None there would
+    mean every timeout silently falls back to the `taskkill` path this change exists
+    to stop relying on -- so that arm asserts a real handle and closes it again.
+
+    Everywhere else there is no `kernel32` to load, which is the same shape as a
+    Windows lacking these entry points: the contract is that it answers None rather
+    than raising, so the caller can fall back. That is a real exercise of the failure
+    arm, not a stand-in for one.
+    """
+    job = oss_config._windows_job_object()
+    if os.name == "nt":
+        assert job, "no job object on Windows means every timeout falls back to taskkill"
+        oss_config._windows_close_job(job)
+    else:
+        assert job is None
+
+
+def test_no_job_means_the_taskkill_fallback_is_reached(monkeypatch):
+    """The fallback still has to happen -- it is weaker than a job object, not
+    nothing -- so a `job=None` must reach `taskkill /F /T`, with `/F` and `/T` both
+    present and the pid the one that was spawned."""
+    monkeypatch.setattr(oss_config.os, "name", "nt")
+    calls = []
+    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    class _Proc(object):
+        pid = 4321
+
+        def kill(self):
+            pass
+
+    oss_config._kill_process_tree(_Proc(), job=None)
+    assert calls == [["taskkill", "/F", "/T", "/PID", "4321"]], calls
+
+
+def test_a_job_that_cannot_be_terminated_still_falls_back(monkeypatch):
+    """The third state between "a job did the kill" and "there was no job": a job
+    handle exists and `TerminateJobObject` did not answer true. Reported by falling
+    back rather than by returning as though the tree had been killed -- a kill that
+    silently did not happen is the defect this whole change is about. Off Windows
+    the ctypes load fails, which is exactly one of the ways that arm is reached.
+    """
+    monkeypatch.setattr(oss_config.os, "name", "nt")
+    calls = []
+    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    class _Proc(object):
+        pid = 99
+
+        def kill(self):
+            pass
+
+    oss_config._kill_process_tree(_Proc(), job=1234)
+    assert calls == [["taskkill", "/F", "/T", "/PID", "99"]], calls
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="the POSIX arm cannot be exercised on Windows: `os.killpg` does not exist "
+    "there, so there is no group kill to assert was preferred over taskkill. UNTESTED "
+    "here: that the POSIX branch avoids taskkill -- which the other three tests' "
+    "Windows behaviour is not evidence for.",
+)
+def test_posix_never_reaches_taskkill(monkeypatch):
+    """The must-not-fire control for the three above: with `os.name` left alone on
+    a POSIX machine, the Windows arm is not taken at all -- so a test that passed
+    because the branch was never entered would fail here."""
+    calls = []
+    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    monkeypatch.setattr(oss_config.os, "killpg", lambda pid, sig: None)
+
+    class _Proc(object):
+        pid = 7
+
+        def kill(self):
+            pass
+
+    oss_config._kill_process_tree(_Proc(), job=None)
+    assert calls == [], calls
