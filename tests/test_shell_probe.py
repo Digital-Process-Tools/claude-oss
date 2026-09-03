@@ -19,6 +19,7 @@ those two states are observed rather than reasoned about.
 """
 
 import os
+import platform
 import shutil
 import stat
 import subprocess
@@ -62,6 +63,42 @@ def _stub_bash(directory):
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return path
+
+
+#: #908: the full-suite child below runs both launcher suites -- 101 tests that spawn shells,
+#: measured at 83s on their own -- so a leg that runs it pays roughly 44s for this one test.
+#: Paid on all 13 legs it was 9.5 minutes of runner time per push for a condition that cannot
+#: occur on 8 of them.
+#:
+#: It runs where the condition it simulates is real (Windows, where WSL's `bash` sits ahead of
+#: the usable one on `PATH`) and on exactly one POSIX leg so the other path stays covered. The
+#: interpreter is pinned so "one Linux leg" is one and not four.
+#:
+#: `test_the_matrix_still_has_a_leg_for_each_run_condition` is what keeps this honest: a skip
+#: condition no leg satisfies disables the test everywhere and says nothing, which is a check
+#: that never ran rendering as a check that found nothing -- this repository's own defect class,
+#: applied to the fix rather than to the bug.
+FULL_SUITE_POSIX_LEG = (3, 9)
+FULL_SUITE_POSIX_OS = "ubuntu-latest"
+FULL_SUITE_WINDOWS_OS = "windows-latest"
+
+
+def _full_suite_leg():
+    """`(runs_here, why)` -- never a bare boolean, so the skip can say where it does run."""
+    if platform.system() == "Windows":
+        return True, "Windows: the System32/WSL case this simulates is a Windows one"
+    pinned = "{}.{}".format(*FULL_SUITE_POSIX_LEG)
+    if sys.version_info[:2] == FULL_SUITE_POSIX_LEG:
+        return True, "the pinned POSIX leg (Python {})".format(pinned)
+    return False, (
+        "runs on every Windows leg and on the pinned POSIX leg (Python {}), not on this one "
+        "(Python {}.{} on {}). UNTESTED here: whether a broken shell earlier on PATH leaves the "
+        "launcher suites able to run -- covered by those legs, and "
+        "test_the_matrix_still_has_a_leg_for_each_run_condition fails if the matrix stops "
+        "carrying them.".format(
+            pinned, sys.version_info[0], sys.version_info[1], platform.system()
+        )
+    )
 
 
 def _child_pytest(path_entries, args):
@@ -119,6 +156,9 @@ def test_a_broken_shell_earlier_on_path_does_not_turn_the_suites_red(tmp_path):
             "never created: the stub answered {!r} rather than running and "
             "failing".format(note)
         )
+    runs_here, why = _full_suite_leg()
+    if not runs_here:
+        pytest.skip(why)
     done = _child_pytest([str(stub.parent), os.environ.get("PATH", "")], LAUNCHER_SUITES)
     assert "failed" not in done.stdout, done.stdout[-4000:]
     assert done.returncode == 0, done.stdout[-4000:]
@@ -229,3 +269,95 @@ def test_a_real_shell_is_probed_by_spawning_it():
         pytest.skip(shell_probe.report(tried))
     assert shell_probe.probe(candidate, [witness])[0] is True
     assert shell_probe.probe(candidate, [REPO_ROOT / "nothing-is-here"])[0] is False
+
+
+# --- #908's guard: the skip above must not be able to disable this everywhere ------------
+#
+# `_full_suite_leg` names two legs by hand. Nothing stops somebody dropping `windows-latest`
+# from the matrix, or moving the floor off 3.9 -- and the expensive test would then skip on
+# every leg, reporting `1 skipped` where nobody reads it, with no failure anywhere. This reads
+# the matrix and fails instead, naming the skip it just orphaned.
+
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "tests.yml"
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - exercised by the guard below
+    yaml = None
+
+
+def test_the_yaml_parser_this_guard_needs_is_present_on_ci():
+    """A skipped guard and a passing guard are the same tick, so CI must not skip this."""
+    if yaml is not None:
+        return
+    if os.environ.get("CI") == "true":
+        pytest.fail(
+            "pyyaml is not importable and CI=true, so #908's matrix guard did not run on a "
+            "runner. requirements-dev.txt declares it and the pytest job installs it; if that "
+            "changed, this guard went quiet rather than red."
+        )
+    pytest.skip(
+        "pyyaml is not installed, so the matrix behind _full_suite_leg was not read. UNTESTED "
+        "here: whether the legs that run the full-suite child still exist in tests.yml."
+    )
+
+
+def _matrix():
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for job in spec["jobs"].values():
+        matrix = job.get("strategy", {}).get("matrix")
+        if matrix and "os" in matrix and "python-version" in matrix:
+            return matrix
+    raise AssertionError("no job in tests.yml declares an os/python-version matrix")
+
+
+def _check_matrix(matrix):
+    """The assertions, over a matrix passed in rather than read here.
+
+    Separated so the control below can hand it a matrix that must fail. A guard whose
+    failure path is never executed is an assertion that nothing is wrong and an assertion
+    that nothing was checked, wearing the same green tick.
+    """
+    versions = [str(v) for v in matrix["python-version"]]
+    pinned = "{}.{}".format(*FULL_SUITE_POSIX_LEG)
+    assert FULL_SUITE_WINDOWS_OS in matrix["os"], (
+        "_full_suite_leg runs the full-suite child on Windows and the matrix no longer has "
+        "{!r}, so that half of the condition is unreachable and the test would skip there "
+        "silently. Matrix os: {}".format(FULL_SUITE_WINDOWS_OS, matrix["os"])
+    )
+    assert FULL_SUITE_POSIX_OS in matrix["os"], (
+        "_full_suite_leg's POSIX half needs {!r} in the matrix. Matrix os: {}".format(
+            FULL_SUITE_POSIX_OS, matrix["os"]
+        )
+    )
+    assert pinned in versions, (
+        "_full_suite_leg pins the POSIX leg to Python {}, which the matrix no longer runs, so "
+        "the full-suite child would run on no POSIX leg at all. Matrix python-version: "
+        "{}. Move FULL_SUITE_POSIX_LEG to a version the matrix has.".format(pinned, versions)
+    )
+
+
+def test_the_matrix_still_has_a_leg_for_each_run_condition():
+    """Must fire: both halves of `_full_suite_leg`'s run condition are reachable in CI."""
+    if yaml is None:
+        pytest.skip("pyyaml is not installed; see the guard above")
+    _check_matrix(_matrix())
+
+
+def test_the_guard_fails_on_a_matrix_that_dropped_either_leg():
+    """Must not fire, executed rather than asserted about.
+
+    `AssertionError` and not `Exception`: pytest's own outcome exceptions derive from
+    `BaseException` and a `pytest.skip` inside a `raises(Exception)` block sails past it,
+    skipping the enclosing test -- a green tick over an assertion that never ran.
+    """
+    real = {"os": [FULL_SUITE_WINDOWS_OS, FULL_SUITE_POSIX_OS], "python-version": ["3.9", "3.12"]}
+    _check_matrix(real)  # the control's own control: this shape must pass
+
+    for dropped in (
+        {"os": [FULL_SUITE_POSIX_OS], "python-version": ["3.9"]},
+        {"os": [FULL_SUITE_WINDOWS_OS], "python-version": ["3.9"]},
+        {"os": [FULL_SUITE_WINDOWS_OS, FULL_SUITE_POSIX_OS], "python-version": ["3.12"]},
+    ):
+        with pytest.raises(AssertionError):
+            _check_matrix(dropped)
