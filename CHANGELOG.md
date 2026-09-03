@@ -7,6 +7,378 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-03
+
+### Added
+
+- Track the portable subset of the loop's own permission entries in
+  `.claude/settings.json` (tracked) instead of leaving all of them in the
+  untracked `.claude/settings.local.json`, so a fresh clone does not prompt on
+  every supertool-routed read (#609): `Bash(supertool:*)`,
+  `Bash(./supertool:*)`, `Bash(git *)` and `Agent`. `gh-pr-merge` allow
+  entries are deliberately left out of the tracked file -- merge authority is
+  a grant, not furniture, and that stays a maintainer decision on a
+  per-clone basis.
+- `scripts/doctor.py` reports a second, sibling line to its existing
+  `gh-pr-merge` check: whether any allow entry names the `supertool` call
+  itself, in one of its real spellings, with the same "this is a file read,
+  not a probe of the harness" caveat (#609).
+
+- **A release now has an agent of its own** ([#696](https://github.com/Digital-Process-Tools/claude-oss/issues/696)). Until now a release ran as the last thing whatever session reached it did, at that session's accumulated context -- measured over 42 hours, two sessions' input ran 96k to 751k and 49k to 411k across their own ticks, and a release is the most call-heavy phase this loop runs. `agents/releaser.md` is spawned fresh instead, with none of that history, so a release pays for its own context and nothing else's. It is the only spawn holding tag-and-publish authority (still gated on `release.authority` in `.oss.json`, unchanged), follows `commands/release.md`'s six gates as its single source rather than a second copy of them, and reports one of three states -- `released` / `refused` / `could-not-run` -- the same shape `scripts/release_delta.py` already uses for its own narrower question. `commands/tick.md`'s release-trigger handling now spawns it with a real `Agent(subagent_type: "oss:releaser", ...)` call where it previously only named spawning as an option in prose.
+
+- `bin/oss-workspace` now checks whether the `oss` plugin is current
+  synchronously, before deciding which opening prompt to use, so an update that
+  lands mid-session is no longer invisible until someone happens to run
+  `/oss:doctor` by hand. A genuine update opens with `/oss:doctor` instead of
+  the ordinary `/oss:tick`/`/oss:setup` choice, to diagnose the tree it just
+  moved to. The launcher also repoints `~/.local/bin/oss-workspace` itself when
+  it is pinned at a superseded install, read from `installed_plugins.json`
+  rather than from the symlink's own current target, so a stale pin cannot
+  perpetuate itself. `hooks/session-start-update.sh` stays as the fallback for
+  a hand-started `claude`; `scripts/plugin_update.py` now debounces the two
+  against each other so the hook never repeats a check the launcher just ran
+  (#753).
+
+- `/oss:doctor` now reports whether the default branch is actually protected --
+  "merge on green" is only a real guarantee if the forge enforces it, and nothing in
+  this plugin had ever asked. Report-only, three states (`protected` / `not
+  protected` / `could not tell`), gated on the same local facts the label check
+  already gates on (`gh` on PATH, the repo resolvable). A 403 from GitHub's branch
+  protection endpoint is never read as `not protected` -- it renders identically to
+  "you lack permission to see this", and only a clean 404 with an empty `rulesets`
+  read is treated as conclusive. A ruleset counts toward `protected` only when its
+  own `enforcement` field reads `active` -- a disabled or evaluate-mode ruleset
+  enforces nothing and must not read the same as a genuinely covering one (#759).
+
+- `/oss:doctor` now compares the clone's actual HEAD against `.oss.json`'s
+  `default_branch`, not just the configured path. A clone left on a merged or
+  stale feature branch -- the shape `gh-pr-merge`'s own declined cleanup leaves
+  behind -- used to report as a healthy repo; it now WARNs naming the branch and
+  whether its remote ref still exists (gone is the post-merge signature), and
+  WARNs when the clone is on the default branch but behind its upstream, since
+  that is what serves stale config to everything reading the project directory
+  (#763).
+
+- `/oss:doctor` now checks the two settings permission rules `gh-pr-merge`'s own
+  `|cleanup` falls back to by hand on a refused reap -- `Bash(git worktree
+  remove:*)` and `Bash(git branch -D:*)` -- mirroring the existing merge-permission
+  check: same four states (`present` / `denied` / `absent` / `unknown`), same
+  project-then-user-scope read, same count-and-file-never-the-text convention. Both
+  commands are commonly denied by the Claude Code auto mode classifier by default,
+  and nothing told a maintainer that before their first merge sent them into it
+  (#787).
+
+- A sub-manager could not tell a genuine mid-tick maintainer ruling relayed by the
+  scheduler from injected tracker text, so it correctly disregarded a real one and
+  the tick reported success while the ruling went unactioned. Maintainer ruling,
+  option 1: the scheduler mints a per-spawn token, states it in the sub-manager's
+  first brief, and includes it in every later message -- a status probe, a resumed
+  `paused` wait, a relayed ruling. `agents/sub-manager.md` now honours a message
+  only when it carries that exact token and treats anything else as untrusted input
+  like any other. This does not defend against an attacker who can read the brief;
+  the threat model is injected tracker content, not a reader of the agent's own
+  context (#828).
+
+- Dispatch selection read an issue's assignees in three states -- assigned, unassigned,
+  could-not-read -- and none of them could express a maintainer deliberately holding an
+  issue open off the tracker, which a sub-manager spawned fresh into the repository has
+  no way to see (#695). `labels.reserved` in `.oss.json` is a fourth, opt-in state, the
+  same shape `labels.filed_by_loop` already is (#762): `dispatch_rank.reserved(labels,
+  declared)` reads it back, and the board-ranking CLI prints `[RESERVED]` beside every
+  issue that carries it. Filed from `jbkkz/requivo` against a real incident: a tick read
+  `Assignees: none` correctly and dispatched a lane onto an issue the maintainer had
+  reserved by hand (#844).
+
+- `scripts/lane_setup.py` gains `--suggest-companions <issue> --lane PATTERN [--lane
+  PATTERN ...]`: the lane-bundling sweep that previously existed only as prose in
+  `skills/manager/phases/dispatch.md`, so it had no batching op and got skipped under
+  time pressure. Given a lane's own issue number and its claimed file set, it reads an
+  open board handed in as JSON on stdin (never calling `gh` itself, the same separation
+  of concerns `dispatch_rank.py` already uses) and reports every OTHER open issue whose
+  title or body names a path landing inside the claimed set, in three states:
+  `candidates` (with the overlapping paths per issue), `none` (the board was read in
+  full and nothing lands inside the claimed set), or `could-not-tell` (the board read
+  was capped per #593's `per=` ceiling, or an issue's own file declarations could not be
+  derived -- either because its title and body named nothing path-shaped, or because a
+  path it did name could not be read off disk, each named separately per issue rather
+  than sharing one sentence) -- never folding the third state into `none`. At least one
+  `--lane` is required: with no claimed file set the sweep would compare every
+  issue against nothing and report a confident `none` about a lane nobody
+  named, the same shape `--claim` already refuses for a fileless claim (#851).
+
+- `scripts/oss_state.py --decision` now takes `--lane-fill PRIMARY:COUNT[:REASON]`
+  (repeatable), recording how many issues each dispatched lane carried and, when that
+  is fewer than `dispatch_rank.MAX_LANE`, why -- from the same closed vocabulary
+  `dispatch_rank.SHORT_REASONS` already declares and `dispatch_rank.check_lane` already
+  enforces at dispatch time. A short lane with no reason refuses the whole
+  `--decision` call outright, the same way `--tick-cost-first` already refuses rather
+  than writing a false value: `commands/tick.md` step 5 has said "a short lane with no
+  reason is a defect in the tick" since #798/#799, and until now nothing could detect
+  one. `--lane-fill-trend` re-adds the reason distribution across the whole history, so
+  a run of `could-not-tell` -- the sibling sweep issue's own skip rate -- becomes a
+  visible number rather than surviving only in free `--decision` prose (#852).
+
+- `CLAUDE.md`'s "Traps that cost time here" now records `fix/753`'s four-round Windows
+  CI lesson: the round that measured the actual mechanism (reading `receipt_dir()`
+  directly) landed clean, and the round that reasoned from the source without
+  measuring it shipped a plausible fix that passed two spawned agents' review and
+  still broke an unrelated Windows-only mechanism, caught only because must-not-fire
+  controls were in the fixture (#854).
+
+- The loop's cadence -- three to four ticks, then a release, then a triage sweep,
+  then three to four more ticks -- is now written down in `skills/manager/SKILL.md`'s
+  new `## Cadence` section, with the cohort freeze (the maintainer's own act, by
+  hand, at the tag) kept apart from the triage sweep that follows it, and
+  `skills/manager/phases/accounting.md` now points its cluster-consuming step at
+  the same cadence so a sweep predating the last release is a fact to state rather
+  than a silent assumption. The last-triaged half of the mechanism now exists:
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded AT` records that a sweep completed, and
+  `--last-triage` re-derives it later in the same three states every other reader
+  in that file uses -- `recorded <ISO>`, `never` (a real, established absence), and
+  `could-not-read` (the state file itself could not be read, never the same fact as
+  `never`). The label-coverage half -- how much of the open board carries no
+  priority label -- is still unbuilt, and the section says so rather than letting
+  the built half's existence imply the whole thing is done (#855).
+
+- **The status line now says whether the default branch itself is green** ([#856](https://github.com/Digital-Process-Tools/claude-oss/issues/856)). Nothing on the line previously said anything about `main`'s own CI state -- including the moment right after this loop's own merge, when the branch has a fresh commit and no concluded run yet, which was exactly the case nothing here would flag. A glyph is now glued onto the `repo` field's name -- `✓`/`✗`/`⋯`/`?` (ASCII: `ok`/`x`/`...`/`?`) -- for GREEN, an actually-failed leg, "not settled yet" (covering both a run in flight and nothing having started at all, one deliberate collapse rather than an oversight), and "could not tell" respectively. The reading shares the pull-request board's own refresh clock and its `stale_after` invalidation (#515/#516) -- a merge in this session is exactly the moment the branch goes unverified, and a reading older than its own interval folds into `?` rather than rendering a stale `✓`, the same discipline #550 already applies to the plugin-version comparison. Absent entirely, never `?`, when `.oss.json` declares no `default_branch`.
+
+- A tick could park an open issue on a reason inherited from a prior handoff --
+  "belongs to an external maintainer", "needs the maintainer's ruling" -- without
+  re-deriving whether it was still true. `scripts/oss_state.py` gains
+  `decline_reason_state`/`--check-decline-reason TEXT`: `CITED` when the text names
+  the op or script invocation this tick ran to establish it (`` `gh-issue:844` ``,
+  `` `gh-prs` ``), `UNCITED` otherwise. `skills/manager/phases/dispatch.md` now says
+  a declined dispatch with no such citation is not a reason, even a true one --
+  dispatch the issue instead of parking it on a stale reason (#866).
+
+- `agents/developer.md` now states that a test run's verdict is never delegated to a
+  spawned agent: the run happens in the lane's own transcript, where its output is
+  readable directly, or it does not happen. Observed live -- a developer lane handed
+  the full test suite to an `Explore` agent and reported the summary that came back
+  rather than the run's own output, and `Explore`'s whole value is compression, so a
+  suite that never finished, one that finished red and was described charitably, and
+  one that genuinely passed all rendered as the identical confident sentence. The
+  behavioural half stays unenforceable from here, and the new prose says so and points
+  at `tests/test_agent_grant_is_total.py`'s precedent for the same limit (#874).
+
+- `agents/auditor.md`, `agents/release-auditor.md`, `agents/sub-manager.md` and
+  `agents/releaser.md` each now state, in a form fitted to what that agent is
+  entitled to, that a test run's verdict is never delegated to a spawned agent
+  -- extending #874's fix in `agents/developer.md` to the rest of the
+  `Bash`-granted definitions (#877). The two auditors and the releaser may read test
+  files and reason about coverage but may not run the suite or ask a spawned
+  agent for a verdict on one, with a load-bearing test-behaviour claim graded
+  `reasoned` rather than `observed`; the sub-manager reads CI rather than
+  reproducing it. `tests/test_delegated_test_run_877.py` derives the set of
+  `Bash`-granted agent definitions from disk, excludes `agents/developer.md`
+  (already covered by #874's own test) and `agents/triager.md` (never touches
+  code, so has no test-behaviour claim to make), and fails loudly if a future
+  `Bash`-granted definition lands in neither bucket without being added here.
+
+- CI now records per-test timings: `pyproject.toml`'s `addopts` carries
+  `--durations=25`, so every leg's log -- and a contributor's own
+  `python3 -m pytest tests/ -q` -- ends with the 25 slowest tests and their
+  wall time. Before this, every leg reported one total and a pass count, and a
+  4-second test and a 4-millisecond test were indistinguishable in every
+  artifact CI produced. This is step 1 only -- making the question answerable
+  -- not an optimisation; no test was touched (#881).
+
+### Changed
+
+- #245 step 1: the "Merge gates" section `skills/manager/SKILL.md` carried in full on every
+  tick moves to a jit-context rule, `.claude/jit-context/tools/01-oss/merge-gate.md`,
+  keyed on a `command` matching `gh-pr-merge` -- it now fires at the moment that call is
+  about to run instead of being paid for on every tick regardless of whether one is
+  reached. The spine's own section is trimmed to a pointer at the rule and at
+  `skills/manager/phases/merge.md`, which still carries the full argument.
+
+- #245 step 3: the "What comes back, and opening the pull request" section of
+  `skills/manager/SKILL.md`, carried in full on every tick, moves to a jit-context rule,
+  `.claude/jit-context/tools/01-oss/pr-create-gate.md`, keyed on a `command` matching
+  `gh-pr-create` -- it now fires at the moment that call is about to run instead of being
+  paid for on every tick regardless of whether a pull request is opened. The spine's own
+  section is trimmed to a pointer at the rule and at `skills/manager/phases/handback.md`,
+  which already carried the full argument.
+- #245 step 3 also widened `tests/test_agent_report_schema.py`'s check that the manager
+  loop documents a working `report_schema.py` invocation: it read
+  `skills/manager/SKILL.md` alone, so it went silent the moment that call moved out of
+  the spine. It now reads `manager_docs.ManagerLoop()` -- this repository's one answer to
+  "does the manager loop say X" -- which also restores coverage of the copy
+  `skills/manager/phases/handback.md` has carried since the #725 phase split and that a
+  spine-pinned guard had already stopped seeing.
+
+- #245 step 2 (first slice): two file-keyed traps move out of `CLAUDE.md`'s "Traps that
+  cost time here" section, loaded in full by every session that opens this repository,
+  into a new `paths` jit-context layer this repository maintains itself --
+  `.claude/jit-context/paths/00-manual/` -- which costs nothing until the file the trap
+  is about is actually touched. `posix-shell-portability.md` fires on `scripts/doctor.sh`
+  and `bin/oss-workspace` (the `${0%/*}` and heredoc `|| true` traps);
+  `assemble-changelog-root.md` fires on `scripts/assemble_changelog.py` and
+  `.oss/assemble_changelog.py` (the caller-cwd root derivation trap). Unlike the `01-oss`
+  layer, `00-manual` is never touched by `oss_rules.install()` and never ships into a
+  managed repository -- these traps are about developing this plugin's own scripts, not
+  knowledge to inject elsewhere. `CLAUDE.md` shrank from 63,259 B to 60,659 B; the two
+  new rule files add 3,986 B, so total prose grew by about 1.4 KB (frontmatter overhead)
+  while the unconditionally-loaded byte count fell by roughly 2.6 KB.
+
+- `README.md` trimmed from 315 lines / 22 KB to under 80 -- what it stated read like a
+  changelog wearing a front door, with a stranger reading references to six issue
+  numbers before reaching the install command. It is now a pitch, install steps, what
+  a tick does, and the launcher, with every receipt it used to carry moved to
+  `docs/install.md`, `docs/commands.md`, `docs/status-line.md`, `docs/development.md`
+  and `docs/status.md` -- nothing dropped, just relocated. `docs/overview.md`'s own
+  wish list had already named this trim as a goal (#795).
+
+### Fixed
+
+- A fresh clone with no `.oss.local.json` no longer blocks the loop. `oss_config.load`
+  now derives `clone`, `worktree_root` and `state_file` from the repository root when
+  the machine-scoped file is absent or missing a key, instead of failing validation
+  and leaving every consumer with `missing required key`. Every consumer that reports
+  one of these three values now says which of three states produced it --
+  `configured` (read from `.oss.local.json`), `derived, not configured` (guessed from
+  the repository root), or `could-not-derive` (with a reason) -- so a value someone
+  chose and a value this tool guessed never render the same way: `doctor.py`'s
+  `clone`/`worktree_root`/`state_file` lines, and `lane_setup.py`'s worktree
+  resolution, which previously reported `unknown` and refused to cut a lane at all
+  on a machine that had never run `/oss:setup` (#608).
+
+- `/oss:doctor`'s `jit rule layer` check can reach `OK` again against a current
+  `claude-jit-context` (#743). `claude-jit-context#176` fixed #119 by deleting the fixed
+  layer list, and this check's only `OK` condition was finding a fixed layer list that
+  named `01-oss` -- so the two were mutually exclusive and `could-not-determine` had
+  become the terminal state for every up-to-date install. A third state that is the only
+  reachable state has stopped being a third state, and a permanent `WARN` costs
+  `VERDICT: ok` its discrimination for every other check on the line. A new
+  `reads-by-glob` state answers `OK` when a hook the runtime executes enumerates the
+  dimension base by directory glob, which visits every layer under it by construction.
+  #241's guard is untouched -- the glob still has to be found inside the hook set, and one
+  in a test fixture answers nothing -- and a glob narrowed by a filter over literal layer
+  names that does not name `01-oss` withholds the answer rather than claiming it.
+
+- `bin/oss-workspace` now checks whether a SECOND configured MCP server also
+  resolves to the claude-channel consumer script before arming
+  `--dangerously-load-development-channels`. Two servers racing that script
+  for one Unix socket used to be invisible from inside the session -- one
+  binds, the other is silently refused, and `channel:health` could only
+  report `CANNOT DETERMINE` with no error surfaced anywhere. On a real
+  collision the session now opens without the channel flag and names every
+  colliding server on stderr; `claude mcp list` failing, timing out, or
+  exiting non-zero is reported as unknown rather than read as "exactly one
+  server". `/oss:doctor` mirrors the identical check, through the identical
+  function, so it and the launcher's own arm-or-not decision can never
+  disagree about the count (#810).
+
+- `scripts/lane_setup.py`'s `--lane` comma split now uses a real escaping rule (`\,` for
+  a literal comma, `\\` for a literal backslash) instead of #836's stat-based heuristic,
+  which had three residual gaps found in review: a glob combined with a comma in a
+  directory name was excluded from the whole-string check outright, a held file that
+  does not exist yet with a comma in its name still split incorrectly, and a
+  `PermissionError` mid-check fell through to a bogus split instead of a third state.
+  The new rule never touches the filesystem while splitting, so none of the three has
+  anywhere left to live. This is a breaking change for the narrow case #836 fixed: a
+  real comma in a filename now needs escaping (`docs/comma\,name.md`) instead of being
+  auto-detected by existence. Also: `lane_report`'s own docstring and a comment in
+  `receipt()` still enumerated only the four pre-#809 availability states, the same
+  defect #837 already fixed one function away in `dispatch.md`'s own prose -- both now
+  name `resolved-to-nothing` too (#843).
+
+- `scripts/tick_handback.py` now refuses a second `TICK-ENDS:`, `BLOCKER:`, `REASON:`,
+  `WAIT-DISPATCH:` or `WAIT-OBSERVABLE:` match the same way it already refused a second
+  `TICK:` header, instead of silently taking the first one found. A quoted line (inside
+  a markdown `>` excerpt) was previously indistinguishable from a real declaration and
+  could silently win over the genuine one -- including ending a tick's continue-or-wait
+  decision on the wrong value (#847).
+
+- A `/oss:tick` sub-manager dispatched a lane as `general-purpose` instead of
+  `oss:developer`, observed live: the whole developer brief -- #765's rule that a lane
+  never runs the repository's whole test suite locally included -- was simply absent
+  for it, and nothing anywhere recorded that this had happened. `skills/manager/phases/
+  dispatch.md` now spells the literal `Agent(subagent_type: "oss:developer", ...)` and
+  `oss:triager` spawn forms the way `commands/tick.md` already spells its own
+  `oss:sub-manager` spawn, rather than leaving the string to inference. `scripts/
+  oss_state.py` gains `--lane-agent-type ISSUE=TYPE`, recorded beside `--lane`: a lane
+  dispatched outside `oss:developer`/`oss:triager` now renders as a finding in the lane
+  mix sentence instead of a silent pass. The record is typed after the spawn, the same
+  way the model-choice mix already is (#316) -- it makes a wrong dispatch observable,
+  it does not intercept the real `Agent(...)` call before it runs (#862).
+
+- `lane_setup.py --claim`, run as a dispatched lane's own first call from inside the
+  worktree it was just cut into, silently could not record: `.oss.local.json` is
+  git-excluded from every worktree this loop cuts, so `worktree_root` derived (#608)
+  from *that worktree's own path* rather than the clone's, and the claim wrote into a
+  registry sibling to that one worktree, invisible to every other lane's
+  `--derive-held`. `linked_worktree_state()` detects standing inside a linked worktree
+  via `git rev-parse --git-common-dir` vs `--git-dir` (the two agree for an ordinary
+  working tree and differ for a linked one), and `--claim` now refuses the call outright
+  when it fires -- exit non-zero, nothing written, a `CLAIM REFUSED` line naming the
+  cause -- rather than degrading quietly into a claim that looks recorded and is not
+  (#865).
+
+- #799's three-issues-per-lane default shipped, but the number reached a
+  sub-manager only through `commands/tick.md`, which `agents/sub-manager.md`
+  points at rather than states -- so the first ticks under the scheduler/sub-manager
+  split still dispatched one issue per lane with nothing to show whether that was a
+  measured `board-exhausted`/`no-adjacent`/`could-not-tell` or simply unread rule.
+  `agents/sub-manager.md` now states the floor, the never-four ceiling and the three
+  short-lane reasons itself, and points at the `--lane-fill` receipt (#852) that
+  already refuses an unreasoned short lane, so a lane's fill is both stated in the
+  brief and checkable in the handback (#867).
+
+- A short lane's `board-exhausted` reason was refused for its *shape* only -- one of
+  `dispatch_rank.SHORT_REASONS`'s three declared words -- never against the board, so
+  a one-issue lane could write it and satisfy every gate with 35 issues still open.
+  `dispatch_rank.check_lane` now takes an optional `candidates` count -- the
+  file-disjoint candidates `lane_setup.py`'s `resolve_lane`/`lane_overlap` found still
+  on the board -- and refuses `board-exhausted` when it is at or above the three-issue
+  lane cap. `oss_state.py --decision --lane-fill PRIMARY:COUNT:board-exhausted:N`
+  threads it through, the strongest of the issue's three candidate directions: refused
+  at the state entry, where a lane record already exists to attach the refusal to,
+  unlike #866's advisory check, which had no lane record for a *declined* dispatch to
+  attach one to (#871).
+
+- A tick now states that it performs exactly one dispatch: a lane that comes back red,
+  or whose base moves under it, is resumed via `SendMessage` to its own agent rather
+  than re-dispatched fresh at the same issue. `skills/manager/phases/dispatch.md`
+  carries the full argument and cost comparison (a resumed lane costs a message; a
+  fresh developer spawn measured 150k-290k tokens on this session's own lanes),
+  `agents/sub-manager.md` and `commands/tick.md` step 5 state the same rule in the
+  form each reads it in. A lane's own agent can genuinely be gone -- its context
+  died, or it was resumed and returned nothing twice -- and that is its own named
+  state, `agent-unreachable`, distinct from an ordinary `resumed` and from a bare,
+  uncited re-dispatch, which is the defect this issue was filed for. The rule is
+  enforced, not only stated: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py"
+  <state_file> --lane-dispatch-state ISSUE=STATE[:WHY]` refuses the whole `--decision` call outright when the same
+  issue is recorded a fresh dispatch more than once in it, mirroring `--lane-fill`'s
+  own refuse-where-the-record-exists precedent (#871) (#880).
+
+- `doctor`'s worktree-reap permission check no longer renders a covering wildcard
+  allow rule (`Bash(git *)`) as `absent`, the state that means nobody granted the
+  op. The substring test `scripts/doctor_check_worktree_reap_permission.py` reuses
+  from `doctor_check_merge_permission._permission_rule_state` cannot see a bare
+  wildcard, so a repository whose `.claude/settings.json` already covers
+  `git worktree remove`/`git branch -D` via a broad grant was warned to add a rule
+  it already had. A fifth state, `cannot-tell-whether-covered`, now replaces
+  `absent` when a Bash allow entry contains an unresolved wildcard -- measured
+  against Claude Code's own installed matcher (`cli.js`'s `w04`/`wR1`, which turns
+  a bare-wildcard rule into a dotall regex and does match `git worktree remove`),
+  but deliberately not reimplemented here: this check still only reads whether a
+  wildcard exists, never what it covers (#886).
+
+- `dispatch_rank.py`'s CLI receipt no longer renders "0 reserved" for both "nobody
+  declared `labels.reserved`" and "a spelling is declared and none matched" -- the
+  count now reads `labels.reserved is not declared, so reservation cannot be read
+  off the board` when the key is absent, matching the phrasing the line above it
+  already uses for an undeclared `labels.filed_by_loop`, and prints a real count
+  only once a spelling is actually declared (#887).
+
+- Fixed `tests/test_oss_rules.py`'s tools-index test, which pinned only two
+  of the three `tools`-dimension jit rules and left the third
+  (`pr-create-gate.md`, added by #861) with no per-row assertion. The fix
+  compares the *set* of indexed filenames against a named expectation rather
+  than checking a fixed list of keys, so an added-but-unaccounted-for rule
+  fails the test instead of passing silently (#889).
+
 ## [0.19.0] - 2026-09-02
 
 ### Added
@@ -7046,7 +7418,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.20.0
 [0.19.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.19.0
 [0.18.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.17.0
