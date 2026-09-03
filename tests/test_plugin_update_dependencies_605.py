@@ -36,8 +36,8 @@ of deferring it: `_next_minor` (in `test_no_test_pins_the_current_version_350.py
 proposes the NEXT MINOR of THIS repository's CURRENT major, so as long as this repository's
 own major stays below `9` -- true for the whole of its history and not expected to change on
 any timescale this fixture needs to survive -- `9.21.0`/`9.22.0` can never equal that
-proposal. (See #901 for the guard's own one-minor horizon, which is a separate, not-yet-filed
-change to the guard itself and not something this fixture works around.)
+proposal. (See #901, already filed, for the guard's own one-minor horizon -- a separate
+change to the guard itself, not addressed here and not something this fixture works around.)
 """
 
 import json
