@@ -141,6 +141,32 @@ def _is_pull_request_commit(subject):
     return bool(_PR_SUBJECT_RE.search(subject) or _MERGE_SUBJECT_RE.match(subject))
 
 
+def _parse_stamp(text):
+    """A git `%cI` stamp as an aware datetime, or ``None``.
+
+    **`datetime.fromisoformat` rejects a `Z` suffix before Python 3.11**, and
+    git writes `Z` exactly when the committer's timezone is UTC -- so this
+    parsed every stamp on a developer machine at `+02:00` and none at all on a
+    CI runner, where TZ is UTC. Three legs failed with `could-not-evaluate`
+    while the same tests passed locally, which is this repository's own
+    interpreter-axis rule (a stdlib answer is not a constant across versions)
+    landing on a module written to keep three states apart.
+
+    The floor is 3.9, so the suffix is normalised rather than the parse being
+    left to the interpreter. `+00:00` is what `Z` means and what every
+    supported version accepts.
+    """
+    if not text:
+        return None
+    stamp = text.strip()
+    if stamp.endswith(("Z", "z")):
+        stamp = stamp[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+
+
 def _condition(name, state, **extra):
     row = {"condition": name, "state": state}
     row.update(extra)
@@ -279,9 +305,8 @@ def user_visible_soak_condition(repo, soak_hours, fragment_dir, now=None):
                 "{0}: {1}".format(path.name, why or "no commit has touched it yet")
             )
             continue
-        try:
-            when = datetime.fromisoformat(stamp)
-        except ValueError:
+        when = _parse_stamp(stamp)
+        if when is None:
             unreadable.append("{0}: unparseable commit date {1!r}".format(path.name, stamp))
             continue
         if oldest is None or when < oldest[1]:

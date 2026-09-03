@@ -242,6 +242,40 @@ def test_a_chore_shaped_fragment_is_not_user_visible(repo):
     assert row["state"] == release_trigger.NOT_MET
 
 
+# --------------------------------------------------- the stamp parser
+
+
+def test_a_utc_z_stamp_parses_on_every_supported_interpreter():
+    """The bug three CI legs found and no local run could: git writes `%cI` as
+    `...Z` when the committer timezone is UTC -- which a runner's is and a
+    developer laptop's usually is not -- and `datetime.fromisoformat` rejects
+    that suffix before Python 3.11.
+
+    Asserted on the parser directly rather than through a repository, because
+    a test that commits and reads back only reproduces this on a machine whose
+    clock is already UTC. Pinning the string is what makes it fire on every
+    interpreter and every runner timezone.
+    """
+    when = release_trigger._parse_stamp("2026-08-31T22:31:29Z")
+    assert when is not None
+    assert when.utcoffset() == timedelta(0)
+
+
+def test_an_offset_stamp_still_parses():
+    """The must-not-fire half: normalising the `Z` must not break the spelling
+    that already worked, which is the one every local run produces."""
+    when = release_trigger._parse_stamp("2026-08-31T22:31:29+02:00")
+    assert when is not None
+    assert when.utcoffset() == timedelta(hours=2)
+
+
+def test_an_unparseable_stamp_is_none_not_an_exception():
+    """`None` is what the caller turns into `could-not-evaluate`; a raise here
+    would take the whole verdict down instead of one condition."""
+    assert release_trigger._parse_stamp("not a date") is None
+    assert release_trigger._parse_stamp("") is None
+
+
 # ------------------------------------------------------ blocking findings
 
 
