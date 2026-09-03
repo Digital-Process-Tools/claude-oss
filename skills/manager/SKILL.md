@@ -483,10 +483,15 @@ means answering "it has never run" when one read-only call would have shown othe
 
 ## Releasing
 
-Trigger, whichever comes first: **N merged pull requests since the last tag**, **any user-visible fix
-plus a soak period**, or **immediately for anything in a class the ranking table in
-`skills/manager/phases/findings.md` marks blocking**. Thresholds live in user config; state them out loud when reporting, because a threshold
-nobody can see arriving is indistinguishable from deciding on a whim.
+Whether a trigger fired is computed, not recalled:
+
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_trigger.py" --repo . [--blocking-finding TEXT | --no-blocking-findings]
+
+`fired` / `not-fired` / `could-not-tell`, with the thresholds printed from config beside each
+condition. **`could-not-tell` is not `not-fired`** — a repository that quietly stops releasing
+because a delta went unread is this loop's own defect class at its largest scale. Pass the audit's
+blocking findings, or say none were found: omitting both is `not-supplied`, which is a statement
+about the call and never about the repository.
 
 **Six gates, each a call and not a feeling, and `skills/manager/phases/release.md` is where they are
 defined.** They are deliberately not restated here: a second copy of a numbered gate list is the copy
