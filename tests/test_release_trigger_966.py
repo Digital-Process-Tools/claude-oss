@@ -168,7 +168,13 @@ def test_a_soaked_user_visible_fragment_fires(repo):
     row = release_trigger.user_visible_soak_condition(
         repo, 48, Path(repo, "changelog.d")
     )
-    assert row["state"] == release_trigger.MET
+    # The row's own detail is in the failure message deliberately: this test
+    # passed locally and failed on three CI legs with `could-not-evaluate`,
+    # and the assertion as first written printed only the state -- so the
+    # reason the fragment could not be dated had to be guessed at from a diff
+    # of two words. An assertion about a three-state answer should print the
+    # state's own reason when it fails.
+    assert row["state"] == release_trigger.MET, row
     assert row["fragment"] == "10.fixed.md"
     assert row["soaked_hours"] >= 48
 
@@ -178,7 +184,7 @@ def test_a_fresh_fragment_does_not_fire_and_says_how_long_is_left(repo):
     row = release_trigger.user_visible_soak_condition(
         repo, 48, Path(repo, "changelog.d")
     )
-    assert row["state"] == release_trigger.NOT_MET
+    assert row["state"] == release_trigger.NOT_MET, row
     assert row["short_by_hours"] > 47
 
 
@@ -190,7 +196,7 @@ def test_the_oldest_qualifying_fragment_sets_the_clock(repo):
     row = release_trigger.user_visible_soak_condition(
         repo, 48, Path(repo, "changelog.d")
     )
-    assert row["state"] == release_trigger.MET
+    assert row["state"] == release_trigger.MET, row
     assert row["fragment"] == "12.fixed.md"
 
 

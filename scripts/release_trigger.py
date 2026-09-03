@@ -247,7 +247,29 @@ def user_visible_soak_condition(repo, soak_hours, fragment_dir, now=None):
     oldest = None
     unreadable = []
     for path, section in rows:
-        ok, out, why = _git(repo, "log", "-1", "--format=%cI", "--", str(path))
+        # A pathspec relative to the repository rather than the absolute path
+        # `iterdir()` produced. **This is not a proven fix for the CI failure
+        # it was written during** -- three soak tests returned
+        # `could-not-evaluate` on a runner and pass locally, and the symlinked
+        # -prefix theory that motivated this was measured and disproved (git
+        # resolves an absolute pathspec correctly through a symlinked prefix,
+        # in all four spellings). It stays because a repo-relative pathspec is
+        # the narrower thing to hand git and cannot be worse, and because
+        # `os.path.relpath` is computed from the two strings this function
+        # already holds, so it introduces no third spelling. The cause is
+        # still open; `why` below is what the next runner will report.
+        try:
+            pathspec = os.path.relpath(str(path), str(repo))
+        except ValueError:  # pragma: no cover - different drives on Windows
+            pathspec = str(path)
+        ok, out, why = _git(repo, "log", "-1", "--format=%cI", "--", pathspec)
+        if ok and not out.strip():
+            # An empty answer from git is not a reason. Say which pathspec
+            # produced it, or the next reader is left diffing two words the
+            # way this round's assertion left me.
+            why = "git dated nothing for pathspec {0!r} under {1}".format(
+                pathspec, repo
+            )
         stamp = out.strip() if ok else ""
         if not stamp:
             # An uncommitted fragment has no commit to date it from. That is
