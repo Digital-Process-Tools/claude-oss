@@ -226,3 +226,54 @@ def test_the_failure_message_says_push_a_commit_when_the_read_degraded(tmp_path)
     )
     assert done.returncode == 1, done.stdout
     assert "push a" in done.stdout, done.stdout
+
+
+# ------------------------------------------------------------ jq absent, not crashed
+
+
+def _path_only(*tools):
+    """A fresh directory holding ONE symlink per name in `tools`, resolved off the
+    CURRENT `PATH` -- never the whole directory a wanted tool happens to live in,
+    which is how the first cut of this fixture also removed `grep`: on this machine
+    `jq` and `grep` are both under `/usr/bin`, so excluding jq's directory silently
+    took grep with it. A directory that names exactly what it means to expose is the
+    only way to leave `jq` out without an accident naming what else goes.
+    """
+    directory = tempfile.mkdtemp(prefix="oss-gate-path-only-")
+    atexit.register(shutil.rmtree, directory, True)
+    for tool in tools:
+        found = shutil.which(tool)
+        if found is None:
+            pytest.skip("{} is not on PATH at all -- untested here".format(tool))
+        (Path(directory) / tool).symlink_to(found)
+    return directory
+
+
+def test_a_missing_jq_does_not_crash_the_payload_fallback(tmp_path):
+    """#777, found by review: the payload fallback pipes `EVENT_LABELS_JSON` through
+    `jq`, unguarded, unlike the live path's own `command -v gh` check two lines above
+    it. `jq` genuinely absent must not read as "the payload held no labels" -- see the
+    must-fire pair below for that distinction -- but it must also not crash the step:
+    `2>/dev/null || true` on the pipeline is what is asserted here."""
+    gh_dir = _gh_shim([], exit_code=1)  # forces the payload fallback
+    env = _child_env(BASH, BASE_REF="main", EVENT_LABELS_JSON='["no-changelog"]')
+    for tool in ("git", "grep", "sed"):
+        _require(tool)
+    clean = _path_only("git", "grep", "sed")
+    env["PATH"] = os.pathsep.join([gh_dir, clean])
+    done = subprocess.run(
+        [BASH, "-c", _gate_script()],
+        cwd=str(_pull_request(tmp_path, NO_FRAGMENT)),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        errors="replace",
+    )
+    # Must not fire: no shell error (a `-c` script error is 2, never 0 or 1).
+    assert done.returncode in (0, 1), done.stdout
+    # Must fire: absent `jq` reads differently from a genuinely empty payload -- see
+    # the two tests above (`test_a_failed_live_read_degrades_...` and
+    # `test_the_failure_message_says_push_a_commit_...`) for the "payload present,
+    # parsed, no label" case this must not be confused with.
+    assert "jq" in done.stdout, done.stdout

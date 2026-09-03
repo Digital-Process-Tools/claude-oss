@@ -1087,8 +1087,19 @@ jobs:
           # yesterday -- it prints a `note` rather than answering as though it had
           # read something.
           if [ "$label_source" = payload ]; then
-            labels=$(printf '%s' "${EVENT_LABELS_JSON:-[]}" | jq -r '.[]' 2>/dev/null || true)
-            echo "changelog   : note        (live label read failed - using this run's event payload; a label applied after this run started is invisible to it)"
+            if command -v jq >/dev/null 2>&1; then
+              labels=$(printf '%s' "${EVENT_LABELS_JSON:-[]}" | jq -r '.[]' 2>/dev/null || true)
+              echo "changelog   : note        (live label read failed - using this run's event payload; a label applied after this run started is invisible to it)"
+            else
+              # Unguarded, this pipeline would exit non-zero under `set -e` with no
+              # `jq` to run at all -- but the more important gap it closes is
+              # silent, not loud: without this branch, `jq` genuinely missing and a
+              # payload genuinely carrying no labels both leave `labels=""`, so a
+              # reader could not tell "there is no label" from "this could not be
+              # read" (#777, found by review).
+              labels=""
+              echo "changelog   : note        (live label read failed and jq is not on PATH - could not read this run's event payload either; treating this run as unlabeled)"
+            fi
           fi
 
           if printf '%s\\n' "$labels" | grep -Fxq 'no-changelog'; then
