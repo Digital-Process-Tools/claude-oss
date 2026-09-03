@@ -24,6 +24,13 @@ is smaller than the last.
 Cohort labels are the maintainer's act, by hand; **the triager must never write one.** The cohort is
 closure accounting, never a work order — priority decides what gets worked next.
 
+**#917.** `cohort_freeze.py`, run as `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cohort_freeze.py" --tag <tag> --cohort <N>`, derives the cutoff from
+the tag object's own `tagger.date`, never `now` -- a late freeze computes the identical set a prompt
+one would, unlike the `v0.20.0` drift above (27/30/32). Dry run by default; `--execute` adds one
+label per issue (`gh issue edit --add-label`), never a `PATCH`. Three states -- `frozen N` /
+`already-frozen` / `could-not-read`, never a silent zero. It does not yet feed the two-route
+`cohort_freeze` check above; still confirm a second route before recording `detail.cohort_freeze`.
+
 **The freeze is a label, and a label write can silently delete it.** `gh api -X PATCH issues/N -f
 'labels[]=…'` **replaces the whole label set** — so a later write setting priority or lane removes
 the cohort label, exit 0, nothing errors, and the freeze verified minutes earlier is wrong. Add with
