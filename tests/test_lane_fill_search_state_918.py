@@ -82,3 +82,57 @@ def test_the_adjacent_count_does_not_leak_into_the_other_reasons(reason):
     verdict = dispatch_rank.check_lane([845], short_reason=reason, adjacent=3)
     assert verdict["state"] == "ok", verdict
     assert verdict["short_reason"] == reason, verdict
+
+
+def _state_file(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text("[]")
+    return path
+
+
+def test_lane_fill_routes_the_count_to_the_claim_the_word_makes(tmp_path):
+    """The fourth `--lane-fill` field means "the count that refutes this claim".
+
+    Which count that is follows from the reason word, so #918 routes rather than
+    adding a fifth positional: `no-adjacent:1` must be refused for the adjacency
+    reason, not silently checked against `board-exhausted`'s `>= MAX_LANE`
+    threshold, which one adjacent candidate would pass.
+    """
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import oss_state  # noqa: E402
+
+    with pytest.raises(oss_state.StateError) as caught:
+        oss_state.lane_fill(
+            [{"primary": 845, "count": 1, "reason": "no-adjacent", "candidates": 1}],
+            window="this tick",
+        )
+    assert "no-adjacent was claimed" in str(caught.value)
+
+
+def test_lane_fill_still_routes_board_exhausted_to_its_own_threshold(tmp_path):
+    """Positive control: the other reason keeps #871's `>= MAX_LANE` threshold.
+
+    One disjoint candidate does not refute `board-exhausted` -- a lane needs
+    MAX_LANE of them to be fillable -- so the same `1` that refuses above must
+    pass here, or the routing has collapsed the two counts into one rule.
+    """
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import oss_state  # noqa: E402
+
+    record = oss_state.lane_fill(
+        [{"primary": 845, "count": 1, "reason": "board-exhausted", "candidates": 1}],
+        window="this tick",
+    )
+    assert record["lanes"][0]["reason"] == "board-exhausted"
+
+
+def test_lane_fill_accepts_the_new_reason_word(tmp_path):
+    """`did-not-search` reaches the state file, since SHORT_REASONS is shared."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import oss_state  # noqa: E402
+
+    record = oss_state.lane_fill(
+        [{"primary": 845, "count": 1, "reason": "did-not-search"}],
+        window="this tick",
+    )
+    assert record["lanes"][0]["reason"] == "did-not-search"

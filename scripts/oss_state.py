@@ -1640,7 +1640,22 @@ def lane_fill(entries, window, why=None):
         # call the dispatch decision itself already had to make, and `check_lane`
         # is the single place a claimed 'board-exhausted' is checked against a
         # measured candidate count rather than merely typed.
-        check = _dispatch_rank.check_lane(range(count), reason, candidates=candidates)
+        #
+        # #918 routes that same optional fourth field to whichever parameter the
+        # claimed reason is a statement about, rather than adding a fifth: the
+        # field has always meant "the count that would refute this claim", and
+        # which count that is follows from the word. 'board-exhausted' is refuted
+        # by file-disjoint candidates still open; 'no-adjacent' is refuted by
+        # candidates adjacent to the top issue. They are different measurements
+        # and check_lane keeps them in different parameters -- routing here is
+        # what stops a caller having to supply both when only one can apply.
+        # 'did-not-search' and 'could-not-tell' take neither: a count says nothing
+        # about a search that never ran or one that ran and failed, and passing a
+        # number alongside either would be a measurement the caller does not have.
+        if reason == "no-adjacent":
+            check = _dispatch_rank.check_lane(range(count), reason, adjacent=candidates)
+        else:
+            check = _dispatch_rank.check_lane(range(count), reason, candidates=candidates)
         if check["state"] != "ok":
             raise StateError(
                 "lane fill {} (issue {}): {}".format(position, primary, check["why"])

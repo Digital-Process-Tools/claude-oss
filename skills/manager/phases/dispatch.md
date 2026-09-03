@@ -264,10 +264,19 @@ most lanes ended up carrying one. Fill to three. **Cap at three, never four**, a
 `dispatch_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
 spawn the cost is already committed.
 
-**A lane dispatched with fewer than three says why, in the handback, in one of three words.**
-`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — candidates
-exist, none shares a file or module with the top issue. `could-not-tell` — adjacency could not be
-computed. **A short lane with no reason is a defect in the tick**, and the three are a closed set on
+**Run the companion search. It is a separate call from the conflict check, pointed the other way.**
+`--against` answers two different questions depending on what it is aimed at, and #918 is the tick
+that aimed it at the wrong one: it checked the three lanes it had already picked against *each
+other*, got `no overlap`, and recorded `no-adjacent` — a claim about the board, on a measurement that
+never looked at the board. Three single-issue lanes went out with 31 issues open and every gate
+green. Aim it at each *candidate's* declared lane against the top issue's, one call per candidate,
+before the lane is filled. **Board size never enters that failure**: with 100 issues open the same
+sequence returns the same answer, because the board is not what it read.
+
+**A lane dispatched with fewer than three says why, in the handback, in one of four words.**
+`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — the search
+above ran across the board and nothing shares a file or module with the top issue. `did-not-search`
+— it did not run (#918). `could-not-tell` — it ran and could not be computed. **A short lane with no reason is a defect in the tick**, and the three are a closed set on
 purpose: a free-text reason is unreadable by anything but a person, which is the defect #773 filed
 against a handback state carrying only prose. The third word earns its place — a board never measured
 for adjacency and one measured and found to have none are different facts.

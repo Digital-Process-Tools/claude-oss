@@ -65,10 +65,25 @@ _BY_PAIR = {pair: number for number, pair in ROWS}
 #: names are ever produced, because they are what the table above is written in.
 BANDS = ("high", "medium", "low")
 
-#: The three reasons a lane may be short (#799). A closed set on purpose: a
+#: The four reasons a lane may be short (#799, #918). A closed set on purpose: a
 #: free-text reason is unreadable by anything but a person, which is the defect
 #: #773 filed against a handback state carrying only prose.
-SHORT_REASONS = ("board-exhausted", "no-adjacent", "could-not-tell")
+#:
+#: `did-not-search` is #918's addition and it is the third state this set was
+#: missing. `no-adjacent` asserts the board was measured and found to hold
+#: nothing adjacent; `could-not-tell` is an adjacency computation that was
+#: attempted and failed. Neither covers a computation nobody started -- and that
+#: is what actually happened when one tick dispatched three single-issue lanes
+#: with 31 issues open, having run `lane_setup.py --against` only between the
+#: three lanes it had already picked. That is the conflict check, not the
+#: companion search, and reading `no overlap` from it as `no-adjacent` is a
+#: claim about a board nothing looked at.
+SHORT_REASONS = (
+    "board-exhausted",
+    "no-adjacent",
+    "did-not-search",
+    "could-not-tell",
+)
 
 #: Measured across 237 lanes (#499): three issues cost 16% less per issue than
 #: one, and four or more is a cliff at 141 median turns and 68% worse per issue.
@@ -288,7 +303,7 @@ def order(issues, declared):
     return sorted(issues, key=key)
 
 
-def check_lane(issues, short_reason, candidates=None):
+def check_lane(issues, short_reason, candidates=None, adjacent=None):
     """Is this a lane that may be dispatched, and has a short one said why?
 
     Three issues is the normal case, not the ceiling: the fixed overhead of a
@@ -315,8 +330,21 @@ def check_lane(issues, short_reason, candidates=None):
     is refused rather than recorded. `candidates=None` (the default) leaves this
     exactly as it was before #871 -- the caller named no board to check against,
     which is a fact for the caller's own receipt to carry, not something this
-    function should guess at. `no-adjacent` and `could-not-tell` are untouched:
-    a candidate count says nothing about either.
+    function should guess at. `could-not-tell` stays untouched by both counts: a
+    count says nothing about a probe that failed to run.
+
+    `adjacent` (#918) is the same idea aimed at the reason #871 deliberately left
+    alone, and it is a *different* count, not the same one reused -- the number of
+    open candidates sharing a file or module with this lane's top issue, which is
+    what `no-adjacent` is a claim about. Its threshold is stricter than
+    `candidates`': `board-exhausted` is refuted by `MAX_LANE` disjoint candidates,
+    but `no-adjacent` means *zero*, so a single adjacent candidate refutes it --
+    one adjacent candidate is one issue this lane could have carried. Like
+    `candidates`, it is the caller's measurement: an issue's files are not
+    derivable from its body (#267), so naming candidate lanes stays the caller's
+    job and `adjacent=None` means "no board was named", never "the board was
+    empty". A caller that never ran the search has no count to offer and should
+    declare `did-not-search` rather than borrow a word that asserts it did.
     """
     size = len(issues)
     if size == 0:
@@ -363,6 +391,18 @@ def check_lane(issues, short_reason, candidates=None):
                 "board-exhausted was claimed but {} file-disjoint candidate(s) "
                 "remain on the board -- at or above the {}-issue lane size, so "
                 "the board was not exhausted (#871)".format(candidates, MAX_LANE)
+            ),
+        }
+    if short_reason == "no-adjacent" and adjacent is not None and adjacent >= 1:
+        return {
+            "state": "adjacent-candidate-exists",
+            "size": size,
+            "short_reason": None,
+            "why": (
+                "no-adjacent was claimed but {} adjacent candidate(s) remain on "
+                "the board -- the word means zero, so one refutes it, and one "
+                "adjacent candidate is one issue this lane could have carried "
+                "(#918)".format(adjacent)
             ),
         }
     return {"state": "ok", "size": size, "short_reason": short_reason, "why": None}
