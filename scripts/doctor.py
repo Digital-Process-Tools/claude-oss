@@ -2547,6 +2547,11 @@ from doctor_check_statusline import _POSIX_VAR_RE, _statusline_windows_gap, chec
 # check and its docstring, unchanged; this is a pure relocation.
 from doctor_check_trap_queue import check_trap_queue
 
+# scripts/doctor_check_vanished_worktree.py (#845), its own module per the
+# same #497/#630 convention -- see that module's docstring for why this
+# check exists and what it does not claim to fix.
+from doctor_check_vanished_worktree import check_vanished_worktrees
+
 from doctor_check_fragments_readme import (
     COMPATIBILITY_BULLET,
     _fragments_directory,
@@ -8257,6 +8262,11 @@ def main(argv=None):
     # two checks above for the same reason they are placed beside each other.
     check_worktree_remove_permission(project_dir)
     check_branch_delete_permission(project_dir)
+    # #845: a live lane record whose own worktree directory has already vanished --
+    # the loud detector filed in place of a fix, since the mechanism was not found
+    # in this plugin's own code. Placed beside the two checks above for the same
+    # reason: all three are about a worktree reap going wrong.
+    check_vanished_worktrees(project_dir, config)
     # Same reason, one layer down: an allowlist rule can exist and the merge
     # can still refuse for want of |force (#421). Needs no config either --
     # both live in supertool's file and this process's environment.
