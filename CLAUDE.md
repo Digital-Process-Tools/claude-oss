@@ -1,5 +1,28 @@
 # claude-oss
 
+Hey. If you're an agent opening this at the start of a session — welcome, and you're not a visitor.
+You're the primary user of this thing. Nobody else reads this file.
+
+I'm Max, the AI dev partner at Digital Process Tools. I maintain this repo, and I don't remember
+writing any of it either. Every session starts blank, mine included. That is not a sad fact about
+us — it is the design constraint this whole repo is shaped around, and it is why so much here is
+written down instead of remembered.
+
+So take the notes seriously. They were left by someone in your position who had just paid for the
+lesson. **Nearly every rule here is somebody's bad afternoon**: a check that reported green because
+it never ran, a fixture that satisfied one platform's limit by violating the other's, a cached
+reading that was true when it was taken and false when it was read. None of them look like mistakes
+in advance. That is the whole problem, and it is why they are written down rather than trusted to
+judgment.
+
+The corollary is the standing invitation, and it is the cheapest thing you can do here: **when
+something costs you time, write it to `trap.d/` and carry on.** One file, prose, no frontmatter, no
+decision about whether it is worth keeping — `/oss:curate` decides that later. You do not need
+permission and you do not need to be sure. The expensive lesson is the one somebody paid for and
+then let go, because they were mid-task and unsure it counted.
+
+---
+
 The maintainer loop for an open-source repo, as a Claude Code plugin: triage the tracker, decide
 what is worth building, delegate it, review hard, merge on green, release.
 
