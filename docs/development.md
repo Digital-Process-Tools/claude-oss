@@ -96,3 +96,15 @@ one running.
 wall time. Before this, every CI leg reported one total and a pass count, and a 4-second test and a
 4-millisecond test were indistinguishable in every artifact CI produced. This is step 1 of #881 only
 -- making the question answerable -- not an optimisation; no test was changed to get here.
+
+`tests/duration_report_plugin.py` -- registered via `tests/conftest.py`'s `pytest_plugins`, the
+same way `must_assert_plugin` is -- is #910's answer to the question #881 only made answerable:
+every run now also prints the slowest single test's **share** of total suite time (a ratio, since
+an absolute second count says more about the runner than about the test) and compares it against a
+recorded baseline at `tests/duration-baseline.json`, in three states named explicitly in the
+output -- `measured`, `no-baseline` (nothing recorded yet, or the file could not be read), and
+`could-not-measure` (nothing was collected this session at all, e.g. a `--collect-only` run) -- so a
+step that saw nothing can never print like a suite with no hot test. Nothing here fails a build on
+a duration or a share; it only reports. The actual computation lives in `scripts/test_durations.py`,
+imported by the plugin rather than duplicated. Run `pytest --record-duration-baseline` to record the
+current numbers as the new baseline -- a deliberate act, never done on an ordinary run.
