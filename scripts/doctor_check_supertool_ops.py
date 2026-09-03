@@ -263,6 +263,69 @@ def ops_in_op_table(text):
     return found
 
 
+def _op_table_shape_without_heading(text):
+    """#748: does `text` carry a block shaped like the op table's own header
+    row (`| Need | Op |`) immediately followed by its divider, even though
+    `_OP_TABLE_HEADING` cannot be found anywhere in the same text?
+
+    This is the shape a reworded heading leaves behind: the table survives,
+    only the sentence introducing it changed. It is deliberately narrower than
+    "any table exists" -- a file that never carried an op table at all (the
+    ordinary case for every file but one, per `ops_in_op_table`'s own
+    docstring) has no `| Need | Op |` row anywhere either, and must answer
+    `False` here exactly as it does through the heading-anchored path, or
+    every one of that function's own fixtures -- and every scaffolded repo
+    with no op table -- would start reporting a drift nobody caused.
+
+    Checked for the heading FIRST, unconditionally: a file that carries the
+    real heading is never "drifted", whatever else is in it, so this never
+    contradicts `ops_in_op_table` on the file that still has both.
+    """
+    if _OP_TABLE_HEADING in text:
+        return False
+    lines = text.splitlines()
+    for i in range(len(lines) - 1):
+        if _OP_TABLE_HEADER_RE.match(lines[i].strip()) and _OP_TABLE_DIVIDER_RE.match(
+            lines[i + 1].strip()
+        ):
+            return True
+    return False
+
+
+def op_table_heading_drift(plugin_root=None):
+    """#748: relative paths, under `OP_TEXT_ROOTS`, of files carrying the op
+    table's own header-row shape without `_OP_TABLE_HEADING` findable
+    anywhere in the same text -- the shape a reworded heading leaves behind.
+
+    Empty is the ordinary answer, in two different ways that both render the
+    same: a repository with no op table at all (most repos this plugin is
+    installed into -- see `_op_table_shape_without_heading`'s own docstring),
+    and this plugin's own tree on an ordinary day, where the heading still
+    matches. Only a non-empty answer is a finding; `supertool_op_inventory`
+    is the caller that turns it into `could-not-ask` rather than a silently
+    narrower `present`.
+    """
+    root = doctor.PLUGIN_ROOT if plugin_root is None else Path(plugin_root)
+    drifted = []
+    for name in OP_TEXT_ROOTS:
+        directory = root / name
+        state, _detail = doctor._dir_state(directory)
+        if state != "dir":
+            continue
+        files, _unreadable = doctor._rglob_md(directory)
+        for path in files:
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if _op_table_shape_without_heading(text):
+                try:
+                    drifted.append(path.relative_to(root).as_posix())
+                except ValueError:  # pragma: no cover - path is built from root
+                    drifted.append(path.name)
+    return sorted(drifted)
+
+
 def ops_in_text(text):
     """Every op name named by a `supertool ...` call in `text`, in order."""
     found = []
@@ -486,6 +549,11 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
     """
     named, roots = named_ops(plugin_root)
     unreadable = [(name, detail) for name, state, detail in roots if state == "unreadable"]
+    # #748: a file carrying the op table's own shape under a heading that no
+    # longer matches `_OP_TABLE_HEADING` narrows `named` silently -- the same
+    # class of gap `unreadable` above already carries, and it is folded into
+    # the same `could-not-ask` arms for that reason.
+    drifted = op_table_heading_drift(plugin_root)
 
     state, available, detail = supertool_roster(run=run, which=which, cwd=cwd)
     if state != "read":
@@ -496,15 +564,35 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
         listed = ", ".join(
             "{} (named by {})".format(name, ", ".join(named[name])) for name in missing
         )
-        clause = ""
+        clauses = []
         if unreadable:
-            clause = " -- and {} source root(s) could not be read, so there may be more".format(
-                len(unreadable)
+            clauses.append(
+                "{} source root(s) could not be read, so there may be more".format(
+                    len(unreadable)
+                )
             )
+        if drifted:
+            clauses.append(
+                "{} file(s) carry an op-table-shaped block under a heading that no "
+                "longer matches `_OP_TABLE_HEADING`, so the derived set may be "
+                "narrower than intended: {}".format(len(drifted), ", ".join(drifted))
+            )
+        clause = " -- and " + "; and ".join(clauses) if clauses else ""
         return "missing", (
             "{} of {} op(s) this plugin's shipped text names are not carried by the "
             "supertool that resolves here: {}{}".format(
                 len(missing), len(named), listed, clause
+            )
+        )
+    if unreadable and drifted:
+        return "could-not-ask", (
+            "the supertool that resolves here was read, and {} source root(s) of "
+            "this plugin were not, and {} file(s) carry an op-table-shaped block "
+            "under a heading that no longer matches `_OP_TABLE_HEADING`, so "
+            "whether every op it names resolves is unknown: {}; {}".format(
+                len(unreadable), len(drifted),
+                "; ".join("{}: {}".format(n, d) for n, d in unreadable),
+                ", ".join(drifted),
             )
         )
     if unreadable:
@@ -514,6 +602,15 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
             "unknown: {}".format(
                 len(unreadable), "; ".join("{}: {}".format(n, d) for n, d in unreadable)
             )
+        )
+    if drifted:
+        return "could-not-ask", (
+            "{} file(s) carry an op-table-shaped block (`| Need | Op |` plus its "
+            "divider) under a heading that no longer matches `_OP_TABLE_HEADING`, "
+            "so the ops derived from that table may be narrower than the real "
+            "one: {}. This never fires for a repository with no op table at all -- "
+            "only for a table whose introducing heading changed while its own "
+            "shape survived.".format(len(drifted), ", ".join(drifted))
         )
     if not named:
         # The per-root states are in the sentence rather than summarised away: a

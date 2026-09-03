@@ -51,6 +51,12 @@ would be stale by next week.
 
 {test_line}
 
+Recommended: make sure that command measures what it runs -- `--durations=N` (so a
+slow test is visible without CI archaeology) and a coverage flag (e.g. `--cov`),
+typically set once in `pyproject.toml`'s `[tool.pytest.ini_options] addopts` (or
+`pytest.ini` / `setup.cfg`). Once both are in place, set
+`"test_measurement_configured": true` in `.oss.json` so `doctor` stops flagging it.
+
 ## Before you open a pull request
 
 - **Test first, and watch it fail.** A test written after the fix asserts what the code

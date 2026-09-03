@@ -35,7 +35,14 @@ REQUIRED_KEYS = {
     "state_file",
 }
 
-OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged", "watch_channel"}
+OPTIONAL_KEYS = {
+    "milestones", "notes", "release", "changelog_untagged", "watch_channel",
+    # #932: a maintainer attestation that this repo's own pytest run measures
+    # test duration and coverage -- see doctor_check_test_measurement.py's
+    # module docstring for why this is never derived from the config's
+    # own content.
+    "test_measurement_configured",
+}
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
 # can record *why* a value is what it is has always been a key -- and every key not
@@ -1756,6 +1763,18 @@ def validate(config):
             "value here is not necessarily off, and only `false` is (#613) -- a "
             "value spelled like a decision must not silently no-op.".format(
                 config["watch_channel"]
+            )
+        )
+
+    # #932: a maintainer attestation, same shape as `watch_channel` above --
+    # a value spelled like a decision (a truthy non-bool string, say) must not
+    # silently pass as one.
+    if "test_measurement_configured" in config and not isinstance(
+        config["test_measurement_configured"], bool
+    ):
+        problems.append(
+            "test_measurement_configured: expected true or false, got {!r}.".format(
+                config["test_measurement_configured"]
             )
         )
 

@@ -685,3 +685,90 @@ def test_the_check_runs_inside_the_real_script_entry_point(tmp_path):
     assert "supertool op inventory:" in output, (
         "the check produced no line at all in a real run:\n{}".format(output)
     )
+
+
+# --- #748: a drifted op-table heading must not silently narrow the derived set ----
+
+
+def test_a_drifted_heading_with_the_table_shape_intact_is_could_not_ask(tmp_path):
+    """The must-fire half. `_OP_TABLE_HEADING` is not in this file at all -- it
+    was reworded -- but the header row and divider that make up the table's own
+    shape are still there. `ops_in_op_table` correctly derives nothing from this
+    file (it is anchored on the heading), and that per-file `[]` must not read as
+    'this file has no table' when the table's own shape is sitting right there
+    under a heading that no longer matches."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "skills/manager/SKILL.md": (
+                "## Ops, by need\n"  # reworded -- not _OP_TABLE_HEADING
+                "\n"
+                "| Need | Op |\n"
+                "| --- | --- |\n"
+                "| Filing | `gh-issue-create:@FILE` |\n"
+                "\n"
+            ),
+        },
+    )
+    assert ops_check.ops_in_op_table(
+        (root / "skills/manager/SKILL.md").read_text(encoding="utf-8")
+    ) == [], "fixture check: a reworded heading must still derive nothing via the heading-anchored path"
+    drifted = ops_check.op_table_heading_drift(root)
+    assert drifted == ["skills/manager/SKILL.md"], drifted
+
+    state, detail = ops_check.supertool_op_inventory(
+        plugin_root=root,
+        run=_run_answering(_roster_text(["gh-issue-create", "ops"])),
+        which=_which_finding(),
+    )
+    assert state == "could-not-ask", (state, detail)
+    assert "skills/manager/SKILL.md" in detail, detail
+
+
+def test_a_file_with_genuinely_no_table_at_all_is_the_ordinary_quiet_case(tmp_path):
+    """The must-not-fire half, in the same shape of fixture: a file that simply
+    never had a table (the ordinary case for every file but one, and the shape
+    most of this module's own other fixtures already use) must not trigger the
+    new fallback -- or every one of those fixtures, and every scaffolded repo
+    with no op table at all, would start reporting `could-not-ask` where
+    `present`/`missing` was the honest answer."""
+    root = _plugin_tree(
+        tmp_path,
+        {
+            "commands/tick.md": "supertool 'gh-prs' 'radar'\n",
+            "skills/manager/SKILL.md": "supertool 'gl-mr:1'\n",
+        },
+    )
+    assert ops_check.op_table_heading_drift(root) == [], (
+        "positive control for the negative: a file with no table-shaped block "
+        "at all must not be reported as drifted"
+    )
+    state, detail = ops_check.supertool_op_inventory(
+        plugin_root=root,
+        run=_run_answering(_roster_text(["gh-prs", "radar", "gl-mr", "ops"])),
+        which=_which_finding(),
+    )
+    assert state == "present", (
+        "the ordinary case -- no table anywhere in this fixture -- must stay "
+        "quiet, not fall back to could-not-ask: {!r}".format(detail)
+    )
+
+
+def test_a_repo_with_no_skills_directory_at_all_stays_the_ordinary_quiet_case(tmp_path):
+    """The scaffolded/managed-repo shape the issue itself worried about: no
+    `skills/` directory on disk at all. `op_table_heading_drift` must find
+    nothing to report, the same as a file that has the directory but no table."""
+    root = _plugin_tree(tmp_path, {"commands/tick.md": "supertool 'gh-prs'\n"})
+    assert ops_check.op_table_heading_drift(root) == []
+    state, _detail = ops_check.supertool_op_inventory(
+        plugin_root=root,
+        run=_run_answering(_roster_text(["gh-prs", "ops"])),
+        which=_which_finding(),
+    )
+    assert state == "present"
+
+
+def test_the_real_tree_has_no_heading_drift():
+    """Dogfood: the real op table's heading must still match today, or this
+    plugin's own tree would report `could-not-ask` on every install."""
+    assert ops_check.op_table_heading_drift(REPO_ROOT) == []
