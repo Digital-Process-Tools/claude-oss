@@ -2337,23 +2337,185 @@ def ensure_worktree_root(config):
     return "created"
 
 
-def _kill_process_tree(proc):
+#: `JOBOBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Named rather than inlined because the whole
+#: Windows arm below turns on it: when the last handle to the job closes, every
+#: process still in it dies. That is what makes this survive THIS process crashing
+#: between the spawn and the timeout, which `taskkill` cannot.
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+
+#: `JobObjectExtendedLimitInformation`, the class index `SetInformationJobObject`
+#: takes for the struct below.
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+
+
+def _windows_job_object():
+    """A job object every descendant of the spawned command will belong to, or None.
+
+    **`taskkill /F /T /PID` cannot do this job and that is what #937's Windows legs
+    measured.** `/T` walks the live parent-child links Windows keeps, and those links
+    only exist while the parent does. The shape this function exists for is the
+    ordinary one: `cmd.exe` starts a command, that command spawns something and
+    exits, and by the time the timeout fires the survivor's parent is gone -- so the
+    survivor is no longer under the pid `/T` was given and is never signalled. It
+    also keeps the stdout handle it inherited, and a Windows anonymous pipe does not
+    report EOF while any handle to it is open, which is the second half of #937.
+
+    A job object is not walked, so nothing about it goes stale when a parent exits: a
+    process joins the job and stays in it, and `TerminateJobObject` reaches every
+    member at once no matter who spawned whom or who has since died.
+
+    Returns None rather than raising when any step fails -- no `ctypes`, a Windows
+    without these entry points, a job the process may not create. The caller falls
+    back to `taskkill`, which is weaker and not nothing.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:  # pragma: no cover - Windows-only path
+        return None
+
+    class _IoCounters(ctypes.Structure):
+        _fields_ = [
+            ("ReadOperationCount", ctypes.c_ulonglong),
+            ("WriteOperationCount", ctypes.c_ulonglong),
+            ("OtherOperationCount", ctypes.c_ulonglong),
+            ("ReadTransferCount", ctypes.c_ulonglong),
+            ("WriteTransferCount", ctypes.c_ulonglong),
+            ("OtherTransferCount", ctypes.c_ulonglong),
+        ]
+
+    class _BasicLimits(ctypes.Structure):
+        # `Affinity` is a ULONG_PTR, so it is `c_size_t` and not `DWORD`: on 64-bit
+        # the wrong width here silently misaligns every field after it, and the
+        # struct would still be accepted.
+        _fields_ = [
+            ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _ExtendedLimits(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _BasicLimits),
+            ("IoInfo", _IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Declared, not left to default: a HANDLE returned as a C int is truncated
+        # on 64-bit Windows, and the truncated value fails later as a wrong handle
+        # rather than as a failed create -- an error attributed to the wrong call.
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+        ]
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        limits = _ExtendedLimits()
+        limits.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel32.SetInformationJobObject(
+            job,
+            _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(limits),
+            ctypes.sizeof(limits),
+        ):
+            kernel32.CloseHandle(job)
+            return None
+        return job
+    except (OSError, AttributeError, ValueError):  # pragma: no cover - Windows-only
+        return None
+
+
+def _windows_assign_job(job, proc):
+    """Put `proc` in `job`. True when it took.
+
+    **There is a race here and it is named rather than hidden.** The process is
+    already running when this is called -- `subprocess` gives no way to start one
+    suspended and hand back the thread handle needed to resume it -- so a command
+    that spawns a child within the first milliseconds could leave that child outside
+    the job. It is a small window against an interpreter start, and the fallback for
+    everything it misses is the `taskkill` path, which is exactly what this replaces
+    and no worse than the previous behaviour.
+
+    Nested jobs (Windows 8+) are why this works on a CI runner at all: the runner
+    already puts its own processes in a job, and on anything older an assignment
+    into a second job fails -- answered False here, not raised.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        return bool(kernel32.AssignProcessToJobObject(job, int(proc._handle)))
+    except (ImportError, OSError, AttributeError, ValueError):  # pragma: no cover
+        return False
+
+
+def _windows_close_job(job):
+    """Close the job handle. With KILL_ON_JOB_CLOSE set this is itself a kill of
+    anything still in it, so it is never skipped on the success path."""
+    try:
+        import ctypes
+
+        ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(job)
+    except (ImportError, OSError, AttributeError, ValueError):  # pragma: no cover
+        pass
+
+
+def _kill_process_tree(proc, job=None):
     """Reach past the one pid Popen.kill() touches.
 
-    A SIGTERM/kill aimed at a single pid never reaches anything the command spawned
-    underneath it -- the shell it was run in, or anything that shell spawned in turn --
-    which is the mechanism behind #937. ``proc`` was started in its own process
-    group (POSIX, via start_new_session) or its own process group on Windows (via
-    CREATE_NEW_PROCESS_GROUP), so the whole unit can be reached at once: killpg for
-    the group on POSIX, taskkill /T for the tree rooted at the pid on Windows. Both
-    are best-effort -- a process that already exited is not an error here.
+    A kill aimed at a single pid never reaches anything the command spawned
+    underneath it -- the shell it was run in, or anything that shell spawned in turn
+    -- which is the mechanism behind #937. The whole unit is reached at once instead,
+    and how differs by platform because the primitives do:
+
+    * **Windows**: `TerminateJobObject` over the job every descendant was assigned
+      to. `taskkill /F /T` is the fallback when no job could be created, and it is a
+      fallback rather than the primary because it walks live parent-child links: a
+      grandchild whose parent has already exited is no longer under the pid it is
+      given, which is precisely the case the test for this covers.
+    * **POSIX**: `killpg` over the process group `start_new_session` created.
+
+    Both are best-effort -- a process that already exited is not an error here.
     """
     if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        killed = False
+        if job is not None:
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.TerminateJobObject.restype = wintypes.BOOL
+                kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+                killed = bool(kernel32.TerminateJobObject(job, 1))
+            except (ImportError, OSError, AttributeError, ValueError):  # pragma: no cover
+                killed = False
+        if not killed:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
     else:
         # proc.pid IS the group id here, not something to look up: start_new_session
         # made this process its own session leader at the moment it started, and a
@@ -2417,8 +2579,10 @@ def verify_test_command(command, cwd, timeout=120):
     # duration regardless of timeout (#937). Putting the whole tree in one killable
     # unit up front, and killing that unit rather than one pid, closes both gaps.
     popen_kwargs = {}
+    job = None
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        job = _windows_job_object()
     else:
         popen_kwargs["start_new_session"] = True
 
@@ -2434,52 +2598,70 @@ def verify_test_command(command, cwd, timeout=120):
     except OSError as exc:
         return {"state": "not-found", "detail": "{!r} would not start ({})".format(command, exc)}
 
+    # Assigned after the spawn because there is no way to start a process suspended
+    # through `subprocess` and resume it afterwards; `_windows_assign_job` documents
+    # the window that leaves. A job that could not be created or assigned is None,
+    # and `_kill_process_tree` falls back to `taskkill` for it.
+    if job is not None and not _windows_assign_job(job, proc):
+        _windows_close_job(job)
+        job = None
+
+    # The job handle is closed on EVERY exit, which with KILL_ON_JOB_CLOSE is
+    # itself a kill of anything still inside it. That is deliberate on the success
+    # path too: a suite that returned 0 while leaving a process of its own behind
+    # has leaked it into this session, and this function's contract is that the
+    # command is over when it returns. Leaking the handle instead would keep those
+    # processes alive until this interpreter exits and hold the job open for as long.
     try:
-        stdout, _ = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill_process_tree(proc)
-        # Reap with two bounded waits, never an unconditional one: a tree-kill that failed
-        # to reach every descendant (a permission failure, a grandchild that called its own
-        # setsid and left the group) must not turn "unverified" into "hung forever" on the
-        # same pipe -- which would reintroduce the exact unbounded-wait class #937 exists to
-        # fix, only now inside this functions own recovery path. If both bounded waits still
-        # do not return, give up on the output rather than block; the state below is already
-        # honest that this run could not be verified either way.
         try:
-            proc.communicate(timeout=5)
+            stdout, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            _kill_process_tree(proc, job=job)
+            # Reap with two bounded waits, never an unconditional one: a tree-kill that failed
+            # to reach every descendant (a permission failure, a grandchild that called its own
+            # setsid and left the group) must not turn "unverified" into "hung forever" on the
+            # same pipe -- which would reintroduce the exact unbounded-wait class #937 exists to
+            # fix, only now inside this functions own recovery path. If both bounded waits still
+            # do not return, give up on the output rather than block; the state below is already
+            # honest that this run could not be verified either way.
             try:
                 proc.communicate(timeout=5)
             except subprocess.TimeoutExpired:
-                pass
-        return {
-            "state": "timeout",
-            "detail": "{!r} did not finish within {}s, so it is unverified -- which is "
-            "not the same as broken.".format(command, timeout),
-        }
+                proc.kill()
+                try:
+                    proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            return {
+                "state": "timeout",
+                "detail": "{!r} did not finish within {}s, so it is unverified -- which is "
+                "not the same as broken.".format(command, timeout),
+            }
 
-    returncode = proc.returncode
-    if returncode == 0:
-        return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
+        returncode = proc.returncode
+        if returncode == 0:
+            return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
 
-    # Bytes, not text: an arbitrary test suites output is not the callers locale to
-    # promise, and a single stray byte in it used to raise past the guards above --
-    # reporting a suite that ran as a probe that crashed. See _decode_output.
-    tail = _decode_output(stdout).strip().splitlines()[-1:] or [""]
-    # 127 is the POSIX shells own "command not found", and 9009 is cmd.exes, which
-    # is a different problem from a suite that ran and failed. Reading only 127 makes
-    # every missing runner on Windows report as a failing suite -- the exact confusion
-    # between "install this" and "fix this" the states exist to prevent.
-    if returncode in (127, 9009):
+        # Bytes, not text: an arbitrary test suites output is not the callers locale to
+        # promise, and a single stray byte in it used to raise past the guards above --
+        # reporting a suite that ran as a probe that crashed. See _decode_output.
+        tail = _decode_output(stdout).strip().splitlines()[-1:] or [""]
+        # 127 is the POSIX shells own "command not found", and 9009 is cmd.exes, which
+        # is a different problem from a suite that ran and failed. Reading only 127 makes
+        # every missing runner on Windows report as a failing suite -- the exact confusion
+        # between "install this" and "fix this" the states exist to prevent.
+        if returncode in (127, 9009):
+            return {
+                "state": "not-found",
+                "detail": "{!r}: command not found ({})".format(command, tail[0]),
+            }
         return {
-            "state": "not-found",
-            "detail": "{!r}: command not found ({})".format(command, tail[0]),
+            "state": "failed",
+            "detail": "{!r} exited {} -- {}".format(command, returncode, tail[0]),
         }
-    return {
-        "state": "failed",
-        "detail": "{!r} exited {} -- {}".format(command, returncode, tail[0]),
-    }
+    finally:
+        if job is not None:
+            _windows_close_job(job)
 
 
 def resolve_worktree(root, target):

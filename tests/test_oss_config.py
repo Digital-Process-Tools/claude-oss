@@ -1142,3 +1142,78 @@ def test_no_accepted_slug_derives_a_name_that_is_a_traversal(value):
     assert problem is None
     assert "/" in value and "/" not in name
     assert name not in (".", "..")
+
+
+# --- the Windows tree-kill wiring, testable off Windows -----------------------
+#
+# The kill itself needs Windows; which call is REACHED does not, and that is what
+# went wrong: the first fix reached `taskkill /T`, which cannot see a grandchild
+# whose parent has already exited, and nothing off Windows noticed because nothing
+# off Windows exercised the branch at all.
+
+
+def test_the_job_object_helper_answers_none_off_windows_rather_than_raising():
+    """`_windows_job_object` is called unconditionally on `os.name == "nt"`, and its
+    whole contract is that every failure answers None so the caller can fall back.
+    Off Windows there is no `kernel32` to load, which is the same shape as a Windows
+    without these entry points -- so this is a real exercise of the failure arm, not
+    a stand-in for one.
+    """
+    assert oss_config._windows_job_object() is None
+
+
+def test_no_job_means_the_taskkill_fallback_is_reached(monkeypatch):
+    """The fallback still has to happen -- it is weaker than a job object, not
+    nothing -- so a `job=None` must reach `taskkill /F /T`, with `/F` and `/T` both
+    present and the pid the one that was spawned."""
+    monkeypatch.setattr(oss_config.os, "name", "nt")
+    calls = []
+    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    class _Proc(object):
+        pid = 4321
+
+        def kill(self):
+            pass
+
+    oss_config._kill_process_tree(_Proc(), job=None)
+    assert calls == [["taskkill", "/F", "/T", "/PID", "4321"]], calls
+
+
+def test_a_job_that_cannot_be_terminated_still_falls_back(monkeypatch):
+    """The third state between "a job did the kill" and "there was no job": a job
+    handle exists and `TerminateJobObject` did not answer true. Reported by falling
+    back rather than by returning as though the tree had been killed -- a kill that
+    silently did not happen is the defect this whole change is about. Off Windows
+    the ctypes load fails, which is exactly one of the ways that arm is reached.
+    """
+    monkeypatch.setattr(oss_config.os, "name", "nt")
+    calls = []
+    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    class _Proc(object):
+        pid = 99
+
+        def kill(self):
+            pass
+
+    oss_config._kill_process_tree(_Proc(), job=1234)
+    assert calls == [["taskkill", "/F", "/T", "/PID", "99"]], calls
+
+
+def test_posix_never_reaches_taskkill(monkeypatch):
+    """The must-not-fire control for the three above: with `os.name` left alone on
+    this POSIX machine, the Windows arm is not taken at all -- so a test that passed
+    because the branch was never entered would fail here."""
+    calls = []
+    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    monkeypatch.setattr(oss_config.os, "killpg", lambda pid, sig: None)
+
+    class _Proc(object):
+        pid = 7
+
+        def kill(self):
+            pass
+
+    oss_config._kill_process_tree(_Proc(), job=None)
+    assert calls == [], calls
