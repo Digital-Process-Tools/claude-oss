@@ -211,38 +211,18 @@ when and how far to bundle is below, beside the claim it is dispatched alongside
 other lever: branch the second agent off the first's branch rather than off the default branch. It
 costs a rebase per merge. Do not stack more than two deep without a reason.
 
-**Claim before you spawn, not after.** Until this week the tracker had one reader; a first external
-maintainer running this loop on their own repository makes a second reader a real thing rather than a
-hypothetical one, and a lane that runs for hours while the issue still reads `Assignees: none` is how
-two readers pick the same issue. A spawn that dies before its first call must not leave an unclaimed
-issue with a worktree already attached to it, so the assignment happens **before** the spawn:
+**Claim before you spawn, not after** — every issue in the lane in one call:
 
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue_claim.py" <N> [<N> ...] --claim
 
-**Every issue in the lane in one call (#964).** A lane carries up to three issues and a bundle is
-claimed together or not at all; one call per issue is how half a bundle ends up claimed while the
-caller believes it holds all of it. A refusal on one row does not stop the others, so what did get
-taken can be released.
+Dispatch only what comes back `claimed` or `already-mine`. A spawn that dies on its first call must
+not leave an unclaimed issue with a worktree attached, and a lane running for hours while the issue
+reads `Assignees: none` is how two readers pick the same issue.
 
-**Selection reads the same field the claim writes, and the script is what reads it.** Three states,
-never two: **assigned** — skip it; **unassigned** — free to dispatch; and `could-not-read`, meaning
-**could not read the assignees** — the forge call failed or was not made, and this must never render
-as `unassigned`.
-Picking an issue whose claim state is unknown is the defect this repository is named after, one
-layer up: an absence produced by the tool, read as an absence in the world. The script refuses to
-write on that row rather than leaving the distinction to a reader in a hurry, and it never claims
-over an issue whose holder it could not identify — including when the authenticated login itself
-could not be resolved, where an assigned issue is somebody unidentified's rather than ours.
-
-`@me` is resolved from the authenticated session rather than a handle written down anywhere in this
-repository — `tests/test_content_invariants.py` fails on a maintainer handle under `skills/` for the
-same reason a hardcoded one would assign a stranger's issues to a stranger, and it is also the only
-spelling correct on a repository this project's author does not own.
-
-**What the script does not buy.** GitHub offers no compare-and-set on an assignee field, so this is
-read-then-write: two loops racing on one issue in the same second can both come away believing they
-claimed it. `claimed` is not a lock. The window is much smaller than the failure this addresses, and
-that is the whole claim being made for it.
+**`could-not-read` is not `unassigned`, and the script is what holds those apart** — picking an issue
+whose claim state is unknown is this repository's own defect class, one layer up. The rest of the
+argument, including what a `claimed` row does *not* promise, is in the script's own docstring rather
+than here (#964).
 
 A contributor without write access cannot self-assign — GitHub restricts assignment to write or
 triage permission — so this mechanism claims for the maintainer's own loop only. What an outside
