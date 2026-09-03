@@ -48,8 +48,14 @@ def check_vanished_worktrees(project_dir, config):
         return
     worktree_root = config.get("worktree_root") if config else None
     if not worktree_root:
+        # Found by this lane's own auditor round (#845): this is a genuine skip --
+        # `detect_vanished_worktrees` is never called below -- and this repository's
+        # own convention (`doctor.unmeasured`'s docstring, and the sibling
+        # `worktree_root` check `main()` runs two lines earlier) is that a skip is
+        # WARN, never OK. OK is reserved for a check that actually ran and came back
+        # clean; this line used to render the two identically.
         doctor.report(
-            "OK",
+            "WARN",
             "vanished worktrees: not checked -- worktree_root is not known in this tree "
             "(expected inside a worktree this loop cut rather than the main clone).",
         )

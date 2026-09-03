@@ -45,9 +45,17 @@ def _doctor_line(project_dir, config):
     return buf.getvalue().strip()
 
 
-def test_doctor_reports_ok_when_worktree_root_is_unknown(tmp_path):
+def test_doctor_reports_a_genuine_skip_as_warn_not_ok_when_worktree_root_is_unknown(tmp_path):
+    """Found by this lane's own auditor round (#845): a run that never called
+    `detect_vanished_worktrees` at all (no derivable worktree_root -- the
+    ordinary state for a fresh install or a config-less tree) used to print
+    `OK ... not checked`, indistinguishable from a check that ran and found
+    nothing. `doctor.py`'s own convention (`unmeasured`'s docstring, and the
+    sibling `worktree_root` check two lines earlier in `main()`) is that a
+    genuine skip is WARN, never OK -- OK is reserved for a check that
+    actually ran and came back clean."""
     line = _doctor_line(tmp_path, {})
-    assert line.startswith("OK "), line
+    assert line.startswith("WARN "), line
     assert "not checked" in line
 
 
