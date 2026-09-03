@@ -28,11 +28,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import developer_docs  # noqa: E402
 from agent_budgets import repo_root  # noqa: E402
 
 
 def _developer():
-    return (repo_root() / "agents" / "developer.md").read_text(encoding="utf-8")
+    # The whole brief, spine plus agents/developer/*.md (#939).
+    return developer_docs.text(repo_root())
 
 
 #: The sentence #765 was filed against, reduced to the claim rather than its

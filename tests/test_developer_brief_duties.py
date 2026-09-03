@@ -41,6 +41,7 @@ aimed at the control that exists to prevent it. Check a new anchor against the
 blob, not against PRIOR.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -48,7 +49,13 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEVELOPER = REPO_ROOT / "agents" / "developer.md"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import developer_docs  # noqa: E402
+
+#: The whole brief -- spine plus `agents/developer/*.md` (#939) -- so an anchor
+#: that moved into a phase file is still found, and one that vanished is not.
+DEVELOPER = developer_docs.DeveloperBrief()
 PROSE = sorted((REPO_ROOT / "skills").rglob("SKILL.md")) + sorted(
     (REPO_ROOT / "agents").glob("*.md")
 )
@@ -681,7 +688,7 @@ def test_the_review_section_still_hands_section_four_over_verbatim():
     """
     assert _unmet(
         DEVELOPER.read_text(encoding="utf-8"),
-        ["hand it §4 above", "verbatim in the brief"],
+        ["hand it §4 of the spine's *how you work*", "verbatim in the brief"],
     ) == []
 
 
@@ -813,7 +820,21 @@ def _review_section(text):
     end = text.find("\n## ", start + 1)
     if end == -1:
         return None
-    return text[start:end]
+    parts = [text[start:end]]
+    # #939: the section's argument lives in two phase files now, each opening
+    # with its own h1 and bounded by the next h1 in the concatenated brief.
+    # A control text carrying only the h2 section still resolves to it alone.
+    # The boundary is the next h1 *title* -- `# Word...:` -- not any line
+    # opening with `# `, because the snapshot code block inside the self-review
+    # file carries a bash comment at column zero that would end the region a
+    # page early.
+    for title in ("\n# Self-review:", "\n# Review returns:"):
+        s = text.find(title)
+        if s == -1:
+            continue
+        nxt = re.compile(r"\n# [A-Z][^\n]*?:").search(text, s + 1)
+        parts.append(text[s:] if nxt is None else text[s:nxt.start()])
+    return "\n".join(parts)
 
 
 def _misplaced_referred_rules(text):

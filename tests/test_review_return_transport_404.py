@@ -45,7 +45,11 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-BRIEF = REPO / "agents" / "developer.md"
+sys.path.insert(0, str(REPO / "scripts"))
+
+from developer_docs import DeveloperBrief  # noqa: E402
+
+BRIEF = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
 PLACEHOLDER = "<the reviewer's final message"
 CANARY = "CANARY-EXECUTED"

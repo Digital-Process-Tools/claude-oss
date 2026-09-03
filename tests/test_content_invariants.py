@@ -17,10 +17,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import developer_docs  # noqa: E402
 import manager_docs  # noqa: E402
 
 SKILLS = sorted((REPO_ROOT / "skills").rglob("SKILL.md"))
 AGENTS = sorted((REPO_ROOT / "agents").glob("*.md"))
+#: #939: the developer brief's late phases, read by a lane when it reaches them.
+#: Not in AGENTS -- they carry no frontmatter and are not agent definitions --
+#: but every content check that asks "does the developer brief say X" reads
+#: the whole set through DEVELOPER, the same way ManagerLoop answers for the
+#: manager's split (#547).
+DEVELOPER_PHASES = sorted((REPO_ROOT / "agents" / "developer").glob("*.md"))
+DEVELOPER = developer_docs.DeveloperBrief()
 COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md"))
 #: A schema description is prose an agent reads with the same authority as a
 #: skill or an agent definition -- #783's own framing, and the reason
@@ -48,7 +56,7 @@ PROSE = SKILLS + AGENTS
 #: The phase files are prose the loop executes, so the sweeps below have to
 #: reach them. They are deliberately NOT in `PROSE`: that list is also what
 #: the frontmatter check iterates, and a phase file is not a skill.
-EXECUTABLE_PROSE = SKILLS + SKILL_PHASES + AGENTS + COMMANDS + SCHEMAS
+EXECUTABLE_PROSE = SKILLS + SKILL_PHASES + AGENTS + DEVELOPER_PHASES + COMMANDS + SCHEMAS
 
 # Spellings that would make a document true of exactly one repository.
 HARDCODED = [
@@ -70,7 +78,8 @@ def _fact_bearing_documents():
     loop reads and acts on, so a repo slug in one arrives with exactly the
     authority the top of CLAUDE.md forbids."""
     return [
-        (path, path.read_text(encoding="utf-8")) for path in PROSE + SKILL_PHASES
+        (path, path.read_text(encoding="utf-8"))
+        for path in PROSE + SKILL_PHASES + DEVELOPER_PHASES
     ]
 
 
@@ -144,7 +153,7 @@ def test_developer_stops_at_a_commit():
     """The publishing clause is unconditional on purpose: a brief phrased as 'do not
     push if something blocks you' is how an agent correctly pushed.
     """
-    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = DEVELOPER.read_text(encoding="utf-8")
     for phrase in ("Do not push", "Do not open a PR"):
         assert phrase in text, "developer.md no longer states: {}".format(phrase)
 
@@ -162,7 +171,7 @@ def test_developer_narration_vs_report_314():
     guidance instead of citing it, would fail this half instead of passing everything
     vacuously.
     """
-    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = DEVELOPER.read_text(encoding="utf-8")
     assert "#314" in text, "developer.md does not cite #314's narration-vs-report finding"
     assert "argued-down" in text, (
         "developer.md no longer keeps the report-for-filing disposition guidance the #314 "
@@ -355,7 +364,7 @@ def test_developer_notes_convention_is_pinned():
     - the report states the split's cost, so the saving stays a measured claim rather than an
       adopted guess
     """
-    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = DEVELOPER.read_text(encoding="utf-8")
     assert "<worktree_root>/notes/" in text, (
         "developer.md must place notes under <worktree_root>/notes/, a sibling of the "
         "numbered worktree directories -- inside a worktree, a note risks entering the diff"
@@ -588,7 +597,7 @@ def test_the_portability_shapes_have_exactly_one_source_each():
     auditor points at them, or "absent from the auditor" is satisfied by their being
     absent everywhere.
     """
-    developer = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    developer = DEVELOPER.read_text(encoding="utf-8")
     missing = [s for s in PORTABILITY_SHAPES if s not in developer]
     assert not missing, (
         "agents/developer.md no longer enumerates {} -- the auditor references that "
@@ -628,7 +637,7 @@ def _wiring_unmet(text):
 
 
 def test_developer_spawns_the_auditor():
-    unmet = _wiring_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    unmet = _wiring_unmet(DEVELOPER.read_text(encoding="utf-8"))
     assert not unmet, (
         "agents/developer.md does not wire the auditor in: " + repr(sorted(unmet))
     )
@@ -660,7 +669,7 @@ def test_the_wiring_check_fires_on_the_sentence_that_predates_this_change():
     anchor on it alone reports the wiring as present in a file that never mentions the
     auditor's own per-class non-run. Deleting only the new sentence must be visible.
     """
-    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = DEVELOPER.read_text(encoding="utf-8")
     without_the_new_sentence = text.replace("did not run", "ran")
     assert "a-spawn-that-did-not-run-is-reported" in _wiring_unmet(without_the_new_sentence), (
         "the wiring check is satisfied by prose that predates this change, so it says "
@@ -991,7 +1000,7 @@ def _explore_reviewer_unmet(text):
 
 
 def test_developer_spawns_explore_not_general_purpose():
-    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = DEVELOPER.read_text(encoding="utf-8")
     unmet = _explore_reviewer_unmet(text)
     assert not unmet, (
         "agents/developer.md does not carry the Explore-reviewer fix: " + repr(sorted(unmet))
@@ -1042,7 +1051,7 @@ def _reviewer_return_unmet(text):
 
 
 def test_developer_states_the_reviewer_return_contract():
-    text = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = DEVELOPER.read_text(encoding="utf-8")
     unmet = _reviewer_return_unmet(text)
     assert not unmet, (
         "agents/developer.md does not carry the reviewer-return contract: " + repr(sorted(unmet))
@@ -1414,7 +1423,7 @@ AGENT_DISPATCH_RE = re.compile(r'subagent_type:\s*"oss:([A-Za-z0-9_-]+)"')
 
 # Each dispatching document, and the definition file its own fallback must point at.
 DISPATCHING_DOCUMENTS = [
-    (REPO_ROOT / "agents" / "developer.md", "agents/auditor.md"),
+    (DEVELOPER, "agents/auditor.md"),
     (REPO_ROOT / "commands" / "release.md", "agents/release-auditor.md"),
 ]
 
@@ -1777,7 +1786,7 @@ def test_the_manager_can_receive_a_tooling_item_it_cannot_derive():
     and every "this was red before" claim here is unsupported.
     """
     manager = _flatten(MANAGER_SKILL.read_text(encoding="utf-8"))
-    developer = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    developer = _flatten(DEVELOPER.read_text(encoding="utf-8"))
 
     assert "loop_repository" in developer, (
         "the developer brief no longer resolves the loop's own board, so nothing "
@@ -1816,7 +1825,7 @@ def test_the_developer_says_the_tooling_has_no_manifest_name():
     asked for a value that cannot exist. Unstated, that renders as a field left empty,
     which is indistinguishable from a field nobody filled in.
     """
-    developer = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    developer = _flatten(DEVELOPER.read_text(encoding="utf-8"))
     assert "which declared dependency" in developer, (
         "the mechanics bullet this guard is about is gone; the guard is measuring nothing"
     )
@@ -1830,7 +1839,7 @@ def test_the_developer_reports_upstream_rather_than_filing_itself():
     """The developer's publishing clause is unconditional, and opening an issue on
     another repo is publishing. So the duty lands as a report, not a filing.
     """
-    folded = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    folded = _flatten(DEVELOPER.read_text(encoding="utf-8"))
     assert "do not open the upstream issue" in folded, (
         "developer.md states the upstream duty without saying who performs it, which "
         "reads as permission to file against another repo mid-task"
@@ -1983,7 +1992,7 @@ def test_the_developer_does_not_run_the_whole_suite_and_still_runs_the_targeted_
     so the brief has to say not to run it, name CI as the gate, and keep the
     targeted run mandatory, which is the one claim CI cannot produce.
     """
-    unmet = _suite_rule_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    unmet = _suite_rule_unmet(DEVELOPER.read_text(encoding="utf-8"))
     assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
 
 
@@ -2044,7 +2053,7 @@ def test_the_developer_reports_tooling_friction():
     the check is the pair: the duty, and where it goes in a schema that refuses
     unknown keys.
     """
-    unmet = _friction_unmet((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    unmet = _friction_unmet(DEVELOPER.read_text(encoding="utf-8"))
     assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
 
 
@@ -2126,7 +2135,7 @@ def test_a_friction_line_has_to_name_what_it_cost():
     noticed -- and an agent that finished every call cleanly still owes a list.
     """
     unmet = _unmet(
-        (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"),
+        DEVELOPER.read_text(encoding="utf-8"),
         FRICTION_BAR_ANCHORS,
     )
     assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
@@ -2148,7 +2157,7 @@ def test_the_friction_bar_check_fires_on_the_duty_without_the_bar():
 
 def test_the_class_clause_requires_a_reachable_class():
     unmet = _unmet(
-        (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"),
+        DEVELOPER.read_text(encoding="utf-8"),
         REACHABILITY_ANCHORS,
     )
     assert not unmet, "agents/developer.md: {}".format(sorted(unmet))
@@ -2267,7 +2276,7 @@ def test_the_developer_separates_an_edit_from_a_derivation_that_already_covers_i
     Which of the two happened is the part a maintainer cannot re-derive from the diff,
     so the report has to say it and name the derivation.
     """
-    folded = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    folded = _flatten(DEVELOPER.read_text(encoding="utf-8"))
     assert "name the derivation" in folded, (
         "developer.md ties a convention change to the diagnostic but offers only one "
         "way to satisfy it, so a derivation that already covers the change reads as "
@@ -2280,7 +2289,7 @@ def test_the_developer_states_what_to_do_when_another_lane_holds_the_file():
     is one file, several agents run at once, and reaching into another lane's file is
     worse than the defect. Silently skipping it is worse again.
     """
-    folded = _flatten((REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8"))
+    folded = _flatten(DEVELOPER.read_text(encoding="utf-8"))
     assert "held by another lane" in folded, (
         "developer.md requires the diagnostic to be updated and never says what to do "
         "when the file is out of bounds, which leaves reaching into it and dropping it "
@@ -2305,7 +2314,7 @@ def test_the_developer_states_what_to_do_when_another_lane_holds_the_file():
 # that an unreadable payload is a third state, and that a maintainer's verification is
 # a different voice from the agent's claims.
 
-PR_PAYLOAD_PRODUCER = REPO_ROOT / "agents" / "developer.md"
+PR_PAYLOAD_PRODUCER = DEVELOPER  # the whole brief: the example lives in agents/developer/report.md (#939)
 PR_PAYLOAD_SCHEMA = REPO_ROOT / "schemas" / "agent-report.schema.json"
 PR_PAYLOAD_CONSUMER_HEADING = "## Opening the pull request"
 
@@ -2885,7 +2894,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_shipped_op_spellings import op_spellings  # noqa: E402
 
 WRITE_ROUTE_DOCUMENTS = (
-    REPO_ROOT / "agents" / "developer.md",
+    DEVELOPER,
     MANAGER_SKILL,
 )
 
@@ -4487,7 +4496,7 @@ def test_developer_md_says_which_schema_version_to_write():
     inside the same prose unit as the existing authority rule, not merely
     somewhere in the file, or a lane skimming past the rule never reaches it.
     """
-    developer = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    developer = DEVELOPER.read_text(encoding="utf-8")
     authority_rule = next(
         (unit for unit in _prose_units(developer) if "the cache wins" in unit.lower()),
         None,

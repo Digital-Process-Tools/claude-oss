@@ -23,6 +23,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from developer_docs import DeveloperBrief  # noqa: E402
 from manager_docs import ManagerLoop  # noqa: E402
 
 #: The manager loop's whole prose -- SKILL.md plus every phase file it defers
@@ -30,7 +31,7 @@ from manager_docs import ManagerLoop  # noqa: E402
 #: X"; pinned to the spine alone they would have gone quietly narrower than
 #: their own subject the moment a paragraph moved into a phase file.
 SKILL = ManagerLoop(REPO_ROOT)
-DEVELOPER = REPO_ROOT / "agents" / "developer.md"
+DEVELOPER = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 SCHEMA = REPO_ROOT / "schemas" / "agent-report.schema.json"
 
 VALUE = "below-bar"

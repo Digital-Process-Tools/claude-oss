@@ -220,7 +220,8 @@ only in the sessions that touch what it governs rather than in every session for
 ```
 skills/manager/SKILL.md     the loop's spine: process only, no repo facts; loaded whole every tick
 skills/manager/phases/*.md  one file per phase, read when the loop enters it: dispatch handback review merge release accounting
-agents/developer.md         one issue, worktree, TDD, stops at a commit
+agents/developer.md         one issue, worktree, TDD, stops at a commit -- the spine
+agents/developer/*.md       its late phases: self-review, review returns, report; read when a lane reaches them
 agents/triager.md           labels only; Bash and TodoWrite, nothing else
 agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
@@ -259,7 +260,7 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 83,014 B | 91,300 B |
+| `agents/developer.md` | 47,819 B | 52,600 B |
 | `agents/auditor.md` | 14,329 B | 15,800 B |
 | `agents/release-auditor.md` | 17,857 B | 19,700 B |
 | `agents/triager.md` | 17,702 B | 19,500 B |
@@ -281,6 +282,27 @@ a document assembled or pasted at runtime rather than checked out by git carries
 so the raw-byte measurement stays exactly what it was — `agent_budgets.py` is unchanged by this pin
 on purpose (see `skills/manager/phases/dispatch.md`'s own note, below, for the incident that forced
 the choice between pinning and normalizing the measurement).
+
+## The developer brief is a spine plus three phase files (#939)
+
+`agents/developer.md` is the system prompt of every developer lane and is re-sent on every turn.
+Measured on one live tick from the lanes' own transcripts, the floor re-sent was 84-96% of everything
+each lane read, and the 89,714 B definition was most of that floor. So it took the same split as the
+manager skill below: the spine holds what governs a lane from its first call, and the three phases a
+lane reaches only after its commit live in `agents/developer/`, read at that point. Nothing was cut;
+the spine went from 89,714 B to 47,819 B and the table above carries the new number.
+`scripts/developer_phases.py` budgets the phase files and reports one the spine stops naming;
+`scripts/developer_docs.py` is the set every content check reads, for the reason `manager_docs.py`
+exists. A phase file a lane did not read is named under the report's `compliance` survey -- the half
+only the lane can report.
+
+| file | measured (baseline) | budget |
+| --- | --- | --- |
+| `agents/developer/review.md` | 12,806 B | 14,100 B |
+| `agents/developer/review-return.md` | 15,440 B | 17,000 B |
+| `agents/developer/report.md` | 20,665 B | 22,700 B |
+
+`tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
 
 ## The manager skill is a spine plus one file per phase
 

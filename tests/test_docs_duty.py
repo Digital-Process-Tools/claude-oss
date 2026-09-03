@@ -46,10 +46,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import developer_docs  # noqa: E402
 import report_schema  # noqa: E402
 
 SCHEMA_PATH = REPO_ROOT / "schemas" / "agent-report.schema.json"
-DEVELOPER = REPO_ROOT / "agents" / "developer.md"
+DEVELOPER = developer_docs.DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
 
 def _schema():

@@ -38,9 +38,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from developer_docs import DeveloperBrief  # noqa: E402
 from test_content_invariants import MANAGER_SKILL, _collapse  # noqa: E402
 
-DEVELOPER_MD = REPO_ROOT / "agents" / "developer.md"
+DEVELOPER_MD = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
 #: The real error `supertool 'batch:@-'` produces for an `[[ops]]` entry with
 #: no `op` field -- measured directly (2026-08-29):
