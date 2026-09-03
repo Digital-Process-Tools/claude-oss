@@ -158,6 +158,33 @@ def test_load_baseline_missing_required_key_is_malformed_not_absent(tmp_path):
     assert error != "absent"
 
 
+class _RaisingExistsPath(object):
+    """A stand-in for `pathlib.Path` whose `.exists()` raises `OSError` --
+    reproducing the failure `Path.exists()` can genuinely surface (an
+    over-long path component, a permission-denied ancestor directory) and
+    which CPython's own `exists()` only swallows a version-dependent subset
+    of. This repository has already paid for the unguarded form of this
+    exact call twice: `scripts/release_delta.py` (killed the release gate
+    with a traceback) and `scripts/doctor_check_worktree_reap_permission.py`
+    (now wraps it in `try/except OSError`)."""
+
+    def exists(self):
+        raise OSError(13, "Permission denied")
+
+
+def test_load_baseline_an_exists_check_that_raises_os_error_is_unreadable_not_a_crash():
+    """Reviewer finding (#910): an unguarded `path.exists()` inside
+    `load_baseline` would let a real `OSError` propagate out of this
+    function and, from there, out of `pytest_terminal_summary` itself --
+    aborting the hook with an unrelated internal-error traceback instead of
+    landing in the one state (`could-not-measure`) this whole module exists
+    to make explicit. Must land as a named, non-absent error instead."""
+    baseline, error = test_durations.load_baseline(_RaisingExistsPath())
+    assert baseline is None
+    assert error is not None
+    assert error != "absent"
+
+
 # -------------------------------------------------------------------- write_baseline
 
 

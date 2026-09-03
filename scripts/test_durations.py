@@ -157,7 +157,20 @@ def load_baseline(path):
     folded into the same "absent" answer a first run gives, or the NO_BASELINE
     report would say "first run" about a file that is actually broken.
     """
-    if not path.exists():
+    # `Path.exists()` is not itself exception-free: it swallows some OSError
+    # subclasses and re-raises others, and which is which has differed by
+    # CPython version on this repository's own CI matrix (3.9-3.12) --
+    # `scripts/release_delta.py` and `scripts/doctor_check_worktree_reap_
+    # permission.py` both had to wrap this identical call for the same
+    # reason (reviewer finding, #910). An OSError here is exactly as real a
+    # "could not look" as one from read_text below, so it lands in the same
+    # "unreadable" bucket rather than propagating out of this function and,
+    # from there, out of the pytest_terminal_summary hook itself.
+    try:
+        found = path.exists()
+    except OSError as exc:
+        return None, "unreadable: {}".format(exc)
+    if not found:
         return None, "absent"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
