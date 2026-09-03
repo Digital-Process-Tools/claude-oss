@@ -40,10 +40,16 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import manager_docs  # noqa: E402
 from developer_docs import DeveloperBrief  # noqa: E402
+
+# The loop's whole prose, not the spine alone (#958): the ranking table moved to
+# `skills/manager/phases/findings.md`, and a check pinned to `SKILL.md` would have
+# gone from "the table says this" to "there is no table" without saying which --
+# the coverage-narrowed-without-saying-so shape `manager_docs` exists for.
+MANAGER_SKILL = manager_docs.ManagerLoop(REPO_ROOT)
 
 DEVELOPER = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 

@@ -73,7 +73,14 @@ SPINE = "skills/manager/SKILL.md"
 #: repo-relative path (POSIX) -> (bytes measured when the budget was set,
 #: budget bytes incl. ~10% headroom, what the file governs).
 DOCUMENTS: dict[str, tuple[int, int, str]] = {
-    SPINE: (58377, 64600, "the loop itself: what is decided every tick, and where each phase's rules live"),
+    # Re-baselined downward (#958): the ranking table and the upstream-filing
+    # section moved out to phases/findings.md, 62,829 -> 54,751 B. The budget
+    # comes down with the measurement rather than staying at 64,600 B, because
+    # a ceiling left 9,849 B above the file is a saving that can be spent
+    # again without anybody choosing to -- which is the same invisibility the
+    # budgets exist to remove. ~10% headroom over the new size, as #491 sets
+    # them.
+    SPINE: (54751, 60200, "the loop itself: what is decided every tick, and where each phase's rules live"),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
@@ -121,6 +128,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     "skills/manager/phases/dispatch.md": (37253, 41000, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
     "skills/manager/phases/review.md": (11637, 12800, "reviewing a returned diff, and what an issue body filed out of one looks like"),
+    "skills/manager/phases/findings.md": (11620, 12800, "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),
     "skills/manager/phases/release.md": (10195, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
     "skills/manager/phases/accounting.md": (15093, 16600, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),

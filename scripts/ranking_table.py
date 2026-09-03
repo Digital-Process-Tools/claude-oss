@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Read the ranking table straight out of the installed
-`skills/manager/SKILL.md`, rather than a human retyping it.
+"""Read the ranking table straight out of the installed manager loop's own
+prose, rather than a human retyping it.
 
 #688: `commands/release.md` gate 3 requires the ranking table pasted into the
 release-audit payload verbatim, so a finding can never come back `could not
@@ -24,10 +24,21 @@ the same way, and neither may a file this could not even open:
                    the missing embargo prose from the #688 incident this
                    module exists to prevent is invisible in a diff of stdout
                    against nothing.
-  could-not-read   `skills/manager/SKILL.md` itself could not be opened, or
-                   could not be decoded as UTF-8, under the given plugin root
-                   -- absent, unreadable, not valid UTF-8, or no root given at
-                   all.
+  could-not-read   **no** source file could be opened or decoded as UTF-8
+                   under the given plugin root -- all absent, all unreadable,
+                   or no root given at all. One unreadable source beside a
+                   readable one is not this state: the reason line names which
+                   were searched and which could not be read, so a table found
+                   in the second source is never reported as if the first had
+                   agreed with it.
+
+`SOURCES` is searched in order and the first well-formed table wins. Two
+entries, not one, and the second is not legacy tolerance (#958): the table
+moved from the spine to `skills/manager/phases/findings.md`, and gate 3 in
+`commands/release.md` runs against `${CLAUDE_PLUGIN_ROOT}` -- the *installed*
+plugin, which during a release is ordinarily the previous tag. A single
+hardcoded path would have made this script `not-found` against every install
+on the other side of that move, in the one session that needs it.
 
 This is deliberately narrow: it extracts one table by its own header text, and
 refuses rather than guesses when the shape does not match. It does not attempt
@@ -47,10 +58,19 @@ STATE_FOUND = "found"
 STATE_NOT_FOUND = "not-found"
 STATE_COULD_NOT_READ = "could-not-read"
 
-#: The exact header cells the ranking table in `skills/manager/SKILL.md` is
-#: written with. Matched loosely on leading whitespace only -- the table sits
-#: under a bullet and is indented -- because the goal is "this is the header
-#: row", not "this is indented exactly two spaces".
+#: Where the ranking table may live, most current first. See the docstring:
+#: the second entry is what keeps gate 3 working against an install predating
+#: the #958 split, not tolerance for an old copy lying around.
+SOURCES = (
+    "skills/manager/phases/findings.md",
+    "skills/manager/SKILL.md",
+)
+
+#: The exact header cells the ranking table is written with. Matched loosely
+#: on leading whitespace only, because the goal is "this is the header row",
+#: not "this is indented exactly N spaces" -- it sat indented under a bullet
+#: in the spine and sits at column 0 in `phases/findings.md`, and both must
+#: match.
 _HEADER_RE = re.compile(
     r"^[ \t]*\|\s*Class\s*\|\s*Blocks a release\?\s*\|\s*"
     r"Embargo when reported upstream\?\s*\|\s*$"
@@ -163,26 +183,56 @@ def extract_ranking_table(text):
 
 
 def load_table(plugin_root):
-    """``(state, table, reason)`` for the ranking table under
-    ``<plugin_root>/skills/manager/SKILL.md``. ``STATE_COULD_NOT_READ`` when
-    that file itself cannot be opened or decoded; delegates to
-    `extract_ranking_table` otherwise.
+    """``(state, table, reason)`` for the ranking table under ``plugin_root``.
+
+    `SOURCES` is searched in order; the first file carrying a well-formed
+    table answers. ``STATE_COULD_NOT_READ`` only when *none* of them could be
+    opened or decoded -- a single unreadable source beside a readable one is
+    reported in the reason rather than by the state, because "the table is not
+    in the loop's prose" and "one of the two files was denied" are different
+    facts and the second must never be printed as the first.
 
     Opened with ``newline=""`` deliberately: the default universal-newline
     translation would silently rewrite a CRLF source to LF before this
     module ever saw it, which is exactly the kind of quiet rewrite a script
     whose whole job is "verbatim" must not perform on its own input.
     """
-    path = Path(plugin_root, "skills", "manager", "SKILL.md")
-    try:
-        with open(str(path), "r", encoding="utf-8", newline="") as handle:
-            text = handle.read()
-    # UnicodeDecodeError is a ValueError, not an OSError -- a manifest that is
-    # not valid UTF-8 would otherwise raise out of this function and crash a
-    # tool whose whole contract is "never crashes, always could-not-read".
-    except (OSError, UnicodeDecodeError) as exc:
-        return STATE_COULD_NOT_READ, None, "{0}: {1}".format(path, exc)
-    return extract_ranking_table(text)
+    unreadable = []
+    searched = []
+    misses = []
+    for rel in SOURCES:
+        path = Path(plugin_root, *rel.split("/"))
+        try:
+            with open(str(path), "r", encoding="utf-8", newline="") as handle:
+                text = handle.read()
+        # UnicodeDecodeError is a ValueError, not an OSError -- a file that is
+        # not valid UTF-8 would otherwise raise out of this function and crash
+        # a tool whose whole contract is "never crashes, always could-not-read".
+        except (OSError, UnicodeDecodeError) as exc:
+            unreadable.append("{0}: {1}".format(rel, exc))
+            continue
+        searched.append(rel)
+        state, table, reason = extract_ranking_table(text)
+        if state == STATE_FOUND:
+            return STATE_FOUND, table, None
+        misses.append("{0}: {1}".format(rel, reason))
+
+    if not searched:
+        return (
+            STATE_COULD_NOT_READ,
+            None,
+            "no source could be read under {0} -- {1}".format(
+                plugin_root, "; ".join(unreadable)
+            ),
+        )
+    detail = "; ".join(misses + unreadable)
+    return (
+        STATE_NOT_FOUND,
+        None,
+        "searched {0} of {1} source(s) ({2}) -- {3}".format(
+            len(searched), len(SOURCES), ", ".join(searched), detail
+        ),
+    )
 
 
 def main(argv=None):

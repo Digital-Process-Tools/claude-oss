@@ -1148,16 +1148,42 @@ def _ranking_table():
     return rows
 
 
-def _release_trigger_rows():
-    """The rows the release trigger enumerates, or None if the marker is gone."""
-    text = MANAGER_SKILL.read_text(encoding="utf-8")
+def _release_trigger_enumerations(text=None):
+    """Every enumeration the release trigger writes out, or None if the marker
+    is gone from the loop's prose entirely.
+
+    A list of lists, not one list, and not the first match (#958). The marker
+    appears wherever the trigger is stated, and only some of those statements
+    enumerate the rows -- the spine names the table's file and stops, the
+    release phase file lists the classes. Taking the first occurrence made a
+    line-wrap decide which one was read: the spine's own sentence used to break
+    between "marks" and "blocking**", so the marker did not match there at all,
+    and reflowing that one line silently moved this check onto a statement that
+    enumerates nothing and would have passed vacuously but for the join below.
+
+    Occurrences that name no class are skipped rather than returned as an empty
+    enumeration: referring to the table without listing it is not a claim about
+    which rows block, and failing it as one would push every such sentence into
+    carrying a second copy of the rows -- the drift this table's own rule
+    forbids.
+    """
+    text = MANAGER_SKILL.read_text(encoding="utf-8") if text is None else text
+    found = []
     at = text.find(TRIGGER_MARKER)
     if at < 0:
         return None
-    tail = text[at + len(TRIGGER_MARKER):]
-    stop = tail.find("\n\n")
-    segment = tail if stop < 0 else tail[:stop]
-    return [m.group(1) for m in re.finditer(r"`([^`]+)`", segment)]
+    while at >= 0:
+        tail = text[at + len(TRIGGER_MARKER):]
+        stop = tail.find("\n\n")
+        segment = tail if stop < 0 else tail[:stop]
+        names = [m.group(1) for m in re.finditer(r"`([^`]+)`", segment)]
+        # A path is a reference, not a class name -- the spine's trigger names
+        # `skills/manager/phases/findings.md` and enumerates nothing.
+        names = [n for n in names if "/" not in n]
+        if names:
+            found.append(names)
+        at = text.find(TRIGGER_MARKER, at + len(TRIGGER_MARKER))
+    return found
 
 
 def test_the_ranking_table_is_findable_and_named():
@@ -1167,8 +1193,8 @@ def test_the_ranking_table_is_findable_and_named():
     """
     rows = _ranking_table()
     assert rows is not None, (
-        "no {!r} table in skills/manager/SKILL.md -- every ranking check below would "
-        "pass vacuously".format(RANKING_HEADER)
+        "no {!r} table anywhere in the manager loop's prose -- every ranking check "
+        "below would pass vacuously".format(RANKING_HEADER)
     )
     assert len(rows) >= 5, "ranking table has {} rows, which is fewer than it had".format(len(rows))
     unnamed = [verdict for name, verdict in rows if name is None]
@@ -1210,16 +1236,56 @@ def _trigger_join_mismatch(rows, trigger):
 def test_the_release_trigger_names_exactly_the_rows_that_block():
     """The join, and the reason it is worth more than the rows themselves.
 
-    Two places in one file state the blocking set: the table's right-hand column and
-    the release trigger. Nothing but this test makes the second follow the first, and
-    a row added to the table alone is a class that blocks a release in the ranking and
-    does not trigger one in the loop that reads it.
+    Two places in the loop's prose state the blocking set: the table's right-hand
+    column and the release trigger. Nothing but this test makes the second follow the
+    first, and a row added to the table alone is a class that blocks a release in the
+    ranking and does not trigger one in the loop that reads it.
+
+    Every enumeration is checked, not just one: a second copy that has gone stale is
+    exactly the drift the "ships once" rule is about, and checking only the first
+    would leave the later ones unread.
     """
-    mismatch = _trigger_join_mismatch(_ranking_table(), _release_trigger_rows())
-    assert not mismatch, (
-        "the release trigger and the ranking table disagree about which classes block. "
-        "In one and not the other: {!r}".format(mismatch)
+    enumerations = _release_trigger_enumerations()
+    assert enumerations is not None, "no release trigger marker in the loop's prose"
+    assert enumerations, (
+        "the release trigger marker appears but nothing enumerates the classes, so "
+        "this join has nothing to compare and would pass vacuously"
     )
+    rows = _ranking_table()
+    for names in enumerations:
+        mismatch = _trigger_join_mismatch(rows, names)
+        assert not mismatch, (
+            "the release trigger and the ranking table disagree about which classes "
+            "block. In one and not the other: {!r}".format(mismatch)
+        )
+
+
+def test_the_trigger_enumeration_reader_skips_references_and_reads_every_list():
+    """Positive control for the reader itself (#958). Three occurrences of the marker:
+    one naming only a file path, one enumerating two classes, one enumerating a
+    different pair. The path-only occurrence must be skipped rather than returned as
+    an empty enumeration, and both real lists must come back -- reading only the first
+    is what a line-wrap silently caused before.
+    """
+    text = (
+        "the ranking table in `skills/manager/phases/findings.md` marks blocking**.\n"
+        "Thresholds live in user config.\n"
+        "\n"
+        "anything the table marks blocking** -- `destroys`, `discloses`.\n"
+        "\n"
+        "a class the table marks blocking** -- `forges`, `executes`.\n"
+    )
+    assert _release_trigger_enumerations(text) == [
+        ["destroys", "discloses"],
+        ["forges", "executes"],
+    ]
+    # Must-not-fire half: no marker at all is None, not an empty list -- "the trigger
+    # is gone" and "the trigger enumerates nothing" are different answers.
+    assert _release_trigger_enumerations("no marker here at all") is None
+    # A marker with only a path reference is an empty result, not None.
+    assert _release_trigger_enumerations(
+        "the table in `skills/manager/phases/findings.md` marks blocking**.\n"
+    ) == []
 
 
 def test_the_trigger_join_fires_when_the_two_disagree():
@@ -1253,7 +1319,7 @@ def test_both_audit_agents_reference_the_ranking_table():
     """
     for path in AUDIT_AGENTS:
         text = path.read_text(encoding="utf-8")
-        assert "${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md" in text, (
+        assert "${CLAUDE_PLUGIN_ROOT}/skills/manager/phases/findings.md" in text, (
             "{} never points at the ranking table, so a finding it reports carries no "
             "row and gate 3 has nothing to weigh".format(path.relative_to(REPO_ROOT))
         )

@@ -59,18 +59,41 @@ def test_extracts_well_formed_table():
     assert "only place the rows are written down" not in table
 
 
-def test_extracts_the_real_table_from_this_repos_own_skill_md():
+def test_extracts_the_real_table_from_this_repos_own_prose():
     """Positive control against the real file, not a fixture -- if the table
-    in `skills/manager/SKILL.md` is ever reshaped, this is the test that
-    should be the first to notice."""
+    is ever reshaped, this is the test that should be the first to notice.
+
+    Reached through `load_table` against this repository as the plugin root
+    rather than by opening one hardcoded path (#958): the table moved from the
+    spine to `skills/manager/phases/findings.md`, and the point of `SOURCES`
+    is that a caller does not need to know which of them currently holds it.
+    """
     mod = _module()
-    real_text = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    state, table, reason = mod.extract_ranking_table(real_text)
+    state, table, reason = mod.load_table(str(REPO_ROOT))
     assert state == FOUND, reason
     for row in ("destroys", "discloses", "forges", "ships-local-state", "misreports"):
         assert "`{0}`".format(row) in table
+
+
+def test_the_declared_sources_are_the_files_that_could_hold_the_table():
+    """`SOURCES` is a list, and a list goes stale. Exactly one of its entries
+    holds the table in this checkout; the others are the older locations kept
+    so gate 3 still works against an install predating the move. A source
+    naming a file that does not exist at all is not that -- it is a path that
+    was renamed and nobody said so.
+    """
+    mod = _module()
+    holders = []
+    for rel in mod.SOURCES:
+        path = REPO_ROOT.joinpath(*rel.split("/"))
+        assert path.is_file(), "{0} is declared as a source and is not on disk".format(rel)
+        state, _, _ = mod.extract_ranking_table(path.read_text(encoding="utf-8"))
+        if state == FOUND:
+            holders.append(rel)
+    assert holders == ["skills/manager/phases/findings.md"], (
+        "the table should live in exactly one source in this checkout, found: "
+        "{0!r}".format(holders)
+    )
 
 
 # ----------------------------------------------------------------- not-found

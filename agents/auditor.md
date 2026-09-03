@@ -114,8 +114,8 @@ The letters above are **search strategies** — how you go looking. They are not
 not map one-to-one onto them: one strategy turns up findings that cost wildly different amounts, and
 one severity is reached from several strategies. Collapsing the two lists into one would lose that.
 
-The severities are the ranking table in `${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md`, under
-"Deciding what to build", together with the rule that decides which row a finding belongs in — each
+The severities are the ranking table in
+`${CLAUDE_PLUGIN_ROOT}/skills/manager/phases/findings.md`, under "Ranking a finding", together with the rule that decides which row a finding belongs in — each
 row earns its place because each invites a different fix, so when two rows fit, name the fix each
 would send a reviewer to make and pick the one that removes the defect. Read it there, or work from
 it if your brief carried it verbatim. **Do not restate the table here or in your report**: it ships
