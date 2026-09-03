@@ -1565,12 +1565,18 @@ def _gh_rollups(repo):
 
 
 #: Concluded check-run outcomes read as a failure, for `_reading_from_check_runs`.
-#: GitHub's documented enum for `conclusion` is wider than the combined-status
-#: endpoint's three-value `state`: `neutral` and `skipped` are deliberately left
-#: out of this set (a run explicitly opting out of pass/fail is not a failure),
-#: everything else that means "this did not pass" is in it.
+#: Matches `gh-branch`'s own red/benign split exactly (supertool's
+#: `presets/_checks.py`: `FAILED_STATES` plus everything in `bucket()`'s
+#: "other" catch-all except its own `BENIGN_STATES`) -- `startup_failure` is a
+#: documented `conclusion` value (a run that failed before it could even
+#: start) and belongs beside `failure`/`timed_out`, not omitted from it; a
+#: `neutral`/`skipped`/`manual` conclusion is deliberately left out (a run
+#: explicitly opting out of pass/fail is not a failure, the same call
+#: `gh-branch`'s own `BENIGN_STATES` makes). Review found the omission of
+#: `startup_failure` on this same round (#914).
 _BAD_CHECK_RUN_CONCLUSIONS = frozenset(
-    {"failure", "timed_out", "action_required", "cancelled", "stale"}
+    {"failure", "timed_out", "action_required", "cancelled", "stale",
+     "startup_failure"}
 )
 
 
@@ -1624,18 +1630,23 @@ def _reading_from_check_runs(repo, branch):
         return None
     bad = False
     running = False
-    green = False
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         if entry.get("status") in ("queued", "in_progress"):
             running = True
             continue
-        conclusion = entry.get("conclusion")
-        if conclusion in _BAD_CHECK_RUN_CONCLUSIONS:
+        if entry.get("conclusion") in _BAD_CHECK_RUN_CONCLUSIONS:
             bad = True
-        elif conclusion == "success":
-            green = True
+    # Conjunctive, matching `gh-branch`'s own `verdict()`: green is "nothing
+    # failed and nothing is still moving", not "at least one entry said
+    # success". A commit whose only check-runs are `skipped`/`neutral` is
+    # GREEN there too (review found this divergence on this same round,
+    # #914) -- a per-entry `conclusion == "success"` requirement would read
+    # that same commit as neither green nor bad nor running (it has no
+    # `"success"` entry either) and fall through to `None`, an unknown that
+    # `gh-branch` does not share.
+    green = total > 0 and not bad and not running
     return {"total": total, "bad": bad, "running": running, "green": green}
 
 

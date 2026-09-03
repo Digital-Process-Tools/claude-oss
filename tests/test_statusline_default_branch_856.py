@@ -200,6 +200,47 @@ def test_unparseable_answers_are_none(monkeypatch):
     assert statusline._gh_default_branch_state("owner/repo", "main") is None
 
 
+def test_startup_failure_conclusion_is_bad(monkeypatch):
+    """Review finding: GitHub's documented `conclusion` enum includes
+    `startup_failure` (a run/job that failed to even start), and `gh-branch`
+    -- the mechanism #914 says already gets this right, and the one the live
+    test below compares against -- reads it as red (its own `FAILED_STATES`
+    names it explicitly). The set this module read from omitted it, which
+    would have been exactly the silent divergence #914's comparison test
+    exists to catch."""
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(
+            check_runs=_check_runs_json(
+                [{"status": "completed", "conclusion": "startup_failure"}]
+            ),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
+    )
+    assert statusline._gh_default_branch_state("owner/repo", "main") == "bad"
+
+
+def test_all_skipped_check_runs_is_still_green(monkeypatch):
+    """Review finding: `gh-branch`'s own verdict treats a leg whose conclusion
+    is `skipped`/`neutral`/`manual` as benign, not red and not pending -- so a
+    commit whose only legs are skipped still concludes GREEN there (nothing
+    failed, nothing is moving). A per-entry `elif conclusion == "success"`
+    check would have missed this: a commit with skipped-only entries has no
+    `"success"` entry either, and would have fallen through to `None`
+    (unknown) instead of matching `gh-branch`'s own GREEN, the exact silent
+    divergence #914's comparison test exists to catch."""
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(
+            check_runs=_check_runs_json(
+                [{"status": "completed", "conclusion": "skipped"}] * 3
+            ),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
+    )
+    assert statusline._gh_default_branch_state("owner/repo", "main") == "green"
+
+
 def test_check_runs_reading_is_none_when_the_page_is_truncated(monkeypatch):
     """Self-review finding on this issue (audit round): `gh api` does not
     auto-paginate, and the check-runs call named neither `--paginate` nor
@@ -237,12 +278,88 @@ def test_missing_repo_or_branch_never_calls_the_forge(monkeypatch):
 # --------------------------------------------------- live, against the real forge
 
 
+def _gh_branch_verdict_word(text):
+    """The literal state word `gh-branch`'s own `Verdict: ` line opens with --
+    `"GREEN"`, `"NOT GREEN"`, `"NO RUN"` or `"UNKNOWN"` -- or `None` when no
+    such line was found.
+
+    Review finding on this issue: an earlier version of this comparison
+    parsed the `Legs: N total: P passed, F failed, R pending` tally instead,
+    which drops any leg bucketed as neither passed/failed/pending (a
+    `cancelled`/`stale`/otherwise-unrecognised conclusion, rendered as an
+    *extra* comma term such as `2 cancelled` -- supertool's own
+    `presets/_checks.py:summarize()`). `gh-branch`'s real verdict treats
+    those as red (`is_red()` -- unrecognised is red on purpose, only
+    `SKIPPED`/`NEUTRAL`/`MANUAL` are carved out as benign), so a commit
+    carrying one would have been misread as `"green"` by the tally-only
+    parse while `gh-branch` itself said `NOT GREEN` -- a spurious mismatch
+    the comparison would have blamed on this module's own (correct) `"bad"`.
+    The `Verdict: ` line's own leading word is what `gh-branch` actually
+    concluded, not a count this function would have to re-derive redness
+    from by hand.
+
+    `"NOT GREEN"` is checked before `"GREEN"` -- `branch.py`'s own module
+    comment: "NOT GREEN contains GREEN -- anything comparing these as
+    substrings cannot tell a header from a finding" -- so a naive
+    shortest-first or unordered check would read a real `NOT GREEN` as a
+    `GREEN` match.
+    """
+    match = re.search(r"^Verdict: (.+)$", text, re.MULTILINE)
+    if not match:
+        return None
+    line = match.group(1)
+    for word in ("NOT GREEN", "GREEN", "NO RUN", "UNKNOWN"):
+        if line.startswith(word):
+            return word
+    return None
+
+
+def test_gh_branch_verdict_word_tells_not_green_from_green():
+    """Must-fire / must-not-fire pair for the substring trap the docstring
+    names: `"NOT GREEN"` is matched as itself, never folded into `"GREEN"`
+    by an unordered or shortest-first check."""
+    assert _gh_branch_verdict_word("Verdict: GREEN - all clear") == "GREEN"
+    assert (
+        _gh_branch_verdict_word("Verdict: NOT GREEN - 1 leg did not pass")
+        == "NOT GREEN"
+    )
+
+
+def test_gh_branch_verdict_word_reads_no_run_and_unknown():
+    assert _gh_branch_verdict_word("Verdict: NO RUN - zero workflow runs") == "NO RUN"
+    assert _gh_branch_verdict_word("Verdict: UNKNOWN - job list absent") == "UNKNOWN"
+
+
+def test_gh_branch_verdict_word_is_none_without_a_verdict_line():
+    assert _gh_branch_verdict_word("no such line here at all") is None
+
+
+def test_gh_branch_verdict_word_is_not_fooled_by_an_extra_leg_bucket():
+    """The exact review scenario: a `NOT GREEN` verdict on a commit whose
+    `Legs:` tally carries an extra `cancelled` term the old tally-only parse
+    would have silently ignored."""
+    text = (
+        "Verdict: NOT GREEN - 1 leg on abc1234 did not pass, in `tests`.\n"
+        "Legs: 3 total: 2 passed, 0 failed, 0 pending, 1 cancelled\n"
+    )
+    assert _gh_branch_verdict_word(text) == "NOT GREEN"
+
+
 def _gh_branch_verdict(repo, sha):
-    """`gh-branch`'s own read on `sha`, folded to this module's four states, by
-    parsing the one `Legs: N total: P passed, F failed, R pending` line its
-    render always carries. `None` when the op could not be run or its output
-    did not carry a parseable legs line -- a real "could not compare" state,
-    never silently read as agreement."""
+    """`gh-branch`'s own read on `sha`, folded to this module's four states.
+    `None` when the op could not be run or produced no parseable verdict
+    line -- a real "could not compare" state, never silently read as
+    agreement.
+
+    `"NOT GREEN"` alone does not say whether something failed or is merely
+    still moving (`gh-branch`'s own docstring: "NOT GREEN -- a finding.
+    Something failed, or something has not finished"). Disambiguated with
+    this module's own `running` reading rather than by parsing prose further
+    -- `running` is a plain `status in (queued, in_progress)` / `state ==
+    "pending" and total > 0` check, no part of #914's own bug (the
+    combined-status `total_count == 0` gap on an Actions-only repo), so
+    using it here does not make the comparison circular on the thing this
+    test exists to catch."""
     supertool_bin = shutil.which("supertool")
     if supertool_bin is None:
         return None
@@ -255,19 +372,18 @@ def _gh_branch_verdict(repo, sha):
     except (OSError, subprocess.SubprocessError):
         return None
     text = result.stdout.decode("utf-8", "replace")
-    match = re.search(
-        r"(\d+) total: (\d+) passed, (\d+) failed, (\d+) pending", text,
-    )
-    if not match:
-        return None
-    _total, passed, failed, pending = (int(g) for g in match.groups())
-    if failed > 0:
-        return "bad"
-    if pending > 0:
-        return "running"
-    if passed > 0:
+    word = _gh_branch_verdict_word(text)
+    if word == "GREEN":
         return "green"
-    return "no-run"
+    if word == "NO RUN":
+        return "no-run"
+    if word in (None, "UNKNOWN"):
+        return None
+    # word == "NOT GREEN"
+    check_runs = statusline._reading_from_check_runs(repo, sha)
+    status = statusline._reading_from_combined_status(repo, sha)
+    running = (check_runs and check_runs["running"]) or (status and status["running"])
+    return "running" if running else "bad"
 
 
 def test_real_check_runs_reading_matches_gh_branch_on_this_repos_own_head():
