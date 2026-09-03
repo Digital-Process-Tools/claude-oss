@@ -1676,7 +1676,15 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     reason this is a function rather than an ``==``:
 
     * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
-    * ``own-tree-stranger`` -- a supertool checkout that has one anyway.
+    * ``own-tree-ok`` -- a supertool checkout that has a `./supertool` anyway, and
+      it resolves to this same tree's own `supertool.py` -- the documented
+      convenience alias (#780), not the plugin wrapper the own-tree line warns
+      about missing a reason to exist.
+    * ``own-tree-stranger`` -- a supertool checkout that has one anyway, and it
+      resolves somewhere else.
+    * ``own-tree-unknown`` -- a supertool checkout with a `./supertool` whose
+      target the filesystem would not compare against this tree's own core --
+      "could not tell", not an accusation. See `_same_file`.
     * ``absent`` -- nothing there. A fresh clone, or a worktree cut mid-session.
     * ``ok`` -- a link reaching a `supertool.py` in the plugin cache, and matching
       the version the install record calls active.
@@ -1744,6 +1752,21 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
         # Displayed against the root the core was found under, not against the raw
         # project_dir -- see _own_supertool_tree.
         if present:
+            # #780: presence alone used to be enough to warn, so a `./supertool`
+            # pointing at this tree's OWN core -- the documented convenience form --
+            # was condemned identically to one pointing at a stranger. `_same_file`
+            # is the same identity check the plugin-cache comparison below already
+            # uses, and it already returns the three answers this needs: `True` is
+            # the alias, earning the OK the own-tree line already gives a bare
+            # tree; `False` is a real stranger, keeping today's WARN; `None` is
+            # "could not tell", which must not read as either the accusation or the
+            # clearance -- see `_same_file`'s own docstring for why that is a
+            # distinct answer rather than a `False`.
+            same = _same_file(str(link), str(core))
+            if same is None:
+                return "own-tree-unknown", _display(root, core)
+            if same:
+                return "own-tree-ok", _display(root, core)
             return "own-tree-stranger", _display(root, core)
         return "own-tree", _display(root, core)
     if not present:
@@ -1808,6 +1831,13 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "session-start hook deliberately creates no wrapper (one would run the "
             "plugin core against this tree's presets). Call {} directly.".format(detail),
         )
+    elif state == "own-tree-ok":
+        report(
+            "OK",
+            "./supertool: a convenience alias for this tree's own {}, not the plugin "
+            "wrapper -- both name the same file, so calls through either reach this "
+            "tree's own core.".format(detail),
+        )
     elif state == "own-tree-stranger":
         report(
             "WARN",
@@ -1815,6 +1845,16 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "hook creates none on purpose. If it points at the plugin install it runs "
             "the plugin core against this tree's presets and every custom op through it "
             "declines. Call {} directly and remove the wrapper.".format(detail),
+        )
+    elif state == "own-tree-unknown":
+        report(
+            "WARN",
+            "./supertool exists inside a supertool checkout, and the filesystem would "
+            "not say whether it names this tree's own {} or something else -- so "
+            "whether it is the harmless alias or a real stranger is unknown, not "
+            "wrong. Call {} directly rather than relying on the wrapper.".format(
+                detail, detail
+            ),
         )
     elif state == "ok":
         report("OK", "./supertool: the plugin's entry point ({})".format(detail))
@@ -5715,7 +5755,18 @@ def dependency_diagnostic_state(
             name, version
         )
     env = dict(os.environ)
-    env["CLAUDE_PROJECT_DIR"] = str(project_dir)
+    # #833: `str(project_dir)` alone hands a relative `--root .` straight through
+    # to the child process, verbatim. `remember`'s own diagnostic derives its
+    # session-directory slug from this value, so a literal "." produces a slug
+    # that matches no real transcript directory and a false `VERDICT: problem`
+    # that this function relays exactly as designed -- the verdict is real, the
+    # fact it describes is not. `os.path.abspath` (not `os.path.realpath`) is
+    # this file's own idiom for "make this absolute" elsewhere -- the config-path
+    # display above, the PATH walk's own directory comparison -- and it is enough
+    # here too: it needs no component to actually exist and never resolves a
+    # symlink, which is exactly what turning "." into a real directory name
+    # requires and nothing more.
+    env["CLAUDE_PROJECT_DIR"] = os.path.abspath(str(project_dir))
     try:
         done = run(
             [bash, str(script)],
