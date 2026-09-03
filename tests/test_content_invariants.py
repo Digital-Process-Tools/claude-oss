@@ -22,6 +22,12 @@ import manager_docs  # noqa: E402
 SKILLS = sorted((REPO_ROOT / "skills").rglob("SKILL.md"))
 AGENTS = sorted((REPO_ROOT / "agents").glob("*.md"))
 COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md"))
+#: A schema description is prose an agent reads with the same authority as a
+#: skill or an agent definition -- #783's own framing, and the reason
+#: `handback.md` points a brief at these fields rather than copying the list
+#: into one. Derived from disk the same way the three lists above are, rather
+#: than a second hand-kept list of filenames (#783's own ask).
+SCHEMAS = sorted((REPO_ROOT / "schemas").glob("*.json"))
 
 #: The manager loop's prose is a spine plus one file per phase. Every check
 #: below asks "does the loop say X", never "does one file say X" -- pinned to
@@ -42,7 +48,7 @@ PROSE = SKILLS + AGENTS
 #: The phase files are prose the loop executes, so the sweeps below have to
 #: reach them. They are deliberately NOT in `PROSE`: that list is also what
 #: the frontmatter check iterates, and a phase file is not a skill.
-EXECUTABLE_PROSE = SKILLS + SKILL_PHASES + AGENTS + COMMANDS
+EXECUTABLE_PROSE = SKILLS + SKILL_PHASES + AGENTS + COMMANDS + SCHEMAS
 
 # Spellings that would make a document true of exactly one repository.
 HARDCODED = [
@@ -4426,6 +4432,79 @@ def test_the_document_that_makes_the_claim_still_makes_it():
         "step that hands over the payload and the paragraph describing what the "
         "op does with it -- and fewer than two are in range, so the check is "
         "vacuous for the ones it missed: {}".format(len(windows))
+    )
+
+
+def test_schemas_directory_is_in_the_swept_population():
+    """#783: schemas/agent-report.schema.json:377 carried the #776 drift after PR
+    #782 corrected every other copy, because EXECUTABLE_PROSE's population
+    stopped at the loop's own markdown and never reached schemas/. A schema
+    description is prose an agent reads with the same authority as any other
+    document in this sweep -- #783's own framing, and the reason
+    `handback.md` points a brief at these fields rather than copying the list
+    into one -- so it belongs in the same population, derived from disk (a
+    glob over schemas/*.json) rather than a second hand-kept list.
+    """
+    assert SCHEMAS, "no schemas/*.json found -- this check would vacuously pass"
+    assert set(SCHEMAS) <= set(EXECUTABLE_PROSE)
+
+
+def test_reverting_the_schema_to_its_pre_783_wording_is_caught_by_the_sweep():
+    """#783's own regression, reproduced against the live file rather than a
+    fixture: revert schemas/agent-report.schema.json's corrected sentence back
+    to its stale wording and confirm both halves the fix depends on -- the
+    checker itself flags the reverted text, and the file is actually a member
+    of the population `_executable_documents()` reads, so the regression above
+    would not pass silently on disk.
+    """
+    schema_path = REPO_ROOT / "schemas" / "agent-report.schema.json"
+    original = schema_path.read_text(encoding="utf-8")
+    reverted = original.replace(
+        "which refuses outright and names no_close as the escape hatch for a "
+        "deliberate `Part of #N` pull request -- before the agent's session "
+        "could matter.",
+        "which REPORTS and does not refuse, exit 0 -- after the agent's "
+        "session had ended.",
+    )
+    assert reverted != original, "the sentence this test reverts is no longer in the schema"
+    assert "the-op-is-said-to-report-and-exit-0-when-it-now-refuses" in _claimed_guarantee_unmet(
+        reverted
+    )
+    assert schema_path in EXECUTABLE_PROSE, (
+        "schemas/agent-report.schema.json is not in the swept population -- the "
+        "regression above would pass silently on disk"
+    )
+
+
+def test_developer_md_says_which_schema_version_to_write():
+    """#732: the report-validation section documented how to READ a
+    schema_version disagreement between the installed cache and this tree's
+    own copy -- the branch's own copy is authoritative in a clone of this
+    plugin -- but never said which number an agent should WRITE into
+    `schema_version` in the first place. So a lane copied whichever file it
+    happened to open first, and seven of nine reports on disk under-declared
+    their actual contract for exactly that reason. The instruction has to sit
+    inside the same prose unit as the existing authority rule, not merely
+    somewhere in the file, or a lane skimming past the rule never reaches it.
+    """
+    developer = (REPO_ROOT / "agents" / "developer.md").read_text(encoding="utf-8")
+    authority_rule = next(
+        (unit for unit in _prose_units(developer) if "the cache wins" in unit.lower()),
+        None,
+    )
+    assert authority_rule is not None, (
+        "the authority-rule sentence this fix is anchored beside ('the cache "
+        "wins') is no longer in developer.md -- update this test's anchor"
+    )
+    assert re.search(
+        r"\bwrit(?:e|ten)\b(?:\W+\w+){0,20}\Wschema_version"
+        r"|schema_version(?:\W+\w+){0,20}\W\bwrit(?:e|ten)\b",
+        authority_rule,
+        re.IGNORECASE,
+    ), (
+        "developer.md's authority-rule paragraph does not say which number to "
+        "WRITE into schema_version -- only how to read a disagreement once "
+        "one is already on disk: {!r}".format(authority_rule)
     )
 
 

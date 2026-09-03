@@ -1068,7 +1068,13 @@ or not.
      That test is deliberately stricter than *a file of that name exists
      here*: a managed repository may ship a `scripts/report_schema.py` of its own for reasons that
      have nothing to do with this plugin, and **a coincidence of filename is not a claim of
-     authorship**. Where the manifest does not name this plugin, the cache wins.
+     authorship**. Where the manifest does not name this plugin, the cache wins. **Write the same
+     number you would read as authoritative.** `schema_version` is a value you write, not one you
+     read back, and this rule governs both: put in it `x-schema-version` of whichever copy this
+     paragraph just named as authoritative — never the number belonging to whichever file you
+     happened to open first when the two disagree. #732 measured seven of nine reports in this
+     repository's own history under-declaring their contract this way, each one correct about how
+     to *read* a disagreement and silent about which side to *write*.
    - **Neither copy ran** — a missing interpreter, a permission block, a cache path that resolved
      to nothing. Not the local copy being absent, which is the ordinary case above and has already
      been answered. The report is then `could not validate`, which is not `valid`, and saying `ok` here
