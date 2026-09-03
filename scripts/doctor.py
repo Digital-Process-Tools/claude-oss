@@ -6919,6 +6919,11 @@ NOT_COMPARED_TOP_LEVEL = {
                     "the difference decides nothing",
     "CLAUDE.md": "prose for a session in this repository",
     "CODE_OF_CONDUCT.md": "project prose, read by people",
+    "CONTRIBUTING.md": "prose for a contributor to this repository, and a "
+                       "`defaults`-class file everywhere else -- scaffold writes it "
+                       "once into a managed repo and it is that maintainer's "
+                       "afterwards, so a copy differing from ours is the designed "
+                       "state rather than a skew worth reporting",
     "LICENSE": "project prose, read by people",
     "README.md": "project prose, read by people",
     "SECURITY.md": "project prose, read by people",
