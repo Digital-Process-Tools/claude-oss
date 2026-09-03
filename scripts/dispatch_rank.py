@@ -445,6 +445,9 @@ def main(argv=None):
     ranked = order(issues, declared)
     unrankable = 0
     reserved_count = 0
+    reserved_spelling = declared.get("reserved")
+    reserved_declared = bool(reserved_spelling) and isinstance(
+        reserved_spelling, str)
     for item in ranked:
         answer = rank(item.get("labels") or [], declared)
         is_reserved = reserved(item.get("labels") or [], declared)
@@ -469,8 +472,11 @@ def main(argv=None):
                 answer["rank"], item.get("number"),
                 answer["author"], answer["band"],
                 "" if not answer["why"] else "  -- " + answer["why"], marker))
-    print("{} issue(s), {} unrankable, {} reserved".format(
-        len(ranked), unrankable, reserved_count))
+    print("{} issue(s), {} unrankable, {}".format(
+        len(ranked), unrankable,
+        "{} reserved".format(reserved_count) if reserved_declared
+        else "labels.reserved is not declared, so reservation cannot be "
+             "read off the board"))
     return 0
 
 
