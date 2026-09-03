@@ -386,6 +386,19 @@ into the probe.
   every time; the class that does not exist yet is where the worst finding lands. An unranked finding
   is reported unranked — never demoted to "no row, therefore minor".
 
+  **One recurring shape stays unranked on purpose: a guard comparing a duplicated fact against its
+  one known instance, never extended when a sibling instance was added (#888).** `misreports`,
+  `fails-to-preserve` and `ships-local-state` were each considered for it and declined — the fix this
+  shape sends a reviewer to make is neither a rendering seam, an invariant a change broke, nor a value
+  baked into the release artifact, it is the guard's own coverage, and none of those three rows' fixes
+  would touch that. It is not folded into `B` (a guard that did not run) either, unless the sibling
+  copies have actually diverged: **the rows are a record of what has already gone wrong, never a
+  partition of what can**, and a coverage gap reported before two copies disagree is exactly the "can"
+  side of that line. Fix it the way #888 did — derive the comparison's own instance list from the
+  same source the duplicated copies are drawn from, so a later instance is covered the moment it is
+  declared rather than the moment somebody remembers to add a test for it — and file it, unranked,
+  when a derivation is not the right fix for the pair in hand.
+
   **Two vocabularies, joined here.** The audit agents search by *strategy* — the lettered checklist in
   `${CLAUDE_PLUGIN_ROOT}/agents/auditor.md`. This table ranks by *cost*. They are deliberately not one
   list and not a one-to-one map: one strategy turns up findings that rank anywhere from `misreports`
