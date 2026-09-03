@@ -249,87 +249,16 @@ into the probe.
 
 ## Deciding what to build
 
-- **Judge as the tool's primary user.** "Is this useful when I actually run it?" beats "is the issue
-  well-written."
-- **Refusing is a first-class outcome**, and cheaper than any build.
-- **Pre-flight before delegating.** Reproduce the behaviour. Read the body *and* the comments
-  (`gh-issue:N:full`) — a comment amendment redefines the deliverable often enough that briefing from
-  the body alone is a known way to burn a whole agent run.
-- **Re-derive the issue's own claims.** A body goes stale while its comments accumulate. Grep for the
-  *concept*, not the issue's spelling of it.
-- **The issue can go stale against the code, and neither bullet above catches that axis.** Both of
-  the two above are about the body going stale against its own comments — nothing yet asks whether
-  the whole issue, comments included, has gone stale against what actually shipped. A lane was
-  dispatched for part 3 of #81 after the fix had already landed and shipped: the body and every
-  comment were read exactly as asked, and the brief was still written for finished work (#457). Before
-  writing a brief, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/preflight_check.py" --pattern
-  PATTERN --path FILE_OR_DIR` against the
-  code path the issue names — for #81 that was one grep for `could not run` in `commands/release.md`
-  — and read its `state` in three, never two: **`matched`**, **`not-matched`**, or
-  **`could-not-search`**, which must never be read as `not-matched`. Whether a match means
-  **already-shipped** or **still-open** depends on what the pattern names — a contract that should
-  exist, or a symptom that should not — and that direction is the maintainer's own judgement to record
-  alongside the call, never the script's to guess. `could-not-search` becomes **`could-not-tell`** at
-  the dispatch decision and must never render as **`still-open`** either — the issue names no code
-  path precise enough to check is the honest reading, not a nudge to dispatch anyway.
-  **For a multi-part issue, run it once per part.** A whole-issue verdict hides exactly the case
-  #457 records: #81 had three parts in three different states (one filed elsewhere, one shipped, one
-  genuinely open), and a single check over the whole issue would have called it open and dispatched
-  it again. **The same check belongs where a bundle is assembled, not only where a single issue is
-  chosen** — a stale member wastes a share of the whole bundle's brief in proportion to the bundle's
-  size, and a bundle reads exactly as healthy at dispatch whether or not one of its members has
-  already shipped. Run it for every candidate before it is added to a bundle, not only for the one
-  issue a single-issue lane would have picked.
-  **Quote the probe's scope verbatim in the brief, never a summary of it (#727).** `not-matched`
-  over one file and `not-matched` over the whole tree render identically once retyped as prose — a
-  brief that wrote *"a pre-flight returned not-matched — nothing does this today"* about a probe
-  scoped to one file (`scripts/doctor.py`) sent a lane to build a second mechanism beside one that
-  already existed (`tests/test_shipped_op_spellings.py`), because the sentence carried no scope for
-  the lane to catch. `preflight_check.py`'s receipt names `roots`, the paths actually searched, on
-  every state including `could-not-search` — paste the whole line, `not-matched over 1 file
-  (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
-  every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
-  wearing a repository-wide claim's clothes.
-- **Select in the dispatch order, and compute it rather than feel it (#798).** Two axes, author
-  before priority within a band. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the
-  one place the table lives; call it rather than re-deriving it here.
+**Judge as the tool's primary user** -- "is this useful when I actually run it?" beats "is the issue
+well-written". **Refusing is a first-class outcome**, and cheaper than any build. **Ask whether the
+fix compounds**: a fix that removes a whole class of future defects outranks a bigger fix that
+removes one instance.
 
-  | Rank | Who filed | Priority |
-  | --- | --- | --- |
-  | 1 | human | high |
-  | 2 | loop | high |
-  | 3 | human | medium |
-  | 4 | human | low, or no priority label |
-  | 5 | loop | medium |
-  | 6 | loop | low, or no priority label |
-
-  **"Loop" is an issue carrying `labels.filed_by_loop`'s label; an issue without it is a human
-  issue.** This replaces priority-only ordering rather than layering over it. The reason is a
-  measurement, not a preference: 476 issues in 20 days on this repository, 98% of them filed by the
-  loop, 68% closed the same day — so a maintainer's ask sat behind the loop's own backlog, and the
-  two maintainers no longer knew what the tool was doing.
-
-  **The order does not put every human issue above every loop one**, and rank 2 is why: a
-  blocking-class defect the loop found still beats an ordinary ask. The ranking table in
-  `skills/manager/phases/findings.md` decides what blocks a release; this decides what gets picked up first among everything that does not.
-
-  **`could-not-rank` is a real answer and must never render as rank 4.** With no declared
-  `labels.filed_by_loop`, every issue on the board is unlabelled, and reading that as "all human"
-  would promote the loop's entire backlog. The module refuses instead, and an unrankable issue sorts
-  last rather than first — the absence of a reading is not evidence of value.
-
-- **Rank a finding by what cannot be undone**, then by who is walking away. The eleven-row table --
-  `destroys`, `discloses`, `executes`, the two `containment` rows, `forges`, `ships-local-state`,
-  `misdirects`, `splices`, `fails-to-preserve`, `misreports` -- lives in
-  `skills/manager/phases/findings.md` and **only there**, with the two verdict columns it carries:
-  *blocks a release* and *embargo when reported upstream*, which are two different questions and
-  disagree on one row. Read that file before ranking anything, and read the column you actually
-  need rather than a restatement of it. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"`
-  prints the table's own bytes when a payload needs it verbatim. **A finding that fits no row is
-  reported unranked**, never demoted to "no row, therefore minor".
-
-- **Ask whether the fix compounds**, not whether the loop is worth it. A fix that removes a whole
-  class of future defects outranks a bigger fix that removes one instance.
+**Read `skills/manager/phases/dispatch.md` before selecting anything.** It carries the pre-flight
+that catches an issue gone stale against shipped code and `preflight_check.py`'s three states, the
+per-part and per-bundle-member rule behind it, why a probe's scope is quoted verbatim rather than
+summarised, and the two-axis dispatch order `dispatch_rank.py` computes -- author before priority,
+with `could-not-rank` as a real answer that must never render as rank 4.
 
 ## The defect this class of tool keeps having
 
@@ -465,35 +394,12 @@ branch-deletion rules `|cleanup` refuses to apply.
 
 The instinct is "the other platforms are untested" — usually wrong, since CI runs them. What is true
 is narrower and worse: **a green run on the platform the code was written on says almost nothing
-about the platform it was not**, and every cross-platform defect below was written by someone who had
-watched the full suite pass locally first.
+about the platform it was not.** **Say which grade a cross-platform claim is** — observed, or
+reasoned; a correct analysis written without access to that platform is still worth having, and
+should still carry the label.
 
-The recurring shapes, worth auditing before any report:
-
-- a suffix or separator match that behaves differently with backslashes than with forward slashes
-- a Windows drive letter read as a hostname, because the colon precedes the first slash
-- a hardcoded POSIX literal in a test assertion
-- a platform raising a different exception type, so a narrow `except` never fires
-- an unspawnable binary raising a spawn error instead of reaching its own "the tool failed" arm
-- a character the console's codepage cannot represent: stdout and stderr are encoded with the
-  console's codepage, not the source file's, so on Windows — typically cp1252 — an arrow, a
-  box-drawing glyph or an emoji raises `UnicodeEncodeError` and kills the process at the `print`,
-  after the work that print was reporting already happened
-
-The last one is the newest, and it is there because the checklist had no item for it while the defect
-shipped: five items about what a program **reads or invokes**, none about what it **writes**. What
-makes it a platform item rather than a cosmetic one is the ordering — the process dies reporting work
-it has already done, so the exit code describes the crash and not the mutation.
-
-Note the shape of the exception type and the unspawnable binary: **neither is a platform bug** — both
-are the test harness rendering an environment limit as a product verdict, which is this file's own
-defect class relocated into the thing meant to detect it. So "add more tests for that platform" is
-the wrong lever; the exposure is in the tests that already exist. What works: make the path cheap
-enough that platform speed cannot hurt it, make failures announce themselves, and deliver the fix
-rather than leaving it fixed-in-source.
-
-**Say which grade a cross-platform claim is** — observed, or reasoned. A correct analysis written
-without access to that platform is still worth having, and should still carry the label.
+**The recurring shapes, and why "add more tests for that platform" is the wrong lever, are in
+`skills/manager/phases/review.md`** -- read them before auditing a diff or writing a report.
 
 ## Untrusted input
 
@@ -604,28 +510,11 @@ mechanics; the phase file restates it rather than redefining it.
 
 ## Cadence
 
-**Three to four ticks, then a release, then a triage sweep, then three to four more ticks.**
-Stated by the maintainer 2026-09-02, and nowhere else in this loop's prose until now (#855). The
-ordering matters and is not the one the documents used to imply: triage lands **immediately before**
-the next run of ticks, not at the end of the one that just closed, so `dispatch_rank.py` reads
-priority labels that are as fresh as they can be at the moment it actually consumes them, and the
-cohort burn-down a triage sweep feeds counts a set the release has already stopped editing (the same
-"re-count after the last label write, never before it" discipline the accounting phase already
-applies to the freeze count itself).
-
-**Keep the freeze and the sweep apart.** The cohort freeze -- defined below, under *Closing a
-tick: the drain and the fill* -- is the maintainer's own act, by hand, in the same minute as the tag;
-the triager must never write a `cohort-*` label. The triage sweep is a separate step that follows the
-freeze, run over the tracker's priority and lane labels, never over cohorts.
-
-**The last-triaged half is enforced, the label-coverage half is not (#855).**
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded AT`, run
-whenever a sweep completes, and `--last-triage`, which any tick can call to read `last triaged: <ISO>
-/ never / could-not-read` back -- `never` is a real, established absence and `could-not-read` is not
-the same fact, the same distinction every other reader in that file draws. Reporting how much of the
-open board carries no priority label at all -- so "the board is triaged" is a measurement rather than
-a memory -- is still unbuilt; that half stays this repository's own defect class, one level up,
-applied to its own cadence, until somebody takes it.
+**Three to four ticks, then a release, then a triage sweep, then three to four more ticks.** The
+ordering matters: triage lands **immediately before** the next run of ticks, not at the end of the
+one that just closed. `--triage-recorded` records a sweep and `--last-triage` reads it back in three
+states -- `<ISO>` / `never` / `could-not-read`. The argument, and the half that is still unenforced,
+are in `skills/manager/phases/accounting.md`.
 
 ## Closing a tick: the drain and the fill
 
@@ -675,21 +564,9 @@ instruction is the one input the loop cannot be wrong about, because acting on i
 **Every other condition arms a wakeup instead** — waiting on CI, waiting on an agent, waiting on a
 third party, a release a gate refused, an empty board. When a direct instruction does stop it, say so
 out loud, because a loop that stops silently is indistinguishable from one that was never armed.
-
-**The asymmetry is the whole argument, and it is why this is not a preference.** A loop that keeps
-ticking with nothing to do is visibly idle and self-correcting, and the cost is one cheap tick that
-says so. A loop that stopped is indistinguishable from one that was never armed, the cost is
-unbounded, and nothing inside it will ever notice.
-
-**What this replaces, written down so it is a decision and not a drift.** The condition used to be
-*nothing outstanding but somebody else's work → stop the loop, `stop: true`*. It is replaced rather
-than tightened, because it asks the loop for a judgement about its own board at the moment it is
-least able to make one: a loop about to stop is definitionally a loop that has stopped looking. On
-2026-08-16 it reached that judgement while holding a belief that had been false for an hour and fifty
-minutes, with four blockers it had filed itself sitting unstarted on its own tracker (#209). And
-*somebody else's work* was carrying the load — an upstream issue, a review someone else owes, a
-release the maintainer must approve — where the right move was already a long wakeup rather than a
-termination. The rule described an exception that never had a good instance.
+**The asymmetry behind that, the rule it replaced and the state-file calls that record a wait, a
+plugin identity and a same-tick plugin-root move are in `skills/manager/phases/accounting.md`;
+`commands/tick.md` steps 1 and 6 are where those calls are wired.**
 
 **A recorded wait names what it is waiting on in a form a later turn can re-read.** *Blocked on audit
 completion* is unfalsifiable prose, and it survived ninety minutes after the audit had answered.
@@ -697,47 +574,16 @@ completion* is unfalsifiable prose, and it survived ninety minutes after the aud
 call. This binds the wakeup's `reason` and the state entry alike — and a wait is re-read at the top
 of the next tick, never carried forward from the belief that recorded it.
 
-**#337 is the executable half: `scripts/oss_state.py` carries `detail.wait` as a field, not only as
-prose in `--decision`.** `--wait-dispatch`/`--wait-observable` on the blocking tick's `--decision`
-call record the claim; `--pending-wait` at the top of the *next* tick reads it back; `--check-wait
-{holds,cleared,could-not-evaluate}` re-derives it once the observable has actually been tested. Three
-states, not two, for the same reason `intake` and `cohort_freeze` have three: `holds` is a
-measurement that came back negative, `could-not-evaluate` is no measurement at all, and rendering the
-two alike is exactly the bug this closes. `commands/tick.md` step 1 is where the call is wired.
-
-**#477 is the same shape one fact over: a tick's own plugin identity is a prior nothing recorded, so
-"has the version changed since last tick" was not a question this system could answer.**
-`--plugin-identity` on step 6's `--decision` call records `doctor.plugin_identity()`'s own string —
-version folded with a content digest, never the version alone, because a manifest version stays put
-for a whole release cycle while the content underneath it can still move (#418). `--check-plugin-
-identity` at the top of the *next* tick compares against it: `changed`, `unchanged`,
-`could-not-tell` when no prior was ever recorded — which must never render as `unchanged` — or
-`route-mismatch` (#677) when the current and prior readings were obtained by different routes (the
-version-pinned `${CLAUDE_PLUGIN_ROOT}` never sees its own version move, so step 1 now resolves the
-actually-installed copy instead and tags each reading with which route produced it — a prior
-recorded by the old route is not the same measurement as a new one, so comparing them is its own
-state rather than a guessed `changed`/`unchanged`). `commands/tick.md` step 1 is where the call is
-wired.
-
-**#565 is a narrower, same-tick question one clock over: does `${CLAUDE_PLUGIN_ROOT}` itself move
-DURING this tick, not merely between two ticks?** An ephemeral, single-use sidecar
-(`--record-plugin-root` at step 1, `--check-plugin-root` at step 6, consumed on first read) answers
-it separately from the cross-tick identity comparison above, because the two are different clocks
-and folding them together would answer neither question honestly.
-
 **The wakeup is a safety net, not a metronome. Never wait for it.** The tell is a closing line that
 describes the schedule instead of the next action. Waiting on CI is not a reason to stop working —
 **a wait is not an act, and it does not outrank dispatch (#820)**, the same rule `commands/tick.md`
 step 3 states where dispatch is decided: everything that can run concurrently with a wait is started
 before the wait, not after.
 
-**What ends a tick, and only one of these three does. None of them stops the loop.** That distinction
-was being conflated, and the conflation is half of #209: these three states say how *this tick*
-closes, while the doctrine above says when the *loop* stops, and the sentence that used to sit here
-made the second follow from the first. Reading a momentarily quiet board as a finish line is what
-that produced — observed at the close of the 0.5.0 tick, which reported nothing pending with nineteen
-issues open, every one of them filed by this loop (#244). So close every tick by saying, in as many
-words, which of these it is in:
+**What ends a tick, and only one of these three does. None of them stops the loop.** Close every
+tick by saying, in as many words, which of these it is in — the distinction between "this tick
+closes" and "the loop stops" is half of #209, and `skills/manager/phases/accounting.md` carries
+what conflating them cost:
 
 - **Work started** — something was delegated in this tick. Name what, and where it is running. Not
   an ending: the tick continues, and arming a wakeup to wait on it is the tell above in its other
