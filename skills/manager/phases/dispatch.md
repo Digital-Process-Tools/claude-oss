@@ -436,7 +436,8 @@ line naming the cause — rather than degrading quietly into a claim that looks 
 Every brief carries these seven, and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brief_schema.py" <brief-file>` checks the draft before
 the spawn — `ok` / a row per missing element / `could-not-read`. Three are checked structurally and
 four are presence only, and the receipt says which: **a brief that passes is not a brief that was
-reviewed** (#967).
+reviewed** (#967). `brief_schema.py` is the symmetric half of `scripts/report_schema.py`: one checks
+what goes into a lane, the other what comes back out of it.
 
 1. **Use supertool, as an instruction not a note.** Paste verbatim:
 
