@@ -313,19 +313,20 @@ standing in a session's context for the whole of every tick and every release, w
 session ever reached the phase a given paragraph governs.
 
 So the loop's prose is split. The **spine** carries what is decided every tick — authority, the
-config read, the op table, the ranking table, untrusted input, the hazards, loop mechanics, state —
+config read, the op table, untrusted input, the hazards, loop mechanics, state —
 plus one directive block per phase. Each **phase file** under `skills/manager/phases/` carries that
 phase's argument: the incident behind a rule, the measurement, the approach tried and rejected. A
 `/oss:release` session no longer loads the dispatch, handback and review material at all.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 58,377 B | 64,600 B |
+| `skills/manager/SKILL.md` | 54,751 B | 60,200 B |
 | `skills/manager/phases/dispatch.md` | 37,253 B | 41,000 B |
 | `skills/manager/phases/handback.md` | 18,864 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 15,093 B | 16,600 B |
 | `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
 | `skills/manager/phases/review.md` | 11,637 B | 12,800 B |
+| `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
 | `skills/manager/phases/merge.md` | 10,012 B | 11,000 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
@@ -365,17 +366,29 @@ moved by the same #762: one paragraph, naming where the filing-time label attach
 10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
 trimming something else in the same file to absorb, so it was raised too.
 
-**The total grew: 122,423 B became 161,431 B, +31.9%** — re-derived here rather than trusted from
-a prior edit of this sentence, which read 153,634 B / +25.5% and had already gone stale by the time
-`dispatch.md`'s own row moved for #880 (33,036 -> 37,253 B, re-summed rather than hand-added: the
-prior figure itself undercounted the table by 3,580 B even before this round's row change, with
-nothing checking it against the table -- still no test ties this sentence's numbers to the table's own
-column, only the per-file rows). Sum the table's own "measured (baseline)" column the next time a row
-changes, rather than editing this sentence by hand. The spine's directive blocks and each phase file's
+**The total grew: 122,423 B became 169,425 B, +38.4%** — re-derived by summing the table's own
+"measured (baseline)" column above, not by editing the prior figure (161,431 B / +31.9%, itself a
+correction of a 153,634 B / +25.5% edit that had gone stale). Still no test ties this sentence's
+numbers to the table's own column, only the per-file rows; sum it again the next time a row changes,
+rather than editing this sentence by hand. The spine's directive blocks and each phase file's
 own header are a second, shorter statement of what the phase file then argues at length, and that is a
 real cost paid on every read of the phase file. It buys the number that actually matters here — what a
-session loads before it knows which phase it will reach — which fell 52%. Quote both, or the saving
-reads as free.
+session loads before it knows which phase it will reach — which fell 52%, and then a further 13%
+when #958 moved the ranking table and the upstream-filing section out to `phases/findings.md`
+(62,829 -> 54,751 B, measured on disk rather than from the baseline column). Quote both, or the
+saving reads as free.
+
+**#958's own reasoning, because the rejected alternative is the interesting half.** Moving that
+prose to `.claude/jit-context/` was weighed and refused: jit's shown-set dedup is keyed on
+`session_id`, and a spawned agent inherits its parent's, so scheduler, sub-manager and every lane
+are one session — a directive moved there reaches the sub-manager only when nothing earlier in the
+session tripped the same match. That is a rule that silently did not run, which is the defect class
+at the top of this file, so jit is for knowledge that fires on touching a file or a term and never
+for a directive a phase depends on. The split was chosen on the same test #725 and #694 used to
+*decline* one: those were each one subject wearing two names, and ranking a finding genuinely is not
+the same subject as choosing what to dispatch. The spine's budget came down with the measurement
+rather than staying at 64,600 B — a ceiling left 9,849 B above the file is a saving that can be
+spent again without anybody choosing to.
 
 **The split's own defect is that an unread phase file is a rule that did not run, and that renders
 exactly like a rule with nothing to say.** Nothing in this repository can observe whether a reader

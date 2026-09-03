@@ -87,7 +87,8 @@ improvising a list from memory.
 
 Rank each finding as well as classing it, and for the same reason you class it there rather than
 here: the rows and the rule that assigns them are enumerated once, in the ranking table in
-`${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md`, and `${CLAUDE_PLUGIN_ROOT}/agents/auditor.md` says
+`${CLAUDE_PLUGIN_ROOT}/skills/manager/phases/findings.md`, and
+`${CLAUDE_PLUGIN_ROOT}/agents/auditor.md` says
 under "Ranking a finding" how the two vocabularies join. Work from there and **do not restate the
 rows here or in your report**. `unranked` — you classified it and no row fits — and `could not rank`
 — the table never reached you — are different answers, and neither is a finding that arrived without

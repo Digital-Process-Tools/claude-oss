@@ -16,7 +16,8 @@ say -- so the absence is stated, never silent.
 ## Releasing
 
 Trigger, whichever comes first: **N merged PRs since the last tag**, **any user-visible fix plus a
-soak period**, or **immediately for anything in a class the ranking table above marks blocking** —
+soak period**, or **immediately for anything in a class the ranking table in
+`skills/manager/phases/findings.md` marks blocking** —
 `destroys`, `discloses`, `executes`, `containment (read)`, `containment (write)`, `forges`,
 `ships-local-state`.
 
