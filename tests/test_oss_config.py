@@ -1152,14 +1152,25 @@ def test_no_accepted_slug_derives_a_name_that_is_a_traversal(value):
 # off Windows exercised the branch at all.
 
 
-def test_the_job_object_helper_answers_none_off_windows_rather_than_raising():
-    """`_windows_job_object` is called unconditionally on `os.name == "nt"`, and its
-    whole contract is that every failure answers None so the caller can fall back.
-    Off Windows there is no `kernel32` to load, which is the same shape as a Windows
-    without these entry points -- so this is a real exercise of the failure arm, not
-    a stand-in for one.
+def test_the_job_object_helper_answers_for_this_platform():
+    """Two platforms, two opposite correct answers, and asserting either one
+    everywhere is how this test failed its first CI round.
+
+    On Windows a job object is exactly what must come back, and a None there would
+    mean every timeout silently falls back to the `taskkill` path this change exists
+    to stop relying on -- so that arm asserts a real handle and closes it again.
+
+    Everywhere else there is no `kernel32` to load, which is the same shape as a
+    Windows lacking these entry points: the contract is that it answers None rather
+    than raising, so the caller can fall back. That is a real exercise of the failure
+    arm, not a stand-in for one.
     """
-    assert oss_config._windows_job_object() is None
+    job = oss_config._windows_job_object()
+    if os.name == "nt":
+        assert job, "no job object on Windows means every timeout falls back to taskkill"
+        oss_config._windows_close_job(job)
+    else:
+        assert job is None
 
 
 def test_no_job_means_the_taskkill_fallback_is_reached(monkeypatch):
@@ -1201,9 +1212,16 @@ def test_a_job_that_cannot_be_terminated_still_falls_back(monkeypatch):
     assert calls == [["taskkill", "/F", "/T", "/PID", "99"]], calls
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="the POSIX arm cannot be exercised on Windows: `os.killpg` does not exist "
+    "there, so there is no group kill to assert was preferred over taskkill. UNTESTED "
+    "here: that the POSIX branch avoids taskkill -- which the other three tests' "
+    "Windows behaviour is not evidence for.",
+)
 def test_posix_never_reaches_taskkill(monkeypatch):
     """The must-not-fire control for the three above: with `os.name` left alone on
-    this POSIX machine, the Windows arm is not taken at all -- so a test that passed
+    a POSIX machine, the Windows arm is not taken at all -- so a test that passed
     because the branch was never entered would fail here."""
     calls = []
     monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
