@@ -203,7 +203,16 @@ SECRET_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|credential)",
 # The anchors live in the pattern rather than at the call site (`fullmatch` would also
 # close it) because a later caller reaching for `.match` or `.search` cannot then lose
 # them. `scripts/assemble_changelog.py` already spells it this way for the same reason.
-REPO_RE = re.compile(r"\A[^/\s]+/[^/\s]+\Z")
+#
+# The excluded-character class also excludes a backslash (#897). The class used to
+# read `[^/\s]`, which keeps a backslash out of neither run -- `owner/..\..\..\x`
+# matched, because a backslash is not `/` and is not whitespace. `_derive_local_config`
+# folds an unrefused `repo` straight into `state_file` (`.max/{name}-watch.json`), and
+# on Windows `ntpath.normpath` resolves a backslash as a separator, so that value could
+# walk the write target outside the clone. GitHub's own repo-name rules already exclude
+# a backslash, so this tightens the pattern to match what a real value can be rather
+# than adding a second check the derivation site would need to remember to call.
+REPO_RE = re.compile(r"\A[^/\\\s]+/[^/\\\s]+\Z")
 
 
 def repo_problem(value):
@@ -313,8 +322,9 @@ def watch_channel_name(value):
     `validate()`, so an unrefused null would derive the string `None` and export it.
 
     The fold survives the validation rather than being replaced by it: `REPO_RE`
-    accepts any pair of non-slash, non-whitespace runs, so characters a socket path
-    should not carry still reach it.
+    accepts any pair of non-slash, non-backslash, non-whitespace runs (#897 added
+    the backslash exclusion), so a character a socket path should not carry -- `+`,
+    say -- can still reach it.
     """
     if not isinstance(value, str):
         return None, "repo: expected 'owner/name', got {!r}".format(value)

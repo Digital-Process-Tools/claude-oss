@@ -115,6 +115,31 @@ def test_repo_must_be_owner_slash_name():
     assert any("repo" in p for p in oss_config.validate(config))
 
 
+@pytest.mark.parametrize("value", ["owner/..\\..\\..\\x", "owner/re\\po"])
+def test_repo_containing_a_backslash_is_refused(value):
+    """#897: `REPO_RE` excludes `/` and whitespace but not `\\`, so a `repo` value
+    carrying one derives a `state_file` (`.max/{name}-watch.json`) that a Windows
+    `normpath` can resolve outside the clone -- the forward-slash traversal case
+    right below is already refused by the existing character class, only the
+    backslash case slipped through.
+    """
+    assert oss_config.repo_problem(value) is not None
+
+
+def test_repo_forward_slash_traversal_is_still_refused():
+    """The must-fire half already covered elsewhere, restated beside the backslash
+    case above so the pair sits in one fixture: `owner/../../x` was always refused.
+    """
+    assert oss_config.repo_problem("owner/../../x") is not None
+
+
+def test_a_plain_owner_slash_name_is_still_accepted():
+    """The must-not-fire half: tightening the pattern must not refuse the ordinary
+    case the schema exists to accept.
+    """
+    assert oss_config.repo_problem("owner/name") is None
+
+
 def test_config_may_not_carry_a_secret():
     """No key in this schema holds a credential. An unknown key that looks like one
     is refused rather than ignored, because a config file is committed.
