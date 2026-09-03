@@ -4,7 +4,9 @@ description: "Measured on macOS: a clean login shell has no dpt-plugins entry at
 keywords: oss-workspace launcher, launcher symlink, login shell path, dpt-plugins path
 ---
 
-**A hit inside the plugin's own `bin/` proves nothing** about whether a command a maintainer is told
+**#526 asked whether the marketplace cache directory is reliably on a maintainer's own `PATH`**, which would make the `ln -sf` step in `docs/install.md` redundant. It is not, and this is the measured answer.
+
+**A hit inside the plugin's own `bin/` proves nothing** (#617) about whether a command a maintainer is told
 to run resolves outside a session — which is why `oss_workspace_launcher_state` does not search there.
 
 **Measured directly rather than assumed:**

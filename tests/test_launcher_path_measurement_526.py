@@ -22,6 +22,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / "README.md"
 INSTALL_DOC = REPO_ROOT / "docs" / "install.md"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
+#: #904 routed CLAUDE.md's trap prose into jit-context rules, so the measured `PATH` finding now
+#: lives in the rule that fires when somebody names the launcher rather than in a file every
+#: session loads whole. The assertions below are unchanged; only the file holding the fact moved.
+LAUNCHER_RULE = (
+    REPO_ROOT / ".claude" / "jit-context" / "vocabulary" / "00-manual" / "launcher-path-reach.md"
+)
 
 
 def _read(path):
@@ -44,14 +50,28 @@ def test_install_doc_records_the_526_measurement_near_the_symlink_instruction():
     assert body.count("\n", ln_at, measurement_at) <= 20
 
 
-def test_claude_md_records_the_measured_path_finding():
-    body = _read(CLAUDE_MD)
+def test_the_jit_rule_records_the_measured_path_finding():
+    """The measurement is recorded where a session meets the subject, not in every session.
+
+    This read `CLAUDE.md` until #904. The check is the same one -- the answer measured by hand is
+    written down rather than assumed -- against the file that now carries it.
+    """
+    body = _read(LAUNCHER_RULE)
     assert "#526" in body
     assert "dpt-plugins" in body
     assert "PATH" in body
 
 
+def test_claude_md_no_longer_carries_the_measurement_inline():
+    """The other half of #904: routed out means gone from here, not copied.
+
+    Paired with the assertion above so that "the rule has it" and "CLAUDE.md does not" are both
+    established -- either alone passes for a file that was simply deleted.
+    """
+    assert "#526" not in _read(CLAUDE_MD)
+
+
 def test_a_string_absent_from_both_files_is_correctly_reported_absent():
     """Negative control: proves `in` here can fail, i.e. these assertions are not vacuous."""
-    body = _read(README) + _read(CLAUDE_MD)
+    body = _read(README) + _read(CLAUDE_MD) + _read(LAUNCHER_RULE)
     assert "#999999-does-not-exist" not in body

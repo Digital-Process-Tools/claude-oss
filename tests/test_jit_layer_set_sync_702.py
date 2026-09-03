@@ -79,7 +79,12 @@ def layer_entries(root, dimension):
         return None, "no such directory: {}".format(exc)
     except OSError as exc:
         return None, "could not be listed: {}".format(exc)
-    return {name for name in names if name != INDEX}, None
+    # Generated index files, excluded as a *class* rather than by name. This read
+    # `name != INDEX` until claude-jit-context's rebuild started writing a second one
+    # (`01-paths.tsv`) beside `00-index.tsv`, at which point the check reported a
+    # generated artifact as an unshipped rule. A rule is always a `.md`, so the class
+    # is the safe boundary and a third index file cannot reopen this.
+    return {name for name in names if not name.endswith(".tsv")}, None
 
 
 def compare(on_disk, shipped):

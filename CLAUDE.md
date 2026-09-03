@@ -185,7 +185,7 @@ only in the sessions that touch what it governs rather than in every session for
 | `scripts/statusline.py` | `paths/00-manual/statusline-cache-staleness.md` |
 | `scripts/plugin_update.py` | `paths/00-manual/windows-subprocess-resolution.md` |
 | `scripts/oss_rules.py` | `paths/00-manual/rules-layer-symlinks.md` |
-| `scripts/`, `bin/` | `paths/00-manual/shell-sources-survey.md`, `posix-shell-portability.md`, `assemble-changelog-root.md` |
+| `bin/`, `scripts/shell_sources.py` | `.claude/jit-context/paths/00-manual/shell-sources-survey.md`, `.claude/jit-context/paths/00-manual/posix-shell-portability.md`, `.claude/jit-context/paths/00-manual/assemble-changelog-root.md` |
 | `.github/workflows/` | `paths/00-manual/owned-workflow-constraints.md` |
 | `agents/`, `skills/manager/` | `paths/00-manual/loop-prose-parity.md` |
 | named out loud | `vocabulary/00-manual/vendored-and-unwired.md`, `launcher-path-reach.md`, `vocabulary/01-oss/plugin-currency.md` |
