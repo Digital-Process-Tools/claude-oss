@@ -50,6 +50,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_budgets import repo_root  # noqa: E402
+
+# scripts/developer_docs.py -- the path is spelled here, not only imported.
+# tests/test_unwired_scripts_253.py counts a full tracked path or a bare
+# `name.py`, and an `import name` matches neither, so a module a dozen tests
+# import reads to that guard exactly like a file nothing uses. That is the
+# guard's own gap rather than this module's, and it is filed as one; naming
+# the path here is what keeps this file from being reported dead meanwhile.
 from developer_docs import documents  # noqa: E402
 
 #: The always-loaded half; budgeted in `agent_budgets.BUDGETS`.
