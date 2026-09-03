@@ -433,3 +433,105 @@ def test_a_repo_with_no_config_is_still_diagnosed(tmp_path):
     done, argv = run(_repo(tmp_path / "repo", with_config=False), root)
     assert "/oss:setup" in argv, done.stderr
     assert _doctor_argv(log) != [], done.stderr
+
+
+# --- #764: a real WARN routes the session into /oss:doctor at its first turn --
+
+
+def test_a_real_warning_routes_the_session_into_oss_doctor(tmp_path):
+    """The must-fire half. `usable with gaps` carries at least one real WARN --
+    NOTICE-only runs read `VERDICT: ok` by doctor.py's own arithmetic and never
+    reach this arm -- so this is exactly the case #764 says an auto-route is
+    readable for."""
+    body = (
+        "echo 'WARN one thing'\n"
+        "echo 'VERDICT: usable with gaps -- 1 warning(s)'\n"
+    )
+    root, _ = _plugin(tmp_path, body)
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "/oss:doctor" in argv, argv
+    assert "/oss:tick" not in argv, argv
+    assert "routing this session into /oss:doctor" in done.stderr, done.stderr
+
+
+def test_a_clean_run_does_not_route_and_keeps_its_own_prompt(tmp_path):
+    """The must-not-fire half, in the same fixture family as the test above. A
+    NOTICE-only (or genuinely clean) run reads `VERDICT: ok` and opens with
+    whatever prompt this launcher already chose -- never routed, never
+    silently overridden."""
+    root, _ = _plugin(tmp_path, "echo 'VERDICT: ok'\n")
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "/oss:tick" in argv, argv
+    assert "/oss:doctor" not in argv, argv
+    assert "routing this session into /oss:doctor" not in done.stderr, done.stderr
+
+
+def test_a_failure_verdict_also_routes(tmp_path):
+    """`not usable` carries at least one FAIL, which is at least as actionable as
+    a WARN -- the route must not be gated on `usable with gaps` alone."""
+    body = (
+        "echo 'FAIL clone path does not exist'\n"
+        "echo 'VERDICT: not usable -- 1 failure(s), 0 warning(s)'\n"
+    )
+    root, _ = _plugin(tmp_path, body)
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "/oss:doctor" in argv, argv
+
+
+def test_a_bad_verdict_on_a_repo_with_no_config_does_not_clobber_setup(tmp_path):
+    """Self-review finding (#764): a repo with no `.oss.json` at all also
+    produces `VERDICT: not usable` (missing config is a FAIL), and the first
+    cut of this route sent that repo to /oss:doctor instead of /oss:setup --
+    directly against the launcher's own reasoning a few lines above the
+    prompt assignment ("a guessed default branch merges into the wrong place
+    confidently"). The route is gated on the prompt already being
+    /oss:tick so /oss:setup is never overridden."""
+    body = (
+        "echo 'FAIL .oss.json not found'\n"
+        "echo 'VERDICT: not usable -- 1 failure(s), 0 warning(s)'\n"
+    )
+    root, _ = _plugin(tmp_path, body)
+    done, argv = run(_repo(tmp_path / "repo", with_config=False), root)
+    assert argv, done.stderr
+    assert "/oss:setup" in argv, argv
+    assert "/oss:doctor" not in argv, argv
+    assert "not routing into /oss:doctor" in done.stderr, done.stderr
+
+
+def test_could_not_run_neither_routes_nor_silently_skips(tmp_path):
+    """The third state for the route itself (#764): a diagnostic that ran and
+    said it could not look must not be routed as though it found a real
+    problem, and must not be silently treated as clean either -- both are said
+    out loud rather than assumed."""
+    body = "echo 'FAIL no working Python found'\necho 'VERDICT: could not run'\n"
+    root, _ = _plugin(tmp_path, body)
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "/oss:doctor" not in argv, argv
+    assert "could not be decided either" in done.stderr, done.stderr
+
+
+def test_a_diagnostic_that_never_started_does_not_route(tmp_path):
+    """Same third state, reached through the COULD NOT BE STARTED arm rather
+    than through the diagnostic's own `could not run` verdict."""
+    root, _ = _plugin(
+        tmp_path, "echo 'Traceback (most recent call last):' >&2\n", doctor_status=3
+    )
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "/oss:doctor" not in argv, argv
+    assert "could not be decided either" in done.stderr, done.stderr
+
+
+def test_no_verdict_line_does_not_route(tmp_path):
+    """Same third state again: exited 0, printed nothing this launcher could
+    parse as a verdict. Not a clean run, so it must not be routed as one, and
+    it carries no WARN this launcher could gate a route on either."""
+    root, _ = _plugin(tmp_path, "echo 'OK something'\n")
+    done, argv = run(_repo(tmp_path / "repo"), root)
+    assert argv, done.stderr
+    assert "/oss:doctor" not in argv, argv
+    assert "could not be decided either" in done.stderr, done.stderr

@@ -3,8 +3,14 @@
 Contract, and every line of it is load-bearing:
 
 * **Exit code 0, always.** A diagnostic must print its findings, not fail to run.
-* **Three states: OK / WARN / FAIL.** WARN is "the check ran and could not answer".
-  A check that cannot answer must never render as a check that found nothing.
+* **Four states: OK / NOTICE / WARN / FAIL.** WARN is "the check ran and could not
+  answer" -- a finding a maintainer can act on. NOTICE is the same absence for a
+  check that already says, in its own text, that it is structurally unable to
+  ever answer (#764) -- reported on every run, never actionable, and never
+  counted toward the verdict's own gate. A check that cannot answer must never
+  render as a check that found nothing, and a check that can NEVER answer must
+  not sit at the same level as one a maintainer can act on -- see the VERDICT
+  arithmetic in `main()`.
 * **One VERDICT line, last.** Greppable, so a human can paste the tail. This holds for
   every diagnostic run. ``--help`` is the one invocation that is not one: it prints
   usage and no VERDICT, and still exits 0.
@@ -1831,14 +1837,17 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "here, or link it by hand to the supertool plugin's supertool.py.",
         )
     elif state == "other-target":
-        # #756: the sentence itself already says why this is not a warning -- "this
-        # names the target rather than judging it" -- because the two states it
-        # cannot tell apart (a deliberate local checkout, a stale link) are
-        # indistinguishable in principle from here. Keeping it a WARN pinned every
-        # local-checkout maintainer at `usable with gaps` forever, for a line with
-        # nothing for them to do.
+        # #756 first moved this off WARN, on the reasoning that the sentence
+        # itself already says why it is not one -- "this names the target
+        # rather than judging it" -- because the two states it cannot tell
+        # apart (a deliberate local checkout, a stale link) are
+        # indistinguishable in principle from here. #764 moves it once more,
+        # from OK to NOTICE: OK claims a pass, and this is not one -- it is
+        # the structurally-unanswerable state NOTICE exists for, reported on
+        # every run of a repo pinned to a local checkout without ever gating
+        # its verdict.
         report(
-            "OK",
+            "NOTICE",
             "./supertool points at {}, which is not a supertool.py in the plugin cache. "
             "A deliberate local checkout looks exactly like this and may be what you "
             "want; a stale link from another machine looks the same and is not. Nothing "
@@ -1861,14 +1870,27 @@ def check_supertool_entry_point(project_dir, cache_root=None, record=None):
             "comparison failed, the link did not.".format(detail),
         )
     elif state == "not-a-symlink":
+        # #858: the remedy half used to recommend replacing this entry point
+        # with the plugin's OWN symlink -- the version-scoped, resolved-once
+        # artifact the comment 30 lines below (#288/#289) exists to warn
+        # against, and the immunity #742 measured this launcher shape for in
+        # the first place. The honest remedy for a state doctor has decided
+        # not to measure (#790/#801: it must not run repository-supplied
+        # code) is a way for the READER to measure it themselves, not a
+        # substitution of one artifact for another failure mode this file
+        # already tracks two checks over.
         report(
             "WARN",
             "{} exists and is not a symlink. doctor does not run it to find out what "
             "it is -- it is code the inspected repository supplies, not this "
             "plugin's -- so whether op calls through it reach the tool the briefs "
-            "mean is unknown, not confirmed. supertool's session-start hook leaves "
-            "anything already at that name untouched; replace it with the "
-            "plugin's own symlink.".format(detail),
+            "mean is unknown, not confirmed. Run `./supertool version` and compare "
+            "it against this install's own version above; if they disagree, or if "
+            "you did not put this file here yourself, treat it as untrusted rather "
+            "than replacing it with a version-pinned symlink -- that trades this "
+            "unknown for the stale-pin failure mode #288/#289 track below.".format(
+                detail
+            ),
         )
     elif state == "dangling":
         report(
@@ -3283,6 +3305,16 @@ from doctor_check_mcp_channel_registration import (
     channel_consumer_names,
     channel_consumer_census_state,
     check_channel_consumer_census,
+)
+
+# check_channel_health_agreement lives in
+# scripts/doctor_check_channel_health_agreement.py (#860) -- a new check, so
+# it never goes inline in doctor.py at all; see the per-check module
+# convention at the top of this file.
+from doctor_check_channel_health_agreement import (
+    channel_health_agreement_state,
+    check_channel_health_agreement,
+    resolve_channel_health_reading,
 )
 
 
@@ -7272,9 +7304,15 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
     lines = []
 
     if attested is None:
+        # NOTICE, not WARN (#764): this line already says it cannot answer --
+        # "nothing establishes which copy the harness resolves a command from"
+        # -- and no invocation shape clears it on a launcher path that names
+        # neither --plugin-root nor CLAUDE_PLUGIN_ROOT. A finding that can
+        # never resolve must not sit at the same level as one a maintainer can
+        # act on.
         lines.append(
             (
-                "WARN",
+                "NOTICE",
                 "plugin copy scope: not established -- neither --plugin-root nor "
                 "CLAUDE_PLUGIN_ROOT named a root, so the copy reported below is "
                 "inferred from this script's own location ({}) and nothing "
@@ -8245,6 +8283,11 @@ def main(argv=None):
     # it so /oss:doctor reports the same collision without opening a session.
     # Needs no config: `claude mcp list` reads claude's own configuration.
     check_channel_consumer_census()
+    # #860: the census above and supertool's own `channel:health` answer the
+    # SAME question and disagreed for three release cycles with nothing
+    # comparing them. Placed right after it for the same reason #810 placed
+    # its own check beside the registration checks above.
+    check_channel_health_agreement(project_dir)
     # Needs no config either: the hook lives under .git/hooks and the budget
     # lives in supertool's file. Structural only -- it never runs the hook.
     check_git_push_budget(project_dir)
@@ -8257,11 +8300,27 @@ def main(argv=None):
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
     warns = sum(1 for state, _ in FINDINGS if state == "WARN")
+    # #764: counted separately from `warns` rather than folded into it. A
+    # NOTICE is a finding a check has already declared, in its own text, that
+    # it can never resolve -- it must be visible on every run and must never
+    # gate the verdict the way an actionable WARN does, or a repo pinned to a
+    # permanently-NOTICE-only state reads `usable with gaps` forever and the
+    # line stops being read by the end of the first week (the furniture
+    # problem #764's own issue names).
+    notices = sum(1 for state, _ in FINDINGS if state == "NOTICE")
     if fails:
         verdict = "not usable -- {} failure(s), {} warning(s)".format(fails, warns)
+        if notices:
+            verdict += ", {} notice(s)".format(notices)
     elif warns:
         verdict = "usable with gaps -- {} warning(s)".format(warns)
+        if notices:
+            verdict += ", {} notice(s)".format(notices)
     else:
+        # A repo whose only findings are notices is `ok`, not `usable with
+        # gaps` -- notices are never actionable and never gate this arm, by
+        # construction (#764). The individual NOTICE lines above still carry
+        # the information; only the verdict's own gate ignores them.
         verdict = "ok"
     print("VERDICT: {}".format(verdict))
     return 0

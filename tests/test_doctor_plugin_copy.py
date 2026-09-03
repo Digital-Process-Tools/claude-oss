@@ -491,10 +491,14 @@ def test_a_complete_scan_does_not_claim_an_incomplete_one(tmp_path):
 
 
 def test_scope_is_unknown_when_nothing_named_the_root(tmp_path):
+    """#764: NOTICE, not WARN -- no invocation shape ever clears this line when
+    the launcher path names neither --plugin-root nor CLAUDE_PLUGIN_ROOT, so it
+    is the structurally-unanswerable state NOTICE exists for, not an actionable
+    finding."""
     answered, checkout = _identical_pair(tmp_path)
     level, message = _line(_provenance(answered, checkout, attested=None), SCOPE)
 
-    assert level == "WARN", message
+    assert level == "NOTICE", message
     assert "not established" in message, message
     assert "--plugin-root" in message, message
 

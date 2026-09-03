@@ -21,14 +21,20 @@ look at — that disagreement is how a well-formed answer about the wrong reposi
 A `--root` that is not a directory is a `FAIL` line, not a crash: the run continues and every
 config-dependent check below reports itself unmeasured.
 
-Do not summarise away any line. Each is one of three states:
+Do not summarise away any line. Each is one of four states:
 
 - `OK` — checked, and fine.
-- `WARN` — the check ran and could not answer, or found a gap that is not fatal.
+- `NOTICE` — the check has already declared, in its own text, that it is structurally unable to
+  ever answer (#764) — reported on every run, never actionable, and never counted toward
+  `VERDICT:`'s own gate. A repo whose only findings are notices is `VERDICT: ok`.
+- `WARN` — the check ran and could not answer, or found a gap that is not fatal, and it CAN
+  resolve (fix the config, install the tool, wait for the next cache refresh).
 - `FAIL` — checked, and broken.
 
-A `WARN` is not a pass. If the output ends in `VERDICT: could not run`, the diagnostic itself did not
-execute — say that plainly rather than reporting the repo as healthy, because nothing was measured.
+Neither `WARN` nor `NOTICE` is a pass, and they are not the same claim: a `WARN` is something to
+act on, a `NOTICE` is not — relay both, but do not treat a `NOTICE` line as work to do. If the
+output ends in `VERDICT: could not run`, the diagnostic itself did not execute — say that plainly
+rather than reporting the repo as healthy, because nothing was measured.
 
 **`not checked` is the third state, and it is not a clean result.** A line reading
 `clone: not checked -- .oss.json was not found` means that check never ran. Five of them say it:
@@ -72,10 +78,11 @@ does is not.
   construction. It fires for a hand invocation naming a root, and for a script run out of one
   checkout inside a session that exported `CLAUDE_PLUGIN_ROOT` pointing at another — which is the
   ordinary shape of running a worktree's `doctor.py` from a maintainer session.
-- `WARN … not established` — nobody named a root, so the copy below is inferred from the script's
-  own location. That is the ordinary state of `python3 scripts/doctor.py` run by hand, and it is a
-  gap in the measurement rather than a fault in the repo. Do not relay it as a finding about the
-  code.
+- `NOTICE … not established` — nobody named a root, so the copy below is inferred from the
+  script's own location. That is the ordinary state of `python3 scripts/doctor.py` run by hand,
+  and no invocation shape clears it there (#764) — it is a gap in the measurement rather than a
+  fault in the repo, and never a `WARN`: it does not gate `VERDICT:`. Do not relay it as a finding
+  about the code.
 
 Every one of the three ends with the same sentence, and it is the half that closes #248: **this is
 one command's copy, and nothing here says which copy answered any other command or skill in this
@@ -425,6 +432,28 @@ launcher-opened session), no relay is present and this line asks for itself.
 - `WARN … so whether a second configured MCP server also resolves to … is unknown` -- `claude` is
   not on PATH, `claude mcp list` did not run, or it exited non-zero. Never relayed as "exactly one
   server": a crashed or refused census is not evidence of a clean one.
+
+## The `channel census vs channel:health` line
+
+The census above and supertool's `channel:health` answer the identical question -- is a second
+channel-capable MCP server racing this repo's socket? -- and for three release cycles disagreed
+about it on the same machine with nothing comparing them (#860). This line is that comparison.
+
+`channel:health` is `acts`-classed and can run north of 20s, so this never spawns it itself by
+default: it reuses a fresh-enough `channel:health` reading from `scripts/statusline.py`'s own
+cache, carrying that reading's own age forward rather than asserting it fresh.
+`OSS_DOCTOR_CHANNEL_HEALTH=1` opts into probing it live instead.
+
+- `OK … both report …` -- the two instruments reached the same verdict about a second server, and
+  the line names which.
+- `WARN … disagree …` -- they did not, and both readings are named verbatim. Neither is assumed
+  right: on #860's own incident doctor's census was, but that is not a general rule.
+- `NOTICE … could not compare -- the watch preset is not enabled …` -- `.supertool.json` plainly
+  does not enable `watch`, so `channel:health` has nothing to answer with until that changes --
+  structurally permanent, the same shape #764 created NOTICE for.
+- `WARN … could not compare …` -- every OTHER reason neither instrument answered (the census could
+  not ask `claude mcp list`, no cached `channel:health` reading exists yet, or the cached one is
+  older than its own refresh interval) -- transient, and never defaulted to agreement.
 
 ## The `branch protection`, `clone HEAD`, and `worktree-reap permission` lines
 

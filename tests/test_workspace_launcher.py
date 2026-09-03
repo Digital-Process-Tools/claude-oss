@@ -357,7 +357,12 @@ def test_opens_the_repo_you_are_standing_in(tmp_path):
 
 
 def test_a_repo_with_config_starts_a_tick(tmp_path):
-    _, argv = run(_repo(tmp_path))
+    # #764: the real setup diagnostic now routes the prompt to /oss:doctor on
+    # any real WARN it finds, and a bare `.oss.json`-only fixture genuinely
+    # carries some (no settings rule names gh-pr-merge, and the like) -- a
+    # fact about this fixture's tree, not about which prompt config presence
+    # alone chooses. Skipped so this test stays about the latter.
+    _, argv = run(_repo(tmp_path), env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": "1"})
     assert "/oss:tick" in argv
 
 
@@ -365,10 +370,18 @@ def test_a_repo_without_config_starts_setup_instead(tmp_path):
     """Ticking against a repo with no config would run on guessed values. Sending the
     first session to setup is the difference between "works after clone" and "works
     after clone, wrongly".
+
+    #764: deliberately runs the REAL diagnostic (unlike the sibling test above) --
+    a repo with no `.oss.json` reports `VERDICT: not usable` too (missing config is
+    a FAIL), and this is the end-to-end coverage that the #764 route does not
+    clobber `/oss:setup` with `/oss:doctor` for it (self-review finding; the
+    targeted regression test is `tests/test_workspace_doctor_gate.py::
+    test_a_bad_verdict_on_a_repo_with_no_config_does_not_clobber_setup`).
     """
     done, argv = run(_repo(tmp_path, with_config=False))
-    assert "/oss:setup" in argv
-    assert "/oss:tick" not in argv
+    assert "/oss:setup" in argv, (argv, done.stderr)
+    assert "/oss:tick" not in argv, argv
+    assert "/oss:doctor" not in argv, argv
     assert "no .oss.json" in done.stderr
 
 
@@ -407,7 +420,13 @@ def test_the_prompt_precedes_the_channel_flag(tmp_path):
 
     which is how this script failed the first time it was run for real.
     """
-    _, argv = run(_repo(tmp_path), with_channel=True)
+    # #764: same isolation as `test_a_repo_with_config_starts_a_tick` above --
+    # this test is about ordering, not about which prompt the diagnostic
+    # would pick on a bare fixture.
+    _, argv = run(
+        _repo(tmp_path), with_channel=True,
+        env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": "1"},
+    )
     assert argv.index("/oss:tick") < argv.index("--dangerously-load-development-channels")
 
 
