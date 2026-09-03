@@ -667,6 +667,36 @@ def test_watch_channel_enabled_default_on():
     assert oss_config.watch_channel_enabled({"watch_channel": "off"}) is True  # not a bool: not off
 
 
+# --------------------------------------------------- #932: test_measurement_configured
+
+
+def test_test_measurement_configured_must_be_a_bool():
+    config = {
+        "repo": "owner/name", "default_branch": "main", "clone": "/c", "worktree_root": "/w",
+        "branch_pattern": "fix/{issue}", "test_command": "pytest", "version_sites": [],
+        "changelog_dir": None, "docs_targets": [], "labels": {"priority": [], "lanes": []},
+        "state_file": ".max/x.json", "test_measurement_configured": "yes",
+    }
+    problems = oss_config.validate(config)
+    assert any("test_measurement_configured" in p for p in problems)
+
+
+def test_test_measurement_configured_true_and_false_and_absent_are_all_fine():
+    base = {
+        "repo": "owner/name", "default_branch": "main", "clone": "/c", "worktree_root": "/w",
+        "branch_pattern": "fix/{issue}", "test_command": "pytest", "version_sites": [],
+        "changelog_dir": None, "docs_targets": [], "labels": {"priority": [], "lanes": []},
+        "state_file": ".max/x.json",
+    }
+    for value in (True, False, None):
+        config = dict(base)
+        if value is not None:
+            config["test_measurement_configured"] = value
+        assert not any(
+            "test_measurement_configured" in p for p in oss_config.validate(config)
+        )
+
+
 def test_statusline_gate_matches_this_accessor():
     """Self-review finding on this issue: `statusline.py` cannot import
     `oss_config` (it has no imports of its own siblings at all -- vendored

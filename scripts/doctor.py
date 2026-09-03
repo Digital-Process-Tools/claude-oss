@@ -2598,6 +2598,13 @@ from doctor_check_fragments_readme import (
     check_fragments_readme,
 )
 
+# scripts/doctor_check_test_measurement.py (#932): a maintainer attestation
+# that this repo's pytest run measures test duration and coverage -- its own
+# module per the #497/#630 convention. The full path is named here because
+# tests/test_unwired_scripts_253.py and test_doctor_check_convention_630.py
+# both read doctor.py for it; an import name alone reads as unwired.
+from doctor_check_test_measurement import check_test_measurement
+
 
 JIT_RULES_DIR = ".claude/jit-context"
 JIT_INDEX = "00-index.tsv"
@@ -8261,6 +8268,9 @@ def main(argv=None):
         unmeasured("clone HEAD")
     check_state_file(project_dir, config, origin=local_states.get("state_file"))
     check_fragments_readme(project_dir, config)
+    # #932: a maintainer attestation, not a derived fact -- see the module's
+    # own docstring for why this never parses `addopts` itself.
+    check_test_measurement(project_dir, config)
     # Visible before the tag step rather than at it -- same reason #421 put the
     # merge-call check here.
     check_release_authority(project_dir, config)

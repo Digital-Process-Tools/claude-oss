@@ -750,8 +750,18 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     )
     if done.returncode != 0:
         pytest.skip("git init failed here: {}".format(done.stderr.strip() or done.returncode))
-    config = _config(tmp_path)
+    # #932: the attestation is a maintainer act, so a *fully configured* repo is one
+    # whose maintainer has made it -- and `absent` is correctly a finding, which is
+    # why it belongs in the fixture rather than being softened in the check. The
+    # `pyproject.toml` below is the other half: the OK state requires some
+    # pytest-config-shaped file to be readable, so that the attestation is
+    # corroborated at least that far rather than cleared on the boolean alone.
+    config = _config(tmp_path, test_measurement_configured=True)
     _fully_configured(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\naddopts = \"--durations=25 --cov\"\n",
+        encoding="utf-8",
+    )
     scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
     (tmp_path / ".github" / "workflows" / "tests.yml").write_text(
         "jobs:\n  tests:\n    steps:\n      - run: pytest\n", encoding="utf-8"

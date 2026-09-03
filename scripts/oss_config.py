@@ -35,7 +35,14 @@ REQUIRED_KEYS = {
     "state_file",
 }
 
-OPTIONAL_KEYS = {"milestones", "notes", "release", "changelog_untagged", "watch_channel"}
+OPTIONAL_KEYS = {
+    "milestones", "notes", "release", "changelog_untagged", "watch_channel",
+    # #932: a maintainer attestation that this repo's own pytest run measures
+    # test duration and coverage -- see doctor_check_test_measurement.py's
+    # module docstring for why this is never derived from the config's
+    # own content.
+    "test_measurement_configured",
+}
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
 # can record *why* a value is what it is has always been a key -- and every key not
@@ -363,6 +370,38 @@ LINE_BREAKS = "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
 _CONTROLS = frozenset(chr(point) for point in range(0x20) if point != 0x09) | {"\x7f"}
 
 _TEST_COMMAND_FORBIDDEN = frozenset(LINE_BREAKS) | _CONTROLS
+
+
+def names_pytest(value):
+    """Does this `test_command` name pytest, or at least not name something else?
+
+    `test_command` is an arbitrary shell command -- `npm test`, `go test ./...`,
+    `cargo test` are all valid values -- so any advice that is pytest-specific
+    (`--durations`, `--cov`, `pyproject.toml`'s `[tool.pytest.ini_options]
+    addopts`) has to ask this before it fires. CLAUDE.md's own governing rule,
+    one level down from a repository to a language: a fact about one project
+    baked into shared code arrives with the authority of a measured one.
+
+    **Absent, empty, or not a string answers True**, and the two callers read
+    that answer differently on purpose:
+
+    * `doctor_check_test_measurement` keeps asking. Nobody probed the command,
+      which is not evidence the repo is not Python, and a maintainer reading a
+      diagnostic can answer the question in a second.
+    * `scaffold` does not write the advice. Its output is a paragraph placed
+      once into somebody else's repository, permanently, in the file every
+      session there reads first -- so it gates on a command that is both set
+      and pytest-shaped, the same standard the "not detected" paragraph
+      directly above it already holds itself to.
+
+    A non-string is a schema PROBLEM `check_config` reports; it is not stripped
+    out of the config dict a caller holds, so it is answered here rather than
+    raising `AttributeError` on `.lower()` and taking a whole diagnostic run
+    down with it (#946).
+    """
+    if not value or not isinstance(value, str):
+        return True
+    return "pytest" in value.lower()
 
 
 def test_command_problem(value):
@@ -1756,6 +1795,18 @@ def validate(config):
             "value here is not necessarily off, and only `false` is (#613) -- a "
             "value spelled like a decision must not silently no-op.".format(
                 config["watch_channel"]
+            )
+        )
+
+    # #932: a maintainer attestation, same shape as `watch_channel` above --
+    # a value spelled like a decision (a truthy non-bool string, say) must not
+    # silently pass as one.
+    if "test_measurement_configured" in config and not isinstance(
+        config["test_measurement_configured"], bool
+    ):
+        problems.append(
+            "test_measurement_configured: expected true or false, got {!r}.".format(
+                config["test_measurement_configured"]
             )
         )
 
