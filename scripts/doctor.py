@@ -1672,7 +1672,7 @@ def plugin_supertool_entries(cache_root=None, record=None):
 def supertool_entry_point(project_dir, cache_root=None, record=None):
     """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
 
-    Eleven states. Three of them are ways of saying "could not tell", and those are the
+    Thirteen states. Four of them are ways of saying "could not tell", and those are the
     reason this is a function rather than an ``==``:
 
     * ``own-tree`` -- a supertool checkout, where no wrapper is correct.
