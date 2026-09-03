@@ -3407,6 +3407,14 @@ def test_the_op_table_rows_are_found_at_all():
 #: board pick the same issue. The claim happens at dispatch, in the fleet
 #: section; the release happens at handback, in the report section -- two
 #: sites, and prose is not a guard, so this pins both rather than one.
+#:
+#: #964 moved the call itself into `scripts/issue_claim.py`, so what these pin
+#: is the mode rather than the `gh` flag. The flags are still pinned, one layer
+#: down, by `tests/test_issue_claim_964.py`, which asserts the exact argv the
+#: script issues -- so nothing stopped being checked, it is checked where the
+#: call now lives. Pinning the raw flag here after the move would have been a
+#: guard demanding that the prose keep an incantation the loop no longer runs.
+_CLAIM_CALL = "issue_claim.py"
 _DISPATCH_SECTION_HEADING = "Run a fleet, not a queue"
 _HANDBACK_SECTION_HEADING = "What comes back is a file, not a document"
 
@@ -3424,9 +3432,9 @@ def _manager_section(heading):
 
 def test_dispatch_claims_the_issue_before_the_spawn():
     body = _manager_section(_DISPATCH_SECTION_HEADING)
-    assert "--add-assignee @me" in body, (
-        "the dispatch section no longer names the claim call (#461) -- a lane that "
-        "runs for hours must not leave its issue reading 'Assignees: none'"
+    assert _CLAIM_CALL in body and "--claim" in body, (
+        "the dispatch section no longer names the claim call (#461, #964) -- a lane "
+        "that runs for hours must not leave its issue reading 'Assignees: none'"
     )
     assert "before" in body.lower() and "spawn" in body.lower(), (
         "the claim has to happen before the spawn, not after -- a spawn that dies on "
@@ -3440,9 +3448,9 @@ def test_dispatch_claims_the_issue_before_the_spawn():
 
 def test_handback_releases_a_lane_that_returned_no_commit():
     body = _manager_section(_HANDBACK_SECTION_HEADING)
-    assert "--remove-assignee @me" in body, (
-        "the handback section no longer names the release call (#461) -- assign with "
-        "no release turns a collision problem into a permanent lock"
+    assert _CLAIM_CALL in body and "--release" in body, (
+        "the handback section no longer names the release call (#461, #964) -- assign "
+        "with no release turns a collision problem into a permanent lock"
     )
 
 
@@ -3458,16 +3466,20 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     substring test below is not measuring what it claims to.
     """
     manager_text = MANAGER_SKILL.read_text(encoding="utf-8")
-    assert "--add-assignee" in manager_text and "--remove-assignee" in manager_text, (
-        "positive control failed: skills/manager/SKILL.md no longer carries both "
-        "assignee flags -- the negative check below over agents/*.md would then "
-        "pass whether or not it is actually looking at anything (#461)"
+    assert "--claim" in manager_text and "--release" in manager_text, (
+        "positive control failed: the manager loop's prose no longer carries both "
+        "claim modes -- the negative check below over agents/*.md would then "
+        "pass whether or not it is actually looking at anything (#461, #964)"
     )
     for path in AGENTS:
         text = path.read_text(encoding="utf-8")
-        assert "--add-assignee" not in text and "--remove-assignee" not in text, (
+        assert (
+            "--add-assignee" not in text
+            and "--remove-assignee" not in text
+            and _CLAIM_CALL not in text
+        ), (
             "{} names an assignee call -- the claim and release belong to the "
-            "manager, not to the developer it spawns (#461)".format(path)
+            "manager, not to the developer it spawns (#461, #964)".format(path)
         )
 
 
@@ -5109,9 +5121,9 @@ def test_handback_releases_a_pull_request_closed_without_merging():
         "assigned forever, and the field it keys on must be the one gh-pr:N:status "
         "actually prints (merged_at, not mergedAt)"
     )
-    assert "--remove-assignee @me" in body, (
+    assert _CLAIM_CALL in body and "--release" in body, (
         "the closed-unmerged release no longer names the same release call the "
-        "no-commit case uses (#465)"
+        "no-commit case uses (#465, #964)"
     )
     assert "#465" in body, "the handback section no longer cites #465"
 
