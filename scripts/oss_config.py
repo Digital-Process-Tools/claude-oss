@@ -322,8 +322,9 @@ def watch_channel_name(value):
     `validate()`, so an unrefused null would derive the string `None` and export it.
 
     The fold survives the validation rather than being replaced by it: `REPO_RE`
-    accepts any pair of non-slash, non-whitespace runs, so characters a socket path
-    should not carry still reach it.
+    accepts any pair of non-slash, non-backslash, non-whitespace runs (#897 added
+    the backslash exclusion), so a character a socket path should not carry -- `+`,
+    say -- can still reach it.
     """
     if not isinstance(value, str):
         return None, "repo: expected 'owner/name', got {!r}".format(value)
