@@ -124,6 +124,39 @@ def test_check_reports_warn_and_does_not_suggest_adding_a_forbidden_rule(
     doctor.FINDINGS.clear()
 
 
+def test_covering_prefix_wildcard_deny_does_not_read_absent(tmp_path):
+    """Self-review finding: `oss:auditor`'s and the `Explore` reviewer's spawn
+    against this lane's own first draft both caught this independently --
+    `_bash_wildcard_deny_detail`'s first version only matched the bare
+    `Bash(git *)` shape, so the command-name-level prefix shape
+    (`Bash(git:*)`, #895's own shape) still rendered `absent` on the deny
+    side, reproducing the exact defect #892 was filed to fix, one spelling
+    over. Same fixture shape as the bare-wildcard case above."""
+    _settings(
+        tmp_path / ".claude" / "settings.json",
+        deny=["Bash(git:*)"],
+    )
+    state, detail = doctor.worktree_remove_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state != "absent"
+    assert state == "cannot-tell-whether-forbidden"
+    assert detail
+
+
+def test_unrelated_prefix_wildcard_deny_does_not_read_cannot_tell(tmp_path):
+    """Negative control paired with the prefix-deny case above: `Bash(npm:*)`
+    cannot cover a `git` op under any prefix semantics."""
+    _settings(
+        tmp_path / ".claude" / "settings.json",
+        deny=["Bash(npm:*)"],
+    )
+    state, _detail = doctor.worktree_remove_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "absent"
+
+
 # --------------------------------------------------------- branch delete, sibling
 
 

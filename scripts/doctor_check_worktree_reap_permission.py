@@ -56,9 +56,10 @@ REAP_RULE_FILE = ".claude/settings.local.json"
 # substring test was never going to be able to read? A rule using the
 # documented `name:*` prefix suffix (`Bash(git branch -D:*)`,
 # `Bash(git worktree remove:*)`) is left alone -- those are already handled
-# correctly today, either by the literal substring test (when the op text is
-# literally present) or are a distinct, unfiled gap (a broad prefix like
-# `Bash(git:*)`) rather than the one #886 measured and asked for.
+# correctly today by the literal substring test (when the op text is
+# literally present). A broad, command-name-level prefix (`Bash(git:*)`) was
+# a distinct, unfiled gap at the time this paragraph was first written -- see
+# the #895 paragraph below for why it is no longer unfiled.
 #
 # The wildcard scan is scoped to the op's own first word (`git`, for both ops
 # this module checks), never to "any Bash entry with a `*` anywhere in the
@@ -159,11 +160,20 @@ def _bash_wildcard_deny_detail(project_dir, op, home=None):
     """#892: the deny-side sibling of `_bash_wildcard_allow_detail` above --
     same bare-wildcard shape (`Bash(git *)`), same op-head scoping, same
     "count and file, never the text" convention, but scanning `deny` entries
-    instead of `allow`. Deliberately narrower than the allow-side helper:
-    only the bare-wildcard shape, not the `name:*` command-level prefix one
-    -- #892's own issue and test shape name only the bare wildcard, and
-    widening this beyond what was asked is exactly what CLAUDE.md's judgment
-    call about issue scope warns against. Empty string when none exist."""
+    instead of `allow`.
+
+    #892's own issue and test shape named only the bare wildcard, but this
+    now also matches the command-name-level `name:*` prefix shape
+    (`Bash(git:*)`, #895's own shape) on the deny side too: leaving it out
+    reproduced the exact defect #892 was filed to fix, one spelling over --
+    `oss:auditor`'s own review of this diff caught it directly (a
+    `deny=["Bash(git:*)"]` fixture rendered `absent` rather than
+    `cannot-tell-whether-forbidden`), the same "unfiled gap" shape that #895
+    itself was born from on the allow side. Fixed in the same diff rather
+    than filed separately: same file, same helper, same one-line mechanism
+    already proven correct on the allow side by `_entry_prefix_wildcard_head`
+    -- reusing it here, not reimplementing it. Empty string when none
+    exist."""
     op_head = op.split(None, 1)[0]
     found = []
     for path in settings_candidates(project_dir, home=home):
@@ -181,9 +191,12 @@ def _bash_wildcard_deny_detail(project_dir, op, home=None):
         matches = [
             e
             for e in _permission_entries(data, "deny")
-            if WILDCARD_MARKER in e
-            and PREFIX_SUFFIX not in e
-            and _entry_command_head(e) == op_head
+            if (
+                WILDCARD_MARKER in e
+                and PREFIX_SUFFIX not in e
+                and _entry_command_head(e) == op_head
+            )
+            or _entry_prefix_wildcard_head(e) == op_head
         ]
         if matches:
             found.append(_entry_count(len(matches), "deny", path))
