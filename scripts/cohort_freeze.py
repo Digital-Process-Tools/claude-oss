@@ -41,9 +41,15 @@ empty must never render the same:
   already-frozen    every member already carries the label -- re-running
                      is the ordinary case, not the exception, and is a no-op
   could-not-read     the tag could not be resolved, the issue list could not
-                     be read, or a write failed partway -- NEVER an empty
-                     cohort. `count` is `None` here, always; a real empty
-                     cohort is `already-frozen` with `count == 0`, an int.
+                     be read, current label membership could not be read, or
+                     a write failed partway -- NEVER an empty cohort. `state`
+                     is the signal to read, not the shape of `count`: it is
+                     `None` when the read failed before anything was
+                     computed, and the already-computed value when a later
+                     step (reading current labels, writing one) failed
+                     partway. A real empty cohort is `already-frozen` with
+                     `count == 0`, an int -- always distinguishable from
+                     `could-not-read` by `state`.
 
 Dry run by default -- `--execute` is required to actually write a label, since
 an unqualified run touches every open issue on the tracker. `pull_request` is
@@ -94,6 +100,35 @@ def _command_text(command):
     return " ".join(command)
 
 
+def _decode_output(raw):
+    """Decode a subprocess's bytes for display. Never raises. (#112's shape,
+    reintroduced here and closed the same way.)
+
+    None of the four `gh` call sites below pass `universal_newlines=True` (or its
+    modern spelling `text=True`) to `run` -- that flag makes `subprocess` decode with
+    the *locale* encoding, strictly, and `UnicodeDecodeError` is a `ValueError`, so it
+    walks straight past every `except (OSError, subprocess.SubprocessError)` guarding
+    these calls. What they carry is free text authored by whoever cut the tag or filed
+    the issue -- `tagger.name`, a commit message, an issue body byte GitHub echoes back
+    -- the one place a byte the runner's locale cannot decode is ordinary rather than
+    exotic. `scripts/oss_config.py`'s own `_decode_output` (#112) is this exact fix,
+    already shipped once in this repo; this is a second, independent copy rather than
+    an import, because reaching into `oss_config` from here for four lines would be a
+    cross-module coupling this file does not otherwise have.
+
+    UTF-8 is named rather than inherited: GitHub's API speaks UTF-8, while a locale is
+    a property of the machine *reading* the output, not of the process that wrote it.
+    `replace` rather than `surrogateescape`, since this text ends up in a `reason`
+    string that may be printed -- a lone surrogate would only move the crash from the
+    decode here to a later `print`.
+    """
+    if raw is None:
+        return ""
+    if not isinstance(raw, bytes):
+        return raw
+    return raw.decode("utf-8", "replace")
+
+
 def _gh_api_json(gh, path_args, run, timeout=25):
     """Run ``gh api <path_args...>`` and parse the JSON it prints.
 
@@ -111,20 +146,21 @@ def _gh_api_json(gh, path_args, run, timeout=25):
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return "could-not-read", None, "{} did not run ({})".format(
             _command_text(command), exc
         )
+    stdout = _decode_output(done.stdout)
+    stderr = _decode_output(done.stderr)
     if done.returncode != 0:
-        message = (done.stderr or done.stdout or "").strip()
+        message = (stderr or stdout or "").strip()
         return "could-not-read", None, "{} failed: {}".format(
             _command_text(command), message
         )
     try:
-        data = json.loads(done.stdout)
+        data = json.loads(stdout)
     except (ValueError, TypeError):
         return "could-not-read", None, "{} printed text that is not JSON".format(
             _command_text(command)
@@ -240,7 +276,6 @@ def fetch_issues(repo, gh, run, timeout=DEFAULT_TIMEOUT):
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -249,8 +284,10 @@ def fetch_issues(repo, gh, run, timeout=DEFAULT_TIMEOUT):
             "issues": None,
             "reason": "{} did not run ({})".format(_command_text(command), exc),
         }
+    stdout = _decode_output(done.stdout)
+    stderr = _decode_output(done.stderr)
     if done.returncode != 0:
-        message = (done.stderr or done.stdout or "").strip()
+        message = (stderr or stdout or "").strip()
         return {
             "state": "could-not-read",
             "issues": None,
@@ -258,7 +295,7 @@ def fetch_issues(repo, gh, run, timeout=DEFAULT_TIMEOUT):
         }
 
     issues = []
-    for line in (done.stdout or "").splitlines():
+    for line in (stdout or "").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -309,7 +346,6 @@ def label_members(repo, label, gh, run, timeout=DEFAULT_TIMEOUT):
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -318,8 +354,10 @@ def label_members(repo, label, gh, run, timeout=DEFAULT_TIMEOUT):
             "numbers": None,
             "reason": "{} did not run ({})".format(_command_text(command), exc),
         }
+    stdout = _decode_output(done.stdout)
+    stderr = _decode_output(done.stderr)
     if done.returncode != 0:
-        message = (done.stderr or done.stdout or "").strip()
+        message = (stderr or stdout or "").strip()
         return {
             "state": "could-not-read",
             "numbers": None,
@@ -327,7 +365,7 @@ def label_members(repo, label, gh, run, timeout=DEFAULT_TIMEOUT):
         }
 
     numbers = []
-    for line in (done.stdout or "").splitlines():
+    for line in (stdout or "").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -369,7 +407,6 @@ def apply_labels(repo, label, numbers, gh, run, timeout=25):
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True,
                 timeout=timeout,
             )
         except (OSError, subprocess.SubprocessError) as exc:
@@ -381,7 +418,7 @@ def apply_labels(repo, label, numbers, gh, run, timeout=25):
             )
             continue
         if done.returncode != 0:
-            message = (done.stderr or done.stdout or "").strip()
+            message = (_decode_output(done.stderr) or _decode_output(done.stdout) or "").strip()
             failed.append({"number": number, "reason": message})
             continue
         added.append(number)
@@ -392,10 +429,17 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
     """Freeze `cohort-{cohort}` for `tag`. Computes membership either way;
     only actually writes a label when `execute` is true.
 
-    Returns a payload with `state` in `FREEZE_STATES`. `count` and `members`
-    are `None` exactly when `state == "could-not-read"` and were never
-    computed -- a real empty cohort is `already-frozen` with `count == 0`,
-    an `int`, so the two can never be confused by shape alone.
+    Returns a payload with `state` in `FREEZE_STATES`. The authoritative
+    signal is always `state`, never the shape of `count`/`members` alone:
+    when the tag timestamp or the issue listing could not be read, nothing
+    was computed yet and both are `None`; when the *current* label
+    membership or a label write fails partway, `count` and `members` still
+    carry whatever was already computed before that point, so a caller
+    reading the reason can see how far the freeze got -- both cases are
+    `could-not-read` regardless. A real empty cohort is `already-frozen`
+    with `count == 0`, an `int` -- distinguishable from every `could-not-read`
+    case by `state`, and from the two earliest ones by `count is None` too,
+    but never claim more than `state` promises.
     """
     label = "{}{}".format(LABEL_PREFIX, cohort)
 

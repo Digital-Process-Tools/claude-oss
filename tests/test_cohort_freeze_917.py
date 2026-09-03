@@ -159,6 +159,35 @@ def test_resolve_tag_timestamp_could_not_read_on_unparseable_json():
     assert result["timestamp"] is None
 
 
+def test_resolve_tag_timestamp_could_not_read_when_object_missing_sha_or_type():
+    """The other unguarded shape of `resolve_tag_timestamp`, alongside the
+    missing-tagger.date case below: `object` present but without `sha`/`type`
+    at all (a response shape this module has never actually observed, but
+    JSON from a remote API is not a contract)."""
+    script = {tuple(TAG_REF_URL_ARGS): _Done(0, json.dumps({"object": {}}))}
+    run = _scripted_run(script)
+    result = cohort_freeze.resolve_tag_timestamp(REPO, TAG, "gh", run)
+    assert result["state"] == "could-not-read"
+    assert result["timestamp"] is None
+
+
+def test_resolve_tag_timestamp_could_not_read_on_unexpected_object_type():
+    """`object.type` is neither `"tag"` nor `"commit"` -- GitHub can return
+    `"blob"` or `"tree"` for other ref shapes. Neither a tag object's
+    `tagger.date` nor a commit's `committer.date` exists to fall back to, so
+    this is `could-not-read`, never a guess."""
+    script = {
+        tuple(TAG_REF_URL_ARGS): _Done(
+            0, json.dumps({"object": {"sha": "deadbeef", "type": "blob"}})
+        )
+    }
+    run = _scripted_run(script)
+    result = cohort_freeze.resolve_tag_timestamp(REPO, TAG, "gh", run)
+    assert result["state"] == "could-not-read"
+    assert result["timestamp"] is None
+    assert "blob" in result["reason"]
+
+
 def test_resolve_tag_timestamp_could_not_read_when_tag_object_missing_tagger_date():
     script = _annotated_tag_script(
         extra={
@@ -412,6 +441,66 @@ def test_label_members_could_not_read():
     assert result["numbers"] is None
 
 
+# ------------------------------------------------------- non-UTF-8 subprocess output
+#
+# #112's shape, reintroduced in this module and closed the same way: passing
+# `universal_newlines=True` (or `text=True`) to `subprocess.run` decodes with the
+# *locale* codec, strictly, and a `UnicodeDecodeError` is a `ValueError` -- not
+# caught by any `except (OSError, subprocess.SubprocessError)` guarding these calls,
+# so it would crash `main()` with a traceback instead of reaching `could-not-read`.
+# These assert two things at once: that `run` is never called with `text=True` /
+# `universal_newlines=True` at all (so real `subprocess.run` hands back bytes, not a
+# strict decode), and that raw bytes containing a byte invalid UTF-8 flow through as
+# `could-not-read` rather than raising -- reproducing this with a `_Done` stand-in
+# alone could not catch the bug, since the mock never exercises real decoding; the
+# `assert "text" not in kwargs` guard below is what actually pins the fix.
+
+
+def test_resolve_tag_timestamp_decodes_nonutf8_bytes_without_raising():
+    def run(command, **kwargs):
+        assert "universal_newlines" not in kwargs
+        assert kwargs.get("text") is not True
+        return _Done(1, b"", b"gh: tag caf\xe9 not found")
+
+    result = cohort_freeze.resolve_tag_timestamp(REPO, TAG, "gh", run)
+    assert result["state"] == "could-not-read"
+    assert "caf" in result["reason"]
+
+
+def test_fetch_issues_decodes_nonutf8_bytes_without_raising():
+    def run(command, **kwargs):
+        assert "universal_newlines" not in kwargs
+        assert kwargs.get("text") is not True
+        return _Done(1, b"", b"gh: rate limited by caf\xe9 proxy")
+
+    result = cohort_freeze.fetch_issues(REPO, "gh", run)
+    assert result["state"] == "could-not-read"
+    assert "caf" in result["reason"]
+
+
+def test_label_members_decodes_nonutf8_bytes_without_raising():
+    def run(command, **kwargs):
+        assert "universal_newlines" not in kwargs
+        assert kwargs.get("text") is not True
+        return _Done(1, b"", b"gh: bad credentials caf\xe9")
+
+    result = cohort_freeze.label_members(REPO, "cohort-16", "gh", run)
+    assert result["state"] == "could-not-read"
+    assert "caf" in result["reason"]
+
+
+def test_apply_labels_decodes_nonutf8_bytes_without_raising():
+    def run(command, **kwargs):
+        assert "universal_newlines" not in kwargs
+        assert kwargs.get("text") is not True
+        return _Done(1, b"", b"422 could not add label caf\xe9")
+
+    result = cohort_freeze.apply_labels(REPO, "cohort-16", [1], "gh", run)
+    assert result["added"] == []
+    assert len(result["failed"]) == 1
+    assert "caf" in result["failed"][0]["reason"]
+
+
 # --------------------------------------------------------------- freeze (orchestration)
 
 
@@ -535,6 +624,14 @@ def test_freeze_execute_partial_failure_is_could_not_read_not_frozen():
     run = _scripted_run(script)
     result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
     assert result["state"] == "could-not-read"
+    # `count`/`members` are NOT None here -- membership was already computed
+    # before the write failed, and the docstring is explicit that only
+    # `state` is the authoritative could-not-read signal, never the shape of
+    # `count` alone. `added` carries the empty list: nothing actually landed
+    # since both writes in this fixture fail.
+    assert result["count"] == 2
+    assert result["members"] == [1, 2]
+    assert result["added"] == []
 
 
 # ----------------------------------------------- the must-fire / must-not-fire pair
