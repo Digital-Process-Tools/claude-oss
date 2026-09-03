@@ -94,6 +94,11 @@ def _python3_shim():
 
 _SHIM_DIR = _python3_shim()
 
+#: An empty, isolated `gh` config directory (#777) -- see `_child_env`'s own comment
+#: for why this is not simply "unset the token env vars".
+_GH_CONFIG_DIR = tempfile.mkdtemp(prefix="oss-gate-gh-config-")
+atexit.register(shutil.rmtree, _GH_CONFIG_DIR, True)
+
 
 def _companion_dirs(shell):
     """Where the tools that ship WITH a given shell live, derived from where that
@@ -143,6 +148,28 @@ def _child_env(shell=None, **extra):
     env["PATH"] = os.pathsep.join(
         [_SHIM_DIR] + _companion_dirs(shell) + [env.get("PATH", "")]
     )
+    # #777: the gate step now reads labels live via `gh api`, which reads credentials
+    # from these two variables (or a `gh auth login` config this process does not
+    # touch). Left inherited, a maintainer's own authenticated `gh` would make these
+    # tests perform a REAL network call against a repo/PR number a fixture invented --
+    # slow, flaky under no network, and answering from github.com rather than from the
+    # fixture the test built. Stripped here so every test gets the fast, offline,
+    # deterministic failure `gh` itself gives with no credentials (~30ms, no socket),
+    # which is exactly the DEGRADE path the gate is required to have -- a test that
+    # wants the LIVE path installs its own `gh` shim on PATH instead (#777).
+    env.pop("GH_TOKEN", None)
+    env.pop("GITHUB_TOKEN", None)
+    # `GH_TOKEN`/`GITHUB_TOKEN` are not the only route to real credentials -- `gh auth
+    # login` stores them under `GH_CONFIG_DIR` (`$XDG_CONFIG_HOME/gh` by default), and
+    # the two env vars above take precedence over that store ONLY when set. Pointed at
+    # an empty directory this process owns rather than left to default, so a machine
+    # that has run `gh auth login` for its maintainer's own account cannot make `gh`
+    # authenticate here either.
+    env["GH_CONFIG_DIR"] = _GH_CONFIG_DIR
+    # A `gh` shim that isn't reached at all (no network, no credentials) answers in
+    # milliseconds, so this is a safety margin against a slow one, not a budget the
+    # suite is meant to spend. A test exercising the LIVE path overrides it.
+    env.setdefault("LABEL_READ_TIMEOUT", "5")
     env.update(extra)
     return env
 
