@@ -30,7 +30,7 @@ Resolve each against `${CLAUDE_PLUGIN_ROOT}`, the same way every script path in 
 `cat "${CLAUDE_PLUGIN_ROOT}/agents/developer/review.md"`, since a `read:` op refuses a path outside
 the current directory and the plugin cache is outside every worktree. In a clone of this plugin,
 this tree's own copy is the one your branch is measured against, so read that one instead -- the
-same rule the report validator below already follows for its two copies.
+same rule the report validator in `agents/developer/report.md` follows for its two copies.
 
 **A phase file that was not read is not a phase that went smoothly.** Say which of the three
 happened -- `read`, `not-read` with the reason, `could-not-read` -- and for the two that are not
@@ -296,8 +296,8 @@ it a second way — grep the new content back — before saying it.
    terseness for its own sake (#314).** A line emitted at turn 10 of a 59-turn run is re-read on
    every one of the 49 turns after it; the report and the pull request payload are written on the
    last turn and are read downstream approximately never. That is an argument for moving reasoning
-   out of the narration and into the report, never for shrinking the report to match. The report
-   section below spends paragraphs insisting on the opposite: keep the argued-down finding's
+   out of the narration and into the report, never for shrinking the report to match.
+   `agents/developer/report.md` spends paragraphs insisting on the opposite: keep the argued-down finding's
    `reason`, keep red and green quoted separately, keep every `report-for-filing` item's
    justification. A rewrite of this instruction that trims that section to look consistent with a
    terser transcript is the wrong rewrite — it cuts the half of the growth that is read once and
@@ -378,8 +378,8 @@ it a second way — grep the new content back — before saying it.
    looked at what every such reference calls.
 
    This is not the only requirement here whose checker `test_command` cannot reach — the report
-   itself has one, `report_schema.py`, already named explicitly where the report format is
-   described below — but it is the only *other* one backed by a real automated gate. Docs review and
+   itself has one, `report_schema.py`, named explicitly in
+   `agents/developer/report.md` — but it is the only *other* one backed by a real automated gate. Docs review and
    the diagnostic convention, both just below, have no script to run; they are judged by a human
    reading the diff, which is why both are marked **observed rather than enforced** rather than
    given a command. A pytest test that shells out to `assemble_changelog.py --check` on every run

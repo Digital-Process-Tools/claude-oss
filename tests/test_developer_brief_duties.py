@@ -688,7 +688,7 @@ def test_the_review_section_still_hands_section_four_over_verbatim():
     """
     assert _unmet(
         DEVELOPER.read_text(encoding="utf-8"),
-        ["hand it §4 above", "verbatim in the brief"],
+        ["hand it §4 of the spine's *how you work*", "verbatim in the brief"],
     ) == []
 
 

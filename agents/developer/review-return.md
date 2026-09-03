@@ -149,7 +149,7 @@ change rather than a courtesy.
   nine are gone. The agents did not know about each other. Every instance was recorded as
   `returned-nothing` rather than `checked`, which is why there is a baseline at all.
 - **Intervention 1, and it did not hold.** The sentence, the `FINDINGS: <n>` header and the
-  `referred-not-stated` sort arm, all above. Together they cost three paragraphs of brief and one
+  `referred-not-stated` sort arm, in `agents/developer/review.md` and above. Together they cost three paragraphs of brief and one
   comparison. #275 and #296 were the first two instances and PR #332 shipped that language; **#392
   reports the identical shape recurring twice in one day, in two unrelated lanes, after it
   shipped.** Two prose attempts, two recurrences. That is what makes a third one the wrong move

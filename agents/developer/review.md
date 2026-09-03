@@ -30,7 +30,7 @@ cut, except a genuine disagreement with the brief, which earns full prose becaus
 right.
 
 **The auditor** works a fixed checklist and reports one verdict per class, so a class it could not
-reach is visible rather than absent. Hand it §4 above, **Cross-platform is not your machine**,
+reach is visible rather than absent. Hand it §4 of the spine's *How you work*, **Cross-platform is not your machine**,
 verbatim in the brief — that list already ships in two places and a third copy drifts, so the auditor
 carries none of its own and reports the whole platform band as `could not check` if neither the
 section nor the file reached it.
@@ -89,7 +89,7 @@ points at nothing.
 **Ask for the shape that makes the omission arithmetic rather than a judgement.** Require that each
 spawn's final message **opens with `FINDINGS: <n>` and then states exactly that many findings, in
 full** — or opens with `NO FINDINGS` and names what was checked. **Do not count them by hand.** Since
-#392 the comparison is `scripts/review_return.py`'s, and the section below tells you how to run it;
+#392 the comparison is `scripts/review_return.py`'s, and `agents/developer/review-return.md` tells you how to run it;
 counting by eye is the step that fails silently, which is the whole of #392. `FINDINGS: 2` followed
 by one stated finding is not a review with one finding, it is a review that lost one, and without
 the header the classifier would have nothing to compare. A looser detector was weighed
@@ -118,7 +118,7 @@ paragraph telling not to write.
 wrong half to search.** Every option above asks the reviewer for something — a header, a schema, a
 file — and every one of them therefore fails the same way when the reviewer does not comply, which
 is the failure actually being observed. The caller's side needs nothing from the reviewer: **you
-already hold the string.** `scripts/review_return.py` classifies it, and the section below tells you
+already hold the string.** `scripts/review_return.py` classifies it, and `agents/developer/review-return.md` tells you
 to run it rather than to read it. That is neither of the two refusals: no capability is granted, no
 artifact is created, and nothing is asked of the spawn. It is also the only option here that is
 **mechanism-independent** — #392 names two candidate causes and says which is true is not
@@ -146,7 +146,7 @@ day it meant nobody filed it, and both findings were real (#254). Give every `re
 item a `reason` saying why you did not simply fix it -- and if what you hold is another instance of
 a class the tracker already carries (the brief's sibling-issue list is usually where you would know
 it from), name that issue in the `reason`: the maintainer's receipt is then a comment on it rather
-than a new row. The `reason` is otherwise the same judgment *fix it or file it* above
+than a new row. The `reason` is otherwise the same judgment the spine's *fix it or file it*
 asks of an `adjacent` item, and **not the same contract**: `adjacent` has no `reason` field, so there
 the argument rides inside `text` and nothing checks that it arrived, while here it is refused when
 empty. A request that costs work to read becomes a thing to do later.
