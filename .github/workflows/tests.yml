@@ -29,6 +29,23 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v7
+      # Windows Defender's real-time scanner walks every file this job touches on the
+      # runner's own disk, and the suite creates many small temp files per assertion
+      # (each `mktemp` fixture, each rewritten .claude/jit-context/ under test). This is
+      # a documented GitHub Actions cost specific to windows-latest: macOS and Linux
+      # runners carry no equivalent always-on scanner. Excluding the checkout and the
+      # runner temp directory removes that tax without touching what any test asserts --
+      # it changes nothing about correctness, only how fast the disk answers. Ported
+      # from Digital-Process-Tools/claude-jit-context#310 (open, not yet merged there,
+      # at the time this landed -- the shape below is that PR's actual diff, not a
+      # retyped guess). The measured saving on this repo's own suite is pending a live
+      # CI round; see #938.
+      - name: Exclude the checkout and temp dir from Windows Defender scanning
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+          Add-MpPreference -ExclusionPath "$env:RUNNER_TEMP"
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
         with:
