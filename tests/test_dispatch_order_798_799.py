@@ -489,23 +489,31 @@ def _extract_dispatch_table_rows(text):
     return tuple(rows)
 
 
-def test_the_spine_states_the_table_dispatch_rank_computes():
-    """#825. The six-row table in `SKILL.md` is a transcription of
-    `dispatch_rank.ROWS` -- the module is the source, the table is prose
-    copied from it -- and a transcription that drifts from its source is
-    exactly what this can catch and a reader skimming the table cannot.
+def test_the_dispatch_phase_states_the_table_dispatch_rank_computes():
+    """#825. The six-row table is a transcription of `dispatch_rank.ROWS` --
+    the module is the source, the table is prose copied from it -- and a
+    transcription that drifts from its source is exactly what this can catch
+    and a reader skimming the table cannot.
 
     This replaces `test_the_spine_and_dispatch_state_the_same_order`, which
     asserted only that the words 'human' and 'loop' occur somewhere in two
     thousand-word documents -- true of nearly any edit to either file, so it
-    could not fail for the defect it claimed to guard against."""
+    could not fail for the defect it claimed to guard against.
+
+    #960 moved which document holds the copy, not how many there are: the
+    selection rules went from the spine into `phases/dispatch.md`, where a lane
+    is assembled, so a session that never dispatches does not load them. The
+    invariant this pair enforces is unchanged -- exactly one copy, in the
+    loop's prose, naming the module -- and the direction of the pair is
+    flipped to match. Asserting the old direction after the move would have
+    been a guard measuring where the table used to be."""
     root = repo_root()
-    spine = root.joinpath(*manager_docs.SPINE_REL).read_text(encoding="utf-8")
-    rows = _extract_dispatch_table_rows(spine)
+    dispatch = (root / "skills/manager/phases/dispatch.md").read_text(encoding="utf-8")
+    rows = _extract_dispatch_table_rows(dispatch)
     assert len(rows) == len(dispatch_rank.ROWS), rows
     assert rows == dispatch_rank.ROWS, rows
-    assert "dispatch_rank.py" in spine, (
-        "the spine table no longer names the module that computes it, so the "
+    assert "dispatch_rank.py" in dispatch, (
+        "the table no longer names the module that computes it, so the "
         "order reads as a thing an agent feels rather than one it can call"
     )
 
@@ -530,23 +538,25 @@ def test_the_table_extractor_catches_a_table_that_disagrees_with_the_module():
     assert rows != dispatch_rank.ROWS, rows
 
 
-def test_dispatch_md_points_at_the_table_rather_than_restating_it():
-    """The design the issue found sound: `SKILL.md` carries the table,
-    `dispatch.md` deliberately does not restate it (#673, #547 -- a second
-    copy is the copy that drifts). Asserting that absence is the real
-    regression to guard, not a parity check between two copies that were
-    never meant to both exist."""
-    dispatch = (repo_root() / "skills/manager/phases/dispatch.md").read_text(
-        encoding="utf-8"
-    )
-    rows = _extract_dispatch_table_rows(dispatch)
+def test_the_spine_points_at_the_table_rather_than_restating_it():
+    """The design the issue found sound, with the two documents swapped by
+    #960: one document carries the table and the other deliberately does not
+    restate it (#673, #547 -- a second copy is the copy that drifts).
+    Asserting that absence is the real regression to guard, not a parity check
+    between two copies that were never meant to both exist.
+
+    The spine must still send a reader to the file that has it: a spine that
+    neither carries the table nor names where it lives is not a smaller spine,
+    it is an order nothing states."""
+    spine = repo_root().joinpath(*manager_docs.SPINE_REL).read_text(encoding="utf-8")
+    rows = _extract_dispatch_table_rows(spine)
     assert not rows, (
-        "dispatch.md now carries its own copy of the dispatch table -- that "
-        "recreates the drift #673/#547 exist to avoid; point at the spine "
-        "instead of restating it: {}".format(rows)
+        "the spine now carries its own copy of the dispatch table -- that "
+        "recreates the drift #673/#547 exist to avoid; point at "
+        "phases/dispatch.md instead of restating it: {}".format(rows)
     )
-    assert "dispatch_rank.py" in dispatch, (
-        "dispatch.md must still name the module that computes the order"
+    assert "skills/manager/phases/dispatch.md" in spine, (
+        "the spine must name the phase file that carries the dispatch order"
     )
 
 

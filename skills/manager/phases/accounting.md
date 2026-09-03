@@ -228,3 +228,83 @@ for how many, `git rev-parse` for which commit — so git answers with one value
 for a proxy to corrupt in between. `scripts/release_delta.py` is the one place in this repo that
 already computes a release delta this way; hold every new count to the same rule.
 
+
+---
+
+## Cadence
+
+**Three to four ticks, then a release, then a triage sweep, then three to four more ticks.**
+Stated by the maintainer 2026-09-02, and nowhere else in this loop's prose until now (#855). The
+ordering matters and is not the one the documents used to imply: triage lands **immediately before**
+the next run of ticks, not at the end of the one that just closed, so `dispatch_rank.py` reads
+priority labels that are as fresh as they can be at the moment it actually consumes them, and the
+cohort burn-down a triage sweep feeds counts a set the release has already stopped editing (the same
+"re-count after the last label write, never before it" discipline the accounting phase already
+applies to the freeze count itself).
+
+**Keep the freeze and the sweep apart.** The cohort freeze -- defined below, under *Closing a
+tick: the drain and the fill* -- is the maintainer's own act, by hand, in the same minute as the tag;
+the triager must never write a `cohort-*` label. The triage sweep is a separate step that follows the
+freeze, run over the tracker's priority and lane labels, never over cohorts.
+
+**The last-triaged half is enforced, the label-coverage half is not (#855).**
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded AT`, run
+whenever a sweep completes, and `--last-triage`, which any tick can call to read `last triaged: <ISO>
+/ never / could-not-read` back -- `never` is a real, established absence and `could-not-read` is not
+the same fact, the same distinction every other reader in that file draws. Reporting how much of the
+open board carries no priority label at all -- so "the board is triaged" is a measurement rather than
+a memory -- is still unbuilt; that half stays this repository's own defect class, one level up,
+applied to its own cadence, until somebody takes it.
+
+
+---
+
+## The loop does not stop, and a tick ending is not the loop ending
+
+**Read this with the tick-end states in the spine.** Those three states say how *this tick* closes;
+the doctrine here says when the *loop* stops, and a sentence that made the second follow from the
+first is half of #209.
+
+**The asymmetry is the whole argument, and it is why this is not a preference.** A loop that keeps
+ticking with nothing to do is visibly idle and self-correcting, and the cost is one cheap tick that
+says so. A loop that stopped is indistinguishable from one that was never armed, the cost is
+unbounded, and nothing inside it will ever notice.
+
+**What this replaces, written down so it is a decision and not a drift.** The condition used to be
+*nothing outstanding but somebody else's work → stop the loop, `stop: true`*. It is replaced rather
+than tightened, because it asks the loop for a judgement about its own board at the moment it is
+least able to make one: a loop about to stop is definitionally a loop that has stopped looking. On
+2026-08-16 it reached that judgement while holding a belief that had been false for an hour and fifty
+minutes, with four blockers it had filed itself sitting unstarted on its own tracker (#209). And
+*somebody else's work* was carrying the load — an upstream issue, a review someone else owes, a
+release the maintainer must approve — where the right move was already a long wakeup rather than a
+termination. The rule described an exception that never had a good instance.
+
+**#337 is the executable half: `scripts/oss_state.py` carries `detail.wait` as a field, not only as
+prose in `--decision`.** `--wait-dispatch`/`--wait-observable` on the blocking tick's `--decision`
+call record the claim; `--pending-wait` at the top of the *next* tick reads it back; `--check-wait
+{holds,cleared,could-not-evaluate}` re-derives it once the observable has actually been tested. Three
+states, not two, for the same reason `intake` and `cohort_freeze` have three: `holds` is a
+measurement that came back negative, `could-not-evaluate` is no measurement at all, and rendering the
+two alike is exactly the bug this closes. `commands/tick.md` step 1 is where the call is wired.
+
+**#477 is the same shape one fact over: a tick's own plugin identity is a prior nothing recorded, so
+"has the version changed since last tick" was not a question this system could answer.**
+`--plugin-identity` on step 6's `--decision` call records `doctor.plugin_identity()`'s own string —
+version folded with a content digest, never the version alone, because a manifest version stays put
+for a whole release cycle while the content underneath it can still move (#418). `--check-plugin-
+identity` at the top of the *next* tick compares against it: `changed`, `unchanged`,
+`could-not-tell` when no prior was ever recorded — which must never render as `unchanged` — or
+`route-mismatch` (#677) when the current and prior readings were obtained by different routes (the
+version-pinned `${CLAUDE_PLUGIN_ROOT}` never sees its own version move, so step 1 now resolves the
+actually-installed copy instead and tags each reading with which route produced it — a prior
+recorded by the old route is not the same measurement as a new one, so comparing them is its own
+state rather than a guessed `changed`/`unchanged`). `commands/tick.md` step 1 is where the call is
+wired.
+
+**#565 is a narrower, same-tick question one clock over: does `${CLAUDE_PLUGIN_ROOT}` itself move
+DURING this tick, not merely between two ticks?** An ephemeral, single-use sidecar
+(`--record-plugin-root` at step 1, `--check-plugin-root` at step 6, consumed on first read) answers
+it separately from the cross-tick identity comparison above, because the two are different clocks
+and folding them together would answer neither question honestly.
+

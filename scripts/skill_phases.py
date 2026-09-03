@@ -80,7 +80,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # again without anybody choosing to -- which is the same invisibility the
     # budgets exist to remove. ~10% headroom over the new size, as #491 sets
     # them.
-    SPINE: (54751, 60200, "the loop itself: what is decided every tick, and where each phase's rules live"),
+    # Re-baselined downward again (#960), second round of the same split: the
+    # pre-flight and dispatch order went to dispatch.md, the platform band to
+    # review.md, cadence and the loop-doctrine argument to accounting.md.
+    # 54,751 -> 42,604 B; 62,829 B before #958, so -32.2% across the two.
+    # Same reasoning as #958's raise-nothing rule: the ceiling follows the
+    # measurement down, or the saving is spendable without a decision.
+    SPINE: (42604, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
@@ -125,13 +131,31 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # free to receive the matching row; that test is expected to be red on this
     # branch and is reported as such rather than silently left unexplained.
     # Sixth budget change.
-    "skills/manager/phases/dispatch.md": (37253, 41000, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
+    # Raised (#960): measured 45,990 B against the prior 41,000 B budget. The
+    # spine's whole `Deciding what to build` section -- the pre-flight probe and
+    # the dispatch order -- moved in here, which is where a lane is actually
+    # assembled and where a session that never dispatches should not pay for it.
+    # Nothing was cut to pay for it: this is relocated argument, not new
+    # argument, and trimming it in the same diff would have hidden which bytes
+    # moved and which were dropped. Seventh budget change for this file.
+    "skills/manager/phases/dispatch.md": (45990, 50600, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
     "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
-    "skills/manager/phases/review.md": (11637, 12800, "reviewing a returned diff, and what an issue body filed out of one looks like"),
+    # Raised (#960): measured 13,992 B against the prior 12,800 B budget -- the
+    # spine's cross-platform band moved in, being what a reviewer audits a diff
+    # against rather than something every tick needs loaded.
+    "skills/manager/phases/review.md": (13992, 15400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/findings.md": (11620, 12800, "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board"),
     "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),
     "skills/manager/phases/release.md": (10195, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
-    "skills/manager/phases/accounting.md": (15093, 16600, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
+    # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two
+    # relocations, both about closing a tick: the cadence section, and the loop
+    # doctrine's argument (the #209 incident and the #337/#477/#565 state-file
+    # mechanics), whose directives stay in the spine. A separate phase file for
+    # the second was weighed and declined -- "when does the loop stop" and "how
+    # does this tick close" are one subject, and a seventh phase file would add
+    # its own spine directive block and header, which is the duplication cost
+    # the split already pays once per file.
+    "skills/manager/phases/accounting.md": (22237, 24500, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
 }
 
 

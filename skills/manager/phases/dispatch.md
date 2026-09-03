@@ -507,3 +507,90 @@ Every brief carries these:
 7. **Unconditional publishing clause:** commit, do not push, do not open a PR, do not comment on the
    issue. "Do not push *if* something blocks you" is how one agent correctly pushed.
 
+
+---
+
+## Deciding what to build: what to select, and checking it is still open
+
+- **Judge as the tool's primary user.** "Is this useful when I actually run it?" beats "is the issue
+  well-written."
+- **Refusing is a first-class outcome**, and cheaper than any build.
+- **Pre-flight before delegating.** Reproduce the behaviour. Read the body *and* the comments
+  (`gh-issue:N:full`) — a comment amendment redefines the deliverable often enough that briefing from
+  the body alone is a known way to burn a whole agent run.
+- **Re-derive the issue's own claims.** A body goes stale while its comments accumulate. Grep for the
+  *concept*, not the issue's spelling of it.
+- **The issue can go stale against the code, and neither bullet above catches that axis.** Both of
+  the two above are about the body going stale against its own comments — nothing yet asks whether
+  the whole issue, comments included, has gone stale against what actually shipped. A lane was
+  dispatched for part 3 of #81 after the fix had already landed and shipped: the body and every
+  comment were read exactly as asked, and the brief was still written for finished work (#457). Before
+  writing a brief, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/preflight_check.py" --pattern
+  PATTERN --path FILE_OR_DIR` against the
+  code path the issue names — for #81 that was one grep for `could not run` in `commands/release.md`
+  — and read its `state` in three, never two: **`matched`**, **`not-matched`**, or
+  **`could-not-search`**, which must never be read as `not-matched`. Whether a match means
+  **already-shipped** or **still-open** depends on what the pattern names — a contract that should
+  exist, or a symptom that should not — and that direction is the maintainer's own judgement to record
+  alongside the call, never the script's to guess. `could-not-search` becomes **`could-not-tell`** at
+  the dispatch decision and must never render as **`still-open`** either — the issue names no code
+  path precise enough to check is the honest reading, not a nudge to dispatch anyway.
+  **For a multi-part issue, run it once per part.** A whole-issue verdict hides exactly the case
+  #457 records: #81 had three parts in three different states (one filed elsewhere, one shipped, one
+  genuinely open), and a single check over the whole issue would have called it open and dispatched
+  it again. **The same check belongs where a bundle is assembled, not only where a single issue is
+  chosen** — a stale member wastes a share of the whole bundle's brief in proportion to the bundle's
+  size, and a bundle reads exactly as healthy at dispatch whether or not one of its members has
+  already shipped. Run it for every candidate before it is added to a bundle, not only for the one
+  issue a single-issue lane would have picked.
+  **Quote the probe's scope verbatim in the brief, never a summary of it (#727).** `not-matched`
+  over one file and `not-matched` over the whole tree render identically once retyped as prose — a
+  brief that wrote *"a pre-flight returned not-matched — nothing does this today"* about a probe
+  scoped to one file (`scripts/doctor.py`) sent a lane to build a second mechanism beside one that
+  already existed (`tests/test_shipped_op_spellings.py`), because the sentence carried no scope for
+  the lane to catch. `preflight_check.py`'s receipt names `roots`, the paths actually searched, on
+  every state including `could-not-search` — paste the whole line, `not-matched over 1 file
+  (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
+  every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
+  wearing a repository-wide claim's clothes.
+- **Select in the dispatch order, and compute it rather than feel it (#798).** Two axes, author
+  before priority within a band. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the
+  one place the table lives; call it rather than re-deriving it here.
+
+  | Rank | Who filed | Priority |
+  | --- | --- | --- |
+  | 1 | human | high |
+  | 2 | loop | high |
+  | 3 | human | medium |
+  | 4 | human | low, or no priority label |
+  | 5 | loop | medium |
+  | 6 | loop | low, or no priority label |
+
+  **"Loop" is an issue carrying `labels.filed_by_loop`'s label; an issue without it is a human
+  issue.** This replaces priority-only ordering rather than layering over it. The reason is a
+  measurement, not a preference: 476 issues in 20 days on this repository, 98% of them filed by the
+  loop, 68% closed the same day — so a maintainer's ask sat behind the loop's own backlog, and the
+  two maintainers no longer knew what the tool was doing.
+
+  **The order does not put every human issue above every loop one**, and rank 2 is why: a
+  blocking-class defect the loop found still beats an ordinary ask. The ranking table in
+  `skills/manager/phases/findings.md` decides what blocks a release; this decides what gets picked up first among everything that does not.
+
+  **`could-not-rank` is a real answer and must never render as rank 4.** With no declared
+  `labels.filed_by_loop`, every issue on the board is unlabelled, and reading that as "all human"
+  would promote the loop's entire backlog. The module refuses instead, and an unrankable issue sorts
+  last rather than first — the absence of a reading is not evidence of value.
+
+- **Rank a finding by what cannot be undone**, then by who is walking away. The eleven-row table --
+  `destroys`, `discloses`, `executes`, the two `containment` rows, `forges`, `ships-local-state`,
+  `misdirects`, `splices`, `fails-to-preserve`, `misreports` -- lives in
+  `skills/manager/phases/findings.md` and **only there**, with the two verdict columns it carries:
+  *blocks a release* and *embargo when reported upstream*, which are two different questions and
+  disagree on one row. Read that file before ranking anything, and read the column you actually
+  need rather than a restatement of it. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"`
+  prints the table's own bytes when a payload needs it verbatim. **A finding that fits no row is
+  reported unranked**, never demoted to "no row, therefore minor".
+
+- **Ask whether the fix compounds**, not whether the loop is worth it. A fix that removes a whole
+  class of future defects outranks a bigger fix that removes one instance.
+
