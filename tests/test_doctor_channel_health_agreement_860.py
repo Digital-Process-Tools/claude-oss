@@ -56,6 +56,38 @@ def test_the_860_incident_itself_is_a_disagreement():
     assert "cannot_determine" in detail, detail
 
 
+def test_disagree_known_cause_hint_fires_for_single_census_and_cannot_determine():
+    """#913: this exact combination -- census says `single` (no collision) while
+    channel:health says CANNOT DETERMINE -- has one overwhelmingly likely cause
+    (claude-supertool#2208), and re-deriving it cost two retracted issues
+    (#911, #912). Name it."""
+    state, detail = agreement.channel_health_agreement_state(
+        "single", "oss-channel", "cannot_determine", "cached", 12.0
+    )
+    assert state == "disagree", detail
+    assert "claude-supertool#2208" in detail, detail
+    assert "census" in detail.lower()
+
+
+def test_disagree_known_cause_hint_fires_for_single_census_and_contradicted():
+    state, detail = agreement.channel_health_agreement_state(
+        "single", "oss-channel", "contradicted", "probed", 0.0
+    )
+    assert state == "disagree", detail
+    assert "claude-supertool#2208" in detail, detail
+
+
+def test_disagree_known_cause_hint_does_not_fire_on_the_collision_disagreement():
+    """Positive control: a collision census versus a single-consumer health
+    reading is also a `disagree`, but it is NOT the known #2208 shape (that
+    shape only ever produces `census: single`), so the hint must not appear."""
+    state, detail = agreement.channel_health_agreement_state(
+        "collision", ["oss-channel", "other"], "forwarding", "cached", 5.0
+    )
+    assert state == "disagree", detail
+    assert "claude-supertool#2208" not in detail, detail
+
+
 def test_could_not_ask_census_is_could_not_compare_never_agree():
     """Load-bearing (#860's own issue): an instrument that did not answer must
     never default to `agree`."""
