@@ -200,6 +200,32 @@ def test_unparseable_answers_are_none(monkeypatch):
     assert statusline._gh_default_branch_state("owner/repo", "main") is None
 
 
+def test_check_runs_reading_is_none_when_the_page_is_truncated(monkeypatch):
+    """Self-review finding on this issue (audit round): `gh api` does not
+    auto-paginate, and the check-runs call named neither `--paginate` nor
+    `per_page` -- so a commit carrying more check-runs than one page could
+    have its later entries (a failure among them) silently invisible to the
+    scan while `total` (read straight from `.total_count`) stayed correct.
+    `total == 3` with only 2 entries returned is exactly what that truncation
+    looks like from here: read as `None`, the same "could not look" answer
+    `_gh_external_issue_count` already gives this shape one function over,
+    never guessed at from the partial page that happened to arrive."""
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(
+            check_runs=json.dumps({
+                "total": 3,
+                "entries": [
+                    {"status": "completed", "conclusion": "success"},
+                    {"status": "completed", "conclusion": "success"},
+                ],
+            }),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
+    )
+    assert statusline._gh_default_branch_state("owner/repo", "main") is None
+
+
 def test_missing_repo_or_branch_never_calls_the_forge(monkeypatch):
     calls = []
     monkeypatch.setattr(statusline, "_run", lambda *a, **k: calls.append(1) or "{}")

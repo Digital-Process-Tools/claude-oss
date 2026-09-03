@@ -1591,7 +1591,11 @@ def _reading_from_check_runs(repo, branch):
         [
             "gh",
             "api",
+            "-X",
+            "GET",
             "repos/{}/commits/{}/check-runs".format(repo, branch),
+            "-f",
+            "per_page=100",
             "--jq",
             "{total: .total_count, "
             "entries: [.check_runs[] | {status: .status, conclusion: .conclusion}]}",
@@ -1609,6 +1613,14 @@ def _reading_from_check_runs(repo, branch):
     total = data.get("total")
     entries = data.get("entries")
     if not isinstance(total, int) or not isinstance(entries, list):
+        return None
+    # `gh api` does not auto-paginate. `per_page=100` covers the ordinary case, but a
+    # commit with more check-runs than that still has a truncated `entries` here while
+    # `total` (read straight from `.total_count`) stays correct -- the same "counted
+    # right, read wrong" shape `_gh_external_issue_count` already guards against one
+    # function over. Read as `None` (could not look) rather than scanning a partial
+    # page and guessing "green" from entries that happen to all be `success`.
+    if len(entries) != total:
         return None
     bad = False
     running = False
