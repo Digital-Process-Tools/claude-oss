@@ -1,12 +1,30 @@
-"""The default branch's own CI state, as a marker beside the repository name (#856).
+"""The default branch's own CI state, as a marker beside the repository name (#856,
+and #914 for the actual data source).
 
 Nothing on the status line said whether `main` itself is currently green -- the moment
 right after this loop's own merge, when the branch has a fresh commit and no concluded
 CI run yet, is exactly the case nothing on the line would flag. `gh-branch` answers this
 in four states (GREEN, NOT GREEN either because a leg failed or because nothing has
-concluded, NO RUN, UNKNOWN); this module reaches the same four states with a cheaper
-call (the combined-status endpoint) rather than `gh-branch`'s own per-workflow
-bookkeeping, because the render is one glyph, not a table.
+concluded, NO RUN, UNKNOWN); this module reaches the same four states with two cheaper
+calls -- check-runs AND the combined-status endpoint -- rather than `gh-branch`'s own
+per-workflow bookkeeping, because the render is one glyph, not a table.
+
+**#914's own root cause: a single-endpoint fixture cannot discover a single-endpoint
+bug.** The prior version of this file stubbed `_run` with one fabricated JSON shape
+per case (`{"state": "success", "total": 3}`), which the real combined-status endpoint
+never produces on an Actions-only repository -- GitHub Actions writes check-runs, not
+legacy commit statuses, so `total_count` there is `0` on every commit, always. The
+suite asserted the mapping from an invented input to a glyph and never asked whether
+the input occurs, which is exactly why it stayed green for the whole time the function
+had exactly one reachable (and wrong) outcome in this repository.
+
+So below: `_run` is stubbed per-call now, dispatched on which endpoint the command
+actually names -- a fixture that could not pass a check-runs-shaped answer through the
+combined-status code path by accident, the way the single shared stub used to. And at
+the bottom, one test calls the real `gh` CLI against this repository's own real default
+branch and compares the verdict against `gh-branch` (the supertool op that already gets
+this right) on the same SHA, per the issue's own acceptance criterion -- skipped, not
+failed, when the network or the tools it needs are unavailable.
 
 Follows #550's own shape throughout: every "must not render confidently" assertion
 carries a "must render" control in the same fixture, and the stale-must-fold-to-unknown
@@ -14,8 +32,13 @@ case is exercised beside the fresh-and-correct case rather than alone.
 """
 
 import json
+import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -26,18 +49,69 @@ import statusline  # noqa: E402
 # --------------------------------------------------------- _gh_default_branch_state
 
 
-def test_success_with_legs_is_green(monkeypatch):
+def _dispatch(check_runs=None, status=None):
+    """A `_run` stand-in that answers differently per endpoint, keyed off the
+    command it was actually given -- never one fixed answer for both calls the
+    function under test makes. `None` for either argument means "the forge did
+    not answer this call" (mirrors `_run`'s own real return on a failed call),
+    distinct from a JSON string answering with zero entries."""
+
+    def _run(command, timeout=None):
+        joined = " ".join(command)
+        if "check-runs" in joined:
+            return check_runs
+        if "/status" in joined:
+            return status
+        raise AssertionError("unexpected command: {}".format(command))
+
+    return _run
+
+
+def _check_runs_json(entries):
+    return json.dumps({"total": len(entries), "entries": entries})
+
+
+def test_all_check_runs_passed_is_green(monkeypatch):
+    """The demonstration case #914 was filed over: an Actions-only repo where the
+    combined-status endpoint reports nothing (`total: 0`) but check-runs carries
+    real, concluded, passing data."""
     monkeypatch.setattr(
         statusline, "_run",
-        lambda *a, **k: json.dumps({"state": "success", "total": 3}),
+        _dispatch(
+            check_runs=_check_runs_json(
+                [{"status": "completed", "conclusion": "success"}] * 13
+            ),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") == "green"
 
 
-def test_failure_is_bad(monkeypatch):
+def test_a_failed_check_run_is_bad(monkeypatch):
     monkeypatch.setattr(
         statusline, "_run",
-        lambda *a, **k: json.dumps({"state": "failure", "total": 3}),
+        _dispatch(
+            check_runs=_check_runs_json(
+                [
+                    {"status": "completed", "conclusion": "success"},
+                    {"status": "completed", "conclusion": "failure"},
+                ]
+            ),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
+    )
+    assert statusline._gh_default_branch_state("owner/repo", "main") == "bad"
+
+
+def test_legacy_status_failure_is_bad_even_with_no_check_runs_at_all(monkeypatch):
+    """The other direction #914 names explicitly: an external CI posting legacy
+    commit statuses with zero GitHub Actions check-runs must still be read."""
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(
+            check_runs=_check_runs_json([]),
+            status=json.dumps({"state": "failure", "total": 1}),
+        ),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") == "bad"
 
@@ -51,40 +125,78 @@ def test_error_state_is_also_bad(monkeypatch):
     to guess wrong in."""
     monkeypatch.setattr(
         statusline, "_run",
-        lambda *a, **k: json.dumps({"state": "error", "total": 1}),
+        _dispatch(
+            check_runs=_check_runs_json([]),
+            status=json.dumps({"state": "error", "total": 1}),
+        ),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") == "bad"
 
 
-def test_pending_with_legs_reporting_is_running(monkeypatch):
+def test_a_queued_check_run_is_running(monkeypatch):
     monkeypatch.setattr(
         statusline, "_run",
-        lambda *a, **k: json.dumps({"state": "pending", "total": 2}),
+        _dispatch(
+            check_runs=_check_runs_json(
+                [
+                    {"status": "completed", "conclusion": "success"},
+                    {"status": "queued", "conclusion": None},
+                ]
+            ),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") == "running"
 
 
-def test_zero_total_is_no_run_even_though_the_endpoint_calls_it_pending(monkeypatch):
-    """GitHub's combined-status endpoint answers `pending` for BOTH "checks are
-    running" and "nothing has reported at all" -- exactly #856's own motivating
-    case, the instant after a merge. `total_count == 0` is what tells them apart;
-    without this the moment this issue was filed for would render as `running`,
-    which is a different claim (something IS in flight) from the true one
-    (nothing has started)."""
+def test_pending_legacy_status_with_legs_reporting_is_running(monkeypatch):
     monkeypatch.setattr(
         statusline, "_run",
-        lambda *a, **k: json.dumps({"state": "pending", "total": 0}),
+        _dispatch(
+            check_runs=_check_runs_json([]),
+            status=json.dumps({"state": "pending", "total": 2}),
+        ),
+    )
+    assert statusline._gh_default_branch_state("owner/repo", "main") == "running"
+
+
+def test_both_sources_empty_is_no_run(monkeypatch):
+    """#914's own acceptance criterion: `no-run` requires BOTH sources to report
+    nothing -- not one of them, which is what the old single-endpoint reading
+    could never tell apart from "the other source has real data"."""
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(
+            check_runs=_check_runs_json([]),
+            status=json.dumps({"state": "pending", "total": 0}),
+        ),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") == "no-run"
 
 
-def test_no_answer_from_the_forge_is_none(monkeypatch):
-    monkeypatch.setattr(statusline, "_run", lambda *a, **k: None)
+def test_check_runs_empty_but_status_unanswered_is_none_not_no_run(monkeypatch):
+    """The merge's own edge case: check-runs genuinely came back empty, but the
+    combined-status call did not answer at all. That source could still carry
+    legacy statuses this function never saw -- guessing `"no-run"` here would be
+    exactly the "an absence this function produced rendered as an absence on the
+    branch" mistake the whole issue is about, one level up."""
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(check_runs=_check_runs_json([]), status=None),
+    )
     assert statusline._gh_default_branch_state("owner/repo", "main") is None
 
 
-def test_unparseable_answer_is_none(monkeypatch):
-    monkeypatch.setattr(statusline, "_run", lambda *a, **k: "not json")
+def test_no_answer_from_either_source_is_none(monkeypatch):
+    monkeypatch.setattr(statusline, "_run", _dispatch(check_runs=None, status=None))
+    assert statusline._gh_default_branch_state("owner/repo", "main") is None
+
+
+def test_unparseable_answers_are_none(monkeypatch):
+    monkeypatch.setattr(
+        statusline, "_run",
+        _dispatch(check_runs="not json", status="not json"),
+    )
     assert statusline._gh_default_branch_state("owner/repo", "main") is None
 
 
@@ -94,6 +206,77 @@ def test_missing_repo_or_branch_never_calls_the_forge(monkeypatch):
     assert statusline._gh_default_branch_state(None, "main") is None
     assert statusline._gh_default_branch_state("owner/repo", None) is None
     assert calls == []
+
+
+# --------------------------------------------------- live, against the real forge
+
+
+def _gh_branch_verdict(repo, sha):
+    """`gh-branch`'s own read on `sha`, folded to this module's four states, by
+    parsing the one `Legs: N total: P passed, F failed, R pending` line its
+    render always carries. `None` when the op could not be run or its output
+    did not carry a parseable legs line -- a real "could not compare" state,
+    never silently read as agreement."""
+    supertool_bin = shutil.which("supertool")
+    if supertool_bin is None:
+        return None
+    try:
+        result = subprocess.run(
+            [supertool_bin, "gh-branch:{}".format(sha)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = result.stdout.decode("utf-8", "replace")
+    match = re.search(
+        r"(\d+) total: (\d+) passed, (\d+) failed, (\d+) pending", text,
+    )
+    if not match:
+        return None
+    _total, passed, failed, pending = (int(g) for g in match.groups())
+    if failed > 0:
+        return "bad"
+    if pending > 0:
+        return "running"
+    if passed > 0:
+        return "green"
+    return "no-run"
+
+
+def test_real_check_runs_reading_matches_gh_branch_on_this_repos_own_head():
+    """The demonstration this issue was actually filed over: not a fabricated
+    payload, but this repository's own real default-branch head, read through
+    the real `gh` CLI, compared against `gh-branch` (the supertool op #914 says
+    already gets this right) on the same SHA. Skipped -- never failed -- when
+    `gh`/`supertool` are not on PATH or the network does not answer, because an
+    environmental gap here is not a claim about the code (the same three-state
+    discipline this whole module is about, applied to the test that checks it)."""
+    if shutil.which("gh") is None:
+        pytest.skip("gh is not on PATH; this test needs the real forge")
+    if shutil.which("supertool") is None:
+        pytest.skip("supertool is not on PATH; nothing to compare against")
+    config = statusline.repo_config(str(REPO_ROOT))
+    repo = config.get("repo")
+    branch = config.get("default_branch")
+    if not repo or not branch:
+        pytest.skip("this checkout's .oss.json names no repo/default_branch")
+    sha = statusline._run(
+        ["gh", "api", "repos/{}/commits/{}".format(repo, branch), "--jq", ".sha"],
+        timeout=25,
+    )
+    if not sha:
+        pytest.skip("could not resolve the default branch's head SHA over the network")
+    ours = statusline._gh_default_branch_state(repo, sha)
+    if ours is None:
+        pytest.skip("neither source answered for this SHA")
+    theirs = _gh_branch_verdict(repo, sha)
+    if theirs is None:
+        pytest.skip("gh-branch did not produce a parseable verdict to compare against")
+    assert ours == theirs, (
+        "statusline read {!r} but gh-branch read {!r} for the same commit {} -- "
+        "the two mechanisms have diverged again".format(ours, theirs, sha)
+    )
 
 
 # ------------------------------------------------------------- _default_branch_marker

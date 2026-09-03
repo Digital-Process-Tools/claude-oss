@@ -1564,29 +1564,78 @@ def _gh_rollups(repo):
     return rows if isinstance(rows, list) else None
 
 
-def _gh_default_branch_state(repo, branch):
-    """Is the default branch's head commit green? One of the four states `gh-branch`
-    itself answers, read off a cheaper call (#856).
+#: Concluded check-run outcomes read as a failure, for `_reading_from_check_runs`.
+#: GitHub's documented enum for `conclusion` is wider than the combined-status
+#: endpoint's three-value `state`: `neutral` and `skipped` are deliberately left
+#: out of this set (a run explicitly opting out of pass/fail is not a failure),
+#: everything else that means "this did not pass" is in it.
+_BAD_CHECK_RUN_CONCLUSIONS = frozenset(
+    {"failure", "timed_out", "action_required", "cancelled", "stale"}
+)
 
-    `gh-branch` (supertool) enumerates every workflow run on the head SHA and
-    collapses re-runs and multi-run workflows to answer conjunctively -- machinery
-    this render does not need, because it produces one glyph, not a table. GitHub's
-    own combined-status endpoint (`repos/{repo}/commits/{ref}/status`) already
-    rolls every check-run and legacy status context on a commit into one summary,
-    which is the same question at the width this line has to spend.
 
-    Returns ``"green"``, ``"bad"``, ``"running"``, ``"no-run"``, or ``None`` when
-    the branch or repo is not configured, or the call did not answer.
+def _reading_from_check_runs(repo, branch):
+    """One raw reading off the check-runs endpoint (#914): total entries, and
+    whether any of them are failed / still in flight / passed.
 
-    **`total_count == 0` is read separately from `state`, and this is the whole
-    point of the function.** The combined-status endpoint answers `state:
-    "pending"` for BOTH "checks are running" and "nothing has reported on this
-    commit at all" -- and the second of those is exactly #856's own motivating
-    case, the instant after this loop's own merge, when the branch has a fresh
-    commit and no concluded run yet. Folding them together would render the one
-    case this issue was filed for identically to legs actively in flight, which is
-    a different and less urgent claim. `total == 0` means nothing has reported,
-    regardless of what `state` says about an empty rollup.
+    GitHub Actions writes check-runs, not legacy commit statuses -- on an
+    Actions-only repository the combined-status endpoint's `total_count` is `0`
+    on every commit, always, which is #914's whole defect. This is the source
+    that actually carries Actions data.
+
+    Returns ``None`` when the call did not answer or produced something this
+    function cannot parse -- never confused with a reading that genuinely came
+    back empty, which is a dict with ``total == 0`` and every flag ``False``.
+    """
+    out = _run(
+        [
+            "gh",
+            "api",
+            "repos/{}/commits/{}/check-runs".format(repo, branch),
+            "--jq",
+            "{total: .total_count, "
+            "entries: [.check_runs[] | {status: .status, conclusion: .conclusion}]}",
+        ],
+        timeout=25,
+    )
+    if not out:
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    total = data.get("total")
+    entries = data.get("entries")
+    if not isinstance(total, int) or not isinstance(entries, list):
+        return None
+    bad = False
+    running = False
+    green = False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") in ("queued", "in_progress"):
+            running = True
+            continue
+        conclusion = entry.get("conclusion")
+        if conclusion in _BAD_CHECK_RUN_CONCLUSIONS:
+            bad = True
+        elif conclusion == "success":
+            green = True
+    return {"total": total, "bad": bad, "running": running, "green": green}
+
+
+def _reading_from_combined_status(repo, branch):
+    """The same shape as `_reading_from_check_runs`, off the legacy
+    combined-status endpoint (`repos/{repo}/commits/{ref}/status`).
+
+    Kept alongside the check-runs reading rather than replaced by it (#914): a
+    repository could carry legacy commit statuses posted by an external CI with
+    no GitHub Actions runs at all, and this is the only source that would ever
+    see those. Neither source alone can answer `"no-run"` on its own -- see
+    `_gh_default_branch_state`, which is where the two readings are merged.
 
     `error` is read the same as `failure`. GitHub's own docs give the COMBINED
     summary's top-level `state` a three-value enum -- `failure`/`pending`/`success`
@@ -1594,14 +1643,10 @@ def _gh_default_branch_state(repo, branch):
     is the spelling an INDIVIDUAL entry in the legacy `statuses[]` array can carry,
     one level below what this function's own `--jq` filter reads. Kept anyway,
     because a top-level `state` outside its documented enum is exactly the shape
-    an undocumented API change would take, and reading it as `"bad"` -- rather
-    than falling through to the `None` below, which this module's own callers
-    read as "no answer" and would then fold into the very "not settled yet"
-    `unk`/`run` glyphs this branch exists to tell apart from an actual failure --
-    is the conservative direction to guess wrong in.
+    an undocumented API change would take, and reading it as bad -- rather than
+    falling through to `None`, which the merge below reads as "this source did
+    not answer" -- is the conservative direction to guess wrong in.
     """
-    if not repo or not branch:
-        return None
     out = _run(
         [
             "gh",
@@ -1623,15 +1668,63 @@ def _gh_default_branch_state(repo, branch):
     total = data.get("total")
     if not isinstance(total, int):
         return None
-    if total == 0:
-        return "no-run"
     state = data.get("state")
-    if state == "success":
-        return "green"
-    if state in ("failure", "error"):
+    return {
+        "total": total,
+        "bad": state in ("failure", "error"),
+        "running": state == "pending" and total > 0,
+        "green": state == "success",
+    }
+
+
+def _gh_default_branch_state(repo, branch):
+    """Is the default branch's head commit green? One of the four states `gh-branch`
+    itself answers, read off two cheaper calls (#856, and #914 for the second one).
+
+    `gh-branch` (supertool) enumerates every workflow run on the head SHA and
+    collapses re-runs and multi-run workflows to answer conjunctively -- machinery
+    this render does not need, because it produces one glyph, not a table.
+
+    **Two sources, not one (#914).** The combined-status endpoint alone answers
+    `total_count == 0` on every commit of an Actions-only repository, because
+    GitHub Actions writes check-runs, not legacy commit statuses -- so a repo
+    whose CI is entirely Actions (this one) could never read anything but
+    `"no-run"` off it. Check-runs alone has the opposite gap: a repository
+    carrying legacy statuses from an external CI, with no Actions runs at all,
+    would show up as empty there. Neither reading is read as authoritative on
+    its own; both are taken and merged below.
+
+    Returns ``"green"``, ``"bad"``, ``"running"``, ``"no-run"``, or ``None`` when
+    the branch or repo is not configured, or the call did not answer.
+
+    **Merge order is bad, then running, then green, then no-run/None** -- the
+    same "worst wins" shape `gh-branch` itself uses across workflows. A failure
+    on either source is a failure; a leg still in flight on either source means
+    "not settled" even if the other source is quiet; `"no-run"` is reserved for
+    the case both sources answered and both came back with `total == 0`. If one
+    source did not answer at all (`None`) and the other came back empty, this is
+    read as `None` rather than guessed as `"no-run"` -- the unanswered source
+    could carry data this function never saw, and `None` is what every caller
+    here already reads as "no answer", never as "confirmed idle" (mirrors the
+    `total_count == 0` vs `state` distinction the combined-status reading always
+    made, one level up: an absence this function produced must not render as an
+    absence on the branch).
+    """
+    if not repo or not branch:
+        return None
+    check_runs = _reading_from_check_runs(repo, branch)
+    status = _reading_from_combined_status(repo, branch)
+    if check_runs is None and status is None:
+        return None
+    if (check_runs and check_runs["bad"]) or (status and status["bad"]):
         return "bad"
-    if state == "pending":
+    if (check_runs and check_runs["running"]) or (status and status["running"]):
         return "running"
+    if (check_runs and check_runs["green"]) or (status and status["green"]):
+        return "green"
+    if check_runs is not None and status is not None:
+        if check_runs["total"] == 0 and status["total"] == 0:
+            return "no-run"
     return None
 
 
