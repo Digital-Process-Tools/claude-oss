@@ -119,6 +119,7 @@ try:
 except ImportError:  # pragma: no cover - the module sits beside this file
     oss_config = None
 
+
 try:
     import scaffold
 except ImportError:  # pragma: no cover - the module sits beside this file
@@ -2542,6 +2543,10 @@ from doctor_check_statusline import _POSIX_VAR_RE, _statusline_windows_gap, chec
 # Moved to scripts/doctor_check_fragments_readme.py (#497) -- see that module
 # for the check, its private helper and constant, and their docstrings,
 # unchanged; this is a pure relocation.
+# Moved to scripts/doctor_check_trap_queue.py (#905, following #497/#630) -- the
+# check and its docstring, unchanged; this is a pure relocation.
+from doctor_check_trap_queue import check_trap_queue
+
 from doctor_check_fragments_readme import (
     COMPATIBILITY_BULLET,
     _fragments_directory,
@@ -8216,6 +8221,7 @@ def main(argv=None):
     # (#551).
     check_latest_skew(project_dir, config)
     check_ci_enforcement(project_dir, config)
+    check_trap_queue(project_dir)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
     check_agent_dispatch()

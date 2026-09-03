@@ -489,6 +489,29 @@ sight. Set `in_blast_radius` honestly: the fix that falls outside the issue's ow
 exactly the one that most needs saying out loud, which is also the one it is most tempting to let
 pass as obvious.
 
+## Hit a trap? Log it and carry on
+
+Something cost you time — a call that swallowed the error, a fixture that violated the other
+platform's limit, a tool whose payload form is not what it looks like. That is neither of the two
+outcomes above: it is not a fix and it is not an issue. Write one file and keep going:
+
+    trap.d/<issue>.<slug>.md
+
+Prose. No frontmatter, no dimension, no match pattern. **Decide nothing about it** — not whether it
+belongs in a jit-context rule, not which one, not whether it is worth keeping at all. `/oss:curate`
+takes those decisions later, holding every fragment at once, which is the only position from which
+"these three are one rule" is visible, and it is not the position you are in.
+
+What helps the curator: what was observed, where (the file, the command, the error string,
+verbatim), what it cost, and how you confirmed it. Unsure it is even a real rule? Say so in the
+fragment and log it anyway.
+
+**Do not put it in `CLAUDE.md`** — that file is loaded whole by every session, is curated by hand,
+and a lane does not edit it. **Do not stop to write a jit-context rule**, which is the curation
+pass's work and needs context you do not have mid-lane.
+
+Hesitating because you are not sure it is worth recording is the exact failure this removes.
+
 ## A defect in a declared dependency is reported, never worked around silently
 
 You will sometimes trip over a bug that is not in this repo at all but in something the project

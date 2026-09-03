@@ -8,4 +8,5 @@
 (^|/)(bin/[^/]+|scripts/shell_sources\.py|tests/test_unwired_scripts_253\.py)$	shell-sources-survey.md
 (^|/)scripts/statusline\.py$	statusline-cache-staleness.md
 (^|/)tests/	test-fixture-pitfalls.md
+(^|/)trap\.d/	trap-fragments.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md
