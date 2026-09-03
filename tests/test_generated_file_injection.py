@@ -64,7 +64,12 @@ EXPECTED_TOP_LEVEL = {"name", "on", "permissions", "concurrency", "jobs"}
 OLD_PATTERNS = {
     "CHANGELOG_DIR_RE": r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$",
     "CHANGELOG_UNTAGGED_RE": r"^\d+\.\d+\.\d+$",
-    "REPO_RE": r"^[^/\s]+/[^/\s]+$",
+    # Body updated for #897 alongside the live pattern -- the comment above the
+    # comparison test that pins this dict says so explicitly: "If oss_config's
+    # character class ever changes, OLD_PATTERNS must change with it." Only the
+    # body tracks; the weak pre-#173 `^...$` anchor stays, which is the other
+    # half `test_old_patterns_still_carry_the_weak_pre_173_anchor` pins.
+    "REPO_RE": r"^[^/\\\s]+/[^/\\\s]+$",
 }
 
 

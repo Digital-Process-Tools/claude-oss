@@ -199,7 +199,10 @@ _WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
 #: all, so `'..'` and `'../../etc'` -- both refused by `oss_config` -- still
 #: produced a channel name here. `tests/test_statusline_watch_name_refusal_653.py`
 #: is the positive control: slugs `oss_config` REJECTS, not only ones it accepts.
-_REPO_RE = re.compile(r"\A[^/\s]+/[^/\s]+\Z")
+#: Excludes a backslash too, as of #897 -- `tests/test_statusline_watch_name_
+#: refusal_653.py::test_repo_re_pattern_matches_oss_configs_own_pattern` pins the
+#: two patterns together so this copy cannot drift from `oss_config.REPO_RE` again.
+_REPO_RE = re.compile(r"\A[^/\\\s]+/[^/\\\s]+\Z")
 
 #: `.supertool.json`'s own filename, read but never written -- the same constant
 #: `doctor.py` carries as `WATCH_CONFIG`, duplicated rather than imported for the
