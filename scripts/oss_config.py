@@ -2438,13 +2438,21 @@ def verify_test_command(command, cwd, timeout=120):
         stdout, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_process_tree(proc)
-        # Reap with a bounded second wait: a tree-kill that failed to reach everything
-        # must not turn "unverified" into "hung forever" waiting on the same pipe.
+        # Reap with two bounded waits, never an unconditional one: a tree-kill that failed
+        # to reach every descendant (a permission failure, a grandchild that called its own
+        # setsid and left the group) must not turn "unverified" into "hung forever" on the
+        # same pipe -- which would reintroduce the exact unbounded-wait class #937 exists to
+        # fix, only now inside this functions own recovery path. If both bounded waits still
+        # do not return, give up on the output rather than block; the state below is already
+        # honest that this run could not be verified either way.
         try:
             proc.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
+            try:
+                proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
         return {
             "state": "timeout",
             "detail": "{!r} did not finish within {}s, so it is unverified -- which is "

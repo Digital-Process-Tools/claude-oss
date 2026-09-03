@@ -6,6 +6,8 @@ than one that finds none, because an invented label reads as a measurement.
 """
 
 import json
+import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -500,7 +502,16 @@ subprocess.Popen([sys.executable, "-c",
     sys.argv[1]])
 """
     )
-    command = subprocess.list2cmdline([sys.executable, str(script), str(marker)])
+    # This command runs through shell=True, and on POSIX that means /bin/sh -c, whose
+    # quoting rules differ from cmd.exe's -- list2cmdline (used elsewhere in this file for
+    # the executable path alone) is the wrong construction here on POSIX for anything with
+    # a shell-metacharacter in it, even though it happens to work for a plain tmp_path with
+    # none.
+    args = [sys.executable, str(script), str(marker)]
+    if os.name == "nt":
+        command = subprocess.list2cmdline(args)
+    else:
+        command = " ".join(shlex.quote(a) for a in args)
 
     result = oss_config.verify_test_command(command, tmp_path, timeout=1)
     assert result["state"] == "timeout"
