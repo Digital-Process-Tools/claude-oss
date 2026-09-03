@@ -100,12 +100,29 @@ def test_every_workflow_declares_a_permissions_block(name, text):
     assert grants, "{}: `permissions:` declared with nothing under it".format(name)
 
 
+#: The one deliberate exception (#777), and the argument for it: the generated
+#: workflow's fragment gate reads the `no-changelog` label LIVE via `gh api
+#: repos/{repo}/pulls/{n}` -- the `pulls` endpoint, not `issues/{n}/labels`, because a
+#: pull request is also an issue but the scope covering `/issues/*` is `issues: read`
+#: rather than `pull-requests: read`. Without this the live read 403s on every run,
+#: forever, and degrades silently to the frozen event payload -- exactly the bug #777
+#: fixes reappearing behind a scope mismatch nobody would see fail. Named here, once,
+#: rather than left to whoever next tightens this test to relearn why it is wider.
+_DELIBERATELY_WIDER = {
+    "generated " + GENERATED_WORKFLOW: ["contents: read", "pull-requests: read"],
+}
+
+
 @pytest.mark.parametrize("name,text", _named_workflows(), ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "")
 def test_no_workflow_grants_more_than_reading_the_contents(name, text):
     grants = _permission_grants(text)
-    assert grants == ["contents: read"], (
-        "{}: expected exactly `contents: read`, got {!r}. Anything wider needs its own "
-        "argument in the pull request that added it.".format(name, grants)
+    expected = _DELIBERATELY_WIDER.get(name, ["contents: read"])
+    assert grants == expected, (
+        "{}: expected exactly {!r}, got {!r}. Anything wider than `contents: read` "
+        "needs its own argument in the pull request that added it -- see "
+        "`_DELIBERATELY_WIDER` above for the one that exists today.".format(
+            name, expected, grants
+        )
     )
 
 
