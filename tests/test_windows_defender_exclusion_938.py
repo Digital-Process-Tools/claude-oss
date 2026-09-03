@@ -93,13 +93,22 @@ def test_step_is_present_in_the_pytest_job():
 
 @needs_yaml
 def test_step_is_windows_only():
+    """Exact-match, not substring -- a substring check would pass `runner.os != 'Windows'`.
+
+    An inverted or typo'd comparison operator (!= instead of ==) still contains both the
+    string "runner.os" and the string "Windows", so a looser check here would not catch
+    the one mutation most likely to actually happen and most likely to break the other
+    two legs of the matrix (found by review, #938).
+    """
     job = _workflow()["jobs"]["pytest"]
     step = _find_step(job, STEP_NAME)
     assert step is not None
     condition = step.get("if", "")
-    assert "runner.os" in condition and "Windows" in condition, (
-        "the exclusion step must be gated to Windows only, got if: {!r} -- "
-        "without this the other two legs of the matrix run it too".format(condition)
+    assert condition == "runner.os == 'Windows'", (
+        "the exclusion step must be gated exactly to runner.os == 'Windows', got "
+        "if: {!r} -- an inverted or mistyped comparison would still contain the "
+        "substrings 'runner.os' and 'Windows' while running the step on every other "
+        "leg of the matrix too".format(condition)
     )
 
 
