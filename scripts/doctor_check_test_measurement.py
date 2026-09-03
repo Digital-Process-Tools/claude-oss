@@ -95,8 +95,17 @@ def _looks_pytest_shaped(test_command):
     pytest-shaped by default and this check keeps firing exactly as it did
     before this function existed. Only a *set* `test_command` that plainly
     names a different runner turns this off.
+
+    `test_command` is documented as a string or null (`oss_config.
+    test_command_problem`), but a malformed `.oss.json` naming e.g. an int
+    or a list is a schema PROBLEM that `check_config` reports -- it does not
+    strip the bad value out of the config dict this function receives. A
+    non-string, truthy value is therefore treated the same as absent: not
+    evidence against pytest, so the existing behavior keeps firing rather
+    than this raising `AttributeError` on `.lower()` and taking the whole
+    diagnostic run down with it (#946).
     """
-    if not test_command:
+    if not test_command or not isinstance(test_command, str):
         return True
     return "pytest" in test_command.lower()
 

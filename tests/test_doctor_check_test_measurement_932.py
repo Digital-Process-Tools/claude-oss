@@ -123,6 +123,20 @@ def test_pytest_test_command_still_fires_finding(tmp_path, monkeypatch):
     assert "not applicable" not in seen[0][1], seen
 
 
+def test_non_string_test_command_does_not_crash(tmp_path, monkeypatch):
+    """#946 auditor finding: `oss_config.test_command_problem` flags a non-string
+    `test_command` as a schema PROBLEM but `check_config` still returns the
+    config with the bad value intact (problems are reported, not stripped) --
+    so `check_test_measurement` can receive an int/bool/list here. It must
+    report a finding, never raise, mirroring how every other `test_command`
+    consumer in this codebase (`scaffold.py`'s `(x or "").strip()`,
+    `doctor.py`'s `'{}'.format(...)`) treats the value defensively."""
+    seen = _capture(monkeypatch)
+    check.check_test_measurement(str(tmp_path), {"test_command": 5})
+    assert seen, "must report something, never raise"
+    assert seen[0][0] in ("WARN", "OK"), seen
+
+
 def test_unset_test_command_keeps_prior_pytest_assumption(tmp_path, monkeypatch):
     """No `test_command` at all is ambiguous, not evidence against pytest -- keep
     firing the existing pytest-shaped behavior rather than silently skipping."""
