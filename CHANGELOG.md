@@ -256,6 +256,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in a test fixture answers nothing -- and a glob narrowed by a filter over literal layer
   names that does not name `01-oss` withholds the answer rather than claiming it.
 
+- `scripts/doctor.py` gains a fourth state, NOTICE, beside OK/WARN/FAIL:
+  a finding a check has already declared, in its own text, that it is
+  structurally unable to ever resolve (#764) -- "plugin copy scope: not
+  established" and "./supertool points at a local checkout" both moved
+  to it. The `VERDICT:` line now counts notices separately from
+  warnings (`usable with gaps -- 2 warning(s), 2 notice(s)`), and a repo
+  whose only findings are notices reads `VERDICT: ok`, never `usable
+  with gaps`. `bin/oss-workspace` now routes a session into
+  `/oss:doctor` at its first turn when the diagnostic's verdict carries
+  at least one real warning or failure, so the agent about to act on
+  the repo starts with what the diagnostic found instead of
+  re-deriving it by hand -- a diagnostic that could not be started,
+  printed no `VERDICT:` line, or reported `could not run` neither
+  routes nor is silently treated as clean.
+
 - `bin/oss-workspace` now checks whether a SECOND configured MCP server also
   resolves to the claude-channel consumer script before arming
   `--dangerously-load-development-channels`. Two servers racing that script
@@ -289,6 +304,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a markdown `>` excerpt) was previously indistinguishable from a real declaration and
   could silently win over the genuine one -- including ending a tick's continue-or-wait
   decision on the wrong value (#847).
+
+- `scripts/doctor.py`'s `not-a-symlink` WARN (`./supertool exists and
+  is not a symlink`) no longer recommends replacing it with the
+  plugin's own version-pinned symlink -- the exact stale-pin failure
+  mode a nearby comment in the same file warns against (#288/#289),
+  and the immunity #742 measured this launcher shape for. The remedy
+  now points the reader at measuring it themselves (`./supertool
+  version` compared against the install record) instead of
+  substituting one artifact for another (#858).
+
+- `/oss:doctor` gains a check comparing its own channel MCP consumer
+  census against supertool's `channel:health` -- the two answered the
+  same question ("is a second channel-capable MCP server racing this
+  socket?") oppositely for three release cycles with nothing comparing
+  them (#860). Reports `agree` (naming the shared verdict), `disagree`
+  (naming both readings verbatim, never picking a winner), or
+  `could-not-compare` (either instrument did not answer, or the
+  `watch` preset is not enabled at all) -- load-bearing, and never
+  defaults to `agree`. `channel:health` is `acts`-classed and can run
+  north of 20s, so this reuses a fresh-enough cached reading from
+  `scripts/statusline.py`'s own cache by default, carrying the
+  reading's own age forward rather than asserting it fresh;
+  `OSS_DOCTOR_CHANNEL_HEALTH=1` opts into probing it live instead.
 
 - A `/oss:tick` sub-manager dispatched a lane as `general-purpose` instead of
   `oss:developer`, observed live: the whole developer brief -- #765's rule that a lane
@@ -378,6 +416,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compares the *set* of indexed filenames against a named expectation rather
   than checking a fixed list of keys, so an added-but-unaccounted-for rule
   fails the test instead of passing silently (#889).
+
+- Fixed a test-fixture collision in
+  `tests/test_plugin_update_dependencies_605.py`: its `remember` dependency
+  fixtures spelled `0.21.0`/`0.22.0`, which was this repository's own
+  next-minor version and reddened the `0.20.0` -> `0.21.0` release commit
+  (`test_no_test_pins_the_current_version_350.py`). Moved the fixture
+  versions to `9.21.0`/`9.22.0`, following the same convention
+  `_plugin_root`'s `9.9.9` already uses in the same file, so the fixture
+  cannot collide with this repository's own version again (#900).
 
 ## [0.19.0] - 2026-09-02
 
