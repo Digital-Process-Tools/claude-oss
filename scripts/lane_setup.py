@@ -3244,12 +3244,13 @@ def main(argv=None):
             ("--release", args.release),
             ("--derive-held", args.derive_held),
             ("--against", bool(args.against)),
+            ("--check-vanished", args.check_vanished),
         ):
             if flag_value:
                 parser.error(
                     "--suggest-companions and {0} are mutually exclusive -- "
                     "the sweep answers a different question than any of "
-                    "this file's other modes (#851)".format(flag_name)
+                    "this file's other modes (#851, #845)".format(flag_name)
                 )
         if not args.lane:
             # Found by this lane's own reviewer, and it is this repository's

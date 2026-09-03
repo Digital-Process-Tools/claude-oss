@@ -189,3 +189,49 @@ def test_cli_check_vanished_refuses_alongside_claim(tmp_path):
     done = _cli_check_vanished(tmp_path, "--claim", "--lane", "a.py")
     assert done.returncode != 0
     assert "--check-vanished" in done.stderr
+
+
+def test_cli_check_vanished_refuses_alongside_suggest_companions(tmp_path):
+    """The reverse of the pairing already tested above (--check-vanished then
+    --claim): --suggest-companions is handled by an earlier branch in main()
+    that has its own, separate mutual-exclusion loop, so the two branches can
+    drift independently. Found by this lane's own reviewer (#845 review
+    round): the --suggest-companions branch's exclusion loop did not name
+    --check-vanished, so the combination was silently accepted -- it ran the
+    companions sweep and silently dropped --check-vanished -- rather than
+    refused, contradicting --check-vanished's own --help text."""
+    (tmp_path / ".oss.json").write_text(
+        json.dumps(
+            {
+                "repo": "example/example",
+                "default_branch": "main",
+                "clone": "/tmp/does-not-matter",
+                "worktree_root": str(tmp_path / "wt"),
+                "branch_pattern": "fix/{issue}",
+                "test_command": "pytest",
+                "version_sites": [],
+                "changelog_dir": None,
+                "docs_targets": [],
+                "labels": {"priority": [], "lanes": []},
+                "state_file": "/tmp/does-not-matter-state.json",
+            }
+        )
+    )
+    env = dict(os.environ)
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_SYSTEM"] = os.devnull
+    done = spawn_guard.run(
+        [
+            sys.executable, str(SCRIPT),
+            "--suggest-companions", "100", "--lane", "scripts/foo.py",
+            "--check-vanished", "--repo", str(tmp_path),
+        ],
+        subject="lane_setup.py --suggest-companions + --check-vanished",
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        input="",
+    )
+    assert done.returncode != 0, done.stdout
+    assert "--check-vanished" in done.stderr
