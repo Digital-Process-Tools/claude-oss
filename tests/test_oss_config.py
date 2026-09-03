@@ -9,6 +9,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -479,6 +480,35 @@ def test_a_slow_command_times_out_rather_than_hanging_setup(tmp_path):
     result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
     assert result["state"] == "timeout"
     assert "unverified" in result["detail"].lower()
+
+
+def test_a_timeout_kills_the_whole_process_tree_not_just_the_shell(tmp_path):
+    """subprocess.run's own TimeoutExpired handling kills only the immediate child.
+    Everything that child spawns in turn keeps running -- and on Windows, keeps holding
+    the stdout pipe open, so communicate() blocks for the leaked grandchild's own
+    duration rather than the requested timeout (#937). This spawns a real grandchild
+    that the shell's own child does not wait for, and asserts it never gets to finish --
+    not merely that verify_test_command returned within timeout, which the old
+    single-pid kill already did while leaving this exact grandchild running loose.
+    """
+    marker = tmp_path / "leaked.marker"
+    script = tmp_path / "spawn_and_detach.py"
+    script.write_text(
+        """import subprocess, sys
+subprocess.Popen([sys.executable, "-c",
+    "import time, sys; time.sleep(2); open(sys.argv[1], 'w').write('leaked')",
+    sys.argv[1]])
+"""
+    )
+    command = subprocess.list2cmdline([sys.executable, str(script), str(marker)])
+
+    result = oss_config.verify_test_command(command, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+
+    # The grandchild sleeps 2s and verify_test_command returned after ~1s; give it the
+    # rest of that window plus margin. If it survived the timeout it would write by now.
+    time.sleep(3)
+    assert not marker.exists(), "grandchild outlived the timeout and wrote its marker"
 
 
 def test_a_null_command_is_nothing_to_verify(tmp_path):

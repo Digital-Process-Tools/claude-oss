@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -2336,6 +2337,45 @@ def ensure_worktree_root(config):
     return "created"
 
 
+def _kill_process_tree(proc):
+    """Reach past the one pid Popen.kill() touches.
+
+    A SIGTERM/kill aimed at a single pid never reaches anything the command spawned
+    underneath it -- the shell it was run in, or anything that shell spawned in turn --
+    which is the mechanism behind #937. ``proc`` was started in its own process
+    group (POSIX, via start_new_session) or its own process group on Windows (via
+    CREATE_NEW_PROCESS_GROUP), so the whole unit can be reached at once: killpg for
+    the group on POSIX, taskkill /T for the tree rooted at the pid on Windows. Both
+    are best-effort -- a process that already exited is not an error here.
+    """
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        # proc.pid IS the group id here, not something to look up: start_new_session
+        # made this process its own session leader at the moment it started, and a
+        # session leaders pgid equals its own pid by definition, permanently -- it does
+        # not change when the leader exits. Looking it up instead with os.getpgid(proc.pid)
+        # is the wrong, racy way to get the same number: once the leader has already
+        # exited (the common case here -- a shell that execs into a short-lived command
+        # returns almost immediately, well before the timeout fires), the pid is gone from
+        # the process table and getpgid raises ProcessLookupError, so the kill silently
+        # never happens and every descendant is left running -- confirmed by hand: the
+        # lookup form left a grandchild alive to finish its full sleep, and using the
+        # captured pid directly killed it as soon as the timeout fired.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
 def verify_test_command(command, cwd, timeout=120):
     """Run the detected test command and say what happened.
 
@@ -2365,43 +2405,72 @@ def verify_test_command(command, cwd, timeout=120):
                 "detail": "{!r}: {!r} is not on PATH".format(command, words[0]),
             }
 
+    # subprocess.run own timeout handling kills only the immediate child. On POSIX
+    # that is the exec-ed command itself (a shell with shell=True typically execs rather
+    # than forks), but anything that spawns in turn -- a background job, an xdist
+    # worker, a fixtures own subprocess -- is untouched and free to keep running, and
+    # free to keep holding the stdout pipe open. On Windows the immediate child is the
+    # real shell (cmd.exe does not exec-replace), so the gap is wider: the actual test
+    # command is already a grandchild, inherits the pipe handle, and a Windows anonymous
+    # pipe does not signal EOF until every handle to it -- including the orphaned
+    # grandchilds -- is closed. communicate() then blocks for the command own
+    # duration regardless of timeout (#937). Putting the whole tree in one killable
+    # unit up front, and killing that unit rather than one pid, closes both gaps.
+    popen_kwargs = {}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+
     try:
-        done = subprocess.run(
+        proc = subprocess.Popen(
             command,
             shell=True,
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
+            **popen_kwargs,
         )
+    except OSError as exc:
+        return {"state": "not-found", "detail": "{!r} would not start ({})".format(command, exc)}
+
+    try:
+        stdout, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        _kill_process_tree(proc)
+        # Reap with a bounded second wait: a tree-kill that failed to reach everything
+        # must not turn "unverified" into "hung forever" waiting on the same pipe.
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
         return {
             "state": "timeout",
             "detail": "{!r} did not finish within {}s, so it is unverified -- which is "
             "not the same as broken.".format(command, timeout),
         }
-    except OSError as exc:
-        return {"state": "not-found", "detail": "{!r} would not start ({})".format(command, exc)}
 
-    if done.returncode == 0:
+    returncode = proc.returncode
+    if returncode == 0:
         return {"state": "ok", "detail": "{!r} ran and passed".format(command)}
 
-    # Bytes, not text: an arbitrary test suite's output is not the caller's locale to
+    # Bytes, not text: an arbitrary test suites output is not the callers locale to
     # promise, and a single stray byte in it used to raise past the guards above --
     # reporting a suite that ran as a probe that crashed. See _decode_output.
-    tail = _decode_output(done.stdout).strip().splitlines()[-1:] or [""]
-    # 127 is the POSIX shell's own "command not found", and 9009 is cmd.exe's, which
+    tail = _decode_output(stdout).strip().splitlines()[-1:] or [""]
+    # 127 is the POSIX shells own "command not found", and 9009 is cmd.exes, which
     # is a different problem from a suite that ran and failed. Reading only 127 makes
     # every missing runner on Windows report as a failing suite -- the exact confusion
     # between "install this" and "fix this" the states exist to prevent.
-    if done.returncode in (127, 9009):
+    if returncode in (127, 9009):
         return {
             "state": "not-found",
             "detail": "{!r}: command not found ({})".format(command, tail[0]),
         }
     return {
         "state": "failed",
-        "detail": "{!r} exited {} -- {}".format(command, done.returncode, tail[0]),
+        "detail": "{!r} exited {} -- {}".format(command, returncode, tail[0]),
     }
 
 
