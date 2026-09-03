@@ -3,6 +3,15 @@ name: changelog
 on:
   pull_request:
 
+# One run per pull request at a time; a push supersedes the run before it (#962). This
+# workflow is `pull_request`-only, so unlike tests.yml there is no default-branch push run
+# to protect and the flag is unconditional -- if a `push:` trigger is ever added here, this
+# must become the same expression tests.yml uses, or a commit on the default branch will be
+# left with a cancelled run reporting neither pass nor fail.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Declared at workflow level rather than per job: every job here only reads the pull
 # request and reports, and a job added later should inherit read-only rather than fall
 # back to the repository default, which is read/write until somebody changes it. This

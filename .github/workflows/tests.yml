@@ -13,6 +13,24 @@ on:
   # the matrix is unconditional -- so a dispatch run behaves exactly like a push run.
   workflow_dispatch:
 
+# One run per ref at a time, and the superseded one is cancelled -- but only for a pull
+# request (#962). Three pushes to one branch in fifteen minutes used to start 42 legs and
+# leave 28 of them running against commits nobody would merge; worse than the minutes, a
+# pull request's summed check tally mixes legs from a superseded commit with legs from the
+# head commit, so "not all green" can mean an old run that will never finish.
+#
+# `cancel-in-progress` is an expression rather than a bare `true` because a push run on the
+# default branch must never be cancelled: it is what `scripts/statusline.py` and the release
+# gates read as that commit's verdict, and cancelling one leaves the commit with a run that
+# reports neither pass nor fail -- an absence produced by our own configuration, read later
+# as an absence of findings. `github.ref` already differs between the two event types
+# (`refs/pull/N/merge` vs `refs/heads/main`), so they could not share a group in any case;
+# the condition states the intent where a reader of this file will look for it, rather than
+# leaving it as a property of GitHub's ref naming that a future group change could lose.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Workflow level: both jobs run tests and report, neither writes to the forge, and a job
 # added later inherits read-only instead of the repository default of read/write (#32).
 permissions:

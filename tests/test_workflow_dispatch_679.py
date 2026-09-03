@@ -46,7 +46,19 @@ file, and this repository has no YAML dependency in its own test path.
 Python 3.9 compatible.
 """
 
+import os
 from pathlib import Path
+
+import pytest
+
+# #962 added one structural assertion (no job and no step is conditional), which needs
+# a parse. The text assertions above it stay text, per this module's docstring; the
+# import is guarded the way every other yaml-using file here guards it, so a runner
+# without pyyaml goes red rather than quiet.
+try:
+    import yaml
+except ImportError:  # pragma: no cover - exercised by the guard test below
+    yaml = None
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
@@ -139,20 +151,104 @@ def test_changelog_workflow_does_not_declare_workflow_dispatch():
     )
 
 
-def test_tests_workflow_still_reads_no_event_context():
+def test_the_parser_the_structural_half_needs_is_present_on_ci():
+    """Same shape as `tests/test_shell_leg_budget_303.py`: locally pyyaml may be
+    absent and the structural half skips with a reason; on a runner its absence is a
+    broken install step, and `1 skipped` there is a check that could not look
+    rendered as a check that looked."""
+    if yaml is not None:
+        return
+    if os.environ.get("CI") == "true":
+        pytest.fail(
+            "pyyaml is not importable and CI=true, so the job/step conditionality "
+            "assertions in this file did not run on a runner."
+        )
+    pytest.skip("pyyaml is not installed here; the workflow installs it on CI")
+
+
+@pytest.mark.skipif(yaml is None, reason="pyyaml is not installed here")
+def test_tests_workflow_reads_no_event_context_outside_the_concurrency_flag():
     """Question 1 from #679, pinned: adding workflow_dispatch must not make any leg
-    conditional. tests.yml has never read github.event.* at all -- the matrix and
-    both jobs (pytest, shell) are unconditional -- and this keeps it that way, or
-    forces whoever adds such a read to reckon with a third event type explicitly.
+    conditional. tests.yml read `github.event.*` nowhere at all until #962, and this
+    keeps every *job and step* that way, or forces whoever adds such a read to reckon
+    with a third event type explicitly.
+
+    #962 added exactly one expression, at workflow level rather than in a leg:
+    `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. Reckoned with
+    rather than exempted quietly, which is what this test's own instruction asks for:
+
+    - on a **pull_request** run it is `true`, which is the whole point -- a superseded
+      run is cancelled instead of finishing against a commit nobody will merge;
+    - on a **push** run it is `false`, deliberately: a default-branch run is that
+      commit's verdict for `scripts/statusline.py` and the release gates, and a
+      cancelled one reports neither pass nor fail;
+    - on a **workflow_dispatch** run -- the third event type this module exists for --
+      it is also `false`, the same as a push. That is the safe direction and needs no
+      further reasoning: a dispatch is the manual remedy for a *dropped* run (#679), so
+      cancelling one because another dispatch followed would take away the remedy this
+      workflow's own `on:` block was extended to provide.
+
+    Nothing here becomes conditional: both jobs and every step still run on every
+    event. That is the property the assertion below now states directly, instead of
+    inferring it from the absence of a substring.
     """
     text = _text("tests.yml")
-    # `${{` is what turns `github.event...` from prose (this file's own comments
-    # discuss the fact) into a live GitHub Actions expression the runner evaluates --
-    # so the check is scoped to that, not to the substring alone.
-    assert "${{ github.event" not in text, (
-        "tests.yml now evaluates a github.event.* expression -- workflow_dispatch "
-        "adds a third event type (push, pull_request, workflow_dispatch) alongside "
-        "push and pull_request, and whatever this expression evaluates to on a "
-        "dispatch run needs to be reasoned about here rather than assumed "
-        "unconditional."
+    doc = yaml.safe_load(text)
+
+    # The property #679 actually cares about: no job and no step is skipped on the
+    # basis of which *event* started the run. Not "no condition at all" -- the
+    # Windows Defender exclusion step is conditional on `runner.os` and rightly so,
+    # and a check demanding its deletion would be enforcing something nobody decided.
+    # A platform condition means the same thing on all three event types; an event
+    # condition is the one that makes a dispatch run behave unlike a push run.
+    for name, job in (doc.get("jobs") or {}).items():
+        assert "github.event" not in str(job.get("if", "")), (
+            "tests.yml job {!r} became conditional on the event -- with three event "
+            "types (push, pull_request, workflow_dispatch) whatever it evaluates to "
+            "on a dispatch run has to be reasoned about here".format(name)
+        )
+        for i, step in enumerate(job.get("steps") or []):
+            assert "github.event" not in str(step.get("if", "")), (
+                "tests.yml job {!r} step {} became conditional on the event; see "
+                "this test's docstring".format(name, i)
+            )
+
+    # And the event context is read in exactly one place, which the docstring above
+    # accounts for event by event. `${{` is what turns `github.event...` from prose
+    # (this file's own comments discuss the fact) into a live expression.
+    live = [
+        line.strip()
+        for line in text.splitlines()
+        if "${{ github.event" in line
+    ]
+    assert live == [
+        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"
+    ], (
+        "tests.yml evaluates a github.event.* expression this test has not reckoned "
+        "with: {!r}. Add the event-by-event reasoning to the docstring above rather "
+        "than widening this list.".format(live)
     )
+
+
+@pytest.mark.skipif(yaml is None, reason="pyyaml is not installed here")
+def test_the_event_context_check_fires_on_an_unaccounted_expression():
+    """Positive control. The assertion above compares a list built by a substring
+    scan; run the scan over text that is wrong on purpose, or a scan that found
+    nothing would look exactly like one that found only the accounted-for line."""
+    text = (
+        "jobs:\n"
+        "  pytest:\n"
+        "    if: ${{ github.event_name != 'workflow_dispatch' }}\n"
+        "    steps:\n"
+        "      - if: runner.os == 'Windows'\n"
+    )
+    live = [line.strip() for line in text.splitlines() if "${{ github.event" in line]
+    assert live == ["if: ${{ github.event_name != 'workflow_dispatch' }}"]
+    doc = yaml.safe_load(text)
+    job = doc["jobs"]["pytest"]
+    # The event condition is caught...
+    assert "github.event" in str(job.get("if", ""))
+    # ...and the platform condition beside it is not, which is the must-not-fire half:
+    # a check that failed on both would be demanding the deletion of a step this
+    # workflow legitimately runs on one OS only.
+    assert "github.event" not in str(job["steps"][0].get("if", ""))
