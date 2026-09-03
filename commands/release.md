@@ -569,6 +569,21 @@ destructive half (the fragments are deleted) ahead of the deniable half, and tag
 a refusal cheaper at the cost of a tag pointing at a commit whose changelog is not folded. The order
 is unchanged and the receipt above is the mitigation.
 
+## Traps waiting, which is a line in the report and not a gate
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/trap_curate.py" .
+```
+
+Three answers — `N waiting`, `none waiting`, `could-not-read` — and **none of them stops a release**.
+A gate here would refuse a security fix over a typo somebody logged on Friday, and the ranking table
+already says a blocking-class finding releases immediately.
+
+So state the count in the release report, with the remedy (`/oss:curate`) beside it, and tag. What
+this line is for is that a queue nobody looks at becomes a landfill, and a landfill is skipped for
+being too big — which is the same failure as never having logged the traps at all, arrived at more
+slowly. `could-not-read` is reported as unknown and never as zero.
+
 ## The tag is not the delivery
 
 Publishing the release closes one surface. It does not close the others. For plugin users the
