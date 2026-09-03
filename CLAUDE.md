@@ -439,17 +439,22 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `94a6c7d`, the commit `v0.20.0` was cut from — in part, and the part is named.** The
+**Measured at `c565488`, the commit `v0.21.0` was cut from — in part, and the part is named.** The
 delta counts, the two audit rounds and the lane findings were re-derived in the session that cut this
-release. The field readings were not: the reach probe, the owned-files table, the two installs and
-the `doctor` run are still `v0.17.0`'s, measured at `ad38b93` and carried through three tags now.
-`#815` tracks re-deriving them, and a second release disclosing the identical gap is evidence the
-disclosure is doing the work the fix was supposed to. **The readings themselves live in
-`docs/release-currency.md`**; this section holds the verdict and the marker. Re-derive at each
-release rather than editing this.
+release. **The reach probe was re-derived too, for the first time since `v0.17.0`** — eleven
+repositories, four carrying `.oss.json`, the same two numbers it last reported, now measured rather
+than carried. The rest of the field readings were not: the owned-files table, the two installs and
+the `doctor` run are still `v0.17.0`'s, measured at `ad38b93` and carried through four tags now.
+`#815` tracks re-deriving them, and a fourth release disclosing the identical gap is evidence the
+disclosure is doing the work the fix was supposed to — and, now that one of the four has moved, that
+the gap is closable one reading at a time rather than only all at once. **The readings themselves
+live in `docs/release-currency.md`**; this section holds the verdict and the marker. Re-derive at
+each release rather than editing this.
 
-**The reach probe, not re-derived.** `gh repo list Digital-Process-Tools --limit 100` returns eleven
-repositories **in that one GitHub organisation**, four of which carry `.oss.json`. The count is
+**The reach probe, re-derived at `c565488` for `v0.21.0`.** `gh repo list Digital-Process-Tools
+--limit 100` returns eleven repositories **in that one GitHub organisation**, four of which carry
+`.oss.json` — `claude-jit-context`, `claude-oss`, `claude-remember`, `claude-supertool`, each
+confirmed by its own contents read rather than inferred from the listing. The count is
 scoped to the organisation the command names, never to "the field": a repository under a different
 account renders identically to one that does not exist, and this probe cannot tell the two apart.
 

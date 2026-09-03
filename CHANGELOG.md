@@ -7,6 +7,384 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-03
+
+### Added
+
+- `scripts/lane_setup.py`: `detect_vanished_worktrees` and a new
+  `--check-vanished` mode flag a live lane record whose own worktree directory
+  is already confirmed absent -- the #845 shape: a lane's worktree disappeared
+  mid-run twice, caused by no `git worktree remove` / `rmtree` call this
+  plugin's own code issues anywhere. Root cause was not found, so this is the
+  loud detector filed in its place, so a repeat is caught rather than
+  discovered later by rebuilding from `git reflog` (#845).
+- `scripts/doctor_check_vanished_worktree.py`: a new `doctor` check reports
+  the same detection unprompted, on the same terms as the trap queue check
+  (#905) -- reported, never blocking (#845).
+
+- `trap.d/` and `/oss:curate`: a lane that hits a trap now logs one file and carries on — no
+  frontmatter, no jit-context dimension, no match pattern, and no judgment about whether it is
+  worth keeping. Deciding where a trap belongs needs every fragment visible at once, which is a
+  position no lane is in, so `/oss:curate` takes those decisions later with the maintainer:
+  promote to a rule, merge into an existing one, or decline with a line in the layer's
+  `00-README.md`. Fragments are inert — the cost of that is one release cycle for a lane touching
+  the same file, against noise firing on every matching session forever (#905).
+- `scripts/trap_curate.py` reports what is waiting in three states — `waiting` / `none` /
+  `could-not-read` — and `doctor` carries the line. A directory that could not be listed reports
+  UNKNOWN and never zero, because a curation pass that was silently skipped and a cycle with
+  nothing to curate would otherwise render identically (#905).
+- The release reports the trap count and **does not gate on it**. A gate here would refuse a
+  security fix over a typo somebody logged on Friday, and the ranking table already releases a
+  blocking-class finding immediately (#905).
+
+- A pytest plugin (`tests/duration_report_plugin.py`, registered via `tests/conftest.py`) now
+  reports the shape of the suite's time at the end of every run -- the top slowest tests and the
+  single slowest test's share of total suite time, a ratio rather than an absolute second count so
+  it travels between machines -- and compares it against a recorded baseline
+  (`tests/duration-baseline.json`). Nothing here fails a build on a duration or a share; it only
+  reports, and states one of three outcomes explicitly: `measured`, `no-baseline` (nothing recorded
+  yet), or `could-not-measure` (nothing was collected this session, e.g. a `--collect-only` run) --
+  so a step that saw nothing can never render like a suite with no hot test. Run
+  `pytest --record-duration-baseline` to record the current numbers as the new baseline. This is
+  #881's own gap: `--durations=25` already printed the numbers on every run and nothing read them,
+  which is how one test grew to ~20% of a CI leg's runtime before a maintainer happened to notice
+  by scrolling a log tail (#910).
+
+- `scripts/cohort_freeze.py` freezes a `cohort-N` label from a tag's own timestamp instead of
+  `now`, so a late freeze computes the identical membership a prompt one would. Measured on
+  `v0.20.0`: the same tag gave 27, 30 or 32 members depending on whether the freeze was read at
+  tag-object time, release-publish time, or an hour later. Membership is derived from
+  `gh api repos/{repo}/git/tags/{sha}`'s own `tagger.date` for an annotated tag, or the pointed-at
+  commit's `committer.date` for a lightweight one -- never from the moment the script happens to
+  run. Three states, never a silent zero: `frozen N` / `already-frozen, nothing to do` /
+  `could-not-read`. Idempotent -- a re-run adds nothing once every member already carries the
+  label -- and dry run by default; `--execute` is required to actually write a label, since an
+  unqualified run reaches every open issue on the tracker (#917).
+
+- `test_measurement_configured` -- a new maintainer attestation in `.oss.json`
+  saying the repo's own pytest run measures test duration (`--durations`) and
+  coverage. `doctor.py` gains a check reading it: `true` and a pytest-config
+  file can be read -- OK; absent or `false` -- a finding naming what to add and
+  where; `true` but no pytest-config file could be read at all -- `unknown`,
+  never silently OK. `scaffold.py`'s default `CLAUDE.md` recommends setting it,
+  the same way other defaults are recommended rather than forced. No content
+  check of `addopts` itself -- this is an attestation, not a derived fact
+  (#932). Scoped to repos whose `test_command` actually looks pytest-shaped --
+  a `.oss.json` naming `npm test`, `go test ./...`, `cargo test` or similar
+  gets an `OK: not applicable` line instead of pytest-specific advice, rather
+  than every diagnosed repo being told to configure pytest regardless of
+  language (#946).
+  The same scoping now applies to what `scaffold.py` *writes*: the recommendation
+  paragraph is rendered only for a repository whose `test_command` is both set and
+  names pytest, so a scaffolded Go or Node repository is no longer handed advice
+  about `[tool.pytest.ini_options]` permanently, in the file every session there
+  reads first. The predicate behind both halves lives once, as
+  `oss_config.names_pytest` (#932, #946).
+
+- `CONTRIBUTING.md` at the root of this repository, stating the conventions a
+  contributor needs and `CLAUDE.md` deliberately does not state for them: test-first with
+  the red and green output quoted separately, a positive control beside every negative
+  assertion, the branch pattern, the required changelog fragment, and which cross-platform
+  claims count as observed. It also names what a pull request cannot do here -- triage,
+  merge, tag or release all end in a permission refusal -- so nobody spends a turn
+  discovering that. Rendered by `/oss:scaffold` from this repo's own `.oss.json` rather
+  than hand-written, then extended with the `pytest-cov` install step a bare `pytest`
+  needs (#611) and with the rule against deciding a change on a local full-suite run
+  (#951).
+
+### Changed
+
+- CLAUDE.md's 25 `Traps` bullets are jit-context rules now, not paragraphs in a file every session
+  loads whole: 11 rules under `.claude/jit-context/paths/00-manual/` and
+  `vocabulary/00-manual/`, each keyed to the files or terms it governs, each shown to fire on a
+  payload that must match and stay silent on one that must not (#904).
+- CLAUDE.md states the project's goal and what a tick ranks against, and the two rules that follow
+  from it: knowledge is routed to a jit-context rule or the loop's own markdown before it is
+  written here, and the loop does not edit this file unless editing it was the explicit ask (#904).
+- The release-currency readings move to `docs/release-currency.md`; `## What is not proven yet`
+  keeps the verdict, the marker and the claims its tests pin (#904).
+- `trap.d/` exists, with the convention for logging a trap without deciding where it belongs. The
+  curation pass that routes fragments into jit-context rules is #905 (#904).
+
+- `tests/test_shell_probe.py`'s full-suite child runs on Windows legs and one pinned POSIX leg
+  rather than all 13. It re-ran both launcher suites — 101 tests that spawn shells, measured at
+  83s on their own — so the single test cost about 44s per leg for a condition (WSL's `bash`
+  ahead of the usable one on `PATH`) that cannot occur on 8 of them. What it asserts is unchanged
+  where it runs, including the collected-at-runtime count that stops "all passed" weakening to
+  "some passed"; elsewhere it skips naming where it does run and what went untested (#908).
+- A guard reads `.github/workflows/tests.yml`'s own matrix and fails if either leg named by that
+  skip condition leaves it. Without it, dropping `windows-latest` or moving the Python floor
+  would disable the test on every leg and report `1 skipped` where nobody reads it — a check that
+  never ran, rendering as a check that found nothing (#908).
+
+- `doctor_check_channel_health_agreement.py`'s `disagree` WARN now names the known cause when
+  the disagreement is exactly `census: single` against a raw `channel:health` state of
+  `cannot_determine` or `contradicted`: claude-supertool#2208, whose own subscription probe
+  self-collides with the live socket and reads its own refusal marker back as that state. Both
+  readings still render verbatim first; every other disagreement stays exactly as silent as
+  before. No expiry -- this codebase has no structured read of a resolved supertool's own
+  version to compare against a fix version, and #2208 names no fix version to compare against
+  either, so the sentence stays unconditional rather than guessing at either (#913).
+
+- `CLAUDE.md` opens by addressing the agent reading it — the only reader it has — and states the
+  constraint that explains the rest of the file: every session starts blank, so what matters is
+  written down rather than remembered. It then carries the `trap.d/` invitation with the permission
+  that makes it work: log it, carry on, and do not stop to decide whether it is worth keeping
+  (#915).
+- `tests/test_claude_md_opening_915.py` fails if that invitation leaves the opening. `trap.d/` and
+  `/oss:curate` shipped in #905 and `agents/developer.md` tells a lane about them, but a session
+  opening `CLAUDE.md` directly was told by nothing — a mechanism nobody is invited to use and a
+  mechanism that was never built are the same thing from outside (#915).
+
+- CI's `pytest` job now excludes the checkout and the runner temp directory from Windows
+  Defender scanning, Windows-only, before the test step (#938). Ported from
+  `Digital-Process-Tools/claude-jit-context#310`, which measured the same signature on
+  their own suite: Defender's real-time scanner walking every temp file a test suite
+  creates is a documented, codebase-independent cost on `windows-latest` runners,
+  unrelated to the subprocess-spawn overhead already addressed by #933/#935/#937. No
+  test logic changes and the step is gated `if: runner.os == 'Windows'`, so the other two
+  legs of the matrix never run it. The actual saving on this repo's own suite is pending
+  a live CI round; it could not be measured locally.
+
+- `agents/developer.md` is a spine now, 47,819 B down from 89,714 B. The three late phases --
+  self-review, review returns, the report and pull request payload -- moved to
+  `agents/developer/*.md`, read when a lane reaches them rather than held in the system prompt
+  from turn one, the same split `skills/manager/SKILL.md` made. Measured on one live tick, the
+  definition re-sent per turn was 84-96% of what each developer lane read. Nothing was cut:
+  every paragraph moved whole. `scripts/developer_phases.py` budgets the phase files and fails
+  when the spine stops naming one; `scripts/developer_docs.py` gives every content check the
+  whole brief, so a check over `agents/developer.md` did not narrow to the spine silently (#939).
+
+### Fixed
+
+- `agents/developer.md`'s report-validation section said how to READ a
+  `schema_version` disagreement between the installed plugin cache and a clone's own
+  copy, but never said which number to WRITE into a report in the first place -- so a
+  lane copied whichever copy it happened to open first, and seven of nine reports on
+  disk under-declared their actual contract for exactly that reason. The section now
+  says, beside the existing authority rule, that `schema_version` is written from the
+  same copy that rule names as authoritative (#732).
+
+- `supertool_op_inventory` no longer silently narrows when `skills/manager/SKILL.md`'s
+  op-table heading drifts: `op_table_heading_drift` now flags a file that carries the
+  table's own header-row shape (`| Need | Op |` plus its divider) under a heading that
+  no longer matches `_OP_TABLE_HEADING`, and the inventory falls back to `could-not-ask`
+  rather than reporting `present` over a set that quietly stopped naming some ops. A
+  repository with no op table at all -- the ordinary case for every scanned file but
+  one -- still reports `present`/`missing` exactly as before (#748).
+
+- `/oss:scaffold --apply` now reports two different claims about a file it removes from the
+  `01-oss` rule layer instead of one. A name matching a shape `oss_rules.install()` could ever have
+  written (a `.md` rule file, or its own index filename) is retired, as before; anything else -- a
+  file some other generator in the managed repo also writes into that directory, such as
+  `claude-jit-context`'s own `rebuild-tsv.sh` writing `01-paths.tsv` -- is reported as never having
+  been shipped by this plugin at all, so the removal is named as holding only until whatever wrote it
+  runs again, rather than reading like an ordinary retirement (#755).
+
+- The scaffolded `.github/workflows/oss-changelog.yml`'s fragment gate now reads the
+  `no-changelog` escape-hatch label live, via `gh api repos/{repo}/pulls/{n}` with a timeout,
+  instead of trusting `github.event.pull_request.labels.*.name` -- the label set as the run was
+  CREATED. A re-run used to replay that same frozen payload, so applying the label to a red run and
+  re-running it failed again forever; only an unrelated commit could clear it. The live read
+  degrades to the event payload on any failure (missing `gh`, no credentials, a timeout, a scope
+  mismatch) rather than ever failing closed, announces the degrade with a `note` line, and both
+  paths read labels as a JSON array -- never a joined comma string -- so a label whose own name
+  contains a comma cannot forge the hatch. The generated workflow's `permissions:` block now also
+  grants `pull-requests: read`, which the live read needs (#777).
+- The payload fallback's own `jq` call is now guarded the same way the live read's `gh` call
+  already was: `jq` genuinely missing on `PATH` is reported as its own `note` rather than reading
+  identically to a payload that genuinely carried no labels (found by review).
+
+- `supertool_entry_point` warned `own-tree-stranger` on presence alone, so a `./supertool`
+  symlink pointing at a supertool checkout's OWN `supertool.py` -- the documented convenience
+  alias -- was condemned identically to one pointing at a different install. The link's target
+  is now compared against the tree's own core with `_same_file`, the same identity check the
+  plugin-cache comparison already uses: the alias reports `own-tree-ok`, a genuine stranger
+  keeps the WARN as `own-tree-stranger`, and a comparison the filesystem would not answer is its
+  own `own-tree-unknown` WARN rather than folding into either (#780).
+
+- `schemas/agent-report.schema.json`'s `$defs.pr_body.closes` description still
+  claimed `gh-pr-create` "REPORTS and does not refuse, exit 0" on an unlinked body --
+  the #776 drift PR #782 corrected everywhere else, missed here because
+  `tests/test_content_invariants.py`'s `EXECUTABLE_PROSE` sweep never reached
+  `schemas/`. The description now states the op refuses and names `no_close` as the
+  remedy, and `EXECUTABLE_PROSE` now includes `schemas/*.json` (derived from disk, not
+  a second hand-kept list), so the same drift is caught here going forward (#783).
+
+- `dependency_diagnostic_state`'s script branch handed a script-shaped dependency's own
+  diagnostic `CLAUDE_PROJECT_DIR` verbatim, unabsolutised. `doctor.py --root .` -- the
+  documented form in six places across `commands/tick.md`, `commands/scaffold.md` and
+  `commands/setup.md` -- reached the child process as the literal `.`, so `remember`'s
+  `scripts/doctor.sh` derived its session-directory slug from `.`, found no transcript
+  directory, and returned a false `VERDICT: problem` that this function relayed exactly as
+  designed: the verdict was real, the fact it described was not. `project_dir` is now
+  absolutised with `os.path.abspath` before it reaches the child environment (#833).
+
+- `doctor_check_worktree_reap_permission.py`: a bare-wildcard **deny** rule
+  (`Bash(git *)`), or the documented command-name-level prefix spelling
+  (`Bash(git:*)`), for `git worktree remove` or `git branch -D` rendered
+  `absent` -- "nobody granted this" -- rather than reporting the op may
+  already be deliberately forbidden. `_bash_wildcard_allow_detail` (#886) was
+  allow-side only; its new deny-side sibling, `_bash_wildcard_deny_detail`,
+  now catches both shapes (the prefix half caught by this lane's own review
+  spawns, after the bare-wildcard half alone repeated the exact defect #892
+  was filed to fix, one spelling over). Reported as its own state,
+  `cannot-tell-whether-forbidden`, kept separate from #886's `cannot-tell-
+  whether-covered` so the direction of the ambiguity -- might be covered vs.
+  might be forbidden -- is never lost (#892).
+
+- `doctor_check_worktree_reap_permission.py`: the documented command-name-level
+  prefix grant (`Bash(git:*)`), which covers `git worktree remove` as broadly
+  as a bare `Bash(git *)` wildcard, rendered `absent` -- byte-identical to a
+  repository that granted nothing -- and was told to add a redundant rule.
+  #886's own wildcard detection excluded this spelling by construction (its
+  `PREFIX_SUFFIX not in e` guard, meant for op-specific `name:*` grants, swept
+  the bare-command-name prefix form out too). A new `_entry_prefix_wildcard_
+  head` helper recognises only that third shape and reports it under the
+  existing `cannot-tell-whether-covered` state (#895).
+
+- `oss_config.REPO_RE` excluded `/` and whitespace from a `repo` value but not a backslash, so
+  `owner/..\..\..\x` validated as an ordinary `owner/name` slug. `_derive_local_config` folds an
+  unrefused `repo` straight into `state_file` (a documented write target every tick invokes), and on
+  Windows a backslash in that value resolves as a path separator, letting the derived write target
+  land outside the clone. The forward-slash traversal case was already refused; only the backslash
+  case slipped through. `REPO_RE`'s excluded-character class now excludes a backslash too, and the
+  vendored copy in `scripts/statusline.py` was updated to match (#897).
+
+- `.claude/jit-context/tools/01-oss/00-README.md` now states, in a section citing #903, that
+  `supertool-required.md` reaches a spawned read-only reviewer subagent (an `Explore` self-review) as
+  well as the dispatching lane -- and why that is not something the rule can be narrowed against: the
+  PreToolUse hook's subject is built from `tool_input` alone, and nothing there names which agent
+  issued the call, so there is no signal to scope on. An unbriefed subagent that hits the block is
+  expected to route around it via its own authorized tools, which is what both reported instances
+  already did on their own (#903).
+
+- `scripts/statusline.py`'s default-branch marker now reads GitHub check-runs, not only the
+  legacy combined-status endpoint. On an Actions-only repository the combined-status endpoint's
+  `total_count` is `0` on every commit, always, because GitHub Actions writes check-runs rather
+  than legacy commit statuses -- so `_gh_default_branch_state` had exactly one reachable outcome
+  (`"no-run"`) and it was always wrong, rendering a dim unknown glyph beside a repository name even
+  moments after every leg had concluded green. Both sources are read and merged now (worst wins:
+  any failure is `bad`, anything still queued/in-progress is `running`, a concluded pass is
+  `green`), so a repository carrying legacy statuses from an external CI with zero Actions runs is
+  still covered, and `"no-run"` is reported only when both sources genuinely answer empty --
+  never when one of them simply failed to respond (#914).
+- `tests/test_statusline_default_branch_856.py` no longer stubs `_run` with one fabricated JSON
+  shape shared by both endpoints -- the exact fixture shape (`{"state": "success", "total": 3}`)
+  the real combined-status endpoint never produces on an Actions-only repo, and the reason the
+  prior suite stayed green for the whole time the bug was live. `_run` is now stubbed per-endpoint,
+  and one test calls the real `gh` CLI against this repository's own default-branch head and
+  compares the verdict against `gh-branch` (the supertool op that already read this correctly) on
+  the same SHA, skipping rather than failing when the network or the tools it needs are
+  unavailable (#914).
+- `_reading_from_check_runs` now names `per_page=100` and cross-checks the returned entry count
+  against `total_count`, reading `None` (could not look) rather than a possibly-truncated page --
+  `gh api` does not auto-paginate, so a commit carrying more than 100 check-runs could otherwise
+  have a later failure silently invisible to the scan while the count stayed correct, the same
+  "counted right, read wrong" shape `_gh_external_issue_count` already guards against one function
+  over (found by audit on this same round).
+- `-X GET` is now explicit on the check-runs call. `gh api` defaults to POST, not GET, the moment
+  any `-f` field is given without an explicit method -- the same trap `_gh_external_issue_count`
+  already names in its own docstring -- and the first version of this fix named `-f per_page=100`
+  without it, which turned every check-runs call into a 404 and silently fell back to the
+  combined-status reading alone. Caught only by the live test comparing against `gh-branch` on a
+  real commit, which is the whole reason that test exists rather than being fabricated too (found
+  by re-running the suite after the pagination fix above).
+- `_BAD_CHECK_RUN_CONCLUSIONS` now names `startup_failure` -- a documented GitHub `conclusion`
+  value (a run that failed before it could even start) matching what `gh-branch` itself already
+  reads as red -- and the check-runs reading's `green` is conjunctive now (nothing failed and
+  nothing is moving) rather than requiring at least one entry to say `success`, so a commit whose
+  only check-runs are `skipped`/`neutral` still reads `green`, the same call `gh-branch` itself
+  makes for that shape (found by review on this same round).
+- The live comparison test parses `gh-branch`'s own `Verdict:` line now, not the `Legs:` tally --
+  a `cancelled`/`stale`/otherwise-unrecognised leg renders there as an *extra* comma term the old
+  tally-only parse silently dropped, which would have misread a real `gh-branch` `NOT GREEN` as
+  `"green"` and blamed the resulting mismatch on this module's own (correct) `"bad"` (found by
+  review on this same round).
+
+- The companion search that fills a lane to three issues is now a step of its own in
+  `skills/manager/phases/dispatch.md`, stated as a different call from the conflict check rather
+  than left implied. `lane_setup.py --against` answers two opposite questions depending on where it
+  is aimed — overlap between running lanes means avoid, overlap between a candidate and the top
+  issue means bundle — and one tick aimed it at the three lanes it had already picked, read `no
+  overlap`, and recorded `no-adjacent`: a claim about the board taken from a measurement that never
+  looked at the board. Three single-issue lanes went out with 31 issues open and every gate green
+  (#918).
+- `did-not-search` joins `dispatch_rank.SHORT_REASONS` as the fourth short-lane reason. The set had
+  no way to say a search never ran: `no-adjacent` asserts the board was measured and found
+  isolated, and `could-not-tell` is an adjacency computation attempted and failed. A search nobody
+  started rendered as one of those two, which is this repository's own defect class landing on
+  dispatch (#918).
+- `dispatch_rank.check_lane` takes an `adjacent` count and refuses a claimed `no-adjacent` when it
+  is one or more, the way #871 already checked `board-exhausted` against a candidate count. The
+  threshold is stricter than #871's on purpose: `board-exhausted` is refuted by `MAX_LANE` disjoint
+  candidates, but `no-adjacent` means zero, so a single adjacent candidate refutes it — and one
+  adjacent candidate is one issue the lane could have carried. `adjacent=None` keeps the prior
+  behaviour, since a caller that named no board must not be credited with a measurement (#918).
+- `oss_state.lane_fill` routes `--lane-fill`'s optional fourth field to whichever count the claimed
+  reason is a statement about, rather than adding a fifth positional: the field has always meant
+  "the count that would refute this claim", and which count that is follows from the word.
+  `did-not-search` and `could-not-tell` take neither (#918).
+- `oss_state.lane_fill` refuses a count supplied alongside `did-not-search` or `could-not-tell`
+  rather than dropping it. `check_lane` reads `candidates` only for `board-exhausted` and `adjacent`
+  only for `no-adjacent`, so a count offered for either of the other two reached neither parameter
+  and vanished — the written receipt was byte-identical to one from a caller who measured nothing,
+  which is the defect #918 is about arriving inside #918's own fix (found by review on PR #921).
+- `agents/sub-manager.md` and `commands/tick.md` name the fourth reason and the companion search.
+  Both still enumerated the pre-#918 three, and `agents/sub-manager.md` is the only file a
+  sub-manager reads before dispatching — so the new refusal existed in code that no dispatching agent
+  had been told about, and `dispatch.md` showed the `--lane-fill` count form for `board-exhausted`
+  alone. A guard nominally on and effectively off, which is the shape #918 was filed about one layer
+  up (found by review on PR #921).
+- `tests/test_spawn_token_fill_parity_828_867.py` reads the vocabulary from
+  `dispatch_rank.SHORT_REASONS` instead of a hardcoded three-tuple. It compared the two prose
+  documents against *each other*, so both naming the same stale set passed as compliant — a guard
+  measuring the wrong pair rather than one that failed to run (found by review on PR #921).
+- `oss_state.lane_fill` also refuses a count supplied on a *full* lane. `check_lane` returns `ok` for
+  `size == MAX_LANE` before it consults `short_reason` or either count, so a count offered there
+  reached neither parameter and the record came back byte-identical to one from a caller who
+  measured nothing. The reason-on-a-full-lane refusal has existed since #852; this is its missing
+  twin for the count — the same defect surviving into the second round of its own fix (found by
+  review on PR #921).
+
+- `assemble_changelog.py`'s `_verify_written` re-parsed the same document up to six times per call
+  (once for `_document_facts`, once for `_disallowed_destinations`, once for `_crowded_headings`'s
+  own re-parse via `_headings`, each on both `before` and `after`), rebuilding a fresh
+  `MarkdownIt("commonmark")` instance every time too. Cached the two parser singletons and
+  memoized the pure per-text parse helpers with `lru_cache`. Cut
+  `test_verify_written_is_a_delta_and_not_a_whole_file_scan`, the suite's slowest test, from 6.02s
+  to 0.41s (#925).
+
+- `spawn_guard.scan_tree` and `test_no_test_pins_the_current_version_350.py`'s `classify_source`
+  redundantly re-walked and re-parsed the whole `tests/` directory: three sibling tests in
+  `test_spawn_guard_716.py` each called `scan_tree` fresh, and `classify_source` `ast.parse`d
+  every file's source twice (once for the pin scan, once for the route scan). Cached `scan_tree`
+  with `lru_cache` and shared one parsed tree between the two scans in `classify_source` (#933).
+
+- `test_board_touch_516.py::test_a_stale_mark_does_not_survive_the_refresh_it_asked_for` made real
+  `gh api` network calls against a fake repo via `statusline._gh_external_issue_count` and
+  `_gh_default_branch_state`, which the test left unmocked while already stubbing `_gh_count` and
+  `_gh_rollups` -- ~3.5s of real network round-trip per run. Mocked both, matching the test's own
+  existing pattern (#935).
+
+- `verify_test_command`'s timeout only reached the shell it ran the detected test command in,
+  never anything that shell spawned in turn -- on Windows, the real test command is already a
+  grandchild the shell execs into as a separate process, and an inherited stdout pipe handle does
+  not close (so `communicate()` does not return) until that grandchild exits on its own, regardless
+  of the requested timeout. Run the command in its own process group/session and kill the whole
+  tree on timeout (`os.killpg` on POSIX, a job object on Windows) instead of relying on
+  `Popen.kill()`'s single-process default. Verified locally on POSIX with a real leaked-grandchild
+  regression test; the Windows-specific pipe-handle mechanism itself is confirmed by CI's
+  windows-latest leg, not by this change alone (#937).
+- On Windows the kill is a job object (`TerminateJobObject`), not `taskkill /F /T`. `/T` walks
+  the live parent-child links Windows keeps, and those exist only while the parent does -- so the
+  ordinary leak here, a command that spawns something and exits before the timeout fires, leaves a
+  survivor that is no longer under the pid `taskkill` was given and is never signalled. CI's four
+  windows-latest legs measured exactly that. A job object is not walked: a process joins it and
+  stays in it, so one call reaches every descendant whoever spawned it and whoever has since died.
+  `taskkill` remains the fallback for a job that could not be created or assigned, and the handle
+  is closed on every exit path, which with `KILL_ON_JOB_CLOSE` is itself a kill (#937).
+
 ## [0.20.0] - 2026-09-03
 
 ### Added
@@ -7465,7 +7843,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.21.0
 [0.20.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.20.0
 [0.19.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.19.0
 [0.18.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.18.0
