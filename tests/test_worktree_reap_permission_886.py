@@ -90,6 +90,25 @@ def test_genuinely_nothing_configured_still_reads_absent(tmp_path):
     assert state == "absent"
 
 
+def test_unrelated_wildcard_grant_does_not_read_cannot_tell(tmp_path):
+    """A wildcard grant for an unrelated command cannot cover a `git` op under
+    any wildcard semantics -- `Bash(npm *)` never becomes `git worktree
+    remove`, whatever the harness's matcher does with the star. Flagging it
+    anyway would turn a genuine `absent` into a false "might already be
+    covered", the opposite direction from what #886 was filed for. Reviewer
+    finding on this lane's own first draft: the wildcard scan was unscoped and
+    flagged any Bash wildcard entry, this repo's own `Bash(supertool:*)`
+    included in spirit -- this is the regression guard for that fix."""
+    _settings(
+        tmp_path / ".claude" / "settings.json",
+        allow=["Bash(npm *)"],
+    )
+    state, _detail = doctor.worktree_remove_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "absent"
+
+
 def test_documented_prefix_suffix_for_the_other_op_stays_absent(tmp_path):
     """A `name:*` rule for the sibling op is deliberately left alone by this
     fix (documented prefix syntax, not the bare-wildcard blind spot #886

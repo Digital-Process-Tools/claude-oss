@@ -59,15 +59,38 @@ REAP_RULE_FILE = ".claude/settings.local.json"
 # correctly today, either by the literal substring test (when the op text is
 # literally present) or are a distinct, unfiled gap (a broad prefix like
 # `Bash(git:*)`) rather than the one #886 measured and asked for.
+#
+# The wildcard scan is scoped to the op's own first word (`git`, for both ops
+# this module checks), never to "any Bash entry with a `*` anywhere in the
+# settings file". An unrelated grant -- `Bash(npm *)`, `Bash(curl *)` -- cannot
+# cover a `git` op under any wildcard semantics, and flagging it anyway would
+# turn a genuine `absent` into a false "might already be covered", which is
+# the opposite direction from the defect #886 was filed for. Comparing the
+# entry's own first token to the op's first token is a structural read, not a
+# guess about what the wildcard matches -- the same restraint the substring
+# test itself already exercises by keying on the full op text.
 WILDCARD_MARKER = "*"
 PREFIX_SUFFIX = ":*"
 
 
-def _bash_wildcard_allow_detail(project_dir, home=None):
+def _entry_command_head(entry):
+    """The first whitespace-separated token inside a `Bash(...)` rule's
+    parentheses, or None if `entry` is not shaped like a Bash rule. Purely
+    structural parsing -- no wildcard interpretation."""
+    if not entry.startswith("Bash(") or not entry.endswith(")"):
+        return None
+    content = entry[len("Bash(") : -1]
+    parts = content.split(None, 1)
+    return parts[0] if parts else None
+
+
+def _bash_wildcard_allow_detail(project_dir, op, home=None):
     """Count-and-file detail (same convention as `_permission_rule_state`,
-    never the entry text) for Bash allow entries containing a bare wildcard --
-    one this check's substring test cannot resolve either way. Empty string
-    when none exist."""
+    never the entry text) for Bash allow entries whose command head matches
+    `op`'s own first word and which contain a bare wildcard -- one this
+    check's substring test cannot resolve either way. Empty string when none
+    exist."""
+    op_head = op.split(None, 1)[0]
     found = []
     for path in settings_candidates(project_dir, home=home):
         try:
@@ -84,9 +107,9 @@ def _bash_wildcard_allow_detail(project_dir, home=None):
         matches = [
             e
             for e in _permission_entries(data, "allow")
-            if e.startswith("Bash(")
-            and WILDCARD_MARKER in e
+            if WILDCARD_MARKER in e
             and PREFIX_SUFFIX not in e
+            and _entry_command_head(e) == op_head
         ]
         if matches:
             found.append(_entry_count(len(matches), "allow", path))
@@ -98,13 +121,16 @@ def worktree_remove_permission_state(project_dir, home=None):
     `doctor_check_merge_permission._permission_rule_state` for the four answers
     and why an unreadable neighbour never wins over a rule that was actually
     read. A fifth answer, `cannot-tell-whether-covered`, replaces `absent` when
-    a Bash allow entry contains a bare wildcard this substring test cannot
-    resolve -- see the module docstring above `_bash_wildcard_allow_detail`."""
+    a Bash allow entry whose command head is `git` also contains a bare
+    wildcard this substring test cannot resolve -- see the module docstring
+    above `_bash_wildcard_allow_detail`."""
     state, detail = _permission_rule_state(
         project_dir, lambda e: WORKTREE_REMOVE_OP in e, home=home
     )
     if state == "absent":
-        wildcard_detail = _bash_wildcard_allow_detail(project_dir, home=home)
+        wildcard_detail = _bash_wildcard_allow_detail(
+            project_dir, WORKTREE_REMOVE_OP, home=home
+        )
         if wildcard_detail:
             return "cannot-tell-whether-covered", wildcard_detail
     return state, detail
@@ -118,7 +144,9 @@ def branch_delete_permission_state(project_dir, home=None):
         project_dir, lambda e: BRANCH_DELETE_OP in e, home=home
     )
     if state == "absent":
-        wildcard_detail = _bash_wildcard_allow_detail(project_dir, home=home)
+        wildcard_detail = _bash_wildcard_allow_detail(
+            project_dir, BRANCH_DELETE_OP, home=home
+        )
         if wildcard_detail:
             return "cannot-tell-whether-covered", wildcard_detail
     return state, detail
