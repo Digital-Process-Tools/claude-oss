@@ -62,21 +62,21 @@ time it does.
 ## Prove it fires before you commit it
 
 A rule that never matched and a rule with nothing to say **render identically**. Rebuilding the index
-is not evidence. Drive the hook, in both directions:
+is not evidence. **Drive the hook, in both directions**, following the *Prove it fires* section of
+the `claude-jit-context:vocabulary` skill — that skill owns the recipe and the paths, and a second
+copy of them here would go stale the first time that plugin moves a script. Two payloads, never one:
 
-```bash
-export CLAUDE_PROJECT_DIR="$PWD"
-JIT="${HOME}/.claude/plugins/cache/dpt-plugins/claude-jit-context"
-bash "${JIT}"/*/scripts/rebuild-tsv.sh
-printf '{"tool_name":"Bash","tool_input":{"command":"supertool %s"}}' "'read:<a file it must govern>'" \
-  | bash "${JIT}"/*/scripts/pre-path-hook.sh
-printf '{"tool_name":"Bash","tool_input":{"command":"supertool %s"}}' "'read:<a file it must ignore>'" \
-  | bash "${JIT}"/*/scripts/pre-path-hook.sh
-```
+- one naming a file the rule **must** govern, and
+- one naming a file it **must ignore**.
 
 The must-fire payload proves the rule exists. **The must-stay-silent payload is the one that finds
 real defects** — a match pattern one character too wide fires on every session that touches the
 repository, and nothing downstream will ever tell you.
+
+**Put a known-good rule in the same batch.** A probe whose payload the hook does not understand
+reports silence, which is indistinguishable from a rule that does not fire; a control you have
+already seen fire is what tells those apart. That is logged in `trap.d/` because it happened while
+this command was being written.
 
 Report both results in the pull request that promotes the rule. A promotion with no firing proof is
 a rule nobody has established is reachable.
