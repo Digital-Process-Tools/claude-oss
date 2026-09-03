@@ -33,15 +33,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import dispatch_rank as _dispatch_rank  # noqa: E402
 from test_content_invariants import _collapse  # noqa: E402
 
 SUB_MANAGER_MD = REPO_ROOT / "agents" / "sub-manager.md"
 TICK_MD = REPO_ROOT / "commands" / "tick.md"
 
-#: The three short-lane reasons, as a closed set -- `dispatch_rank.SHORT_REASONS`
-#: is the actual source of truth for the vocabulary; this only checks that both
-#: prose documents name the same three words for a human reading them.
-SHORT_REASONS = ("board-exhausted", "no-adjacent", "could-not-tell")
+#: The short-lane reasons, read from `dispatch_rank.SHORT_REASONS` rather than
+#: retyped (#918, found by review on PR #921). This tuple used to be a hardcoded
+#: three, and its own comment called `dispatch_rank` "the actual source of truth"
+#: while comparing neither document to it -- it checked the two prose files
+#: against *each other*, so both naming the same stale three passed as fully
+#: compliant. #918 added a fourth word to the vocabulary and this guard went on
+#: reporting parity, which is a guard measuring the wrong pair rather than one
+#: that failed to run. Two copies agreeing proves nothing about whether either is
+#: right; pin the source, not the parity.
+SHORT_REASONS = tuple(_dispatch_rank.SHORT_REASONS)
 
 
 #: "default" alone is a false positive waiting to happen: `commands/tick.md`

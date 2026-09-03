@@ -1652,6 +1652,20 @@ def lane_fill(entries, window, why=None):
         # 'did-not-search' and 'could-not-tell' take neither: a count says nothing
         # about a search that never ran or one that ran and failed, and passing a
         # number alongside either would be a measurement the caller does not have.
+        if candidates is not None and reason in ("did-not-search", "could-not-tell"):
+            # Neither reason is a claim a count can refute, so `check_lane` would
+            # read this field for neither parameter and drop it -- and a dropped
+            # measurement renders exactly like one nobody took, which is the
+            # defect #918 is about. Refuse rather than discard silently (found by
+            # review on PR #921: the two calls returned identical receipts).
+            raise StateError(
+                "lane fill {} (issue {}): {!r} takes no count, but {} was given "
+                "-- a count refutes a claim, and this reason makes none: "
+                "'board-exhausted' is refuted by file-disjoint candidates and "
+                "'no-adjacent' by adjacent ones, while a search that did not run "
+                "and one that could not be computed are refuted by neither "
+                "(#918)".format(position, primary, reason, candidates)
+            )
         if reason == "no-adjacent":
             check = _dispatch_rank.check_lane(range(count), reason, adjacent=candidates)
         else:

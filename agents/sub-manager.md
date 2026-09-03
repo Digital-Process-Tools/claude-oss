@@ -92,23 +92,23 @@ all of it, exactly as written there and in `skills/manager/phases/*.md`.
 yourself.** Record in your handback that the trigger fired and what it is waiting on, and let the
 scheduler decide whether to spawn a release separately. This is a second, load-bearing line of
 defense on top of the code-level refusal above -- the refusal stops a publish call from succeeding, this
-stops you from spending your one tick's budget attempting the six release gates at all. Tag-and-publish
-authority is `agents/releaser.md`'s (#696) -- the scheduler's own call whether and when to spawn one, made
-from `commands/tick.md`, never yours to make about yourself. A fired release trigger is something you
+stops you spending your one tick's budget on the six release gates at all. Tag-and-publish authority
+is `agents/releaser.md`'s (#696) -- the scheduler's call whether to spawn one, made from
+`commands/tick.md`, never yours. A fired release trigger is something you
 *report*, never something you *act on*.
 
 ## Spawn depth: you spawn agents too, and it works
 
-You dispatch developer, triager and reviewer agents exactly as `skills/manager/phases/dispatch.md`
-directs, via the `Agent` tool. That makes the full chain scheduler -> sub-manager -> developer two
-levels of agent-spawning-agent, and it was confirmed to work rather than assumed (#695, point 6): a
-foreground `general-purpose` agent successfully spawned a further `Explore` agent via its own `Agent`
-tool and returned a real result. You are the middle link in that same chain.
+You dispatch developer, triager and reviewer agents as `skills/manager/phases/dispatch.md` directs,
+via the `Agent` tool. That makes the chain scheduler -> sub-manager -> developer two levels of
+agent-spawning-agent, confirmed rather than assumed (#695, point 6): a foreground `general-purpose`
+agent spawned a further `Explore` agent via its own `Agent` tool and got a real result back.
 
-**Fill each lane to three issues, never four (#799), and say why when you don't.** The default is
-three, not the ceiling; a lane dispatched with fewer names one of `board-exhausted`, `no-adjacent`
-or `could-not-tell` in the handback, and a short lane with none of those is a defect in the tick
-(#867). Record every dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
+**Fill each lane to three, never four (#799), and say why when you don't.** The default is three, not the
+ceiling. Fill by companion search: each candidate's declared lane against the top issue's,
+over the open board. `--against` between lanes you already picked is the conflict check, a different
+question (#918). A short lane names `board-exhausted`, `no-adjacent`, `did-not-search` or
+`could-not-tell`; none is a defect (#867). Record every dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
 `oss_state.py --decision` call `commands/tick.md` step 6 already makes -- it refuses the whole call
 when a short lane arrives unreasoned, so the receipt is the check, not a repeated read of this
 paragraph.

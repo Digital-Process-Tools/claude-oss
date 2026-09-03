@@ -136,3 +136,37 @@ def test_lane_fill_accepts_the_new_reason_word(tmp_path):
         window="this tick",
     )
     assert record["lanes"][0]["reason"] == "did-not-search"
+
+
+@pytest.mark.parametrize("reason", ["did-not-search", "could-not-tell"])
+def test_a_count_is_refused_for_a_reason_no_count_can_refute(reason):
+    """Found by review on PR #921: the count was silently dropped, not refused.
+
+    `check_lane` reads `candidates` only for `board-exhausted` and `adjacent`
+    only for `no-adjacent`, so a count supplied alongside either of these two
+    reached neither parameter and vanished -- the receipt was byte-identical to
+    one written by a caller who supplied nothing. A discarded measurement
+    rendering as a measurement nobody took is the defect #918 is about, arriving
+    in #918's own fix.
+    """
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import oss_state  # noqa: E402
+
+    with pytest.raises(oss_state.StateError) as caught:
+        oss_state.lane_fill(
+            [{"primary": 845, "count": 1, "reason": reason, "candidates": 5}],
+            window="this tick",
+        )
+    assert "takes no count" in str(caught.value)
+
+
+@pytest.mark.parametrize("reason", ["did-not-search", "could-not-tell"])
+def test_those_reasons_still_stand_when_no_count_is_offered(reason):
+    """Positive control: refusing the count must not refuse the reason."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import oss_state  # noqa: E402
+
+    record = oss_state.lane_fill(
+        [{"primary": 845, "count": 1, "reason": reason}], window="this tick"
+    )
+    assert record["lanes"][0]["reason"] == reason
