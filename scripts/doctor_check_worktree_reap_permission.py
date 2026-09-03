@@ -69,6 +69,22 @@ REAP_RULE_FILE = ".claude/settings.local.json"
 # entry's own first token to the op's first token is a structural read, not a
 # guess about what the wildcard matches -- the same restraint the substring
 # test itself already exercises by keying on the full op text.
+#
+# #895: the scan above deliberately excluded the documented `name:*` PREFIX
+# syntax (`PREFIX_SUFFIX not in e`) because that suffix is also used for an
+# op-specific grant (`Bash(git worktree remove:*)`, already handled by the
+# literal substring test) and a sibling-op grant (`Bash(git branch -D:*)`,
+# correctly left `absent` for this op). But the SAME suffix, applied to the
+# bare command name with nothing else in front of it (`Bash(git:*)`), is a
+# third, distinct shape: the documented command-name-level prefix grant,
+# which covers `git worktree remove` exactly as broadly as `Bash(git *)`
+# does. #886's exclusion swept that shape out along with the two it meant to
+# exclude, and #895 is the filing for it. `_entry_prefix_wildcard_head`
+# recognises only that third shape -- a bare command name immediately
+# followed by `:*`, no space anywhere in it -- so `Bash(git worktree
+# remove:*)` and `Bash(git branch -D:*)` are untouched (both contain a
+# space before `:*`, so `head` here would carry the space and never equal a
+# bare op_head).
 WILDCARD_MARKER = "*"
 PREFIX_SUFFIX = ":*"
 
@@ -84,12 +100,32 @@ def _entry_command_head(entry):
     return parts[0] if parts else None
 
 
+def _entry_prefix_wildcard_head(entry):
+    """The bare command name inside a `Bash(name:*)` command-name-level
+    prefix rule (`Bash(git:*)`), or None if `entry` is not shaped like one.
+    Deliberately narrower than `content.endswith(PREFIX_SUFFIX)` alone: an
+    op-specific prefix grant such as `Bash(git worktree remove:*)` also ends
+    in `:*`, but its content before the suffix contains whitespace, so it is
+    excluded here (it is not this shape -- it is the literal, already-handled
+    one, or a sibling op's own grant that must stay `absent` for this op)."""
+    if not entry.startswith("Bash(") or not entry.endswith(")"):
+        return None
+    content = entry[len("Bash(") : -1]
+    if not content.endswith(PREFIX_SUFFIX):
+        return None
+    head = content[: -len(PREFIX_SUFFIX)]
+    if not head or any(ch.isspace() for ch in head):
+        return None
+    return head
+
+
 def _bash_wildcard_allow_detail(project_dir, op, home=None):
     """Count-and-file detail (same convention as `_permission_rule_state`,
     never the entry text) for Bash allow entries whose command head matches
-    `op`'s own first word and which contain a bare wildcard -- one this
-    check's substring test cannot resolve either way. Empty string when none
-    exist."""
+    `op`'s own first word and which contain a bare wildcard, OR whose
+    command-name-level prefix (`Bash(git:*)`, #895) matches it -- either
+    shape this check's substring test cannot resolve either way. Empty
+    string when none exist."""
     op_head = op.split(None, 1)[0]
     found = []
     for path in settings_candidates(project_dir, home=home):
@@ -107,12 +143,50 @@ def _bash_wildcard_allow_detail(project_dir, op, home=None):
         matches = [
             e
             for e in _permission_entries(data, "allow")
+            if (
+                WILDCARD_MARKER in e
+                and PREFIX_SUFFIX not in e
+                and _entry_command_head(e) == op_head
+            )
+            or _entry_prefix_wildcard_head(e) == op_head
+        ]
+        if matches:
+            found.append(_entry_count(len(matches), "allow", path))
+    return "; ".join(found)
+
+
+def _bash_wildcard_deny_detail(project_dir, op, home=None):
+    """#892: the deny-side sibling of `_bash_wildcard_allow_detail` above --
+    same bare-wildcard shape (`Bash(git *)`), same op-head scoping, same
+    "count and file, never the text" convention, but scanning `deny` entries
+    instead of `allow`. Deliberately narrower than the allow-side helper:
+    only the bare-wildcard shape, not the `name:*` command-level prefix one
+    -- #892's own issue and test shape name only the bare wildcard, and
+    widening this beyond what was asked is exactly what CLAUDE.md's judgment
+    call about issue scope warns against. Empty string when none exist."""
+    op_head = op.split(None, 1)[0]
+    found = []
+    for path in settings_candidates(project_dir, home=home):
+        try:
+            if not path.exists():
+                continue
+        except OSError:
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        matches = [
+            e
+            for e in _permission_entries(data, "deny")
             if WILDCARD_MARKER in e
             and PREFIX_SUFFIX not in e
             and _entry_command_head(e) == op_head
         ]
         if matches:
-            found.append(_entry_count(len(matches), "allow", path))
+            found.append(_entry_count(len(matches), "deny", path))
     return "; ".join(found)
 
 
@@ -122,12 +196,29 @@ def worktree_remove_permission_state(project_dir, home=None):
     and why an unreadable neighbour never wins over a rule that was actually
     read. A fifth answer, `cannot-tell-whether-covered`, replaces `absent` when
     a Bash allow entry whose command head is `git` also contains a bare
-    wildcard this substring test cannot resolve -- see the module docstring
-    above `_bash_wildcard_allow_detail`."""
+    wildcard, or is a command-name-level `name:*` prefix (#895), that this
+    substring test cannot resolve -- see the module docstring above
+    `_bash_wildcard_allow_detail`. A sixth, `cannot-tell-whether-forbidden`
+    (#892), replaces `absent` the same way when the ambiguous bare wildcard is
+    on the `deny` side instead -- see `_bash_wildcard_deny_detail`. The two
+    are kept as separate state names rather than folded into one, deliberately:
+    an allow-side ambiguity means "might already be covered" and a deny-side
+    one means "might already be forbidden", and collapsing them loses exactly
+    the direction that makes the deny-side case the more dangerous of the two
+    (#892's own argument for why it is worse than the gap #886 fixed). Deny is
+    checked before allow here, mirroring `_permission_rule_state`'s own "deny
+    wins" precedent for the case (nothing in the fixtures currently produces
+    it) where both an ambiguous allow and an ambiguous deny wildcard exist for
+    the same op head."""
     state, detail = _permission_rule_state(
         project_dir, lambda e: WORKTREE_REMOVE_OP in e, home=home
     )
     if state == "absent":
+        deny_wildcard_detail = _bash_wildcard_deny_detail(
+            project_dir, WORKTREE_REMOVE_OP, home=home
+        )
+        if deny_wildcard_detail:
+            return "cannot-tell-whether-forbidden", deny_wildcard_detail
         wildcard_detail = _bash_wildcard_allow_detail(
             project_dir, WORKTREE_REMOVE_OP, home=home
         )
@@ -137,13 +228,18 @@ def worktree_remove_permission_state(project_dir, home=None):
 
 
 def branch_delete_permission_state(project_dir, home=None):
-    """Is there a settings rule naming `git branch -D`? Same five answers, same
+    """Is there a settings rule naming `git branch -D`? Same six answers, same
     caveats, as `worktree_remove_permission_state` above -- independent of it,
     per the issue: a rule granting one command says nothing about the other."""
     state, detail = _permission_rule_state(
         project_dir, lambda e: BRANCH_DELETE_OP in e, home=home
     )
     if state == "absent":
+        deny_wildcard_detail = _bash_wildcard_deny_detail(
+            project_dir, BRANCH_DELETE_OP, home=home
+        )
+        if deny_wildcard_detail:
+            return "cannot-tell-whether-forbidden", deny_wildcard_detail
         wildcard_detail = _bash_wildcard_allow_detail(
             project_dir, BRANCH_DELETE_OP, home=home
         )
@@ -196,6 +292,20 @@ def check_worktree_remove_permission(project_dir, home=None):
             ),
         )
         return
+    if state == "cannot-tell-whether-forbidden":
+        doctor.report(
+            "WARN",
+            "no settings rule literally names {}, but a Bash deny entry with a "
+            "wildcard exists ({}) that this check's substring test cannot read -- "
+            "it may already forbid this op, or may not. This is NOT a suggestion "
+            "to add `Bash({}:*)` to an allow list: doing so on a repository that "
+            "already denies it via this wildcard would be adding a rule against "
+            "the owner's own explicit prohibition. Confirm what the wildcard "
+            "covers before adding anything.".format(
+                WORKTREE_REMOVE_OP, detail, WORKTREE_REMOVE_OP
+            ),
+        )
+        return
     doctor.report(
         "WARN",
         "no settings rule names {}, so the first merge whose worktree reap is "
@@ -244,6 +354,20 @@ def check_branch_delete_permission(project_dir, home=None):
             "Claude Code's own permission matcher's job, not this check's, so this "
             "is not a suggestion to add `Bash({}:*)`: that may already be "
             "redundant. Confirm by attempting the reap once.".format(
+                BRANCH_DELETE_OP, detail, BRANCH_DELETE_OP
+            ),
+        )
+        return
+    if state == "cannot-tell-whether-forbidden":
+        doctor.report(
+            "WARN",
+            "no settings rule literally names {}, but a Bash deny entry with a "
+            "wildcard exists ({}) that this check's substring test cannot read -- "
+            "it may already forbid this op, or may not. This is NOT a suggestion "
+            "to add `Bash({}:*)` to an allow list: doing so on a repository that "
+            "already denies it via this wildcard would be adding a rule against "
+            "the owner's own explicit prohibition. Confirm what the wildcard "
+            "covers before adding anything.".format(
                 BRANCH_DELETE_OP, detail, BRANCH_DELETE_OP
             ),
         )
