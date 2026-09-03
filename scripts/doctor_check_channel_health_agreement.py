@@ -65,10 +65,16 @@ def _health_signal(raw_state):
     CANNOT DETERMINE and CONTRADICTED are `channel:health`'s own way of
     saying the socket answered something other than one clean consumer --
     the shape actually measured on #860's own incident, where doctor's
-    census said `single` and `channel:health` said CANNOT DETERMINE because
-    a second server declared the same socket unconditionally. FORWARDING,
-    NOT DELIVERING and BOUND-NOT-SUBSCRIBED are all single-consumer readings
-    (delivering or not, but from one server rather than two racing for it).
+    census said `single` and `channel:health` said CANNOT DETERMINE. #860
+    read that as a second server declaring the same socket unconditionally;
+    #913's own investigation instead traced a later recurrence of the
+    identical shape to claude-supertool#2208 -- no second server at all, its
+    own subscription probe self-colliding with the live socket. Both are
+    real, on different occasions, and this docstring does not adjudicate
+    between them; `channel_health_agreement_state`'s own `disagree` branch is
+    where the #913 finding is actually surfaced. FORWARDING, NOT DELIVERING
+    and BOUND-NOT-SUBSCRIBED are all single-consumer readings (delivering or
+    not, but from one server rather than two racing for it).
     """
     if raw_state in ("cannot_determine", "contradicted"):
         return True
@@ -156,7 +162,13 @@ def channel_health_agreement_state(census_state, census_detail, health_raw_state
     Never picks a winner on `disagree`: naming both readings verbatim is the
     whole of what this function does, on purpose (#860 -- "doctor was right
     this once" is not a general rule and encoding it as one would make this a
-    second opinion rather than a comparison).
+    second opinion rather than a comparison). One exception, and it is a
+    citation rather than a verdict (#913): when the disagreement is exactly
+    `census: single` against a raw `channel:health` state of
+    `cannot_determine` or `contradicted`, one extra sentence names
+    claude-supertool#2208 as the known cause of that specific shape and says
+    the census is the half to believe -- both readings still render verbatim
+    first, and every other disagreement stays exactly as silent as before.
     """
     census_signal = _census_signal(census_state)
     health_signal = (
@@ -177,7 +189,28 @@ def channel_health_agreement_state(census_state, census_detail, health_raw_state
         return "agree", "both report {} -- census: {}. channel:health: {}.".format(
             verdict, census_words, health_words
         )
-    return "disagree", "census: {}. channel:health: {}.".format(census_words, health_words)
+    detail = "census: {}. channel:health: {}.".format(census_words, health_words)
+    if census_state == "single" and health_raw_state in ("cannot_determine", "contradicted"):
+        # #913: this exact combination has one overwhelmingly likely cause,
+        # claude-supertool#2208 -- its own subscription probe spawns a second
+        # instance of the consumer server, that instance cannot take the live
+        # socket (claude-supertool#550), writes a `.refused.json` marker, and
+        # the same run reads its own marker back as CANNOT DETERMINE (or
+        # CONTRADICTED). Self-inflicted, every run, until #2208 ships. Name it
+        # rather than making a maintainer re-derive it -- #913's own issue
+        # records two retracted issues (#911, #912) spent doing exactly that.
+        # No expiry: this codebase has no structured read of a *resolved*
+        # supertool's own version to compare against a fix version, and #2208
+        # names no fix version to compare against either -- see this module's
+        # docstring and #913's own report for why the sentence stays
+        # unconditional rather than guessing at either.
+        detail += (
+            " Known cause: claude-supertool#2208 -- its subscription probe "
+            "self-collides with the live socket and reads its own refusal "
+            "marker back as this exact channel:health state. Believe the "
+            "census in this combination."
+        )
+    return "disagree", detail
 
 
 def _preset_disabled(project_dir):

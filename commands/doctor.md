@@ -447,7 +447,11 @@ cache, carrying that reading's own age forward rather than asserting it fresh.
 - `OK … both report …` -- the two instruments reached the same verdict about a second server, and
   the line names which.
 - `WARN … disagree …` -- they did not, and both readings are named verbatim. Neither is assumed
-  right: on #860's own incident doctor's census was, but that is not a general rule.
+  right, with one named exception (#913): when the disagreement is exactly `census: single`
+  against a raw `channel:health` state of `cannot_determine` or `contradicted`, one extra
+  sentence names claude-supertool#2208 as the known cause of that specific shape and says the
+  census is the half to believe -- both readings still render first, unconditionally, and every
+  other disagreement stays exactly as silent as before.
 - `NOTICE … could not compare -- the watch preset is not enabled …` -- `.supertool.json` plainly
   does not enable `watch`, so `channel:health` has nothing to answer with until that changes --
   structurally permanent, the same shape #764 created NOTICE for.
