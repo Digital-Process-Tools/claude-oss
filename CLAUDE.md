@@ -17,6 +17,58 @@ docstring line eight modules under `scripts/` carry, and the oldest explicit `py
 `doctor.sh`'s walk — and none of them can read a manifest at parse time, so
 `tests/test_python_floor_410.py` is what holds them together.
 
+## What this is for, which is what a tick ranks against
+
+**A repository that maintains itself.** Not issues closed — a tracker that moves with no human in the
+merge path, and the evidence attached that each move was right. The reach half of that goal — every
+repository that installs the plugin, not only this one — and how far it is from true is derived in
+`docs/autonomy.md`, and is deliberately not restated here.
+
+Six consequences, each one a decision a session takes differently for having read it:
+
+- **The developer lane is the product. Everything else is architecture, and it earns its place only
+  by making that lane work better.** The manager spine, the phase files, the auditors, the state
+  files, this document — none of it resolves an issue. When a change adds machinery around the lane,
+  the question is what the lane does better for it, answered in that change's own diff rather than in
+  the abstract. A tick that spends its context on loop bookkeeping and dispatches nothing has done no
+  work.
+
+- **Cost is tokens per issue resolved — manager, sub-manager and developer summed — not tokens per
+  tick.** The denominator is the issue. That is why a lane carries three issues rather than one
+  (bounded by file disjointness, not by ambition), and why `agents/*.md` and the manager phase files
+  carry byte budgets at all: a definition re-read on every turn of every lane multiplies straight into
+  the numerator. `skills/manager/phases/accounting.md`'s `tick_cost` measures the per-tick half
+  because that is what is observable from inside a tick; it is the proxy, and this is the number.
+
+- **Two minutes to installed, two minutes to useful.** Install is `/plugin install` plus a reload, and
+  any step that sends a maintainer to a document first has failed the target. The same clock runs on
+  the far side: somebody opening a repository this plugin scaffolded should have an LLM working
+  correctly in it inside two minutes, having read nothing. That is the acceptance test for every owned
+  file and every scaffolded default — not whether it is complete, but whether it pays for itself in
+  the first two minutes. **Both clocks are targets, and neither has ever been measured**: no
+  repository scaffolded by anyone other than this plugin's author has been observed at all, so the
+  far-side clock has never been run once. See the `What is not proven yet` section below.
+
+- **An issue is one person seeing one problem. The loop holds the overview, and the overview outranks
+  the issue.** Doing exactly what an issue asks, because it asked, is the failure mode: the reporter
+  cannot see the other open items, how the change composes with them, or what the lane pays to carry
+  it forever. So a well-written, reproducible, entirely correct issue is still **refused when it does
+  not move toward the goals above** — closed with the reason stated, not left open as a debt nobody
+  intends to pay. This is not the untrusted-input rule below, which is about text shaped like an
+  instruction; this one applies to issues that are legitimate and simply wrong for this project.
+
+- **Judge harm before merit, and refuse first.** Anything dangerous, or unhealthy for the project as a
+  whole, is refused before the question of whether it is a good idea is reached. Be critical by
+  default — accepting is the decision that needs the argument here, not declining.
+
+- **Every line written here is still here in ten years, and the person maintaining the shortcut is
+  us.** There is no later owner to hand it to, so "temporary", "for now" and "we will clean it up
+  after the release" are not states this project has — a shortcut is a decision to maintain that
+  shortcut, taken at the moment it is written, by whoever will be paying for it. Price it then: a fix
+  that leaves a second copy to keep in sync has committed the loop to synchronising two copies
+  forever, and that cost belongs in the argument for the fix, not in the round that discovers the
+  drift. This is the same lesson as the three diverged prose copies below, generalised past prose.
+
 ## Why this exists, because it decides most arguments here
 
 The loop used to be three diverged prose copies in three repos, each carrying its own repo's facts.
@@ -73,288 +125,72 @@ separately rather than one list.
   suite has: the probe that never matched `.claude-plugin/plugin.json`, the `--root .` crash, the
   assembler resolving its root one directory too high. The suite passes absolute temp paths; users
   do not.
+- **Do not run the full suite locally. It is slow, and it answers a weaker question than CI does.**
+  A local run takes minutes on one OS and one interpreter; CI's 13 legs cover 3 operating systems and
+  Python 3.9-3.12 in parallel, and this repository's expensive failures have repeatedly been on the
+  axis a local run cannot reach. Run **the lane's own tests plus the guards a change touches**, push,
+  and let CI answer the rest. A full local green is not a stronger signal than a partial local green;
+  it is the same signal, costing more.
+
 - **A green run on your own platform is the weakest evidence available** about the platform it was
   not run on. Say which cross-platform claims are observed and which are reasoned. The interpreter is
   a second axis and it is the easier one to miss: a local suite stayed green for a whole round while
   CI was red on the same fixture, because `Path.exists()` swallows every `OSError` on 3.14 and raises
   on 3.11 and 3.13 — and CI runs 3.9–3.12. An observation on the version you happen to have is not an
   observation on the versions that gate the merge.
+- **CLAUDE.md is either JIT context or the loop's own markdown, and what is left over is this file.**
+  Knowledge that fires on touching a file, using a tool or meeting a term belongs in a jit-context
+  rule under `.claude/jit-context/<paths|tools|vocabulary>/`, where it costs nothing until its match
+  fires. Knowledge that governs a phase or an agent belongs in `skills/manager/phases/*.md` or
+  `agents/*.md`. Only what every session must hold **regardless of what it touches** — the goal, the
+  governing rules, the ownership contracts, the layout — stays here, because this file is loaded
+  whole on every session and every byte is paid on every tick forever. Route the lesson before
+  writing it; #245 is the precedent, moving two file-scoped traps out to
+  `.claude/jit-context/paths/00-manual/`. A trap section grows to 25 KB one appended incident at a
+  time, never once paid for by a cut.
+
+- **Found a trap, a tip, anything that cost time? Write it to `trap.d/` and carry on.** One file per
+  finding, `trap.d/<issue>.<slug>.md`. Prose is fine. No frontmatter, no dimension, no match pattern,
+  and **no judgment about whether it is worth keeping** — that decision belongs to `/oss:curate`,
+  taken later with every fragment visible at once, which is the only position from which "these three
+  are one rule" can be seen. What helps: what was observed, which file or command produced it, what it
+  cost, and how it was confirmed. What is not wanted: appending it to this file, or stopping mid-lane
+  to write a jit-context rule for it. Hesitating because you are not sure it is worth recording is the
+  exact failure this removes — log it and move on, and let the pass throw it away (#905).
+
+- **And this file is curated by hand: the loop does not write it.** No lane, sub-manager, auditor or
+  release session edits `CLAUDE.md` unless editing it was the thing it was explicitly asked to do. A
+  lane that finds a trap worth recording routes it per the rule above, says so in its handback, and
+  files an issue; it does not append a paragraph here. An append is invisible at the moment it is
+  made and a document that grows by accretion stops being read, which no budget can measure. Two
+  exceptions, both an explicit ask rather than initiative: the release session updating `What is not
+  proven yet`'s marker inside the release commit, and a change whose subject *is* this file.
+  **Nothing enforces either rule**; they are followed because a session read them, which is the
+  weakest kind of guard this repository has and is named as such.
+
 - **Do not tune a test until it passes.** A test that reconstructs shell behaviour inside a
   `bash -c` string measures its own escaping. That one was deleted, not fixed.
 
 ## Traps that cost time here
 
-- **Tests must pin `PATH`.** With the stub absent, the launcher found the real `claude` and executed
-  it — a suite starting live agent sessions in temp directories.
-- **Two shell portability traps found in `scripts/doctor.sh` and `bin/oss-workspace` already cost a
-  round each** — `${0%/*}` stripping nothing under Git Bash, and a trailing `|| true` on a heredoc
-  opener silently suppressing `errexit` as well as the exit status. Both are general POSIX-shell
-  mistakes, not facts about those two files alone, so the jit rule this moved to (#245) is scoped
-  to every file under `bin/` and every `.sh` under `scripts/`, not just the two it was found on:
-  `.claude/jit-context/paths/00-manual/posix-shell-portability.md`.
-- **`assemble_changelog.py` derives its root from the caller's cwd, not from where it lives.** Moved
-  (#245) to a jit rule that fires when that file is touched:
-  `.claude/jit-context/paths/00-manual/assemble-changelog-root.md`.
-- **A vendored file is a document about the repository it came from, and it keeps being one after
-  you copy it.** `scripts/coverage_gate.py` was a verbatim copy of claude-supertool's coverage gate,
-  wired into nothing here for its whole life. Every claim in it was true — *there*. Its enforced
-  floors named `presets/` and `_supertool.py`; its "measured, not enforced" entry for `scripts/`
-  gave that repo's reason about `git push --force-with-lease` helpers, and this repo's entire
-  product is in `scripts/`, so asking it about `doctor.py` returned `measured` — unfloored, with a
-  confident reason belonging to somebody else. #253 filed one false-looking sentence in it and the
-  sentence was fine; the file was not. **Deleted rather than forked**, because forking means
-  maintaining 541 lines of another project's issue history for a gate nobody decided to adopt.
-  `assemble_changelog.py` stays because it is the opposite case on the only axis that matters: 27
-  tracked files mention it and it ships into every scaffolded repo. (27 as the check itself counts,
-  excluding narrative sources. A `git grep -l assemble_changelog.py` says 34 — that `.` is a regex
-  wildcard — and counting every file says 33. Quote the number the check produces, or the prose and
-  the guard disagree about what they are both describing.)
-  The axis is **whether anything uses it**, not whether its prose looks wrong — and
-  `tests/test_unwired_scripts_253.py` checks that one, deliberately not "does it cite a test we do
-  not have", which fires on all six of the deleted file's citations and would flag correct
-  vendoring as a defect.
-- **A check for unreferenced files must not count the documentation of a deletion, and a changelog
-  fragment is the case with teeth.** The first version of `tests/test_unwired_scripts_253.py`
-  excluded `CHANGELOG.md` alone, reasoning that append-only history would make the check
-  permanently unable to fire. The same argument applies word for word to the `CLAUDE.md` trap
-  bullet above, to the `changelog.d/` fragment, and to the checking module's own regression test —
-  and the commit that deleted `coverage_gate.py` added all three, so the general check called the
-  file **wired** by the three files whose entire subject is that it was deleted for being unwired.
-  The fragment is worse than the other two: `changelog.d/` is emptied at the fold, so a file whose
-  only reference is its own fragment is wired today and unwired the moment a release is cut — a red
-  build on a release branch caused by nothing in that branch's diff, landing on whoever cut it.
-  Narrative sources are excluded as a set, and the module excludes itself by deriving its own path
-  from `__file__` rather than spelling it out.
-- **`scripts/` and `bin/` are surveyed whole, with no extension test, because a suffix filter is
-  #193 wearing a different hat.** `git ls-files '*.sh'` matched one path while `bin/oss-workspace`
-  — tracked, POSIX `sh`, extensionless — was parsed by no leg for its whole life, and the leg
-  stayed green because a lint that found nothing and a lint that never received the file both exit
-  0. A file skipped by a suffix test is not an offender and not unknown; it is simply never looked
-  at. `scripts/shell_sources.py` exists to solve that by extension **or** shebang — and the
-  unwired check deliberately does not call it, because dropping the classification entirely is
-  stronger than classifying better: after the suffix test is gone there is no question left to ask,
-  and `shell_sources.py` answers "is this shell", which was never the question.
-- **A forge reads workflows only from `.github/workflows/` itself.** Subdirectories are unsupported
-  and a symlink there fails outright — hence the `oss-` filename prefix as the only ownership
-  signal available.
-- **A workflow calling a plugin path is a red build on day one.** CI checks out the managed repo and
-  nothing else, which is why owned scripts ship into `.oss/`.
-- **The rules engine refuses symlinked layers.** Git carries symlinks, so a clone could aim rules
-  anywhere. Copies into an owned layer are the supported shape.
-- **`MAX_PATH` and `NAME_MAX` pull in opposite directions, so a long-path fixture has to satisfy both
-  by construction.** Windows caps the whole path at 260; POSIX caps each *component* at 255. A fixture
-  on #76 reached its length through four nested directories and failed all four Windows legs at
-  `git init -q: … Filename too long`, before a line of the code under test ran. Moving the same
-  length into one 256-byte component then failed all eight POSIX legs, over by a byte. Each round
-  satisfied the limit it had just been burned by and violated the other — so the rule is not "keep
-  fixture paths short": shortening names until it is green everywhere deletes the case on the one
-  platform where paths are long. Build the length out of many short components, which cannot violate
-  either limit — a construction, rather than an assertion that a construction is safe. If the case
-  genuinely needs the tree on disk, attempt it and skip with the length, the errno and what went
-  untested, so a runner with `LongPathsEnabled` still gets the real test. This is the harness
-  rendering an environment limit as a product verdict, which `agents/auditor.md` puts out of scope
-  under *What this does not check* on the grounds that nothing in a diff predicts runner load. Right
-  for the timeout and network instances; wrong for this one — a fixture composing a 300-character
-  path is a static fact sitting in the diff, and a reader could have caught it.
-- **Do not ask the filesystem a second question to explain why the first one failed.**
-  `release_delta.py`'s `_read_config` (landed with #76, `3e5f6c4`) called
-  `path.exists()` from inside the `except` that guards the read, to tell an absent config from an
-  unreadable one. `Path.exists()` swallows a short list of errnos and re-raises everything else, so
-  an over-long component — or a directory the process cannot traverse — killed the release gate with a
-  traceback and no receipt, from the line added to make it survive a bad read. The exception already
-  in hand answers *which arm runs*: `FileNotFoundError` is the absence arm, anything else is
-  unreadable, and no version's `exists()` semantics get a vote. **What it does not answer is whether
-  the absence is real, and #380 is where that bit.** Windows folds an over-`MAX_PATH` name onto
-  `FileNotFoundError`, errno 2, `winerror` None — indistinguishable from a genuine miss — so
-  `lane_setup.worktree_occupancy` and `doctor._dir_state` printed a confident absence for a path
-  nothing had looked at. The prohibition here is on `Path.exists()`, whose swallow varies by version
-  and takes the classification out of your hands; it is not a prohibition on asking a *different*
-  question that the version cannot swallow. #380's absence arm asks one: `os.stat` on the subject's
-  own deepest lookable ancestor, then `os.listdir` on it, because enumeration answers regardless of
-  how long the full path would be. Same rule underneath — never let a library decide the
-  classification for you — reached by a second call rather than by none.
-- **Splitting the exception is not the whole fix if only one arm has a sentence.**
-  `oss_state.check_plugin_root` (#686) already had the mechanism right in the sense that mattered
-  most — its could-not-read state never collapsed into `unchanged` — but a single `except OSError`
-  covered both a genuine absence and an unreadable snapshot, and the one `why` string it returned was
-  written for the absence case only: it told a maintainer whose snapshot exists and cannot be read
-  (measured: `chmod 0`, confirmed `PermissionError`, errno 13) to run `--record-plugin-root`, which
-  cannot help them. The rule from the bullet above still applies — `FileNotFoundError` is the absence
-  arm, everything else is unreadable — but having the right arms is not the same as having written
-  the right words in each one. A checker's third state can be structurally correct and still name the
-  wrong remedy.
-- **A guard over "did this platform distinguish these two cases?" must ask a control, not a table of
-  error codes.** Windows folds several Win32 codes onto `ENOENT`, so 206 (`ERROR_FILENAME_EXCED_RANGE`)
-  reaches Python as an ordinary `FileNotFoundError`. A branch was written for 206, graded *reasoned*,
-  and CI settled it the way grading it that way is supposed to: an unlookable name arrives as
-  `FileNotFoundError, errno 2, winerror None` — no distinguishing signal at all. The grade was honest
-  and it still cost a round, because the *skip* arm covering "this platform told me nothing" was itself
-  a table (`winerror in (2, 3)`), and a table cannot report a value it does not contain — so no signal
-  fell out of the skip and into the assertion, and reported as a finding. The fix is to measure: open
-  a plainly-missing path of the same shape and compare the two answers. Identical means there is
-  nothing to classify, and it skips carrying both. macOS answers `(OSError, 63, None)` against a
-  control of `(FileNotFoundError, 2, None)` and so asserts; Windows answers its control exactly and
-  so skips. Neither the errno nor the platform is written down anywhere — both are measured.
-  An escape hatch for the unknown that only fires when the platform is informative is this repo's own
-  defect class wearing the third state's clothes.
-- **`Path.rglob` and `Path.is_dir` each destroy the answer a guard beside them was written to
-  read.** `is_dir()` swallows `OSError` and returns True for a directory that exists and cannot be
-  entered, so `if not d.is_dir(): return []` passes and the `iterdir()` under it raises
-  `PermissionError` — which is how #124 took out `doctor.py`'s *exit 0 always, one VERDICT line*
-  contract from three frames away in `scaffold.py`. Worse in the same function: pathlib's recursive
-  glob **swallows `PermissionError` while walking** and yields nothing for the subtree, so the
-  `except OSError` wrapped around `root.rglob(...)` to build an `unreadable` list could never fire
-  for the case it was written for, and `('none', '')` came back identically for "read the whole tree,
-  no gate" and "could not read the tree" — with the owned trio then written into that repo. A walk
-  that must report has to be `os.walk(onerror=...)`; there is no argument to `rglob` that makes it
-  speak. And catching the raise into `[]` would have been the worse fix, because `[]` already meant
-  "this repo has no workflows": the two states have to be returned separately, which is why
-  `_workflow_scan` returns `(files, unreadable)` and `_workflow_files` is only the first half.
-- **A permission fixture is a measurement, not a given.** Root ignores the mode bit, some
-  filesystems ignore it, and Windows' `os.chmod` on a directory toggles a read-only attribute that
-  does not stop a listing. So the deny is confirmed by attempting the exact operation the code under
-  test performs, and skips with what went untested when it did not take — never asserts on a
-  platform's error code from a table.
-- **A sweep of patterns cannot see a value that never had one.** #173 swept all 28 compiled
-  patterns in `scripts/` — honestly, in both directions, 3 hits and 25 clean with a reason each —
-  and closed a newline hole in the `repo` that reaches a generated `CLAUDE.md`. The same commit
-  left `test_command` and `default_branch`, substituted into the same file by the same function,
-  with nothing but a `str` type check: guard and bypass three lines apart. Neither value had a
-  pattern, so neither could appear in a sweep of patterns. Enumerate the **substitution sites** —
-  every `.oss.json` value that reaches a generated file, in every template rendered — and report
-  the ones found clean as loudly as the ones fixed, because a sweep that reports only hits cannot
-  be told from one that stopped early. Also worth keeping from #180: a `\A…\Z` pattern was the
-  wrong mechanism for both of the new values. A shell command admits nearly everything, so the
-  refusal is a *character class* chosen from the harm; a branch name already has an authority, so
-  the refusal is a transcription of `git check-ref-format`. Neither is a shape this repo invented.
-  And a transcription is a claim about something outside the repo, so it is **measured against
-  that authority in a test, not asserted in a comment**: the first version of #180's borrowed a
-  control set that carves tab out for a shell command, git refuses a tab in a ref name, and the
-  docstring citing git was already false at the moment it was written. Over-refusals that are
-  deliberate live in a named exception list with a reason each, and a test fails when an entry
-  stops being an exception — an exception list that has drifted is a licence.
-- **`pytest.raises(Exception)` does not catch a skip, and the test passes anyway.** pytest's outcome
-  exceptions derive from `BaseException`, so a `pytest.skip` inside the block sails past the `raises`
-  and skips the enclosing test — a green tick over an assertion that never ran, reported as `1 skipped`
-  where nobody reads it. Pin the outcome type when a test's subject is a skip.
-- **`$` matches before a trailing newline, so `^…$` is not a whole-string anchor.** Every value
-  validated in `oss_config.py` and spliced into a generated file used `^…$`, so `"changelog.d\n"`
-  and `"0.1.0\n"` validated (#173). The harm was not shell escape — a newline cannot leave a
-  single-quoted string — it ended the `run:` block scalar, so the workflow this plugin writes into
-  somebody else's repo stopped parsing and its changelog gate stopped running, with no failed check
-  on the pull request. `.oss.json` is tracked, so the value arrives by ordinary contribution. Anchor
-  `\A…\Z` **in the pattern**, not `fullmatch` at the call site, so a later caller reaching for
-  `.match` or `.search` cannot lose it. Assert the rendered file still parses, not that the regex
-  returned False: the regex is the cause and the parse is the harm.
+The class above is the general form. The 25 specific traps — each one a CI round, a release or a
+retracted conclusion — are **jit-context rules now, not paragraphs here** (#904), so each is paid
+only in the sessions that touch what it governs rather than in every session forever. Where they went:
 
-- **Patching a module attribute injects nothing where the caller captured the function at import.**
-  `pathlib` on **3.10 alone** routes `Path.open` through `self._accessor.open`, and
-  `_NormalAccessor.open = io.open` binds the function object when `pathlib` is imported — so a test
-  that monkeypatches `io.open` rebinds the module attribute and pathlib never looks at it again. 3.9
-  calls `io.open(...)` by name and 3.11 deleted the accessor, so #174's injection was green on 3.9,
-  3.11 and 3.12 and red on all three operating systems at 3.10: the interpreter axis, not the
-  platform one, and the failure read as a product defect for a condition the harness could not
-  produce. Patch the method the code under test calls — `Path.write_text`, `Path.read_bytes` — which
-  is looked up on the class at call time on every version. And measure it: attempt the exact
-  operation against a scratch file of the same shape, and skip carrying the interpreter and the
-  sentence naming what went untested when the injection did not take. Same rule as the permission
-  fixture, one axis over: never assert on a condition you did not establish.
+| when you touch | rule under `.claude/jit-context/` |
+| --- | --- |
+| `tests/` | `paths/00-manual/test-fixture-pitfalls.md` — long-path fixtures, permission denies, patched attributes, stdlib answers that differ by interpreter, skips swallowed by `pytest.raises`, platform controls, `PATH` pinning |
+| `scripts/*.py` | `paths/00-manual/filesystem-probe-states.md` — `Path.exists`, `rglob`, `is_dir`, which exception arm answers which question |
+| `scripts/oss_config.py`, `scripts/scaffold.py` | `paths/00-manual/config-value-validation.md` — `\A…\Z` in the pattern, substitution sites over compiled patterns |
+| `scripts/statusline.py` | `paths/00-manual/statusline-cache-staleness.md` |
+| `scripts/plugin_update.py` | `paths/00-manual/windows-subprocess-resolution.md` |
+| `scripts/oss_rules.py` | `paths/00-manual/rules-layer-symlinks.md` |
+| `scripts/`, `bin/` | `paths/00-manual/shell-sources-survey.md`, `posix-shell-portability.md`, `assemble-changelog-root.md` |
+| `.github/workflows/` | `paths/00-manual/owned-workflow-constraints.md` |
+| `agents/`, `skills/manager/` | `paths/00-manual/loop-prose-parity.md` |
+| named out loud | `vocabulary/00-manual/vendored-and-unwired.md`, `launcher-path-reach.md`, `vocabulary/01-oss/plugin-currency.md` |
 
-- **A stdlib function can disagree with itself across interpreter versions on the identical
-  input, and a test that pins the answer it happens to get locally is pinning the wrong thing.**
-  `#267`'s fix for a lane-pattern containment check replaced `os.path.isabs` with a string test,
-  reasoning from a real platform disagreement: `posixpath.isabs("/etc/passwd")` is `True` and
-  `ntpath.isabs("/etc/passwd")` is `False`. The regression test asserted that second value as a
-  fact and passed locally on CPython 3.13 -- where it is `False` -- and failed on every CI leg at
-  3.9-3.12, where the identical call answers `True` (#435). The fix was never in question; the
-  test had turned an interpreter-version fact into a hardcoded platform one, on the version that
-  happened to be installed. Nothing here proposes a per-version table: the fix, in both places,
-  was to stop depending on any real `os.path` answer at all -- a fabricated stand-in module for
-  the assertion, a normalized string test for the product code -- so neither has a live stdlib
-  fact left under it to change again on 3.14.
-
-- **A cached reading that was correct when it was taken, and false before its interval expires, is
-  indistinguishable from a fresh one at the render.** `scripts/statusline.py`'s cached `latest` for
-  this repo was stamped 17:54 holding `0.12.0`; `v0.13.0` published at 18:06, 12 minutes later, with
-  48 minutes still left on the cache's own `LATEST_REFRESH_AFTER`. Read at 18:46 -- 52 minutes
-  against a 60 minute interval, so `latest_is_due` correctly said `False` -- the render showed a
-  green `ahead` marker printing the *installed* version, and a maintainer read it as "we are not on
-  0.13.0" and spent a session establishing otherwise. The interval was not the bug and shortening it
-  is not the fix: the falsifying event can land one minute after a poll just as easily as fifty-two.
-  What closes it is having the actor that *causes* the change invalidate the cache at the moment it
-  causes it -- `/oss:release` now calls `statusline.invalidate_latest_cache()` immediately after
-  `execute()` reports a Release `created` (#549). What makes it *readable* in the window before that
-  closes is carrying the reading's own age to the render rather than discarding it: `refresh()`
-  already stores `latest_fetched_at` and warns in its own docstring that stamping a carried value
-  `now` "would make an hour-old reading indistinguishable from one just taken, which is the same
-  defect this module spends the rest of its length avoiding" -- and `gather()` then discarded that
-  stamp one function later, making them indistinguishable anyway. `plugin_facts`/`version_status`
-  now take a `stale` flag so a comparison older than its own refresh interval folds into the existing
-  `?` bucket instead of a false `behind`/`ahead` (#550) -- worth naming as a shape: a guard that
-  survives all the way into the cache and dies at the one function that renders it. Neither fix alone
-  would have caught the 52-minute incident (fresh-by-its-own-rule and simply wrong is exactly what
-  #550 cannot catch), which is why both tests must run: cover the stale case *and* the fresh-but-wrong
-  case in the same fixture, or the pairing proves nothing about what was actually observed. And until
-  #551, nothing compared the two mechanisms this plugin has for "am I current" at all: the status
-  line's cache and `plugin_update`'s receipt answer from different sources on different clocks, and
-  `doctor` ran twice during this incident reporting the second ("already current") while saying
-  nothing about the first being stale-but-wrong -- a true answer to a different question, standing in
-  for the one being asked.
-- **A running session's PATH is not the PATH a maintainer's own shell has, and `#526` needed that
-  distinguished before the README's symlink instruction could be judged.** `#617` stopped
-  `oss_workspace_launcher_state` from searching the plugin's own `bin/` directory, on the reasoning
-  that a hit there proves nothing about whether the command a maintainer is told to run ever
-  resolves outside a session -- but it left open whether the marketplace cache directory
-  (`.../dpt-plugins/oss/<version>/bin`) reaches a plain login shell's `PATH` some other way, which
-  would make the `ln -sf` step redundant. Measured directly rather than assumed:
-  `env -i HOME="$HOME" TERM=xterm /bin/zsh -i -l -c 'echo $PATH' | tr : '\n' | grep -c dpt-plugins`
-  returns `0` on a clean macOS login shell -- no `dpt-plugins` entry at all, plugin cache or
-  otherwise. That settles `#526`'s open question the way its own second branch predicted: the
-  instruction is not a stopgap waiting to be dropped, because there is nothing on a plain shell's
-  `PATH` to shadow. Not observed here: Linux, Windows, or a project- or local-scope install, so the
-  claim is macOS-marketplace-scoped rather than universal -- but it is the first machine-measured
-  answer this repository has recorded for a question `#519`'s own lane declined to act on
-  unverified.
-- **Two copies of a brief agreeing with each other proves nothing about whether either is right.**
-  `agents/developer.md` and `skills/manager/phases/dispatch.md` both told an agent that an
-  `[[ops]]` entry missing its `op` field fails with `batch op missing op field` -- no quotes around
-  `op`. The real string, measured by actually tripping the failure, is `batch op missing 'op'
-  field`. `tests/test_content_invariants.py`'s #250/#669 checks only asserted each copy against a
-  floor -- does it name `paste`, does it name `path` and `content` -- never against each other, so
-  the two documents drifting into agreement on a wrong string was invisible to both (#673).
-  `tests/test_write_route_fact_parity_673.py` compares five named facts between the two documents
-  pairwise and pins the batch error string against the actually-measured tool output, on purpose,
-  because parity alone would have passed this exact case.
-- **A runbook table's command cells are commands a session runs verbatim, and nothing had ever run
-  one.** `skills/manager/SKILL.md`'s three-call table told a session to invoke
-  `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py` directly. That file is committed mode 100644 with
-  no shebang, so the row as written exits 126 -- `scripts/lane_setup.py`, invoked the same way two
-  rows up, is 100755 with a shebang, so the exec bit does survive packaging and this file
-  specifically never had one. The same table quoted `${CLAUDE_PLUGIN_ROOT}` in none of its four
-  cells, so a plugin root containing a space -- the ordinary shape of a Windows home directory built
-  from a two-word account name -- word-splits into argv. Both (#687, #689) were found by the
-  0.16.0 release gate's round-one audit, not by any test: `tests/test_op_table_commands_687_689.py`
-  now reads the table's own cells and checks quoting and exec-bit agreement for whatever script
-  each cell names, scoped to that one table and to `dispatch.md`'s matching compose line -- not a
-  sweep of every code fence in the loop's prose, which is a larger, separate piece of work.
-- **A fix for one Windows-only mechanism can silently break a second, unrelated Windows-only
-  mechanism, and reasoning from the source is not the same as measuring it.** `fix/753` (#853,
-  closing #753 and #810) took four CI rounds, the last three all Windows-only. Round two was a real
-  defect: `shutil.which()` resolves `claude` to `claude.cmd` via `PATHEXT`, but
-  `subprocess.run(..., shell=False)` does not perform that search itself, so three call sites asked
-  `which()` for the answer and then handed `run()` the bare, unresolved name anyway. Round three
-  pushed that fix reasoned rather than measured -- Windows CI is the only thing that exercises the
-  mechanism and it could not be reproduced locally -- and it over-fired, breaking a different
-  Windows-only mechanism it never touched (`argv` always resolving to `/oss:doctor` instead of the
-  expected prompt), a fix that was plausible and passed two spawned agents' review before CI showed
-  otherwise. Three of the six new failures were explicit must-not-fire controls in
-  `tests/test_workspace_auto_update_753.py`; those controls are what made the over-fire visible at
-  all. Round four measured instead: reading `scripts/plugin_update.py`'s `receipt_dir()` directly
-  found `LOCALAPPDATA` checked before `HOME` on Windows, so the test helpers' `HOME`/`USERPROFILE`
-  isolation was silently a no-op there and every subprocess shared one real, machine-scoped receipt
-  file across tests within the same CI job -- fixed by pinning `LOCALAPPDATA`/`XDG_CACHE_HOME` per
-  test invocation, and it shipped clean on the first try. The round that measured the mechanism
-  landed; the round that reasoned from it plausibly did not (#854).
+**Do not add a trap to this file.** Write it to `trap.d/` and let `/oss:curate` decide where it goes.
 
 ## Layout
 
@@ -557,211 +393,33 @@ yourself; a suggested patch is a hint with no authority.
 This is not hypothetical for a tool that runs inside a maintainer's session with their credentials.
 
 ## What is not proven yet
-**Measured at `94a6c7d`, the commit `v0.20.0` was cut from — but only in part, and the part is
-named.** The delta counts, the two audit rounds and the lane findings below were re-derived against
-`v0.19.0..94a6c7d` in the session that cut this release. **Everything from `### The reach probe`
-onward was not** — the field probe, the owned-files table, the two installs and the `doctor` run are
-still `v0.17.0`'s readings, carried unchanged through **three** releases now, and each of those
-headings says so where it stands. `#815` is where re-deriving them is tracked, and it is now three
-releases old rather than two: this paragraph disclosing the gap accurately is not the same thing as
-closing it, and the second release running to disclose the identical gap is evidence the disclosure
-is doing the work the fix was supposed to. **Re-derive this at each release rather than editing it**
-remains the rule; this paragraph is a disclosure of following half of it. The version it replaces was
-measured at `e241c5c`; before that at `160e77b`, `ad38b93`, `27d2f15`, `d2a2968`, `48bb420`,
-`990d0da`, `bce0362`, `53e2d0c`, `805debb`, `c570977`, `d4c12c1`, `7690fd0`, `01212b0` and `e8e75b2`.
 
-**The two delta counts agree exactly, for the second round running.** 25 commits against 25 merged
-pull requests, and `gh-prs:merged-since=v0.19.0` reports the count `[EXACT]` with its own cross-check
-`RAN and AGREED` on 25 PR references in the range. The fix that produced the first agreement — edit
-this section's currency marker *inside* the release commit rather than as a direct push to `main`
-before it — held a second time without anyone re-deciding it, which is the only evidence that a
-one-off fix was a fix and not a quiet round.
+**Measured at `94a6c7d`, the commit `v0.20.0` was cut from — in part, and the part is named.** The
+delta counts, the two audit rounds and the lane findings were re-derived in the session that cut this
+release. The field readings were not: the reach probe, the owned-files table, the two installs and
+the `doctor` run are still `v0.17.0`'s, measured at `ad38b93` and carried through three tags now.
+`#815` tracks re-deriving them, and a second release disclosing the identical gap is evidence the
+disclosure is doing the work the fix was supposed to. **The readings themselves live in
+`docs/release-currency.md`**; this section holds the verdict and the marker. Re-derive at each
+release rather than editing this.
 
-**Every trailing `(#N)` in the range was checked against the issues API rather than read as a pull
-request number**: 25 of 25 returned `pull_request != null`, **zero** were issues. That check exists
-because a round three releases ago found one that was — `#679`, cited in a commit message — and
-reconciled it by hand. Clean again, and recorded as such rather than passed over, because a check
-that only speaks when it finds something is indistinguishable from a check nobody ran.
+**The reach probe, not re-derived.** `gh repo list Digital-Process-Tools --limit 100` returns eleven
+repositories **in that one GitHub organisation**, four of which carry `.oss.json`. The count is
+scoped to the organisation the command names, never to "the field": a repository under a different
+account renders identically to one that does not exist, and this probe cannot tell the two apart.
 
-`git rev-list --count --merges v0.19.0..HEAD` returns `0`, unchanged: this repository squash-merges,
-so a merged pull request is an ordinary single commit and no merge commit exists to intersect
-against.
+What has **not been observed**, across fifteen rounds inside the one organisation this probe can see:
+any repository scaffolded by a maintainer who is not this plugin's author. That qualifier is
+load-bearing and it is `#711`'s whole subject — `#705` was filed from a repository under a personal
+account this probe cannot enumerate — so "not observed" here means "not observed by a probe that
+could not have seen it", never "does not exist".
 
-### This release was gated twice, and both rounds are on the record
+**Most of what this plugin claims about a scaffolded repository rests on tests and scratch runs
+rather than on a repository somebody maintains through it.** That stood at `v0.3.0` and at every
+release since. The surface is thin because it has barely been run, not because it is sound.
 
-Both rounds ran with distinct tokens: **round one under `rel-0200-0116419f52`**, **round two under
-`rel-0200-r2-a1dc626b57`**. Both completions echoed their own token, so both were attributed; neither
-arm for an unattributed or duplicated completion was reached.
-
-- **Round one: 4 findings, `0 of 4 classes read but not exercised`.** Round-one findings stop the
-  tag, so they did. Three were fixed and merged before round two was dispatched — `#886` (`#891`),
-  `#887` (`#890`), `#889` (`#893`). **The fourth, `#888`, was refuted by measurement and closed
-  invalid**, and that is the round's most useful outcome: a gate whose findings are all treated as
-  true has stopped being a measurement and become a queue. The refutation was itself verified rather
-  than believed — round two ran `git diff 378dab0..94a6c7d` over the two files `#893`'s commit
-  message claimed to have reverted and found the diff empty, so the tree matches the claim.
-- **Round two: 4 findings, `0 of 4 classes read but not exercised`, none in a blocking row.** Filed
-  as `#895`-`#898`; the tag moved over them, which is what round two is for.
-
-**`0 of 4` twice in one release, and six rounds running.** Still held up by the brief asking for
-controls rather than reads, and still by nothing in the checklist — so it survives exactly as long as
-somebody keeps asking for it, on the same single thread it has always rested on. A streak is not a
-mechanism, and the length of this one is an argument for writing the mechanism rather than evidence
-that none is needed.
-
-**Round two declined two blocking rows on measurement and refused the table outright on a third, and
-that is the better record of this gate working than either count.** Its `B-1` — `#869` made
-`state_file` derive from the tracked `repo` on every config load, and `REPO_RE` permits a backslash,
-so on Windows `ntpath.normpath` resolves the derived path to `C:\x-watch.json`, outside the clone —
-has a complete, measured mechanism for `containment (write)`, which blocks unconditionally. The
-auditor declined it, because it could not establish a route by which `repo` takes a value the
-maintainer did not choose. It then declined `splices` (the fix that row invites, quoting, does not
-remove the defect) and `misreports` (the module already warns the value is a guess), and reported the
-finding **`unranked`** rather than shrinking it into the nearest row that would take it — the
-escape hatch `## Who decides` describes, used for the first time on a release. `B-2` declined
-`containment (read)` the same way, on a control that fired: six hostile lane patterns refused, three
-benign ones accepted, and the one residual (`~`, refused in neither form) shown to be inert by
-`grep expanduser scripts/` returning 28 hits across six modules and none in `lane_setup.py`.
-
-**The audit read its own definition against the copy running it, and complied with the stricter
-one.** `checklist_skew.py` read `matches` — installed `0.19.0`, this tree `0.19.0` — with **six of
-ten** definition files `differs` underneath it, including **both** audit definitions, which is why the
-state name alone is never the answer and why the byte comparison runs on `matches` as well as on
-`differs`. The auditor identified what the skew actually was: the installed `agents/release-auditor.md`
-lacks `## Test behaviour is reasoned, not run`, added by `d119d59` (`#877`) **inside this range**. It
-complied with this tree's stricter copy — ran no suite, delegated no test verdict, and labelled every
-coverage claim `reasoned` — rather than with the laxer copy that was actually loaded. That is the
-`#538` machinery paying out: the skew was computed rather than recalled, so the agent could read it.
-
-### What the two-layer arrangement produced this release
-
-**8 findings from two audit rounds, one of them refuted.** The lane-review layer produced nothing
-comparable to the previous two releases' catch of a defect inside the audit's own fix, and that is
-recorded as an absence rather than passed over: three lanes fixed three round-one findings and each
-one's reviewer came back with nothing to add. Whether that means the fixes were smaller, or the
-reviews were, is not established here — the previous release's entry could name the reviewer's own
-measurement, and this one cannot.
-
-What did happen at the lane layer is a defect a lane caused and then reported on itself. The `#764`
-lane, writing its note file with an **unquoted heredoc**, executed backtick-quoted markdown phrases
-as shell commands and created an empty `.git` at the shared `worktree_root` — a second git repository
-sitting one level above every lane worktree. It was verified before removal (no commits, no refs,
-`git log` reporting "does not have any commits yet"), and the lane's own two cleanup attempts were
-refused by the permission classifier, which is correct agent behaviour: the step belonged to the
-maintainer. The reason it is here rather than in a changelog entry is that the lane **said so
-unprompted**; a lane that quietly cleaned up after itself and a lane that never noticed render
-identically in a handback.
-
-### The reach probe: eleven repositories, fifty-five probes, and the field did not move at all
-
-> **NOT RE-DERIVED for `v0.20.0`.** Every number in this subsection, and in the three that follow it,
-> was measured at `ad38b93` for `v0.17.0` and has now been carried through three tags without being
-> re-run. It is a reading, and it is a reading with a date on it — not a statement about the field
-> today. `#815` is where re-deriving it is tracked. Read nothing here as current.
-
-`gh repo list Digital-Process-Tools --limit 100` returns **eleven** repositories **in that one
-GitHub organisation**, unchanged, and each of five artifacts was probed in every one — **55 probes**,
-no filtered subset, re-run at this commit. **The count is scoped to the org the command names, not
-to "the field"**: a repository under a different account renders identically to one that does not
-exist, and this probe cannot tell the two apart (#711).
-
-- **`.oss.json` on four** — this one, `claude-supertool`, `claude-jit-context`, `claude-remember`.
-  Unchanged.
-- **Every field cell is byte-identical to the previous round's reading.** Sixteen cells, none moved.
-- **The remaining seven carry none of the five, unchanged** — `claude-marketplace`, `.github` and
-  the four `mcp-*-warm` servers.
-
-What has **still** not been observed, across fifteen rounds **within the one organisation this probe
-can see**: any repository scaffolded **by a maintainer who is not the author of this plugin**. That
-qualifier is load-bearing and it is `#711`'s whole subject — `#705` was filed from `jbkkz/requivo`,
-a repository under a personal account this probe cannot enumerate — so "not observed" here means
-"not observed by a probe that could not have seen it", never "does not exist" (#711). The owned-files
-table below inherits the identical gap.
-
-### Owned files in the field, and the strongest case yet against gating on our own render
-
-Rendering each at `ad38b93` with `scaffold.render_owned(name, config, ".")` — the config **unpacked
-from `oss_config.load('.oss.json')`, which returns `(config, warnings)`; passing the tuple renders
-the two vendored copies fine and raises `AttributeError` on the two templated ones**, which is worth
-writing down because it looks like a defect in the renderer and is not.
-
-| owned file | would write today | `claude-jit-context` | `claude-5h-window-spread` | `claude-remember` | `claude-supertool` |
-| --- | --- | --- | --- | --- | --- |
-| `.oss/assemble_changelog.py` | 136,323 B (`1cfa2d72`) | 102,079 `b16cc044` — **drifted** | 55,261 `dc1f11f8` — **drifted** | 124,329 `28ef77c7` — **drifted** | **absent** |
-| `.oss/README.md` | 2,808 B (`67472247`) | 1,753 `c380cfe0` — **drifted** | 1,325 `68de5d32` — **drifted** | 1,753 `c380cfe0` — **drifted** | **absent** |
-| `.github/workflows/oss-changelog.yml` | 12,639 B (`c820d2dc`) | 9,954 `dae31dc9` — **drifted** | 2,159 `032184b4` — **drifted** | 12,648 `259ddf76` — **drifted** | **absent** |
-| `.oss/statusline.py` | 88,159 B (`bd072a18`) | 52,373 `d60ecb75` — **drifted** | **absent** | 65,637 `ef3ed46b` — **drifted** | 65,637 `ef3ed46b` — **drifted** |
-
-- **Our render moved in two rows of four** — `.oss/assemble_changelog.py` 127,721 → 136,323 B
-  (+8,602, the `compatibility_finding()` transcription from `#737`) and `.oss/README.md` 1,753 →
-  2,808 B (+1,055). The other two render byte-for-byte what they rendered last round.
-- **Two field cells flipped from `identical` to `drifted` without the field moving one byte.**
-  `claude-jit-context` and `claude-remember` both carry `.oss/README.md` at `c380cfe0`, which *was*
-  what we would have written and now is not. Nothing changed in those repositories.
-- **So the case against gating CI on this column is stronger than last round's, and last round's was
-  already the strongest yet.** Then, one render moved and sixteen field cells held still. This round,
-  two renders moved, sixteen cells held still again, **and two of them changed verdict as a pure
-  artifact of our own edit**. A gate on this column would have fired twice on us and stayed silent
-  about every cell that is actually stale.
-
-### The two installs, and the launcher
-
-```
-installed: 0.15.0, no git HEAD here, content ad08d4efebc2 over 58 file(s)
-clone    : 0.17.0, git HEAD ad38b93, content read from this checkout over 65 file(s)
-```
-
-The marketplace cache holds `0.16.0` as well as `0.15.0` — the directory is there — but this whole
-session's commands resolved from `0.15.0`, because the session began before `0.16.0` was picked up.
-**That had one measured consequence and it is worth keeping**: the installed copy's
-`skills/manager/phases/dispatch.md` still carried the pre-`#673` batch-error string, and the brief
-written from it would have shipped a string this repository has already measured as wrong. It was
-caught by reading the clone's copy before pasting. `#477`'s identity comparison is what surfaced the
-skew in the first place, on the tick's own first call.
-
-**`oss-workspace` reads `PINNED ELSEWHERE`** — `PATH` resolves it to `…/oss/0.15.0/bin/oss-workspace`
-while the tree is `0.17.0`. The previous round reported *no skew* on this machine and predicted
-exactly this: the symlink is pinned to whatever version was current when it was made. `#289` is back,
-one round after a twelve-round streak was broken by a fresh install rather than by a fix.
-
-`python3 scripts/doctor.py --root .`: **6 warnings, 0 failures** — the plugin-copy scope not
-established on a bare invocation, the launcher pin above, the two `remember` store-location unknowns,
-the jit layer `unknown`, and `.oss/statusline.py` absent from this clone.
-
-### Still the most important sentence here
-
-Most of what this plugin claims about a *scaffolded* repository rests on tests and scratch runs
-rather than on a repo somebody maintains through it. That stood at `v0.3.0` and at every release
-since, and it is re-earned rather than inherited here. **The surface is thin because it has barely
-been run, not because it is sound.**
-
-What changed since the previous round: a round-one finding was **refuted by measurement and closed
-invalid** rather than fixed, which is the first time this gate has disproved its own output; round
-two reported a finding **`unranked`**, declining two blocking rows on measurement rather than
-stretching it into the nearest row that would take it; the auditor read the skew between its own
-installed definition and this tree's, identified the missing section by the commit that added it, and
-complied with the stricter copy; the delta counts agreed exactly for a second round, on a fix nobody
-re-decided; and the lane-review layer produced no finding inside an audit fix, recorded here as an
-absence rather than passed over.
-
-`tests/test_claude_md_currency.py` still cannot check that a claim above is true, and still does not
-try — and at the moment this section was rewritten it reported that in as many words, skipping with
-*no unfolded changelog fragments, so no release is being prepared … UNTESTED here: whether the
-section is current*. The mechanism to add more of is a **second measurement** contradicting the prose
-beside it. This round produced four, and every one of them contradicted something a reader would
-otherwise have believed: every trailing `(#N)` checked against the issues API rather than read as a
-pull request number; `#888`'s revert claim verified with an empty `git diff` over the two files it
-named, rather than read out of its own commit message; `checklist_skew` reading `matches` while six
-of ten definition files differ, so the state name was measured against the files rather than quoted;
-and the auditor's own definition compared against the copy loaded to run it, which is the only reason
-`#877`'s new section governed this audit at all.
-
-One claim stays deliberately unguarded, and the decision is re-taken rather than inherited: the
-"would write today" column is computed entirely from this tree and a three-line test could hold it.
-**Declined again**, and this round the reason is one step weaker and stated as such: the field table
-above was not re-derived, so it offers no fresh evidence either way, and the decision rests on the
-previous round's reading plus the argument below rather than on anything measured here. The reason
-not to add it is unchanged: it would redden unrelated pull requests until somebody edited
-`CLAUDE.md` to make CI green, training the reflex of editing the section instead of re-deriving it.
+`tests/test_claude_md_currency.py` cannot check that a claim here is true, and does not try. The
+mechanism to add more of is a **second measurement contradicting the prose beside it** — the last
+release produced four, and every one contradicted something a reader would otherwise have believed.
 
 Treat this as tested, not proven.
