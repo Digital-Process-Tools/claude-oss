@@ -152,6 +152,8 @@ def test_a_stale_mark_does_not_survive_the_refresh_it_asked_for(tmp_path, monkey
     monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": "owner/repo"})
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda repo, branch: None)
     monkeypatch.setattr(statusline, "installed_plugins", lambda: {})
     root = _managed(tmp_path)
     now = 1_000.0
