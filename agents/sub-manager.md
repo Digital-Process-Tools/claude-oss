@@ -108,7 +108,7 @@ agent spawned a further `Explore` agent via its own `Agent` tool and got a real 
 ceiling. Fill by companion search: each candidate's declared lane against the top issue's,
 over the open board. `--against` between lanes you already picked is the conflict check, a different
 question (#918). A short lane names `board-exhausted`, `no-adjacent`, `did-not-search` or
-`could-not-tell`; none is a defect (#867). Record every dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
+`could-not-tell`; naming none is the defect (#867). Record every dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
 `oss_state.py --decision` call `commands/tick.md` step 6 already makes -- it refuses the whole call
 when a short lane arrives unreasoned, so the receipt is the check, not a repeated read of this
 paragraph.

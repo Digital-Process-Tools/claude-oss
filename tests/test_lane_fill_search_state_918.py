@@ -170,3 +170,39 @@ def test_those_reasons_still_stand_when_no_count_is_offered(reason):
         [{"primary": 845, "count": 1, "reason": reason}], window="this tick"
     )
     assert record["lanes"][0]["reason"] == reason
+
+
+def test_a_count_on_a_full_lane_is_refused_rather_than_dropped():
+    """Found by review on PR #921's own fix commit -- the same class again.
+
+    `check_lane` returns "ok" for `size == MAX_LANE` before it looks at
+    `short_reason` or either count, so a count supplied on a full lane reached
+    neither parameter. `lane_fill` had refused a stray *reason* on a full lane
+    since #852 and had no twin for the count, which meant the record came back
+    byte-identical to one from a caller who measured nothing -- the defect #918
+    is about, surviving two rounds of its own fix.
+    """
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import dispatch_rank  # noqa: E402
+    import oss_state  # noqa: E402
+
+    with pytest.raises(oss_state.StateError) as caught:
+        oss_state.lane_fill(
+            [{"primary": 845, "count": dispatch_rank.MAX_LANE, "candidates": 5}],
+            window="this tick",
+        )
+    assert "makes no claim a count could refute" in str(caught.value)
+
+
+def test_a_full_lane_with_no_count_is_still_recorded():
+    """Positive control: refusing the stray count must not refuse the lane."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import dispatch_rank  # noqa: E402
+    import oss_state  # noqa: E402
+
+    record = oss_state.lane_fill(
+        [{"primary": 845, "count": dispatch_rank.MAX_LANE}], window="this tick"
+    )
+    assert record["lanes"][0] == {
+        "primary": 845, "count": dispatch_rank.MAX_LANE, "reason": None,
+    }

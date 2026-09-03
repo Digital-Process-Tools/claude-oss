@@ -1652,6 +1652,21 @@ def lane_fill(entries, window, why=None):
         # 'did-not-search' and 'could-not-tell' take neither: a count says nothing
         # about a search that never ran or one that ran and failed, and passing a
         # number alongside either would be a measurement the caller does not have.
+        if candidates is not None and count == _dispatch_rank.MAX_LANE:
+            # A full lane makes no short-lane claim at all, so there is nothing a
+            # count could refute. `check_lane` returns "ok" for size == MAX_LANE
+            # before it ever looks at `short_reason` or either count, so this one
+            # was accepted and dropped -- the record came back byte-identical to
+            # one from a caller who measured nothing. The reason-on-a-full-lane
+            # refusal above has existed since #852; this is its missing twin for
+            # the count, found by review on PR #921's own fix for the same class.
+            raise StateError(
+                "lane fill {} (issue {}): a full lane of {} makes no claim a "
+                "count could refute, but {} was given -- record it on the short "
+                "lane it was measured for, or omit it (#918)".format(
+                    position, primary, count, candidates
+                )
+            )
         if candidates is not None and reason in ("did-not-search", "could-not-tell"):
             # Neither reason is a claim a count can refute, so `check_lane` would
             # read this field for neither parameter and drop it -- and a dropped
