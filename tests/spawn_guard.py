@@ -53,6 +53,7 @@ import collections
 import os
 import subprocess
 import sys
+from functools import lru_cache
 
 import pytest
 
@@ -268,6 +269,7 @@ def scan_source(source, path):
     return Scan(spawns, unguarded, [])
 
 
+@lru_cache(maxsize=8)
 def scan_tree(directory):
     """`Scan` over every `*.py` under `directory`.
 
@@ -275,6 +277,14 @@ def scan_tree(directory):
     CLAUDE.md records: pathlib's recursive glob swallows a `PermissionError` while
     walking and yields nothing for that subtree, so an unreadable directory would
     arrive here indistinguishable from an empty one.
+
+    Cached per `directory` -- not the same thing the module docstring warns
+    against ("re-derived from the tree on every run rather than recorded as a
+    list"), which is about not letting a stale answer ship across runs. This
+    only reuses the answer within the lifetime of one process, and `tests/`
+    does not change under it mid-run; three sibling tests in
+    `test_spawn_guard_716.py` each called this with the identical directory
+    and paid a fresh walk-and-parse of the whole tree for it (#933).
     """
     spawns = []
     unguarded = []
