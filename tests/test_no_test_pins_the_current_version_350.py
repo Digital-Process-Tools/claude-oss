@@ -103,14 +103,8 @@ def _docstring_nodes(tree):
     return out
 
 
-def scan_source(source, version):
-    """Line numbers of code string literals in `source` exactly equal to `version`.
-
-    Raises `SyntaxError` when `source` does not parse -- the caller decides what an
-    unparseable file means, rather than this returning an empty list and letting
-    "could not look" render as "looked and found nothing".
-    """
-    tree = ast.parse(source)
+def _scan_tree(tree, version):
+    """The literal scan over an already-parsed tree -- see `scan_source`."""
     skip = _docstring_nodes(tree)
     hits = []
     for node in ast.walk(tree):
@@ -121,6 +115,16 @@ def scan_source(source, version):
         if node.value == version:
             hits.append(node.lineno)
     return sorted(hits)
+
+
+def scan_source(source, version):
+    """Line numbers of code string literals in `source` exactly equal to `version`.
+
+    Raises `SyntaxError` when `source` does not parse -- the caller decides what an
+    unparseable file means, rather than this returning an empty list and letting
+    "could not look" render as "looked and found nothing".
+    """
+    return _scan_tree(ast.parse(source), version)
 
 
 def current_version():
@@ -306,14 +310,8 @@ def test_the_walk_reports_a_subtree_it_could_not_read(tmp_path):
 VERSION_ROUTES = ("plugin.json", ".claude-plugin", "PLUGIN_ROOT", "plugin_version")
 
 
-def version_routes(source):
-    """Line numbers where `source` shows a route to this repo's own version.
-
-    Code only, on the same argument the literal scan uses: prose describing the
-    manifest is not a read of it, and narrative about a past release is
-    permanent and legitimate.
-    """
-    tree = ast.parse(source)
+def _routes_tree(tree):
+    """The route scan over an already-parsed tree -- see `version_routes`."""
     skip = _docstring_nodes(tree)
     hits = []
     for node in ast.walk(tree):
@@ -343,14 +341,29 @@ def version_routes(source):
     return sorted(hits)
 
 
+def version_routes(source):
+    """Line numbers where `source` shows a route to this repo's own version.
+
+    Code only, on the same argument the literal scan uses: prose describing the
+    manifest is not a read of it, and narrative about a past release is
+    permanent and legitimate.
+    """
+    return _routes_tree(ast.parse(source))
+
+
 def classify_source(source, version):
     """`(pins, collisions)` -- the literals from `scan_source`, split in two.
 
     Every hit lands in exactly one bucket and none is dropped, so the split can
     never quietly lose a literal; `test_the_split_loses_nothing` holds that.
+
+    Parses `source` once and shares the tree between the literal scan and the
+    route scan -- `sweep()` calls this once per file, and each used to
+    `ast.parse` the same source independently (#933).
     """
-    hits = scan_source(source, version)
-    if version_routes(source):
+    tree = ast.parse(source)
+    hits = _scan_tree(tree, version)
+    if _routes_tree(tree):
         return hits, []
     return [], hits
 
