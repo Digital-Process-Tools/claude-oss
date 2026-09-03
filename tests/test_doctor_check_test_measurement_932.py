@@ -77,3 +77,46 @@ def test_config_none_is_unmeasured(monkeypatch):
 
 def test_doctor_reexports_the_check():
     assert doctor.check_test_measurement is check.check_test_measurement
+
+
+def test_non_pytest_test_command_is_not_applicable_npm(tmp_path, monkeypatch):
+    """#946-adjacent finding from review: a non-Python repo's `test_command` (e.g.
+    `npm test`) must never trigger pytest-specific advice -- that bakes in "every
+    diagnosed repo uses pytest", the same class of error CLAUDE.md's governing rule
+    exists to prevent, one language down."""
+    seen = _capture(monkeypatch)
+    check.check_test_measurement(str(tmp_path), {"test_command": "npm test"})
+    assert seen[0][0] == "OK", seen
+    assert "pytest" not in seen[0][1].split("not applicable")[-1].lower() or "pytest-shaped" in seen[0][1]
+    assert "not applicable" in seen[0][1], seen
+
+
+def test_non_pytest_test_command_is_not_applicable_go(tmp_path, monkeypatch):
+    seen = _capture(monkeypatch)
+    check.check_test_measurement(str(tmp_path), {"test_command": "go test ./..."})
+    assert seen[0][0] == "OK", seen
+    assert "not applicable" in seen[0][1], seen
+
+
+def test_non_pytest_test_command_is_not_applicable_cargo(tmp_path, monkeypatch):
+    seen = _capture(monkeypatch)
+    check.check_test_measurement(str(tmp_path), {"test_command": "cargo test"})
+    assert seen[0][0] == "OK", seen
+    assert "not applicable" in seen[0][1], seen
+
+
+def test_pytest_test_command_still_fires_finding(tmp_path, monkeypatch):
+    """A pytest-shaped `test_command` keeps the existing finding/OK behavior."""
+    seen = _capture(monkeypatch)
+    check.check_test_measurement(str(tmp_path), {"test_command": "python3 -m pytest tests/ -q"})
+    assert seen[0][0] == "WARN", seen
+    assert "not applicable" not in seen[0][1], seen
+
+
+def test_unset_test_command_keeps_prior_pytest_assumption(tmp_path, monkeypatch):
+    """No `test_command` at all is ambiguous, not evidence against pytest -- keep
+    firing the existing pytest-shaped behavior rather than silently skipping."""
+    seen = _capture(monkeypatch)
+    check.check_test_measurement(str(tmp_path), {})
+    assert seen[0][0] == "WARN", seen
+    assert "not applicable" not in seen[0][1], seen

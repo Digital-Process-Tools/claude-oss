@@ -69,6 +69,29 @@ def _pytest_config_file(repo_root):
     return None, "; ".join(tried)
 
 
+def _looks_pytest_shaped(test_command):
+    """Is `test_command` evidence this repo runs pytest, or at least not
+    evidence against it (#946 review finding on #932)?
+
+    This check's advice -- `--durations`, `--cov`, `pyproject.toml`'s
+    `addopts` -- is pytest-specific, but `.oss.json`'s `test_command` is
+    documented (`scripts/oss_config.py`) as an arbitrary shell command:
+    `npm test`, `go test ./...`, `cargo test` are all valid values, and for
+    any of those this check firing pytest advice is simply wrong for that
+    project -- CLAUDE.md's own governing rule (a fact about one repository,
+    or here one *language*, baked into shared code) one level down.
+
+    An absent or empty `test_command` is not evidence either way -- it means
+    nobody has probed it, not that the repo isn't Python -- so it stays
+    pytest-shaped by default and this check keeps firing exactly as it did
+    before this function existed. Only a *set* `test_command` that plainly
+    names a different runner turns this off.
+    """
+    if not test_command:
+        return True
+    return "pytest" in test_command.lower()
+
+
 def check_test_measurement(project_dir, config):
     """One line, in every state -- see the module docstring.
 
@@ -78,6 +101,17 @@ def check_test_measurement(project_dir, config):
     """
     if config is None:
         doctor.unmeasured("test measurement (--durations + coverage)")
+        return
+    test_command = config.get("test_command")
+    if not _looks_pytest_shaped(test_command):
+        doctor.report(
+            "OK",
+            "test_measurement_configured: not applicable -- test_command "
+            "({!r}) does not look pytest-shaped, so this pytest-specific "
+            "attestation (--durations + coverage via addopts) does not "
+            "apply here. Nothing else in this check is skipped -- only the "
+            "pytest-specific advice.".format(test_command),
+        )
         return
     attested = config.get("test_measurement_configured")
     if attested is not True:
