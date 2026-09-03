@@ -414,8 +414,10 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    ask. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the one place that table
    lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
    says how a lane is filled from it. Three issues is the default rather than the ceiling, and a
-   lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent` or
-   `could-not-tell`. A short lane with no reason is a defect in the tick -- and now one this loop
+   lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent`,
+   `did-not-search` or `could-not-tell` — and it fills a lane with the companion search (each
+   candidate's declared lane against the top issue's, over the open board), never with `--against`
+   between lanes already picked, which is the conflict check answering a different question (#918). A short lane with no reason is a defect in the tick -- and now one this loop
    can detect rather than only state: record every dispatched lane's fill with `--lane-fill
    PRIMARY:COUNT[:REASON]` on the same `oss_state.py --decision` call (#852), which refuses the
    whole call outright when a short lane arrives with no reason, the same way `--tick-cost-first`

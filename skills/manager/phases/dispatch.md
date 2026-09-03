@@ -264,13 +264,24 @@ most lanes ended up carrying one. Fill to three. **Cap at three, never four**, a
 `dispatch_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
 spawn the cost is already committed.
 
-**A lane dispatched with fewer than three says why, in the handback, in one of three words.**
-`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — candidates
-exist, none shares a file or module with the top issue. `could-not-tell` — adjacency could not be
-computed. **A short lane with no reason is a defect in the tick**, and the three are a closed set on
+**Run the companion search. It is a separate call from the conflict check, pointed the other way.**
+`--against` answers two different questions depending on what it is aimed at, and #918 is the tick
+that aimed it at the wrong one: it checked the three lanes it had already picked against *each
+other*, got `no overlap`, and recorded `no-adjacent` — a claim about the board, on a measurement that
+never looked at the board. Three single-issue lanes went out with 31 issues open and every gate
+green. Aim it at each *candidate's* declared lane against the top issue's, one call per candidate,
+before the lane is filled. **Board size never enters that failure**: with 100 issues open the same
+sequence returns the same answer, because the board is not what it read.
+
+**A lane dispatched with fewer than three says why, in the handback, in one of four words.**
+`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — the search
+above ran across the board and nothing shares a file or module with the top issue. `did-not-search`
+— it did not run (#918). `could-not-tell` — it ran and could not be computed. **A short lane with no reason is a defect in the tick**, and the four are a closed set on
 purpose: a free-text reason is unreadable by anything but a person, which is the defect #773 filed
-against a handback state carrying only prose. The third word earns its place — a board never measured
-for adjacency and one measured and found to have none are different facts.
+against a handback state carrying only prose. The last two earn their place separately — a board
+never measured for adjacency, one whose measurement was attempted and failed, and one measured and
+found to have none are three different facts, and #918 is the tick that proved the first was being
+reported as the third.
 
 **`board-exhausted` is now checked against the board, not merely typed (#871).** Every refusal on this
 path used to be a *shape* refusal — one of the three declared words — and never asked whether the
@@ -282,6 +293,17 @@ or above three, the same way an unsupported reason word already was. Omit it and
 name it and a lazy `board-exhausted` is refused at the one place a lane record already exists to
 attach the refusal to, the way #866's advisory check could not for a declined dispatch with no record
 of its own.
+
+**#918 gives `no-adjacent` the same treatment, through the same field.**
+`--lane-fill PRIMARY:COUNT:no-adjacent:CANDIDATES` carries the count of candidates *adjacent to the
+top issue* — the companion search's own output, not the disjoint sweep's — and the threshold is
+stricter than `board-exhausted`'s: that one needs three to be refuted, but `no-adjacent` means zero,
+so **one adjacent candidate refuses it**, because one adjacent candidate is one issue this lane could
+have carried. The field is one field and the word decides which count it is; `did-not-search` and
+`could-not-tell` take **no** count at all and `oss_state.py` refuses one supplied anyway, because a
+count refutes a claim and neither of those two makes one. Attach it whenever the search ran: a
+`no-adjacent` with no count is still accepted, and is exactly as unfalsifiable as every refusal was
+before #871.
 
 **A bundle is not a cluster** — `agents/triager.md`
 correctly refuses to cluster on a shared file, because a cluster claims one change fixes several

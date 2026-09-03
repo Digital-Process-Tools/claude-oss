@@ -1640,7 +1640,51 @@ def lane_fill(entries, window, why=None):
         # call the dispatch decision itself already had to make, and `check_lane`
         # is the single place a claimed 'board-exhausted' is checked against a
         # measured candidate count rather than merely typed.
-        check = _dispatch_rank.check_lane(range(count), reason, candidates=candidates)
+        #
+        # #918 routes that same optional fourth field to whichever parameter the
+        # claimed reason is a statement about, rather than adding a fifth: the
+        # field has always meant "the count that would refute this claim", and
+        # which count that is follows from the word. 'board-exhausted' is refuted
+        # by file-disjoint candidates still open; 'no-adjacent' is refuted by
+        # candidates adjacent to the top issue. They are different measurements
+        # and check_lane keeps them in different parameters -- routing here is
+        # what stops a caller having to supply both when only one can apply.
+        # 'did-not-search' and 'could-not-tell' take neither: a count says nothing
+        # about a search that never ran or one that ran and failed, and passing a
+        # number alongside either would be a measurement the caller does not have.
+        if candidates is not None and count == _dispatch_rank.MAX_LANE:
+            # A full lane makes no short-lane claim at all, so there is nothing a
+            # count could refute. `check_lane` returns "ok" for size == MAX_LANE
+            # before it ever looks at `short_reason` or either count, so this one
+            # was accepted and dropped -- the record came back byte-identical to
+            # one from a caller who measured nothing. The reason-on-a-full-lane
+            # refusal above has existed since #852; this is its missing twin for
+            # the count, found by review on PR #921's own fix for the same class.
+            raise StateError(
+                "lane fill {} (issue {}): a full lane of {} makes no claim a "
+                "count could refute, but {} was given -- record it on the short "
+                "lane it was measured for, or omit it (#918)".format(
+                    position, primary, count, candidates
+                )
+            )
+        if candidates is not None and reason in ("did-not-search", "could-not-tell"):
+            # Neither reason is a claim a count can refute, so `check_lane` would
+            # read this field for neither parameter and drop it -- and a dropped
+            # measurement renders exactly like one nobody took, which is the
+            # defect #918 is about. Refuse rather than discard silently (found by
+            # review on PR #921: the two calls returned identical receipts).
+            raise StateError(
+                "lane fill {} (issue {}): {!r} takes no count, but {} was given "
+                "-- a count refutes a claim, and this reason makes none: "
+                "'board-exhausted' is refuted by file-disjoint candidates and "
+                "'no-adjacent' by adjacent ones, while a search that did not run "
+                "and one that could not be computed are refuted by neither "
+                "(#918)".format(position, primary, reason, candidates)
+            )
+        if reason == "no-adjacent":
+            check = _dispatch_rank.check_lane(range(count), reason, adjacent=candidates)
+        else:
+            check = _dispatch_rank.check_lane(range(count), reason, candidates=candidates)
         if check["state"] != "ok":
             raise StateError(
                 "lane fill {} (issue {}): {}".format(position, primary, check["why"])
