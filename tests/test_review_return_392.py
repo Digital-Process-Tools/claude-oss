@@ -48,6 +48,7 @@ SCRIPT = REPO / "scripts" / "review_return.py"
 
 sys.path.insert(0, str(REPO / "scripts"))
 
+import developer_docs  # noqa: E402
 import review_return  # noqa: E402
 
 
@@ -373,7 +374,7 @@ def test_crlf_line_endings_do_not_change_any_verdict():
 # -- the brief must actually point at this, or it is an unwired script ----
 
 def test_the_developer_brief_names_the_classifier():
-    text = (REPO / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = developer_docs.text(REPO)  # spine + agents/developer/*.md (#939)
     assert "scripts/review_return.py" in text, (
         "agents/developer.md must name the classifier -- a checker nobody is "
         "told to run is the shape #392 is the third instance of"
@@ -386,7 +387,7 @@ def test_the_path_the_brief_names_is_a_file_that_opens():
     opens it. Read the bytes rather than asking `exists()`: that call swallows a
     short list of errnos and re-raises the rest, so it answers a different
     question than the one being asked."""
-    text = (REPO / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = developer_docs.text(REPO)  # spine + agents/developer/*.md (#939)
     assert "scripts/review_return.py" in text
     assert SCRIPT.read_bytes(), "the brief names a path that is empty or absent"
 
@@ -395,6 +396,6 @@ def test_the_developer_brief_still_carries_the_four_arms():
     """Whatever replaced the judgment must not have deleted the states. The
     property #392 says has to survive is that a reviewer that returned nothing
     and a reviewer that found nothing stay distinguishable."""
-    text = (REPO / "agents" / "developer.md").read_text(encoding="utf-8")
+    text = developer_docs.text(REPO)  # spine + agents/developer/*.md (#939)
     for arm in ("returned-nothing", "referred-not-stated", "could-not-classify"):
         assert arm in text, arm

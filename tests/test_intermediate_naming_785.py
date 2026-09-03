@@ -13,10 +13,15 @@ destination paths already use, and that a fixed name under a shared scratchpad i
 under a fleet -- not that any code enforces it, since this is prose read by an agent.
 """
 
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEVELOPER_MD = REPO_ROOT / "agents" / "developer.md"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from developer_docs import DeveloperBrief  # noqa: E402
+
+DEVELOPER_MD = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
 
 def _flat():

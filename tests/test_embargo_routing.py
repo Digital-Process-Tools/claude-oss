@@ -36,11 +36,16 @@ disagreement on exactly one row are a structure, so they are read as one.
 """
 
 import re
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANAGER_SKILL = REPO_ROOT / "skills" / "manager" / "SKILL.md"
-DEVELOPER = REPO_ROOT / "agents" / "developer.md"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from developer_docs import DeveloperBrief  # noqa: E402
+
+DEVELOPER = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
 # The one row where the two sets differ, and why. Written here so the disagreement is a
 # recorded decision -- a test that only checked "the sets differ somewhere" would pass on

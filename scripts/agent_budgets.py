@@ -41,7 +41,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # shape review_return.py already argues for a different silent loss in
     # the same review step) plus the invocation and the two exit states a
     # developer lane has to act on, which does not fit the prior headroom.
-    "agents/developer.md": (83014, 91300),
+    # Re-baselined for #939: the three late phases -- self-review, review
+    # returns, the report -- moved out to agents/developer/*.md, read when a
+    # lane reaches them rather than held in the system prompt from turn one.
+    # 89,714 B measured before the split (the prior 83,014 baseline had gone
+    # stale, unchecked, while the file grew) became 47,819 B after it. The
+    # phase files carry their own budgets in scripts/developer_phases.py.
+    # Lowered, not raised: growth back toward the old number is exactly the
+    # signal this budget exists to make visible.
+    "agents/developer.md": (47819, 52600),
     "agents/auditor.md": (14329, 15800),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
