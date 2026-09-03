@@ -45,9 +45,10 @@ def test_both_instruments_reporting_a_collision_agree():
 
 def test_the_860_incident_itself_is_a_disagreement():
     """The actual measurement on #860's own issue: doctor's census said
-    `single` (no collision) while `channel:health` said `CANNOT DETERMINE`
-    because a second server declared the same socket unconditionally.
-    Neither answer is treated as the winner."""
+    `single` (no collision) while `channel:health` said `CANNOT DETERMINE`.
+    Both readings are still named verbatim -- #913 added a known-cause
+    sentence for exactly this combination (covered separately below), but
+    it never replaces either reading or silently overrides the WARN."""
     state, detail = agreement.channel_health_agreement_state(
         "single", "oss-channel", "cannot_determine", "cached", 12.0
     )
@@ -83,6 +84,21 @@ def test_disagree_known_cause_hint_does_not_fire_on_the_collision_disagreement()
     shape only ever produces `census: single`), so the hint must not appear."""
     state, detail = agreement.channel_health_agreement_state(
         "collision", ["oss-channel", "other"], "forwarding", "cached", 5.0
+    )
+    assert state == "disagree", detail
+    assert "claude-supertool#2208" not in detail, detail
+
+
+def test_disagree_known_cause_hint_is_scoped_to_single_not_none():
+    """`census_state == "none"` maps to the same boolean census signal as
+    `"single"` (`_census_signal` folds both to `False`), but the #913 hint
+    is scoped to the literal `single` state, never the signal -- a `none`
+    census cannot be the #2208 shape, because #2208's own mechanism needs a
+    configured consumer server to self-collide with. A regression that
+    swapped the `census_state == "single"` check for the boolean signal
+    would pass every other test in this file and only be caught here."""
+    state, detail = agreement.channel_health_agreement_state(
+        "none", "", "cannot_determine", "cached", 12.0
     )
     assert state == "disagree", detail
     assert "claude-supertool#2208" not in detail, detail

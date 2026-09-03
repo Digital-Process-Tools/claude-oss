@@ -65,10 +65,16 @@ def _health_signal(raw_state):
     CANNOT DETERMINE and CONTRADICTED are `channel:health`'s own way of
     saying the socket answered something other than one clean consumer --
     the shape actually measured on #860's own incident, where doctor's
-    census said `single` and `channel:health` said CANNOT DETERMINE because
-    a second server declared the same socket unconditionally. FORWARDING,
-    NOT DELIVERING and BOUND-NOT-SUBSCRIBED are all single-consumer readings
-    (delivering or not, but from one server rather than two racing for it).
+    census said `single` and `channel:health` said CANNOT DETERMINE. #860
+    read that as a second server declaring the same socket unconditionally;
+    #913's own investigation instead traced a later recurrence of the
+    identical shape to claude-supertool#2208 -- no second server at all, its
+    own subscription probe self-colliding with the live socket. Both are
+    real, on different occasions, and this docstring does not adjudicate
+    between them; `channel_health_agreement_state`'s own `disagree` branch is
+    where the #913 finding is actually surfaced. FORWARDING, NOT DELIVERING
+    and BOUND-NOT-SUBSCRIBED are all single-consumer readings (delivering or
+    not, but from one server rather than two racing for it).
     """
     if raw_state in ("cannot_determine", "contradicted"):
         return True
