@@ -1774,6 +1774,133 @@ def lane_count(worktree_root):
     return {"state": "resolved", "count": live, "detail": ""}
 
 
+def detect_vanished_worktrees(worktree_root):
+    """#845: a live lane record whose own worktree directory is confirmed absent.
+
+    #845 was filed with two independently reported instances of a lane's
+    worktree directory disappearing mid-run, caused by no command the lane
+    itself ran -- once twice in the same run, once as a sub-manager's own
+    `git worktree remove` deleting a *different* lane's tree and branch. The
+    investigation for #845 found no `git worktree remove` / `worktree_remove`
+    / `rmtree` call anywhere in `scripts/` or `skills/` that touches a git
+    worktree directory (two unrelated `rmtree` hits, `oss_rules.py` and
+    `scaffold.py`, neither near a worktree path) -- the reap is two hand
+    commands `doctor_check_worktree_reap_permission.py` names, typed by a
+    human or an agent reading `skills/manager/phases/merge.md`'s prose, never
+    issued by this file. Root cause was not found in this plugin's own code,
+    so this is the loud detector #845 asks for in that case instead: nothing
+    before this function ever noticed a vanished worktree at all, which is
+    why the reporting agent found out only by rebuilding from `git reflog`
+    by hand, twice.
+
+    Reuses `lane_count`'s exact registry walk (live records only, aged under
+    `LANE_RECORD_TTL_SECONDS`, same three states) rather than a second idea of
+    what "live" means, and adds one check per live record: does
+    `worktree_occupancy` on the record's own `path` field come back `False`
+    (confirmed absent)?
+
+      resolved         the registry was read; `vanished` lists every live
+                        record (`issue`, `branch`, `path`, `recorded_at`)
+                        whose own `path` is confirmed absent, `[]` when none
+                        are.
+      unknown           no lane registry, or no live records at all -- nothing
+                        to check, not a failure.
+      could-not-run     the registry itself, or a record inside it, could not
+                        be read.
+
+    `worktree_occupancy`'s own `None` ("could not look") is never read as
+    vanished -- a path this process could not examine is not evidence it
+    disappeared, the same distinction every other absence check in this
+    module already makes (`_absence_confirmed`, `worktree_occupancy` itself).
+    A record carrying no `path` (a version of this script that predates the
+    field) is skipped, not flagged -- there is nothing to check it against.
+    """
+    root = lane_registry_dir(worktree_root)
+    if root is None:
+        return {"state": "unknown", "vanished": [], "detail": "worktree_root is not known."}
+    try:
+        found = os.stat(root)
+    except (FileNotFoundError, NotADirectoryError):
+        if _absence_confirmed(root) is not True:
+            return {
+                "state": "could-not-run",
+                "vanished": [],
+                "detail": "a lane registry may exist at {0} but could not be examined "
+                "-- an ancestor could not be looked at, which is not a confirmed "
+                "absence.".format(root),
+            }
+        found = None
+    except OSError as exc:
+        return {
+            "state": "could-not-run",
+            "vanished": [],
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    except ValueError as exc:
+        return {
+            "state": "could-not-run",
+            "vanished": [],
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    if found is None or not stat.S_ISDIR(found.st_mode):
+        return {
+            "state": "unknown", "vanished": [],
+            "detail": "no lane registry at {0}.".format(root),
+        }
+    try:
+        names = os.listdir(root)
+    except OSError as exc:
+        return {
+            "state": "could-not-run",
+            "vanished": [],
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+
+    now = time.time()
+    vanished = []
+    live = 0
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        entry_path = os.path.join(root, name)
+        try:
+            with open(entry_path) as fh:
+                data = json.load(fh)
+            recorded_at = float(data["recorded_at"])
+            issue = data["issue"]
+        except FileNotFoundError:
+            # A sibling reader pruned this same stale record between our
+            # `listdir` and our `open` -- gone either way, not counted.
+            continue
+        except (OSError, ValueError, KeyError, TypeError):
+            return {
+                "state": "could-not-run",
+                "vanished": vanished,
+                "detail": "lane record {0} under {1} could not be read.".format(name, root),
+            }
+        age = now - recorded_at
+        if age >= 0 and age > LANE_RECORD_TTL_SECONDS:
+            continue  # expired; not live, and never checked
+        live += 1
+        path = data.get("path")
+        if not path:
+            continue
+        if worktree_occupancy(path) is False:
+            vanished.append({
+                "issue": issue,
+                "branch": data.get("branch"),
+                "path": path,
+                "recorded_at": recorded_at,
+            })
+
+    if live == 0:
+        return {
+            "state": "unknown", "vanished": [],
+            "detail": "no live lane records under {0}.".format(root),
+        }
+    return {"state": "resolved", "vanished": vanished, "detail": ""}
+
+
 def lanes_snapshot(worktree_root, issue, branch, path, files=None, claim=False):
     """Report the live picture, and record this lane's own presence only when asked.
 
@@ -3078,6 +3205,18 @@ def main(argv=None):
         "existed to release; every other flag is ignored when this is given.",
     )
     parser.add_argument(
+        "--check-vanished",
+        action="store_true",
+        help="#845: report every live lane record whose own worktree "
+        "directory is confirmed absent -- a loud detector for a worktree "
+        "that disappeared mid-run, caused by no command this file issues "
+        "(the mechanism was not found in this plugin's own code). Reads "
+        "worktree_root from .oss.local.json the same way --release does, "
+        "needs no issue number, and refuses every other mode flag "
+        "alongside it (--claim, --release, --derive-held, --against, "
+        "--suggest-companions).",
+    )
+    parser.add_argument(
         "--suggest-companions",
         type=int,
         default=None,
@@ -3105,12 +3244,13 @@ def main(argv=None):
             ("--release", args.release),
             ("--derive-held", args.derive_held),
             ("--against", bool(args.against)),
+            ("--check-vanished", args.check_vanished),
         ):
             if flag_value:
                 parser.error(
                     "--suggest-companions and {0} are mutually exclusive -- "
                     "the sweep answers a different question than any of "
-                    "this file's other modes (#851)".format(flag_name)
+                    "this file's other modes (#851, #845)".format(flag_name)
                 )
         if not args.lane:
             # Found by this lane's own reviewer, and it is this repository's
@@ -3129,8 +3269,21 @@ def main(argv=None):
                 "reports a confident `none` about a lane that was never named; "
                 "pass --lane once per file this lane holds"
             )
+    elif args.check_vanished:
+        for flag_name, flag_value in (
+            ("--claim", args.claim),
+            ("--release", args.release),
+            ("--derive-held", args.derive_held),
+            ("--against", bool(args.against)),
+        ):
+            if flag_value:
+                parser.error(
+                    "--check-vanished and {0} are mutually exclusive -- it "
+                    "answers a different question than any of this file's "
+                    "other modes (#845)".format(flag_name)
+                )
     elif args.issue is None:
-        parser.error("the issue argument is required unless --suggest-companions is given")
+        parser.error("the issue argument is required unless --suggest-companions or --check-vanished is given")
 
     if args.derive_held and args.against:
         parser.error("--derive-held and --against are mutually exclusive (#558)")
@@ -3249,6 +3402,45 @@ def main(argv=None):
                 " -- " + result["detail"] if result["detail"] else "",
             ))
         return EXIT_COULD_NOT_RUN if result["state"] == "could-not-release" else EXIT_OK
+
+    if args.check_vanished:
+        config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
+        local_read_problem = None
+        if config is not None:
+            _, local_read_problem = oss_config._read_json_object(
+                oss_config.local_config_path(Path(args.repo) / CONFIG_NAME)
+            )
+        if config is None or local_read_problem is not None:
+            result = {
+                "state": "could-not-run",
+                "vanished": [],
+                "detail": "worktree_root is not known -- the config could not "
+                "be read: {0}".format(
+                    "; ".join(problems) if problems else "no detail available."
+                ),
+            }
+        else:
+            worktree_root = config.get("worktree_root")
+            result = detect_vanished_worktrees(worktree_root)
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            if result["state"] == "resolved" and result["vanished"]:
+                lines = ["VANISHED WORKTREES: {0} live lane record(s) whose own "
+                         "worktree directory is confirmed absent".format(len(result["vanished"]))]
+                for entry in result["vanished"]:
+                    lines.append("  lane #{0} branch={1} path={2} recorded_at={3}".format(
+                        entry["issue"], entry["branch"], entry["path"], entry["recorded_at"],
+                    ))
+                print("\n".join(lines))
+            else:
+                print("VANISHED WORKTREES: {0}{1}".format(
+                    result["state"],
+                    " -- " + result["detail"] if result["detail"] else " -- none found",
+                ))
+        if result["state"] == "could-not-run":
+            return EXIT_COULD_NOT_RUN
+        return 1 if result.get("vanished") else EXIT_OK
 
     payload = compute(
         args.repo, args.issue, args.remote, args.lane, args.against,
