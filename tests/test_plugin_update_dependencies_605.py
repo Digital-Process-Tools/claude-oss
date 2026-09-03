@@ -21,6 +21,23 @@ Two properties carry most of this file:
 Every negative assertion here is paired with a positive control in the same fixture, per
 this repository's rule: "no update call was made for it" also passes when no update call
 was made for anything.
+
+The `remember` fixture versions below are spelled `9.21.0`/`9.22.0` rather than `0.21.0`/
+`0.22.0` for the same reason `_plugin_root` below fixes this loop plugin's own fixture
+version at `9.9.9`: `tests/test_no_test_pins_the_current_version_350.py` sweeps every test
+file that carries a route to this repository's OWN declared version for a literal equal to
+the version this repository is about to reach next, and a dependency's version fixture
+happens to carry such a route (this file imports `plugin_update`) even though the value has
+nothing to do with this repository's own number. `0.21.0` was this repository's own next
+minor at the moment #900 was filed (`0.20.0` -> `0.21.0`), so the fixture collided with the
+release commit that bumped to it. Bumping the digits again would only defer the same
+collision to a future release. Moving the major digit to `9` removes the collision instead
+of deferring it: `_next_minor` (in `test_no_test_pins_the_current_version_350.py`) only ever
+proposes the NEXT MINOR of THIS repository's CURRENT major, so as long as this repository's
+own major stays below `9` -- true for the whole of its history and not expected to change on
+any timescale this fixture needs to survive -- `9.21.0`/`9.22.0` can never equal that
+proposal. (See #901 for the guard's own one-minor horizon, which is a separate, not-yet-filed
+change to the guard itself and not something this fixture works around.)
 """
 
 import json
@@ -93,7 +110,7 @@ def test_every_declared_dependency_is_updated_alongside_the_loop_plugin(tmp_path
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
             "supertool@dpt": _installed(tmp_path, "0.40.0"),
         },
     )
@@ -119,7 +136,7 @@ def test_the_marketplace_is_refreshed_exactly_once_for_the_whole_run(tmp_path):
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
             "supertool@dpt": _installed(tmp_path, "0.40.0"),
         },
     )
@@ -145,8 +162,8 @@ def test_a_dependency_is_updated_at_every_scope_it_is_installed_at(tmp_path):
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
             "remember@dpt": [
-                {"version": "0.21.0", "scope": "project", "projectPath": str(tmp_path)},
-                {"version": "0.21.0", "scope": "user"},
+                {"version": "9.21.0", "scope": "project", "projectPath": str(tmp_path)},
+                {"version": "9.21.0", "scope": "user"},
             ],
         },
     )
@@ -170,7 +187,7 @@ def test_a_dependency_that_moved_carries_its_two_versions(tmp_path):
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
         },
     )
 
@@ -183,7 +200,7 @@ def test_a_dependency_that_moved_carries_its_two_versions(tmp_path):
                         {
                             "plugins": {
                                 "oss@dpt": _installed(tmp_path, "9.9.9"),
-                                "remember@dpt": _installed(tmp_path, "0.22.0"),
+                                "remember@dpt": _installed(tmp_path, "9.22.0"),
                             }
                         }
                     ),
@@ -200,7 +217,7 @@ def test_a_dependency_that_moved_carries_its_two_versions(tmp_path):
     )
     entry = _by_name(document)["remember"]
     assert entry["state"] == "updated", entry
-    assert entry["from"] == "0.21.0" and entry["to"] == "0.22.0", entry
+    assert entry["from"] == "9.21.0" and entry["to"] == "9.22.0", entry
     # The loop plugin did not move, and its own verdict must be unaffected by one that did.
     assert document["state"] == "current", document
 
@@ -219,7 +236,7 @@ def test_a_dependency_this_project_never_installed_is_not_installed_not_a_failur
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
             # jit is installed -- for a DIFFERENT project on this machine.
             "jit@dpt": [
                 {
@@ -251,7 +268,7 @@ def test_a_dependency_whose_every_scope_failed_is_could_not_check(tmp_path):
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
         },
     )
     runner = _Runner([(True, ""), (True, ""), (False, "network unreachable")])
@@ -274,7 +291,7 @@ def test_a_failed_dependency_does_not_become_the_loop_plugins_verdict(tmp_path):
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
         },
     )
     document = plugin_update.update(
@@ -297,7 +314,7 @@ def test_a_marketplace_that_did_not_refresh_attempts_no_dependency_either(tmp_pa
         tmp_path,
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
-            "remember@dpt": _installed(tmp_path, "0.21.0"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
         },
     )
     runner = _Runner([(False, "network unreachable")])
@@ -439,7 +456,7 @@ def test_every_dependency_current_is_the_ok_control(tmp_path, monkeypatch):
         _clean_loop_plugin(
             dependencies_unreadable=False,
             dependencies=[
-                {"name": "remember", "state": "current", "from": "0.22.0", "to": "0.22.0"},
+                {"name": "remember", "state": "current", "from": "9.22.0", "to": "9.22.0"},
                 {"name": "supertool", "state": "current", "from": "0.40.0", "to": "0.40.0"},
             ],
         ),
@@ -460,7 +477,7 @@ def test_a_dependency_that_moved_warns_because_this_session_runs_the_old_copy(
         _clean_loop_plugin(
             dependencies_unreadable=False,
             dependencies=[
-                {"name": "remember", "state": "updated", "from": "0.21.0", "to": "0.22.0"}
+                {"name": "remember", "state": "updated", "from": "9.21.0", "to": "9.22.0"}
             ],
         ),
         monkeypatch,
@@ -469,7 +486,7 @@ def test_a_dependency_that_moved_warns_because_this_session_runs_the_old_copy(
     dependency_rows = [row for row in rows if "dependencies" in row[1]]
     state, message = dependency_rows[0]
     assert state == "WARN", rows
-    assert "remember" in message and "0.21.0" in message and "0.22.0" in message
+    assert "remember" in message and "9.21.0" in message and "9.22.0" in message
     assert "/reload-plugins" in message, message
 
 
@@ -511,7 +528,7 @@ def test_a_dependency_this_project_never_installed_is_named_without_warning(
             dependencies_unreadable=False,
             dependencies=[
                 {"name": "jit", "state": "not-installed", "detail": "no install record"},
-                {"name": "remember", "state": "current", "from": "0.22.0", "to": "0.22.0"},
+                {"name": "remember", "state": "current", "from": "9.22.0", "to": "9.22.0"},
             ],
         ),
         monkeypatch,
