@@ -357,6 +357,23 @@ def test_tools_rule_names_the_replacement_op():
         )
 
 
+#: Per-row expectations, keyed by filename rather than asserted blanket across every
+#: row or pinned to a literal count. #245/#859/#861 grew the tools dimension from one
+#: indexed rule to three without this test noticing the other two arrived (#889): a
+#: literal `len(rows) == 2` (or `== 3`) reproduces the same defect one number later,
+#: because it is still satisfied the moment a fourth rule is added and nobody edits this
+#: dict. The check that actually catches that is below -- the *set* of filenames this
+#: dict names is compared against the *set* `index_rows` actually returned, in both
+#: directions, so an added-but-unaccounted-for row fails here rather than passing
+#: silently the way an unindexed `00-README.md` correctly does (it declares neither
+#: `tool:` nor `match:`, so index_rows never emits a row for it at all).
+TOOLS_INDEX_EXPECTED = {
+    "supertool-required.md": ("Read|Edit|Write|Glob|Grep", "block", "supertool"),
+    "merge-gate.md": ("Bash", "remind", ""),
+    "pr-create-gate.md": ("Bash", "remind", ""),
+}
+
+
 def test_tools_index_row_is_the_seven_column_shape():
     """`tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid<TAB>requires`,
     re-derived from claude-jit-context's rebuild-tsv.sh rather than trusted from the
@@ -364,12 +381,6 @@ def test_tools_index_row_is_the_seven_column_shape():
     it). The seventh column was added by #665: `requires` was declared in frontmatter by
     #570 and read by claude-jit-context 0.6.0's `jit_missing_requires()`, but nothing
     here ever emitted it, so the shipped index disagreed with the rule body it indexes.
-
-    Per-row expectations are keyed by filename, not asserted blanket across every row --
-    the tools dimension carries two indexed rules since #245 (`supertool-required.md` and
-    `merge-gate.md`), and a blanket assertion here would fail on a correctly built index
-    with a second row, which is this test's own defect wearing the opposite sign from the
-    "Named, not positional" fix a few tests below.
     """
     rows = oss_rules.index_rows("tools", oss_rules.RULES["tools"])
     assert rows
@@ -381,14 +392,17 @@ def test_tools_index_row_is_the_seven_column_shape():
         assert match, "empty match -- the row would refuse to load"
         by_filename[filename] = (tool, mode, requires)
 
-    assert by_filename["supertool-required.md"] == (
-        "Read|Edit|Write|Glob|Grep",
-        "block",
-        "supertool",
-    ), by_filename["supertool-required.md"]
-    assert by_filename["merge-gate.md"] == ("Bash", "remind", ""), by_filename[
-        "merge-gate.md"
-    ]
+    assert set(by_filename) == set(TOOLS_INDEX_EXPECTED), (
+        "the tools index carries a different set of filenames than this test expects "
+        "-- indexed but not expected: {} -- expected but not indexed: {} -- a rule "
+        "added to (or dropped from) the tools dimension has to be accounted for here, "
+        "not just given a passing count (#889)".format(
+            sorted(set(by_filename) - set(TOOLS_INDEX_EXPECTED)),
+            sorted(set(TOOLS_INDEX_EXPECTED) - set(by_filename)),
+        )
+    )
+    for filename, expected in TOOLS_INDEX_EXPECTED.items():
+        assert by_filename[filename] == expected, (filename, by_filename[filename])
 
 
 def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():
