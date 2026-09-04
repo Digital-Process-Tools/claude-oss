@@ -336,7 +336,8 @@ def main(argv=None):
             "invoked from a different cwd -- e.g. after the Bash tool resets cwd "
             "between calls -- still re-snapshots this same root rather than "
             "wherever it happens to be standing (#971). Passing --root again at "
-            "compare time overrides that on purpose (#1024)."
+            "compare time still overrides that on purpose, unchanged. No such "
+            "cross-worktree resolution bug was found or fixed here (#1024)."
         ),
     )
 
