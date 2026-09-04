@@ -2505,13 +2505,16 @@ def _kill_process_tree(proc, job=None):
     Both are best-effort -- a process that already exited is not an error here.
 
     Returns True when the primitive that reaches the whole tree reported success --
-    `TerminateJobObject` returning nonzero, `taskkill` exiting 0, or `killpg` raising
-    nothing -- and False when it could not confirm that: an exception it had to
-    swallow (a process already gone, a permission failure, anything else `killpg` or
-    `taskkill` can raise or exit nonzero for), all of which look identical from here.
-    False does not mean the tree is still running; it means this function cannot say
-    it isn't -- which #945 exists to surface rather than silently fold into the same
-    "killed" outcome as a confirmed clean kill.
+    `TerminateJobObject` returning nonzero, `taskkill` exiting 0, `killpg` raising
+    nothing, or `killpg` raising `ProcessLookupError` (no process with that pgid
+    exists at all, which proves the tree is already gone rather than leaving that
+    unknown) -- and False when it could not confirm that: some other exception
+    `killpg` had to swallow (a permission failure, say), or `taskkill` exiting
+    nonzero. (`taskkill`'s own "already gone" exit code is not given the same
+    distinction as `killpg`'s -- see #945's own report for why.) False does not
+    mean the tree is still running; it means this function cannot say it isn't --
+    which #945 exists to surface rather than silently fold into the same "killed"
+    outcome as a confirmed clean kill.
     """
     confirmed = False
     if os.name == "nt":
@@ -2551,7 +2554,12 @@ def _kill_process_tree(proc, job=None):
         try:
             os.killpg(proc.pid, signal.SIGKILL)
             confirmed = True
-        except (ProcessLookupError, OSError):
+        except ProcessLookupError:
+            # No process with this pgid exists at all -- not "we could not tell",
+            # the whole tree is provably gone already, which is the positive
+            # answer this field exists to carry (#945).
+            confirmed = True
+        except OSError:
             confirmed = False
     try:
         proc.kill()

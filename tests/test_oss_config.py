@@ -528,6 +528,33 @@ def test_a_swallowed_kill_failure_is_reported_unconfirmed(tmp_path, monkeypatch)
     assert result["kill_confirmed"] is False
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="ProcessLookupError is the POSIX killpg-specific case; there is no "
+    "equivalent distinction drawn on the taskkill/TerminateJobObject path.",
+)
+def test_a_process_group_already_gone_is_still_a_confirmed_kill(tmp_path, monkeypatch):
+    """A finding from #945's own self-review: `killpg` raising `ProcessLookupError`
+    means no process with that pgid exists at all -- the whole tree is already
+    gone, which is proof of the very thing `kill_confirmed` exists to report, not
+    an unknown outcome. Folding it into the same bucket as a genuine kill failure
+    (a permission error, say) understated what was actually known. This is the
+    positive control for the negative case above: a generic `OSError` from
+    `killpg` still reads `kill_confirmed is False`, and only the "already gone"
+    case reads `True`.
+    """
+    real_killpg = oss_config.os.killpg
+
+    def _already_gone(pid, sig):
+        real_killpg(pid, sig)  # actually reap the real child first
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(oss_config.os, "killpg", _already_gone)
+    result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+    assert result["kill_confirmed"] is True
+
+
 def test_a_timeout_kills_the_whole_process_tree_not_just_the_shell(tmp_path):
     """subprocess.run's own TimeoutExpired handling kills only the immediate child.
     Everything that child spawns in turn keeps running -- and on Windows, keeps holding
