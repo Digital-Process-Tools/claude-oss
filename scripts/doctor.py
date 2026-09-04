@@ -2676,6 +2676,16 @@ from doctor_check_branch_protection import (
     branch_protection_state,
     check_branch_protection,
 )
+# #760: same convention, same reason -- see
+# scripts/doctor_check_security_alerts.py.
+from doctor_check_security_alerts import (
+    SCANNERS,
+    SECURITY_SETTINGS_URL,
+    security_alert_state,
+    check_code_scanning_alerts,
+    check_dependabot_alerts,
+    check_secret_scanning_alerts,
+)
 
 
 # #582: does the supertool that resolves here carry the ops this plugin's own
@@ -8344,6 +8354,13 @@ def main(argv=None):
     # (gh on PATH, repo/origin resolvable), report-only -- see check_branch_
     # protection's own docstring for why a 403 must never render as unprotected.
     check_branch_protection(project_dir, config)
+    # #760: furniture only -- whether each of the three GitHub security-alert
+    # scanners is configured on this repo, never a count and never findings
+    # text. Same local gating, same report-only reasoning. See doctor_check_
+    # security_alerts.py's own docstring for the never-scanned/disabled split.
+    check_code_scanning_alerts(project_dir, config)
+    check_dependabot_alerts(project_dir, config)
+    check_secret_scanning_alerts(project_dir, config)
     check_statusline(project_dir)
     check_auto_update(project_dir)
     # The weakest of the two "am I current" checks, deliberately last of the pair:
