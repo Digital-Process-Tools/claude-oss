@@ -73,7 +73,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing in the existing three states was safe to cut to pay for a
     # correctness addition -- a design decision this repo's own conventions
     # ask to be written down, not trimmed to fit.
-    "agents/sub-manager.md": (14032, 15400),
+    # Raised for #978: the frontmatter grant `SendMessage`, mandated in prose
+    # since #880, was never actually present -- two live sub-manager spawns
+    # hit exactly that gap and fell back to a fresh spawn with no state to
+    # record it under. The bulk of the argument (what to record if the tool
+    # itself refuses -- documented as gated behind an opt-in feature on some
+    # harness versions) went to skills/manager/phases/dispatch.md, where the
+    # rest of #880's argument already lives; this file only grew one clause
+    # in its own #880 pointer sentence naming that dispatch.md now covers it
+    # too. Baseline re-measured to 15501 B post-commit, per this module's own
+    # convention (see #818's entry above); budget set with ~10% headroom.
+    "agents/sub-manager.md": (15501, 17000),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

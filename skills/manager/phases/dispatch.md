@@ -370,6 +370,16 @@ fresh developer spawn's measured 150k-290k tokens).
 `agent-unreachable`, distinct from `resumed`.** A re-dispatch with neither an attempted resume nor
 that finding is the defect this section stops; state which one applied in the handback.
 
+**#978: `agents/sub-manager.md`'s frontmatter grants `SendMessage`, and some harness versions are
+documented as still refusing it as gated behind an opt-in feature even so.** Two live sub-manager
+spawns hit exactly this before the grant existed at all -- reporting no `SendMessage` tool -- and
+fell back to a fresh spawn recorded as `resumed`, because the honest answer had nowhere else to go.
+If the resume call itself refuses, naming the tool absent or disabled rather than the lane's own
+agent being unreachable, that is `agent-unreachable` too -- quote the refusal verbatim as
+`dispatch_state_why`, never a silent fresh spawn recorded as `resumed`. This is a different failure
+from the target agent being gone, and the same remedy covers it: neither one is a licence to
+re-dispatch without recording which happened.
+
 **This is enforced, not only stated (#880), in `oss_state.py` itself** -- its own
 `--lane-dispatch-state ISSUE=STATE[:WHY]` help and refusal carry the argument now, so it is not
 retyped here: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file>
