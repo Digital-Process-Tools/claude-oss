@@ -19,6 +19,7 @@ nothing is not indistinguishable from a harness that found no violations.
 Python 3.9 compatible.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -82,7 +83,14 @@ def test_violation_within_baseline_passes(tmp_path):
 
 def test_missing_ruff_reports_third_state_not_ok(tmp_path):
     root = _fixture(tmp_path, "def f():\n    return 1\n")
-    env = {"PATH": ""}
+    # Copy the real environment and clear only PATH, rather than env={"PATH": ""} --
+    # that replaces the child's *entire* environment, which on Windows also strips
+    # SystemRoot/SYSTEMROOT that the interpreter's own startup and the CRT depend on,
+    # so the child can fail to start for reasons unrelated to "ruff not found" and this
+    # test would then fail on a returncode that is neither 2 nor a real ruff run --
+    # never reaching the third-state logic this test exists to exercise (#635 review).
+    env = dict(os.environ)
+    env["PATH"] = ""
     r = _run(root, baseline=0, env=env)
     assert r.returncode == 2, r.stdout + r.stderr
     assert "COULD NOT RUN" in r.stdout

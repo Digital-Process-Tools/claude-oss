@@ -31,8 +31,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Workflow level: both jobs run tests and report, neither writes to the forge, and a job
-# added later inherits read-only instead of the repository default of read/write (#32).
+# Workflow level: every job here runs tests or lints and reports, none writes to the
+# forge, and a job added later inherits read-only instead of the repository default of
+# read/write (#32). Three jobs as of #635 (pytest, shell, lint) -- this line names none
+# of them by count on purpose, so a fourth job does not make it stale again.
 permissions:
   contents: read
 
@@ -83,10 +85,17 @@ jobs:
       # only test that needs it; the rest of the suite reads workflows as text on
       # purpose. That file fails rather than skips when `CI` is set and pyyaml is
       # missing, so dropping this package cannot make it go quiet.
+      #
+      # ruff is here (#635) so tests/test_ruff_ratchet_635.py actually runs instead of
+      # skipping: that file's own `pytestmark` declines every test when `ruff` is not on
+      # PATH, and this is the only job that runs `pytest` at all -- the `lint` job below
+      # never does. Absent here, the ratchet script's own logic (baseline comparison,
+      # exit-code selection, the third `could-not-run` state) would ship a whole new file
+      # of tests that pass by skipping on all 12 legs of this matrix, every time.
       - name: Install test deps
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov markdown-it-py pyyaml
+          pip install pytest pytest-cov markdown-it-py pyyaml ruff
       - name: Run tests
         run: pytest
 
@@ -204,6 +213,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ruff
-        run: python -m pip install --upgrade pip && pip install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
       - name: ruff (#635 ratchet)
         run: python3 scripts/ruff_ratchet.py --root .

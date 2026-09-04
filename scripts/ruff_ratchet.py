@@ -54,9 +54,21 @@ def _count(root: Path) -> Tuple[Optional[int], str]:
     if not shutil.which("ruff"):
         return None, "ruff not found on PATH -- pip install ruff"
     try:
+        # encoding + errors="replace", explicit rather than bare text=True: ruff always
+        # writes UTF-8 JSON, but bare text=True decodes with
+        # locale.getpreferredencoding(False) -- typically a Windows codepage such as
+        # cp1252 -- which has undefined byte values that can appear as UTF-8
+        # continuation bytes. A UnicodeDecodeError there is not an OSError or a
+        # SubprocessError, so it would not be caught below: it would propagate as an
+        # unhandled traceback exiting 1, the same exit code this script uses for a real
+        # "FAIL: over baseline", misreporting an encoding crash as a lint regression.
+        # validators/ruff/ruff.py, shipped with supertool, already passes both flags on
+        # the identical subprocess.run call; this is the same fix at the second call
+        # site.
         proc = subprocess.run(
             ["ruff", "check", "--output-format", "json", "--no-cache", "--", "."],
             cwd=str(root), capture_output=True, text=True, timeout=120,
+            encoding="utf-8", errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "ruff could not be run: %s" % (exc,)
