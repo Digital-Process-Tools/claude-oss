@@ -110,6 +110,20 @@ MUST_NOT_BE_GRANTED = [
     "git commit",
 ]
 
+# #1017: `git -C <worktree> rev-parse HEAD` (`skills/manager/phases/merge.md`'s
+# #1007 worktree-reap safety check) does not start with any entry above --
+# `Bash(git rev-parse:*)` matches a literal STRING PREFIX and `-C <path>` sits
+# before the subcommand in that string. The fix taken here is NOT to grant a
+# `-C`-prefixed shape: `Bash(git -C:*)` would match `git -C <any path> <any
+# subcommand at all>`, reopening exactly the "one flag away from anything" gap
+# #982 narrowed the blanket `Bash(git *)` grant to close, for every subcommand
+# in MUST_NOT_BE_GRANTED above included. merge.md instead leads its safety
+# check with `git-worktrees:PATH`, already reachable through the granted
+# `Bash(supertool:*)` entry -- see test_merge_md_worktree_reap_head_check_
+# leads_with_a_covered_op below. This entry documents the rejected shape as a
+# negative control on that decision, not as something anyone asked to grant.
+UNSAFE_C_FLAG_WILDCARD = "git -C"
+
 
 def _load_settings():
     text = SETTINGS_PATH.read_text(encoding="utf-8")
@@ -213,3 +227,53 @@ def test_doctor_worktree_and_branch_permission_checks_still_see_present():
     b_state, _ = branch_delete_permission_state(str(REPO_ROOT))
     assert w_state == "present", w_state
     assert b_state == "present", b_state
+
+
+def test_unsafe_c_flag_wildcard_stays_ungranted():
+    """#1017 negative control: a `Bash(git -C:*)` grant would match `git -C <any
+    path> <any subcommand>`, including every subcommand in MUST_NOT_BE_GRANTED
+    above -- adding it back for the sake of one safety check (`git -C <worktree>
+    rev-parse HEAD` in `skills/manager/phases/merge.md`) would reopen the exact
+    "one flag away from anything" gap #982 narrowed the blanket grant to close.
+    The fix taken instead is `test_merge_md_worktree_reap_head_check_leads_with_
+    a_covered_op` below: reorder the brief so the already-granted supertool op
+    leads, not widen the allow-list."""
+    entries = _allow_entries()
+    assert "Bash({}:*)".format(UNSAFE_C_FLAG_WILDCARD) not in entries
+    assert "Bash(git -C *)" not in entries
+
+
+def test_merge_md_worktree_reap_head_check_leads_with_a_covered_op():
+    """#1017: composed with #982's narrowed allow-list, `git -C <worktree>
+    rev-parse HEAD` does not necessarily start with any grant in
+    REQUIRED_SUBCOMMAND_GRANTS -- `Bash(git rev-parse:*)` matches a literal
+    STRING PREFIX and `-C <path>` sits before the subcommand, so (reasoned, not
+    observed: nothing in this suite can drive Claude Code's own permission UI
+    to confirm whether its matcher normalizes git's global options ahead of
+    prefix matching) the raw form may trigger a permission prompt the #1007
+    safety check was written to run unattended. Rather than widen the
+    allow-list (see test_unsafe_c_flag_wildcard_stays_ungranted above for why
+    that shape is refused), the brief itself is required to lead with
+    `git-worktrees:PATH`, already reachable through the granted
+    `Bash(supertool:*)` entry, and name the raw `git -C` form only as a
+    documented fallback."""
+    text = (REPO_ROOT / "skills" / "manager" / "phases" / "merge.md").read_text(
+        encoding="utf-8"
+    )
+    # This document hard-wraps prose at a column width, so a phrase spanning a
+    # wrap carries a literal newline (and the next line's leading indent) in
+    # the raw text -- collapse whitespace runs to a single space before
+    # searching, rather than anchoring on a substring that breaks the moment
+    # somebody reflows the paragraph.
+    collapsed = " ".join(text.split())
+    anchor = "read the tree's HEAD one more time"
+    start = collapsed.index(anchor)
+    end = collapsed.index(".", start)
+    sentence = collapsed[start:end]
+    op_index = sentence.index("git-worktrees:PATH")
+    raw_index = sentence.index("git -C <worktree> rev-parse HEAD")
+    assert op_index < raw_index, (
+        "the raw `git -C` form must not lead the worktree-reap HEAD re-check; "
+        "git-worktrees:PATH, already covered by Bash(supertool:*), must be "
+        "recommended first"
+    )

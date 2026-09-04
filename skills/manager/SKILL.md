@@ -80,6 +80,22 @@ states.
 | **Deleting anything with no copy elsewhere** | the `destroys` row below, applied to this loop's own hands |
 | **The embargo path** | a private disclosure cannot be un-sent, and sending it commits this project to somebody else's disclosure timing |
 | **A value the repository genuinely does not state** | inventing one is unrecoverable the same way a tag is; `tag_pattern: null` is the worked example, and a model because it refuses *and says why* |
+| **Committing anything to the default branch outside a pull request** | a `git revert` is loop-reachable with no outside credential, but that answers the wrong question — see below (#976) |
+
+**The default-branch row has no content exception, `trap.d/` fragments included, and no "reached
+green afterward" substitute for reaching it first.** #976 found this loop at the identical fork
+twice in one tick. Once it force-pushed a batch of untracked `trap.d/` fragments straight to `main`
+using GitHub's branch-protection bypass-for-maintainers path — 14 of 14 required checks bypassed,
+not skipped — reasoning that a `git revert` was available with no outside help; CI happened to reach
+green afterward, so no actual harm followed, but the precedent was invented on the spot. The same
+tick, facing the identical situation a second time, instead routed the fragments through an ordinary
+pull request (#1021). The revert-availability reasoning does not hold up: **reversibility of the
+write is not the same test as recoverability of the gate that write skipped.** Every other change
+this loop makes, code or prose, earns its merge by reaching green *before* landing — gate 3 already
+refuses "the delta reached green after the fact" as a substitute for a release, and a stray discovery
+mid-tick does not get a laxer rule than a release does merely because the file is `.md` rather than
+`.py`. #1021 is the precedent this rule endorses; the direct push is the one it forbids going
+forward.
 
 **The first two rows are conditional on a per-repository grant, and this table does not
 assert the answer — it names the key that does (#478).** `release.authority` in

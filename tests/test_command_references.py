@@ -466,6 +466,15 @@ def _names_the_undo_test(text):
     )
 
 
+def _forbids_a_direct_push_to_main_with_no_exception(text):
+    """#976: a `git revert` being available does not make a direct, unreviewed
+    push to the default branch the loop's own call -- and no content is exempt,
+    `trap.d/` fragments included."""
+    return bool(
+        re.search(r"[Cc]ommitting anything to the default branch outside a pull request", text)
+    ) and bool(re.search(r"no content exception, `trap\.d/` fragments included", text))
+
+
 #: Acts the loop takes without asking, and acts it stops for. A principle without
 #: a list is where the stalling comes back, so the list is what gets asserted.
 ACTS_THE_LOOP_TAKES = ("merging on green", "closing and reopening", "reaping worktrees")
@@ -786,6 +795,11 @@ SKILL_AUTHORITY_FACTS = [
         "undetermined authority is not a declined one",
         _says_undetermined_is_not_declined,
         r"could not determine whether this was mine to decide",
+    ),
+    (
+        "a direct push to the default branch has no content exception",
+        _forbids_a_direct_push_to_main_with_no_exception,
+        r"Committing anything to the default branch outside a pull request|no content exception, `trap\.d/` fragments included",
     ),
 ]
 

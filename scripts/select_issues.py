@@ -70,6 +70,41 @@ STATE_CANDIDATES = "candidates"
 STATE_NONE_AVAILABLE = "none-available"
 STATE_COULD_NOT_SELECT = "could-not-select"
 
+#: #1013: `dispatch_rank.rank`'s own contract (see its module docstring)
+#: expects an already-translated `"external"`/`"maintainer"` axis, never
+#: GitHub's own `author_association` vocabulary -- but this module is the one
+#: that reads a raw `gh api` payload, and nothing translated the field
+#: between the two, so every real board marked every non-loop issue
+#: `unrankable`. Only the two sets `dispatch_rank.py`'s own module docstring
+#: names are translated here; a value in neither set -- `FIRST_TIMER`,
+#: `FIRST_TIME_CONTRIBUTOR`, `MANNEQUIN`, a typo, a missing field -- is left
+#: untranslated (`None`) on purpose, so `rank()`'s own "could not tell"
+#: refusal still fires rather than this module guessing which axis an
+#: unrecognised value belongs to.
+_MAINTAINER_ASSOCIATIONS = frozenset(("OWNER", "MEMBER", "COLLABORATOR"))
+_EXTERNAL_ASSOCIATIONS = frozenset(("CONTRIBUTOR", "NONE"))
+
+
+def _translate_author_association(raw):
+    """GitHub's own `author_association` field to `dispatch_rank.rank`'s two-
+    value vocabulary (`"maintainer"` / `"external"`), or `None` for "could
+    not tell" -- see the module-level comment above for which values map
+    where and why an unrecognised one is never guessed.
+
+    A caller that already translated the field (this module's own test
+    fixtures, and any caller written before this function existed) passes
+    straight through unchanged: the two vocabularies never share a spelling
+    (GitHub's is all-caps, `dispatch_rank.ASSOCIATIONS` is not), so accepting
+    either introduces no ambiguity, and it means this fix does not silently
+    stop ranking a payload that was already correct."""
+    if raw in dispatch_rank.ASSOCIATIONS:
+        return raw
+    if raw in _MAINTAINER_ASSOCIATIONS:
+        return "maintainer"
+    if raw in _EXTERNAL_ASSOCIATIONS:
+        return "external"
+    return None
+
 
 def _could_not_select(why, dropped=None):
     # `dropped` defaults to `[]`, never `None` reused across callers: a caller
@@ -122,8 +157,10 @@ def select(payload, checker=None, search=None, resolve_lane=None):
 
     for item in ranked:
         number = item.get("number")
-        answer = dispatch_rank.rank(item.get("labels") or [], declared,
-                                     item.get("author_association"))
+        answer = dispatch_rank.rank(
+            item.get("labels") or [], declared,
+            _translate_author_association(item.get("author_association")),
+        )
         if answer["rank"] is None:
             dropped.append({"number": number, "disposition": "unrankable", "why": answer["why"]})
             continue
