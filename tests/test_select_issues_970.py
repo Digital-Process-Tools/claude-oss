@@ -192,6 +192,30 @@ def test_a_lane_collision_is_dropped_and_named():
     assert "scripts/held.py" in result["dropped"][0]["why"]
 
 
+def test_a_refused_lane_pattern_forces_could_not_select_998():
+    """#998: a lane pattern `resolve_lane` could not read at all -- `refused`,
+    the same state `_lane_pattern_problem` also produces for a bad literal or
+    a glob-and-OSError -- must not read as "this lane resolved to no files,
+    therefore no overlap". An unreadable input is dark, not clean."""
+    def resolve(repo, patterns):
+        return {
+            "patterns": [
+                {"pattern": patterns[0], "state": "refused", "files": [],
+                 "detail": "ValueError: bad pattern"}
+            ],
+            "files": [],
+        }
+
+    payload = {
+        "declared": DECLARED,
+        "issues": [_issue(1, ["priority-high"], lane_patterns=["[unterminated"])],
+        "held_files": ["scripts/held.py"],
+    }
+    result = select_issues.select(payload, checker=_no_op_checker, resolve_lane=resolve)
+    assert result["state"] == "could-not-select"
+    assert "#1" in result["why"]
+
+
 def test_eligible_candidates_are_ranked_best_first():
     payload = {
         "declared": DECLARED,

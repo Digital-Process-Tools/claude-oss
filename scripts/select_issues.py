@@ -148,6 +148,21 @@ def select(payload, checker=None, search=None, resolve_lane=None):
         lane_patterns = item.get("lane_patterns")
         if lane_patterns and held_files:
             resolved = resolve_lane(Path("."), lane_patterns)
+            refused = [
+                entry for entry in resolved["patterns"] if entry["state"] == "refused"
+            ]
+            if refused:
+                # #998: a refused member contributes `files: []`, and an empty
+                # union used to read as "no overlap" -- the same defect class
+                # #970 closed for the assignee read, one input over: an
+                # unreadable lane pattern is dark, never a clean disjointness
+                # result reached by accident.
+                dark_inputs.append(
+                    "lane pattern for #{0}: {1}".format(
+                        number, "; ".join(entry["detail"] for entry in refused)
+                    )
+                )
+                continue
             overlap = lane_setup.lane_overlap(resolved["files"], held_files)
             if overlap:
                 dropped.append({

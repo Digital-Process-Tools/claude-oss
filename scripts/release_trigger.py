@@ -418,6 +418,7 @@ def receipt(payload):
             "threshold_hours",
             "short_by_hours",
             "fragment",
+            "undated",
             "detail",
         ):
             value = row.get(key)
