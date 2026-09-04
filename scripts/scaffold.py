@@ -492,16 +492,20 @@ def _code_span(text):
 #: column-0 lines of a rendered CLAUDE.md that the template itself does not contain,
 #: and `tests/test_claude_md_injection.py` has to be able to tell it from a line a
 #: config value put there. A copy in the test would go stale silently.
-#: The pytest-specific half of the "Running the tests" section, rendered only when
-#: `test_command` is set AND names pytest -- see `oss_config.names_pytest` for why
-#: those are two conditions and why this file's answer is stricter than doctor's.
-#: Every flag named here is pytest's own; a repo running `go test ./...` or
-#: `npm test` gets nothing rather than advice about somebody else's language.
+#: Runner-neutral by design (#955): the prior text was pytest-specific
+#: (`--durations`, `--cov`, `pyproject.toml`'s `addopts`) and gated on
+#: `oss_config.names_pytest`, a substring match over an arbitrary shell command.
+#: That match is wrong in both directions -- `'npm test --grep pytest'` tripped
+#: pytest advice into a JS repo, and `'make test'` that wraps pytest underneath
+#: got nothing. Naming the PROPERTY every runner can have (duration and
+#: coverage) rather than one runner's flags means the paragraph is never wrong
+#: to render, so it is gated on `test_command` being set at all, not on a guess
+#: about which runner it is.
 TEST_MEASUREMENT_RECOMMENDATION = (
-    "\nRecommended: make sure that command measures what it runs -- `--durations=N` "
-    "(so a\nslow test is visible without CI archaeology) and a coverage flag (e.g. "
-    "`--cov`),\ntypically set once in `pyproject.toml`'s `[tool.pytest.ini_options] "
-    "addopts` (or\n`pytest.ini` / `setup.cfg`). Once both are in place, set\n"
+    "\nRecommended: make sure that command measures what it runs -- how long each "
+    "test\ntakes (so a slow test is visible without CI archaeology) and how much of "
+    "the\ncode it covers, configured however your test runner reports those two "
+    "things.\nOnce both are in place, set\n"
     '`"test_measurement_configured": true` in `.oss.json` so `doctor` stops '
     "flagging it.\n"
 )
@@ -519,12 +523,14 @@ def _render_claude_md(config):
         test_line = _fenced(command)
     else:
         test_line = TEST_COMMAND_NOT_DETECTED
-    # Both conditions, not one. `oss_config.names_pytest` answers True for an
-    # absent command -- correct for doctor, which can keep asking a maintainer,
-    # and wrong here: this paragraph is written once into another repository and
-    # stays there, so an unprobed repo gets no runner named at all. That is the
-    # same standard TEST_COMMAND_NOT_DETECTED directly above holds itself to.
-    if command and oss_config.names_pytest(command):
+    # Gated on `command` alone (#955), not on `oss_config.names_pytest`: that
+    # predicate is a substring match over an arbitrary shell command and is
+    # wrong in both directions over it -- `'npm test --grep pytest'` matches
+    # and `'make test'` wrapping pytest does not. The paragraph itself is now
+    # runner-neutral, so there is no guess left to gate on; an absent command
+    # still gets nothing, the same standard TEST_COMMAND_NOT_DETECTED directly
+    # above holds itself to (a guess here becomes an instruction).
+    if command:
         measurement_line = TEST_MEASUREMENT_RECOMMENDATION
     else:
         measurement_line = ""

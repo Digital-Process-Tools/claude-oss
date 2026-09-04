@@ -563,12 +563,15 @@ def test_the_split_loses_nothing(tmp_path):
     assert collided == 1, collided
 
 
-def _next_minor(version):
-    """`0.8.0` -> `0.9.0`, or None when the version is not three integers.
+def _minor_after(version, steps):
+    """`_minor_after("0.8.0", 1)` -> `"0.9.0"`, `_minor_after("0.8.0", 2)` ->
+    `"0.10.0"`, or None when `version` is not three integers.
 
     Spelled by arithmetic rather than as a literal on purpose: a file naming the
     version this repository is about to reach becomes an offender the day it
-    reaches it, and this file carries a route.
+    reaches it, and this file carries a route. `steps` is how many minors ahead
+    to look -- `_next_minor` below is `steps=1`, and #901 adds a `steps=2`
+    WARNING-only horizon beside it (see `warn_on_far_horizon_pins`).
     """
     parts = version.split(".")
     if len(parts) != 3:
@@ -577,7 +580,42 @@ def _next_minor(version):
         major, minor, _patch = (int(part) for part in parts)
     except ValueError:
         return None
-    return "{}.{}.0".format(major, minor + 1)
+    return "{}.{}.0".format(major, minor + steps)
+
+
+def _next_minor(version):
+    """`0.8.0` -> `0.9.0`, or None when the version is not three integers.
+
+    `_minor_after(version, 1)`, kept as its own name because it feeds the
+    FAILING sweep below and every caller of that sweep names `_next_minor`.
+    """
+    return _minor_after(version, 1)
+
+
+def warn_on_far_horizon_pins(pins, horizon):
+    """#901: a literal beyond the one-minor horizon is a third state the
+    pass/fail sweep cannot express -- not wrong today, not right either. This
+    reports it as a `UserWarning` naming the pins and the horizon, the same
+    "announce, never fail" mechanism `test_no_test_file_pins_the_current_
+    version` already uses for a collision, so a pull request introducing one
+    is told and nothing reddens. Widening the FAILING sweep itself was tried
+    and reverted for majors -- see the docstring on
+    `test_the_sweep_is_clean_for_the_version_this_repository_reaches_next` --
+    and a horizon of two minors would hit the identical failure mode one step
+    further out, which is why this stays a warning rather than a second
+    assertion.
+    """
+    if not pins:
+        return
+    warnings.warn(
+        "{} test file(s) pin {}, two minors beyond the current version -- not "
+        "an offender yet, but it will redden the release commit that bumps "
+        "this repository into range unless fixed first: {}".format(
+            len(pins), horizon, ", ".join(pins)
+        ),
+        UserWarning,
+        stacklevel=1,
+    )
 
 
 def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
@@ -587,7 +625,7 @@ def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
     `scanned` and `unscannable` are this test's own controls: without them a walk
     that read nothing, or a tree that would not parse, passes as clean.
 
-    It asks about the next MINOR and nothing else, and that gap is deliberate
+    It FAILS about the next MINOR and nothing else, and that gap is deliberate
     rather than an oversight. Measured when this landed: the next major would
     report `test_doctor_inprocess.py`, `test_release_publish.py` and
     `test_release_config.py`, which spell `1.0.0`, `1.1.0` and `1.2.0` in files
@@ -596,6 +634,25 @@ def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
     Asserting it here would redden every pull request until somebody edited a
     fixture to make CI green, which is the reflex this repository refuses to
     train. What goes untested is therefore a major bump.
+
+    #901: the one-minor horizon has its own gap one step short of a major --
+    v0.20.0's release commit went red on a literal TWO minors out
+    (`test_plugin_update_dependencies_605.py` landed `0.21.0` while the current
+    version was `0.19.0`), invisible to this assertion until the bump moved it
+    into range. Widening the FAILING horizon to two minors was considered and
+    declined: it has the identical failure mode as the major case above, one
+    step further out, just not measured to the same degree yet -- so instead
+    this function also runs a WARNING-only sweep two minors out, below, using
+    the same "announce, never fail" mechanism `test_no_test_file_pins_the_
+    current_version` already has for a collision. Moving the question into
+    `/oss:release`'s own version-sites sweep (`commands/release.md` gate 4,
+    `git grep -n "<the new version>"`) was also considered and declined: that
+    sweep is scoped to `version_sites` -- the specific files a release bump
+    writes into -- not to `tests/` in general, where this defect actually
+    lives, so folding it in would need its own separate release-time check
+    rather than an extension of an existing one. A warning inside the suite
+    that already asks this question, at the moment #399 says to ask it, costs
+    less than either alternative.
     """
     version = _next_minor(current_version())
     if version is None:
@@ -614,6 +671,18 @@ def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
             version, len(collisions), ", ".join(pins)
         )
     )
+
+    # #901: the one-minor horizon above is a hard floor, not the whole answer --
+    # v0.20.0's release commit went red on a literal TWO minors out, invisible
+    # to the assertion above until the bump moved it into range. Reported here
+    # as a WARNING, never a failure, at exactly the point #399's own docstring
+    # says is knowable now: see `warn_on_far_horizon_pins`.
+    far_horizon = _minor_after(current_version(), 2)
+    if far_horizon is not None:
+        far_pins, _far_collisions, far_unscannable, far_scanned = sweep(far_horizon)
+        assert far_unscannable == [], far_unscannable
+        assert far_scanned > 1, far_scanned
+        warn_on_far_horizon_pins(far_pins, far_horizon)
 
 
 def test_no_test_file_pins_the_current_version():
@@ -696,3 +765,79 @@ def test_every_exception_is_still_an_exception():
         assert classify_source(clean, version) == ([], []), (
             "a file with no literal at all must produce neither bucket"
         )
+
+
+def test_minor_after_generalizes_next_minor():
+    """`_minor_after(v, 1)` must be `_next_minor(v)` -- the new helper is a
+    generalization, not a parallel implementation that can drift from it."""
+    assert _minor_after("0.8.0", 1) == _next_minor("0.8.0")
+    assert _minor_after("0.8.0", 2) == "0.10.0"
+    assert _minor_after("bad", 2) is None
+
+
+def test_a_literal_two_minors_out_warns_rather_than_fails(tmp_path):
+    """#901: v0.20.0's own release commit went red on a literal TWO minors
+    out (`0.21.0`, landed by #605 while the current version was `0.19.0`) --
+    invisible to the one-minor sweep, which fires only once the version bump
+    moves it into range. Widening the FAILING horizon was already tried and
+    reverted for majors (see the docstring on
+    `test_the_sweep_is_clean_for_the_version_this_repository_reaches_next`),
+    so this widens a WARNING-only horizon instead: a pull request that lands
+    such a literal is told about it, and nothing reddens.
+
+    Must-fire and must-not-fire in the same fixture, synthetic and isolated
+    from this repository's real tests/ tree so the assertion does not depend
+    on what tests/ happens to spell today.
+    """
+    horizon = _minor_after("1.2.3", 2)
+    assert horizon == "1.4.0"
+
+    offender = tmp_path / "offender"
+    offender.mkdir()
+    (offender / "test_x.py").write_text(
+        'M = ".claude-plugin/plugin.json"\n'
+        'def test_x():\n    assert v == "{}"\n'.format(horizon),
+        encoding="utf-8",
+    )
+    pins, _collisions, unscannable, scanned = sweep(horizon, root=offender)
+    assert unscannable == []
+    assert scanned == 1
+    assert pins, "the synthetic fixture must actually pin the horizon literal"
+
+    with pytest.warns(UserWarning, match=horizon):
+        warn_on_far_horizon_pins(pins, horizon)
+
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "test_y.py").write_text("def test_y():\n    assert True\n", encoding="utf-8")
+    pins2, _c2, _u2, _s2 = sweep(horizon, root=clean)
+    assert pins2 == [], "the must-not-fire control pins the horizon literal too"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_on_far_horizon_pins(pins2, horizon)
+        assert caught == [], "no pins beyond the horizon; nothing should warn"
+
+
+def test_the_real_sweep_two_minors_out_is_reported_as_a_warning_not_a_failure():
+    """The integration half: run the same warning-only sweep against this
+    repository's real tests/ tree, at the actual two-minors-out horizon.
+    Never asserts `not pins` -- that would be exactly the failing horizon
+    #901 says not to widen -- it only proves the call does not raise and
+    reports via `UserWarning` when there is something to report.
+    """
+    horizon = _minor_after(current_version(), 2)
+    if horizon is None:
+        pytest.skip(
+            "the current version ({!r}) is not three integers, so the "
+            "two-minors-out horizon could not be derived".format(current_version())
+        )
+    pins, _collisions, unscannable, scanned = sweep(horizon)
+    assert unscannable == [], unscannable
+    assert scanned > 1, scanned
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_on_far_horizon_pins(pins, horizon)
+    if pins:
+        assert any(horizon in str(w.message) for w in caught), caught
+    else:
+        assert caught == []

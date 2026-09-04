@@ -54,20 +54,24 @@ def test_it_is_a_recommendation_not_an_instruction_to_set_it_to_a_fixed_value():
     )
 
 
-def test_a_repo_whose_runner_is_not_pytest_gets_no_pytest_advice():
-    """The paragraph is pytest-specific -- `--durations`, `--cov`,
+def test_a_repo_whose_runner_is_not_pytest_still_gets_the_neutral_advice():
+    """#955: the paragraph used to be pytest-specific -- `--durations`, `--cov`,
     `pyproject.toml`'s `addopts` -- and `.oss.json`'s `test_command` is an
-    arbitrary shell command. #946's finding on doctor's own half of #932 is
-    the same finding here, one file over: a Go repo told to configure
-    `[tool.pytest.ini_options]` has been handed a fact about somebody else's
-    language, permanently, in a file it will read on every session.
+    arbitrary shell command, so it was gated on a substring match that is
+    wrong in both directions. The fix makes the paragraph itself
+    runner-neutral (it names the property, not one runner's flags), so a Go
+    repo gets the same generic recommendation as everyone else rather than
+    nothing at all.
     """
     text = scaffold.render("CLAUDE.md", _config(test_command="go test ./..."))
     assert "pytest" not in text, (
-        "scaffold wrote pytest advice into a repo whose test_command plainly "
-        "names another runner"
+        "scaffold wrote pytest-specific wording into a repo whose test_command "
+        "plainly names another runner"
     )
-    assert "test_measurement_configured" not in text
+    assert "test_measurement_configured" in text, (
+        "a set test_command withheld the (now runner-neutral) measurement "
+        "advice on the strength of a guess about which runner it is"
+    )
 
 
 def test_an_undetected_test_command_gets_no_pytest_advice():
@@ -86,7 +90,44 @@ def test_an_undetected_test_command_gets_no_pytest_advice():
 def test_a_pytest_repo_still_gets_the_advice():
     """The positive control for both must-not-fire assertions above: with a
     pytest-shaped command the paragraph is present, so a template that simply
-    stopped rendering it would fail here rather than pass all three."""
+    stopped rendering it would fail here rather than pass all three. The
+    advice is runner-neutral now (#955), so this checks the property named --
+    duration and coverage -- rather than pytest's own flag spelling."""
     text = scaffold.render("CLAUDE.md", _config(test_command="python -m pytest tests/"))
     assert "test_measurement_configured" in text
-    assert "--durations" in text
+    assert "how long each" in text
+    assert "how much" in text
+
+
+def test_a_command_naming_pytest_only_incidentally_gets_no_pytest_flags():
+    """#955: `names_pytest` is a substring match. `'npm test --grep pytest'`
+    contains the word `pytest` and used to trip the pytest-specific advice
+    into a JavaScript repo's CLAUDE.md -- a fact about somebody else's
+    language, written permanently into the file every session there reads
+    first. The command itself is still echoed verbatim in its own code
+    fence -- that is not the defect -- so this checks the ADVICE paragraph
+    specifically: it must never name pytest's own flags on the strength of a
+    substring match.
+    """
+    text = scaffold.render(
+        "CLAUDE.md", _config(test_command="npm test --grep pytest")
+    )
+    assert "--durations" not in text and "--cov" not in text, (
+        "a substring match on the word 'pytest' inside an npm invocation wrote "
+        "pytest-specific flag advice into a non-Python repo's CLAUDE.md"
+    )
+    assert "pyproject.toml" not in text
+
+
+def test_a_wrapped_pytest_invocation_still_gets_the_measurement_advice():
+    """#955's mirror: `'make test'` that actually runs pytest underneath used
+    to get NOTHING, because `names_pytest` cannot see through a wrapper --
+    `doctor` reporting `OK: not applicable` for a check that never looked.
+    The fix is runner-neutral, so a wrapped command is not a reason to
+    withhold it either.
+    """
+    text = scaffold.render("CLAUDE.md", _config(test_command="make test"))
+    assert "test_measurement_configured" in text, (
+        "a set test_command with no pytest-specific wording got no measurement "
+        "advice at all -- exactly the withheld half of #955"
+    )
