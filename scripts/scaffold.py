@@ -708,6 +708,30 @@ def untagged_versions(config):
     return value
 
 
+def user_visible_pattern(config):
+    """This repository's `user_visible_paths`, as one `grep -E` alternation.
+
+    Returns the empty string when nothing is declared -- absent/null, the
+    default -- which is what makes the generated workflow's guard
+    (`[ -n '__USER_VISIBLE_PATTERN__' ]`) never fire and leaves today's
+    unconditional-fragment behaviour byte-identical (#779).
+
+    Re-checked here for the same reason `fragments_dir()` and
+    `untagged_declaration()` are: `render_owned()` reaches this without going
+    near `plan()`, and this value becomes shell source, single-quoted, in a
+    `run:` line of the workflow generated for another repository -- an
+    unparseable or empty declaration is refused here rather than shipped as a
+    silent "nothing is user-visible" that would turn the whole gate off.
+    """
+    value = config.get("user_visible_paths")
+    problem = oss_config.user_visible_paths_problem(value)
+    if problem:
+        raise ScaffoldError(problem)
+    if not value:
+        return ""
+    return "|".join(value)
+
+
 def _render_fragments_readme(config):
     return FRAGMENTS_README.replace("__DIR__", fragments_dir(config))
 
@@ -909,6 +933,14 @@ To change something here, copy it out and point your own config at the copy.
 cannot live in here: a forge reads workflows only from `.github/workflows/` itself —
 subdirectories are not supported and a symlink there fails outright. So it keeps the
 `oss-` prefix and carries the same note in its own header.
+
+## Exclude this directory from your own linter
+
+Every `.py` file here is vendored and replaced wholesale on every `/oss:scaffold`
+run, so a style finding your own linter (ruff, flake8, …) reports inside `__DIR__`
+is not actionable: any fix you make is reverted the next time this directory is
+regenerated. Add `__DIR__` to your linter's exclude list — for `ruff`, an `exclude`
+entry under `[tool.ruff]` in `pyproject.toml`.
 
 ## What is here
 
@@ -1196,14 +1228,36 @@ jobs:
             exit 0
           fi
 
+          # `user_visible_paths` in .oss.json (#779): a list of regexes THIS
+          # repository has declared as user-visible, joined by
+          # `user_visible_pattern()` at scaffold time into one `grep -E`
+          # alternation. Empty (the substituted value below) when nothing is
+          # declared -- absent/null, the default -- so `[ -n '' ]` is false and
+          # this guard never fires: every non-empty diff with no fragment still
+          # falls through to the label/dependabot/failure branches below,
+          # unchanged from before this key existed.
+          #
+          # Placed BELOW every branch above that can find or lose a fragment on
+          # purpose: a deleted fragment was already refused, above, before this
+          # line is reached, so declaring `user_visible_paths` cannot make that
+          # bypass possible again -- the `$removed && ! $assembled` branch at
+          # the top of this step already returned.
+          if [ -n '__USER_VISIBLE_PATTERN__' ]; then
+            if ! printf '%s\\n' "$changed" | grep -Eq '__USER_VISIBLE_PATTERN__'; then
+              echo "changelog: skipped (no user-visible paths changed)"
+              exit 0
+            fi
+          fi
+
           # Every pull request is asked for one, including a docs-only or tests-only
-          # change. The alternative -- exempting paths by regex, as some repositories
-          # do -- needs a list of what is user-visible, and that is a fact about YOUR
-          # repository which this template cannot know: guessing `docs/` and `tests/`
-          # is silent in the dangerous direction for a project whose product is its
-          # documentation. The escape hatch is the label, which a human applies and a
-          # reviewer can see; `gh api` above is what makes it actually take effect on
-          # a re-run rather than only on the next push.
+          # change, UNLESS this repository has declared `user_visible_paths` above and
+          # none of the changed paths matched it. Guessing `docs/` and `tests/` by
+          # default is still refused -- silent in the dangerous direction for a
+          # project whose product is its documentation -- so the unconfigured
+          # default stays exactly this strict. The escape hatch below is the label,
+          # which a human applies and a reviewer can see; `gh api` above is what
+          # makes it actually take effect on a re-run rather than only on the next
+          # push.
           #
           # One author is exempt, and it is placed HERE -- last, after every branch above --
           # so that it changes exactly one outcome: the one that currently fails with
@@ -1300,6 +1354,7 @@ def _owned_workflow(config, plugin_root):
         CHANGELOG_WORKFLOW.replace("__DIR__", OWNED_DIR)
         .replace("__FRAGMENTS__", fragments_dir(config))
         .replace("__PACKAGES__", _assembler_packages())
+        .replace("__USER_VISIBLE_PATTERN__", user_visible_pattern(config))
         .replace("__UNTAGGED__", flag)
         # Wrapped against the placeholder's own indentation rather than a constant:
         # the note is a paragraph, and a YAML comment that runs off the line is the

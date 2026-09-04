@@ -43,6 +43,11 @@ OPTIONAL_KEYS = {
     # module docstring for why this is never derived from the config's
     # own content.
     "test_measurement_configured",
+    # #779: which changed paths this repository considers user-visible, so the
+    # generated changelog gate can exempt a pull request that touches none of
+    # them. Absent/null is the default and leaves the gate unconditional, same
+    # as before this key existed -- see `user_visible_paths_problem` below.
+    "user_visible_paths",
 }
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
@@ -968,6 +973,62 @@ def changelog_untagged_problem(value):
     return None
 
 
+def user_visible_paths_problem(value):
+    """Why this `user_visible_paths` cannot be used, or None when it is fine.
+
+    Null is the default and means nobody has told the generated changelog gate
+    which paths are user-visible for this repository, so every non-empty diff
+    with no fragment still fails -- exactly the behaviour before this key
+    existed (#779).
+
+    A declared value becomes a `grep -E` pattern spliced, single-quoted, into a
+    `run:` line of the workflow generated for another repository -- the same
+    surface `changelog_dir_problem` above already refuses a shell-breaking
+    value on, so a quote character here is refused for the identical reason
+    rather than shipped as an injection surface waiting for the first
+    contributor to (accidentally or not) close that literal early.
+
+    `[]` is refused rather than accepted as "declared, and nothing is
+    user-visible": unlike `changelog_untagged`, where an empty list is a real
+    and different answer from null, an empty `user_visible_paths` would turn
+    the whole gate off silently for every pull request -- exactly the failure
+    the acceptance bar for #779 names by name. Say nothing (null) to keep
+    today's behaviour, or name at least one pattern.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        return (
+            "user_visible_paths: expected a non-empty list of regex strings, or null "
+            "to leave the generated changelog gate unconditional (today's default "
+            "behaviour); got {!r}. An empty list is refused rather than read as "
+            "'nothing is user-visible', which would silently turn the gate off for "
+            "the whole repository.".format(value)
+        )
+    for index, pattern in enumerate(value):
+        if not isinstance(pattern, str) or not pattern:
+            return (
+                "user_visible_paths[{}]: expected a non-empty regex string; got "
+                "{!r}.".format(index, pattern)
+            )
+        if "'" in pattern or "\n" in pattern:
+            return (
+                "user_visible_paths[{}]: {!r} carries a single quote or a newline. "
+                "This value is written into a `run:` line of the workflow generated "
+                "for another repository, single-quoted, so a character that would "
+                "close that literal early is refused rather than quoted and hoped "
+                "about.".format(index, pattern)
+            )
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            return (
+                "user_visible_paths[{}]: {!r} is not a valid regular expression "
+                "({}).".format(index, pattern, exc)
+            )
+    return None
+
+
 # Label vocabularies differ per repo and no pattern list covers every convention, so
 # these are widened rather than made exhaustive -- and every label that matches none
 # of them is reported by name. `priority/high` is GitHub's own documented spelling and
@@ -1793,6 +1854,10 @@ def validate(config):
     changelog_untagged = changelog_untagged_problem(config.get("changelog_untagged"))
     if changelog_untagged:
         problems.append(changelog_untagged)
+
+    user_visible_paths = user_visible_paths_problem(config.get("user_visible_paths"))
+    if user_visible_paths:
+        problems.append(user_visible_paths)
 
     if "release" in config:
         problems.extend(_validate_release(config["release"]))
