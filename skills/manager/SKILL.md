@@ -313,9 +313,9 @@ quote the error, report it as a finding rather than only routing around it, and 
 lane's brief carrying every further open issue whose files land inside its already-claimed set.
 Three states, computed rather than felt: **`filled`** on both axes; **`under-filled`**, naming the
 count, the shared file that blocked a further issue, and the issues queued behind it; and
-**`could-not-tell`**, which must never render as `filled`. **Claim before you spawn** --
-`gh issue edit <N> --add-assignee @me` -- and skip any candidate whose assignees read non-empty, or
-whose assignees could not be read at all.
+**`could-not-tell`**, which must never render as `filled`. **Claim before you spawn**, every issue in the lane in one call:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue_claim.py" <N> [<N> ...] --claim`. Skip every candidate
+that came back anything but `claimed` or `already-mine`.
 
 Three calls stand in for judgement here, and none of them is optional:
 
