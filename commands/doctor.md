@@ -632,21 +632,25 @@ Two of the warnings are about CI rather than about setup, and neither is cosmeti
 
 ## Then name the next step
 
-`doctor.py`'s own docstring is explicit that it never names a next command itself -- a
-line printed regardless of state carries no information, and the advice belongs on
-"the surface that instructs the work", not in a diagnostic that also runs mid-tick and
-before a release. This command is that surface for the one path neither of those two
-covers: a session **reopened** on a managed repo, where the sequence a human actually
-runs is `/oss:doctor`, fix whatever it named, then stop -- with nothing left to say
-what "then" is (#957).
+`doctor.py`'s own docstring is explicit that *the diagnostic* never names a next
+command itself -- a line printed regardless of state carries no information, and the
+advice belongs on "the surface that instructs the work". `scripts/doctor.py` is
+called directly, script to script, from inside a running tick (`commands/tick.md`)
+and before a release (`skills/manager/SKILL.md`) -- neither of those callers goes
+through this command at all, so neither reads this section, and there was never a
+next-step gap to close on those two paths. What has no such surface is a session
+**reopened** on a managed repo, where the sequence a human actually runs is
+`/oss:doctor` -- this command, read in full -- fix whatever it named, then stop, with
+nothing left to say what "then" is (#957).
 
-So: if you reached this command by reopening a session on a managed repo, and this run
-is not sitting inside an already-running tick or an already-running release, name
-**`/oss:tick`** as the next step once the report above is clean, or once every `FAIL`
-and every actionable `WARN` is resolved. That is the maintainer loop itself -- read the
-board, decide, delegate, review, merge on green -- and it is the step nothing else in
-this session is already carrying out.
+So: name **`/oss:tick`** as the next step once the report above is clean, or once
+every `FAIL` and every actionable `WARN` is resolved. That is the maintainer loop
+itself -- read the board, decide, delegate, review, merge on green.
 
-Do not name it when `doctor` ran **mid-tick** or **before a release**: both are
-ordinary times to run this diagnostic, named as such above, and neither is a moment to
-start a second tick on top of the one already running.
+**One case this section cannot see:** a human typing `/oss:doctor` by hand while a
+tick or a release is already running in the same session. Nothing in this command's
+own text can tell that apart from a reopened session, because both read the identical
+report. If you know independently that a tick or a release is already under way in
+this session, do not name `/oss:tick` here -- starting a second one on top of the one
+already running is the failure this caveat exists to avoid, and that knowledge has to
+come from outside this command, not from anything printed above.
