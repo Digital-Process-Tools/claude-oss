@@ -325,7 +325,21 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
 
     snap_parser = sub.add_parser("snapshot", help="print a snapshot as JSON")
-    snap_parser.add_argument("--root", default=".", help="the worktree to snapshot")
+    snap_parser.add_argument(
+        "--root",
+        default=".",
+        help=(
+            "the worktree to snapshot (default: the calling process's own cwd "
+            "at this call, never a guess across sibling worktrees -- there is no "
+            "such heuristic here). The resolved, absolute root is recorded in the "
+            "output and reused by a later `compare` call by default, so a `compare` "
+            "invoked from a different cwd -- e.g. after the Bash tool resets cwd "
+            "between calls -- still re-snapshots this same root rather than "
+            "wherever it happens to be standing (#971). Passing --root again at "
+            "compare time still overrides that on purpose, unchanged. No such "
+            "cross-worktree resolution bug was found or fixed here (#1024)."
+        ),
+    )
 
     cmp_parser = sub.add_parser("compare", help="compare a before-snapshot to now")
     cmp_parser.add_argument(
