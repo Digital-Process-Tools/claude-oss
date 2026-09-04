@@ -8,17 +8,16 @@ many companions join it and what a short lane must say for itself.
 **#798 -- the order.** Selection used to be priority-only, which cannot separate
 a maintainer's ask from the loop's own backlog. On a board where 98% of filings
 are the loop's, that means a human ask waits behind them. The order is now two
-axes, author before priority within a band:
+axes, author before priority within a band -- and **#993 replaced the old
+six-row table with nine computed rows, ranks 2-10** (rank 1 is a documented,
+uncomputed "blocking-class defect" row): "human" split into "external" and
+"maintainer", read from GitHub's own author association rather than a
+declared label, because that axis was collapsing an outside reporter and the
+maintainer into one band and sinking an untriaged external bug report -- see
+``dispatch_rank.py``'s own module docstring for the current table.
 
-    1  human, high
-    2  loop,  high
-    3  human, medium
-    4  human, low or no priority label
-    5  loop,  medium
-    6  loop,  low or no priority label
-
-"Loop" is an issue carrying ``labels.filed_by_loop``'s label. An issue without
-it is a human issue.
+"Loop" is still an issue carrying ``labels.filed_by_loop``'s label. An issue
+without it is either external or maintainer, never a fallback "human" band.
 
 **That default is only safe because the backlog was labelled.** The label's own
 description on the tracker says "absence is not proof a human filed it", and
@@ -29,7 +28,8 @@ loop-filed issue above every labelled one. The maintainer resolved it by
 labelling every open issue and pruning by hand, which makes absence a positive
 act rather than a gap. Nothing here can verify that was done -- which is exactly
 why ``rank`` refuses to rank at all when the repository declares no label, and
-never quietly reads an unlabelled board as a board full of human issues.
+never quietly reads an unlabelled board as though every issue on it were
+external or maintainer.
 
 **#799 -- the size.** Measured across 237 lanes (#499): three issues in one lane
 cost 16% less per issue than one alone, and four or more is a cliff at 141
@@ -173,6 +173,24 @@ def test_an_unrankable_association_sorts_last_not_first_or_middle():
     assert ordered[-1]["number"] == 1, [i["number"] for i in ordered]
 
 
+def test_an_unrankable_issue_sorts_last_even_when_it_arrives_first_993():
+    """Found by review (#993 self-review round): `order()`'s fallback sort
+    key for an unrankable issue used to be `len(ROWS) + 1`, which was
+    strictly above every real rank only while `ROWS` was numbered
+    `1..len(ROWS)`. #993 renumbered `ROWS` to start at 2 (nine rows, ranks
+    2-10), so `len(ROWS) + 1 == 10` collided with the real `loop`/`low`
+    rank -- and `sorted()`'s own stability then let an unrankable issue
+    keep whatever position it already held relative to a genuine rank-10
+    issue, rather than being pushed after it. The test above never caught
+    this because it always placed the unrankable issue *last* in its input,
+    where stable-sort tie-breaking hides the collision; this one places it
+    *first*, which is the arrangement the old formula got wrong."""
+    unreadable = {"number": 1, "labels": [LOW]}
+    loop_low = [{"number": n, "labels": [LOOP, LOW]} for n in (2, 3)]
+    ordered = dispatch_rank.order([unreadable] + loop_low, DECLARED)
+    assert ordered[-1]["number"] == 1, [i["number"] for i in ordered]
+
+
 def test_a_loop_labelled_issue_ignores_whatever_association_it_carries():
     """A loop-filed issue is filed under the maintainer's own GitHub account,
     so its author association can never distinguish 'loop' from 'maintainer'
@@ -189,9 +207,10 @@ def test_an_undeclared_filed_by_loop_label_cannot_rank_at_all():
     """The third state, and the reason it exists.
 
     With no declared label, every issue on the board is unlabelled. Reading
-    that as 'every issue is a human issue' would rank the loop's entire backlog
-    into rows 1, 3 and 4 -- confidently, and wrongly, with nothing reporting it.
-    So the author axis is unavailable and `rank` says so."""
+    that as 'every issue is external or maintainer' would rank the loop's
+    entire backlog into every non-loop row -- confidently, and wrongly, with
+    nothing reporting it. So the author axis is unavailable and `rank` says
+    so."""
     answer = dispatch_rank.rank([MEDIUM], {"priority": [HIGH, MEDIUM, LOW]})
     assert answer["state"] == "could-not-rank", answer
     assert answer["rank"] is None, answer
@@ -520,8 +539,9 @@ def test_every_filing_instruction_names_the_label():
     """#798 item 1: every issue the loop opens carries the label from creation,
     so every place that tells an agent to file must say so. A filing
     instruction that omits it produces an unlabelled issue, and an unlabelled
-    issue is a human issue under the rule this same change introduces -- so the
-    loop's own filings would outrank the maintainer's."""
+    issue is never read as the loop's own under the rule this same change
+    introduces -- so the loop's own filings would outrank the maintainer's
+    and every external report."""
     silent = [
         str(path.relative_to(repo_root()))
         for path, text in _filing_instructions()
@@ -568,10 +588,11 @@ def _extract_dispatch_table_rows(text):
 
 
 def test_the_dispatch_phase_states_the_table_dispatch_rank_computes():
-    """#825. The six-row table is a transcription of `dispatch_rank.ROWS` --
-    the module is the source, the table is prose copied from it -- and a
-    transcription that drifts from its source is exactly what this can catch
-    and a reader skimming the table cannot.
+    """#825, updated for #993's nine-row table. The dispatch table is a
+    transcription of `dispatch_rank.ROWS` -- the module is the source, the
+    table is prose copied from it -- and a transcription that drifts from
+    its source is exactly what this can catch and a reader skimming the
+    table cannot.
 
     This replaces `test_the_spine_and_dispatch_state_the_same_order`, which
     asserted only that the words 'human' and 'loop' occur somewhere in two

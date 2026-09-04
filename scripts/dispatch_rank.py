@@ -105,6 +105,17 @@ ROWS = (
 
 _BY_PAIR = {pair: number for number, pair in ROWS}
 
+#: `order()`'s sort key for an issue that could not be ranked -- strictly
+#: above the *highest real rank*, not `len(ROWS) + 1`. Those used to be the
+#: same number when `ROWS` was numbered `1..len(ROWS)`; #993 renumbered it to
+#: start at 2 (rank 1 is the prose-only row this module never computes), so
+#: `len(ROWS) + 1 == 10` collided with the real `loop`/`low` rank and an
+#: unrankable issue silently sorted ahead of it whenever it happened to
+#: appear earlier in the caller's input list (found by review, #993). Deriving
+#: this from the rows themselves means a future row added or renumbered can
+#: never quietly reintroduce the same collision.
+_UNRANKABLE_KEY = max(number for number, _ in ROWS) + 1
+
 #: The two GitHub author-association readings `rank()` recognises for a
 #: non-loop issue. Anything else -- `None`, an empty string, a typo -- means
 #: "could not tell" and refuses to rank rather than guessing between them.
@@ -372,7 +383,7 @@ def order(issues, declared):
     def key(item):
         answer = rank(item.get("labels") or [], declared,
                        item.get("author_association"))
-        return answer["rank"] if answer["rank"] is not None else len(ROWS) + 1
+        return answer["rank"] if answer["rank"] is not None else _UNRANKABLE_KEY
 
     return sorted(issues, key=key)
 
