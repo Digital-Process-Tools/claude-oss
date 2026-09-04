@@ -329,9 +329,15 @@ def _config(**overrides):
     return config
 
 
-def _step_script(step):
-    """One step's shell body, dedented, ready to hand to bash."""
-    body = scaffold.render_owned(GENERATED_WORKFLOW, _config())
+def _step_script(step, config=None):
+    """One step's shell body, dedented, ready to hand to bash.
+
+    `config` defaults to this module's own `_config()` -- the shape every existing
+    caller already relied on -- but a caller that needs a non-default `.oss.json`
+    key rendered into the workflow (`user_visible_paths` in #996, for example) can
+    pass one instead of reimplementing this extraction against its own config.
+    """
+    body = scaffold.render_owned(GENERATED_WORKFLOW, config if config is not None else _config())
     lines = body.splitlines()
     starts = [i for i, line in enumerate(lines) if line.strip() == step]
     assert len(starts) == 1, "expected exactly one {!r} step, found {}".format(
@@ -354,8 +360,8 @@ def _step_script(step):
     return textwrap.dedent("\n".join(block)) + "\n"
 
 
-def _gate_script():
-    return _step_script(GATE_STEP)
+def _gate_script(config=None):
+    return _step_script(GATE_STEP, config)
 
 
 def _git(repo, *args):

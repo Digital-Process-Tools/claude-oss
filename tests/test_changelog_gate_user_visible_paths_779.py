@@ -182,3 +182,130 @@ def test_an_unparseable_config_refuses_at_render_time_rather_than_shipping_silen
             ".github/workflows/oss-changelog.yml",
             _config(user_visible_paths=[]),
         )
+
+
+# ----------------------------------------------------- real shell execution (#996)
+#
+# Everything above reads the RENDERED TEXT of the workflow. Its sibling files
+# (`tests/test_changelog_gate.py`, `tests/test_bot_pull_request_293.py`,
+# `tests/test_changelog_label_live_read_777.py`) all put the extracted `run:` body in
+# front of a real git repository and read the exit status instead -- because a defect
+# in what the shell actually DOES is invisible to a text assertion (#87 is the reason
+# `test_changelog_gate.py` exists at all). This file had none of that until #996: two
+# diagnostic passes had to reason about the generated script from outside because
+# nothing here ever actually ran it.
+#
+# Reuses the shared harness (`_gate_script`, `_child_env`, `_pull_request`, `_require`,
+# `BASH`) from `tests/test_changelog_gate.py` rather than reinventing shell-extraction
+# machinery, exactly as the sibling files already do.
+
+import subprocess  # noqa: E402
+
+from test_changelog_gate import (  # noqa: E402
+    BASH,
+    _child_env,
+    _config as _shared_config,
+    _gate_script,
+    _pull_request,
+    _require,
+)
+
+
+def _user_visible_config(**overrides):
+    """The shared harness's own `_config()`, with `user_visible_paths` overrides
+    layered on top -- this file's local `_config()` above is for the render-only
+    tests and is not what `_gate_script()` needs, since the extracted `run:` body
+    has to come from the same rendering `_step_script` uses.
+    """
+    return _shared_config(**overrides)
+
+
+def _run_gate(repo, config):
+    for tool in ("git", "grep", "sed"):
+        _require(tool)
+    return subprocess.run(
+        [BASH, "-c", _gate_script(config)],
+        cwd=str(repo),
+        env=_child_env(BASH, BASE_REF="main"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        errors="replace",
+    )
+
+
+# A pull request that changes only a path the config below declares user-visible
+# (`^docs/`), adds no fragment: the exemption must NOT reach this -- declaring
+# `user_visible_paths` narrows what counts, it does not blanket-exempt a repo.
+VISIBLE_ONLY = {"docs/guide.md": "a new sentence\n"}
+
+# A pull request that changes only a path OUTSIDE the declared pattern, adds no
+# fragment: the shape the exemption exists for.
+NOT_VISIBLE_ONLY = {"tests/harness.py": "value = 2\n"}
+
+
+def test_a_path_not_matching_user_visible_paths_is_skipped_and_says_so(tmp_path):
+    """The 'must fire' half of the pair below: a diff that touches only a path the
+    config did NOT declare user-visible is exempted, and the receipt says which
+    branch fired rather than reading like an ordinary pass or the label escape hatch.
+    """
+    config = _user_visible_config(user_visible_paths=[r"^docs/"])
+    repo = _pull_request(tmp_path, NOT_VISIBLE_ONLY)
+    done = _run_gate(repo, config)
+    assert done.returncode == 0, done.stdout
+    assert "skipped (no user-visible paths changed)" in done.stdout, done.stdout
+
+
+def test_a_path_matching_user_visible_paths_is_still_refused(tmp_path):
+    """The 'must not fire' half: a diff that DOES touch a path the config declared
+    user-visible is refused exactly as it would be with no config at all --
+    declaring `user_visible_paths` narrows the exemption, it does not turn the gate
+    off for the paths it names.
+    """
+    config = _user_visible_config(user_visible_paths=[r"^docs/"])
+    repo = _pull_request(tmp_path, VISIBLE_ONLY)
+    done = _run_gate(repo, config)
+    assert done.returncode == 1, done.stdout
+    assert "No changelog fragment" in done.stdout, done.stdout
+
+
+def test_with_no_user_visible_paths_configured_the_same_diff_is_still_refused(tmp_path):
+    """Positive control for the first test above: without the key declared at all,
+    the identical NOT_VISIBLE_ONLY diff is NOT exempted -- proving the skip in the
+    first test came from the configured pattern genuinely not matching, not from
+    some other branch (`nothing changed`, the label, dependabot) firing instead.
+    """
+    config = _user_visible_config()
+    repo = _pull_request(tmp_path, NOT_VISIBLE_ONLY)
+    done = _run_gate(repo, config)
+    assert done.returncode == 1, done.stdout
+    assert "No changelog fragment" in done.stdout, done.stdout
+
+
+def test_a_fragment_present_still_passes_even_with_user_visible_paths_configured(tmp_path):
+    """A fragment satisfies the gate regardless of `user_visible_paths` -- the
+    exemption is an additional way to pass, never a narrower way to fail."""
+    config = _user_visible_config(user_visible_paths=[r"^docs/"])
+    repo = _pull_request(
+        tmp_path,
+        {"src.py": "value = 2\n", "changelog.d/925.fixed.md": "- a fix (#925).\n"},
+    )
+    done = _run_gate(repo, config)
+    assert done.returncode == 0, done.stdout
+    assert "925.fixed.md" in done.stdout, done.stdout
+
+
+def test_deleting_a_fragment_is_refused_even_when_the_rest_of_the_diff_is_user_visible_only(tmp_path):
+    """Acceptance bar #1, executed rather than read: the deleted-fragment branch
+    sits ABOVE the user-visible-paths exemption, so losing a pending fragment is
+    refused even when every OTHER changed path matches the configured pattern.
+    """
+    config = _user_visible_config(user_visible_paths=[r"^docs/"])
+    repo = _pull_request(
+        tmp_path,
+        {"docs/guide.md": "a new sentence\n", "changelog.d/906.added.md": None},
+    )
+    done = _run_gate(repo, config)
+    assert done.returncode == 1, done.stdout
+    assert "deleted without being assembled" in done.stdout, done.stdout
+
