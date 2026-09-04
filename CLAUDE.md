@@ -492,22 +492,25 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `f9dec04`, the commit `v0.22.0` was cut from — in part, and the part is named.**
-The delta count, gate 3's audit round and the cohort freeze were re-derived in the session that cut
-this release: **17** merged pull requests against `v0.21.0..HEAD`, confirmed twice after an earlier
-count of 15 turned out to be stale — a first reading was wrong and was caught, which belongs in this
-disclosure rather than smoothed over the same way past corrections here have been; gate 3's audit
-round, 4 findings, filed as `#997`, `#998`, `#999`, `#1000`, none blocking; and the cohort freeze,
-cohort-18 at 23 open issues against cohort-17's 11. **The reach probe was not re-derived this
-release** — it is still `v0.21.0`'s, measured at `c565488`, eleven repositories in the one org it can
-see and four carrying `.oss.json`. The rest of the field readings were not either: the owned-files
-table, the two installs and the `doctor` run are still `v0.17.0`'s, measured at `ad38b93` and now
-carried through **five** tags (`v0.18.0` through `v0.22.0`). `#815` tracks re-deriving them, and a
-fifth release disclosing the identical, unmeasured-since-`v0.17.0` gap is one of two things: either
-the gap is genuinely low priority against everything else this loop spends a tick on, or the
-disclosure is not actually driving anyone to close it. Both are worth naming and neither is decided
-here — the honest content of this paragraph is the count itself, five releases running, not a
-conclusion drawn from it. **The readings themselves live in `docs/release-currency.md`**; this
+**Measured at `b45ef51`, the commit `v0.23.0` was cut from — in part, and the part is named.**
+The delta count, gate 3's audit rounds and the cohort freeze were re-derived in the session that cut
+this release: **10** merged pull requests against `v0.22.0..HEAD`; gate 3's audit, **two rounds run
+to the hard cap** — round one, 4 findings, filed as `#1013`, `#1014`, `#1015`, `#1016`; round two, 4
+more findings over the same delta, filed as `#1017`, `#1018`, `#1019`, `#1020` — none in either round
+landed in a ranking-table row marked blocking, so both rounds were filed rather than stopping the tag,
+per gate 3's own stated rule; and the cohort freeze, cohort-19 at **16** open issues against
+cohort-18's 8 — a cohort that grew rather than shrank, stated plainly rather than smoothed over,
+because 8 of the 16 are this release's own round-1 and round-2 findings landing in the same minute as
+the freeze that counts them. **The reach probe was not re-derived this release** — it is still
+`v0.21.0`'s, measured at `c565488`, eleven repositories in the one org it can see and four carrying
+`.oss.json`. The rest of the field readings were not either: the owned-files table, the two installs
+and the `doctor` run are still `v0.17.0`'s, measured at `ad38b93` and now carried through **six** tags
+(`v0.18.0` through `v0.23.0`). `#815` tracks re-deriving them, and a sixth release disclosing the
+identical, unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low
+priority against everything else this loop spends a tick on, or the disclosure is not actually driving
+anyone to close it. Both are worth naming and neither is decided here — the honest content of this
+paragraph is the count itself, six releases running, not a conclusion drawn from it. **The readings
+themselves live in `docs/release-currency.md`**; this
 section holds the verdict and the marker. Re-derive at each release rather than editing this.
 
 **The reach probe, re-derived at `c565488` for `v0.21.0`.** `gh repo list Digital-Process-Tools
