@@ -1,0 +1,234 @@
+"""Board in, ranked claimable candidates out -- #970.
+
+Selection used to be five scripts and a session doing the joins by hand:
+`dispatch_rank.py` for the order, `issue_claim.py --read` for who already
+holds an issue, `preflight_check.py` for whether it is stale, and
+`lane_setup.py` for whether it collides with a lane already in flight. A
+tick that finds no candidate after running all four and a tick that could
+not read one of the four inputs used to end the same way -- the `nothing
+left` state, whose own guard ("`gh-issues` and `gh-prs` both answered")
+lived in prose with nothing enforcing it.
+
+This module composes the four -- never re-implements them -- and enforces
+that guard: refuse to answer `none-available` when any input could not be
+read, and name which one went dark instead.
+
+## Three states, and the one that must never render as another
+
+  candidates       at least one issue survived every filter -- ranked, with
+                    the reason every other issue on the board was dropped.
+  none-available    every input was read cleanly and nothing survived -- a
+                    real, established absence.
+  could-not-select  at least one input could not be read. **Never**
+                    `none-available` -- an absence produced because a read
+                    failed is not an absence in the world, and #970 exists
+                    to close exactly that gap.
+
+## Per-issue disposition
+
+`eligible` / `assigned` / `assignee-unreadable` / `stale` (a preflight
+pattern matched -- the defect is already fixed) / `unrankable`
+(`dispatch_rank.rank` could not place it -- an undeclared label axis, most
+often) / `lane-collision` (its own declared files overlap a lane already
+claimed).
+
+## What this deliberately does NOT do
+
+**The lane pattern stays an input, never a guess.** #267 settled that an
+issue's files are not derivable from its body, so this module never invents
+`lane_patterns` or a `preflight_pattern` for an issue that did not carry
+one -- an issue with neither is simply never checked for staleness or
+collision, which is the correct answer for an issue nobody has looked at
+that closely yet, not a silent `stale: no` or `lane-collision: no`.
+
+**This module never calls `gh` for the board itself.** The same separation
+`dispatch_rank.py` and `lane_setup.py --suggest-companions` already use: the
+caller (a tick, a sub-manager, a human) reads the board and hands it in as
+data, so this module's own reads never depend on network access or forge
+credentials beyond the one call it does make itself -- `issue_claim.check`,
+to verify the assignee state of whichever issues survive ranking, staleness
+and lane-collision (checking every issue on a large board would be a `gh`
+call per issue paid for issues about to be dropped anyway).
+
+Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import dispatch_rank  # noqa: E402
+import issue_claim  # noqa: E402
+import lane_setup  # noqa: E402
+import preflight_check  # noqa: E402
+
+STATE_CANDIDATES = "candidates"
+STATE_NONE_AVAILABLE = "none-available"
+STATE_COULD_NOT_SELECT = "could-not-select"
+
+
+def _could_not_select(why):
+    return {"state": STATE_COULD_NOT_SELECT, "why": why, "candidates": [], "dropped": []}
+
+
+def select(payload, checker=None, search=None, resolve_lane=None):
+    """The join. `payload` is `{"declared": {...}, "issues": [...], ...}` --
+    see the module docstring's per-issue optional fields (`preflight_pattern`
+    / `preflight_roots`, `lane_patterns`) and the top-level optional
+    `held_files` and `repo`.
+
+    `checker`/`search`/`resolve_lane` default to `issue_claim.check`/
+    `preflight_check.search`/`lane_setup.resolve_lane` -- injectable so a
+    caller (or a test) never needs a live `gh` session or a real tree to
+    drive this function.
+    """
+    checker = issue_claim.check if checker is None else checker
+    search = preflight_check.search if search is None else search
+    resolve_lane = lane_setup.resolve_lane if resolve_lane is None else resolve_lane
+
+    declared = payload.get("declared") or {}
+
+    if payload.get("board_read_ok") is False:
+        why = payload.get("board_read_why") or "the caller reported the board read failed"
+        return _could_not_select("board: {0}".format(why))
+
+    issues = payload.get("issues")
+    if not isinstance(issues, list):
+        return _could_not_select(
+            "board: 'issues' is missing or not a list -- the board could not be read"
+        )
+
+    held_files = set(payload.get("held_files") or [])
+    repo = payload.get("repo")
+
+    ranked = dispatch_rank.order(issues, declared)
+
+    dropped = []
+    survivors = []  # (issue_row, rank_answer)
+    dark_inputs = []
+
+    for item in ranked:
+        number = item.get("number")
+        answer = dispatch_rank.rank(item.get("labels") or [], declared)
+        if answer["rank"] is None:
+            dropped.append({"number": number, "disposition": "unrankable", "why": answer["why"]})
+            continue
+
+        pattern = item.get("preflight_pattern")
+        if pattern:
+            roots = [Path(r) for r in (item.get("preflight_roots") or ["."])]
+            result = search(pattern, roots)
+            if result["state"] == "matched":
+                dropped.append({
+                    "number": number,
+                    "disposition": "stale",
+                    "why": "preflight pattern matched: {0}".format(pattern),
+                })
+                continue
+            if result["state"] == "could-not-search":
+                dark_inputs.append(
+                    "preflight for #{0}: {1}".format(number, result.get("problem"))
+                )
+                continue
+
+        lane_patterns = item.get("lane_patterns")
+        if lane_patterns and held_files:
+            resolved = resolve_lane(Path("."), lane_patterns)
+            overlap = lane_setup.lane_overlap(resolved["files"], held_files)
+            if overlap:
+                dropped.append({
+                    "number": number,
+                    "disposition": "lane-collision",
+                    "why": "overlaps already-claimed file(s): {0}".format(", ".join(overlap)),
+                })
+                continue
+
+        survivors.append((item, answer))
+
+    if dark_inputs:
+        return _could_not_select("; ".join(dark_inputs))
+
+    candidates = []
+    if survivors:
+        numbers = [item.get("number") for item, _answer in survivors]
+        rows = {row["issue"]: row for row in checker(numbers, "read", repo=repo)}
+        for item, answer in survivors:
+            number = item.get("number")
+            row = rows.get(number)
+            if row is None:
+                dark_inputs.append("assignee read for #{0}: no row returned".format(number))
+                continue
+            if row["state"] == issue_claim.STATE_COULD_NOT_READ:
+                dark_inputs.append(
+                    "assignee read for #{0}: {1}".format(number, row.get("detail"))
+                )
+                continue
+            if row["state"] == issue_claim.STATE_ASSIGNED:
+                dropped.append({
+                    "number": number,
+                    "disposition": "assigned",
+                    "why": "already assigned to {0}".format(", ".join(row.get("assignees") or [])),
+                })
+                continue
+            candidates.append({
+                "number": number,
+                "disposition": "eligible",
+                "rank": answer["rank"],
+                "author": answer["author"],
+                "band": answer["band"],
+                "why": answer["why"],
+            })
+
+    if dark_inputs:
+        return _could_not_select("; ".join(dark_inputs))
+
+    state = STATE_CANDIDATES if candidates else STATE_NONE_AVAILABLE
+    return {"state": state, "why": None, "candidates": candidates, "dropped": dropped}
+
+
+def main(argv=None):
+    """Read the board (and the rest of `select`'s payload) as JSON on stdin,
+    print the result as JSON, and exit 0 (candidates), 1 (none-available) or
+    2 (could-not-select).
+
+    #846's own class, guarded here from the start rather than added after
+    the fact: `sys.stdin` is `None` when the harness hands this process a
+    closed or unopenable standard input, and `json.load(None)` raises
+    `AttributeError` uncaught -- past this module's own `could-not-select`,
+    which is exactly the state that exists for a read that failed.
+    """
+    del argv  # this module takes no flags; the payload is the whole input
+    if sys.stdin is None:
+        result = _could_not_select(
+            "stdin: no readable stdin -- the process was handed a closed or "
+            "unopenable standard input"
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 2
+
+    try:
+        sys.stdin.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper
+        pass
+
+    try:
+        payload = json.load(sys.stdin)
+    except ValueError as exc:
+        result = _could_not_select("stdin: not valid JSON ({0})".format(exc))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 2
+
+    result = select(payload)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    if result["state"] == STATE_CANDIDATES:
+        return 0
+    if result["state"] == STATE_NONE_AVAILABLE:
+        return 1
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

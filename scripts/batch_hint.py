@@ -395,10 +395,19 @@ def main(argv=None) -> int:
         print(json.dumps(status(argv[1])))
         return 0
 
-    try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except json.JSONDecodeError:
+    # #846: `sys.stdin` is `None` when the harness hands this hook a closed
+    # or unopenable standard input -- `.read()` on `None` raises
+    # `AttributeError`, which `except json.JSONDecodeError` below does not
+    # catch. This hook must never block or deny the call it observed (see
+    # the module docstring), so the same empty-payload fallback used for a
+    # decode failure applies here too, rather than crashing the hook.
+    if sys.stdin is None:
         payload = {}
+    else:
+        try:
+            payload = json.loads(sys.stdin.read() or "{}")
+        except json.JSONDecodeError:
+            payload = {}
 
     if payload.get("tool_name") not in (None, "Bash"):
         print(json.dumps({}))
