@@ -180,3 +180,30 @@ jobs:
           fail=0
           while IFS= read -r f; do shellcheck -S warning "$f" || fail=1; done < shell-sources.txt
           exit "$fail"
+
+  # #635 -- 250 tracked .py files had no linter anywhere. The write-time half
+  # (supertool's `ruff` validator, `.supertool.json`, catches a finding the
+  # moment a file is edited) cannot see a file nobody touches in this run, and
+  # is not wired into CI at all, so this leg is what covers the whole tree and
+  # cannot be skipped. Ubuntu-only and its own job (not folded into `pytest`
+  # above): the ruleset in pyproject.toml's `[tool.ruff.lint]` does not vary
+  # by OS or interpreter, so running it 12 times would be 11 wasted runs
+  # buying no new coverage -- the same reasoning `shell` above already uses.
+  #
+  # `scripts/ruff_ratchet.py` is a ratchet, not a "must be zero" gate: #635's
+  # own measurement found 95 pre-existing findings across 51 files outside
+  # that issue's claimed scope, so this only fails a PR that makes the count
+  # go UP, never one that leaves it flat. See that script's own docstring.
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: python -m pip install --upgrade pip && pip install ruff
+      - name: ruff (#635 ratchet)
+        run: python3 scripts/ruff_ratchet.py --root .
