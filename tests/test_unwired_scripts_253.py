@@ -141,25 +141,44 @@ UNWIRED_EXCEPTIONS = {}
 _LEFT_BOUNDARY = r"(?<![\w./\-])"
 
 
+#: `import foo`, or `from foo import bar` -- an import statement, at the start of a
+#: logical line (allowing for leading indentation, so an import nested in a function
+#: or a `try` block still counts). `re.MULTILINE` anchors `^` to every line rather
+#: than the string as a whole, which is what makes this a per-line, not per-file, test.
+_IMPORT_LINE = r"(?m)^[ \t]*(?:from[ \t]+{0}[ \t]+import\b|import[ \t]+{0}\b)"
+
+
 def _mention_res(rel):
     """Patterns that count as a reference to the tracked path `rel`.
 
-    Two of them, and the pair is the point. Matching the *basename* alone reports
-    `.oss/foo.py` or another project's `.github/scripts/foo.py` as a use of our
-    `scripts/foo.py`; the file deleted for #253 spelled its own upstream path five
-    times in its own text. Matching the *full path* alone misses every ordinary prose
-    mention of a bare filename in backticks. So: the full tracked path anywhere, or the
-    basename where it is not preceded by a separator.
+    Three of them now (#949). Matching the *basename* alone reports `.oss/foo.py` or
+    another project's `.github/scripts/foo.py` as a use of our `scripts/foo.py`; the
+    file deleted for #253 spelled its own upstream path five times in its own text.
+    Matching the *full path* alone misses every ordinary prose mention of a bare
+    filename in backticks. So: the full tracked path anywhere, or the basename where
+    it is not preceded by a separator -- plus, for a `.py` file whose basename is a
+    valid Python identifier, `import <name>` / `from <name> import ...` at the start
+    of a line. That third pattern is textual, not `ast`-based: this repo's own CI
+    runs 3.9-3.12 and a per-file `ast.parse` would need a fourth state for a file that
+    will not parse, which is the exact swallow this module's docstring names as the
+    defect class it exists to avoid. A regex has no such failure mode -- it either
+    matches a line or it does not, on any input, including one that is not valid
+    Python at all.
 
     The left boundary also carries the `state.py` / `oss_state.py` fix -- a bare
     substring test reported an orphan as wired the moment its basename was a suffix of
     another file's, the check answering confidently about a file it never looked at.
     """
     base = rel.rsplit("/", 1)[-1]
-    return (
+    patterns = [
         re.compile(_LEFT_BOUNDARY + re.escape(rel) + r"(?!\w)"),
         re.compile(_LEFT_BOUNDARY + re.escape(base) + r"(?!\w)"),
-    )
+    ]
+    if base.endswith(".py"):
+        modname = base[: -len(".py")]
+        if modname.isidentifier():
+            patterns.append(re.compile(_IMPORT_LINE.format(re.escape(modname))))
+    return patterns
 
 
 def _surveyed_paths(tracked):
@@ -237,10 +256,11 @@ def survey_unwired(root, tracked):
     for rel in candidates:
         if rel in gone:
             continue
-        full, base = _mention_res(rel)
+        patterns = _mention_res(rel)
         if any(
-            other != rel and (full.search(body) or base.search(body))
+            other != rel and pattern.search(body)
             for other, body in texts.items()
+            for pattern in patterns
         ):
             continue
         unwired.append(rel)
@@ -417,6 +437,52 @@ def test_a_basename_that_is_a_suffix_of_another_is_not_a_reference(tmp_path):
         "the positive half: oss_state.py really is referenced by caller.py, so a match "
         "that has become too strict to see it would be caught here rather than showing "
         "up as a red build on an unrelated branch"
+    )
+    assert unreadable == []
+
+
+def test_a_python_import_by_module_name_counts_as_a_reference(tmp_path):
+    """#949. `import foo` / `from foo import x` is neither the tracked path nor a bare
+    basename not preceded by a separator, so a module reached only that way read as
+    referenced by no other tracked file -- `scripts/developer_docs.py`, imported by
+    twelve tracked files, was the specimen. Both import spellings get their own caller
+    here, and a third file that merely mentions the module name inside a sentence
+    checks that the match still needs `from`/`import` at the start of a logical line
+    rather than turning into a second bare-basename match with no boundary at all.
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "scripts" / "helper_mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "scripts" / "orphan_mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+    (tmp_path / "caller_a.py").write_text(
+        "import sys\nsys.path.insert(0, 'scripts')\nimport helper_mod\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests" / "test_caller_b.py").write_text(
+        "from helper_mod import VALUE\n", encoding="utf-8"
+    )
+    (tmp_path / "prose.md").write_text(
+        "This paragraph talks about helper_mod without importing it.\n",
+        encoding="utf-8",
+    )
+    tracked = [
+        "caller_a.py",
+        "prose.md",
+        "scripts/helper_mod.py",
+        "scripts/orphan_mod.py",
+        "tests/test_caller_b.py",
+    ]
+
+    unwired, unreadable, _ = survey_unwired(tmp_path, tracked)
+
+    assert "scripts/helper_mod.py" not in unwired, (
+        "scripts/helper_mod.py is imported both ways (`import helper_mod` and `from "
+        "helper_mod import VALUE`), so a survey that cannot see either reports a file a "
+        "dozen real callers depend on as dead; got unwired={!r}".format(unwired)
+    )
+    assert "scripts/orphan_mod.py" in unwired, (
+        "the positive half: nothing imports scripts/orphan_mod.py, and a match that has "
+        "become loose enough to wire it too would be caught here"
     )
     assert unreadable == []
 

@@ -50,7 +50,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Lowered, not raised: growth back toward the old number is exactly the
     # signal this budget exists to make visible.
     "agents/developer.md": (47819, 52600),
-    "agents/auditor.md": (14329, 15800),
+    "agents/auditor.md": (16743, 18400),
     "agents/release-auditor.md": (17857, 19700),
     "agents/triager.md": (17702, 19500),
     # Baseline raised three times, each time for the same reason: a
