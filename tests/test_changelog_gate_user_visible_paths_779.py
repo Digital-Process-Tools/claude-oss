@@ -199,8 +199,6 @@ def test_an_unparseable_config_refuses_at_render_time_rather_than_shipping_silen
 # `BASH`) from `tests/test_changelog_gate.py` rather than reinventing shell-extraction
 # machinery, exactly as the sibling files already do.
 
-import subprocess  # noqa: E402
-
 from test_changelog_gate import (  # noqa: E402
     BASH,
     _child_env,
@@ -208,6 +206,7 @@ from test_changelog_gate import (  # noqa: E402
     _gate_script,
     _pull_request,
     _require,
+    _run_script,
 )
 
 
@@ -223,15 +222,7 @@ def _user_visible_config(**overrides):
 def _run_gate(repo, config):
     for tool in ("git", "grep", "sed"):
         _require(tool)
-    return subprocess.run(
-        [BASH, "-c", _gate_script(config)],
-        cwd=str(repo),
-        env=_child_env(BASH, BASE_REF="main"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        errors="replace",
-    )
+    return _run_script(_gate_script(config), repo, _child_env(BASH, BASE_REF="main"))
 
 
 # A pull request that changes only a path the config below declares user-visible

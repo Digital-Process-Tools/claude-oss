@@ -23,7 +23,6 @@ import atexit
 import os
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -44,6 +43,7 @@ from test_changelog_gate import (  # noqa: E402
     _gate_script,
     _pull_request,
     _require,
+    _run_script,
 )
 
 # A pull request that changes product code and adds no fragment: the exact shape the
@@ -88,15 +88,7 @@ def _run_gate(repo, gh_dir=None, event_labels_json=None, author=None):
         # Ahead of the rest of PATH, including any real `gh`, so this shim is the one
         # `command -v gh` and the call itself both reach.
         env["PATH"] = os.pathsep.join([gh_dir, env["PATH"]])
-    return subprocess.run(
-        [BASH, "-c", _gate_script()],
-        cwd=str(repo),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        errors="replace",
-    )
+    return _run_script(_gate_script(), repo, env)
 
 
 def test_permissions_grants_pull_requests_read():
@@ -261,15 +253,7 @@ def test_a_missing_jq_does_not_crash_the_payload_fallback(tmp_path):
         _require(tool)
     clean = _path_only("git", "grep", "sed")
     env["PATH"] = os.pathsep.join([gh_dir, clean])
-    done = subprocess.run(
-        [BASH, "-c", _gate_script()],
-        cwd=str(_pull_request(tmp_path, NO_FRAGMENT)),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        errors="replace",
-    )
+    done = _run_script(_gate_script(), _pull_request(tmp_path, NO_FRAGMENT), env)
     # Must not fire: no shell error (a `-c` script error is 2, never 0 or 1).
     assert done.returncode in (0, 1), done.stdout
     # Must fire: absent `jq` reads differently from a genuinely empty payload -- see

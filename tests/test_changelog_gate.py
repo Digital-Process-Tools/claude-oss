@@ -420,18 +420,50 @@ def _pull_request(tmp_path, head_files):
     return repo
 
 
+def _run_script(script, cwd, env):
+    """Run `script` through BASH from a FILE, never via `bash -c "<script>"`.
+
+    `bash -c "<script>"` makes Windows agree with itself twice: Python builds the
+    child's command line with `subprocess.list2cmdline` (the MSVCRT /
+    `CommandLineToArgvW` quoting convention), and Git-for-Windows' bundled MSYS2
+    `bash.exe` then re-parses that reconstructed command line with its own,
+    not-identical rules -- a second, independent quoting pass over a ~9KB script
+    full of quotes, parens and semicolons. A bare path argument is the one shape
+    both sides already agree on without either re-quoting anything, so the script
+    is written to disk and run as `bash <path>` instead. This is the untested
+    hypothesis from PR #992's own body, implemented so CI's real Windows legs can
+    confirm or refute it, not a confirmed root cause.
+
+    `newline="\n"` is deliberate: `Path.write_text`'s platform default would
+    translate every embedded `\n` to `\r\n` on Windows, trading the CRLF
+    corruption already ruled out for the in-memory `-c` string for a fresh one
+    introduced by writing the file.
+    """
+    fd, path = tempfile.mkstemp(prefix="oss-gate-script-", suffix=".sh")
+    try:
+        with os.fdopen(fd, "w", newline="\n", encoding="utf-8") as handle:
+            handle.write(script)
+        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        return subprocess.run(
+            [BASH, path],
+            cwd=str(cwd),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            errors="replace",
+        )
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def _run_gate(repo):
     for tool in ("git", "grep", "sed"):
         _require(tool)
-    return subprocess.run(
-        [BASH, "-c", _gate_script()],
-        cwd=str(repo),
-        env=_child_env(BASH, BASE_REF="main"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        errors="replace",
-    )
+    return _run_script(_gate_script(), repo, _child_env(BASH, BASE_REF="main"))
 
 
 # ------------------------------------------------------- the shell probe's own controls
@@ -807,15 +839,7 @@ def _links_repo(tmp_path, changelog):
 
 def _run_links(repo):
     _require("python3")
-    return subprocess.run(
-        [BASH, "-c", _step_script(LINKS_STEP)],
-        cwd=str(repo),
-        env=_child_env(BASH),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        errors="replace",
-    )
+    return _run_script(_step_script(LINKS_STEP), repo, _child_env(BASH))
 
 
 STALE = """# Changelog
