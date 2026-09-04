@@ -211,6 +211,22 @@ def test_check_secret_scanning_alerts_reports_warn_when_disabled(tmp_path, capsy
     assert doctor.FINDINGS[-1][0] == "WARN"
 
 
+def test_remedy_link_uses_the_origin_fallback_slug_not_only_config(tmp_path, monkeypatch, capsys):
+    """Review finding: `_report_security_alert_check` used to re-derive the slug
+    from `config` alone when building the remedy URL, so a slug resolved via
+    the `origin` fallback (config carries no `repo` key) silently dropped the
+    settings-page link even though `security_alert_state` itself had already
+    resolved the correct slug and named it in `detail`."""
+    monkeypatch.setattr(
+        doctor, "_origin_slug", lambda project_dir, run=None: ("owner/from-origin", None)
+    )
+    run = _run_once(1, '{"message": "no analysis found"}', "gh: no analysis found (HTTP 404)")
+    doctor.check_code_scanning_alerts(tmp_path, config=None, run=run)
+    out = capsys.readouterr().out
+    assert "owner/from-origin" in out
+    assert "github.com/owner/from-origin/settings/security_analysis" in out
+
+
 def test_check_reports_could_not_tell_distinctly_never_as_ok_or_a_count(tmp_path, capsys):
     """Negative control paired with the OK test above: an ambiguous 403 must
     never render with the OK-shaped wording, and must never claim a count."""

@@ -113,6 +113,26 @@ SCANNERS = {
 SECURITY_SETTINGS_URL = "https://github.com/{}/settings/security_analysis"
 
 
+def _resolve_slug(project_dir, config, run):
+    """``(slug, reason)`` -- ``.oss.json``'s ``repo`` key, else the ``origin``
+    remote. ``slug`` is ``None`` when it could not be resolved, with
+    ``reason`` explaining why.
+
+    Shared by `security_alert_state` and `_report_security_alert_check` so a
+    slug resolved via the origin fallback still reaches the WARN remedy's
+    settings-page link -- self-review finding: an earlier draft had
+    `_report_security_alert_check` re-derive the slug from `config` alone,
+    which silently dropped the link whenever the slug actually came from
+    `origin` rather than from config.
+    """
+    slug = (config or {}).get("repo") if config else None
+    if slug is not None and not isinstance(slug, str):
+        return None, "the repo value in .oss.json is not a string"
+    if slug:
+        return slug, None
+    return doctor._origin_slug(project_dir, run=run)
+
+
 def security_alert_state(project_dir, scanner, config=None, run=None):
     """``"configured"`` / ``"never-scanned"`` / ``"disabled"`` / ``"could-not-tell"``
     for one of the three GitHub security-alert endpoints (#760).
@@ -127,13 +147,9 @@ def security_alert_state(project_dir, scanner, config=None, run=None):
     run = subprocess.run if run is None else run
     if shutil.which("gh") is None:
         return "could-not-tell", "gh is not on PATH"
-    slug = (config or {}).get("repo") if config else None
-    if slug is not None and not isinstance(slug, str):
-        return "could-not-tell", "the repo value in .oss.json is not a string"
-    if not slug:
-        slug, reason = doctor._origin_slug(project_dir, run=run)
-        if slug is None:
-            return "could-not-tell", reason
+    slug, reason = _resolve_slug(project_dir, config, run)
+    if slug is None:
+        return "could-not-tell", reason
 
     rc, out, err, exc = _gh_api("repos/{}/{}".format(slug, SCANNERS[scanner]), run)
     if exc is not None:
@@ -181,7 +197,8 @@ def _report_security_alert_check(project_dir, scanner, config=None, run=None):
         doctor.report("OK", "{}: {}".format(scanner, detail))
         return
     if state in ("never-scanned", "disabled"):
-        slug = (config or {}).get("repo") if config else None
+        run_ = subprocess.run if run is None else run
+        slug, _reason = _resolve_slug(project_dir, config, run_)
         url = SECURITY_SETTINGS_URL.format(slug) if isinstance(slug, str) and slug else None
         remedy = (
             "Enable it from the repo's Settings > Code security and analysis page{}.".format(
