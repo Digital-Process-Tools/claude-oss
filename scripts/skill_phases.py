@@ -92,7 +92,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # confirmed by a dedicated comparison, `tests/test_baseline_matches_
     # disk_1014.py`, added in the same diff. Budget is unchanged; the file
     # was already comfortably under it.
-    SPINE: (42867, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
+    # Re-baselined for #1029: 44358 B on disk against a stale 42867 declared
+    # baseline -- #1026 grew this file (#976's push-to-main rule, #1017's
+    # worktree-reap fix) without touching this table. Budget unchanged; the
+    # file is still comfortably under it (2542 B headroom).
+    SPINE: (44358, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
@@ -164,7 +168,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # against rather than something every tick needs loaded.
     "skills/manager/phases/review.md": (13992, 15400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/findings.md": (11620, 12800, "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board"),
-    "skills/manager/phases/merge.md": (13198, 14500, "merging: the gates, the call itself, and what is still owed after green"),
+    # Re-baselined for #1029: 14455 B on disk against a stale 13198 declared
+    # baseline -- #1026 grew this file (#976's push-to-main rule, #1017's
+    # worktree-reap fix) without touching this table. Budget unchanged; the
+    # file is still under it, though only by 45 B (worth a fresh headroom
+    # raise the next time this file grows, out of scope here).
+    "skills/manager/phases/merge.md": (14455, 14500, "merging: the gates, the call itself, and what is still owed after green"),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
     # baseline. Budget unchanged; comfortably under it either way.
     "skills/manager/phases/release.md": (10381, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
