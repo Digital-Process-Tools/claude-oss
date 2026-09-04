@@ -199,6 +199,43 @@ def test_gh_api_call_that_does_not_run_at_all_is_could_not_tell(tmp_path):
     assert "did not run" in detail
 
 
+# ----------------------------------------------------- undecodable stdout (#1019)
+#
+# Found by review of the sibling fix in `doctor_check_security_alerts.py`
+# (tests/test_doctor_security_alerts_760.py's own pair of the same name):
+# `doctor_check_branch_protection._gh_api` carries the identical
+# `universal_newlines=True`/no-`errors=` shape and the identical fix, but had no
+# regression test of its own -- the existing suite staying green after the fix
+# never actually turned red against the pre-fix code for this defect.
+
+
+def test_stdout_that_cannot_be_decoded_does_not_abort_the_check(tmp_path):
+    """`_gh_api` used to call `run(...)` with `universal_newlines=True` and no
+    `errors=`, which decodes under `errors="strict"` with the runner's own
+    locale codec -- a byte that codec cannot represent raises
+    `UnicodeDecodeError` (a `ValueError`, not an `OSError` or a
+    `subprocess.SubprocessError`), escaping the surrounding `except` and
+    aborting the whole `doctor.py` run before its `print("VERDICT: ...")`
+    line. `\xff\xfe` is not valid UTF-8 -- the check must still return a
+    state, never raise. `_run_sequence` above always hands back `str`, which
+    skips the real decode path entirely, so this uses raw `bytes` directly --
+    what a real `subprocess.run` call returns without `text=True`."""
+    run = _run_sequence([(1, b"bad \xff\xfe (HTTP 404)", b""), (0, b"[]", b"")])
+    state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
+    assert isinstance(state, str)
+    assert isinstance(detail, str)
+
+
+def test_ordinary_bytes_stdout_still_decodes_and_classifies_correctly(tmp_path):
+    """Positive control for the case above: a real, cleanly-decodable byte
+    response (what `subprocess.run` actually hands back without `text=True`)
+    is still read correctly -- the fix tolerates a bad byte, it does not
+    swallow every response into `could-not-tell`."""
+    run = _run_sequence([(0, b"{}", b""), (0, b"[]", b"")])
+    state, _detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
+    assert state == "protected"
+
+
 def test_rulesets_response_that_is_not_a_json_list_is_could_not_tell(tmp_path):
     run = _run_sequence([
         (1, "", "gh: Branch not protected (HTTP 404)"),
