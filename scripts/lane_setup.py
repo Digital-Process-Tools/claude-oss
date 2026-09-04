@@ -333,13 +333,22 @@ def _lane_pattern_problem(pattern):
     """Why `pattern` cannot be rendered as part of a lane, or None when it can.
 
     #267: a lane an agent implements gets asserted from a maintainer's memory,
-    never re-derived. A lane pattern reaching this function is one step closer
-    to trusted than that -- it is still typed by a human, but it is about to be
-    turned into the one canonical form (a resolved, repo-relative path) that a
-    second brief's lane can be checked against, rather than eyeballed. It is
-    refused the same way `oss_config.resolve_worktree` refuses a worktree
-    target: absolute, drive-prefixed or traversing out of the repo is refused
+    never re-derived. A lane pattern reaching this function from a `--lane` /
+    `--against` flag is one step closer to trusted than that -- it is typed by
+    a human -- but it is about to be turned into the one canonical form (a
+    resolved, repo-relative path) that a second brief's lane can be checked
+    against, rather than eyeballed. It is refused the same way
+    `oss_config.resolve_worktree` refuses a worktree target: absolute,
+    drive-prefixed, home-relative or traversing out of the repo is refused
     before anything touches the filesystem, not caught after.
+
+    #898: that premise does not hold for every caller any more.
+    `_derive_declared_files` (#851) pulls backtick-quoted tokens out of an
+    issue's own title and body -- text written by a stranger, not typed by
+    the human running this command -- and feeds them into this same guard
+    unchanged. So the containment here has to hold against untrusted input,
+    not only against a human's typo, and every refusal below (including the
+    `~` case just added) exists for that caller as much as for `--lane`.
 
     #766: a `|`-joined value (`--lane 'a|b'`) used to fall straight through to
     the literal branch below -- `_is_lane_glob` only tests for `*?[`, so an
@@ -385,6 +394,12 @@ def _lane_pattern_problem(pattern):
     normalized = pattern.replace("\\", "/")
     if normalized.startswith("/") or re.match(r"^[A-Za-z]:", pattern):
         return "lane pattern {0!r} is not relative".format(pattern)
+    if normalized.startswith("~"):
+        return (
+            "lane pattern {0!r} starts with '~' -- home-directory expansion "
+            "is refused here the same as an absolute path, whether or not "
+            "anything downstream calls expanduser() on it today (#898)"
+        ).format(pattern)
     if ".." in normalized.split("/"):
         return "lane pattern {0!r} is a traversal".format(pattern)
     return None
