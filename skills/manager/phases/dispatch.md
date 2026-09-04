@@ -64,7 +64,7 @@ a stronger sentence here -- it is not composing the call by hand at all. `script
 already refuses to compose a *description* from an incomplete issue bundle (#539); its
 `agent_call` does the same for the **whole call**:
 
-    python3 scripts/fleet_label.py 534 534,537,495 "auto-update path" oss:developer --model sonnet
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" 534 534,537,495 "auto-update path" oss:developer --model sonnet
     -> Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false, description: "Lane 534 x3  auto-update path", prompt: "<brief>")
 
 Paste that line and fill in `prompt` with the brief -- the one part only the caller can write.

@@ -6,20 +6,28 @@ a phrase about that issue. A lane carrying three issues (#534, #537, #495) and a
 carrying one rendered identically, because the label was composed by habit at the
 moment of the spawn and nothing checked it.
 
-``fleet_label`` is the one place that composition happens. It does not observe what a
-lane actually carries -- the label is a string handed to the ``Agent`` tool's own
-``description`` parameter at dispatch time, and nothing in this repository can inspect
-that after the fact (the sibling constraint the issue names explicitly). What it can do
-is refuse to *compose* a label from an incomplete answer: the caller must state every
-issue the lane carries, not just the one that named the branch, or nothing is rendered
-at all. A convention followed only by habit is exactly what #539 was filed about, so the
-guard lives in the one function that ever produces the string, not in a sentence next to
-it.
+``fleet_label`` composes the *description* -- a string handed to the ``Agent`` tool's
+own ``description`` parameter, which nothing in this repository can inspect after the
+fact (the sibling constraint the issue names explicitly). It does not observe what a
+lane actually carries. What it can do is refuse to *compose* a label from an incomplete
+answer: the caller must state every issue the lane carries, not just the one that named
+the branch, or nothing is rendered at all. A convention followed only by habit is
+exactly what #539 was filed about, so the guard lives in the one function that ever
+produces the description, not in a sentence next to it.
 
 The count is the load-bearing half (see the issue's own "what would settle it"): a
 reader scanning a fleet must see ``x3`` without reading the phrase. A genuine one-issue
 lane never carries the multiplier -- if every lane wrote ``x1``, a bundled lane's ``x3``
 would read as house style rather than as a fact.
+
+``agent_call`` (#989) is the module's second composition function, built on
+``fleet_label``. It renders the *whole* literal ``Agent(...)`` invocation rather than
+only the description, and it closes the one half of "nothing can inspect that after the
+fact" that a Python-level check *can* reach before the call is ever pasted: whether
+``subagent_type`` was given at all, and whether it resolves to one of this loop's known
+agent types. What still cannot be inspected after the fact is the call actually run --
+``agent_call`` only makes the correct call cheaper to produce than a wrong one typed
+from memory.
 
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
