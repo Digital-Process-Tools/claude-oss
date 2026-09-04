@@ -21,8 +21,9 @@ soak period**, or **immediately for anything in a class the ranking table in
 `destroys`, `discloses`, `executes`, `containment (read)`, `containment (write)`, `forges`,
 `ships-local-state`.
 
-Thresholds live in user config; state them out loud when reporting, because a threshold nobody can
-see arriving is indistinguishable from deciding on a whim.
+`scripts/release_trigger.py` computes which of those fired and prints the thresholds it compared
+against (#966), so a threshold nobody can see arriving is not indistinguishable from a decision on a
+whim. What *user-visible* means and where the soak clock starts are decided in the module, not here.
 
 Gates, each a call and not a feeling:
 
