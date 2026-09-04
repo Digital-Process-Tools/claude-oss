@@ -136,3 +136,50 @@ def test_compute_uses_stacked_base_instead_of_default_branch(tmp_path):
     payload = lane_setup.compute(repo, 996, stack_on="fix/683")
     assert payload["base"]["state"] == "resolved"
     assert payload["base"]["ref"] == "refs/heads/fix/683"
+
+
+# --- receipt(): resolved-stale keeps its own wording, resolved-remote gets its own ---
+# (review round: an earlier version of this diff silently renamed the pre-existing
+# resolved-stale ("STALE") flag to "NOTE" for every non-resolved base state,
+# including the ordinary default_branch path this issue never touched.)
+
+
+def _minimal_payload(base_payload):
+    return dict(
+        issue=1006,
+        repo=".",
+        config={"state": "ok", "problems": []},
+        base=base_payload,
+        branch={
+            "state": "resolved",
+            "pattern": "fix/{issue}",
+            "name": "fix/1006",
+            "exists_local": False,
+            "exists_remote": False,
+            "detail": "",
+        },
+        worktree={"state": "unknown", "root": None, "path": None, "detail": "", "exists": None},
+        board={"state": "ok", "lines": [], "detail": ""},
+    )
+
+
+def test_receipt_still_says_stale_for_a_genuinely_stale_default_branch_fetch():
+    payload = _minimal_payload({
+        "remote": "origin", "state": "resolved-stale", "ref": "origin/main",
+        "sha": "a" * 40, "detail": "fetch failed, using the last-known ref: timed out",
+    })
+    text = lane_setup.receipt(payload)
+    base_line = [l for l in text.splitlines() if l.startswith("base")][0]
+    assert "STALE" in base_line
+    assert "NOTE" not in base_line
+
+
+def test_receipt_says_note_not_stale_for_a_resolved_remote_stacked_base():
+    payload = _minimal_payload({
+        "remote": "origin", "state": "resolved-remote", "ref": "refs/remotes/origin/fix/683",
+        "sha": "b" * 40, "detail": "found only as a remote-tracking ref",
+    })
+    text = lane_setup.receipt(payload)
+    base_line = [l for l in text.splitlines() if l.startswith("base")][0]
+    assert "NOTE" in base_line
+    assert "STALE" not in base_line

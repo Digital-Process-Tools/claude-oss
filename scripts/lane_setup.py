@@ -27,8 +27,10 @@ Three states everywhere, never two, because this is the repository that is named
 collapsing them by accident:
 
   base       resolved (fetched and rev-parsed), resolved-stale (fetched failed, a local
-             remote-tracking ref answered anyway -- flagged, never silent), or
-             could-not-resolve (neither answered; nothing to brief a lane from).
+             remote-tracking ref answered anyway -- flagged, never silent),
+             resolved-remote (a --stack-on base found only as a remote-tracking
+             ref of the branch being stacked on -- #1006, flagged the same way),
+             or could-not-resolve (nothing answered; nothing to brief a lane from).
   branch     resolved (derived from `branch_pattern`) or unknown (no `{issue}`
              placeholder in the pattern -- every issue would get the same branch).
   worktree   resolved, unknown (`worktree_root` could not be derived at all --
@@ -320,8 +322,20 @@ def resolve_stacked_base(repo, remote, stack_on):
             "remote": remote,
             "ref": remote_ref,
             "sha": remote_out,
-            "detail": "found only as a remote-tracking ref -- can be stale if "
-            "nobody has fetched since {0} last moved.".format(stack_on),
+            # #1006, audit round: `stack_on` has already been proven, at this
+            # point, to resolve to a real object -- git's own check-ref-format
+            # rules already forbid control characters in any ref component, so
+            # nothing here can forge a receipt line today. `_one_line` is
+            # applied anyway, for the same reason every other text of external
+            # origin in this file goes through it (`resolve_base`'s own
+            # `fetch_err`/`err` above): consistency with the rest of the
+            # module, and defense-in-depth against a future caller feeding
+            # --stack-on from a less-trusted source than this one does.
+            "detail": _one_line(
+                "found only as a remote-tracking ref -- can be stale if "
+                "nobody has fetched since {0} last moved.".format(stack_on),
+                300,
+            ),
         }
 
     return {
@@ -2974,11 +2988,18 @@ def receipt(payload):
     if base["state"] == "could-not-resolve":
         lines.append("base      : COULD NOT RESOLVE -- {0}".format(base["detail"]))
     else:
-        # #1006: `resolved-remote` (a stacked base found only as a
-        # remote-tracking ref) is a *different* note than `resolved-stale`
-        # (the default-branch fetch itself failed) -- both get the detail
-        # printed, neither is worded "STALE" unless it actually is one.
-        flag = "" if base["state"] == "resolved" else "  ** NOTE ** {0}".format(base["detail"])
+        # #1006, review round: the pre-existing `resolved-stale` wording
+        # ("STALE" -- the default_branch fetch itself failed) must not
+        # silently change for callers who never pass --stack-on. The new
+        # `resolved-remote` state (a stacked base found only as a
+        # remote-tracking ref -- #1006) gets its own, different word rather
+        # than reusing or renaming that one.
+        if base["state"] == "resolved":
+            flag = ""
+        elif base["state"] == "resolved-remote":
+            flag = "  ** NOTE ** {0}".format(base["detail"])
+        else:
+            flag = "  ** STALE ** {0}".format(base["detail"])
         lines.append(_row("base", "{0} ({1}){2}".format(base["sha"], base["ref"], flag)))
 
     branch = payload["branch"]
