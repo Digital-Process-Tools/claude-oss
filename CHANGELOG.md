@@ -7,6 +7,267 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-04
+
+### Added
+
+- `scripts/command_budgets.py` budgets `commands/*.md` the way `agent_budgets.py` already covers
+  `agents/*.md` and `skill_phases.py` covers `skills/manager/**` (#940) -- `commands/tick.md` had
+  grown to 48 KB with nothing reporting it. Confirmed directly, in this repository's own session,
+  that a plain `cat` of a file this size is truncated by the Bash tool's own output limit rather
+  than delivered whole, which is why a sub-manager reading it used to pay for a useless `cat` and
+  then read it again in `sed -n` chunks; `commands/tick.md` now opens with a note saying so and
+  naming the bounded-read alternative.
+
+- `commands/doctor.md` now closes by naming `/oss:tick` as the next step for a
+  session reopened on a managed repo, once the report is clean or every actionable
+  finding is resolved (#957). `doctor.py` itself still names no next command --
+  that rule stays intact -- and the new prose does not fire when doctor ran
+  mid-tick or before a release, both of which are ordinary times to run it and
+  neither of which is a moment to start a second tick.
+
+- `scripts/issue_claim.py` claims, reads and releases the assignee field on one or more issues at
+  once (#964), replacing the `gh issue edit --add-assignee @me` incantation written out in three
+  documents. One row per issue, and the row is the answer: `could-not-read` never renders as
+  `unassigned`, an unreadable issue is never claimed, and an issue whose holder cannot be identified
+  — including when the authenticated login itself cannot be resolved — is never claimed over. A lane
+  claims its whole bundle in one call, and a refusal on one issue does not stop the others.
+
+- `scripts/release_trigger.py` computes whether a release trigger fired instead of leaving a tick to
+  read three conditions and remember two thresholds (#966): `fired` / `not-fired` / `could-not-tell`,
+  with each condition carrying its own state and the configured threshold printed beside it. A delta
+  that could not be read is `could-not-tell` and never `not-fired` — a repository that quietly stops
+  releasing is the largest-scale version of this project's own defect class. Blocking findings are
+  supplied by the caller: omitting them is `not-supplied`, a statement about the call and never about
+  the repository.
+
+- `scripts/brief_schema.py` validates a developer brief against the seven elements dispatch requires,
+  before the spawn rather than after a lane has run (#967) — the symmetric half of
+  `scripts/report_schema.py`, which already validated what comes back. `ok` / a row naming each
+  missing element / `could-not-read`, which is neither. Three elements are checked structurally —
+  the supertool block naming an op that can create a file (#250), the TDD steps in order, and a
+  publishing clause that has not been softened into a condition — and four are presence only. The
+  receipt prints which is which and says a pass is not a review, because a tool reporting `ok` on a
+  brief nobody read moves the missing review out of sight.
+
+- `scripts/select_issues.py` composes `dispatch_rank.py`, `preflight_check.py`, `lane_setup.py` and
+  `issue_claim.py` into one call (#970): board in, ranked claimable candidates out, with a
+  per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` /
+  `lane-collision`) and three overall states -- `candidates` / `none-available` / `could-not-select`,
+  the last never rendering as the second. A tick that finds no candidate and a tick that could not
+  read one of its inputs used to end the same way; this module refuses to answer `none-available`
+  when any input could not be read, and names which one went dark instead.
+
+### Changed
+
+- `.claude/settings.json`'s `Bash(git *)` and unscoped `Agent` grants stay
+  tracked (#899). #609 already measured the alternative -- leaving them out
+  of the tracked file meant a fresh clone or worktree prompted on every git
+  call and every subagent spawn, which the autonomous maintainer loop
+  cannot pay for. The reasoning, and the residual risk #899 raised (every
+  clone inherits both grants, not only the loop's own sessions), is
+  recorded as a code comment above `scaffold.SETTINGS_PATH` -- not as a
+  key inside `.claude/settings.json` itself, since the shipped Claude Code
+  settings schema declares `additionalProperties: false`, and a stray key
+  risks a strict loader rejecting the whole file.
+
+- The manager loop's ranking table and the upstream-filing section moved out of
+  `skills/manager/SKILL.md` into a new phase file, `skills/manager/phases/findings.md`, read when a
+  finding has to be ranked or filed on another board rather than on every tick (#958). The spine
+  falls 62,829 B to 54,751 B, and its budget comes down with it. Measured cause: a live tick's
+  sub-manager stood at 79,229 tokens of context before its first dispatch decision, 21,309 of that
+  the spine loaded whole.
+- `scripts/ranking_table.py` now searches an ordered `SOURCES` list rather than one hardcoded path,
+  so `commands/release.md` gate 3 still finds the table when the installed plugin predates the move
+  (#958). `could-not-read` now means no source could be read, and a single unreadable source beside
+  a readable one is reported in the reason instead.
+
+- Second round of the manager-spine split (#960): the pre-flight and dispatch order moved to
+  `skills/manager/phases/dispatch.md`, the cross-platform evidence band to `phases/review.md`, and
+  the cadence section plus the loop doctrine's argument to `phases/accounting.md`. The spine falls
+  54,751 B to 42,604 B — 122,423 B to 42,604 B, -65%, across all three rounds of the split — and its
+  budget follows the measurement down. `Who decides`, `Operational hazards` and the op table's rows
+  stay in the spine, for reasons stated in CLAUDE.md.
+
+### Fixed
+
+- `scripts/dispatch_rank.py`, `scripts/statusline.py` and `scripts/batch_hint.py` no longer crash
+  with an uncaught `AttributeError` when the harness hands them a closed standard input (#846) --
+  the same class `scripts/review_return.py` was fixed for under #405, but scoped to one file, so it
+  recurred in three more CLIs unnoticed. `dispatch_rank.py` now answers its own `COULD NOT READ`
+  state for this case; `statusline.py` and `batch_hint.py` fall back to an empty payload, the same
+  answer they already give a JSON decode failure. A sweep test
+  (`tests/test_stdin_guard_sweep_846.py`) drives all four CLIs with a closed stdin in one
+  parametrized run, so a fifth carrying the same defect is caught without a new test file.
+
+- `scripts/tick_handback.py`'s `TICK:` and `TICK-ENDS:` matches no longer collapse "the line is
+  present with a value this tool does not recognise" onto "the line is absent" (#896). Both now
+  capture any token, validate it against the enum separately, and say the unrecognised value back
+  in the `could-not-classify` reason -- previously an off-enum `TICK-ENDS: mostly-done` (or a
+  `TICK:` header naming something other than the four known states) read as "no TICK-ENDS: line"
+  or "no TICK: header found" about a message that had one, right above.
+
+- `scripts/lane_setup.py`'s `_lane_pattern_problem` now refuses a `~`-leading
+  pattern the same way it already refuses an absolute or drive-prefixed one, and
+  its docstring names both callers honestly (#898). `_derive_declared_files`
+  (#851) feeds this guard tokens pulled straight out of an issue's own title and
+  body -- untrusted text, not a human-typed `--lane` value -- and the docstring's
+  stated trust premise had not been updated to say so. Containment itself held
+  (`/etc/passwd`, `../secret.txt`, `C:\Windows\win.ini` and friends were all
+  already refused); the one gap was `~`, refused in neither form, so
+  `~/.ssh/id_rsa` came back as an accepted literal file entry. Not a live escape
+  today -- nothing in `lane_setup.py` calls `expanduser` on a lane member -- but
+  the guard should not depend on that staying true.
+
+- The next-minor version sweep (`tests/test_no_test_pins_the_current_
+  version_350.py`) now also runs a WARNING-only sweep two minors out,
+  alongside the existing one-minor FAILING sweep. #901: v0.20.0's release
+  commit went red on a literal two minors out, invisible to the one-minor
+  horizon until the version bump moved it into range -- exactly the moment
+  the guard exists to protect. Widening the failing horizon itself was
+  considered and declined (same failure mode as the already-declined major
+  case, one step further out); the two-minor horizon is reported via the
+  same `UserWarning` mechanism the guard already uses for a version
+  collision, so a pull request introducing one is told and nothing
+  reddens.
+
+- `scripts/tick_handback.py` now recognises a sub-manager handback that closes with a promise to
+  resume ("I'll pick this back up once CI resolves") instead of a `TICK:` header, and names the
+  defect in the `could-not-classify` reason it hands back: the sub-manager dies with its context
+  the instant it reports, so it cannot keep that promise, and the correct shape for a mid-work CI
+  wait is `TICK: paused` (#818), not a status note (#941). `agents/sub-manager.md` and
+  `commands/tick.md` document the corrected contract; a hook that refuses the turn at write time,
+  rather than only classifying it downstream, is filed separately as it needs harness reach this
+  lane does not have.
+
+- `verify_test_command`'s `"timeout"` state could not tell a cleanly reaped
+  process tree from one where the kill primitive raised or exited nonzero and
+  the failure was swallowed (#945). `_kill_process_tree` (`scripts/oss_config.py`)
+  now reports whether the kill it attempted -- `killpg` on POSIX, or
+  `TerminateJobObject`/`taskkill` on Windows -- actually confirmed success, and
+  `verify_test_command` carries that through as a new `kill_confirmed` field on
+  the result dict rather than as a new `state` value: both `commands/setup.md`
+  and `tests/test_state_vocabularies.py` branch on `state` by exact string, and a
+  fourth value neither had ever seen risked being silently ignored or misread as
+  an unrelated state. `state` stays `"timeout"` either way -- both readings are
+  equally unverified -- with `kill_confirmed` distinguishing a confirmed clean
+  kill from an outcome this function cannot vouch for. `killpg` raising
+  `ProcessLookupError` -- no process with that pgid exists at all -- is its own
+  arm reading `True`: the tree being provably already gone is the positive
+  answer this field exists to carry, not the same "cannot tell" bucket as a
+  genuine kill failure. Found by the `oss:auditor` spawned against #937/#944's
+  own diff, reported for filing rather than fixed there; the `ProcessLookupError`
+  distinction was itself found in this fix's own self-review.
+
+- `tests/test_unwired_scripts_253.py` now counts a Python import (`import foo`, or
+  `from foo import bar`, at the start of a line) as a reference, alongside the full
+  tracked path and a boundary-guarded bare basename (#949). `scripts/developer_docs.py`
+  is imported by twelve tracked files and read as "referenced by no other tracked
+  file" -- the only mention spelling neither the path nor a bare filename is exactly
+  how every real caller reaches it. The match stays textual rather than `ast`-based, so
+  a file that will not parse degrades to no new match rather than to a fourth state
+  this module would otherwise have to swallow.
+
+- `oss_state.lane_fill` now persists the `candidates` count it already used to validate a
+  short-lane claim, instead of dropping it once the claim was checked. A `board-exhausted`
+  claim corroborated against a measured 0 candidates and one for which no count was ever
+  supplied used to produce byte-identical records and receipt lines; `candidates` is now
+  recorded on the lane entry whenever a caller supplies it, so a corroborated claim is
+  distinguishable from an uncorroborated one (#953).
+
+- `cohort_freeze.py`'s `_resolve_repo_slug` now routes every candidate `repo` slug -- whether
+  passed explicitly or read out of a tracked `.oss.json` -- through `oss_config.repo_problem`,
+  the same validator `scripts/oss_config.py`'s `REPO_RE` already enforces everywhere else. It
+  used to accept anything containing a `/` whose path did not exist, and any non-empty
+  `.oss.json` `repo` after a bare `.strip()`, diverging from the shared validator on inputs like
+  `owner/name\..\evil` or `a b/c d` (#954).
+
+- `scaffold`'s test-measurement paragraph is no longer gated on
+  `oss_config.names_pytest`, a substring match over an arbitrary
+  `test_command` -- it wrote pytest-specific advice (`--durations`,
+  `--cov`, `pyproject.toml`'s `addopts`) into a JavaScript repo's
+  CLAUDE.md whenever the word "pytest" happened to appear anywhere in
+  the command (e.g. `npm test --grep pytest`), and withheld it
+  entirely from a wrapped invocation that actually runs pytest
+  underneath (e.g. `make test`). The paragraph itself is now
+  runner-neutral -- it names the property every runner can have
+  (duration and coverage) rather than one runner's flags -- and is
+  gated only on `test_command` being set, not on a guess about which
+  runner it is (#955).
+
+- `cohort_freeze.py` now checks whether the cohort label exists before rehearsing or writing a
+  freeze, instead of discovering it only as N identical `'<label>' not found` failures once
+  `--execute` runs. A dry run against a missing label now reports it up front; `--execute`
+  reports a single `label-missing` finding with the `gh label create` remedy rather than
+  `could-not-read`, which pointed at permissions or the network when the actual cause was that
+  the label had never been created. The script still never creates the label itself -- that
+  write stays the maintainer's own act (#956).
+
+- CI declares a concurrency group, so a push to an open pull request cancels the superseded run
+  instead of leaving all 14 legs running against a commit nobody will merge (#962). Beyond the
+  minutes, a pull request's summed check tally no longer mixes legs from a superseded commit with
+  legs from the head commit. `tests.yml` cancels only for `pull_request` events: a push run on the
+  default branch is that commit's verdict for the statusline and the release gates, and a cancelled
+  one reports neither pass nor fail.
+
+- `scripts/tree_snapshot.py`'s `compare` no longer defaults to the live cwd when
+  re-snapshotting after a review spawn returns (#971). `snapshot()` now records the
+  resolved, absolute directory it looked at rather than the literal `"."` string it
+  was called with, and `compare`'s CLI reuses that recorded root by default -- an
+  explicit `--root` still overrides it. Found in self-review on a different issue: a
+  `snapshot`/`compare` pair spanning two Bash tool calls, with the cwd reset to the
+  main clone in between, reported `mutated` (HEAD moved) about a worktree that was
+  never touched, purely because `compare`'s own default `--root "."` resolved against
+  the wrong directory. Re-running from the correct directory against the same
+  snapshot returned `clean`. `snapshot()` also now records whether that resolution
+  actually succeeded (`root_resolved`); `compare` only reuses a recorded root that
+  did, falling back to its own live cwd otherwise, and a `Path.resolve()` failure on
+  a NUL byte in the root string -- reachable through arbitrary JSON on `compare`'s
+  stdin -- no longer crashes the CLI with an exit code that collided with `mutated`.
+
+- `agents/auditor.md` now names the worktree a review spawn was briefed on as a hard
+  boundary: before running `rm`, `mv`, a redirect or any op supertool marks as a
+  write, resolve the target against that path and refuse the call if it does not
+  resolve inside it (#972). A spawned `oss:auditor` had run `rm -f` against an
+  untracked file in the live main clone -- a directory nothing in its brief had
+  named -- after deciding from the file's shape alone that it was its own scratch
+  artifact; the deletion left no git-visible trace at all. The rule targets that
+  exact reasoning failure: how sure a spawn is that a file is its own is never the
+  test, where the file sits is.
+
+- `agents/sub-manager.md`'s frontmatter now grants `SendMessage` (#978). Prose since #880 has
+  told the sub-manager to resume a red lane by sending its own agent a message, never a fresh
+  spawn -- but the tool it needs to do that was never in its `tools:` line. Two live sub-manager
+  spawns hit exactly this and fell back to a fresh `Agent` spawn reconstructing the lost lane's
+  report and PR files from its own committed diff, recording the result as `resumed` because
+  `oss_state.py`'s dispatch-state vocabulary had nowhere else to put an honest answer. `SendMessage`
+  is verified as a documented, frontmatter-grantable tool rather than one reserved for a top-level
+  session; the same paragraph also names what to record (`agent-unreachable`, with the refusal
+  quoted as why) if a given harness still refuses it as gated behind an opt-in feature.
+
+- `scripts/lane_setup.py`'s `--suggest-companions` mode crashed with an
+  uncaught `AttributeError` when the harness handed the process a closed
+  stdin, instead of the module's own `COULD NOT READ` state (#984) -- the
+  same #846-class shape already fixed elsewhere in `dispatch_rank.py`,
+  `statusline.py`, `batch_hint.py` and `review_return.py`. That was the
+  mode's only stdin read; `--claim`, `--release`, `--derive-held` and every
+  other mode never touch stdin. `tests/test_stdin_guard_sweep_846.py`'s
+  sweep now covers `lane_setup.py` too, instead of a standalone test file.
+
+- `scripts/fleet_label.py` now composes the whole literal `Agent(...)` invocation, not only the
+  description string (#989). A sub-manager tick reported, unprompted, that all three of its
+  `Agent()` calls omitted `subagent_type: "oss:developer"` and ran as `general-purpose` instead --
+  caught only because the tick happened to notice; nothing distinguishes a lane run by the wrong
+  agent from one run by the right one. `fleet_label`'s new `agent_call` refuses an omitted
+  `subagent_type` (a Python `TypeError` at the call site) or one that does not resolve to this
+  loop's known agent types, the same way `fleet_label` already refuses an incomplete issue bundle
+  (#539) -- a caller pastes the rendered call and fills in the brief rather than retyping
+  `subagent_type` by hand at every dispatch. `skills/manager/phases/dispatch.md` points its own
+  spawn examples at the new CLI form (`fleet_label.py ... oss:developer --model sonnet`). Self-review
+  found the rendered `description` field itself unescaped a caller-supplied phrase -- a `"` in the
+  phrase closed the field early and could reopen a new keyword, including `subagent_type`; the
+  phrase and label are now escaped before composition.
+
 ## [0.21.0] - 2026-09-03
 
 ### Added
@@ -7843,7 +8104,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.21.0
 [0.20.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.20.0
 [0.19.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.19.0

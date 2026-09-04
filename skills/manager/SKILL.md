@@ -1,7 +1,7 @@
 ---
 name: "manager"
 description: "Run an open-source repo as its maintainer: triage the tracker, decide what is worth building, delegate implementation, review hard, merge on green, release. Use when managing a repo you own and merge for."
-version: "0.21.0"
+version: "0.22.0"
 author: "Digital Process Tools"
 user_invocable: true
 ---
