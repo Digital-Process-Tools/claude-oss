@@ -464,6 +464,19 @@ def main(argv=None):
     # Forcing UTF-8 here makes the tool accept what it is documented to
     # accept, on every platform, rather than merely explaining a decode
     # failure caused by reading it wrong in the first place.
+    # #846: `sys.stdin` is `None` when the harness hands the process a closed
+    # or unopenable standard input, so `.reconfigure` raises `AttributeError`
+    # before the `except (AttributeError, ValueError): pass` below can help --
+    # that guard was written for a *stream* that refuses to reconfigure, not
+    # for the absence of a stream. Past that, `json.load(None)` would raise
+    # `AttributeError` uncaught, exiting 1 with none of this module's own
+    # states. Check for `None` first and answer `COULD NOT READ`, the state
+    # that already exists for exactly this (#405's fix, same class).
+    if sys.stdin is None:
+        print("COULD NOT READ: stdin is not JSON (no readable stdin: the "
+              "process was handed a closed or unopenable standard input)")
+        return 2
+
     try:
         sys.stdin.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper

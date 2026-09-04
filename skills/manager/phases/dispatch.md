@@ -224,6 +224,16 @@ whose claim state is unknown is this repository's own defect class, one layer up
 argument, including what a `claimed` row does *not* promise, is in the script's own docstring rather
 than here (#964).
 
+**`scripts/select_issues.py` composes the ranking, staleness and lane-collision checks above plus
+this claim read into one call (#970) — board in, ranked claimable candidates out, three states
+(`candidates` / `none-available` / `could-not-select`, the last never rendering as the second) and a
+per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` /
+`lane-collision`).** It does not replace `--claim` above — reading who is claimable and writing a
+claim stay separate calls, the same separation `issue_claim.py` itself already makes between
+`--read` and `--claim` — and it does not invent a preflight pattern or a lane pattern for an issue
+that named neither (#267): those stay caller-supplied input, exactly as they are for the scripts it
+composes.
+
 A contributor without write access cannot self-assign — GitHub restricts assignment to write or
 triage permission — so this mechanism claims for the maintainer's own loop only. What an outside
 contributor uses to claim an issue is a separate decision (#460); it must land somewhere this same
@@ -360,10 +370,10 @@ fresh developer spawn's measured 150k-290k tokens).
 `agent-unreachable`, distinct from `resumed`.** A re-dispatch with neither an attempted resume nor
 that finding is the defect this section stops; state which one applied in the handback.
 
-**This is enforced, not only stated.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py"
-<state_file> --lane-dispatch-state ISSUE=STATE[:WHY]` (repeatable, matched to `--lane` by issue)
-refuses the whole `--decision` call outright when the same issue is recorded a fresh dispatch more
-than once in it -- the shape `--lane-fill` already refuses an unreasoned short lane in. `resumed`
+**This is enforced, not only stated (#880), in `oss_state.py` itself** -- its own
+`--lane-dispatch-state ISSUE=STATE[:WHY]` help and refusal carry the argument now, so it is not
+retyped here: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file>
+--lane-dispatch-state ISSUE=STATE[:WHY]` (repeatable, matched to `--lane` by issue). `resumed`
 needs no reason; `agent-unreachable` requires one. Omit the flag for an ordinary single dispatch.
 
 **Lane length is itself a cost decision, and it is measured after a lane completes, never during
@@ -417,21 +427,19 @@ the pointer, not a second copy of that explanation.
 lane unconditionally, so probing several candidates before picking one left phantom records that
 blocked `--derive-held` for hours. The probe forms above are now read-only; only `--claim` writes.
 
-**`--claim` refuses without `--lane` (#788).** `<issue> --claim` alone used to write a fileless lane
-record, indistinguishable at write time from a well-formed one — and every later `--derive-held`
-call this tick then had to treat the whole held set as untrustworthy while that record stayed live,
-for every candidate probed after it, not just this one's own. Pass the same patterns this candidate
-was already probed with above; this is the one call that writes, so it is also the one call the
-files must be named on.
-
-**When a dispatched lane's own brief tells it to run `--claim` as its own first call, that call must
+**`--claim` refuses without `--lane` (#788), and refuses a claim made from inside a worktree rather
+than the clone (#865) -- both enforced by `lane_setup.py` itself now, with the argument in its own
+code rather than only here.** #788 is an argparse `parser.error`; #865 is a report-time refusal (it
+sets `effective_claim` false and prints `CLAIM REFUSED` with the reason) rather than an argparse
+error -- same posture, different mechanism, both read by whoever edits the script next. Pass the
+same patterns this candidate was already probed
+with above; this is the one call that writes, so it is also the one call the files must be named on.
+When a dispatched lane's own brief tells it to run `--claim` as its own first call, that call must
 run from the clone, before the `git worktree add` (or equivalent `cd`) the brief also asks for — not
-after (#865).** `.oss.local.json` is git-excluded from every worktree this loop cuts, by construction,
-so `--claim` standing inside one derives `worktree_root` from that worktree's own path rather than
-the clone's (#608's own repository-root fallback, reached from the wrong root) and would write into a
-registry sibling to that one worktree, invisible to every other lane's `--derive-held`. `lane_setup.py`
-now refuses the call outright when it detects this — exit non-zero, nothing written, a `CLAIM REFUSED`
-line naming the cause — rather than degrading quietly into a claim that looks recorded and is not.
+after: `.oss.local.json` is git-excluded from every worktree this loop cuts, so `--claim` standing
+inside one would derive `worktree_root` from that worktree's own path and write into a registry
+sibling to it, invisible to every other lane's `--derive-held` -- which is exactly what the refusal
+now stops before it happens.
 
 Every brief carries these seven, and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brief_schema.py" <brief-file>` checks the draft before
 the spawn — `ok` / a row per missing element / `could-not-read`. Three are checked structurally and

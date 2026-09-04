@@ -3,6 +3,14 @@ description: Run one maintainer tick — read the board, decide, delegate, revie
 allowed-tools: Bash, Agent
 ---
 
+**#940: this file is past a Bash tool's output-truncation threshold -- a plain `cat` of it comes
+back as a preview of the first ~2KB plus a pointer to a saved file, not the content, and the
+`wc -l` plus three `sed -n` ranges that follow it in that case cost roughly 11.9k tokens of pure
+duplication for nothing the first read delivered.** Measured directly, in this repository's own
+session, reproducing #940's own trap.d finding rather than only citing it. Read this file in
+bounded chunks from the first call -- `supertool 'read:commands/tick.md:OFFSET:LIMIT'`, or a single
+`sed -n 'START,ENDp'` sized well under the truncation point -- never a bare `cat`.
+
 One pass of the maintainer loop over the repo named in `.oss.json`.
 
 **This session is the scheduler, and the scheduler does not run a tick.** It spawns `oss:sub-manager`,
