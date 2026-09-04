@@ -261,7 +261,7 @@ from being invisible.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer.md` | 47,819 B | 52,600 B |
-| `agents/auditor.md` | 14,329 B | 15,800 B |
+| `agents/auditor.md` | 16,743 B | 18,400 B |
 | `agents/release-auditor.md` | 17,857 B | 19,700 B |
 | `agents/triager.md` | 17,702 B | 19,500 B |
 | `agents/sub-manager.md` | 14,032 B | 15,400 B |
@@ -271,6 +271,11 @@ The counter-argument stands and must survive whatever gets cut to stay under bud
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
 a still-live trap costs a whole extra review round — a cost that will not show up next to the token
 count it saved. The budget is a visible number, not a mandate to shrink.
+
+**#972 raised `agents/auditor.md`'s ceiling from 15,800 B to 18,400 B** rather than trimming
+an existing paragraph to fit the new one: the addition states the worktree-boundary rule a
+spawned auditor failed to hold (#972's own incident), and nothing already in the file argued
+that point, so there was nothing safe to cut in its place.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same

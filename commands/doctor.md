@@ -629,3 +629,24 @@ Two of the warnings are about CI rather than about setup, and neither is cosmeti
   matrix expands one job declaration into many, a reusable workflow declares nothing
   locally, an organisation- or app-level check never appears in `.github/workflows/` at
   all, and a run that has not happened declares nothing either.
+
+## Then name the next step
+
+`doctor.py`'s own docstring is explicit that it never names a next command itself -- a
+line printed regardless of state carries no information, and the advice belongs on
+"the surface that instructs the work", not in a diagnostic that also runs mid-tick and
+before a release. This command is that surface for the one path neither of those two
+covers: a session **reopened** on a managed repo, where the sequence a human actually
+runs is `/oss:doctor`, fix whatever it named, then stop -- with nothing left to say
+what "then" is (#957).
+
+So: if you reached this command by reopening a session on a managed repo, and this run
+is not sitting inside an already-running tick or an already-running release, name
+**`/oss:tick`** as the next step once the report above is clean, or once every `FAIL`
+and every actionable `WARN` is resolved. That is the maintainer loop itself -- read the
+board, decide, delegate, review, merge on green -- and it is the step nothing else in
+this session is already carrying out.
+
+Do not name it when `doctor` ran **mid-tick** or **before a release**: both are
+ordinary times to run this diagnostic, named as such above, and neither is a moment to
+start a second tick on top of the one already running.

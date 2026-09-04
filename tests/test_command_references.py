@@ -83,6 +83,7 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
 SETUP_MD = REPO_ROOT / "commands" / "setup.md"
 SCAFFOLD_MD = REPO_ROOT / "commands" / "scaffold.md"
 TICK_MD = REPO_ROOT / "commands" / "tick.md"
+DOCTOR_MD = REPO_ROOT / "commands" / "doctor.md"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from manager_docs import ManagerLoop  # noqa: E402
@@ -124,6 +125,15 @@ def _names_scaffold_as_the_next_step(text):
 
 def _names_tick_as_the_next_step(text):
     return "/oss:tick" in text and bool(re.search(r"furniture is in place", text, re.I))
+
+
+def _names_tick_as_the_reopened_session_next_step(text):
+    """#957: doctor.md's own version of the same hand-off, worded for a session that
+    was *reopened* rather than one that just finished scaffolding -- see the doctor.py
+    docstring the command's own prose quotes for why the diagnostic itself stays
+    silent about this.
+    """
+    return "/oss:tick" in text and bool(re.search(r"reopen", text, re.I))
 
 
 def _names_the_settings_file_for_the_merge_rule(text):
@@ -1214,6 +1224,11 @@ def test_pointing_at_a_repos_own_readme_fails_the_compatibility_predicate():
 CHAIN = [
     ("/oss:setup", SETUP_MD, "/oss:scaffold", _names_scaffold_as_the_next_step),
     ("/oss:scaffold", SCAFFOLD_MD, "/oss:tick", _names_tick_as_the_next_step),
+    # A second entry point rather than a third link -- #957. A reopened session runs
+    # /oss:doctor, not /oss:scaffold, and has no furniture step to name; it hands off
+    # to /oss:tick directly, worded for that path rather than reusing the scaffold
+    # predicate above.
+    ("/oss:doctor", DOCTOR_MD, "/oss:tick", _names_tick_as_the_reopened_session_next_step),
 ]
 
 

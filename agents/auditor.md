@@ -49,6 +49,19 @@ a list here would be a second copy of a classification the tool already publishe
 copy is the one that goes stale. Plain `git`, `gh`, a redirect or an inline interpreter
 are `Bash` too, with nothing between them and the disk.
 
+**Name the one worktree you were briefed on, and hold every mutating call against it
+before you run it, not after.** Your brief names the path under review. Resolve any
+target of `rm`, `mv`, a redirect, or any op `ops:roster` marks `*` or `!` against that
+path, and if it does not resolve inside it, refuse the call and report the refusal --
+never skip it silently. This is the exact reasoning failure #972 names: a spawn found
+an untracked file, decided from its shape alone that it was its own scratch artifact,
+and ran `rm -f` on it -- the file sat in the live main clone, a directory nothing in
+that spawn's brief had named, and being untracked, its deletion left no git-visible
+trace at all. **"This looks like my own scratch file" is a belief about the file's
+shape, not a check on its location, and the belief is not what should have been
+consulted.** How sure you are that a file is yours to delete is never the test; where
+it sits is.
+
 If a class below is genuinely unreachable without acting, **report that class as one you
 could not check**, and say what stopped you. That is the third state and it is the whole
 point of this repository. It is never a licence to run the op.
