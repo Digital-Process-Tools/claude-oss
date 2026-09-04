@@ -98,3 +98,32 @@ def test_a_missing_association_still_refuses_to_rank_the_positive_control():
     )
     assert result["state"] == "none-available", result
     assert result["dropped"][0]["disposition"] == "unrankable"
+
+
+def test_the_ordering_call_also_sees_the_translated_association():
+    """The translation must reach `dispatch_rank.order`, not just the later
+    per-item `dispatch_rank.rank` call -- `order`'s own stable sort computes
+    its key by calling `rank` internally with whatever `author_association`
+    it was handed, and until that call sees a translated value too, a real
+    GitHub payload sorts every non-loop issue as `_UNRANKABLE_KEY` (all of
+    them tied, so the stable sort leaves them in input order) even though
+    each candidate's own `rank`/`author`/`band` fields come out individually
+    correct -- exactly the shape that passes every single-issue test above
+    while the board-level ordering #993 exists for stays broken."""
+    result = select_issues.select(
+        {
+            "declared": DECLARED,
+            "issues": [
+                _issue(1, "CONTRIBUTOR", ["priority-low"]),
+                _issue(2, "CONTRIBUTOR", ["priority-high"]),
+            ],
+        },
+        checker=_no_op_checker,
+    )
+    assert result["state"] == "candidates", result
+    numbers = [c["number"] for c in result["candidates"]]
+    assert numbers == [2, 1], (
+        "the priority-high issue (#2) must sort ahead of the priority-low one "
+        "(#1); got {} -- dispatch_rank.order() is still seeing the raw, "
+        "untranslated GitHub association".format(numbers)
+    )

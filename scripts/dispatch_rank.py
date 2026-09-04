@@ -54,14 +54,19 @@ checked first, and settles the author axis on its own for a loop-filed issue.
 **"External" and "maintainer" are read from GitHub's own author association**
 on the issue -- `OWNER`/`MEMBER`/`COLLABORATOR` versus `CONTRIBUTOR`/`NONE` --
 never from a declared label: there is no opt-in step here for a label to
-forget the way `filed_by_loop` can rot. It still needs a third state: an
-association that could not be read must not render as "external" and must
-not render as "maintainer" either -- the same "never render as the
-lowest-cost guess" discipline this module already applies to an undeclared
-`filed_by_loop`. `rank()`'s `association` parameter carries that state
-explicitly: pass `"external"` or `"maintainer"` for a measured value, or
-leave it `None` (or anything else) for "could not tell", which refuses to
-rank a non-loop issue rather than guessing which of the two it is.
+forget the way `filed_by_loop` can rot. **This module never reads GitHub's
+raw field itself** -- that reasoning, and the exact set of recognised
+spellings, lives one call earlier, in `select_issues.py`'s own
+`_translate_author_association` (#1013), which is where a repository's real
+`gh api` payload actually gets translated before it ever reaches `rank()`.
+It still needs a third state: an association that could not be read must not
+render as "external" and must not render as "maintainer" either -- the same
+"never render as the lowest-cost guess" discipline this module already
+applies to an undeclared `filed_by_loop`. `rank()`'s `association` parameter
+carries that state explicitly: pass `"external"` or `"maintainer"` for an
+already-translated value, or leave it `None` (or anything else) for "could
+not tell", which refuses to rank a non-loop issue rather than guessing which
+of the two it is.
 
 Nothing in this module can check that a caller actually measured the
 association before passing it. What it can do, and does, is refuse to rank a

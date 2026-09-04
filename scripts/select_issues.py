@@ -149,7 +149,20 @@ def select(payload, checker=None, search=None, resolve_lane=None):
     held_files = set(payload.get("held_files") or [])
     repo = payload.get("repo")
 
-    ranked = dispatch_rank.order(issues, declared)
+    # #1013 review round: `dispatch_rank.order()` computes its own stable-sort
+    # key by calling `rank()` internally (see its docstring) with whatever
+    # `author_association` the item carries -- translating only inside the
+    # loop below fixed each candidate's own rank/author/band fields but left
+    # `order()` itself sorting on the raw, untranslated GitHub value, which
+    # is unrankable for every real board and so leaves every non-loop issue
+    # in input order regardless of true priority. Translating once here, into
+    # a shallow-copied issue list, means both `order()`'s key and the loop's
+    # own `rank()` call see the same already-translated value.
+    translated_issues = [
+        dict(item, author_association=_translate_author_association(item.get("author_association")))
+        for item in issues
+    ]
+    ranked = dispatch_rank.order(translated_issues, declared)
 
     dropped = []
     survivors = []  # (issue_row, rank_answer)
@@ -159,7 +172,7 @@ def select(payload, checker=None, search=None, resolve_lane=None):
         number = item.get("number")
         answer = dispatch_rank.rank(
             item.get("labels") or [], declared,
-            _translate_author_association(item.get("author_association")),
+            item.get("author_association"),
         )
         if answer["rank"] is None:
             dropped.append({"number": number, "disposition": "unrankable", "why": answer["why"]})
