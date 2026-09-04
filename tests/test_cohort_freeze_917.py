@@ -40,6 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import cohort_freeze  # noqa: E402
+import oss_config  # noqa: E402
 
 
 CUTOFF = "2026-09-03T08:13:40Z"
@@ -504,9 +505,14 @@ def test_apply_labels_decodes_nonutf8_bytes_without_raising():
 # --------------------------------------------------------------- freeze (orchestration)
 
 
-def _freeze_script(members_numbers, already_numbers, apply_ok=True):
+def _freeze_script(members_numbers, already_numbers, apply_ok=True, label_missing=False):
     label = "cohort-16"
     script = _annotated_tag_script()
+    script[("gh", "api", "-X", "GET", "repos/{}/labels/{}".format(REPO, label))] = (
+        _Done(1, "", "gh: Not Found (HTTP 404)")
+        if label_missing
+        else _Done(0, json.dumps({"name": label}))
+    )
     lines = "\n".join(
         json.dumps({"number": n, "created_at": CUTOFF, "closed_at": None})
         for n in members_numbers
@@ -660,6 +666,69 @@ def test_freeze_already_frozen_zero_members_is_a_real_zero():
     assert result["members"] == []
 
 
+# ------------------------------------------------------- #956: missing cohort label
+
+
+def test_freeze_dry_run_reports_label_missing_not_frozen():
+    """MUST-FIRE: `--dry-run` (the default) must not report `frozen` /
+    `would add ... to N issue(s)` when the cohort label does not exist on the
+    tracker yet -- the label existence precondition must be checked before
+    the write is even rehearsed, not discovered only when `--execute` runs."""
+    script = _freeze_script(
+        members_numbers=[1, 2, 3], already_numbers=[], label_missing=True
+    )
+    run = _scripted_run(script)
+    result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=False)
+    assert result["state"] == cohort_freeze.STATE_LABEL_MISSING
+    assert "cohort-16" in result["reason"]
+    assert "gh label create" in result["reason"]
+
+
+def test_freeze_execute_against_missing_label_is_one_finding_not_23():
+    """MUST-FIRE: `--execute` against a missing label must report a single,
+    correctly-named finding, never one identical failure per issue -- and
+    must never be `could-not-read`, which points a maintainer at permissions
+    or the network rather than at the actual cause."""
+    script = _freeze_script(
+        members_numbers=list(range(1, 24)), already_numbers=[], label_missing=True
+    )
+    run = _scripted_run(script)
+    result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
+    assert result["state"] == cohort_freeze.STATE_LABEL_MISSING
+    assert result["state"] != "could-not-read"
+    assert result["reason"].count("not found") <= 1
+    assert "gh label create" in result["reason"]
+
+
+def test_freeze_still_frozen_when_label_exists():
+    """MUST-NOT-FIRE control: the ordinary case (label already exists) must
+    still freeze exactly as before -- the new precondition check must not
+    change behaviour when there is nothing wrong."""
+    script = _freeze_script(members_numbers=[1, 2, 3], already_numbers=[])
+    run = _scripted_run(script)
+    result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
+    assert result["state"] == "frozen"
+    assert result["added"] == [1, 2, 3]
+
+
+def test_freeze_collapses_apply_failures_that_all_report_label_not_found():
+    """Defence in depth for the race where the label existed at the
+    precondition check and is deleted before the write -- `apply_labels`
+    itself, not just the upfront check, must collapse N identical `not
+    found` failures into the single named state rather than a wall of
+    per-issue reasons."""
+    script = _freeze_script(members_numbers=[1, 2, 3], already_numbers=[])
+    label = "cohort-16"
+    for n in (1, 2, 3):
+        script[("gh", "issue", "edit", str(n), "--repo", REPO, "--add-label", label)] = _Done(
+            1, "", "failed to update .../issues/{}: '{}' not found\\nfailed to update 1 issue".format(n, label)
+        )
+    run = _scripted_run(script)
+    result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
+    assert result["state"] == cohort_freeze.STATE_LABEL_MISSING
+    assert result["reason"].count("not found") <= 1
+
+
 # --------------------------------------------------------------- CLI wiring
 
 
@@ -703,4 +772,59 @@ def test_main_accepts_explicit_slug(monkeypatch):
     # gh missing either way -- this only proves the slug itself was accepted
     # without needing a .oss.json on disk, not that the freeze ran.
     assert code == cohort_freeze.EXIT_COULD_NOT_READ
+
+
+# --------------------------------------------------- #954: shared repo validator
+#
+# `_resolve_repo_slug` used to accept any string containing `/` whose path did
+# not exist, and any non-empty `.oss.json` `repo` after a bare `.strip()` --
+# never calling `oss_config.repo_problem` / `REPO_RE`, the shared validator
+# `f96a95f` (#897) tightened to exclude backslash. These four probes are the
+# ones the issue measured as diverging between the two validators.
+
+MALFORMED_SLUGS_954 = (
+    "../../users/victim",
+    "owner/name\\..\\evil",
+    "a b/c d",
+    "../../../repos/other/other",
+)
+
+
+def test_resolve_repo_slug_rejects_what_oss_config_would_refuse():
+    """MUST-FIRE half: every slug oss_config.repo_problem refuses must also be
+    refused by cohort_freeze._resolve_repo_slug, not silently accepted."""
+    for value in MALFORMED_SLUGS_954:
+        assert oss_config.repo_problem(value) is not None, value
+        slug, problem = cohort_freeze._resolve_repo_slug(value)
+        assert problem is not None, value
+        assert slug is None, value
+
+
+def test_resolve_repo_slug_still_accepts_a_valid_slug():
+    """MUST-NOT-FIRE half of the same fixture: a genuinely valid explicit slug
+    (no `.oss.json` at that path) must still resolve."""
+    assert oss_config.repo_problem(REPO) is None
+    slug, problem = cohort_freeze._resolve_repo_slug(REPO)
+    assert problem is None
+    assert slug == REPO
+
+
+def test_resolve_repo_slug_rejects_malformed_repo_from_oss_json(tmp_path):
+    """The other branch: a malformed `repo` value read out of a tracked,
+    contributor-editable `.oss.json` must be refused too, not just an
+    explicit `--repo` slug."""
+    config = tmp_path / ".oss.json"
+    config.write_text(json.dumps({"repo": "a b/c d"}), encoding="utf-8")
+    slug, problem = cohort_freeze._resolve_repo_slug(str(tmp_path))
+    assert slug is None
+    assert problem is not None
+
+
+def test_resolve_repo_slug_still_accepts_valid_repo_from_oss_json(tmp_path):
+    """MUST-NOT-FIRE control for the .oss.json branch."""
+    config = tmp_path / ".oss.json"
+    config.write_text(json.dumps({"repo": REPO}), encoding="utf-8")
+    slug, problem = cohort_freeze._resolve_repo_slug(str(tmp_path))
+    assert slug == REPO
+    assert problem is None
 

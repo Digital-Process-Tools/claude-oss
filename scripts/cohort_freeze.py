@@ -32,24 +32,33 @@ shares that exact format and width, so a plain string compare is correct and
 sidesteps `datetime.fromisoformat`'s refusal of the trailing `Z` on Python
 before 3.11 -- this repository's own floor is 3.9 (`CLAUDE.md`).
 
-Three states, and the third is the point -- this repository's own defect
-class, applied to its own bookkeeping. A check that cannot look has to say
-so, because a cohort nobody could measure and a cohort that is genuinely
-empty must never render the same:
+Four states, and the third and fourth are the point -- this repository's own
+defect class, applied to its own bookkeeping. A check that cannot look has to
+say so, because a cohort nobody could measure and a cohort that is genuinely
+empty must never render the same, and a write that was refused for a reason
+this module could establish up front must never render as an unexplained
+read failure (#956):
 
   frozen            issues were labelled (or, on a dry run, would be)
   already-frozen    every member already carries the label -- re-running
                      is the ordinary case, not the exception, and is a no-op
-  could-not-read     the tag could not be resolved, the issue list could not
-                     be read, current label membership could not be read, or
-                     a write failed partway -- NEVER an empty cohort. `state`
-                     is the signal to read, not the shape of `count`: it is
-                     `None` when the read failed before anything was
-                     computed, and the already-computed value when a later
-                     step (reading current labels, writing one) failed
-                     partway. A real empty cohort is `already-frozen` with
-                     `count == 0`, an int -- always distinguishable from
-                     `could-not-read` by `state`.
+  label-missing     the cohort label does not exist on the tracker yet --
+                    `gh issue edit --add-label` never creates one, so this
+                    is checked before any write is even rehearsed by a dry
+                    run, not discovered as N identical per-issue failures
+                    once `--execute` runs. This script never creates the
+                    label itself: that write is the maintainer's own act.
+  could-not-read    the tag could not be resolved, the issue list could not
+                    be read, current label membership could not be read, or
+                    a write failed partway for a reason other than the
+                    label missing -- NEVER an empty cohort. `state`
+                    is the signal to read, not the shape of `count`: it is
+                    `None` when the read failed before anything was
+                    computed, and the already-computed value when a later
+                    step (reading current labels, writing one) failed
+                    partway. A real empty cohort is `already-frozen` with
+                    `count == 0`, an int -- always distinguishable from
+                    `could-not-read` by `state`.
 
 Dry run by default -- `--execute` is required to actually write a label, since
 an unqualified run touches every open issue on the tracker. `pull_request` is
@@ -78,16 +87,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import oss_config  # noqa: E402
+
 CONFIG_NAME = ".oss.json"
 
 STATE_FROZEN = "frozen"
 STATE_ALREADY = "already-frozen"
 STATE_COULD_NOT_READ = "could-not-read"
+STATE_LABEL_MISSING = "label-missing"
 
-FREEZE_STATES = (STATE_FROZEN, STATE_ALREADY, STATE_COULD_NOT_READ)
+FREEZE_STATES = (STATE_FROZEN, STATE_ALREADY, STATE_COULD_NOT_READ, STATE_LABEL_MISSING)
 
 EXIT_OK = 0
 EXIT_COULD_NOT_READ = 3
+EXIT_LABEL_MISSING = 4
 
 LABEL_PREFIX = "cohort-"
 
@@ -382,6 +395,65 @@ def label_members(repo, label, gh, run, timeout=DEFAULT_TIMEOUT):
     return {"state": "ok", "numbers": numbers, "reason": ""}
 
 
+def label_exists(repo, label, gh, run, timeout=25):
+    """Whether `label` exists on `repo`'s tracker.
+
+    `gh issue edit --add-label` does not create a missing label -- it fails,
+    once per issue, with an identical `'<label>' not found`, so this
+    precondition is checked explicitly here, before any write is even
+    rehearsed by a dry run, rather than discovered only as a wall of
+    per-issue failures once `--execute` runs (#956). Returns
+    ``{"state": "ok"|"could-not-read", "exists": bool|None, "reason": str}``.
+    """
+    command = [gh, "api", "-X", "GET", "repos/{}/labels/{}".format(repo, label)]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "state": "could-not-read",
+            "exists": None,
+            "reason": "{} did not run ({})".format(_command_text(command), exc),
+        }
+    if done.returncode == 0:
+        return {"state": "ok", "exists": True, "reason": ""}
+    message = (_decode_output(done.stderr) or _decode_output(done.stdout) or "").strip()
+    if "404" in message or "not found" in message.lower():
+        return {"state": "ok", "exists": False, "reason": ""}
+    return {
+        "state": "could-not-read",
+        "exists": None,
+        "reason": "{} failed: {}".format(_command_text(command), message),
+    }
+
+
+def _label_missing_reason(label, repo):
+    """The one sentence #956 asks for in place of 23 identical per-issue
+    failures: name the cause once and give the remedy. Never issued as a
+    silent write of its own -- creating the label is a decision the
+    maintainer makes, not this script (#956)."""
+    return (
+        "{} does not exist on {} yet -- gh issue edit --add-label does not "
+        "create a missing label. Create it first: "
+        "gh label create {} --repo {} --description "
+        "'cohort, frozen at a release' --color ededed".format(
+            label, repo, label, repo
+        )
+    )
+
+
+def _all_failures_are_label_not_found(failed, label):
+    """Defence in depth for the label existing at the upfront check and
+    being deleted before the write lands -- `apply_labels`'s own failures
+    collapse to the same named state rather than a wall of identical
+    reasons, the same way the upfront check does."""
+    if not failed:
+        return False
+    marker = "'{}' not found".format(label)
+    return all(marker in entry.get("reason", "") for entry in failed)
+
+
 def apply_labels(repo, label, numbers, gh, run, timeout=25):
     """Add `label` to each issue in `numbers`, one `gh issue edit --add-label`
     per issue -- never `--remove-label`, never a set. Returns
@@ -508,6 +580,34 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "dry_run": not execute,
         }
 
+    checked = label_exists(repo, label, gh, run)
+    if checked["state"] != "ok":
+        return {
+            "state": STATE_COULD_NOT_READ,
+            "reason": "could not check whether {} exists: {}".format(
+                label, checked["reason"]
+            ),
+            "label": label,
+            "tag": tag,
+            "cutoff": cutoff,
+            "count": len(members),
+            "members": members,
+            "added": None,
+            "dry_run": not execute,
+        }
+    if not checked["exists"]:
+        return {
+            "state": STATE_LABEL_MISSING,
+            "reason": _label_missing_reason(label, repo),
+            "label": label,
+            "tag": tag,
+            "cutoff": cutoff,
+            "count": len(members),
+            "members": members,
+            "added": None,
+            "dry_run": not execute,
+        }
+
     if not execute:
         return {
             "state": STATE_FROZEN,
@@ -525,6 +625,18 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
 
     result = apply_labels(repo, label, to_add, gh, run)
     if result["failed"]:
+        if _all_failures_are_label_not_found(result["failed"], label):
+            return {
+                "state": STATE_LABEL_MISSING,
+                "reason": _label_missing_reason(label, repo),
+                "label": label,
+                "tag": tag,
+                "cutoff": cutoff,
+                "count": len(members),
+                "members": members,
+                "added": result["added"],
+                "dry_run": False,
+            }
         return {
             "state": STATE_COULD_NOT_READ,
             "reason": "labelled {} of {} issue(s) with {}; failed: {}".format(
@@ -557,11 +669,19 @@ def _resolve_repo_slug(value):
     `.oss.json` names one under `repo` -- the same `--repo .` shape
     `release_publish.py` uses. Returns `(slug, problem)`; `problem` is `None`
     on success.
+
+    Both branches route the candidate slug through `oss_config.repo_problem`
+    -- the same validator `f96a95f` (#897) tightened -- before accepting it.
+    `.oss.json` is tracked and contributor-editable, so a malformed `repo`
+    there is exactly as untrusted as a malformed `--repo` argument (#954).
     """
     path = Path(value)
     config_path = path / CONFIG_NAME
     if not config_path.is_file():
         if "/" in value and not path.exists():
+            problem = oss_config.repo_problem(value)
+            if problem:
+                return None, problem
             return value, None
         return None, "{} not found, and {!r} is not an owner/name slug".format(
             config_path, value
@@ -577,12 +697,18 @@ def _resolve_repo_slug(value):
     slug = data.get("repo") if isinstance(data, dict) else None
     if not isinstance(slug, str) or not slug.strip():
         return None, "{} does not name a `repo`".format(config_path)
-    return slug.strip(), None
+    slug = slug.strip()
+    problem = oss_config.repo_problem(slug)
+    if problem:
+        return None, "{} names `repo`: {}".format(config_path, problem)
+    return slug, None
 
 
 def _exit_code(state):
     if state == STATE_COULD_NOT_READ:
         return EXIT_COULD_NOT_READ
+    if state == STATE_LABEL_MISSING:
+        return EXIT_LABEL_MISSING
     return EXIT_OK
 
 

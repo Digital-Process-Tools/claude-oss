@@ -27,9 +27,17 @@ closure accounting, never a work order — priority decides what gets worked nex
 **#917.** `cohort_freeze.py`, run as `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cohort_freeze.py" --tag <tag> --cohort <N>`, derives the cutoff from
 the tag object's own `tagger.date`, never `now` -- a late freeze computes the identical set a prompt
 one would, unlike the `v0.20.0` drift above (27/30/32). Dry run by default; `--execute` adds one
-label per issue (`gh issue edit --add-label`), never a `PATCH`. Three states -- `frozen N` /
-`already-frozen` / `could-not-read`, never a silent zero. It does not yet feed the two-route
-`cohort_freeze` check above; still confirm a second route before recording `detail.cohort_freeze`.
+label per issue (`gh issue edit --add-label`), never a `PATCH`. Four states -- `frozen N` /
+`already-frozen` / `label-missing` / `could-not-read`, never a silent zero. It does not yet feed
+the two-route `cohort_freeze` check above; still confirm a second route before recording
+`detail.cohort_freeze`.
+
+**`label-missing` (#956) means the cohort label itself does not exist on the tracker yet** --
+`gh issue edit --add-label` never creates one, and a dry run now says so before `--execute` ever
+runs. The fix is one command, and it is yours to run, never the script's: `gh label create
+<cohort-label> --repo <repo> --description "..." --color ededed`. Re-run the identical
+`cohort_freeze.py` call afterward; nothing was written on the `label-missing` run, so there is
+nothing to reconcile.
 
 **The freeze is a label, and a label write can silently delete it.** `gh api -X PATCH issues/N -f
 'labels[]=…'` **replaces the whole label set** — so a later write setting priority or lane removes
