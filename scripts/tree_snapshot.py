@@ -119,24 +119,32 @@ def _run_git(args, root):
 
 
 def _resolved_root(root):
-    """Return the absolute path `root` names, or `root` itself unchanged if
-    it cannot be resolved (#971).
+    """Return ``(root_string, resolved)`` -- `resolved` is `False` whenever
+    `root_string` is not actually usable as an absolute, cwd-independent
+    path, so a caller can tell the two apart rather than trusting an
+    unresolved string as if it had resolved (#971 self-review).
 
     `root` defaults to `"."`, meaningful only relative to whatever the
     calling process's cwd happened to be at the instant this ran. A
     snapshot taken now and compared later -- possibly by a different
     process, possibly after the caller's cwd has moved, which is exactly
     what happens between two Bash tool calls -- needs a `root` that still
-    means the same directory once that cwd is gone. `Path.resolve()` can
-    raise on a handful of platforms for a cyclic symlink or an unreadable
-    parent; falling back to the literal string on failure keeps `snapshot`
-    itself never crashing over what is, at worst, a return to the
-    pre-#971 behaviour for that one path.
+    means the same directory once that cwd is gone.
+
+    `Path.resolve()` can fail: `OSError` on a handful of platforms for a
+    cyclic symlink or an unreadable parent, and `ValueError` for a path
+    string pathlib cannot even attempt to stat -- an embedded NUL byte,
+    reachable in practice because `compare --before -` reads arbitrary
+    JSON off stdin and a JSON string can legally encode a NUL character.
+    Falling back to the literal string on any of these keeps `snapshot`
+    itself never crashing, but the caller must not then treat that literal
+    string as though it were resolved -- `resolved=False` is what lets it
+    refuse to.
     """
     try:
-        return str(Path(root).resolve())
-    except (OSError, RuntimeError):
-        return str(root)
+        return str(Path(root).resolve()), True
+    except (OSError, RuntimeError, ValueError):
+        return str(root), False
 
 
 def snapshot(root="."):
@@ -149,22 +157,32 @@ def snapshot(root="."):
     rather than folded into the directory's own line).
 
     The `root` recorded in the result is the *resolved, absolute* path,
-    never the literal string this was called with (#971) -- `compare`'s
-    CLI reuses it as the default root for the after-snapshot precisely so
-    a caller whose cwd moved between the two calls still re-snapshots the
-    directory the before-snapshot actually looked at.
+    never the literal string this was called with (#971), whenever it
+    could be resolved at all -- `root_resolved` says which happened, so
+    `compare`'s CLI can reuse `root` as the default root for the
+    after-snapshot (a caller whose cwd moved between the two calls still
+    re-snapshots the directory the before-snapshot actually looked at)
+    without also reusing an unresolved fallback string as though it were
+    cwd-independent, which it is not.
     """
-    resolved_root = _resolved_root(root)
+    resolved_root, root_resolved = _resolved_root(root)
     head, head_error = _run_git(["rev-parse", "HEAD"], root)
     if head_error is not None:
-        return {"root": resolved_root, "head": None, "status": None, "error": head_error}
+        return {
+            "root": resolved_root, "root_resolved": root_resolved,
+            "head": None, "status": None, "error": head_error,
+        }
     status, status_error = _run_git(
         ["status", "--porcelain=v2", "--untracked-files=all"], root
     )
     if status_error is not None:
-        return {"root": resolved_root, "head": None, "status": None, "error": status_error}
+        return {
+            "root": resolved_root, "root_resolved": root_resolved,
+            "head": None, "status": None, "error": status_error,
+        }
     return {
         "root": resolved_root,
+        "root_resolved": root_resolved,
         "head": head.strip(),
         "status": status,
         "error": None,
@@ -371,8 +389,19 @@ def main(argv=None):
             root_for_after = args.root
         else:
             recorded_root = before.get("root")
+            # Trust the recorded root only when the before-snapshot itself
+            # says it resolved (#971 self-review): a `root_resolved: False`
+            # or absent (pre-#971, or built by hand) before-snapshot has no
+            # cwd-independent root to reuse, and defaulting to it anyway
+            # would silently reopen the exact bug this default exists to
+            # close -- an unresolved fallback string resolved a second
+            # time, now against whatever cwd `compare` happens to run in.
             root_for_after = (
-                recorded_root if isinstance(recorded_root, str) and recorded_root else "."
+                recorded_root
+                if isinstance(recorded_root, str)
+                and recorded_root
+                and before.get("root_resolved") is True
+                else "."
             )
         verdict = compare(before, snapshot(root_for_after))
 
