@@ -209,11 +209,54 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
      DOCTOR_ROOT="${CLAUDE_PLUGIN_ROOT}"
      ROUTE="pinned-root"
    fi
-   IDENTITY="$(python3 "$DOCTOR_ROOT/scripts/doctor.py" --root . 2>&1 \
-     | sed -n 's/^OK oss plugin version //p')"
+   DOCTOR_OUTPUT="$(python3 "$DOCTOR_ROOT/scripts/doctor.py" --root . 2>&1)"
+   IDENTITY="$(printf '%s\n' "$DOCTOR_OUTPUT" | sed -n 's/^OK oss plugin version //p')"
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
      --check-plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"
    ```
+
+   **#942: the same run already answers "is the installed copy behind the repository I am
+   standing in", when that question can even be asked — read its line instead of discarding
+   it.** The tick-to-tick comparison above answers "did this move since the last tick"; it
+   cannot see a maintainer running an install that has never caught up with their own repo,
+   because it only ever compares one tick's identity to another's. That is a different
+   question from "is this the version of the repository I am standing in", and it only has an
+   answer at all when the managed repo IS this plugin — every other repo has no such notion of
+   being "behind". `doctor.py`'s own `check_plugin_copy` already asks exactly that question on
+   every run — the SAME `$DOCTOR_OUTPUT` above already carries it — by comparing the checkout
+   at `--root .` against the installed copy it ran from, byte for byte, and naming both
+   manifests' versions the instant they disagree. Nothing needs to run twice; the line was
+   simply thrown away by the `sed` above, which keeps only the `OK oss plugin version` line.
+   Pull it out and say so before doing anything else this tick:
+
+   ```bash
+   PLUGIN_COPY="$(printf '%s\n' "$DOCTOR_OUTPUT" \
+     | sed -nE 's/^(OK|WARN) plugin copy: //p' | head -n1)"
+   ```
+
+   `-E` rather than `\(OK\|WARN\)`: BSD `sed` (macOS, the platform this plugin is developed
+   on) does not implement `\|` alternation in a basic regular expression at all — it is a GNU
+   extension — so that spelling would silently match nothing on every macOS machine and every
+   `sed -n` invocation above would need the same audit. `-E` is POSIX extended-regex mode and
+   both BSD and GNU `sed` implement it.
+
+   Four shapes, and only the first two are worth a line in the tick record — the other two are
+   this check correctly declining to answer, exactly as narrow as #942 itself says the whole
+   question is:
+
+   - **`SKEW …`** — the checkout and the installed copy differ, and the sentence at its end
+     names both manifests' declared versions. Report this prominently before anything else
+     this tick, the same as `changed` above — prose this tick reads (`agents/*.md`,
+     `skills/manager/**`, `commands/*.md`) may be a whole release older than the checkout that
+     diagnosed it.
+   - **`the copy that answered … and the checkout being diagnosed … are identical`** — nothing
+     to report; the install is current with the repo it is managing.
+   - **`… is not a checkout of this plugin …`** — not applicable. The repo being ticked is not
+     this plugin itself, so "behind the repo it manages" has no meaning here; say nothing
+     further.
+   - anything else (`could not be determined`, an empty `$PLUGIN_COPY`, doctor.py's own output
+     not carrying the line at all) — could-not-tell, not clean. Say so rather than reading
+     silence as "identical".
 
    Four answers, not three. `unchanged` — proceed, say nothing further. `changed` — report it
    prominently before anything else this tick; whether to re-run the rest of doctor's diagnostic

@@ -979,6 +979,29 @@ PRIORITY_RES = (
 )
 LANE_RES = (re.compile(r"^(?:lane|area|type)[-:/ ]", re.IGNORECASE),)
 
+# #990: the spelling this repo hand-added at `.oss.json`'s `labels.filed_by_loop` --
+# "filed-by-loop" -- widened the same way PRIORITY_RES and LANE_RES are, on the same
+# reasoning: a pattern list covers a convention, not an exact string, and every probed
+# label that matches none of them is simply absent from this match rather than reported
+# by name, because unlike priority/lane classification this is a single opt-in value,
+# not a bucket.
+FILED_BY_LOOP_RE = re.compile(r"^filed[-_:/ ]?by[-_:/ ]?loop$", re.IGNORECASE)
+
+
+def _infer_filed_by_loop_label(labels):
+    """The probed label name matching a loop-filed spelling, or None.
+
+    Never invents: this only ever returns a name that was actually in ``labels``.
+    The first match wins when more than one label matches, which is not expected in
+    practice and is not a case this function tries to adjudicate.
+    """
+    for label in labels or []:
+        name = str(label)
+        if FILED_BY_LOOP_RE.match(name):
+            return name
+    return None
+
+
 # A version-shaped string. Two-part versions are deliberately not matched: `3.9` in a
 # README is far more often a Python floor than a release.
 VERSION_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
@@ -2076,7 +2099,17 @@ def build(probe):
         # a maintainer who needs it finds it in the file rather than in a changelog.
         "changelog_untagged": None,
         "docs_targets": docs_targets,
-        "labels": {"priority": classified["priority"], "lanes": classified["lanes"]},
+        "labels": {
+            "priority": classified["priority"],
+            "lanes": classified["lanes"],
+            # #990: never invented -- a match against the labels the probe already
+            # collected, or an emitted `null` with the same visible-but-undeclared
+            # shape `changelog_untagged` above already uses. Without this, no
+            # repository onboarded through /oss:setup ever received the key, and
+            # dispatch_rank.rank (#798) refused to rank anything on every one of them
+            # but this repo, where the key was hand-added.
+            "filed_by_loop": _infer_filed_by_loop_label(labels),
+        },
         "milestones": list(probe.get("milestones") or []),
         # No `ci` block. See LEGACY_KEYS: the job-declaration count this used to emit
         # was not the merge gate's number and could not be made into one (#113, #85).
@@ -3051,6 +3084,22 @@ def _report_probe_notes(probe, config):
             "NOTE state_file: {!r} is a guess from a naming convention, not "
             "something measured on disk. If this repo has been onboarded before, "
             "check the real path before trusting it.".format(state_file),
+            file=sys.stderr,
+        )
+
+    # #990: the probe carried no label matching a loop-filed spelling (e.g.
+    # "filed-by-loop"), so labels.filed_by_loop ships null -- visible, not omitted,
+    # the same shape as changelog_untagged above. Said out loud because a null the
+    # maintainer never notices is a dispatch order that never ranks anything: see
+    # dispatch_rank.rank (#798), which answers could-not-rank for EVERY issue on a
+    # board where this key is undeclared.
+    if (config.get("labels") or {}).get("filed_by_loop") is None:
+        print(
+            "NOTE labels.filed_by_loop: no label on this repo matched a loop-filed "
+            "spelling, so this key ships null. Until it names a label, "
+            "dispatch_rank.rank cannot rank ANY issue on this board (#798) -- create "
+            "a label (e.g. `gh label create filed-by-loop`) and set it by hand, or "
+            "re-run /oss:setup once the label exists.",
             file=sys.stderr,
         )
 

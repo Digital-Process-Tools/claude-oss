@@ -385,7 +385,7 @@ def test_probe_invents_nothing_on_a_bare_repo():
     config = oss_config.build(
         _probe(labels=[], milestones=[], workflow_jobs=[], files=["README.md"])
     )
-    assert config["labels"] == {"priority": [], "lanes": []}
+    assert config["labels"] == {"priority": [], "lanes": [], "filed_by_loop": None}
     assert "ci" not in config
     assert config["changelog_dir"] is None
     assert oss_config.validate(config) == []
