@@ -49,10 +49,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # phase files carry their own budgets in scripts/developer_phases.py.
     # Lowered, not raised: growth back toward the old number is exactly the
     # signal this budget exists to make visible.
-    "agents/developer.md": (47819, 52600),
-    "agents/auditor.md": (16743, 18400),
-    "agents/release-auditor.md": (17857, 19700),
-    "agents/triager.md": (17702, 19500),
+    # Re-baselined for #1014: `check()` only ever compares measured size
+    # against `budget` (the ceiling), never against `baseline`, so these five
+    # numbers had drifted from disk with nothing to notice -- confirmed by a
+    # dedicated comparison, `tests/test_baseline_matches_disk_1014.py`, added
+    # in the same diff so this class of drift is caught going forward rather
+    # than re-discovered by hand again. Budgets (the ceilings) are unchanged;
+    # every file measured here was already comfortably under its own.
+    "agents/developer.md": (47822, 52600),
+    "agents/auditor.md": (17121, 18400),
+    "agents/release-auditor.md": (18550, 19700),
+    "agents/triager.md": (18384, 19500),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
@@ -83,11 +90,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # in its own #880 pointer sentence naming that dispatch.md now covers it
     # too. Baseline re-measured to 15501 B post-commit, per this module's own
     # convention (see #818's entry above); budget set with ~10% headroom.
-    "agents/sub-manager.md": (15501, 17000),
+    # Re-baselined for #1014 (see the sentence beside the four-row block
+    # above): 16341 B on disk against a stale 15501 declared baseline.
+    "agents/sub-manager.md": (16341, 17000),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
-    "agents/releaser.md": (8691, 9560),
+    # Re-baselined for #1014: 9215 B on disk against a stale 8691 declared
+    # baseline.
+    "agents/releaser.md": (9215, 9560),
 }
 
 

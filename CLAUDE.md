@@ -260,12 +260,12 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 47,819 B | 52,600 B |
-| `agents/auditor.md` | 16,743 B | 18,400 B |
-| `agents/release-auditor.md` | 17,857 B | 19,700 B |
-| `agents/triager.md` | 17,702 B | 19,500 B |
-| `agents/sub-manager.md` | 15,501 B | 17,000 B |
-| `agents/releaser.md` | 8,691 B | 9,560 B |
+| `agents/developer.md` | 47,822 B | 52,600 B |
+| `agents/auditor.md` | 17,121 B | 18,400 B |
+| `agents/release-auditor.md` | 18,550 B | 19,700 B |
+| `agents/triager.md` | 18,384 B | 19,500 B |
+| `agents/sub-manager.md` | 16,341 B | 17,000 B |
+| `agents/releaser.md` | 9,215 B | 9,560 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -325,11 +325,11 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,604 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 45,990 B | 50,600 B |
-| `skills/manager/phases/handback.md` | 18,864 B | 20,700 B |
-| `skills/manager/phases/accounting.md` | 22,237 B | 24,500 B |
-| `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
+| `skills/manager/SKILL.md` | 42,867 B | 46,900 B |
+| `skills/manager/phases/dispatch.md` | 52,601 B | 57,900 B |
+| `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
+| `skills/manager/phases/accounting.md` | 22,741 B | 24,500 B |
+| `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
 | `skills/manager/phases/merge.md` | 13,198 B | 14,500 B |
@@ -380,18 +380,26 @@ without the first would make an override legible without making the removal any 
 splitting the two into separate bullets would have cost more bytes than raising the ceiling
 did. No paragraph already in the file argued either point, so nothing was cut to make room.
 
-**The total grew: 122,423 B became 178,700 B, +46.0%** — re-derived by summing the table's own
-"measured (baseline)" column above, not by editing the prior figure (175,514 B / +43.4%, itself a
-correction of a 161,431 B / +31.9% edit that had gone stale). Still no test ties this sentence's
-numbers to the table's own column, only the per-file rows; sum it again the next time a row changes,
-rather than editing this sentence by hand. The spine's directive blocks and each phase file's
-own header are a second, shorter statement of what the phase file then argues at length, and that is a
-real cost paid on every read of the phase file. It buys the number that actually matters here — what a
-session loads before it knows which phase it will reach. **122,423 B became 42,604 B, -65%**, in
-three rounds: the original split, then #958 (the ranking table and upstream filing out to
-`phases/findings.md`, 62,829 -> 54,751 B), then #960 (the pre-flight and dispatch order to
-`dispatch.md`, the platform band to `review.md`, cadence and the loop doctrine's argument to
-`accounting.md`, 54,751 -> 42,604 B). Quote both numbers, or the saving reads as free.
+**The total grew: 122,423 B became 186,769 B, +52.6%** — re-derived by summing the table's own
+"measured (baseline)" column above, not by editing the prior figure (178,700 B / +46.0%, itself a
+correction of a 175,514 B / +43.4% edit that had gone stale). #1014 is the reason for this
+correction, not the usual one: the prior figure was not stale because a phase file grew and nobody
+re-summed, it was stale because `check()` in `skill_phases.py`, `agent_budgets.py` and
+`command_budgets.py` only ever compares measured size against `budget` (the ceiling), never against
+the "baseline" quoted in these tables' own first column -- so a baseline could drift from disk
+indefinitely with no test noticing, and several of the rows above had. `tests/test_baseline_matches_
+disk_1014.py` now compares every declared baseline against the file's actual size directly, closing
+that gap; #709 and #725 already compared this table against the modules' own dicts, which was never
+the missing link. Still no test ties this sentence's own summed total to the table's column, only
+the per-file rows; sum it again the next time a row changes, rather than editing this sentence by
+hand. The spine's directive blocks and each phase file's own header are a second, shorter statement
+of what the phase file then argues at length, and that is a real cost paid on every read of the phase
+file. It buys the number that actually matters here — what a session loads before it knows which
+phase it will reach. **122,423 B became 42,867 B, -65%**, in three rounds: the original split, then
+#958 (the ranking table and upstream filing out to `phases/findings.md`, 62,829 -> 54,751 B), then
+#960 (the pre-flight and dispatch order to `dispatch.md`, the platform band to `review.md`, cadence and
+the loop doctrine's argument to `accounting.md`, 54,751 -> 42,604 B, since re-baselined to 42,867 B by
+#1014's own measurement). Quote both numbers, or the saving reads as free.
 
 **#958's own reasoning, because the rejected alternative is the interesting half.** Moving that
 prose to `.claude/jit-context/` was weighed and refused: jit's shown-set dedup is keyed on

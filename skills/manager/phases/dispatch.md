@@ -471,6 +471,28 @@ inside one would derive `worktree_root` from that worktree's own path and write 
 sibling to it, invisible to every other lane's `--derive-held` -- which is exactly what the refusal
 now stops before it happens.
 
+**`--stack-on BRANCH` (#1006) is the narrow escape from a `cannot tell` this loop caused itself,
+never a general substitute for the ordinary dispatch path above.** The incident it was built for:
+the manager merges and pushes into a live lane's own branch (to pull in a just-landed fix, say), and
+sixty seconds later wants to dispatch a second, related lane stacked on that same branch's tip --
+and `git-worktrees` reads that tree as `cannot tell`, citing the manager's own index write as the
+reason, with no way to tell that write apart from a live agent's. Passed to `lane_setup.py`, `base`
+is resolved straight out of the shared object database (`refs/heads/<BRANCH>`, falling back to
+`refs/remotes/<remote>/<BRANCH>`) rather than through any worktree's checked-out files, so cutting
+the new lane's branch from it never touches the tree that read `cannot tell` at all -- there is
+nothing left to collide with. Reach for it when **both** hold: the lane you are about to dispatch
+is meant to stack on a specific sibling branch rather than on `default_branch`, and that branch's own
+worktree is the one reading `cannot tell` (or is plainly occupied by a live lane you do not want to
+touch). It is not a way to dispatch past a `cannot tell` on `default_branch` itself -- ordinary
+dispatch already reads `main`'s worktree only to fetch and rev-parse, never through the worktree's
+own files, so that collision does not arise there in the first place. `resolved-remote` (found only
+as a remote-tracking ref) is flagged, not silent: it can be stale if nobody has fetched since that
+branch last moved, and the brief should say so rather than treat it as equivalent to a local
+`resolved`. **This is a different moment from #1007's `cannot tell` in `merge.md` above**, which
+gates *removing* a worktree that already merged; `--stack-on` gates *creating* one, and the two
+never substitute for each other -- a lane briefed with a stacked base still goes through the same
+worktree-removal read at cleanup time, unchanged.
+
 Every brief carries these seven, and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brief_schema.py" <brief-file>` checks the draft before
 the spawn — `ok` / a row per missing element / `could-not-read`. Three are checked structurally and
 four are presence only, and the receipt says which: **a brief that passes is not a brief that was
