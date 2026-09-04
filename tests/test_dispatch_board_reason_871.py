@@ -107,3 +107,52 @@ def test_lane_fill_refuses_an_unsupported_board_exhausted_claim():
 def test_lane_fill_cli_argument_parses_the_fourth_field():
     entry = oss_state._lane_fill_argument("871:1:board-exhausted:1")
     assert entry == {"primary": 871, "count": 1, "reason": "board-exhausted", "candidates": 1}
+
+
+# ------------------------------------------------------------------- #953
+#
+# `lane_fill` used `candidates` to validate the short-lane claim and then
+# dropped it from the persisted record -- a `board-exhausted` corroborated
+# against a measured 0 candidates and one where no count was ever supplied
+# produced byte-identical records. `candidates` is now persisted, present
+# only when a caller actually supplied one, so a corroborated claim and an
+# uncorroborated one stop rendering identically.
+
+
+def test_lane_fill_persists_candidates_when_given():
+    """MUST-FIRE: a corroborated claim's `candidates` count survives into the
+    persisted record, not just into the validation that consumed it."""
+    record = oss_state.lane_fill(
+        [{"primary": 953, "count": 1, "reason": "board-exhausted", "candidates": 0}],
+        window=WINDOW,
+    )
+    assert record["lanes"][0]["candidates"] == 0
+
+
+def test_lane_fill_corroborated_and_uncorroborated_records_no_longer_collide():
+    """The exact reproduction from the issue: a `board-exhausted` corroborated
+    against a measured 0 candidates, and one where no count was ever
+    supplied, must produce different records -- both share the same
+    `count`/`reason`, so only `candidates` can tell them apart."""
+    corroborated = oss_state.lane_fill(
+        [{"primary": 1, "count": 1, "reason": "board-exhausted", "candidates": 0}],
+        window=WINDOW,
+    )
+    uncorroborated = oss_state.lane_fill(
+        [{"primary": 1, "count": 1, "reason": "board-exhausted"}],
+        window=WINDOW,
+    )
+    assert corroborated["lanes"][0] != uncorroborated["lanes"][0]
+    assert "candidates" in corroborated["lanes"][0]
+    assert "candidates" not in uncorroborated["lanes"][0]
+
+
+def test_lane_fill_still_refuses_a_record_candidates_contradicts():
+    """MUST-NOT-BREAK: the validation this issue explicitly says already
+    works -- a claimed `board-exhausted` refuted by a candidates count that
+    proves the board was not exhausted -- must keep refusing."""
+    with pytest.raises(oss_state.StateError, match="board-exhausted"):
+        oss_state.lane_fill(
+            [{"primary": 953, "count": 1, "reason": "board-exhausted", "candidates": 3}],
+            window=WINDOW,
+        )

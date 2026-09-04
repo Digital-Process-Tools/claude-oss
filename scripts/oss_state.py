@@ -1690,9 +1690,19 @@ def lane_fill(entries, window, why=None):
                 "lane fill {} (issue {}): {}".format(position, primary, check["why"])
             )
 
-        normalized.append({
+        lane_record = {
             "primary": primary, "count": count, "reason": check["short_reason"],
-        })
+        }
+        # #953: `candidates` was used to validate the short-lane claim above and
+        # then dropped here -- a claim corroborated against a measured 0 and one
+        # for which no count was ever supplied produced byte-identical records.
+        # Persisted only when a caller actually supplied one, so an existing
+        # record with no `candidates` key (a full lane, or an older entry) stays
+        # readable, and a corroborated claim now differs from an uncorroborated
+        # one even when `count`/`reason` are identical.
+        if candidates is not None:
+            lane_record["candidates"] = candidates
+        normalized.append(lane_record)
 
     return {"state": LANE_FILL_RECORDED, "window": window, "lanes": normalized, "why": None}
 
