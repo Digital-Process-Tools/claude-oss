@@ -27,8 +27,10 @@ Three states everywhere, never two, because this is the repository that is named
 collapsing them by accident:
 
   base       resolved (fetched and rev-parsed), resolved-stale (fetched failed, a local
-             remote-tracking ref answered anyway -- flagged, never silent), or
-             could-not-resolve (neither answered; nothing to brief a lane from).
+             remote-tracking ref answered anyway -- flagged, never silent),
+             resolved-remote (a --stack-on base found only as a remote-tracking
+             ref of the branch being stacked on -- #1006, flagged the same way),
+             or could-not-resolve (nothing answered; nothing to brief a lane from).
   branch     resolved (derived from `branch_pattern`) or unknown (no `{issue}`
              placeholder in the pattern -- every issue would get the same branch).
   worktree   resolved, unknown (`worktree_root` could not be derived at all --
@@ -258,6 +260,95 @@ def resolve_base(repo, remote, default_branch):
         "ref": ref,
         "sha": None,
         "detail": _one_line(fetch_err if not fetched else err),
+    }
+
+
+def resolve_stacked_base(repo, remote, stack_on):
+    """The commit a lane should be cut from when stacking on another lane's own
+    branch tip instead of deriving `base` from `default_branch` (#1006's third
+    candidate fix, chosen over the other two named in that issue for blast
+    radius: it needs no change to the `git-worktrees` op itself, so nothing
+    here needs an upstream filing to land -- see #1006 for the two that would).
+
+    Reads the ref straight out of the shared object database -- `refs/heads/
+    <stack_on>` first, `refs/remotes/<remote>/<stack_on>` as a fallback --
+    rather than through any worktree's checked-out files. Branches are refs
+    shared by every worktree linked to one repository, so resolving one never
+    touches the tree a live developer agent (or the manager's own merge)
+    might be occupying: it sidesteps the same-branch/same-worktree collision
+    `git-worktrees`' `cannot tell` state exists to gate, rather than trying to
+    reason about who wrote its index most recently.
+
+    Three states, same shape as `resolve_base` above: `resolved` (found
+    locally -- likely the freshest answer, since a sibling worktree cut from
+    this same repository has already advanced it without needing a fetch),
+    `resolved-remote` (found only as a remote-tracking ref -- flagged, since
+    this can be stale if nobody has fetched since `stack_on` last moved; that
+    staleness is the caller's to weigh, not this function's to hide), and
+    `could-not-resolve` (neither ref exists, or `stack_on` is not a usable
+    branch name).
+
+    Both git calls prefix `stack_on` with a fixed `refs/...` string before it
+    ever reaches argv, the same technique `branch_occupancy` above already
+    uses -- so a dash-prefixed value can never occupy git's flag position, and
+    `tests/test_lane_setup_1006.py` pins that directly rather than trusting
+    this paragraph.
+    """
+    if not isinstance(stack_on, str) or not stack_on:
+        return {
+            "state": "could-not-resolve",
+            "remote": remote,
+            "ref": None,
+            "sha": None,
+            "detail": "stack_on: expected a non-empty branch name; got {0!r}.".format(stack_on),
+        }
+
+    local_ref = "refs/heads/" + stack_on
+    code, out, err = _git(repo, "rev-parse", "--verify", local_ref)
+    if code == 0 and out:
+        return {
+            "state": "resolved",
+            "remote": remote,
+            "ref": local_ref,
+            "sha": out,
+            "detail": "",
+        }
+
+    remote_ref = "refs/remotes/{0}/{1}".format(remote, stack_on)
+    remote_code, remote_out, remote_err = _git(repo, "rev-parse", "--verify", remote_ref)
+    if remote_code == 0 and remote_out:
+        return {
+            "state": "resolved-remote",
+            "remote": remote,
+            "ref": remote_ref,
+            "sha": remote_out,
+            # #1006, audit round: `stack_on` has already been proven, at this
+            # point, to resolve to a real object -- git's own check-ref-format
+            # rules already forbid control characters in any ref component, so
+            # nothing here can forge a receipt line today. `_one_line` is
+            # applied anyway, for the same reason every other text of external
+            # origin in this file goes through it (`resolve_base`'s own
+            # `fetch_err`/`err` above): consistency with the rest of the
+            # module, and defense-in-depth against a future caller feeding
+            # --stack-on from a less-trusted source than this one does.
+            "detail": _one_line(
+                "found only as a remote-tracking ref -- can be stale if "
+                "nobody has fetched since {0} last moved.".format(stack_on),
+                300,
+            ),
+        }
+
+    return {
+        "state": "could-not-resolve",
+        "remote": remote,
+        "ref": None,
+        "sha": None,
+        "detail": _one_line(
+            "neither {0} nor {1} exists ({2}).".format(
+                local_ref, remote_ref, err or remote_err or "not found"
+            ),
+            300,
+        ),
     }
 
 
@@ -2639,8 +2730,17 @@ def compute(
     against_patterns=None,
     derive_held=False,
     claim=False,
+    stack_on=None,
 ):
     """Everything a lane brief needs, in one payload. `config.state` gates the exit.
+
+    `stack_on` (#1006): when given, `base` is resolved from that branch's own
+    tip (`resolve_stacked_base`) instead of from `default_branch` -- the third
+    candidate fix in #1006, taken because it needs no change to the
+    `git-worktrees` op itself and so needs no upstream filing to land. A
+    stacked branch never touches the worktree `stack_on` might be checked out
+    in, sidestepping the `cannot tell` collision `git-worktrees` reports for a
+    tree whose index was written recently, rather than trying to resolve it.
 
     `lane_patterns` / `against_patterns` are optional (#267): when neither is
     given and `derive_held` is False, `payload["lane"]` is None -- an absent ask
@@ -2709,14 +2809,17 @@ def compute(
             "lane": lane_report(repo, lane_patterns, against_patterns, derived_held),
         }
 
-    default_branch = config.get("default_branch")
-    base = resolve_base(repo, remote, default_branch) if default_branch else {
-        "state": "could-not-resolve",
-        "remote": remote,
-        "ref": None,
-        "sha": None,
-        "detail": "no default_branch in config",
-    }
+    if stack_on:
+        base = resolve_stacked_base(repo, remote, stack_on)
+    else:
+        default_branch = config.get("default_branch")
+        base = resolve_base(repo, remote, default_branch) if default_branch else {
+            "state": "could-not-resolve",
+            "remote": remote,
+            "ref": None,
+            "sha": None,
+            "detail": "no default_branch in config",
+        }
 
     branch = derive_branch(config.get("branch_pattern"), issue)
     if branch["state"] == "resolved":
@@ -2885,7 +2988,18 @@ def receipt(payload):
     if base["state"] == "could-not-resolve":
         lines.append("base      : COULD NOT RESOLVE -- {0}".format(base["detail"]))
     else:
-        flag = "" if base["state"] == "resolved" else "  ** STALE ** {0}".format(base["detail"])
+        # #1006, review round: the pre-existing `resolved-stale` wording
+        # ("STALE" -- the default_branch fetch itself failed) must not
+        # silently change for callers who never pass --stack-on. The new
+        # `resolved-remote` state (a stacked base found only as a
+        # remote-tracking ref -- #1006) gets its own, different word rather
+        # than reusing or renaming that one.
+        if base["state"] == "resolved":
+            flag = ""
+        elif base["state"] == "resolved-remote":
+            flag = "  ** NOTE ** {0}".format(base["detail"])
+        else:
+            flag = "  ** STALE ** {0}".format(base["detail"])
         lines.append(_row("base", "{0} ({1}){2}".format(base["sha"], base["ref"], flag)))
 
     branch = payload["branch"]
@@ -3177,6 +3291,18 @@ def main(argv=None):
     )
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
     parser.add_argument("--remote", default="origin", help="remote to fetch from (default: origin)")
+    parser.add_argument(
+        "--stack-on",
+        default=None,
+        metavar="BRANCH",
+        help="resolve `base` from this branch's own tip instead of "
+        "default_branch (#1006) -- reads refs/heads/<BRANCH>, falling back "
+        "to refs/remotes/<remote>/<BRANCH>, straight out of the shared "
+        "object database, so it never touches whatever worktree BRANCH "
+        "might be checked out in. Use this to stack a new lane on another "
+        "live lane's branch and sidestep git-worktrees' 'cannot tell' "
+        "collision on that worktree entirely, rather than reasoning about it.",
+    )
     parser.add_argument("--json", action="store_true", help="emit the payload instead of the receipt")
     parser.add_argument(
         "--lane",
@@ -3474,7 +3600,7 @@ def main(argv=None):
 
     payload = compute(
         args.repo, args.issue, args.remote, args.lane, args.against,
-        derive_held=args.derive_held, claim=args.claim,
+        derive_held=args.derive_held, claim=args.claim, stack_on=args.stack_on,
     )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
