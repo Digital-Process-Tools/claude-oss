@@ -893,6 +893,24 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(
         doctor, "check_branch_protection", lambda *a, **kw: doctor.report("OK", "branch protection")
     )
+    # #760: `check_code_scanning_alerts` / `check_dependabot_alerts` /
+    # `check_secret_scanning_alerts` each make their own real `gh api` call
+    # against this fixture's `owner/name` repo, which does not exist on
+    # GitHub -- exactly the same reason `check_branch_protection` immediately
+    # above is stubbed rather than measured here. Left unstubbed, the repo's
+    # own `could-not-tell` state (no resolvable real repo) renders as a WARN
+    # per `_report_security_alert_check`, breaking this "fully configured,
+    # everything clean" fixture's own invariant over a fact this test is not
+    # about.
+    monkeypatch.setattr(
+        doctor, "check_code_scanning_alerts", lambda *a, **kw: doctor.report("OK", "code-scanning alerts")
+    )
+    monkeypatch.setattr(
+        doctor, "check_dependabot_alerts", lambda *a, **kw: doctor.report("OK", "dependabot alerts")
+    )
+    monkeypatch.setattr(
+        doctor, "check_secret_scanning_alerts", lambda *a, **kw: doctor.report("OK", "secret-scanning alerts")
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about
