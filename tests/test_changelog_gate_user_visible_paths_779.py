@@ -123,6 +123,55 @@ def test_an_ordinary_ere_pattern_still_validates():
     ) is None
 
 
+@pytest.mark.parametrize("pattern", [
+    "a{1,2,3}",  # three counts -- grep -E: "invalid repetition count(s)"
+    "a{",        # unbalanced brace -- grep -E: "braces not balanced"
+])
+def test_a_malformed_brace_interval_is_refused(pattern):
+    """#1015: `re.compile` reads `a{1,2,3}` as eight literal characters (it does
+    not match Python's own interval grammar either, so it never raises), and
+    `a{` as a literal open brace with nothing to say about balance. Measured
+    directly: both BSD grep (`/usr/bin/grep` on macOS) and ugrep exit 2,
+    SYNTAX ERROR, on each of these patterns. The generated
+    `if ! grep -Eq PATTERN; then skip; fi` guard cannot tell that apart from
+    a genuine no-match, so an accepted-but-malformed pattern like this
+    silently and permanently disables the changelog gate for the whole
+    repository."""
+    problem = oss_config.user_visible_paths_problem([pattern])
+    assert problem is not None, pattern
+
+
+def test_a_well_formed_brace_interval_still_validates():
+    """Positive control for the pair above: `{m}`, `{m,}` and `{m,n}` with
+    m <= n are real POSIX ERE interval bounds and must still be accepted."""
+    assert oss_config.user_visible_paths_problem(
+        [r"^v[0-9]{4}/", r"^docs/.{2,}", r"^a{1,3}$"]
+    ) is None
+
+
+@pytest.mark.parametrize("byte", ["\r", "\u2028", "\x0b"])
+def test_a_yaml_line_break_character_is_refused(byte):
+    """#1018: the previous validator denylisted `'` and `\\n` individually and
+    missed `\\r`, U+2028 (the YAML line separator) and VT (`\\x0b`) -- all of
+    which are YAML line breaks that either silently vanish into the grep
+    alternation (permanent skip) or terminate the generated workflow's block
+    scalar mid-parse. Refused by an anchored allow-list of printable ASCII
+    now, the same shape `CHANGELOG_UNTAGGED_RE` already uses, rather than a
+    denylist patched a third time."""
+    problem = oss_config.user_visible_paths_problem(["docs/" + byte + "x"])
+    assert problem is not None, repr(byte)
+
+
+def test_printable_ascii_still_validates_positive_control_for_the_allow_list():
+    """Positive control for the allow-list above: an ordinary pattern using
+    only printable ASCII (letters, digits, ERE metacharacters, `~`, `%`)
+    still validates -- the allow-list must not be narrower than POSIX ERE
+    itself."""
+    assert oss_config.user_visible_paths_problem(
+        [r"^docs/[A-Za-z0-9_~%.-]+$"]
+    ) is None
+
+
 # --------------------------------------------------------- rendered workflow
 
 
