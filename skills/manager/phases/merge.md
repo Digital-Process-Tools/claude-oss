@@ -125,14 +125,30 @@ is not on this list is just a way of not fixing things.
   and both times destroyed a commit the lane had made in the window between the tick's last look and
   the force-remove: a self-review finding it had just fixed, local only, gone with the tree. Both were
   recovered by luck, a surviving reflog entry, not by design. **Before that force-remove runs, read the
-  tree's HEAD one more time** (`git -C <worktree> rev-parse HEAD`, or the equivalent through
-  `git-worktrees:PATH`) and compare it to the HEAD you observed when you decided to force this one —
+  tree's HEAD one more time** (`git-worktrees:PATH`, or the raw `git -C <worktree> rev-parse HEAD`
+  as a fallback — see below) and compare it to the HEAD you observed when you decided to force this one —
   the merge's own head commit, or your last `git-worktrees` read of that path. If it moved, something
   committed there after your last look and the force-remove is refused this tick: leave the worktree
   standing, the same as any other `cannot tell`, and let a later tick's cooldown re-evaluate it rather
   than destroying work you have not re-observed. This closes the actual race window; a tick cannot get
   it right by being careful, because the gap is between its own two observations, not a lapse in
-  attention. **When the HEAD check passes and you do force it, record the override** —
+  attention.
+
+  **Lead with `git-worktrees:PATH` for that HEAD re-read, not the raw `git -C` form (#1017).**
+  #982 narrowed `.claude/settings.json`'s blanket `Bash(git *)` grant to an enumerated allow-list
+  matched as a literal command-string prefix, and `git -C <worktree> rev-parse HEAD` does not
+  start with the string `git rev-parse` — `-C <path>` sits ahead of the subcommand. Whether Claude
+  Code's own Bash permission matcher normalizes a git global option before that prefix test is
+  reasoned here, not observed (nothing in this loop can drive its permission UI to confirm it
+  directly); treat the raw form as liable to stall on an interactive prompt regardless of the
+  answer. Widening the allow-list is not the fix — `Bash(git -C:*)` would match `git -C <any
+  path> <anything at all>`, reopening every subcommand #982 narrowed the grant to exclude. Use
+  `git-worktrees:PATH` first: it is reachable through the already-granted `Bash(supertool:*)`
+  entry and answers the same question this check needs — merged/dirty/occupancy state that would
+  differ if a commit landed since your last look. Fall back to `git -C <worktree> rev-parse HEAD`
+  only if the op cannot answer, and expect that fallback may need an interactive grant.
+
+  **When the HEAD check passes and you do force it, record the override** —
   `oss_state.py`'s `--cleanup-override WORKTREE=REASON` (repeatable), same call as the tick's other
   `--decision` flags, reason required. A forced cleanup over a `cannot tell` is not the same event as a
   clean one, and until this the only trace of the override was a state file that afterwards read
