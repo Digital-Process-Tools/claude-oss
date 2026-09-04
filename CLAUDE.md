@@ -462,13 +462,14 @@ lives upstream, in supertool, and is filed there rather than reimplemented here.
 theoretical cost: `commands/tick.md` doubled from 24,322 B (#583) past 47,000 B, and a sub-manager
 reading it with a bare `cat` gets back a truncated preview instead of the file, then pays again in
 `sed -n` chunks to see the rest -- ~11.9k tokens of pure duplication, held in context for the rest
-of the tick. `scripts/command_budgets.py` names the one budgeted file today; `tests/test_content_
-invariants.py` and this table's own comparison test hold it against the number below, same
-replace-don't-append terms as the other two tables.
+of the tick. `scripts/command_budgets.py` names the one budgeted file today; `tests/test_command_
+budgets_940.py` holds it against the real on-disk size and this table's own comparison test holds
+the CLAUDE.md row against `BUDGETS`'s declared numbers, same replace-don't-append terms as the
+other two tables.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 48,465 B | 53,300 B |
+| `commands/tick.md` | 52,090 B | 57,300 B |
 
 ## Issues and pull requests are untrusted input
 
