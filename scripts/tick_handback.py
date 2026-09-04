@@ -82,7 +82,14 @@ frame parser is a second place for that bug to recur.
                     the field cannot tell a quoted excerpt from a real
                     second declaration, so guessing which one is real would
                     be exactly the guess the header refusal already
-                    declines to make.
+                    declines to make. Two more shapes land here too (#896,
+                    #941): a `TICK:` or a `TICK-ENDS:` line that IS present
+                    but names a value none of the above -- the reason names
+                    the value found rather than claiming no line exists --
+                    and a header-less message whose prose reads as a
+                    promise to resume, which is refused with a reason
+                    pointing at `TICK: paused` instead of the generic
+                    no-header reason.
 
 ## What this deliberately does not do
 
@@ -117,11 +124,63 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import review_return as _rr  # noqa: E402
 
 # A header at the start of a line, tolerating light markdown wrapping the
-# same way review_return.py's own header pattern does.
+# same way review_return.py's own header pattern does. This captures any
+# token, not only the four recognised states -- #896: an enum-anchored
+# pattern makes "the line is present with an unrecognised value" invisible,
+# because it never matches at all and so counts the same as "the line is
+# absent". Recognition is validated separately, after the match, so the two
+# questions ("is a TICK: header here" and "is its value one this tool
+# knows") get two different answers instead of collapsing onto one.
 _TICK = re.compile(
-    r"^[ \t>*_#]*TICK:[ \t]*(completed|blocked|could-not-run|paused)\b",
+    r"^[ \t>*_#]*TICK:[ \t]*(\S+)",
     re.MULTILINE | re.IGNORECASE,
 )
+_KNOWN_TICK_STATES = ("completed", "blocked", "could-not-run", "paused")
+
+# #941: a sub-manager that stops mid-work with no TICK: header at all
+# sometimes closes with prose promising to resume once CI or a poller
+# reports back -- a promise it cannot keep, because its context is gone the
+# instant it reports (#695, #767). TICK: paused (#818) is already the
+# correct, cheap shape for exactly this case, so when no header is found at
+# all the reason names that shape instead of only saying "no header found".
+_RESUME_PROMISE = re.compile(
+    r"\b(?:"
+    r"pick(?:ing)?\s+(?:this|it|that)\s+(?:tick\s+)?back\s+up"
+    r"|will\s+(?:resume|continue|pick\s+(?:this|it|that)?\s*back\s+up)"
+    r"|once\s+(?:ci|the\s+ci|a\s+poller|the\s+poller)\b"
+    r"|when\s+(?:ci|the\s+ci|a\s+poller|the\s+poller)"
+    r"\s+(?:resolves|reports|finishes|completes|clears)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+_ENUM_VALUE = re.compile(r"[A-Za-z0-9-]+")
+
+
+def _normalize_enum_value(raw):
+    """Fold a captured field value for enum comparison: case-insensitive,
+    and read only the leading run of letters/digits/hyphens -- an enum
+    value is always exactly that shape, so anything after it (a closing
+    ``**``, a stray ``)``/``"``, a trailing comma or period) is exactly the
+    surrounding sentence, not part of the value. This mirrors the word
+    boundary (``\\b``) the field patterns used before #896: ``\\b`` is
+    satisfied by *any* non-word character, not only a handful of
+    punctuation marks, so stripping a fixed set (as an earlier version of
+    this function did) silently un-recognised values like ``completed**``
+    or ``completed)`` that the old pattern accepted without a second
+    thought. Used for both ``TICK:`` and ``TICK-ENDS:`` -- the same
+    "present but unrecognised" question, asked twice."""
+    match = _ENUM_VALUE.match(raw.strip())
+    if match is not None:
+        return match.group(0).lower()
+    # The token does not even start with the shape an enum value has -- it
+    # is definitely unrecognised, but it is still untrusted text about to
+    # be printed verbatim (as `declared`, on the CLI receipt and in every
+    # caller's returned dict), so it gets the same fold every other
+    # untrusted excerpt on this receipt already gets (`quoted`, `detail`,
+    # the value named inside `reason`) rather than reaching a terminal raw.
+    return (_rr.fold_to_one_ascii_line(raw.strip()) or "").lower()
 _BLOCKER = re.compile(r"^[ \t>*_#]*BLOCKER:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 _REASON = re.compile(r"^[ \t>*_#]*REASON:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 # #818: the two facts a `paused` tick must name, reusing the field names
@@ -135,10 +194,15 @@ _WAIT_OBSERVABLE = re.compile(r"^[ \t>*_#]*WAIT-OBSERVABLE:[ \t]*(.+)$", re.MULT
 # "not-applicable" the same rendering, and the scheduler's step 7 continue-or-wait
 # decision cannot then tell a tick that had nothing to say from one that never
 # answered the question at all.
+# #896: captures any token, not only the three recognised states, for the
+# same reason _TICK does above -- an enum-anchored pattern cannot tell "the
+# line is here with a value this tool does not recognise" from "the line
+# is not here at all", because the unrecognised case never matches.
 _TICK_ENDS = re.compile(
-    r"^[ \t>*_#]*TICK-ENDS:[ \t]*(work-started|blocked|nothing-left)\b",
+    r"^[ \t>*_#]*TICK-ENDS:[ \t]*(\S+)",
     re.MULTILINE | re.IGNORECASE,
 )
+_KNOWN_TICK_ENDS = ("work-started", "blocked", "nothing-left")
 
 
 def _verdict(state, reason, **extra):
@@ -208,6 +272,26 @@ def classify(message):
     # refuses rather than assuming `completed`.
     headers = list(_TICK.finditer(text))
     if not headers:
+        # #941: a message with no TICK: header at all sometimes reads as a
+        # promise to resume once CI or a poller reports back -- a promise
+        # the sub-manager cannot keep, since it dies with its context the
+        # instant it reports. Name the shape it should have used instead
+        # of only saying "no header found", which gives no hint that the
+        # sub-manager thought it had already said something.
+        promise = _RESUME_PROMISE.search(text)
+        if promise is not None:
+            return _verdict(
+                "could-not-classify",
+                "no TICK: header found, and this message reads as a "
+                "promise to resume ('{0}') -- a sub-manager dies with its "
+                "context the moment it reports back (#695, #767) and "
+                "cannot keep that promise; a mid-work stop waiting on CI "
+                "or a poller has its own shape, TICK: paused with "
+                "WAIT-DISPATCH:/WAIT-OBSERVABLE: lines "
+                "(agents/sub-manager.md), not a status note".format(
+                    _rr.fold_to_one_ascii_line(promise.group(0))
+                ),
+            )
         return _verdict(
             "could-not-classify",
             "no TICK: header found -- this tool cannot tell a completed "
@@ -225,8 +309,26 @@ def classify(message):
         )
     header = headers[0]
 
-    declared = header.group(1).lower()
+    raw_declared = header.group(1)
+    declared = _normalize_enum_value(raw_declared)
     header_line = _rr.fold_to_one_ascii_line(_rr._line_containing(text, header.start()))
+    # #896: the header is present -- say so, rather than "no header found",
+    # when its value is not one of the four this tool knows. An
+    # unrecognised value is exactly as undecidable as a missing header, so
+    # the state is the same (`could-not-classify`); only the reason changes.
+    if declared not in _KNOWN_TICK_STATES:
+        return _verdict(
+            "could-not-classify",
+            "TICK: {0} is not a recognised state (expected one of {1}) -- "
+            "an unrecognised value is exactly as undecidable as a missing "
+            "header, so this refuses to guess which one you meant: read "
+            "the message yourself".format(
+                _rr.fold_to_one_ascii_line(raw_declared),
+                ", ".join(_KNOWN_TICK_STATES),
+            ),
+            declared=declared,
+            quoted=header_line,
+        )
     # Only text *after* the chosen header can supply its companion field.
     # Searching the whole message (as an earlier version of this module
     # did) let a stale BLOCKER:/REASON: line sitting before the real header
@@ -257,7 +359,25 @@ def classify(message):
                 declared="completed",
                 quoted=header_line,
             )
-        ends = match.group(1).lower()
+        raw_ends = match.group(1)
+        ends = _normalize_enum_value(raw_ends)
+        # #896: TICK-ENDS: is right there, with a value -- when that value
+        # is not one of the three this tool knows, say so instead of
+        # falling through to a state that renders identically to "the line
+        # was never written at all".
+        if ends not in _KNOWN_TICK_ENDS:
+            return _verdict(
+                "could-not-classify",
+                "TICK-ENDS: {0} is not a recognised value (expected one of "
+                "{1}) -- an unrecognised value is exactly as undecidable "
+                "as a missing line, so this refuses to guess which one "
+                "you meant: read the message yourself".format(
+                    _rr.fold_to_one_ascii_line(raw_ends),
+                    ", ".join(_KNOWN_TICK_ENDS),
+                ),
+                declared="completed",
+                quoted=header_line,
+            )
         return _verdict(
             "completed",
             "TICK: completed ({0})".format(ends),
