@@ -20,7 +20,18 @@ names a different runner short-circuits straight to `OK: not applicable`
 before any of the three states below are reached. An absent/empty
 `test_command` is not evidence either way and falls through to them exactly
 as before -- see `_looks_pytest_shaped`, which delegates to
-`oss_config.names_pytest` so scaffold's template asks the same question.
+`oss_config.names_pytest`.
+
+Scaffold's own paragraph used to ask this identical question (#932/#946); it
+no longer does (#955) -- `scaffold._render_claude_md`'s advice is now
+runner-neutral and gates on `test_command` being set alone, so it recommends
+the `test_measurement_configured` attestation for every runner, not only a
+pytest-shaped one. This check's own gate is unchanged and deliberately still
+pytest-specific: nothing here parses a non-pytest runner's own config for
+duration/coverage flags, so `OK: not applicable` for e.g. `go test ./...` or
+`make test` is still correct -- the attestation scaffold now recommends for
+those repos is a record of intent this check does not verify, not a claim
+that it does.
 
 Three states below that, following CLAUDE.md's own three-state rule -- ok /
 finding / unknown, never collapsed:
@@ -83,15 +94,17 @@ def _pytest_config_file(repo_root):
 def _looks_pytest_shaped(test_command):
     """One question, one home: `oss_config.names_pytest` (#932/#946).
 
-    This used to carry its own copy of the predicate. `scripts/scaffold.py`
-    then needed the identical question for the identical reason -- its
-    CLAUDE.md template carries the same pytest-specific advice -- and a second
-    copy of a rule about what counts as a pytest command is exactly the drift
-    CLAUDE.md's governing rule forbids. The wrapper stays so this module's own
-    name for the question survives, and so a test may patch it.
+    `scripts/scaffold.py` used to need the identical question for the
+    identical reason -- its CLAUDE.md template used to carry the same
+    pytest-specific advice, and a second copy of a rule about what counts as
+    a pytest command is exactly the drift CLAUDE.md's governing rule
+    forbids. #955 made scaffold's own paragraph runner-neutral, so scaffold
+    no longer calls `names_pytest` at all -- this module is now its only
+    caller. The wrapper stays anyway: it is still this module's own name for
+    the question, and a test may still patch it.
 
-    Note the two callers read the shared True-on-absent answer differently, and
-    that difference is stated where the predicate lives, not here.
+    Note the True-on-absent answer this predicate gives, stated where the
+    predicate lives, not here.
     """
     return oss_config.names_pytest(test_command)
 
