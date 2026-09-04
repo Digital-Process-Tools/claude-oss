@@ -227,28 +227,49 @@ def test_main_on_an_ordinary_piped_board_prints_candidates(monkeypatch, capsys):
     assert code == 0
 
 
-def test_a_non_ascii_label_does_not_crash_the_print():
+def test_a_non_ascii_label_does_not_crash_the_print(monkeypatch, capsys):
     """#970 review round: `select_issues.py` composes `dispatch_rank.rank`,
-    whose `why` can carry an issue's own (possibly non-ASCII) label text --
-    on a console codepage that cannot encode it, an unreconfigured stdout
-    would raise `UnicodeEncodeError` after the selection was already
-    computed (#794/#834's own class). Forcing `PYTHONIOENCODING` to ascii
-    reproduces a narrow console without needing a real one."""
-    import os
+    whose `why` can carry an issue's own (possibly non-ASCII) label text.
+    `main()` prints via `json.dumps(result, indent=2, sort_keys=True)` at
+    its default `ensure_ascii=True`, so a non-ASCII character is already
+    escaped to a u-escape sequence before it ever reaches `stdout` --
+    verified by hand: breaking `main()`'s own defensive
+    `stream.reconfigure(errors="backslashreplace")` call (#794/#834's own
+    guard, aimed at a console codepage narrower than the text being
+    printed) still leaves this test green, because there is no raw
+    non-ASCII byte in the print for a narrow codepage to choke on. That
+    reconfigure call earns its place as defence-in-depth against some other
+    future print site, not this one -- this test is a smoke check that a
+    plausible-priority-typo, non-ASCII label reaches `main()`'s printed
+    output intact and escaped, not a red check for an encoding crash this
+    code path cannot produce.
 
+    CI-round finding on the sibling test above this one, carried over here:
+    `priority-hïgh` is shaped like a plausible priority typo (see
+    `dispatch_rank._plausible_priority_typo`), so it ranks and survives to
+    `select()`'s *default* `checker` -- the same live, `gh`-shelling
+    `issue_claim.check` the sibling test's fix removes. The previous
+    subprocess version of this test never noticed that it, too, depended on
+    `gh`: on CI's unauthenticated `gh`, the issue is dropped as
+    `assignee-unreadable` before its `why` is ever printed, so this test's
+    old assertions (stderr has no `Traceback`/`UnicodeEncodeError`) passed
+    without the non-ASCII text ever being printed at all. Stubbing
+    `issue_claim.check` here too, and asserting on the actual candidate
+    `why`, closes that gap the same way the sibling test's fix does."""
+    monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
     board = {
         "declared": DECLARED,
         "issues": [{"number": 6, "labels": ["priority-hïgh"]}],
     }
-    proc = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "select_issues.py")],
-        input=json.dumps(board).encode("utf-8"),
-        capture_output=True,
-        env={**os.environ, "PYTHONIOENCODING": "ascii"},
-    )
-    err = proc.stderr.decode("utf-8", errors="replace")
-    assert "UnicodeEncodeError" not in err, err
-    assert "Traceback" not in err, err
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
+    code = select_issues.main()
+    out = json.loads(capsys.readouterr().out)
+    # The positive half: the non-ASCII label really did reach the printed
+    # output (escaped, per json.dumps's default) rather than being dropped
+    # silently before it got there -- so this test exercises the path it
+    # claims to, not an empty `why`.
+    assert "priority-h" in out["candidates"][0]["why"]
+    assert code == 0
 
 
 def test_stdin_that_cannot_decode_as_utf8_is_not_read_as_bad_json():
