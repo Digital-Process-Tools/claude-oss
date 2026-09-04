@@ -589,33 +589,57 @@ what goes into a lane, the other what comes back out of it.
   (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
   every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
   wearing a repository-wide claim's clothes.
-- **Select in the dispatch order, and compute it rather than feel it (#798).** Two axes, author
-  before priority within a band. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the
-  one place the table lives; call it rather than re-deriving it here.
+- **Select in the dispatch order, and compute it rather than feel it (#798, extended by #993).**
+  Two axes, author before priority within a band. `python3
+  "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the one place the table lives; call it
+  rather than re-deriving it here.
 
   | Rank | Who filed | Priority |
   | --- | --- | --- |
-  | 1 | human | high |
-  | 2 | loop | high |
-  | 3 | human | medium |
-  | 4 | human | low, or no priority label |
-  | 5 | loop | medium |
-  | 6 | loop | low, or no priority label |
+  | 1 | any | a blocking-class row in `skills/manager/phases/findings.md`'s own table |
+  | 2 | external | high |
+  | 3 | maintainer | high |
+  | 4 | loop | high |
+  | 5 | external | medium |
+  | 6 | maintainer | medium |
+  | 7 | loop | medium |
+  | 8 | external | low, or no priority label |
+  | 9 | maintainer | low, or no priority label |
+  | 10 | loop | low, or no priority label |
 
-  **"Loop" is an issue carrying `labels.filed_by_loop`'s label; an issue without it is a human
-  issue.** This replaces priority-only ordering rather than layering over it. The reason is a
-  measurement, not a preference: 476 issues in 20 days on this repository, 98% of them filed by the
-  loop, 68% closed the same day — so a maintainer's ask sat behind the loop's own backlog, and the
-  two maintainers no longer knew what the tool was doing.
+  **"Loop" is an issue carrying `labels.filed_by_loop`'s label.** An issue without it is either
+  external or maintainer, never both and never a fallback "human" band — #798's original two-axis
+  order collapsed an outside reporter and the maintainer into one "human" value, which ranked an
+  untriaged external bug report (unlabelled by definition, since nobody has triaged it yet) below
+  the loop's own high-band backlog. #993 splits it: **"external" and "maintainer" are read from
+  GitHub's own author association** on the issue (`OWNER`/`MEMBER`/`COLLABORATOR` versus
+  `CONTRIBUTOR`/`NONE`), never from a declared label — an issue the loop files is filed under the
+  maintainer's own account, so `labels.filed_by_loop` is checked first and settles the author axis
+  on its own for a loop-filed issue; the association is only consulted for everything else. This
+  replaces priority-only ordering rather than layering over it. The reason is a measurement, not a
+  preference: 476 issues in 20 days on this repository, 98% of them filed by the loop, 68% closed
+  the same day — so a maintainer's ask sat behind the loop's own backlog, and the two maintainers no
+  longer knew what the tool was doing.
 
-  **The order does not put every human issue above every loop one**, and rank 2 is why: a
-  blocking-class defect the loop found still beats an ordinary ask. The ranking table in
-  `skills/manager/phases/findings.md` decides what blocks a release; this decides what gets picked up first among everything that does not.
+  **Rank 1 is prose, not a row `dispatch_rank.rank()` ever returns** — nothing here can read an
+  issue against the eleven-row findings table; that classification is a judgment call made when a
+  finding is written up. Check the blocking-class exception before consulting the computed table,
+  the way the old six-row table's rank 2 encoded it: a blocking defect must not lose to any author's
+  ordinary ask.
 
-  **`could-not-rank` is a real answer and must never render as rank 4.** With no declared
-  `labels.filed_by_loop`, every issue on the board is unlabelled, and reading that as "all human"
-  would promote the loop's entire backlog. The module refuses instead, and an unrankable issue sorts
-  last rather than first — the absence of a reading is not evidence of value.
+  **Rank 5's second clause in #993's own proposal — "or a bug with no priority label" — is
+  deferred**, and is not in the table above. It needs a `labels.defect` (or `labels.type`) key
+  `.oss.json` does not declare yet, the identical undeclared-axis shape #990 fixes for
+  `labels.filed_by_loop`'s own rot. Until that key exists, an untriaged external bug ranks by
+  priority alone, same as any other unprioritised external issue (rank 8).
+
+  **`could-not-rank` is a real answer and must never render as the lowest-cost guess.** With no
+  declared `labels.filed_by_loop`, every issue is unlabelled, and reading that as "all external" or
+  "all maintainer" would misplace the loop's whole backlog either way. Same discipline one level
+  down: a non-loop issue whose association could not be read must render as neither — guessing
+  "external" promotes a stranger's ask above the maintainer's own, guessing "maintainer" buries a
+  genuine external report — `rank()` refuses on both axes, and sorts an unrankable issue last, never
+  first. The absence of a reading is not evidence of value.
 
 - **Rank a finding by what cannot be undone**, then by who is walking away. The eleven-row table --
   `destroys`, `discloses`, `executes`, the two `containment` rows, `forges`, `ships-local-state`,
