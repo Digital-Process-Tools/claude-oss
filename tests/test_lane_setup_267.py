@@ -169,6 +169,55 @@ def test_ordinary_relative_pattern_is_still_accepted(tmp_path):
     assert lane_setup._lane_pattern_problem("commands/*.md") is None
 
 
+# --- _lane_pattern_problem: `~` refusal (#898) ------------------------------------
+# #898: `_derive_declared_files` (#851) feeds backtick-quoted tokens pulled out of
+# an issue's own title and body straight into this guard, so the guard's own
+# containment now has to hold against untrusted text, not only a human-typed
+# `--lane` value. Home-directory expansion (`~`) was the one spelling of
+# "outside the repo" this guard did not refuse in either form -- `~/.ssh/id_rsa`
+# came back accepted as a literal file entry. Nothing in `lane_setup.py` calls
+# `expanduser` on a lane member today, so this was not a live escape, but the
+# guard is defense in depth and should not depend on that staying true forever.
+
+
+def test_home_directory_pattern_is_refused(tmp_path):
+    """Must-fire case: a `~`-leading pattern is refused at the guard itself,
+    the same way an absolute or drive-prefixed pattern already is.
+    """
+    import lane_setup  # noqa: E402
+
+    problem = lane_setup._lane_pattern_problem("~/.ssh/id_rsa")
+    assert problem is not None
+    assert "~" in problem
+
+    problem_user = lane_setup._lane_pattern_problem("~someuser/x")
+    assert problem_user is not None
+    assert "~" in problem_user
+
+
+def test_home_directory_pattern_refused_with_backslashes_too(tmp_path):
+    """The same refusal has to hold on the backslash-normalized form, the way
+    the absolute-path check above already normalizes `\\` to `/` before
+    testing -- a Windows-flavoured `~\\.ssh\\id_rsa` must not slip through
+    because the leading `~` is not immediately followed by `/`.
+    """
+    import lane_setup  # noqa: E402
+
+    problem = lane_setup._lane_pattern_problem("~\\.ssh\\id_rsa")
+    assert problem is not None
+    assert "~" in problem
+
+
+def test_tilde_not_at_the_start_is_still_accepted(tmp_path):
+    """Control for the case above: `~` only matters as a leading character.
+    A pattern that merely contains one elsewhere is not home-directory
+    expansion and must not be refused by tightening this check.
+    """
+    import lane_setup  # noqa: E402
+
+    assert lane_setup._lane_pattern_problem("scripts/a~b.py") is None
+
+
 # --- lane_overlap: the actual disjointness check, both directions ----------------
 
 
