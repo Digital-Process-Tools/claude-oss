@@ -117,6 +117,29 @@ is not on this list is just a way of not fixing things.
   (1), and treating both as "not idle" is the only safe read through supertool. That is the one read
   this document sanctions outside supertool, and only for that reason — the op's own `help` names the
   script, so derive its path from the installed tool rather than from a path written down anywhere.
+- **A `cannot tell` worktree is not yours to force through without re-checking HEAD, and the force is
+  recorded when you do it anyway (#1007).** `|cleanup` declined that worktree for a reason: an agent
+  may still be writing there, and the tick's own last observation of that tree is already stale by
+  the time cleanup runs. Twice this loop force-removed one anyway — `git worktree remove --force` plus
+  `git branch -D`, the manual fallback `commands/doctor.md`'s `worktree-reap permission` check names —
+  and both times destroyed a commit the lane had made in the window between the tick's last look and
+  the force-remove: a self-review finding it had just fixed, local only, gone with the tree. Both were
+  recovered by luck, a surviving reflog entry, not by design. **Before that force-remove runs, read the
+  tree's HEAD one more time** (`git -C <worktree> rev-parse HEAD`, or the equivalent through
+  `git-worktrees:PATH`) and compare it to the HEAD you observed when you decided to force this one —
+  the merge's own head commit, or your last `git-worktrees` read of that path. If it moved, something
+  committed there after your last look and the force-remove is refused this tick: leave the worktree
+  standing, the same as any other `cannot tell`, and let a later tick's cooldown re-evaluate it rather
+  than destroying work you have not re-observed. This closes the actual race window; a tick cannot get
+  it right by being careful, because the gap is between its own two observations, not a lapse in
+  attention. **When the HEAD check passes and you do force it, record the override** —
+  `oss_state.py`'s `--cleanup-override WORKTREE=REASON` (repeatable), same call as the tick's other
+  `--decision` flags, reason required. A forced cleanup over a `cannot tell` is not the same event as a
+  clean one, and until this the only trace of the override was a state file that afterwards read
+  identically to a tick that never triggered `cannot tell` at all — the guard's refusal was a line in
+  an op's output and the force-remove that followed was two ordinary git commands, so nothing outlived
+  either. Recording it does not make the removal safer; the HEAD check above is what does that. It
+  makes the override auditable rather than invisible, which is the second, cheaper half of the fix.
 - **The branch deletion is `|cleanup`'s, not a second call.** Inside the token it is
   `gh api -X DELETE repos/OWNER/REPO/git/refs/heads/<b>`, never `git push --delete`, and only once the
   head branch is established to be in this repository and the remote ref reads back at the PR's own
