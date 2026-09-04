@@ -325,14 +325,14 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,867 B | 46,900 B |
+| `skills/manager/SKILL.md` | 44,358 B | 46,900 B |
 | `skills/manager/phases/dispatch.md` | 52,601 B | 57,900 B |
 | `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,741 B | 24,500 B |
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
-| `skills/manager/phases/merge.md` | 13,198 B | 14,500 B |
+| `skills/manager/phases/merge.md` | 14,455 B | 14,500 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -379,10 +379,14 @@ force if it moved since the merge, plus record the override with `oss_state.py`'
 without the first would make an override legible without making the removal any safer, and
 splitting the two into separate bullets would have cost more bytes than raising the ceiling
 did. No paragraph already in the file argued either point, so nothing was cut to make room.
+Re-baselined again for #1029: 13,198 B on disk drifted to 14,455 B after #1026 grew this file
+(#976's push-to-main rule, #1017's worktree-reap fix) without updating this table or
+`scripts/skill_phases.py`, leaving `tests/test_baseline_matches_disk_1014.py` red on `main`.
+Budget unchanged; the file is still under it, but only by 45 B.
 
-**The total grew: 122,423 B became 186,769 B, +52.6%** — re-derived by summing the table's own
-"measured (baseline)" column above, not by editing the prior figure (178,700 B / +46.0%, itself a
-correction of a 175,514 B / +43.4% edit that had gone stale). #1014 is the reason for this
+**The total grew: 122,423 B became 189,517 B, +54.8%** — re-derived by summing the table's own
+"measured (baseline)" column above, not by editing the prior figure (186,769 B / +52.6%, itself a
+correction of a 178,700 B / +46.0% edit that had gone stale). #1014 is the reason for that
 correction, not the usual one: the prior figure was not stale because a phase file grew and nobody
 re-summed, it was stale because `check()` in `skill_phases.py`, `agent_budgets.py` and
 `command_budgets.py` only ever compares measured size against `budget` (the ceiling), never against
@@ -390,16 +394,20 @@ the "baseline" quoted in these tables' own first column -- so a baseline could d
 indefinitely with no test noticing, and several of the rows above had. `tests/test_baseline_matches_
 disk_1014.py` now compares every declared baseline against the file's actual size directly, closing
 that gap; #709 and #725 already compared this table against the modules' own dicts, which was never
-the missing link. Still no test ties this sentence's own summed total to the table's column, only
-the per-file rows; sum it again the next time a row changes, rather than editing this sentence by
-hand. The spine's directive blocks and each phase file's own header are a second, shorter statement
+the missing link. #1029 is this pattern recurring exactly as #1014 predicted it would: #1026 grew
+`SKILL.md` and `merge.md` for reasons unrelated to this table (#976, #1017) and did not touch
+`CLAUDE.md` or `scripts/skill_phases.py`, so both baselines drifted again and the dedicated
+comparison test caught it. Still no test ties this sentence's own summed total to the table's
+column, only the per-file rows; sum it again the next time a row changes, rather than editing this
+sentence by hand. The spine's directive blocks and each phase file's own header are a second, shorter statement
 of what the phase file then argues at length, and that is a real cost paid on every read of the phase
 file. It buys the number that actually matters here — what a session loads before it knows which
-phase it will reach. **122,423 B became 42,867 B, -65%**, in three rounds: the original split, then
+phase it will reach. **122,423 B became 44,358 B, -63.8%**, in three rounds: the original split, then
 #958 (the ranking table and upstream filing out to `phases/findings.md`, 62,829 -> 54,751 B), then
 #960 (the pre-flight and dispatch order to `dispatch.md`, the platform band to `review.md`, cadence and
-the loop doctrine's argument to `accounting.md`, 54,751 -> 42,604 B, since re-baselined to 42,867 B by
-#1014's own measurement). Quote both numbers, or the saving reads as free.
+the loop doctrine's argument to `accounting.md`, 54,751 -> 42,604 B, since re-baselined to 42,867 B
+by #1014's own measurement and again to 44,358 B by #1029's). Quote both numbers, or the saving
+reads as free.
 
 **#958's own reasoning, because the rejected alternative is the interesting half.** Moving that
 prose to `.claude/jit-context/` was weighed and refused: jit's shown-set dedup is keyed on
