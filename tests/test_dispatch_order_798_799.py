@@ -58,6 +58,7 @@ from agent_budgets import repo_root  # noqa: E402
 
 HIGH, MEDIUM, LOW = "priority-high", "priority-medium", "priority-low"
 LOOP = "filed-by-loop"
+EXTERNAL, MAINTAINER = "external", "maintainer"
 
 #: The declared spellings a repository hands `rank`. Written out rather than
 #: read from `.oss.json`, because a test that reads the config it is testing
@@ -65,54 +66,123 @@ LOOP = "filed-by-loop"
 DECLARED = {"priority": [HIGH, MEDIUM, LOW], "filed_by_loop": LOOP}
 
 
-def _rank(labels):
-    return dispatch_rank.rank(labels, DECLARED)
+def _rank(labels, association=None):
+    return dispatch_rank.rank(labels, DECLARED, association)
 
 
 # --------------------------------------------------------------- #798: the order
 
 
-def test_the_six_rows_rank_in_the_order_798_states():
-    """Every row, in order, as one assertion rather than six -- an off-by-one
-    between two adjacent rows is the failure this must catch, and testing each
-    row against a literal number would pass a table that is internally
-    consistent and shifted by one."""
+def test_the_nine_rows_rank_in_the_order_993_states():
+    """Every computed row, in order, as one assertion rather than nine -- an
+    off-by-one between two adjacent rows is the failure this must catch, and
+    testing each row against a literal number would pass a table that is
+    internally consistent and shifted by one.
+
+    #993 replaces #798's six-row table with nine computed rows (external /
+    maintainer / loop, crossed with high / medium / low) plus a tenth,
+    prose-only row -- 'any author, a blocking-class row in the findings
+    table' -- that `rank()` never returns (see the module docstring). Rank
+    numbering starts at 2 for exactly that reason: rank 1 is reserved for the
+    row this module does not compute."""
     board = [
-        ([HIGH], 1),
-        ([LOOP, HIGH], 2),
-        ([MEDIUM], 3),
-        ([LOW], 4),
-        ([], 4),
-        ([LOOP, MEDIUM], 5),
-        ([LOOP, LOW], 6),
-        ([LOOP], 6),
+        ([HIGH], EXTERNAL, 2),
+        ([HIGH], MAINTAINER, 3),
+        ([LOOP, HIGH], None, 4),
+        ([MEDIUM], EXTERNAL, 5),
+        ([MEDIUM], MAINTAINER, 6),
+        ([LOOP, MEDIUM], None, 7),
+        ([LOW], EXTERNAL, 8),
+        ([], EXTERNAL, 8),
+        ([LOW], MAINTAINER, 9),
+        ([], MAINTAINER, 9),
+        ([LOOP, LOW], None, 10),
+        ([LOOP], None, 10),
     ]
-    got = [(labels, _rank(labels)["rank"]) for labels, _ in board]
-    assert got == board, got
+    got = [(labels, dispatch_rank.rank(labels, DECLARED, assoc)["rank"])
+           for labels, assoc, _ in board]
+    want = [(labels, rank) for labels, _, rank in board]
+    assert got == want, got
 
 
-def test_a_human_medium_outranks_every_loop_medium():
+def test_an_external_or_maintainer_medium_outranks_every_loop_medium():
     """#798's own acceptance criterion, stated as it is written there: 'A board
     with one human priority-medium issue and ten loop priority-medium issues
-    dispatches the human one first.'"""
-    human = {"number": 1, "labels": [MEDIUM]}
+    dispatches the human one first.' #993 splits that 'human' issue into
+    external and maintainer; both still outrank the loop's own medium band."""
+    non_loop = {"number": 1, "labels": [MEDIUM], "author_association": MAINTAINER}
     loop = [{"number": n, "labels": [LOOP, MEDIUM]} for n in range(2, 12)]
-    ordered = dispatch_rank.order(loop + [human], DECLARED)
+    ordered = dispatch_rank.order(loop + [non_loop], DECLARED)
     assert ordered[0]["number"] == 1, [i["number"] for i in ordered]
 
 
-def test_a_loop_high_outranks_a_human_medium():
+def test_a_loop_high_outranks_a_maintainer_medium():
     """The axes are not lexicographic on author alone. A blocking-class defect
-    the loop found still beats an ordinary human ask, which is why the table
-    interleaves rather than putting every human issue above every loop one."""
-    assert _rank([LOOP, HIGH])["rank"] < _rank([MEDIUM])["rank"]
+    the loop found still beats an ordinary ask, which is why the table
+    interleaves rather than putting every non-loop issue above every loop
+    one."""
+    assert _rank([LOOP, HIGH])["rank"] < _rank([MEDIUM], MAINTAINER)["rank"]
 
 
 def test_no_priority_label_ranks_with_low_not_with_medium():
-    """#798's rows 4 and 6 read 'low, or no label'. An unprioritised issue must
-    not drift upward into the medium band by being unlabelled."""
-    assert _rank([])["rank"] == _rank([LOW])["rank"]
+    """#993's rows 8-9 read 'low, or no label' the same way #798's did. An
+    unprioritised issue must not drift upward into the medium band by being
+    unlabelled."""
+    assert _rank([], MAINTAINER)["rank"] == _rank([LOW], MAINTAINER)["rank"]
     assert _rank([LOOP])["rank"] == _rank([LOOP, LOW])["rank"]
+
+
+def test_an_unreadable_author_association_cannot_rank_either():
+    """The third state #993 asks for explicitly: GitHub's author association
+    could not be read for a non-loop issue. Guessing 'external' would promote
+    a stranger's ask above the maintainer's own; guessing 'maintainer' would
+    quietly demote a genuine external report. Neither is safe, so `rank`
+    refuses -- the same discipline it already applies to an undeclared
+    `filed_by_loop` or an undeclared priority set."""
+    answer = _rank([HIGH])
+    assert answer["state"] == "could-not-rank", answer
+    assert answer["rank"] is None, answer
+    assert "association" in answer["why"], answer
+
+
+def test_an_unrecognised_association_value_is_could_not_tell_too():
+    """Must-fire control: a caller passing anything other than the two
+    recognised spellings is the same fact as passing nothing -- it must not
+    be silently accepted as a third, invented author."""
+    answer = _rank([HIGH], "could-not-tell")
+    assert answer["state"] == "could-not-rank", answer
+
+
+def test_a_readable_association_does_rank_the_positive_control():
+    """Positive control for the two tests above: a *readable* association
+    does place the issue, so the refusal is about the specific unreadable
+    case and not a blanket regression that never ranks a non-loop issue at
+    all."""
+    answer = _rank([HIGH], EXTERNAL)
+    assert answer["state"] == "ranked", answer
+    assert answer["rank"] == 2, answer
+
+
+def test_an_unrankable_association_sorts_last_not_first_or_middle():
+    """Paired with #798's own 'could-not-rank sorts last' discipline: an
+    issue whose author association could not be read must not slip to the
+    front of the board the way an unlabelled loop issue must not either."""
+    unreadable = {"number": 1, "labels": [HIGH]}
+    ranked = [{"number": n, "labels": [LOOP, LOW]} for n in (2, 3)]
+    ordered = dispatch_rank.order(ranked + [unreadable], DECLARED)
+    assert ordered[-1]["number"] == 1, [i["number"] for i in ordered]
+
+
+def test_a_loop_labelled_issue_ignores_whatever_association_it_carries():
+    """A loop-filed issue is filed under the maintainer's own GitHub account,
+    so its author association can never distinguish 'loop' from 'maintainer'
+    -- `labels.filed_by_loop` settles the author axis first, and any
+    association value passed alongside it (even 'external', which would be
+    wrong for a loop-filed issue but is exactly what a stale caller might
+    still send) must not override that."""
+    answer = _rank([LOOP, HIGH], EXTERNAL)
+    assert answer["author"] == "loop", answer
+    assert answer["rank"] == 4, answer
 
 
 def test_an_undeclared_filed_by_loop_label_cannot_rank_at_all():
@@ -152,7 +222,7 @@ def test_two_priority_labels_on_one_issue_take_the_stronger():
     priority onto #754 within the same window. An issue carrying two bands is a
     real state, and taking the stronger is the safe direction -- the alternative
     is an issue silently sinking because somebody added a lower label."""
-    assert _rank([HIGH, MEDIUM])["rank"] == _rank([HIGH])["rank"]
+    assert _rank([HIGH, MEDIUM], MAINTAINER)["rank"] == _rank([HIGH], MAINTAINER)["rank"]
 
 
 def test_an_unrecognised_priority_spelling_is_distinguished_from_no_priority():
@@ -161,8 +231,8 @@ def test_an_unrecognised_priority_spelling_is_distinguished_from_no_priority():
     priority label, not the absence of one. The two must not produce the same
     receipt, or a maintainer has no way to tell a typo from an unlabelled
     issue without re-deriving the board by hand."""
-    unlabelled = _rank([])
-    typo = _rank(["priority-critical"])
+    unlabelled = _rank([], MAINTAINER)
+    typo = _rank(["priority-critical"], MAINTAINER)
     assert typo != unlabelled, (unlabelled, typo)
     # Still usable for ordering -- the trap #826 names explicitly is a fix
     # that stops ranking the issue at all.
@@ -176,7 +246,7 @@ def test_the_genuinely_unprioritised_case_still_ranks_low():
     """Paired control for the assertion above: the fix must not become
     'refuse everything'. An issue that truly carries no priority label keeps
     the old, quiet answer."""
-    answer = _rank([])
+    answer = _rank([], MAINTAINER)
     assert answer["state"] == "ranked", answer
     assert answer["band"] == "low", answer
     assert answer["why"] is None, answer
@@ -186,7 +256,7 @@ def test_an_unrelated_label_is_not_mistaken_for_an_unrecognised_priority():
     """Must-not-fire control: a label that shares no prefix with any declared
     priority spelling is not a priority label at all, and must not be
     reported as an unrecognised one."""
-    answer = _rank(["bug"])
+    answer = _rank(["bug"], MAINTAINER)
     assert answer["why"] is None, answer
 
 
@@ -196,7 +266,7 @@ def test_no_common_prefix_means_no_unrecognised_detection():
     failure this module already refuses elsewhere -- there is no signal, so
     none is invented."""
     declared_no_prefix = {"priority": ["urgent", "later"], "filed_by_loop": LOOP}
-    answer = dispatch_rank.rank(["priority-critical"], declared_no_prefix)
+    answer = dispatch_rank.rank(["priority-critical"], declared_no_prefix, "maintainer")
     assert answer["why"] is None, answer
 
 
@@ -208,7 +278,7 @@ def test_a_short_shared_prefix_does_not_flag_an_unrelated_word_838():
     pass if `_band` did nothing? No -- the pre-fix code returns
     `('low', 'python')` here, which this asserts against directly."""
     declared_short = {"priority": ["p1", "p2", "p3"], "filed_by_loop": LOOP}
-    answer = dispatch_rank.rank(["python", "bug"], declared_short)
+    answer = dispatch_rank.rank(["python", "bug"], declared_short, "maintainer")
     assert answer["why"] is None, answer
 
 
@@ -219,7 +289,7 @@ def test_a_plausible_typo_is_still_caught_with_short_spellings_838():
     length -- must still be reported. Otherwise the fix for #838 could have
     been 'stop detecting typos at all', which would silently regress #826."""
     declared_short = {"priority": ["p1", "p2", "p3"], "filed_by_loop": LOOP}
-    answer = dispatch_rank.rank(["p9"], declared_short)
+    answer = dispatch_rank.rank(["p9"], declared_short, "maintainer")
     assert answer["why"] is not None and "p9" in answer["why"], answer
 
 
@@ -235,7 +305,7 @@ def test_a_single_declared_spelling_still_catches_a_close_typo_838():
     control: a close typo of the one declared spelling must still be
     reported."""
     declared_one = {"priority": ["urgent"], "filed_by_loop": LOOP}
-    answer = dispatch_rank.rank(["urgentx"], declared_one)
+    answer = dispatch_rank.rank(["urgentx"], declared_one, "maintainer")
     assert answer["why"] is not None and "urgentx" in answer["why"], answer
 
 
@@ -247,7 +317,7 @@ def test_a_single_declared_spelling_does_not_flag_an_implausible_suffix_838():
     have been 'always flag anything sharing the prefix', which is #838 all
     over again with an even shorter effective floor."""
     declared_one = {"priority": ["urgent"], "filed_by_loop": LOOP}
-    answer = dispatch_rank.rank(["urgentlyneeded"], declared_one)
+    answer = dispatch_rank.rank(["urgentlyneeded"], declared_one, "maintainer")
     assert answer["why"] is None, answer
 
 
@@ -264,7 +334,7 @@ def test_mixed_length_declared_spellings_do_not_let_a_short_one_over_match_838()
         "priority": ["p1", "priority-extremely-long-spelling-here"],
         "filed_by_loop": LOOP,
     }
-    answer = dispatch_rank.rank(["python", "bug"], declared_mixed)
+    answer = dispatch_rank.rank(["python", "bug"], declared_mixed, "maintainer")
     assert answer["why"] is None, answer
 
 
@@ -276,6 +346,14 @@ def _run_main(issues, capsys, monkeypatch, declared=None):
     priority signal and `main()` then dropped it, so a test that only calls
     `rank()` cannot see the seam. Nothing in this file exercised `main()`
     before -- a scoped coverage run reported its whole body uncovered."""
+    # #993: a non-loop issue now needs a readable author association to rank
+    # at all. Tests in this file that are not about the association axis
+    # itself do not care which value it carries, only that ranking succeeds
+    # -- so a caller-supplied `author_association` is respected and an
+    # absent one defaults to "maintainer" here, in the test fixture only.
+    issues = [dict(item) for item in issues]
+    for item in issues:
+        item.setdefault("author_association", "maintainer")
     payload = {"declared": declared if declared is not None else DECLARED,
                "issues": issues}
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
@@ -459,7 +537,7 @@ def test_every_filing_instruction_names_the_label():
 #: priority cell. Anchored per-line rather than across the whole table, so it
 #: finds a row wherever one sits rather than assuming a fixed block shape.
 _TABLE_ROW_RE = re.compile(
-    r"^\s*\|\s*(\d+)\s*\|\s*(human|loop)\s*\|\s*([^|]+?)\s*\|\s*$",
+    r"^\s*\|\s*(\d+)\s*\|\s*(external|maintainer|loop)\s*\|\s*([^|]+?)\s*\|\s*$",
     re.MULTILINE,
 )
 
@@ -526,12 +604,15 @@ def test_the_table_extractor_catches_a_table_that_disagrees_with_the_module():
     contradicting = (
         "| Rank | Who filed | Priority |\n"
         "| --- | --- | --- |\n"
-        "| 1 | human | high |\n"
-        "| 2 | loop | high |\n"
-        "| 3 | human | medium |\n"
-        "| 4 | human | low, or no priority label |\n"
-        "| 5 | loop | medium |\n"
-        "| 6 | loop | medium |\n"
+        "| 2 | external | high |\n"
+        "| 3 | maintainer | high |\n"
+        "| 4 | loop | high |\n"
+        "| 5 | external | medium |\n"
+        "| 6 | maintainer | medium |\n"
+        "| 7 | loop | medium |\n"
+        "| 8 | external | low, or no priority label |\n"
+        "| 9 | maintainer | low, or no priority label |\n"
+        "| 10 | loop | medium |\n"
     )
     rows = _extract_dispatch_table_rows(contradicting)
     assert len(rows) == len(dispatch_rank.ROWS), rows

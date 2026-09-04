@@ -1,37 +1,77 @@
-"""The dispatch order (#798) and the lane size bound (#799), computed rather
-than felt.
+"""The dispatch order (#798, extended by #993) and the lane size bound (#799),
+computed rather than felt.
 
 Selection used to be priority-only. On a tracker where the loop files most of
 the issues, that means a maintainer's ask waits behind the loop's own backlog:
 measured on claude-oss, 476 issues in 20 days, 98% filed by the loop including
-those under a human account. The order below puts a human ask ahead of loop work
-of the same or lower band, without letting an ordinary ask jump a blocking-class
-defect.
+those under a human account. #798's fix added an author axis, but "human"
+covered two different populations -- the maintainer, and an outside reporter
+who hit a real defect -- and they ranked identically. An untriaged external
+report is unlabelled by definition (nobody has triaged it yet), so it sank to
+the bottom of its band exactly when its evidence was scarcest (#993).
 
-    rank  author  priority
-    ----  ------  --------
-    1     human   high
-    2     loop    high
-    3     human   medium
-    4     human   low, or no priority label
-    5     loop    medium
-    6     loop    low, or no priority label
+The order now has three author values in strength order, not two:
 
-**"Loop" means carrying the label `labels.filed_by_loop` names. An issue without
-it is a human issue** -- and that default is only sound on a board where the
-label has actually been applied. The label's own description says "absence is not
-proof a human filed it", which is exactly right: absence means *nobody labelled
-it* until somebody labels everything. On 2026-09-02 the maintainer closed that by
-labelling every open issue and pruning the ones that were theirs, which turns an
-absence into a positive act.
+    rank  author      priority
+    ----  ----------  --------
+    2     external    high
+    3     maintainer  high
+    4     loop        high
+    5     external    medium
+    6     maintainer  medium
+    7     loop        medium
+    8     external    low, or no priority label
+    9     maintainer  low, or no priority label
+    10    loop        low, or no priority label
 
-Nothing in this module can check that was done. What it can do, and does, is
-refuse to rank at all when the repository declares no such label -- because on
-that board every issue is unlabelled, and reading them all as human issues would
-rank the loop's whole backlog into rows 1, 3 and 4 confidently and wrongly. That
-is this repository's own defect class: a check that never ran rendering as a
-check that found nothing. So the author axis being unavailable is a state, not a
-default.
+**Rank 1 -- "any author, a blocking-class row in the findings table" -- is
+prose, not a computed row**, and `rank()` never returns it. Nothing here can
+read a GitHub issue against the eleven-row findings table in
+`skills/manager/phases/findings.md`; that classification is a judgment call
+made when a finding is written up, not a fact derivable from an issue's
+labels. A caller applying this table checks the blocking-class exception
+before consulting it, the same way rank 2 of the old six-row table encoded it
+implicitly (#993's own text: "whether it stays a row or stays prose is an
+implementation call").
+
+**Rank 5's second clause in #993's own proposal -- "or a bug with no priority
+label" -- is deferred.** It needs a `labels.defect` (or `labels.type`) key
+`.oss.json` does not declare yet, the identical undeclared-axis shape #990
+fixes for `labels.filed_by_loop`'s own rot; #993 asks for the two to land
+together or in that order rather than reproducing the failure a second time.
+Until that key exists, an untriaged external bug ranks by priority alone,
+same as any other unprioritised external issue (rank 8).
+
+**"Loop" still means carrying the label `labels.filed_by_loop` names**, exactly
+as #798 defined it, and still refuses to rank at all when the repository
+declares no such label -- because on a board where every issue is unlabelled,
+reading them all as non-loop would rank the loop's whole backlog into every
+other row confidently and wrongly. An issue the loop files is filed under the
+maintainer's own GitHub account, so GitHub's author association can never
+tell "loop" from "maintainer" apart the way this label can -- the label is
+checked first, and settles the author axis on its own for a loop-filed issue.
+
+**"External" and "maintainer" are read from GitHub's own author association**
+on the issue -- `OWNER`/`MEMBER`/`COLLABORATOR` versus `CONTRIBUTOR`/`NONE` --
+never from a declared label: there is no opt-in step here for a label to
+forget the way `filed_by_loop` can rot. It still needs a third state: an
+association that could not be read must not render as "external" and must
+not render as "maintainer" either -- the same "never render as the
+lowest-cost guess" discipline this module already applies to an undeclared
+`filed_by_loop`. `rank()`'s `association` parameter carries that state
+explicitly: pass `"external"` or `"maintainer"` for a measured value, or
+leave it `None` (or anything else) for "could not tell", which refuses to
+rank a non-loop issue rather than guessing which of the two it is.
+
+Nothing in this module can check that a caller actually measured the
+association before passing it. What it can do, and does, is refuse to rank a
+non-loop issue at all when no recognised value was given -- because guessing
+"maintainer" quietly buries an outside reporter's own evidence, and guessing
+"external" quietly promotes a stranger's ask above the maintainer's, both
+silently, from a caller that simply never wired the read up. That is this
+repository's own defect class again: a check that never ran rendering as a
+check that found nothing. So the author axis being unavailable is a state,
+not a default.
 
 The same refusal applies one axis over. A repository that declares no priority
 spellings has no bands, and inventing `priority-high` for it would be a fact
@@ -48,17 +88,27 @@ import sys
 
 
 #: rank -> (author, band). The single source for the table above; `rank()`
-#: inverts it rather than restating it, so the two cannot disagree.
+#: inverts it rather than restating it, so the two cannot disagree. Numbering
+#: starts at 2 on purpose: rank 1 is the prose-only "blocking-class" row the
+#: module docstring describes, and this module never computes it.
 ROWS = (
-    (1, ("human", "high")),
-    (2, ("loop", "high")),
-    (3, ("human", "medium")),
-    (4, ("human", "low")),
-    (5, ("loop", "medium")),
-    (6, ("loop", "low")),
+    (2, ("external", "high")),
+    (3, ("maintainer", "high")),
+    (4, ("loop", "high")),
+    (5, ("external", "medium")),
+    (6, ("maintainer", "medium")),
+    (7, ("loop", "medium")),
+    (8, ("external", "low")),
+    (9, ("maintainer", "low")),
+    (10, ("loop", "low")),
 )
 
 _BY_PAIR = {pair: number for number, pair in ROWS}
+
+#: The two GitHub author-association readings `rank()` recognises for a
+#: non-loop issue. Anything else -- `None`, an empty string, a typo -- means
+#: "could not tell" and refuses to rank rather than guessing between them.
+ASSOCIATIONS = ("external", "maintainer")
 
 #: Bands in strength order. A priority list shorter or longer than this is
 #: still usable -- the first entry is the strongest -- but only these three
@@ -201,12 +251,18 @@ def _band(labels, priority_spellings):
     return "low", None
 
 
-def rank(labels, declared):
+def rank(labels, declared, association=None):
     """Where one issue sits in the dispatch order.
 
     `labels` is the issue's label names. `declared` is the repository's own
     `labels` block from `.oss.json` -- read, never assumed, because one repo
     spells it `priority-high` and a sibling spells it `priority:high`.
+    `association` is the issue's GitHub author association, read as this
+    module's own two-value vocabulary (`"external"` or `"maintainer"`, see
+    `ASSOCIATIONS`) or left `None` for "could not tell" -- consulted only
+    when the issue does not carry the loop's own label, because a loop-filed
+    issue's author axis is already settled by `labels.filed_by_loop` (see the
+    module docstring).
 
     Returns `state` `ranked` with `rank`, `author` and `band`, or
     `could-not-rank` with `why` and a `rank` of `None`. The receipt names both
@@ -223,8 +279,8 @@ def rank(labels, declared):
             "why": (
                 "labels.filed_by_loop is not declared, so who filed an issue "
                 "cannot be read off the board -- and treating every unlabelled "
-                "issue as a human one would rank the loop's whole backlog above "
-                "the maintainer's asks"
+                "issue as external or maintainer would rank the loop's whole "
+                "backlog above the maintainer's own asks"
             ),
         }
     if not priority or not isinstance(priority, (list, tuple)):
@@ -238,7 +294,24 @@ def rank(labels, declared):
                 "within and this module will not invent spellings for them"
             ),
         }
-    author = "loop" if loop_label in set(labels) else "human"
+    if loop_label in set(labels):
+        author = "loop"
+    elif association in ASSOCIATIONS:
+        author = association
+    else:
+        return {
+            "state": "could-not-rank",
+            "rank": None,
+            "author": None,
+            "band": None,
+            "why": (
+                "GitHub's author association could not be read (got {!r}) for "
+                "an issue not carrying labels.filed_by_loop's label -- "
+                "treating it as external or as maintainer would guess who "
+                "filed it, the same discipline this module already applies "
+                "to an undeclared axis".format(association)
+            ),
+        }
     band, unrecognised = _band(labels, priority)
     why = None
     if unrecognised is not None:
@@ -297,7 +370,8 @@ def order(issues, declared):
     at the front would let a configuration gap silently promote work.
     """
     def key(item):
-        answer = rank(item.get("labels") or [], declared)
+        answer = rank(item.get("labels") or [], declared,
+                       item.get("author_association"))
         return answer["rank"] if answer["rank"] is not None else len(ROWS) + 1
 
     return sorted(issues, key=key)
@@ -411,9 +485,12 @@ def check_lane(issues, short_reason, candidates=None, adjacent=None):
 def main(argv=None):
     """Rank a board handed in on stdin as JSON.
 
-    Input is `{"declared": {...}, "issues": [{"number": N, "labels": [...]}]}`,
-    which is the shape `gh-issues` already produces once the labels are pulled
-    out. Prints one line per issue, best first.
+    Input is `{"declared": {...}, "issues": [{"number": N, "labels": [...],
+    "author_association": "external"|"maintainer"|null}]}`. The
+    `author_association` field is optional per issue and is only consulted
+    for a non-loop issue; an issue omitting it, or carrying anything outside
+    `ASSOCIATIONS`, could not have its author association read. Prints one
+    line per issue, best first.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -502,7 +579,8 @@ def main(argv=None):
     reserved_declared = bool(reserved_spelling) and isinstance(
         reserved_spelling, str)
     for item in ranked:
-        answer = rank(item.get("labels") or [], declared)
+        answer = rank(item.get("labels") or [], declared,
+                       item.get("author_association"))
         is_reserved = reserved(item.get("labels") or [], declared)
         if is_reserved:
             reserved_count += 1
