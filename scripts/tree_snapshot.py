@@ -118,6 +118,27 @@ def _run_git(args, root):
     return result.stdout, None
 
 
+def _resolved_root(root):
+    """Return the absolute path `root` names, or `root` itself unchanged if
+    it cannot be resolved (#971).
+
+    `root` defaults to `"."`, meaningful only relative to whatever the
+    calling process's cwd happened to be at the instant this ran. A
+    snapshot taken now and compared later -- possibly by a different
+    process, possibly after the caller's cwd has moved, which is exactly
+    what happens between two Bash tool calls -- needs a `root` that still
+    means the same directory once that cwd is gone. `Path.resolve()` can
+    raise on a handful of platforms for a cyclic symlink or an unreadable
+    parent; falling back to the literal string on failure keeps `snapshot`
+    itself never crashing over what is, at worst, a return to the
+    pre-#971 behaviour for that one path.
+    """
+    try:
+        return str(Path(root).resolve())
+    except (OSError, RuntimeError):
+        return str(root)
+
+
 def snapshot(root="."):
     """Capture what is needed to detect a mutation of the working tree.
 
@@ -126,17 +147,24 @@ def snapshot(root="."):
     from it -- staged, unstaged, and untracked alike (``--untracked-files=all``
     so a new file inside an existing untracked directory is still named,
     rather than folded into the directory's own line).
+
+    The `root` recorded in the result is the *resolved, absolute* path,
+    never the literal string this was called with (#971) -- `compare`'s
+    CLI reuses it as the default root for the after-snapshot precisely so
+    a caller whose cwd moved between the two calls still re-snapshots the
+    directory the before-snapshot actually looked at.
     """
+    resolved_root = _resolved_root(root)
     head, head_error = _run_git(["rev-parse", "HEAD"], root)
     if head_error is not None:
-        return {"root": str(root), "head": None, "status": None, "error": head_error}
+        return {"root": resolved_root, "head": None, "status": None, "error": head_error}
     status, status_error = _run_git(
         ["status", "--porcelain=v2", "--untracked-files=all"], root
     )
     if status_error is not None:
-        return {"root": str(root), "head": None, "status": None, "error": status_error}
+        return {"root": resolved_root, "head": None, "status": None, "error": status_error}
     return {
-        "root": str(root),
+        "root": resolved_root,
         "head": head.strip(),
         "status": status,
         "error": None,
@@ -287,7 +315,15 @@ def main(argv=None):
         required=True,
         help="path to a file holding the before-snapshot's JSON, or - for stdin",
     )
-    cmp_parser.add_argument("--root", default=".", help="the worktree to re-snapshot")
+    cmp_parser.add_argument(
+        "--root",
+        default=None,
+        help=(
+            "the worktree to re-snapshot. Defaults to the before-snapshot's "
+            "own recorded root, not the live cwd (#971) -- pass this "
+            "explicitly to compare against a different directory on purpose."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -325,7 +361,20 @@ def main(argv=None):
             "and finding no mutation".format(error),
         )
     else:
-        verdict = compare(before, snapshot(args.root))
+        # `--root` defaults to `None`, not `"."` -- when the caller did not
+        # pass it explicitly, re-snapshot the directory the before-snapshot
+        # itself recorded (#971), never a live cwd that may have moved
+        # since. An explicit `--root` always wins, unchanged from before
+        # this fix. A before-snapshot missing a usable `root` (a hand-built
+        # or pre-#971 payload) falls back to `"."`, the old default.
+        if args.root is not None:
+            root_for_after = args.root
+        else:
+            recorded_root = before.get("root")
+            root_for_after = (
+                recorded_root if isinstance(recorded_root, str) and recorded_root else "."
+            )
+        verdict = compare(before, snapshot(root_for_after))
 
     print("VERDICT: {0} -- {1}".format(verdict["state"], _one_line(verdict["reason"])))
     if verdict["head_moved"]:
