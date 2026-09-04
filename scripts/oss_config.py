@@ -940,6 +940,16 @@ def scaffolded_changelog_gate(repo_root):
 # this is the second one being made to actually hold up its half.
 CHANGELOG_UNTAGGED_RE = re.compile(r"\A\d+\.\d+\.\d+\Z")
 
+# A backslash immediately followed by an ASCII letter -- `\d`, `\w`, `\s`, `\A`,
+# `\Z`, `\b`, and every other Perl/Python-only escape class share this shape.
+# POSIX ERE (what `grep -E` speaks, spliced from `user_visible_paths_problem`
+# below) defines no backslash-letter escapes at all; whichever ones a given
+# `grep` happens to accept as a GNU extension is a version question this
+# validator, running on the maintainer's own machine rather than the release
+# runner, has no way to answer -- so the whole class is refused rather than
+# allow-listed one construct at a time (#779, found by review).
+PERL_ONLY_BACKSLASH_ESCAPE_RE = re.compile(r"\\[A-Za-z]")
+
 
 def changelog_untagged_problem(value):
     """Why this `changelog_untagged` cannot be used, or None when it is fine.
@@ -994,6 +1004,25 @@ def user_visible_paths_problem(value):
     the whole gate off silently for every pull request -- exactly the failure
     the acceptance bar for #779 names by name. Say nothing (null) to keep
     today's behaviour, or name at least one pattern.
+
+    Validated against POSIX ERE, not Python `re`, and that is not a stricter
+    reading of the same grammar -- it is the actual one the value runs
+    against. The generated workflow splices this pattern into `grep -Eq`,
+    which runs POSIX ERE (with GNU extensions the version this validator
+    cannot see may or may not carry), on the maintaining repository's own
+    `ubuntu-latest` runner, not on whatever machine ran `/oss:scaffold`.
+    `re.compile` alone used to accept Perl-only syntax -- `(?=...)`,
+    `(?:...)`, `\\d`, `\\w`, `\\s`, `\\A`, `\\Z`, `\\b` -- that `grep -E`
+    rejects as a SYNTAX ERROR (exit 2) at runtime, and the generated guard
+    (`if ! grep -Eq PATTERN; then skip; fi`) cannot tell that apart from a
+    genuine no-match: an accepted-but-unparseable pattern silently and
+    permanently disables the changelog gate for the whole repository,
+    reopening the exact failure the empty-list refusal above exists to
+    close (found by review, #779). So `(?` anywhere, and a backslash
+    followed by a letter, are refused outright rather than allow-listed one
+    construct at a time -- which GNU-extension escapes a given `grep`
+    happens to support is a version question this validator has no way to
+    answer from here.
     """
     if value is None:
         return None
@@ -1025,6 +1054,31 @@ def user_visible_paths_problem(value):
             return (
                 "user_visible_paths[{}]: {!r} is not a valid regular expression "
                 "({}).".format(index, pattern, exc)
+            )
+        if "(?" in pattern:
+            return (
+                "user_visible_paths[{}]: {!r} uses `(?...)` -- a non-capturing "
+                "group, a lookaround or a named group. These are Python `re` syntax, "
+                "not POSIX ERE, and this value runs as `grep -E` at release time, on "
+                "the generated workflow's own runner. `grep -E` treats this as a "
+                "SYNTAX ERROR indistinguishable, in the generated receipt, from a "
+                "genuine no-match -- so an accepted pattern like this one silently "
+                "and permanently disables the changelog gate rather than exempting "
+                "the paths you meant. Write plain groups: `(docs|tests)`, not "
+                "`(?:docs|tests)`.".format(index, pattern)
+            )
+        if PERL_ONLY_BACKSLASH_ESCAPE_RE.search(pattern):
+            return (
+                "user_visible_paths[{}]: {!r} carries a backslash followed by a "
+                "letter. POSIX ERE, which `grep -E` speaks at release time, defines "
+                "no backslash-letter escapes at all -- `\\d`, `\\w`, `\\s`, `\\A`, "
+                "`\\Z`, `\\b` and similar are Python `re` (or a GNU extension this "
+                "validator cannot confirm the release runner's `grep` carries), and "
+                "an unrecognised one is the same silent-disable failure `(?...)` is "
+                "refused for above. Escape only ERE metacharacters -- `\\.`, `\\(`, "
+                "`\\)`, `\\[`, `\\]`, `\\*`, `\\+`, `\\?`, `\\{{`, `\\}}`, `\\|`, "
+                "`\\\\` -- or use a POSIX character class such as "
+                "`[[:digit:]]`.".format(index, pattern)
             )
     return None
 

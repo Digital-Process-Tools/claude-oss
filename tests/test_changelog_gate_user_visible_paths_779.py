@@ -87,16 +87,60 @@ def test_a_single_quote_is_refused_shell_injection_surface():
     assert problem is not None
 
 
+def test_a_perl_only_lookahead_is_refused_grep_e_cannot_parse_it():
+    """Found by review (#779): `oss_config.user_visible_paths_problem` used to
+    validate with Python's `re.compile`, but the value is spliced into a
+    `grep -E` (POSIX ERE) invocation at runtime -- a different grammar.
+    `(?=...)` is ordinary Python `re` and a `grep -E` SYNTAX ERROR (exit 2),
+    which the generated workflow's `if ! grep -Eq ...; then skip; fi` cannot
+    tell apart from a genuine no-match -- so an accepted-but-unparseable
+    pattern silently and permanently turns the gate off for the whole repo,
+    the exact failure the acceptance bar names by name for an empty list."""
+    problem = oss_config.user_visible_paths_problem(["(?=README)"])
+    assert problem is not None
+
+
+def test_a_non_capturing_group_is_refused_same_reason():
+    problem = oss_config.user_visible_paths_problem(["(?:docs|README)"])
+    assert problem is not None
+
+
+def test_a_perl_only_backslash_class_is_refused():
+    """`\\d`, `\\w`, `\\s`, `\\A`, `\\Z`, `\\b`... are not POSIX ERE. Every
+    backslash-letter escape is refused rather than allow-listed one at a
+    time, because whether a given one happens to work is a GNU-grep-version
+    question this validator cannot answer on the maintainer's own machine."""
+    problem = oss_config.user_visible_paths_problem([r"^docs/\d+"])
+    assert problem is not None
+
+
+def test_an_ordinary_ere_pattern_still_validates():
+    """Positive control for the three refusals above: a pattern using only
+    POSIX ERE syntax -- anchors, character classes, alternation, quantifiers,
+    a backslash-escaped metacharacter -- is still accepted."""
+    assert oss_config.user_visible_paths_problem(
+        [r"^docs/", r"^README\.md$", r"^(docs|tests)/"]
+    ) is None
+
+
 # --------------------------------------------------------- rendered workflow
 
 
 def test_absent_key_renders_no_exemption_block_pattern():
     """Default: nothing declared, so the generated workflow's exemption guard
-    never fires -- the substituted pattern is empty."""
+    never fires -- the substituted pattern is empty, which makes the `[ -n ]`
+    test around it false on every run.
+
+    Caught by review (#779): the earlier version of this assertion,
+    `"if [ -n '' ]" in body or "if [ -n \"\" ]" not in body`, was a tautology
+    -- the second disjunct is true regardless of what the first substitution
+    produced, because the template never uses the double-quoted spelling at
+    all. Asserting the exact rendered guard line directly is what actually
+    exercises `user_visible_pattern()` returning `""` for an absent key.
+    """
     body = scaffold.render_owned(".github/workflows/oss-changelog.yml", _config())
     assert "no user-visible paths changed" in body
-    # the guard around it must be shaped so an empty pattern never matches
-    assert "if [ -n '' ]" in body or "if [ -n \"\" ]" not in body
+    assert "if [ -n '' ]; then" in body
 
 
 def test_a_declared_list_is_rendered_into_the_workflow():

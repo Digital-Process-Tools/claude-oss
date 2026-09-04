@@ -1273,10 +1273,12 @@ jobs:
           # before the first failure exists, which is why it is a condition here and not a
           # label somebody applies afterwards.
           #
-          # This is an AUTHOR check and not a path check, which is the distinction that keeps
-          # the paragraph above honest: which paths are user-visible is a fact about YOUR
-          # repository that this template cannot know, while who opened the pull request is a
-          # fact the event hands it. It matches one exact login -- the bot that
+          # This is an AUTHOR check and not a path check. `user_visible_paths` above is
+          # the path-based route, and it is opt-in -- a repository that has not declared
+          # it is in exactly the position this comment used to describe unconditionally:
+          # which paths are user-visible is a fact this template does not guess at, so
+          # the escape hatch for a bot that cannot use the label is who opened the pull
+          # request, not what it touched. It matches one exact login -- the bot that
           # `.github/dependabot.yml`, scaffolded beside this file, actually produces.
           #
           # It is a skip that announces itself, not a silent pass. Read that line if you point
