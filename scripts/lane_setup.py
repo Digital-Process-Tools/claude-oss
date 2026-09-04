@@ -3335,6 +3335,21 @@ def main(argv=None):
         # `_one_line` stays local beside release_delta.py's: this is a setup
         # read, not that module, and neither should have to change because
         # the other one's contract did.
+        # #984: `sys.stdin` is `None` when the harness hands the process a
+        # closed or unopenable standard input, so `.reconfigure` raises
+        # `AttributeError` before the `except (AttributeError, ValueError):
+        # pass` below can help -- that guard was written for a *stream* that
+        # refuses to reconfigure, not for the absence of a stream. Past
+        # that, `json.load(None)` would raise `AttributeError` uncaught,
+        # exiting 1 with none of this module's own states. Check for `None`
+        # first and answer `COULD NOT READ`, the same class #405 and #846
+        # already fixed in `review_return.py`, `tree_snapshot.py`,
+        # `dispatch_rank.py`, `statusline.py` and `batch_hint.py`.
+        if sys.stdin is None:
+            print("COULD NOT READ: stdin is not JSON (no readable stdin: "
+                  "the process was handed a closed or unopenable standard "
+                  "input)")
+            return EXIT_COULD_NOT_RUN
         try:
             sys.stdin.reconfigure(encoding="utf-8")
         except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper

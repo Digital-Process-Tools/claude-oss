@@ -16,9 +16,10 @@ this list is one line, not a new test module.
 **Known, unfixed instances of the same class exist outside this lane's
 claimed files** and are reported rather than silently swept up here:
 `scripts/oss_config.py:3085` (`json.load(sys.stdin)`, guarded only by
-`except ValueError`) and `scripts/lane_setup.py:3328` (same shape as
-`dispatch_rank.py` before this fix). Both are out of this lane's claimed
-file set (`agents/developer.md`'s own boundary) -- see the lane's report.
+`except ValueError`). That is out of this lane's claimed file set
+(`agents/developer.md`'s own boundary) -- see the lane's report.
+`scripts/lane_setup.py`'s `--suggest-companions` mode carried the identical
+shape (#984) and is fixed and swept below alongside the rest.
 `scripts/board_touch.py` and `scripts/tree_snapshot.py` also read
 `sys.stdin` but are already safe: `board_touch.py` wraps the whole read in
 `except Exception: pass` (module docstring: never break a tool call), and
@@ -43,6 +44,11 @@ SWEPT_SCRIPTS = [
     ("scripts/statusline.py", [], '{}'),
     ("scripts/batch_hint.py", [], '{}'),
     ("scripts/review_return.py", ["-"], "NO FINDINGS: nothing to check"),
+    (
+        "scripts/lane_setup.py",
+        ["--suggest-companions", "1", "--lane", "scripts/lane_setup.py"],
+        '{"declared": {}, "issues": []}',
+    ),
 ]
 
 
