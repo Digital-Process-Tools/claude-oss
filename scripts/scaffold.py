@@ -505,9 +505,9 @@ TEST_MEASUREMENT_RECOMMENDATION = (
     "\nRecommended: make sure that command measures what it runs -- how long each "
     "test\ntakes (so a slow test is visible without CI archaeology) and how much of "
     "the\ncode it covers, configured however your test runner reports those two "
-    "things.\nOnce both are in place, set\n"
-    '`"test_measurement_configured": true` in `.oss.json` so `doctor` stops '
-    "flagging it.\n"
+    "things.\nOnce both are in place, record\n"
+    '`"test_measurement_configured": true` in `.oss.json` as a note that this has '
+    "been\ndone.\n"
 )
 
 
@@ -1483,6 +1483,37 @@ def plan(repo_root, config, force_owned=False):
 
 
 SETTINGS_PATH = ".claude/settings.json"
+
+#: This repository's OWN `.claude/settings.json` carries a `permissions.allow` block
+#: -- `Bash(supertool:*)`, `Bash(./supertool:*)`, `Bash(git *)`, `Agent` -- that scaffold
+#: never writes (permissions are not in `settings_plan`'s contract at all, only the
+#: `statusLine` key is). It is tracked deliberately (#609), reaffirmed rather than
+#: reversed by #899: `Bash(git *)` and unscoped `Agent` are wider than the two supertool
+#: entries beside them, and #899 asked whether that block should move to the untracked
+#: `.claude/settings.local.json` instead. Decision: stays here. #609 already measured
+#: the alternative -- leaving these two out of the tracked file meant a fresh clone or
+#: worktree prompted on every git call and every subagent spawn, which the autonomous
+#: maintainer loop (agents under `agents/`, `skills/manager`) cannot pay for; it runs
+#: git and spawns constantly, unattended. `doctor`'s worktree-reap permission check
+#: (#892, `scripts/doctor_check_worktree_reap_permission.py`) and its merge-permission
+#: sibling already read both this file and `settings.local.json` (`settings_candidates`
+#: in `scripts/doctor_check_merge_permission.py`), so moving the grant would not blind
+#: `doctor` -- but scaffold never writes this block, so a fresh clone would get no
+#: default git/Agent grant at all until a maintainer wrote one by hand. The residual
+#: risk #899 named stands: any clone of this repo inherits both grants, not only the
+#: loop's own sessions. Accepted rather than narrowed: this repo is maintained almost
+#: entirely by the autonomous loop itself, and a tighter allow-list (naming safe git
+#: subcommands rather than the whole surface, or excluding `reset --hard` /
+#: `clean -fdx` / `push --force` by name) was not attempted here -- worth its own
+#: issue, not a reason to move the whole block.
+#:
+#: This comment, not a key inside `.claude/settings.json` itself, is where that
+#: reasoning lives: the shipped Claude Code settings schema (`ClaudeCodeSettings`)
+#: declares `"additionalProperties": false` at its top level, so a stray key like
+#: `"//"` risks a strict loader rejecting the whole file -- silently dropping every
+#: grant it carries on every clone, which is the opposite of what #609 and #899 are
+#: both trying to preserve. Prose that has to survive a strict reader cannot live
+#: inside the document that reader might refuse to parse whole.
 
 #: The label `--show` prints beside each pending write, per action. `replace` is what
 #: the OWNED trio and the rule layer always are; `create` is a template written once;

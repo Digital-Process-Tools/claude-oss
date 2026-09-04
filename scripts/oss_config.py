@@ -383,17 +383,24 @@ def names_pytest(value):
     one level down from a repository to a language: a fact about one project
     baked into shared code arrives with the authority of a measured one.
 
-    **Absent, empty, or not a string answers True**, and the two callers read
-    that answer differently on purpose:
+    **Absent, empty, or not a string answers True.**
 
-    * `doctor_check_test_measurement` keeps asking. Nobody probed the command,
-      which is not evidence the repo is not Python, and a maintainer reading a
-      diagnostic can answer the question in a second.
-    * `scaffold` does not write the advice. Its output is a paragraph placed
-      once into somebody else's repository, permanently, in the file every
-      session there reads first -- so it gates on a command that is both set
-      and pytest-shaped, the same standard the "not detected" paragraph
-      directly above it already holds itself to.
+    `doctor_check_test_measurement` is this function's only caller now: it
+    keeps asking when the answer is True (nobody probed the command, which is
+    not evidence the repo is not Python, and a maintainer reading a
+    diagnostic can answer the question in a second) and short-circuits to
+    `OK: not applicable` when it is False.
+
+    `scaffold` used to be a second caller, gating its own CLAUDE.md paragraph
+    on this same substring match -- and #955 is why it no longer is: the
+    match is a substring, not a parse, so it is wrong in both directions over
+    an arbitrary shell command (`'npm test --grep pytest'` matches,
+    `'make test'` wrapping pytest does not), and scaffold's paragraph is a
+    write into somebody else's repository, permanently, in the file every
+    session there reads first -- too permanent a place to be wrong. Its
+    advice is now runner-neutral instead (see `scaffold.TEST_MEASUREMENT_
+    RECOMMENDATION`) and gates only on `test_command` being set, never on
+    this predicate.
 
     A non-string is a schema PROBLEM `check_config` reports; it is not stripped
     out of the config dict a caller holds, so it is answered here rather than
