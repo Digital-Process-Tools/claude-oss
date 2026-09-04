@@ -42,23 +42,23 @@ read failure (#956):
   frozen            issues were labelled (or, on a dry run, would be)
   already-frozen    every member already carries the label -- re-running
                      is the ordinary case, not the exception, and is a no-op
-  label-missing      the cohort label does not exist on the tracker yet --
-                     `gh issue edit --add-label` never creates one, so this
-                     is checked before any write is even rehearsed by a dry
-                     run, not discovered as N identical per-issue failures
-                     once `--execute` runs. This script never creates the
-                     label itself: that write is the maintainer's own act.
-  could-not-read     the tag could not be resolved, the issue list could not
-                     be read, current label membership could not be read, or
-                     a write failed partway for a reason other than the
-                     label missing -- NEVER an empty cohort. `state`
-                     is the signal to read, not the shape of `count`: it is
-                     `None` when the read failed before anything was
-                     computed, and the already-computed value when a later
-                     step (reading current labels, writing one) failed
-                     partway. A real empty cohort is `already-frozen` with
-                     `count == 0`, an int -- always distinguishable from
-                     `could-not-read` by `state`.
+  label-missing     the cohort label does not exist on the tracker yet --
+                    `gh issue edit --add-label` never creates one, so this
+                    is checked before any write is even rehearsed by a dry
+                    run, not discovered as N identical per-issue failures
+                    once `--execute` runs. This script never creates the
+                    label itself: that write is the maintainer's own act.
+  could-not-read    the tag could not be resolved, the issue list could not
+                    be read, current label membership could not be read, or
+                    a write failed partway for a reason other than the
+                    label missing -- NEVER an empty cohort. `state`
+                    is the signal to read, not the shape of `count`: it is
+                    `None` when the read failed before anything was
+                    computed, and the already-computed value when a later
+                    step (reading current labels, writing one) failed
+                    partway. A real empty cohort is `already-frozen` with
+                    `count == 0`, an int -- always distinguishable from
+                    `could-not-read` by `state`.
 
 Dry run by default -- `--execute` is required to actually write a label, since
 an unqualified run touches every open issue on the tracker. `pull_request` is
