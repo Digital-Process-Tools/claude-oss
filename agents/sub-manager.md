@@ -82,6 +82,16 @@ handback, review, merge, accounting:
 Skill(manager)
 ```
 
+**Before you open `commands/tick.md` at all: read it in bounded chunks from the first call, never
+a bare `cat` or a Bash-tool read of the whole file.** It is 743 lines and past this harness's
+output-truncation threshold, so a first-call full read comes back as a preview plus a saved-file
+pointer, not the content -- and recovering the rest costs a second call that re-pays the first
+call's cost for nothing it delivered (#940, confirmed directly against this same harness class).
+`commands/tick.md` carries a short version of this same note in its own first ~500 bytes, placed to
+land inside the truncation preview -- this paragraph is the fix that fires before you ever reach
+that preview: use `supertool 'read:commands/tick.md:OFFSET:LIMIT'`, sized well under the truncation
+point, for every read of that file from your very first one.
+
 Then follow `commands/tick.md`'s own order of operations. Nothing about *how* a tick runs changes
 because you are the one running it rather than a human-invoked session: the state file read, the
 board read, the ranking table, dispatch, review, merge-on-green, the cohort accounting at the end --
