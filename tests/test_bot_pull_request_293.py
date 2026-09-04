@@ -34,7 +34,6 @@ second thing to keep right.
 Python 3.9 compatible.
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -54,6 +53,7 @@ from test_changelog_gate import (  # noqa: E402
     _gate_script,
     _pull_request,
     _require,
+    _run_script,
 )
 
 BOT = "dependabot[bot]"
@@ -70,15 +70,7 @@ def _run_gate(repo, author=None):
     extra = {"BASE_REF": "main"}
     if author is not None:
         extra["PR_AUTHOR"] = author
-    return subprocess.run(
-        [BASH, "-c", _gate_script()],
-        cwd=str(repo),
-        env=_child_env(BASH, **extra),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        errors="replace",
-    )
+    return _run_script(_gate_script(), repo, _child_env(BASH, **extra))
 
 
 # A pull request that changes product code and adds no fragment: the exact shape the gate

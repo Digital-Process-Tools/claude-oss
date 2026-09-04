@@ -43,6 +43,11 @@ OPTIONAL_KEYS = {
     # module docstring for why this is never derived from the config's
     # own content.
     "test_measurement_configured",
+    # #779: which changed paths this repository considers user-visible, so the
+    # generated changelog gate can exempt a pull request that touches none of
+    # them. Absent/null is the default and leaves the gate unconditional, same
+    # as before this key existed -- see `user_visible_paths_problem` below.
+    "user_visible_paths",
 }
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
@@ -935,6 +940,16 @@ def scaffolded_changelog_gate(repo_root):
 # this is the second one being made to actually hold up its half.
 CHANGELOG_UNTAGGED_RE = re.compile(r"\A\d+\.\d+\.\d+\Z")
 
+# A backslash immediately followed by an ASCII letter -- `\d`, `\w`, `\s`, `\A`,
+# `\Z`, `\b`, and every other Perl/Python-only escape class share this shape.
+# POSIX ERE (what `grep -E` speaks, spliced from `user_visible_paths_problem`
+# below) defines no backslash-letter escapes at all; whichever ones a given
+# `grep` happens to accept as a GNU extension is a version question this
+# validator, running on the maintainer's own machine rather than the release
+# runner, has no way to answer -- so the whole class is refused rather than
+# allow-listed one construct at a time (#779, found by review).
+PERL_ONLY_BACKSLASH_ESCAPE_RE = re.compile(r"\\[A-Za-z]")
+
 
 def changelog_untagged_problem(value):
     """Why this `changelog_untagged` cannot be used, or None when it is fine.
@@ -965,6 +980,106 @@ def changelog_untagged_problem(value):
             "instruction is refused rather than quoted and hoped about. Versions, not "
             "tags: write '0.1.0', not 'v0.1.0'.".format(bad)
         )
+    return None
+
+
+def user_visible_paths_problem(value):
+    """Why this `user_visible_paths` cannot be used, or None when it is fine.
+
+    Null is the default and means nobody has told the generated changelog gate
+    which paths are user-visible for this repository, so every non-empty diff
+    with no fragment still fails -- exactly the behaviour before this key
+    existed (#779).
+
+    A declared value becomes a `grep -E` pattern spliced, single-quoted, into a
+    `run:` line of the workflow generated for another repository -- the same
+    surface `changelog_dir_problem` above already refuses a shell-breaking
+    value on, so a quote character here is refused for the identical reason
+    rather than shipped as an injection surface waiting for the first
+    contributor to (accidentally or not) close that literal early.
+
+    `[]` is refused rather than accepted as "declared, and nothing is
+    user-visible": unlike `changelog_untagged`, where an empty list is a real
+    and different answer from null, an empty `user_visible_paths` would turn
+    the whole gate off silently for every pull request -- exactly the failure
+    the acceptance bar for #779 names by name. Say nothing (null) to keep
+    today's behaviour, or name at least one pattern.
+
+    Validated against POSIX ERE, not Python `re`, and that is not a stricter
+    reading of the same grammar -- it is the actual one the value runs
+    against. The generated workflow splices this pattern into `grep -Eq`,
+    which runs POSIX ERE (with GNU extensions the version this validator
+    cannot see may or may not carry), on the maintaining repository's own
+    `ubuntu-latest` runner, not on whatever machine ran `/oss:scaffold`.
+    `re.compile` alone used to accept Perl-only syntax -- `(?=...)`,
+    `(?:...)`, `\\d`, `\\w`, `\\s`, `\\A`, `\\Z`, `\\b` -- that `grep -E`
+    rejects as a SYNTAX ERROR (exit 2) at runtime, and the generated guard
+    (`if ! grep -Eq PATTERN; then skip; fi`) cannot tell that apart from a
+    genuine no-match: an accepted-but-unparseable pattern silently and
+    permanently disables the changelog gate for the whole repository,
+    reopening the exact failure the empty-list refusal above exists to
+    close (found by review, #779). So `(?` anywhere, and a backslash
+    followed by a letter, are refused outright rather than allow-listed one
+    construct at a time -- which GNU-extension escapes a given `grep`
+    happens to support is a version question this validator has no way to
+    answer from here.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        return (
+            "user_visible_paths: expected a non-empty list of regex strings, or null "
+            "to leave the generated changelog gate unconditional (today's default "
+            "behaviour); got {!r}. An empty list is refused rather than read as "
+            "'nothing is user-visible', which would silently turn the gate off for "
+            "the whole repository.".format(value)
+        )
+    for index, pattern in enumerate(value):
+        if not isinstance(pattern, str) or not pattern:
+            return (
+                "user_visible_paths[{}]: expected a non-empty regex string; got "
+                "{!r}.".format(index, pattern)
+            )
+        if "'" in pattern or "\n" in pattern:
+            return (
+                "user_visible_paths[{}]: {!r} carries a single quote or a newline. "
+                "This value is written into a `run:` line of the workflow generated "
+                "for another repository, single-quoted, so a character that would "
+                "close that literal early is refused rather than quoted and hoped "
+                "about.".format(index, pattern)
+            )
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            return (
+                "user_visible_paths[{}]: {!r} is not a valid regular expression "
+                "({}).".format(index, pattern, exc)
+            )
+        if "(?" in pattern:
+            return (
+                "user_visible_paths[{}]: {!r} uses `(?...)` -- a non-capturing "
+                "group, a lookaround or a named group. These are Python `re` syntax, "
+                "not POSIX ERE, and this value runs as `grep -E` at release time, on "
+                "the generated workflow's own runner. `grep -E` treats this as a "
+                "SYNTAX ERROR indistinguishable, in the generated receipt, from a "
+                "genuine no-match -- so an accepted pattern like this one silently "
+                "and permanently disables the changelog gate rather than exempting "
+                "the paths you meant. Write plain groups: `(docs|tests)`, not "
+                "`(?:docs|tests)`.".format(index, pattern)
+            )
+        if PERL_ONLY_BACKSLASH_ESCAPE_RE.search(pattern):
+            return (
+                "user_visible_paths[{}]: {!r} carries a backslash followed by a "
+                "letter. POSIX ERE, which `grep -E` speaks at release time, defines "
+                "no backslash-letter escapes at all -- `\\d`, `\\w`, `\\s`, `\\A`, "
+                "`\\Z`, `\\b` and similar are Python `re` (or a GNU extension this "
+                "validator cannot confirm the release runner's `grep` carries), and "
+                "an unrecognised one is the same silent-disable failure `(?...)` is "
+                "refused for above. Escape only ERE metacharacters -- `\\.`, `\\(`, "
+                "`\\)`, `\\[`, `\\]`, `\\*`, `\\+`, `\\?`, `\\{{`, `\\}}`, `\\|`, "
+                "`\\\\` -- or use a POSIX character class such as "
+                "`[[:digit:]]`.".format(index, pattern)
+            )
     return None
 
 
@@ -1816,6 +1931,10 @@ def validate(config):
     changelog_untagged = changelog_untagged_problem(config.get("changelog_untagged"))
     if changelog_untagged:
         problems.append(changelog_untagged)
+
+    user_visible_paths = user_visible_paths_problem(config.get("user_visible_paths"))
+    if user_visible_paths:
+        problems.append(user_visible_paths)
 
     if "release" in config:
         problems.extend(_validate_release(config["release"]))
