@@ -73,7 +73,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing in the existing three states was safe to cut to pay for a
     # correctness addition -- a design decision this repo's own conventions
     # ask to be written down, not trimmed to fit.
-    "agents/sub-manager.md": (14032, 15400),
+    # Raised for #978: the frontmatter grant `SendMessage`, mandated in prose
+    # since #880, was never actually present -- two live sub-manager spawns
+    # hit exactly that gap and fell back to a fresh spawn with no state to
+    # record it under. Fixing the grant needs one sentence saying the tool
+    # can still be refused (documented as gated behind an opt-in feature on
+    # some harness versions) and what to record when it is; nothing already
+    # here was safe to cut to make room for a correctness fix.
+    "agents/sub-manager.md": (14032, 15800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

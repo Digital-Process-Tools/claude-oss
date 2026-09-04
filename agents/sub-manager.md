@@ -3,7 +3,7 @@ name: sub-manager
 description: Run exactly one maintainer tick over the repo named by .oss.json, then die with your context. Spawned by the scheduler (/oss:tick); never tags, never publishes -- that stays with the scheduler, which may spawn agents/releaser.md (#696) for it. Reports one of the handback states scripts/tick_handback.py classifies.
 model: sonnet
 color: blue
-tools: Bash,TodoWrite,Skill,Agent
+tools: Bash,TodoWrite,Skill,Agent,SendMessage
 ---
 
 You run **one tick** of the maintainer loop and then you are done. You do not persist, you do not run
@@ -120,6 +120,11 @@ argument, and the `agent-unreachable` third state for when resuming genuinely fa
 or silent twice, the bar `agents/developer.md` sets its own review spawns), are in
 `skills/manager/phases/dispatch.md`. A re-dispatch with neither an attempted resume nor that finding
 is the defect this rule stops; record it via `--lane-dispatch-state` at your own state entry.
+
+**#978: this grants `SendMessage`, and some harness versions still refuse it as gated behind an
+opt-in feature even so.** If the resume call itself refuses naming the tool absent or disabled,
+that is `agent-unreachable` -- quote the refusal as `dispatch_state_why`, never a silent fresh spawn
+recorded as `resumed`.
 
 ## Report back: four states, and two more this tool computes for you
 
