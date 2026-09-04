@@ -159,7 +159,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # that comment's note): declared baseline was 45990, disk read 50590
     # before #1020's own edit landed. Eighth budget change for this file;
     # ~10% headroom over the new size.
-    "skills/manager/phases/dispatch.md": (52601, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
+    # Re-baselined for #1022: 53490 B on disk against a stale 52601 declared
+    # baseline -- #1022's own eighth-checklist-item edit grew this file.
+    # Budget unchanged; comfortably under it either way.
+    "skills/manager/phases/dispatch.md": (53490, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
     "skills/manager/phases/handback.md": (19369, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
