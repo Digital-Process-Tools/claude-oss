@@ -92,6 +92,64 @@ def fleet_label(primary_issue, issues, phrase):
     return "Lane {} x{}  {}".format(primary, count, phrase)
 
 
+KNOWN_AGENT_TYPES = ("oss:developer", "oss:triager")
+"""The only two agent types this loop's dispatch step ever composes a call for.
+
+Not every agent type this repository defines -- ``oss:sub-manager`` and
+``oss:releaser`` are spawned from ``commands/tick.md``, a different call site with
+its own literal examples. Widen this tuple only when this module grows a second
+call site to compose for.
+"""
+
+
+def agent_call(primary_issue, issues, phrase, subagent_type, model=None,
+                run_in_background=False):
+    """Render the whole literal ``Agent(...)`` invocation for one dispatched lane (#989).
+
+    A sub-manager tick reported, unprompted, that all three of its ``Agent()`` calls
+    omitted ``subagent_type: "oss:developer"`` and ran as ``general-purpose`` instead
+    -- caught only because the tick happened to notice. Nothing distinguishes a lane
+    run by the wrong agent from one run by the right one: same brief text, it
+    commits, it reports. ``fleet_label`` already refuses to compose a *description*
+    from an incomplete bundle; this does the same for the *whole call*, so a caller
+    pastes the rendered line instead of retyping ``subagent_type`` from memory at
+    every call site.
+
+    ``subagent_type`` has no default -- a call built without one is a Python
+    ``TypeError`` at the call site, before this function's own body ever runs, which
+    is the structural half of the fix. The runtime half is this: a ``subagent_type``
+    that *is* given but does not resolve to one of ``KNOWN_AGENT_TYPES`` -- a typo, or
+    literally ``"general-purpose"``, the historical failure's own value -- refuses
+    the same way an omitted issue bundle already refuses, rather than rendering a
+    call that quietly spawns the wrong agent.
+
+    ``prompt`` is never composed here -- the brief is lane-specific text only the
+    caller can write -- so the rendered call carries a placeholder the caller fills
+    in, the same way ``fleet_label`` never composes the phrase for the caller.
+    """
+    label = fleet_label(primary_issue, issues, phrase)
+
+    if subagent_type not in KNOWN_AGENT_TYPES:
+        raise FleetLabelError(
+            "agent_call: {!r} is not one of this loop's known agent types {!r} -- "
+            "an omitted or misspelled subagent_type is the #989 failure this "
+            "function exists to make structurally harder".format(
+                subagent_type, KNOWN_AGENT_TYPES
+            )
+        )
+
+    parts = ['subagent_type: "{}"'.format(subagent_type)]
+    if model:
+        parts.append('model: "{}"'.format(model))
+    parts.append(
+        "run_in_background: {}".format("true" if run_in_background else "false")
+    )
+    parts.append('description: "{}"'.format(label))
+    parts.append('prompt: "<brief>"')
+
+    return "Agent({})".format(", ".join(parts))
+
+
 def _print(text, stream=None):
     """Print ``text`` without dying on the console's own codepage.
 
@@ -113,29 +171,65 @@ def _print(text, stream=None):
 
 
 def _main(argv=None):
-    """CLI: ``fleet_label.py PRIMARY ISSUE1,ISSUE2,... "phrase"``.
+    """CLI: ``fleet_label.py PRIMARY ISSUE1,ISSUE2,... "phrase" [SUBAGENT_TYPE]``.
 
     Named in the brief instead of composed by hand -- the whole point is that the
     guard runs even when the caller is a maintainer typing a spawn call, not only a
     test.
+
+    The fourth positional argument is optional and is what turns this from "print
+    the description" into "print the whole ``Agent(...)`` call" (#989): give it and
+    the CLI prints ``agent_call``'s output instead of ``fleet_label``'s, refusing an
+    unresolvable agent type exactly as ``agent_call`` does. Omit it and the CLI
+    behaves exactly as before -- the original three-argument form is untouched.
     """
-    argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 3:
+    argv = sys.argv[1:] if argv is None else list(argv)
+
+    model = None
+    background = False
+    positional = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--model":
+            i += 1
+            if i >= len(argv):
+                sys.stderr.write("--model needs a value\n")
+                return 2
+            model = argv[i]
+        elif arg == "--background":
+            background = True
+        else:
+            positional.append(arg)
+        i += 1
+
+    if len(positional) == 3:
+        primary_text, issues_text, phrase = positional
+        subagent_type = None
+    elif len(positional) == 4:
+        primary_text, issues_text, phrase, subagent_type = positional
+    else:
         sys.stderr.write(
-            "usage: fleet_label.py PRIMARY_ISSUE ISSUE1,ISSUE2,... PHRASE\n"
+            "usage: fleet_label.py PRIMARY_ISSUE ISSUE1,ISSUE2,... PHRASE "
+            "[SUBAGENT_TYPE] [--model MODEL] [--background]\n"
         )
         return 2
 
-    primary_text, issues_text, phrase = argv
     issues = [part.strip() for part in issues_text.split(",") if part.strip()]
 
     try:
-        label = fleet_label(primary_text, issues, phrase)
+        if subagent_type is None:
+            output = fleet_label(primary_text, issues, phrase)
+        else:
+            output = agent_call(
+                primary_text, issues, phrase, subagent_type,
+                model=model, run_in_background=background,
+            )
     except FleetLabelError as exc:
         sys.stderr.write(str(exc) + "\n")
         return 1
 
-    _print(label)
+    _print(output)
     return 0
 
 

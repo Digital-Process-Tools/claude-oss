@@ -56,6 +56,26 @@ The only other place `agents/` demonstrates the `subagent_type: "..."` form is
 leaving the string to inference here is how #862 dispatched a lane as `general-purpose` and lost
 every rule written into `agents/developer.md`.
 
+**This paragraph alone did not hold: #989 is the same failure recurring** -- a tick reported,
+unprompted, that all three of its `Agent()` calls omitted `subagent_type: "oss:developer"` and ran
+as `general-purpose`, caught only because the tick happened to notice. Prose read once at the top of
+a phase file is not present at the moment a call is typed by hand, turn after turn, so the fix is not
+a stronger sentence here -- it is not composing the call by hand at all. `scripts/fleet_label.py`
+already refuses to compose a *description* from an incomplete issue bundle (#539); its
+`agent_call` does the same for the **whole call**:
+
+    python3 scripts/fleet_label.py 534 534,537,495 "auto-update path" oss:developer --model sonnet
+    -> Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false, description: "Lane 534 x3  auto-update path", prompt: "<brief>")
+
+Paste that line and fill in `prompt` with the brief -- the one part only the caller can write.
+Give it no fourth argument and it prints the description alone, unchanged from before. An omitted
+`subagent_type` is a Python `TypeError` at the call site if you call `agent_call` directly, or a CLI
+usage refusal; a misspelled one (`general-purpose` included, the historical failure's own value)
+refuses against `KNOWN_AGENT_TYPES` rather than rendering a call that quietly spawns the wrong
+agent. This does not prevent a call typed by hand anyway -- nothing in this repository can intercept
+the real `Agent(...)` call before it runs, the same limit the model-choice recording above already
+states -- it makes the correct call cheaper to produce than a wrong one typed from memory.
+
 **A spawn whose `subagent_type` does not resolve is `could not run`, and the fallback is to brief
 `general-purpose` with a pointer to the definition file.** A newly written agent file not
 registering until a fresh session is the benign case and it clears itself. The one that does not is
