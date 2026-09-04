@@ -1542,27 +1542,40 @@ def plan(repo_root, config, force_owned=False):
 SETTINGS_PATH = ".claude/settings.json"
 
 #: This repository's OWN `.claude/settings.json` carries a `permissions.allow` block
-#: -- `Bash(supertool:*)`, `Bash(./supertool:*)`, `Bash(git *)`, `Agent` -- that scaffold
-#: never writes (permissions are not in `settings_plan`'s contract at all, only the
+#: -- `Bash(supertool:*)`, `Bash(./supertool:*)`, an enumerated list of `Bash(git
+#: <subcommand>:*)` / `Bash(git <op>:*)` entries (#982), `Agent` -- that scaffold never
+#: writes (permissions are not in `settings_plan`'s contract at all, only the
 #: `statusLine` key is). It is tracked deliberately (#609), reaffirmed rather than
-#: reversed by #899: `Bash(git *)` and unscoped `Agent` are wider than the two supertool
-#: entries beside them, and #899 asked whether that block should move to the untracked
-#: `.claude/settings.local.json` instead. Decision: stays here. #609 already measured
-#: the alternative -- leaving these two out of the tracked file meant a fresh clone or
-#: worktree prompted on every git call and every subagent spawn, which the autonomous
-#: maintainer loop (agents under `agents/`, `skills/manager`) cannot pay for; it runs
-#: git and spawns constantly, unattended. `doctor`'s worktree-reap permission check
-#: (#892, `scripts/doctor_check_worktree_reap_permission.py`) and its merge-permission
-#: sibling already read both this file and `settings.local.json` (`settings_candidates`
-#: in `scripts/doctor_check_merge_permission.py`), so moving the grant would not blind
-#: `doctor` -- but scaffold never writes this block, so a fresh clone would get no
-#: default git/Agent grant at all until a maintainer wrote one by hand. The residual
-#: risk #899 named stands: any clone of this repo inherits both grants, not only the
-#: loop's own sessions. Accepted rather than narrowed: this repo is maintained almost
-#: entirely by the autonomous loop itself, and a tighter allow-list (naming safe git
-#: subcommands rather than the whole surface, or excluding `reset --hard` /
-#: `clean -fdx` / `push --force` by name) was not attempted here -- worth its own
-#: issue, not a reason to move the whole block.
+#: reversed by #899: unscoped `Agent` and (until #982) a blanket `Bash(git *)` were
+#: wider than the two supertool entries beside them, and #899 asked whether that block
+#: should move to the untracked `.claude/settings.local.json` instead. Decision: stays
+#: here. #609 already measured the alternative -- leaving these two out of the tracked
+#: file meant a fresh clone or worktree prompted on every git call and every subagent
+#: spawn, which the autonomous maintainer loop (agents under `agents/`, `skills/
+#: manager`) cannot pay for; it runs git and spawns constantly, unattended. `doctor`'s
+#: worktree-reap permission check (#892, `scripts/doctor_check_worktree_reap_
+#: permission.py`) and its merge-permission sibling already read both this file and
+#: `settings.local.json` (`settings_candidates` in `scripts/doctor_check_merge_
+#: permission.py`), so moving the grant would not blind `doctor` -- but scaffold never
+#: writes this block, so a fresh clone would get no default git/Agent grant at all
+#: until a maintainer wrote one by hand.
+#:
+#: #982 did the narrowing #899 flagged and left unattempted: `Bash(git *)` is gone,
+#: replaced by one entry per git subcommand (or, for `worktree` and `branch`, one entry
+#: per op -- see the docstring of `tests/test_settings_git_allowlist_982.py` for why
+#: those two stay narrower than a bare subcommand grant) actually invoked anywhere in
+#: `agents/*.md`, `agents/developer/*.md`, `commands/*.md` or `skills/manager/**/*.md`,
+#: enumerated by hand rather than guessed. `git commit` is deliberately excluded --
+#: every commit goes through `supertool 'git-commit:@-'`, never a raw `Bash(git
+#: commit:*)`. What #982 does NOT claim: Claude Code's `Bash(<prefix>:*)` allow syntax
+#: matches a literal command-string prefix, not "this subcommand with these arguments
+#: forbidden" -- a grant for `git push` still reaches `git push --force` exactly as it
+#: did under the blanket wildcard, restrained only by the same brief-level prose as
+#: before (`skills/manager/phases/merge.md`'s "never `git push --delete`"). The residual
+#: risk #899 named for a *subcommand* the loop never calls (`reset --hard`, `clean
+#: -fdx`, `rebase`, `filter-branch`, ...) is closed by this narrowing; the risk from a
+#: dangerous *flag* on a subcommand the loop legitimately does call is not, and cannot
+#: be, by this syntax alone.
 #:
 #: This comment, not a key inside `.claude/settings.json` itself, is where that
 #: reasoning lives: the shipped Claude Code settings schema (`ClaudeCodeSettings`)
