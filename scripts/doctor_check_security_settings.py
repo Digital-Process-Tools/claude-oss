@@ -188,6 +188,19 @@ def _toggle_endpoint_state(project_dir, path_suffix, parse_body, config=None, ru
     ``(state, detail)`` or ``None`` when the body cannot answer -- the
     `automated-security-fixes` endpoint is the only one of the two that has a
     body to parse at all.
+
+    Self-review finding: a plain repo-existence 404 (a stale or mistyped
+    `repo` slug, a renamed repository, or a token that cannot see a private
+    repo at all -- GitHub's own documented behaviour for some endpoints is to
+    answer "not found" rather than "forbidden" specifically to avoid
+    confirming a private repo exists) renders identically to this endpoint's
+    own "the feature is off" 404, and the earlier version of this function
+    read the first as the second, printing a confident "disabled -- enable it
+    here" for a repo it never actually reached. `GET /repos/{owner}/{repo}`
+    is read first (the same call `_repo_json` already makes for the
+    `security_and_analysis` checks above) so a repo that cannot be resolved
+    at all is `could-not-tell` before the toggle endpoint's own 404 is ever
+    read as a setting.
     """
     run_ = subprocess.run if run is None else run
     if shutil.which("gh") is None:
@@ -195,6 +208,9 @@ def _toggle_endpoint_state(project_dir, path_suffix, parse_body, config=None, ru
     slug, reason = _resolve_slug(project_dir, config, run_)
     if slug is None:
         return "could-not-tell", reason
+    repo_status, repo_body_or_reason = _repo_json(project_dir, config, run_)
+    if repo_status != "ok":
+        return "could-not-tell", repo_body_or_reason
     rc, out, err, exc = _gh_api("repos/{}/{}".format(slug, path_suffix), run_)
     if exc is not None:
         return "could-not-tell", "gh api .../{} did not run ({})".format(path_suffix, exc)

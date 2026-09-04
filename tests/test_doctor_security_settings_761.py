@@ -45,6 +45,34 @@ def _run_once(rc, out, err):
     return run
 
 
+def _run_dispatch(repo_response, endpoint_response):
+    """A `run` stub that answers `GET /repos/{slug}` (the repo-existence
+    check `_toggle_endpoint_state` now makes first -- self-review finding on
+    the toggle checks below) with ``repo_response`` and the toggle endpoint
+    call itself with ``endpoint_response``, each an ``(rc, out, err)`` triple.
+    A single-response `_run_once` cannot exercise this two-call shape: it
+    would answer the repo check and the endpoint check identically, which is
+    exactly the confound the self-review finding is about.
+    """
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        path = cmd[2]
+        # The repo-existence call is `repos/{slug}` (one slash: owner/name is
+        # itself slash-shaped, so this counts on `repos/owner/name` == 2
+        # slashes; the toggle/settings sub-path calls add one more segment,
+        # `repos/owner/name/<suffix>` == 3 slashes).
+        if path.count("/") <= 2:
+            rc, out, err = repo_response
+        else:
+            rc, out, err = endpoint_response
+        return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
+
+    run.calls = calls
+    return run
+
+
 # --------------------------------------------------------------- gating
 
 
@@ -131,9 +159,24 @@ def test_automated_security_fixes_disabled_via_body(tmp_path):
 
 
 def test_automated_security_fixes_404_is_disabled(tmp_path):
-    run = _run_once(1, "", "gh: Not Found (HTTP 404)")
+    """The repo itself resolves (200) and only the toggle endpoint 404s --
+    this is the genuine "feature is off" case."""
+    run = _run_dispatch(repo_response=(0, "{}", ""), endpoint_response=(1, "", "gh: Not Found (HTTP 404)"))
     state, _detail = doctor.automated_security_fixes_state(tmp_path, config=_config(), run=run)
     assert state == "disabled"
+
+
+def test_automated_security_fixes_could_not_tell_when_repo_itself_is_unreachable(tmp_path):
+    """Self-review finding: a 404 from `GET /repos/{owner}/{repo}` itself --
+    a stale/mistyped slug, a renamed repo, or a private repo this token
+    cannot see -- must never be read as "the feature is disabled". Must-fire
+    pair for the genuine-404 case above: identical toggle-endpoint response
+    is never reached because the repo check fails first."""
+    run = _run_dispatch(repo_response=(1, "", "gh: Not Found (HTTP 404)"), endpoint_response=(1, "", "gh: Not Found (HTTP 404)"))
+    state, detail = doctor.automated_security_fixes_state(tmp_path, config=_config(), run=run)
+    assert state == "could-not-tell"
+    assert state != "disabled"
+    assert len(run.calls) == 1, "the toggle endpoint must never be called once the repo itself could not be confirmed"
 
 
 def test_automated_security_fixes_403_is_could_not_tell(tmp_path):
@@ -157,10 +200,21 @@ def test_vulnerability_alerts_enabled_on_204(tmp_path):
 
 def test_vulnerability_alerts_disabled_on_404(tmp_path):
     """Must-fire pair for the enabled case above: the same endpoint's 404
-    (no message body to sniff at all) is `disabled`."""
-    run = _run_once(1, "", "gh: Not Found (HTTP 404)")
+    (no message body to sniff at all) is `disabled` -- but only once the
+    repo itself is confirmed to resolve; see the automated-security-fixes
+    pair of tests above for the must-not-fire half of this same finding."""
+    run = _run_dispatch(repo_response=(0, "{}", ""), endpoint_response=(1, "", "gh: Not Found (HTTP 404)"))
     state, _detail = doctor.vulnerability_alerts_state(tmp_path, config=_config(), run=run)
     assert state == "disabled"
+
+
+def test_vulnerability_alerts_could_not_tell_when_repo_itself_is_unreachable(tmp_path):
+    run = _run_dispatch(repo_response=(1, "", "gh: Not Found (HTTP 404)"), endpoint_response=(0, "", ""))
+    state, _detail = doctor.vulnerability_alerts_state(tmp_path, config=_config(), run=run)
+    assert state == "could-not-tell"
+    assert state != "disabled"
+    assert state != "enabled"
+    assert len(run.calls) == 1
 
 
 def test_vulnerability_alerts_403_is_could_not_tell_never_disabled(tmp_path):
@@ -183,7 +237,7 @@ def test_check_secret_scanning_reports_ok_when_enabled(tmp_path, capsys):
 
 
 def test_check_automated_security_fixes_reports_warn_with_remedy_when_disabled(tmp_path, capsys):
-    run = _run_once(1, "", "gh: Not Found (HTTP 404)")
+    run = _run_dispatch(repo_response=(0, "{}", ""), endpoint_response=(1, "", "gh: Not Found (HTTP 404)"))
     doctor.check_automated_security_fixes(tmp_path, config=_config(repo="owner/name"), run=run)
     out = capsys.readouterr().out
     assert doctor.FINDINGS[-1][0] == "WARN"

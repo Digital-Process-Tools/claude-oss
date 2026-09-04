@@ -228,28 +228,42 @@ def _local_families_outside_owned(project_dir, owned_dir):
 
 
 def _workflow_files_mention(project_dir, needle):
-    """Does any `.github/workflows/*.y*ml` file's text contain ``needle``
-    (case-insensitive)? Used both to note an existing CodeQL workflow and to
-    check for a language-appropriate linter already running -- a coarse
-    string sniff, not a YAML parse, which is enough to answer "does this
-    already exist" without claiming to verify it actually runs correctly.
+    """``True`` / ``False`` / ``None`` -- does any `.github/workflows/*.y*ml`
+    file's text contain ``needle`` (case-insensitive)? A coarse string sniff,
+    not a YAML parse, which is enough to answer "does this already exist"
+    without claiming to verify it actually runs correctly.
+
+    Self-review finding: the earlier version of this function folded "the
+    workflows directory could not be listed" (a permission error on the
+    checkout, not "no workflows directory exists") into the same ``False`` a
+    genuinely empty or absent directory returns -- exactly the defect class
+    CLAUDE.md is named after, one function under a doctor check that exists
+    to name it in others. ``None`` is that third state, said out loud: an
+    absent directory (`FileNotFoundError`/`NotADirectoryError` -- there is
+    nothing to search, which is a real ``False``) is distinguished from a
+    directory that exists but could not be read (``None`` -- unknown, not "no
+    match").
     """
     workflows_dir = Path(project_dir) / ".github" / "workflows"
     try:
         entries = os.listdir(str(workflows_dir))
-    except OSError:
+    except (FileNotFoundError, NotADirectoryError):
         return False
+    except OSError:
+        return None
     needle_lower = needle.lower()
+    unreadable = False
     for name in entries:
         if not (name.endswith(".yml") or name.endswith(".yaml")):
             continue
         try:
             text = (workflows_dir / name).read_text(encoding="utf-8", errors="replace")
         except OSError:
+            unreadable = True
             continue
         if needle_lower in text.lower():
             return True
-    return False
+    return None if unreadable else False
 
 
 def codeql_scan_state(project_dir, config=None, run=None):
@@ -296,6 +310,20 @@ def codeql_scan_state(project_dir, config=None, run=None):
         if name in CODEQL_LANGUAGE_FAMILIES and isinstance(byte_count, int) and byte_count > 0
     }
     owned_dir = _default_owned_dir()
+    #: Self-review finding: `CODEQL_LANGUAGE_FAMILIES` is a hardcoded
+    #: snapshot (see the module docstring's second bullet) -- a language
+    #: CodeQL has since learned to scan renders here exactly like a repo
+    #: CodeQL genuinely cannot cover. That gap was documented in this
+    #: module's source and nowhere in its printed output, so a maintainer
+    #: skimming for WARN/FAIL would never see the one line that would tell
+    #: them to go re-check. Carried into every `no-supported-language`
+    #: detail string below instead, so the caveat travels with the finding
+    #: rather than staying a fact only this file's own reader can see.
+    _STALE_TABLE_CAVEAT = (
+        " (this check's CodeQL-supported-language table is a hardcoded snapshot and may "
+        "not include a language CodeQL has since learned to scan -- re-check GitHub's "
+        "current supported-language list against the languages named above if in doubt)"
+    )
     if not supported_families:
         top = None
         if languages:
@@ -305,7 +333,15 @@ def codeql_scan_state(project_dir, config=None, run=None):
                 default=None,
             )
         hint = _NON_CODEQL_LINTER_HINTS.get(top) if top else None
-        if hint and _workflow_files_mention(project_dir, hint):
+        mentions = _workflow_files_mention(project_dir, hint) if hint else None
+        if hint and mentions is None:
+            detail = (
+                "no CodeQL-supported language found on {} (languages: {}); the largest "
+                "language present, {}, has no CodeQL analyser -- whether a {} workflow "
+                "already covers it could not be told (its workflows directory could not "
+                "be read)".format(slug, sorted(languages), top, hint)
+            )
+        elif hint and mentions:
             detail = (
                 "no CodeQL-supported language found on {} (languages: {}); the largest "
                 "language present, {}, has no CodeQL analyser, and a {} workflow already "
@@ -326,7 +362,7 @@ def codeql_scan_state(project_dir, config=None, run=None):
             )
         else:
             detail = "no languages reported at all for {}".format(slug)
-        return "no-supported-language", detail
+        return "no-supported-language", detail + _STALE_TABLE_CAVEAT
 
     local_families, problem = _local_families_outside_owned(project_dir, owned_dir)
     if problem is not None:
@@ -334,10 +370,15 @@ def codeql_scan_state(project_dir, config=None, run=None):
     covered = sorted(supported_families & local_families)
     if covered:
         existing = _workflow_files_mention(project_dir, "codeql")
-        note = (
-            " (a workflow mentioning CodeQL already exists; this check does not verify "
-            "what it scans)" if existing else ""
-        )
+        if existing is None:
+            note = " (whether a CodeQL workflow already exists could not be told)"
+        elif existing:
+            note = (
+                " (a workflow mentioning CodeQL already exists; this check does not verify "
+                "what it scans)"
+            )
+        else:
+            note = ""
         return (
             "uncovered-outside-owned",
             "CodeQL-supported language(s) {} appear outside {}/{}".format(

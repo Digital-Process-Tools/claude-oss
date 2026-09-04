@@ -22,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
+import doctor_check_codeql_scan  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -161,6 +162,67 @@ def test_jit_context_01_oss_directory_is_treated_as_owned(tmp_path):
     run = _languages_run({"Python": 500})
     state, _detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
     assert state == "owned-only"
+
+
+# ---------------------------------------------------------- workflow-mention tri-state
+
+
+def test_workflow_files_mention_true_when_needle_present(tmp_path):
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("run: shellcheck script.sh\n", encoding="utf-8")
+    assert doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is True
+
+
+def test_workflow_files_mention_false_when_directory_absent(tmp_path):
+    """Must-not-fire pair for the could-not-read case below: a directory that
+    genuinely does not exist is False, not None -- there is nothing to search,
+    which is a real, confident answer."""
+    assert doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is False
+
+
+def test_workflow_files_mention_none_when_directory_could_not_be_listed(tmp_path, monkeypatch):
+    """Self-review finding: a workflows directory that exists but could not
+    be listed (a permission error, not absence) must render as `None` --
+    unknown -- never silently as `False`, the same "an absence produced by
+    the tool must not read as an absence in the world" rule CLAUDE.md states
+    for every checker in this plugin."""
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+
+    def broken_listdir(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(doctor_check_codeql_scan.os, "listdir", broken_listdir)
+    assert doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is None
+
+
+def test_no_supported_language_detail_carries_the_stale_table_caveat(tmp_path):
+    """Self-review finding: `CODEQL_LANGUAGE_FAMILIES` is a hardcoded,
+    admittedly stale snapshot documented in the module's own docstring --
+    that limitation must reach the printed detail, not stay a fact only the
+    source reader sees."""
+    run = _languages_run({"Shell": 1000})
+    _state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert "hardcoded snapshot" in detail
+
+
+def test_no_supported_language_names_could_not_tell_when_workflows_unreadable(tmp_path, monkeypatch):
+    """Must-fire pair for the existing-shellcheck-workflow test above: when
+    the workflows directory cannot be read at all, the detail must say so
+    rather than silently reading as "no shellcheck workflow was found"."""
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+
+    def broken_listdir(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(doctor_check_codeql_scan.os, "listdir", broken_listdir)
+    run = _languages_run({"Shell": 1000})
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "no-supported-language"
+    assert "could not be told" in detail
+    assert "no shellcheck workflow was found" not in detail
 
 
 # ---------------------------------------------------------------- report lines
