@@ -89,10 +89,27 @@ _CONDITIONAL_RE = re.compile(r"\b(if|unless|when|should)\b", re.IGNORECASE)
 #: point SendMessage was unavailable to correct any of them. There is no
 #: templating step between composing a brief and the Agent() call that sends
 #: it: whatever string is typed is what the agent receives verbatim, so this
-#: is only catchable before the call, on the composed text. This repo's loop
-#: prose never legitimately uses double-brace syntax, so any `{{...}}` is
-#: flagged, not only the one recorded phrase.
-_PLACEHOLDER_RE = re.compile(r"\{\{[^{}\n]{1,200}\}\}")
+#: is only catchable before the call, on the composed text.
+#:
+#: Excludes a match immediately preceded by `$` (self-review finding on
+#: #1022): this repo's own workflow files and `scripts/scaffold.py`'s
+#: generated YAML use GitHub Actions' `${{ ... }}` expression syntax
+#: extensively, and a brief scoping a CI/workflow lane can legitimately quote
+#: a line like `GH_TOKEN: ${{ github.token }}` -- a genuine "double-brace
+#: syntax" this repo's own tree does use, unlike a bare `{{...}}`, which
+#: nothing here ever writes on purpose.
+#:
+#: Allows a newline and up to 4000 characters inside the braces (a second
+#: self-review finding, oss:auditor on #1022): the recorded phrase itself
+#: embeds a full scratchpad path -- "{{PASTE THE FULL CONTENTS OF
+#: <scratchpad path> HERE}}" -- which grows with repo/branch/session-id
+#: length and can plausibly exceed a tight single-line character cap, or wrap
+#: across a line in prose. The earlier `[^{}\n]{1,200}` bound silently missed
+#: exactly that shape: `check_placeholder` fell through to the same "found,
+#: clean" payload whether no marker was present or one was present but did
+#: not fit the pattern's assumptions -- this repo's own defect class, a
+#: script's own absence read as an absence in the world.
+_PLACEHOLDER_RE = re.compile(r"(?<!\$)\{\{[^{}]{1,4000}\}\}")
 
 
 def _finding(element, why, checked):

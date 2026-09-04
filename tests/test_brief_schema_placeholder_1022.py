@@ -51,8 +51,42 @@ def test_a_complete_brief_with_no_placeholder_passes():
 
 
 def test_a_generic_double_brace_marker_is_also_caught():
-    """Not just the one recorded phrase -- any leftover `{{...}}` marker, since
-    this repo's loop prose never legitimately uses double-brace syntax."""
+    """Not just the one recorded phrase -- any leftover `{{...}}` marker."""
     text = GOOD + "\n\nFix the thing in {{module_name}}.\n"
     payload = brief_schema.check_text(text)
     assert "placeholder" in payload["missing"]
+
+
+def test_a_placeholder_spanning_a_line_wrap_is_still_caught():
+    """oss:auditor's self-review finding on #1022: the earlier bound
+    excluded a newline inside the braces, so a marker wrapped across a line
+    -- an ordinary thing for prose to do -- fell through to the same clean
+    payload as no marker at all."""
+    text = GOOD + "\n\nSupertool required: {{PASTE THE FULL CONTENTS OF\n<scratchpad path> HERE}}\n"
+    payload = brief_schema.check_text(text)
+    assert "placeholder" in payload["missing"]
+
+
+def test_a_placeholder_longer_than_the_old_200_char_bound_is_still_caught():
+    """The same finding, the other axis: the recorded phrase embeds a full
+    scratchpad path, which grows with repo/branch/session-id length and can
+    plausibly exceed a tight single-line character cap."""
+    long_path = "/very/long/scratchpad/path" * 10
+    text = GOOD + "\n\n{{PASTE THE FULL CONTENTS OF " + long_path + " HERE}}\n"
+    payload = brief_schema.check_text(text)
+    assert "placeholder" in payload["missing"]
+
+
+def test_a_genuine_github_actions_expression_does_not_fire():
+    """The must-not-fire half, found on self-review (#1022): this repo's own
+    workflow files and `scripts/scaffold.py`'s generated YAML use GitHub
+    Actions' `${{ ... }}` expression syntax, which a brief scoping a
+    CI/workflow lane can legitimately quote. That is real double-brace
+    syntax this repo's own tree does use, unlike a bare `{{...}}`, and it
+    must not be confused with a leftover template placeholder."""
+    text = GOOD + "\n\nUpdate the workflow: `GH_TOKEN: ${{ github.token }}`.\n"
+    payload = brief_schema.check_text(text)
+    assert "placeholder" not in payload["missing"]
+    text = GOOD + "\n\ngroup: ${{ github.workflow }}-${{ github.ref }}\n"
+    payload = brief_schema.check_text(text)
+    assert "placeholder" not in payload["missing"]

@@ -1,8 +1,9 @@
 """#967: the brief validated the way the report already is.
 
 The risk this file exists to hold down is not a missed element -- it is the
-opposite. Six of the seven checks can only report presence, and a tool that
-says `ok` on a brief nobody read moves the missing review out of sight. So the
+opposite. Four of the eight checks (#1022 added an eighth, `placeholder`) can
+only report presence, and a tool that says `ok` on a brief nobody read moves
+the missing review out of sight. So the
 assertions below cover both directions: a brief missing an element is caught,
 and a brief that passes is not thereby claimed to be good.
 """
@@ -64,7 +65,7 @@ def test_a_complete_brief_passes():
     assert payload["missing"] == []
 
 
-# ------------------------------------------------------------ the seven, missing
+# ------------------------------------------------------------- the elements, missing
 
 
 @pytest.mark.parametrize(
@@ -192,7 +193,7 @@ def test_the_receipt_says_a_pass_is_not_a_review():
 
 def test_a_brief_of_keywords_alone_still_passes_and_that_is_the_known_limit():
     """Recorded deliberately rather than asserted as good behaviour: a document
-    that name-drops all seven, in separate paragraphs, passes. That is the
+    that name-drops all eight, in separate paragraphs, passes. That is the
     ceiling of what a text check can do and it is why the receipt refuses to
     call a pass a review.
 
