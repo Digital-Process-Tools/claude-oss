@@ -104,7 +104,7 @@ def test_every_check_runs_even_after_one_fails():
     for one fix at a time."""
     payload = brief_schema.check_text("nothing useful here at all")
     assert len(payload["missing"]) >= 5
-    assert len(payload["elements"]) == 7
+    assert len(payload["elements"]) == 8
 
 
 # ------------------------------------------- the checks that catch a degraded element

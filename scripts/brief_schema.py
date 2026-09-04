@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Does a developer brief carry the seven elements dispatch requires? -- #967.
+"""Does a developer brief carry the elements dispatch requires? -- #967, #1022.
 
 A lane's *report* is validated by `scripts/report_schema.py`. Its *brief* --
 the artefact dispatch actually produces, and the only thing the developer ever
 reads -- was validated by nothing, and `skills/manager/phases/dispatch.md` line
-"Every brief carries these:" lists seven mandatory elements checked by a
+"Every brief carries these:" lists eight mandatory elements checked by a
 session re-reading its own draft.
 
-Every one of the seven is there because a brief shipped without it:
+Every one of the eight is there because a brief shipped without it:
 
   * `paste` is named in the supertool block because a brief that omitted it
     "read as correct" for six deliveries (#250) -- an op named and later
@@ -24,7 +24,7 @@ Each was fixed by strengthening the prose, and none of them was checked.
 
 ## The risk this script carries, stated first
 
-**A brief that passes is not a good brief.** Only three of the seven can be
+**A brief that passes is not a good brief.** Only four of the eight can be
 checked in a way that catches the failure actually observed; the other four are
 presence checks, and presence is not quality. A tool reporting `ok` on a brief
 nobody read is worse than no tool, because it moves the missing review out of
@@ -33,13 +33,13 @@ catch it.
 
 So the receipt separates the two, always, in both directions: every element
 says whether it was checked `structurally` (a claim about what the text does)
-or by `presence` (a claim only that a section exists). `ok` means "the seven
+or by `presence` (a claim only that a section exists). `ok` means "the eight
 are there", never "this brief is good", and the receipt's own last line says
 so rather than leaving it to be inferred.
 
 ## States
 
-  ok               all seven elements found
+  ok               all eight elements found
   findings         one row per element missing or degraded, named individually
   could-not-read   the file could not be opened or decoded. Never `ok`, and
                    never a findings row either: "this brief is missing item 4"
@@ -81,6 +81,18 @@ TDD_ORDER = ("test", "red", "fix", "green")
 #: dispatch.md), not a stylistic preference: "do not push *if* something blocks
 #: you" is how one agent correctly pushed.
 _CONDITIONAL_RE = re.compile(r"\b(if|unless|when|should)\b", re.IGNORECASE)
+
+#: #1022: a sub-manager wrote a brief's supertool paragraph as the literal
+#: template placeholder string it was meant to be substituted with --
+#: "{{PASTE THE FULL CONTENTS OF <scratchpad path> HERE}}" -- and only noticed
+#: after all three Agent() calls of that tick had already returned, by which
+#: point SendMessage was unavailable to correct any of them. There is no
+#: templating step between composing a brief and the Agent() call that sends
+#: it: whatever string is typed is what the agent receives verbatim, so this
+#: is only catchable before the call, on the composed text. This repo's loop
+#: prose never legitimately uses double-brace syntax, so any `{{...}}` is
+#: flagged, not only the one recorded phrase.
+_PLACEHOLDER_RE = re.compile(r"\{\{[^{}\n]{1,200}\}\}")
 
 
 def _finding(element, why, checked):
@@ -263,6 +275,24 @@ def check_publishing(text):
     return _found("publishing", STRUCTURAL)
 
 
+def check_placeholder(text):
+    """#1022: a literal `{{...}}` marker is unfixable once dispatched --
+    SendMessage is unavailable to correct a lane after Agent() returns, so
+    this can only be caught on the composed text before the call."""
+    match = _PLACEHOLDER_RE.search(text)
+    if match:
+        return _finding(
+            "placeholder",
+            "literal template placeholder marker found ({0!r}) -- there is no "
+            "templating step between composing a brief and the Agent() call "
+            "that sends it; whatever string is typed is what the agent "
+            "receives verbatim, and it cannot be corrected after dispatch "
+            "(#1022)".format(match.group(0)),
+            STRUCTURAL,
+        )
+    return _found("placeholder", STRUCTURAL)
+
+
 #: Order matters only for the receipt; every check runs regardless of what the
 #: ones before it found. A validator that stopped at the first finding would
 #: send an author back for one fix at a time.
@@ -274,6 +304,7 @@ CHECKS = (
     check_docs,
     check_worktrees,
     check_publishing,
+    check_placeholder,
 )
 
 
@@ -331,7 +362,7 @@ def receipt(payload):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Validate a developer brief against dispatch's seven elements."
+        description="Validate a developer brief against dispatch's eight elements."
     )
     parser.add_argument("briefs", nargs="+", help="brief files")
     parser.add_argument("--json", action="store_true", help="emit payloads as JSON")

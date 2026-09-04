@@ -493,8 +493,8 @@ gates *removing* a worktree that already merged; `--stack-on` gates *creating* o
 never substitute for each other -- a lane briefed with a stacked base still goes through the same
 worktree-removal read at cleanup time, unchanged.
 
-Every brief carries these seven, and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brief_schema.py" <brief-file>` checks the draft before
-the spawn — `ok` / a row per missing element / `could-not-read`. Three are checked structurally and
+Every brief carries these eight, and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brief_schema.py" <brief-file>` checks the draft before
+the spawn — `ok` / a row per missing element / `could-not-read`. Four are checked structurally and
 four are presence only, and the receipt says which: **a brief that passes is not a brief that was
 reviewed** (#967). `brief_schema.py` is the symmetric half of `scripts/report_schema.py`: one checks
 what goes into a lane, the other what comes back out of it.
@@ -564,6 +564,16 @@ what goes into a lane, the other what comes back out of it.
    memory, so agents know about each other.
 7. **Unconditional publishing clause:** commit, do not push, do not open a PR, do not comment on the
    issue. "Do not push *if* something blocks you" is how one agent correctly pushed.
+8. **Re-read the composed brief for a leftover `{{...}}` placeholder before the `Agent()` call, not
+   after.** There is no templating step between writing this text and it being sent -- whatever
+   string is typed is what the agent receives verbatim. A sub-manager dispatching three lanes in one
+   tick wrote one brief's supertool paragraph as the literal marker
+   `{{PASTE THE FULL CONTENTS OF <scratchpad path> HERE}}` instead of the real blockquote content,
+   caught it only after all three `Agent()` calls had already returned, and found `SendMessage`
+   unavailable to correct any of them (#1022) -- so this is only catchable before the call.
+   `brief_schema.py` (above) now flags any literal `{{...}}` in the draft file structurally; this
+   item is the same check performed by eye for a brief composed and sent without ever touching a
+   file, which the validator cannot reach.
 
 
 ---
