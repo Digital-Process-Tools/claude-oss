@@ -6609,6 +6609,62 @@ def check_release_authority(project_dir, config):
         )
 
 
+def check_filed_by_loop(project_dir, config):
+    """#990: three states for `labels.filed_by_loop`, and what `not-declared` costs.
+
+    `dispatch_rank.rank` (#798) refuses to rank ANY issue on a board where this key is
+    undeclared -- every issue reads as unlabelled, and reading them all as human would
+    confidently promote the loop's own backlog, so the refusal is correct. But the
+    refusal is permanent on a repo that never received the key, and it renders exactly
+    like a board with nothing rankable on it today unless something says what it costs.
+    So `not-declared` names the `dispatch_rank`/`could-not-rank` consequence rather than
+    only "a key is missing" -- a maintainer reading "labels.filed_by_loop is not set"
+    otherwise has no way to know that sentence describes a dead selection order.
+
+    `could-not-tell` is for a value present but not a usable label name -- a bool, an
+    empty string, a number -- the same malformed shapes `oss_config.validate` already
+    refuses at commit time. That is a different fact from "nobody has declared one yet"
+    and must not print the same remedy.
+    """
+    if oss_config is None:
+        report(
+            "WARN",
+            "labels.filed_by_loop: not checked (scripts/oss_config.py could not be imported)",
+        )
+        return
+    if config is None:
+        report("WARN", "labels.filed_by_loop: not checked (.oss.json could not be read)")
+        return
+    labels = config.get("labels") if isinstance(config, dict) else None
+    if not isinstance(labels, dict) or "filed_by_loop" not in labels:
+        value = None
+    else:
+        value = labels["filed_by_loop"]
+    if isinstance(value, str) and value.strip():
+        report(
+            "OK",
+            "labels.filed_by_loop: declared as '{}' -- the dispatch order can tell who "
+            "filed an issue.".format(value),
+        )
+    elif value is None:
+        report(
+            "WARN",
+            "labels.filed_by_loop: not-declared -- dispatch_rank.rank answers "
+            "could-not-rank for EVERY issue on this board (#798) until this key names "
+            "a label; the dispatch order is inert, not merely today's ranking. Run "
+            "/oss:setup to probe for a loop-filed spelling, or set labels.filed_by_loop "
+            "by hand in .oss.json.",
+        )
+    else:
+        report(
+            "WARN",
+            "labels.filed_by_loop: could-not-tell -- the value {!r} is not a usable "
+            "label name (expected a non-empty string or null). dispatch_rank.rank "
+            "treats this the same as undeclared: could-not-rank for every "
+            "issue.".format(value),
+        )
+
+
 def check_ci_enforcement(project_dir, config):
     """Does anything in CI run the tests?
 
@@ -8279,6 +8335,10 @@ def main(argv=None):
     # Visible before the tag step rather than at it -- same reason #421 put the
     # merge-call check here.
     check_release_authority(project_dir, config)
+    # #990: same reason, one key over -- a dispatch order that has been inert since
+    # /oss:setup ran must be visible before a tick spends a whole board read pretending
+    # it is picking issues, not only after somebody notices the order never moves.
+    check_filed_by_loop(project_dir, config)
     # #759: "merge on green" is only a real guarantee if the default branch
     # actually requires green checks. Same local gating as check_label_vocabulary
     # (gh on PATH, repo/origin resolvable), report-only -- see check_branch_

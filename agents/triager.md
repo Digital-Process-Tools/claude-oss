@@ -31,11 +31,14 @@ not create one — creating labels is the maintainer's act.
 
 **Priority**, by what cannot be undone, then by who is walking away:
 
-The classes are the ranking table in `${CLAUDE_PLUGIN_ROOT}/skills/manager/SKILL.md`, under "Deciding
-what to build" — read it there, every run. **Do not work from a copy and do not reconstruct it from
-memory.** This file carried its own copy until the table gained rows, at which point the copy was a
-confident, complete-looking taxonomy that no longer matched the one the release gate reads; nothing
-looked wrong, because a stale copy and a current one render identically.
+The classes are the ranking table, which lives in `skills/manager/phases/findings.md` and only
+there — read it there, every run, by running `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"`
+rather than opening a path by hand: the script searches every location the table has ever lived at, in
+order, so a future move cannot silently break this pointer the way this one broke twice already
+(#958, #960). **Do not work from a copy and do not reconstruct it from memory.** This file carried
+its own copy until the table gained rows, at which point the copy was a confident, complete-looking
+taxonomy that no longer matched the one the release gate reads; nothing looked wrong, because a
+stale copy and a current one render identically.
 
 Read two things off it: the class, and its **Blocks a release?** column. **A row the table marks
 blocking outranks everything, including a loud external report** — no count is written down here on

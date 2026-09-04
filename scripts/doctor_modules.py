@@ -109,6 +109,11 @@ PENDING = (
     "check_ci_enforcement",
     "check_agent_dispatch",
     "check_label_vocabulary",
+    # #990, added straight into doctor.py rather than its own module: it is small,
+    # self-contained (report/unmeasured and one private read of config), and sits
+    # right beside check_release_authority above, which the same reasoning already
+    # applies to and which extraction has not reached yet either.
+    "check_filed_by_loop",
 )
 
 #: A tally of something the filesystem already answers. `modules` and `checks`

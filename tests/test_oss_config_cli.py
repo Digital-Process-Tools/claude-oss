@@ -95,7 +95,7 @@ def test_build_on_a_bare_repo_still_produces_a_valid_config(monkeypatch, capsys)
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(probe)))
     assert oss_config._main(["--build"]) == 0
     config = json.loads(capsys.readouterr().out)
-    assert config["labels"] == {"priority": [], "lanes": []}
+    assert config["labels"] == {"priority": [], "lanes": [], "filed_by_loop": None}
     assert config["test_command"] is None
 
 
