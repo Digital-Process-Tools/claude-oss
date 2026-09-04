@@ -193,6 +193,20 @@ CONTRACT_FINGERPRINTS = {
     # mutation test: a payload declaring `no_close: true` while its own body
     # still binds a closing keyword is refused.
     8: "184b54a76a33b8f5e4452a6759c2dea5e251cc96fa818dc36ee31d38bd80065e",
+    # 9 (#724): escaped_newline_body_errors -- a third on-disk content check --
+    # shipped enforced in PR #723 without a declaration here, deliberately: a
+    # non-additive bump at that moment would have made every in-flight report
+    # from the two developer lanes then writing against 8 UNVALIDATABLE for a
+    # formalism, and #724 exists to close that window once it is clear. It is
+    # BREAKING, unlike #698 at 8: #698's rule was scoped to `no_close`, a field
+    # no version-7 document could already carry, so no version-7 document could
+    # already trip it. This rule counts backslash-n sequences shaped like line
+    # breaks against real newlines in `body`, a free-text field every prior
+    # contract already had -- there is no way to scope the rule to something
+    # only a new document could spell, because nothing new was added. A
+    # version-8 payload whose body happened to be more escaped than formatted
+    # was valid under 8 and is refused under 9.
+    9: "43a3d5a0732c03a51275b95029b5755aabd771e2249b2b7d83abe3b1643b58d6",
 }
 
 _TYPES = {
