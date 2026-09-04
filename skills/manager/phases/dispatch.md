@@ -429,7 +429,10 @@ blocked `--derive-held` for hours. The probe forms above are now read-only; only
 
 **`--claim` refuses without `--lane` (#788), and refuses a claim made from inside a worktree rather
 than the clone (#865) -- both enforced by `lane_setup.py` itself now, with the argument in its own
-`parser.error` messages, not only here.** Pass the same patterns this candidate was already probed
+code rather than only here.** #788 is an argparse `parser.error`; #865 is a report-time refusal (it
+sets `effective_claim` false and prints `CLAIM REFUSED` with the reason) rather than an argparse
+error -- same posture, different mechanism, both read by whoever edits the script next. Pass the
+same patterns this candidate was already probed
 with above; this is the one call that writes, so it is also the one call the files must be named on.
 When a dispatched lane's own brief tells it to run `--claim` as its own first call, that call must
 run from the clone, before the `git worktree add` (or equivalent `cd`) the brief also asks for — not

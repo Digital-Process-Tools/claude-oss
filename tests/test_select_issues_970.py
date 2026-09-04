@@ -63,6 +63,15 @@ def test_an_unreadable_assignee_field_forces_could_not_select():
     result = select_issues.select(payload, checker=checker)
     assert result["state"] == "could-not-select"
     assert "#1" in result["why"]
+    # #970 review round: an unreadable assignee field must still leave a
+    # dropped row behind, carrying the disposition the module's own
+    # docstring promises -- not silently discarded the way the overall
+    # could-not-select return used to hardcode `dropped: []`.
+    assert result["dropped"] == [{
+        "number": 1,
+        "disposition": "assignee-unreadable",
+        "why": "assignee read failed: gh timed out",
+    }]
 
 
 def test_an_unmatched_preflight_pattern_still_produces_candidates():
@@ -199,3 +208,41 @@ def test_main_on_an_ordinary_piped_board_prints_candidates():
     assert out["state"] == "candidates"
     assert out["candidates"][0]["number"] == 5
     assert proc.returncode == 0
+
+
+def test_a_non_ascii_label_does_not_crash_the_print():
+    """#970 review round: `select_issues.py` composes `dispatch_rank.rank`,
+    whose `why` can carry an issue's own (possibly non-ASCII) label text --
+    on a console codepage that cannot encode it, an unreconfigured stdout
+    would raise `UnicodeEncodeError` after the selection was already
+    computed (#794/#834's own class). Forcing `PYTHONIOENCODING` to ascii
+    reproduces a narrow console without needing a real one."""
+    import os
+
+    board = {
+        "declared": DECLARED,
+        "issues": [{"number": 6, "labels": ["priority-hïgh"]}],
+    }
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "select_issues.py")],
+        input=json.dumps(board).encode("utf-8"),
+        capture_output=True,
+        env={**os.environ, "PYTHONIOENCODING": "ascii"},
+    )
+    err = proc.stderr.decode("utf-8", errors="replace")
+    assert "UnicodeEncodeError" not in err, err
+    assert "Traceback" not in err, err
+
+
+def test_stdin_that_cannot_decode_as_utf8_is_not_read_as_bad_json():
+    """The #834 split: a `UnicodeDecodeError` is a `ValueError` subclass, so
+    catching only `ValueError` folds a decode failure into "not valid JSON"
+    -- wrong when stdin genuinely was JSON and simply mis-encoded."""
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "select_issues.py")],
+        input=b"\xff\xfe not valid utf-8",
+        capture_output=True,
+    )
+    out = json.loads(proc.stdout.decode("utf-8"))
+    assert out["state"] == "could-not-select"
+    assert "could not be decoded as UTF-8" in out["why"]

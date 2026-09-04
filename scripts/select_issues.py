@@ -70,8 +70,17 @@ STATE_NONE_AVAILABLE = "none-available"
 STATE_COULD_NOT_SELECT = "could-not-select"
 
 
-def _could_not_select(why):
-    return {"state": STATE_COULD_NOT_SELECT, "why": why, "candidates": [], "dropped": []}
+def _could_not_select(why, dropped=None):
+    # `dropped` defaults to `[]`, never `None` reused across callers: a caller
+    # that could not select still knows which issues it had already sorted a
+    # disposition for (#970 review round) -- surfacing that partial record
+    # rather than discarding it back to a bare empty list.
+    return {
+        "state": STATE_COULD_NOT_SELECT,
+        "why": why,
+        "candidates": [],
+        "dropped": [] if dropped is None else dropped,
+    }
 
 
 def select(payload, checker=None, search=None, resolve_lane=None):
@@ -149,7 +158,7 @@ def select(payload, checker=None, search=None, resolve_lane=None):
         survivors.append((item, answer))
 
     if dark_inputs:
-        return _could_not_select("; ".join(dark_inputs))
+        return _could_not_select("; ".join(dark_inputs), dropped=dropped)
 
     candidates = []
     if survivors:
@@ -159,9 +168,28 @@ def select(payload, checker=None, search=None, resolve_lane=None):
             number = item.get("number")
             row = rows.get(number)
             if row is None:
+                dropped.append({
+                    "number": number,
+                    "disposition": "assignee-unreadable",
+                    "why": "no row returned by the assignee checker",
+                })
                 dark_inputs.append("assignee read for #{0}: no row returned".format(number))
                 continue
             if row["state"] == issue_claim.STATE_COULD_NOT_READ:
+                # #970 review round: this used to fall straight into
+                # `dark_inputs` with no matching `dropped` entry -- and the
+                # whole call always returns `could-not-select` with `dropped`
+                # hardcoded to `[]` in that case (below), so the disposition
+                # named in this module's own docstring could never actually
+                # be produced. Recording it here first means a caller that
+                # inspects a partial/aborted run (or a future caller that
+                # keeps going past the first dark input) sees the real
+                # per-issue reason rather than nothing.
+                dropped.append({
+                    "number": number,
+                    "disposition": "assignee-unreadable",
+                    "why": "assignee read failed: {0}".format(row.get("detail")),
+                })
                 dark_inputs.append(
                     "assignee read for #{0}: {1}".format(number, row.get("detail"))
                 )
@@ -183,7 +211,7 @@ def select(payload, checker=None, search=None, resolve_lane=None):
             })
 
     if dark_inputs:
-        return _could_not_select("; ".join(dark_inputs))
+        return _could_not_select("; ".join(dark_inputs), dropped=dropped)
 
     state = STATE_CANDIDATES if candidates else STATE_NONE_AVAILABLE
     return {"state": state, "why": None, "candidates": candidates, "dropped": dropped}
@@ -201,6 +229,19 @@ def main(argv=None):
     which is exactly the state that exists for a read that failed.
     """
     del argv  # this module takes no flags; the payload is the whole input
+
+    # #970 review round: the sibling idiom used by dispatch_rank.py,
+    # lane_setup.py, issue_claim.py and others (#794, #834) -- a candidate's
+    # `why` can carry an issue's own label or title text (via
+    # `dispatch_rank.rank`'s `repr(unrecognised)`), and a console codepage
+    # that cannot encode one of them must not crash this print after the
+    # selection was already computed.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
+
     if sys.stdin is None:
         result = _could_not_select(
             "stdin: no readable stdin -- the process was handed a closed or "
@@ -216,6 +257,14 @@ def main(argv=None):
 
     try:
         payload = json.load(sys.stdin)
+    except UnicodeDecodeError as exc:
+        # UnicodeDecodeError is a ValueError, not a JSON-syntax error --
+        # caught separately so this never renders as "not valid JSON" when
+        # stdin was JSON and simply could not be decoded (dispatch_rank.py's
+        # own #834 fix, same class).
+        result = _could_not_select("stdin: could not be decoded as UTF-8 ({0})".format(exc))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 2
     except ValueError as exc:
         result = _could_not_select("stdin: not valid JSON ({0})".format(exc))
         print(json.dumps(result, indent=2, sort_keys=True))
