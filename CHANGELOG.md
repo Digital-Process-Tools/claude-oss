@@ -7,6 +7,185 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-04
+
+### Added
+
+- `doctor.py` never looked at a repo's security tab, so an open code-scanning,
+  Dependabot or secret-scanning alert was invisible to every tick, and a repo where a
+  scanner has never run looked identical to one that runs clean. Three new report-only
+  checks (`check_code_scanning_alerts`, `check_dependabot_alerts`,
+  `check_secret_scanning_alerts`, in the new `scripts/doctor_check_security_alerts.py`)
+  report each scanner's own *configuration* state -- `configured` / `never-scanned` /
+  `disabled` / `could-not-tell` -- never a count and never findings text, distinguishing
+  a 404 "no analysis found" from a 404 "... is disabled ..." by the response body's own
+  wording, and never folding a 403 into either. This is furniture only: whether the tick's
+  own board read should surface an actual alert is a separate, unbuilt decision (#760).
+
+- An optional `.oss.json` key, `user_visible_paths`, lists regexes naming which
+  changed paths this repository considers user-visible (#779). When declared, the
+  generated `.github/workflows/oss-changelog.yml` exempts a pull request that
+  touches none of them, with its own receipt line -- `skipped (no user-visible
+  paths changed)` -- distinguishable from the existing `no-changelog` label skip
+  and the dependabot skip. Absent or null keeps today's behaviour exactly: every
+  non-empty diff with no fragment still fails. The exemption sits below the
+  deleted-fragment branch, so `git rm`-ing a pending fragment is still refused even
+  when the deletion's own paths would otherwise match. An empty list is refused
+  rather than read as "nothing is user-visible", which would silently turn the gate
+  off for the whole repository; an unparseable pattern, or one carrying a quote
+  character that could break out of the single-quoted shell literal it is rendered
+  into, is refused the same way `changelog_dir` already is. Validated against
+  POSIX ERE, not Python's `re` -- the value runs as `grep -Eq` on the generated
+  workflow's own runner, and a pattern `re.compile` accepts but `grep -E` cannot
+  parse (a lookahead, a non-capturing group, `\d`/`\w`/`\s`/`\A`/`\Z`/`\b`, ...)
+  is a `grep -E` syntax error the generated guard cannot tell apart from a
+  genuine no-match -- silently and permanently disabling the gate, found by
+  review before merge.
+
+- `tests/test_changelog_gate_user_visible_paths_779.py` now runs the `user_visible_paths`
+  exemption through a real shell instead of only reading the rendered YAML text (#996). Two
+  Windows-CI diagnostic passes on #683/#992 had to reason about the generated fragment gate
+  from outside because nothing in the suite ever actually executed it, unlike its sibling
+  files (`tests/test_changelog_gate.py`, `tests/test_bot_pull_request_293.py`,
+  `tests/test_changelog_label_live_read_777.py`), which all extract the step's `run:` block
+  and run it against a real git repository. The new cases put a path that matches a declared
+  pattern and one that does not in front of the extracted script and read the exit status and
+  receipt, paired as a must-fire/must-not-fire set with a positive control, plus a case
+  proving the deleted-fragment refusal still sits above the exemption when executed rather
+  than only read. `tests/test_changelog_gate.py`'s `_gate_script()`/`_step_script()` now take
+  an optional `config`, reused rather than reimplemented, so a non-default `.oss.json` key can
+  be rendered into the extracted step without a second copy of the extraction logic.
+
+### Changed
+
+- #977 asked whoever picked it up to decide, and say so, among three answers for what would
+  actually bound a review spawn's writable surface beyond #972's advisory prose (`agents/auditor.md`'s
+  "resolve before you write" instruction, which a spawn can simply not check): (a) something
+  enforceable in this repo, (b) something enforceable upstream in `claude-supertool`, or (c) nothing
+  enforceable belongs anywhere yet. The decision is (b): supertool already refuses a path-having
+  *op* (`edit`, `paste`) that resolves outside the caller's cwd, but a raw shell command a
+  `Bash`-granted agent runs directly -- `rm -f`, `mv`, `cp -r`, `sed -i` -- bypasses that guard
+  entirely, which is exactly the mechanism #972's own incident used. Nothing in this repository has
+  the means to intercept a raw command the way supertool's own op layer does, so no code changes
+  here; the request to extend supertool's cwd-scoped guard (or add an equivalent) to raw
+  filesystem-mutating commands is filed on that dependency's own tracker as a `report-for-filing`
+  item, per this repository's "a defect in a declared dependency is filed there, not routed around"
+  rule.
+
+- `.claude/settings.json`'s blanket `Bash(git *)` grant is narrowed to an enumerated
+  allow-list: one entry per git subcommand (or, for `worktree` and `branch`, one entry
+  per op) actually invoked anywhere in `agents/*.md`, `agents/developer/*.md`,
+  `commands/*.md` or `skills/manager/**/*.md`, enumerated by hand against those files
+  rather than guessed (#982, raised during #899's own review and left unattempted
+  there as separately-reviewable). `git commit` is deliberately not granted -- every
+  commit already goes through `supertool 'git-commit:@-'`, never a raw `Bash(git
+  commit:*)`. This closes the risk #899 named for a *subcommand* the loop never calls
+  (`reset --hard`, `clean -fdx`, `rebase`, `filter-branch`, ...); it does not, and
+  Claude Code's `Bash(<prefix>:*)` syntax cannot, restrict a dangerous *flag* on a
+  subcommand the loop legitimately does call (`git push --force` reaches exactly as
+  far under the narrowed grant as it did under the blanket one) -- that stays governed
+  by brief-level prose alone, as it always was. The reasoning, and the full
+  enumeration with citations, is recorded as a code comment above
+  `scaffold.SETTINGS_PATH` and in `tests/test_settings_git_allowlist_982.py`'s own
+  docstring, the same place #899's reasoning already lived.
+
+### Fixed
+
+- `.oss/README.md` now says its `.py` files are vendored and replaced wholesale on
+  every `/oss:scaffold` run, and to add `.oss` to your own linter's exclude list
+  (#683). A repo's own ruff/flake8 run used to report style findings inside `.oss/`
+  that no fix could survive -- any edit is reverted at the next scaffold -- with
+  nothing declaring the directory out of scope. Scope: the README line only; wiring
+  auto-detection into every linter's own config format was weighed and declined --
+  `pyproject.toml` and `.eslintrc` are "yours" files this plugin never reads or
+  writes, per its own ownership contract.
+
+- `commands/tick.md`'s plugin-identity check only ever compared one tick's identity
+  to the previous tick's, so it could not see the loop running a release behind the
+  repository it manages (only possible when the managed repo IS this plugin itself).
+  `doctor.py`'s own `check_plugin_copy` already computes exactly that comparison, byte
+  for byte, on every run and names both manifests' versions the moment they disagree
+  -- the tick was simply discarding that line. It is read now instead of thrown away,
+  with no new check added (#942).
+
+- `CLAUDE.md` gained a "Command files have a size budget too" table naming
+  `scripts/command_budgets.py`'s `commands/tick.md` row, mirroring the existing agent and phase
+  budget tables, plus a comparison test holding it against `command_budgets.BUDGETS`. And
+  `agents/sub-manager.md` now carries its own bounded-read instruction ahead of any attempt to open
+  `commands/tick.md`, so a sub-manager reads it in chunks from the first call rather than hitting
+  the harness's truncation preview and paying for a second call to see the rest (#940, #985).
+
+- `/oss:setup` never wrote `labels.filed_by_loop`, so `dispatch_rank.rank`'s
+  who-filed-it selection (#798) was inert on every repository this plugin onboarded
+  except the one it was hand-fixed on. `oss_config.build()` now probes the labels it
+  already collected for a loop-filed spelling and emits the key either way -- the
+  matched label name, or a visible `null` with a stderr `NOTE` naming what stays
+  inert until it is filled in, the same shape `changelog_untagged` already uses.
+  `/oss:doctor` reports the same three states (declared / not-declared /
+  could-not-tell) and names the `dispatch_rank`/`could-not-rank` consequence rather
+  than only "a key is missing" (#990).
+
+- The dispatch order (`scripts/dispatch_rank.py`, table in
+  `skills/manager/phases/dispatch.md`) used to collapse an outside reporter and the maintainer
+  into one "human" author band, so an untriaged external bug report -- unlabelled by definition,
+  since nobody has triaged it yet -- ranked below the loop's own high-priority backlog. The
+  six-row table is now nine computed rows (external / maintainer / loop, crossed with
+  high / medium / low), read from GitHub's own author association rather than a declared label,
+  plus a tenth, prose-only "blocking-class defect" row `dispatch_rank.rank()` never computes. A
+  non-loop issue whose author association could not be read refuses to rank rather than guessing
+  which of the two it is, the same discipline already applied to an undeclared
+  `labels.filed_by_loop`. `scripts/select_issues.py` now reads a per-issue `author_association`
+  field; the second half of the proposal -- an untriaged external *bug* ranking mid-band even
+  with no priority label -- is deferred pending an undeclared `labels.defect` key (#990) (#993).
+
+- `agents/triager.md` pointed the ranking table at `skills/manager/SKILL.md`, which
+  `#958` and `#960` had already moved out to `skills/manager/phases/findings.md` and
+  `phases/dispatch.md`. Repointed at `scripts/ranking_table.py`, which already
+  searches every location the table has lived at, so a future move cannot silently
+  break this cross-reference again (#994).
+
+- `scripts/release_trigger.py`'s soak-hours condition dropped an undatable changelog fragment out
+  of the receipt instead of naming it -- `undated` was already carried on the condition row, but
+  `receipt()`'s printed-key list did not include it, so a fragment set with one datable and one
+  undatable member rendered identically to a cleanly-read one (#997).
+- `scripts/select_issues.py` read a refused (unreadable) lane pattern as "no overlap" instead of as
+  a dark input -- a refused member contributes `files: []`, and an empty union used to satisfy the
+  disjointness check by accident rather than by evaluating it, so a lane could be dispatched onto
+  files another live lane already held (#998).
+- `scripts/fleet_label.py`'s `agent_call()` escaped the `description` argument when rendering the
+  literal `Agent(...)` call text but not `model`, so a `model` value carrying a quote could re-open
+  the `subagent_type` keyword the whitelist just closed (#999).
+
+- `scripts/issue_claim.py`'s `claim_one()` and `release_one()` called `run(...)` without resolving
+  `run=None` first, unlike every other entry point in the module -- so a direct importer calling
+  either with the documented `run=None` default raised `TypeError: 'NoneType' object is not
+  callable` on the one branch that performs the write, instead of one of the module's own states.
+  The CLI and `check()` were already safe (#1000).
+
+- `tests/test_claude_md_currency.py`'s
+  `test_the_section_is_current_for_the_release_being_prepared` was red on every
+  open pull request carrying a pending fragment once `v0.22.0` was tagged, because
+  `CLAUDE.md`'s `What is not proven yet` marker paragraph still named `v0.21.0`.
+  Re-derived and updated for `v0.22.0` at `f9dec04` (#1004).
+
+- `scripts/lane_setup.py` gains `--stack-on BRANCH` / `compute(..., stack_on=...)`: resolve `base`
+  from that branch's own tip (`resolve_stacked_base`, read straight out of the shared object
+  database) instead of `default_branch`. A stacked branch never touches the worktree `BRANCH` might
+  be checked out in, sidestepping `git-worktrees`' `cannot tell` collision -- a live agent's index
+  write and the manager's own `git merge`/`git push` render identically and cannot be told apart --
+  entirely, rather than reasoning about it. Chosen over the issue's other two candidate fixes (the
+  manager recording its own writes, or `git-worktrees` reporting *why* it cannot tell) because it
+  needs no change to the `git-worktrees` op itself and so needs no upstream filing to land (#1006).
+
+- A tick's merge phase re-reads a worktree's HEAD immediately before force-removing it over
+  `|cleanup`'s own `cannot tell` refusal, and refuses the force-remove if HEAD moved since the
+  merge -- closing the window where an agent commits (e.g. a self-review fix) between the tick's
+  last observation and the forced cleanup. Two such removals had destroyed a lane's committed,
+  not-yet-pushed work, recovered only by a surviving reflog entry rather than by design (#1007).
+  When the check passes and the force runs anyway, the override is now recorded with a reason
+  via `oss_state.py`'s new `--cleanup-override WORKTREE=REASON`, so a forced cleanup over a
+  refused reap is auditable rather than indistinguishable from a clean one.
+
 ## [0.22.0] - 2026-09-04
 
 ### Added
@@ -8104,7 +8283,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.23.0
 [0.22.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.21.0
 [0.20.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.20.0
