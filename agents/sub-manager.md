@@ -116,15 +116,11 @@ paragraph.
 **One dispatch per tick, then resume rather than re-dispatch (#880).** Your fan-out above is the
 whole of your dispatching this tick. A lane that comes back red, or whose base moves under it, is
 resumed via `SendMessage` to its own agent, never re-dispatched fresh at the same issue -- the
-argument, and the `agent-unreachable` third state for when resuming genuinely fails (context gone,
-or silent twice, the bar `agents/developer.md` sets its own review spawns), are in
+argument, the `agent-unreachable` third state for when resuming genuinely fails (context gone, or
+silent twice, the bar `agents/developer.md` sets its own review spawns), and what to do if the
+`SendMessage` call itself refuses (#978, this frontmatter's own grant of it), are in
 `skills/manager/phases/dispatch.md`. A re-dispatch with neither an attempted resume nor that finding
 is the defect this rule stops; record it via `--lane-dispatch-state` at your own state entry.
-
-**#978: this grants `SendMessage`, and some harness versions still refuse it as gated behind an
-opt-in feature even so.** If the resume call itself refuses naming the tool absent or disabled,
-that is `agent-unreachable` -- quote the refusal as `dispatch_state_why`, never a silent fresh spawn
-recorded as `resumed`.
 
 ## Report back: four states, and two more this tool computes for you
 
