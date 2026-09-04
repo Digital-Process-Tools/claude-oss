@@ -181,6 +181,56 @@ def test_gh_api_call_that_does_not_run_at_all_is_could_not_tell(tmp_path):
     assert "did not run" in detail
 
 
+# ----------------------------------------------------- undecodable stdout (#1019)
+
+
+def _run_once_bytes(rc, out, err):
+    """`_run_once` above hands `_gh_api` a `str`. A real `subprocess.run` call
+    without `universal_newlines=True`/`text=True` (what `_gh_api` now uses)
+    hands back `bytes` instead -- this is what makes the fixture below
+    exercise the real decode path rather than one `_run_once`'s string
+    shortcut skips entirely."""
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
+
+    run.calls = calls
+    return run
+
+
+def test_stdout_that_cannot_be_decoded_does_not_abort_the_check(tmp_path):
+    """#1019: `_gh_api` used to call `run(...)` with `universal_newlines=True`
+    and no `errors=`, which decodes under `errors="strict"` with the
+    runner's own locale codec -- a byte that codec cannot represent raises
+    `UnicodeDecodeError` (a `ValueError`, not an `OSError` or a
+    `subprocess.SubprocessError`), escaping the surrounding `except` and
+    aborting the whole `doctor.py` run before its `print("VERDICT: ...")`
+    line, breaking the "exit 0 always" contract every check here states.
+    `\xff\xfe` is not valid UTF-8 and not valid in most other locale
+    codecs either -- the check must still return a state, never raise."""
+    run = _run_once_bytes(1, b"gh: something \xff\xfe went wrong (HTTP 404)", b"")
+    state, detail = doctor.security_alert_state(
+        tmp_path, "code-scanning", config=_config(), run=run
+    )
+    assert isinstance(state, str)
+    assert isinstance(detail, str)
+
+
+def test_ordinary_bytes_stdout_still_decodes_and_classifies_correctly(tmp_path):
+    """Positive control for the case above: a real, cleanly-decodable byte
+    response (what `subprocess.run` actually hands back without
+    `text=True`) is still read correctly and classified as `configured` --
+    the fix is a decode that tolerates a bad byte, not one that swallows
+    every response into `could-not-tell`."""
+    run = _run_once_bytes(0, b"[]", b"")
+    state, _detail = doctor.security_alert_state(
+        tmp_path, "code-scanning", config=_config(), run=run
+    )
+    assert state == "configured"
+
+
 # --------------------------------------------------------------- report lines
 
 

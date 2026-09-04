@@ -56,12 +56,19 @@ def _gh_api(path, run):
             ["gh", "api", path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             timeout=25,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "", "", exc
-    return done.returncode, done.stdout, done.stderr, None
+    # #1019: NOT `universal_newlines=True` -- that decodes under `errors="strict"`
+    # with the runner's own locale codec, and a byte that codec cannot represent
+    # raises `UnicodeDecodeError` (a `ValueError`, escaping the `except` above)
+    # straight out of what is meant to be a check that exits 0 always. Bytes,
+    # decoded here with `errors="replace"` instead -- the same fix `doctor.py`'s
+    # own two subprocess reads already carry for the identical trap.
+    stdout = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
+    stderr = done.stderr.decode("utf-8", "replace") if isinstance(done.stderr, bytes) else (done.stderr or "")
+    return done.returncode, stdout, stderr, None
 
 
 _GH_API_HTTP_STATUS_RE = re.compile(r"HTTP (\d+)")

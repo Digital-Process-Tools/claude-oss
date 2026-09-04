@@ -950,6 +950,19 @@ CHANGELOG_UNTAGGED_RE = re.compile(r"\A\d+\.\d+\.\d+\Z")
 # allow-listed one construct at a time (#779, found by review).
 PERL_ONLY_BACKSLASH_ESCAPE_RE = re.compile(r"\\[A-Za-z]")
 
+# #1018: the previous validator denylisted `'` and `\n` one character at a time
+# and missed `\r`, U+2028 (the YAML line separator) and VT (`\x0b`) -- every one
+# of them a YAML line break, and each one either silently absorbed into the
+# generated `grep -E` alternation (permanent skip, the same failure shape
+# `(?...)` above is refused for) or a break in the middle of the workflow's own
+# YAML block scalar. `CHANGELOG_UNTAGGED_RE` above is already an anchored
+# allow-list rather than a denylist; this is the same shape applied here --
+# only printable ASCII, and not the single quote a single-quoted shell literal
+# still needs refused, is admitted at all. A denylist grows one incident at a
+# time; an allow-list of printable ASCII closes the whole class, known bytes
+# and unknown ones alike, by construction.
+USER_VISIBLE_PATH_CHAR_RE = re.compile(r"\A[\x20-\x26\x28-\x7e]*\Z")
+
 
 def changelog_untagged_problem(value):
     """Why this `changelog_untagged` cannot be used, or None when it is fine.
@@ -980,6 +993,53 @@ def changelog_untagged_problem(value):
             "instruction is refused rather than quoted and hoped about. Versions, not "
             "tags: write '0.1.0', not 'v0.1.0'.".format(bad)
         )
+    return None
+
+
+def _brace_interval_problem(pattern):
+    """None, or why a `{...}` in `pattern` is a POSIX ERE interval bound
+    `grep -E` reads as malformed, rather than a genuine no-match.
+
+    `re.compile` gives no signal here: `a{1,2,3}` is not a valid Python
+    interval either, so Python reads it as eight literal characters and
+    never raises. Measured directly against both BSD grep (what
+    `/usr/bin/grep` is on macOS) and ugrep: `a{1,2,3}` (three counts, ERE
+    allows at most two) and an unbalanced `a{` (no closing `}`) both exit 2,
+    SYNTAX ERROR -- indistinguishable, in the generated
+    `if ! grep -Eq PATTERN; then skip; fi` guard, from a genuine no-match
+    (#1015, found by review). `{`, `}`, digits and `,` are all otherwise
+    safe, allow-listed characters, so this is checked separately from
+    `USER_VISIBLE_PATH_CHAR_RE` above: only the *arrangement* is at fault.
+    """
+    index = 0
+    length = len(pattern)
+    while index < length:
+        char = pattern[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "{":
+            close = pattern.find("}", index + 1)
+            if close == -1:
+                return "has an unbalanced `{` with no matching `}`"
+            content = pattern[index + 1:close]
+            match = re.match(r"\A(\d+)(,(\d*))?\Z", content)
+            if not match:
+                return (
+                    "has `{{{}}}`, which is not a well-formed interval bound "
+                    "-- expected `{{m}}`, `{{m,}}` or `{{m,n}}`".format(content)
+                )
+            low = int(match.group(1))
+            high = match.group(3)
+            if high:
+                if int(high) < low:
+                    return (
+                        "has `{{{}}}`, whose lower bound is greater than its "
+                        "upper bound".format(content)
+                    )
+            index = close + 1
+            continue
+        index += 1
     return None
 
 
@@ -1040,13 +1100,18 @@ def user_visible_paths_problem(value):
                 "user_visible_paths[{}]: expected a non-empty regex string; got "
                 "{!r}.".format(index, pattern)
             )
-        if "'" in pattern or "\n" in pattern:
+        if not USER_VISIBLE_PATH_CHAR_RE.match(pattern):
             return (
-                "user_visible_paths[{}]: {!r} carries a single quote or a newline. "
-                "This value is written into a `run:` line of the workflow generated "
-                "for another repository, single-quoted, so a character that would "
-                "close that literal early is refused rather than quoted and hoped "
-                "about.".format(index, pattern)
+                "user_visible_paths[{}]: {!r} carries a character outside printable "
+                "ASCII, or a single quote. This value is written into a `run:` line "
+                "of the workflow generated for another repository, single-quoted "
+                "inside a YAML block scalar -- so a single quote would close that "
+                "shell literal early, and any byte outside printable ASCII (a "
+                "carriage return, U+2028 the YAML line separator, VT, or anything "
+                "else) is either a YAML line break this validator has no way to "
+                "enumerate by name, or absorbed silently into the grep alternation. "
+                "Refused by an anchored allow-list rather than a denylist of the "
+                "characters found so far (#1018).".format(index, pattern)
             )
         try:
             re.compile(pattern)
@@ -1079,6 +1144,17 @@ def user_visible_paths_problem(value):
                 "`\\)`, `\\[`, `\\]`, `\\*`, `\\+`, `\\?`, `\\{{`, `\\}}`, `\\|`, "
                 "`\\\\` -- or use a POSIX character class such as "
                 "`[[:digit:]]`.".format(index, pattern)
+            )
+        interval_problem = _brace_interval_problem(pattern)
+        if interval_problem:
+            return (
+                "user_visible_paths[{}]: {!r} {}. This value runs as `grep -E` "
+                "on the release runner's own machine, and a malformed interval "
+                "like this is a SYNTAX ERROR (exit 2) the generated "
+                "`if ! grep -Eq PATTERN; then skip; fi` guard cannot tell "
+                "apart from a genuine no-match, so the changelog gate would go "
+                "silently and permanently off for the whole repository "
+                "(#1015).".format(index, pattern, interval_problem)
             )
     return None
 
