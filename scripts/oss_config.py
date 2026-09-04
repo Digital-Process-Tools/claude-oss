@@ -2503,7 +2503,20 @@ def _kill_process_tree(proc, job=None):
     * **POSIX**: `killpg` over the process group `start_new_session` created.
 
     Both are best-effort -- a process that already exited is not an error here.
+
+    Returns True when the primitive that reaches the whole tree reported success --
+    `TerminateJobObject` returning nonzero, `taskkill` exiting 0, `killpg` raising
+    nothing, or `killpg` raising `ProcessLookupError` (no process with that pgid
+    exists at all, which proves the tree is already gone rather than leaving that
+    unknown) -- and False when it could not confirm that: some other exception
+    `killpg` had to swallow (a permission failure, say), or `taskkill` exiting
+    nonzero. (`taskkill`'s own "already gone" exit code is not given the same
+    distinction as `killpg`'s -- see #945's own report for why.) False does not
+    mean the tree is still running; it means this function cannot say it isn't --
+    which #945 exists to surface rather than silently fold into the same "killed"
+    outcome as a confirmed clean kill.
     """
+    confirmed = False
     if os.name == "nt":
         killed = False
         if job is not None:
@@ -2517,12 +2530,15 @@ def _kill_process_tree(proc, job=None):
                 killed = bool(kernel32.TerminateJobObject(job, 1))
             except (ImportError, OSError, AttributeError, ValueError):  # pragma: no cover
                 killed = False
-        if not killed:
-            subprocess.run(
+        if killed:
+            confirmed = True
+        else:
+            result = subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            confirmed = result.returncode == 0
     else:
         # proc.pid IS the group id here, not something to look up: start_new_session
         # made this process its own session leader at the moment it started, and a
@@ -2537,12 +2553,19 @@ def _kill_process_tree(proc, job=None):
         # captured pid directly killed it as soon as the timeout fired.
         try:
             os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, OSError):
-            pass
+            confirmed = True
+        except ProcessLookupError:
+            # No process with this pgid exists at all -- not "we could not tell",
+            # the whole tree is provably gone already, which is the positive
+            # answer this field exists to carry (#945).
+            confirmed = True
+        except OSError:
+            confirmed = False
     try:
         proc.kill()
     except OSError:
         pass
+    return confirmed
 
 
 def verify_test_command(command, cwd, timeout=120):
@@ -2623,7 +2646,7 @@ def verify_test_command(command, cwd, timeout=120):
         try:
             stdout, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            _kill_process_tree(proc, job=job)
+            kill_confirmed = _kill_process_tree(proc, job=job)
             # Reap with two bounded waits, never an unconditional one: a tree-kill that failed
             # to reach every descendant (a permission failure, a grandchild that called its own
             # setsid and left the group) must not turn "unverified" into "hung forever" on the
@@ -2639,10 +2662,22 @@ def verify_test_command(command, cwd, timeout=120):
                     proc.communicate(timeout=5)
                 except subprocess.TimeoutExpired:
                     pass
+            # `state` stays "timeout" either way -- both readings are equally
+            # "unverified", and #945's collapse is not in that value. It is here,
+            # in a field of its own: `kill_confirmed=True` says the tree-kill
+            # primitive itself reported success; `False` says it raised or exited
+            # nonzero and this function cannot say the tree is actually down, which
+            # is a materially different thing for a caller deciding whether a
+            # leaked process on this machine needs a human. Additive rather than a
+            # new `state` value on purpose -- commands/setup.md and
+            # tests/test_state_vocabularies.py both branch on `state` by exact
+            # string, and a value neither one has ever seen would either be
+            # silently ignored there or misread as an unrelated state.
             return {
                 "state": "timeout",
                 "detail": "{!r} did not finish within {}s, so it is unverified -- which is "
                 "not the same as broken.".format(command, timeout),
+                "kill_confirmed": kill_confirmed,
             }
 
         returncode = proc.returncode

@@ -484,6 +484,77 @@ def test_a_slow_command_times_out_rather_than_hanging_setup(tmp_path):
     assert "unverified" in result["detail"].lower()
 
 
+def test_a_clean_tree_kill_is_reported_confirmed(tmp_path):
+    """Positive control for #945: a normal timeout, where the tree-kill primitive
+    (killpg on POSIX, TerminateJobObject/taskkill on Windows) actually ran and
+    reported success, must land in the *other* state from a swallowed failure --
+    the case right below. Without this pairing, a test asserting only the failure
+    case reads "unclean reads unconfirmed" and would pass vacuously if the code
+    always returned unconfirmed.
+    """
+    result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+    assert result["kill_confirmed"] is True
+
+
+def test_a_swallowed_kill_failure_is_reported_unconfirmed(tmp_path, monkeypatch):
+    """#945: before this fix, `_kill_process_tree` swallowed every exception the
+    kill primitive could raise (a permission failure, anything past the already-
+    exited case the comment above documents) and `verify_test_command` returned
+    the same `state: "timeout"` regardless. A caller reading `state: "timeout"`
+    could not tell a cleanly reaped process tree from one where a descendant is
+    still running, un-killed, on the machine. This forces the swallowed-exception
+    path and asserts the result says so instead of reporting the same state as a
+    confirmed clean kill.
+    """
+    if os.name == "nt":
+        # No job object (forces the taskkill fallback), and taskkill itself
+        # reports failure -- the same "swallowed, no way to tell" shape as the
+        # POSIX branch below, just through the other primitive.
+        monkeypatch.setattr(oss_config, "_windows_job_object", lambda: None)
+        monkeypatch.setattr(
+            oss_config.subprocess,
+            "run",
+            lambda *a, **k: subprocess.CompletedProcess(a, 1),
+        )
+    else:
+        def _raise(*_a, **_k):
+            raise OSError("simulated: kill primitive failed")
+
+        monkeypatch.setattr(oss_config.os, "killpg", _raise)
+
+    result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+    assert result["kill_confirmed"] is False
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="ProcessLookupError is the POSIX killpg-specific case; there is no "
+    "equivalent distinction drawn on the taskkill/TerminateJobObject path.",
+)
+def test_a_process_group_already_gone_is_still_a_confirmed_kill(tmp_path, monkeypatch):
+    """A finding from #945's own self-review: `killpg` raising `ProcessLookupError`
+    means no process with that pgid exists at all -- the whole tree is already
+    gone, which is proof of the very thing `kill_confirmed` exists to report, not
+    an unknown outcome. Folding it into the same bucket as a genuine kill failure
+    (a permission error, say) understated what was actually known. This is the
+    positive control for the negative case above: a generic `OSError` from
+    `killpg` still reads `kill_confirmed is False`, and only the "already gone"
+    case reads `True`.
+    """
+    real_killpg = oss_config.os.killpg
+
+    def _already_gone(pid, sig):
+        real_killpg(pid, sig)  # actually reap the real child first
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(oss_config.os, "killpg", _already_gone)
+    result = oss_config.verify_test_command(SLEEPS, tmp_path, timeout=1)
+    assert result["state"] == "timeout"
+    assert result["kill_confirmed"] is True
+
+
 def test_a_timeout_kills_the_whole_process_tree_not_just_the_shell(tmp_path):
     """subprocess.run's own TimeoutExpired handling kills only the immediate child.
     Everything that child spawns in turn keeps running -- and on Windows, keeps holding
@@ -1179,7 +1250,12 @@ def test_no_job_means_the_taskkill_fallback_is_reached(monkeypatch):
     present and the pid the one that was spawned."""
     monkeypatch.setattr(oss_config.os, "name", "nt")
     calls = []
-    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    def _run(argv, **kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(oss_config.subprocess, "run", _run)
 
     class _Proc(object):
         pid = 4321
@@ -1187,8 +1263,10 @@ def test_no_job_means_the_taskkill_fallback_is_reached(monkeypatch):
         def kill(self):
             pass
 
-    oss_config._kill_process_tree(_Proc(), job=None)
+    confirmed = oss_config._kill_process_tree(_Proc(), job=None)
     assert calls == [["taskkill", "/F", "/T", "/PID", "4321"]], calls
+    # #945: taskkill exiting 0 is what "confirmed" means here.
+    assert confirmed is True
 
 
 def test_a_job_that_cannot_be_terminated_still_falls_back(monkeypatch):
@@ -1200,7 +1278,12 @@ def test_a_job_that_cannot_be_terminated_still_falls_back(monkeypatch):
     """
     monkeypatch.setattr(oss_config.os, "name", "nt")
     calls = []
-    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    def _run(argv, **kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(oss_config.subprocess, "run", _run)
 
     class _Proc(object):
         pid = 99
@@ -1208,8 +1291,10 @@ def test_a_job_that_cannot_be_terminated_still_falls_back(monkeypatch):
         def kill(self):
             pass
 
-    oss_config._kill_process_tree(_Proc(), job=1234)
+    confirmed = oss_config._kill_process_tree(_Proc(), job=1234)
     assert calls == [["taskkill", "/F", "/T", "/PID", "99"]], calls
+    # #945: the fallback's own exit code is what decides confirmation here.
+    assert confirmed is True
 
 
 @pytest.mark.skipif(
