@@ -82,7 +82,14 @@ frame parser is a second place for that bug to recur.
                     the field cannot tell a quoted excerpt from a real
                     second declaration, so guessing which one is real would
                     be exactly the guess the header refusal already
-                    declines to make.
+                    declines to make. Two more shapes land here too (#896,
+                    #941): a `TICK:` or a `TICK-ENDS:` line that IS present
+                    but names a value none of the above -- the reason names
+                    the value found rather than claiming no line exists --
+                    and a header-less message whose prose reads as a
+                    promise to resume, which is refused with a reason
+                    pointing at `TICK: paused` instead of the generic
+                    no-header reason.
 
 ## What this deliberately does not do
 
@@ -148,13 +155,24 @@ _RESUME_PROMISE = re.compile(
 )
 
 
+_ENUM_VALUE = re.compile(r"[A-Za-z0-9-]+")
+
+
 def _normalize_enum_value(raw):
     """Fold a captured field value for enum comparison: case-insensitive,
-    with the odd trailing punctuation a sentence written around the field
-    can leave stripped (a comma, a period ending the line). Used for both
-    ``TICK:`` and ``TICK-ENDS:`` -- the same "present but unrecognised"
-    question, asked twice."""
-    return raw.strip().rstrip(".,;:!?").lower()
+    and read only the leading run of letters/digits/hyphens -- an enum
+    value is always exactly that shape, so anything after it (a closing
+    ``**``, a stray ``)``/``"``, a trailing comma or period) is exactly the
+    surrounding sentence, not part of the value. This mirrors the word
+    boundary (``\\b``) the field patterns used before #896: ``\\b`` is
+    satisfied by *any* non-word character, not only a handful of
+    punctuation marks, so stripping a fixed set (as an earlier version of
+    this function did) silently un-recognised values like ``completed**``
+    or ``completed)`` that the old pattern accepted without a second
+    thought. Used for both ``TICK:`` and ``TICK-ENDS:`` -- the same
+    "present but unrecognised" question, asked twice."""
+    match = _ENUM_VALUE.match(raw.strip())
+    return match.group(0).lower() if match else raw.strip().lower()
 _BLOCKER = re.compile(r"^[ \t>*_#]*BLOCKER:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 _REASON = re.compile(r"^[ \t>*_#]*REASON:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 # #818: the two facts a `paused` tick must name, reusing the field names

@@ -109,3 +109,25 @@ def test_cli_reason_for_off_enum_tick_ends_names_the_value():
         result.stdout + result.stderr
     )
     assert "mostly-done" in result.stdout
+
+
+def test_a_value_with_trailing_markdown_emphasis_is_still_recognised():
+    """Regression: the old `\\b`-anchored enum pattern was satisfied by any
+    non-word character following the enum word, not only a handful of
+    punctuation marks -- so `TICK: completed**` (a bolded value) was
+    already recognised as `completed` before #896. The fix must not narrow
+    that: it reads the leading run of letters/digits/hyphens and ignores
+    whatever markdown or punctuation follows it, exactly like `\\b` did."""
+    verdict = tick_handback.classify(
+        "TICK: completed**\nTICK-ENDS: work-started\nsome summary text"
+    )
+    assert verdict["state"] == "completed"
+    assert verdict["ends"] == "work-started"
+
+
+def test_a_bracketed_or_quoted_value_is_still_recognised():
+    for wrapped in ("blocked)", 'blocked"', "blocked]"):
+        verdict = tick_handback.classify(
+            "TICK: {0}\nBLOCKER: waiting on review\n".format(wrapped)
+        )
+        assert verdict["state"] == "blocked", wrapped
