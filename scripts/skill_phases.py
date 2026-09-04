@@ -145,7 +145,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # against rather than something every tick needs loaded.
     "skills/manager/phases/review.md": (13992, 15400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/findings.md": (11620, 12800, "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board"),
-    "skills/manager/phases/merge.md": (10012, 11000, "merging: the gates, the call itself, and what is still owed after green"),
+    "skills/manager/phases/merge.md": (13198, 14500, "merging: the gates, the call itself, and what is still owed after green"),
     "skills/manager/phases/release.md": (10195, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
     # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two
     # relocations, both about closing a tick: the cadence section, and the loop

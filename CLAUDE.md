@@ -332,7 +332,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/release.md` | 10,195 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
-| `skills/manager/phases/merge.md` | 10,012 B | 11,000 B |
+| `skills/manager/phases/merge.md` | 13,198 B | 14,500 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -371,9 +371,18 @@ moved by the same #762: one paragraph, naming where the filing-time label attach
 10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
 trimming something else in the same file to absorb, so it was raised too.
 
-**The total grew: 122,423 B became 175,514 B, +43.4%** — re-derived by summing the table's own
-"measured (baseline)" column above, not by editing the prior figure (161,431 B / +31.9%, itself a
-correction of a 153,634 B / +25.5% edit that had gone stale). Still no test ties this sentence's
+**`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
+guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two
+things together -- re-read the tree's HEAD immediately before a force-remove and refuse the
+force if it moved since the merge, plus record the override with `oss_state.py`'s new
+`--cleanup-override` when the check passes and the force runs anyway -- because the second
+without the first would make an override legible without making the removal any safer, and
+splitting the two into separate bullets would have cost more bytes than raising the ceiling
+did. No paragraph already in the file argued either point, so nothing was cut to make room.
+
+**The total grew: 122,423 B became 178,700 B, +46.0%** — re-derived by summing the table's own
+"measured (baseline)" column above, not by editing the prior figure (175,514 B / +43.4%, itself a
+correction of a 161,431 B / +31.9% edit that had gone stale). Still no test ties this sentence's
 numbers to the table's own column, only the per-file rows; sum it again the next time a row changes,
 rather than editing this sentence by hand. The spine's directive blocks and each phase file's
 own header are a second, shorter statement of what the phase file then argues at length, and that is a

@@ -1901,6 +1901,75 @@ def lane_fill_trend(entries):
     return trend
 
 
+def cleanup_overrides(entries):
+    """Cleanup overrides for one tick (#1007): a forced worktree removal that ran
+    after ``gh-pr-merge``'s own ``|cleanup`` had already declined that worktree with
+    ``cannot tell``. Each entry is a mapping carrying ``worktree`` and ``reason``,
+    both required.
+
+    Unlike ``lane_fill``, no entry here is ever reason-optional: the whole reason to
+    record one at all is that a guard already said no and the tick pushed the
+    removal through anyway, so there is always a reason to state -- naming why the
+    tick judged the override safe (or accepted the risk). A forced removal with no
+    stated reason is exactly the silent override #1007 was filed over: `|cleanup`'s
+    refusal was a line in an op's output, the force-remove that followed was two
+    ordinary git commands, and afterwards nothing distinguished that cleanup from a
+    clean one.
+
+    ``entries`` must be a non-empty list -- call this only when at least one
+    override actually happened in this tick; an empty list is a claim nothing
+    supports, not a state worth writing (contrast ``lane_fill``, which does record a
+    real empty-dispatch zero).
+    """
+    if not isinstance(entries, list) or not entries:
+        raise StateError(
+            "cleanup_overrides needs a non-empty list of {worktree, reason} "
+            "mappings; call it only when at least one forced cleanup actually "
+            "happened this tick"
+        )
+    normalized = []
+    for position, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise StateError(
+                "cleanup override {} is not a mapping ({!r})".format(position, entry)
+            )
+        worktree = entry.get("worktree")
+        if not isinstance(worktree, str) or not worktree.strip():
+            raise StateError(
+                "cleanup override {}: worktree is required and must be a "
+                "non-blank string ({!r})".format(position, worktree)
+            )
+        reason = entry.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise StateError(
+                "cleanup override {}: reason is required and must be a "
+                "non-blank string -- a forced removal with no stated reason is "
+                "the silent override #1007 was filed over ({!r})".format(
+                    position, reason
+                )
+            )
+        normalized.append({"worktree": worktree.strip(), "reason": reason.strip()})
+    return normalized
+
+
+def cleanup_override_line(record):
+    """One line a tick report can print for a cleanup-override record."""
+    if not isinstance(record, list) or not record:
+        raise StateError(
+            "cleanup_override_line takes a non-empty list of records, not "
+            "{!r}".format(record)
+        )
+    return _receipt_line(
+        "cleanup override: {} worktree(s) force-removed over |cleanup's own "
+        "refusal -- {}".format(
+            len(record),
+            "; ".join(
+                "{} ({})".format(item["worktree"], item["reason"]) for item in record
+            ),
+        )
+    )
+
+
 def cohort_freeze(cohort, counts, why=None):
     """One cohort freeze count (#407): a label's count taken from more than one route.
 
@@ -2850,6 +2919,35 @@ def _lane_fill_argument(text):
     return entry
 
 
+def _cleanup_override_argument(text):
+    """A CLI cleanup-override entry: ``WORKTREE=REASON`` (#1007).
+
+    Split on the first ``=``, not ``:`` -- a worktree is a filesystem path, and a
+    Windows path's drive letter (``C:`` at the front) already owns the first
+    colon, so ``:`` cannot be the delimiter here the way it is for
+    ``--lane-fill``'s ``PRIMARY:COUNT``. ``=`` mirrors ``--lane-dispatch-state``'s
+    ``ISSUE=STATE`` for the same reason: the left side is freeform text that must
+    not collide with the separator.
+
+    Only the shape is checked here -- both sides present and non-blank. Nothing
+    here treats a reason as optional; unlike a lane fill's count, there is no
+    case where recording an override needs no reason, so the CLI type itself is
+    the whole check and ``cleanup_overrides`` re-validates rather than trusting it,
+    the same defence in depth ``lane_fill`` keeps for its own entries.
+    """
+    import argparse
+
+    if "=" not in text:
+        raise argparse.ArgumentTypeError("{!r} is not WORKTREE=REASON".format(text))
+    worktree_text, _, reason_text = text.partition("=")
+    worktree, reason = worktree_text.strip(), reason_text.strip()
+    if not worktree or not reason:
+        raise argparse.ArgumentTypeError(
+            "{!r} is not WORKTREE=REASON -- both sides are required".format(text)
+        )
+    return {"worktree": worktree, "reason": reason}
+
+
 def _say(text, stream=None):
     """Write one line that cannot die on the console's codepage.
 
@@ -3050,6 +3148,16 @@ def _main(argv=None):
         help="why the fill is 'unknown'; required when --lane-fills unknown is",
     )
     parser.add_argument(
+        "--cleanup-override",
+        action="append",
+        type=_cleanup_override_argument,
+        metavar="WORKTREE=REASON",
+        help="#1007: record a forced worktree cleanup that overrode "
+        "gh-pr-merge's own |cleanup declining that worktree with 'cannot "
+        "tell' -- WORKTREE=REASON, reason required, naming why the force "
+        "was judged safe. Repeatable, one per forced worktree.",
+    )
+    parser.add_argument(
         "--cohort", help="the frozen cohort's label, e.g. cohort-6 -- required with --cohort-count"
     )
     parser.add_argument(
@@ -3179,6 +3287,11 @@ def _main(argv=None):
         )
         if value is not None
     ]
+    cleanup_override_flags = [
+        name
+        for name, value in (("--cleanup-override", args.cleanup_override),)
+        if value is not None
+    ]
     cohort_flags = [
         name
         for name, value in (
@@ -3232,6 +3345,7 @@ def _main(argv=None):
     pending_intake = None
     pending_lanes = None
     pending_lane_fill = None
+    pending_cleanup_override = None
     pending_cohort = None
     pending_wait_record = None
     pending_tick_cost = None
@@ -3261,6 +3375,12 @@ def _main(argv=None):
         if pending_lane_fill is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + lane_fill_line(pending_lane_fill), sys.stderr)
+        if pending_cleanup_override is not None:
+            sys.stdout.flush()
+            _say(
+                "NOT RECORDED " + cleanup_override_line(pending_cleanup_override),
+                sys.stderr,
+            )
         if pending_cohort is not None:
             sys.stdout.flush()
             _say("NOT RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
@@ -3310,6 +3430,12 @@ def _main(argv=None):
             _say(
                 "FAIL {} are only recorded with --decision; a reading mode would "
                 "accept them and drop them".format(", ".join(lane_fill_flags))
+            )
+            return 1
+        if reading_mode and cleanup_override_flags:
+            _say(
+                "FAIL {} are only recorded with --decision; a reading mode would "
+                "accept them and drop them".format(", ".join(cleanup_override_flags))
             )
             return 1
         if reading_mode and cohort_flags:
@@ -3690,6 +3816,12 @@ def _main(argv=None):
             pending_lane_fill = lane_fill(
                 None, window=args.lane_fill_window, why=args.lane_fill_why
             )
+        # #1007: cleanup_overrides() itself raises StateError on a blank worktree or
+        # reason -- caught by this function's own StateError handler below, which
+        # routes to refuse() the same as an invalid --lane-fill does, rather than
+        # writing a half-stated override to disk.
+        if args.cleanup_override is not None:
+            pending_cleanup_override = cleanup_overrides(args.cleanup_override)
         if args.cohort_count:
             if not args.cohort:
                 return refuse(
@@ -3820,6 +3952,20 @@ def _main(argv=None):
                     "other"
                 )
             detail["lane_fill"] = pending_lane_fill
+        if pending_cleanup_override is not None:
+            if detail is None:
+                detail = {}
+            if not isinstance(detail, dict):
+                return refuse(
+                    "--detail must be a JSON object when a cleanup override "
+                    "record is attached"
+                )
+            if "cleanup_override" in detail:
+                return refuse(
+                    "--detail already carries a 'cleanup_override' key; pass "
+                    "one or the other"
+                )
+            detail["cleanup_override"] = pending_cleanup_override
         if pending_cohort is not None:
             if detail is None:
                 detail = {}
@@ -3903,6 +4049,11 @@ def _main(argv=None):
             _say("RECORDED " + lane_models_line(pending_lanes), sys.stderr)
         if pending_lane_fill is not None:
             _say("RECORDED " + lane_fill_line(pending_lane_fill), sys.stderr)
+        if pending_cleanup_override is not None:
+            _say(
+                "RECORDED " + cleanup_override_line(pending_cleanup_override),
+                sys.stderr,
+            )
         if pending_cohort is not None:
             _say("RECORDED " + cohort_freeze_line(pending_cohort), sys.stderr)
         if pending_wait_record is not None:
