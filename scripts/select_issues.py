@@ -28,7 +28,8 @@ read, and name which one went dark instead.
 
 `eligible` / `assigned` / `assignee-unreadable` / `stale` (a preflight
 pattern matched -- the defect is already fixed) / `unrankable`
-(`dispatch_rank.rank` could not place it -- an undeclared label axis, most
+(`dispatch_rank.rank` could not place it -- an undeclared label axis, or a
+non-loop issue whose `author_association` this payload never carried, most
 often) / `lane-collision` (its own declared files overlap a lane already
 claimed).
 
@@ -121,7 +122,8 @@ def select(payload, checker=None, search=None, resolve_lane=None):
 
     for item in ranked:
         number = item.get("number")
-        answer = dispatch_rank.rank(item.get("labels") or [], declared)
+        answer = dispatch_rank.rank(item.get("labels") or [], declared,
+                                     item.get("author_association"))
         if answer["rank"] is None:
             dropped.append({"number": number, "disposition": "unrankable", "why": answer["why"]})
             continue
