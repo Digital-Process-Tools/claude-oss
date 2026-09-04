@@ -218,6 +218,7 @@ def read_one(number, login, run=None, repo=None):
 
 
 def claim_one(number, login, run=None, repo=None):
+    run = _run if run is None else run
     logins, detail = read_assignees(number, run=run, repo=repo)
     if logins is None:
         return _row(number, STATE_COULD_NOT_READ, detail=detail)
@@ -242,6 +243,7 @@ def claim_one(number, login, run=None, repo=None):
 
 
 def release_one(number, login, run=None, repo=None):
+    run = _run if run is None else run
     logins, detail = read_assignees(number, run=run, repo=repo)
     if logins is None:
         return _row(number, STATE_COULD_NOT_READ, detail=detail)

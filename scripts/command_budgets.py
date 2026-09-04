@@ -36,7 +36,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # at the top of the file itself). The budget is not raised to make room
     # for further growth; it is set at today's size so growth from here is
     # visible, the same posture #491 already takes for agents/*.md.
-    "commands/tick.md": (48465, 53300),
+    # Re-baselined for #985: this row had already drifted to 52,090 B by the
+    # time #985 re-measured it (grown past the 48,465 B baseline in #1001's
+    # own diff, unnoticed because `check()` only compares against `budget`,
+    # never against `baseline` -- a real gap #985's own review round found
+    # and named as `misreports`, not a defect this commit's diff introduced).
+    # Re-measured rather than left stale, with ~10% headroom restored.
+    "commands/tick.md": (52090, 57300),
 }
 
 
