@@ -110,9 +110,14 @@ Seven answers, not three, and only one of them is the ordinary case:
   not read this as an idle, clean tick — that collapse is the exact failure #695 and #767 exist to
   prevent. One fresh re-spawn, then stop and say so if the second one is empty too — the same rule
   `agents/developer.md` applies to a reviewer that returns nothing.
-- **`could-not-classify`** — no `TICK:` header, or a declared state missing its companion field.
-  Read the raw message yourself and say so in the record rather than guess which of the above it
-  meant.
+- **`could-not-classify`** — no `TICK:` header, or a declared state missing its companion field, or
+  a declared state or field value this tool does not recognise (#896 — an unrecognised value is
+  exactly as undecidable as a missing one, and the reason names the value it found rather than
+  claiming nothing was there). One specific shape of the header-less case gets its own reason
+  (#941): a message that reads as a promise to resume once CI or a poller reports back, which a
+  sub-manager cannot keep, since its context is gone the instant it reports — that reason names
+  `TICK: paused` as the shape it should have used instead. Read the raw message yourself and say so
+  in the record rather than guess which of the above it meant.
 - **`could-not-read`** — the `--framed` unwrap itself failed: the message never closed with `END OF
   MESSAGE`, or an earlier line broke the indentation, so nothing was reliably looked at. This is not
   the same fact as `could-not-classify` — that state means the message was read and could not be
