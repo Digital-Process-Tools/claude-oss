@@ -86,7 +86,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # 54,751 -> 42,604 B; 62,829 B before #958, so -32.2% across the two.
     # Same reasoning as #958's raise-nothing rule: the ceiling follows the
     # measurement down, or the saving is spendable without a decision.
-    SPINE: (42604, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
+    # Re-baselined for #1014: `check()` only ever compares measured size
+    # against `budget` (the ceiling), never against `baseline`, so this
+    # number had drifted from disk (42867 B) with nothing to notice --
+    # confirmed by a dedicated comparison, `tests/test_baseline_matches_
+    # disk_1014.py`, added in the same diff. Budget is unchanged; the file
+    # was already comfortably under it.
+    SPINE: (42867, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
@@ -138,15 +144,30 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Nothing was cut to pay for it: this is relocated argument, not new
     # argument, and trimming it in the same diff would have hidden which bytes
     # moved and which were dropped. Seventh budget change for this file.
-    "skills/manager/phases/dispatch.md": (45990, 50600, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries"),
-    "skills/manager/phases/handback.md": (18864, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
+    # Raised (#1016): measured 52601 B against the prior 50600 B budget --
+    # 10 B of headroom left before this raise, following #725's own precedent
+    # where a 48 B margin already forced a misplaced directive once (see
+    # CLAUDE.md's own note beside this table). #1020's `--stack-on` paragraph
+    # is what pushed it over: it documents a flag that had already landed
+    # (#1006/#1009) with no brief, phase file or agent definition naming it,
+    # so there was nothing to cut to pay for it -- the addition is the fix,
+    # not padding. Also folds in #1014's own baseline re-measurement (see
+    # that comment's note): declared baseline was 45990, disk read 50590
+    # before #1020's own edit landed. Eighth budget change for this file;
+    # ~10% headroom over the new size.
+    "skills/manager/phases/dispatch.md": (52601, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
+    # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
+    # baseline. Budget unchanged; comfortably under it either way.
+    "skills/manager/phases/handback.md": (19369, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
     # Raised (#960): measured 13,992 B against the prior 12,800 B budget -- the
     # spine's cross-platform band moved in, being what a reviewer audits a diff
     # against rather than something every tick needs loaded.
     "skills/manager/phases/review.md": (13992, 15400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
     "skills/manager/phases/findings.md": (11620, 12800, "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board"),
     "skills/manager/phases/merge.md": (13198, 14500, "merging: the gates, the call itself, and what is still owed after green"),
-    "skills/manager/phases/release.md": (10195, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
+    # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
+    # baseline. Budget unchanged; comfortably under it either way.
+    "skills/manager/phases/release.md": (10381, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
     # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two
     # relocations, both about closing a tick: the cadence section, and the loop
     # doctrine's argument (the #209 incident and the #337/#477/#565 state-file
@@ -155,7 +176,9 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # does this tick close" are one subject, and a seventh phase file would add
     # its own spine directive block and header, which is the duplication cost
     # the split already pays once per file.
-    "skills/manager/phases/accounting.md": (22237, 24500, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
+    # Re-baselined for #1014: 22741 B on disk against a stale 22237 declared
+    # baseline. Budget unchanged; comfortably under it either way.
+    "skills/manager/phases/accounting.md": (22741, 24500, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
 }
 
 
