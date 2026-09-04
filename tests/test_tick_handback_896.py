@@ -131,3 +131,28 @@ def test_a_bracketed_or_quoted_value_is_still_recognised():
             "TICK: {0}\nBLOCKER: waiting on review\n".format(wrapped)
         )
         assert verdict["state"] == "blocked", wrapped
+
+
+def test_an_unrecognised_tick_value_that_is_not_even_word_shaped_is_folded():
+    """Found by this lane's own oss:auditor review: an unrecognised TICK:
+    value that does not even start with letters/digits/hyphens (e.g. raw
+    ANSI escape bytes a sub-manager's message happened to carry) used to
+    reach `verdict["declared"]`, and the CLI's `declared:` line, completely
+    unfolded -- every sibling field on this receipt (`quoted`, `detail`,
+    the value embedded in `reason`) is folded to printable ASCII, and this
+    one was not. A terminal cursor-control sequence in an untrusted
+    handback message must not reach the printed receipt raw."""
+    verdict = tick_handback.classify(
+        "TICK: \x1b[2J\x1b[Hpwned-line\nsome summary text here"
+    )
+    assert verdict["state"] == "could-not-classify"
+    assert "\x1b" not in verdict["declared"]
+    assert all(32 <= ord(c) <= 126 for c in verdict["declared"])
+
+
+def test_cli_declared_line_has_no_raw_escape_bytes():
+    result = _run("TICK: \x1b[2J\x1b[Hpwned-line\nsome summary text here\n")
+    assert result.returncode == tick_handback.EXIT_CODES["could-not-classify"], (
+        result.stdout + result.stderr
+    )
+    assert "\x1b" not in result.stdout

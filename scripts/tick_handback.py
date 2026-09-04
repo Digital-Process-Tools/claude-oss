@@ -172,7 +172,15 @@ def _normalize_enum_value(raw):
     thought. Used for both ``TICK:`` and ``TICK-ENDS:`` -- the same
     "present but unrecognised" question, asked twice."""
     match = _ENUM_VALUE.match(raw.strip())
-    return match.group(0).lower() if match else raw.strip().lower()
+    if match is not None:
+        return match.group(0).lower()
+    # The token does not even start with the shape an enum value has -- it
+    # is definitely unrecognised, but it is still untrusted text about to
+    # be printed verbatim (as `declared`, on the CLI receipt and in every
+    # caller's returned dict), so it gets the same fold every other
+    # untrusted excerpt on this receipt already gets (`quoted`, `detail`,
+    # the value named inside `reason`) rather than reaching a terminal raw.
+    return (_rr.fold_to_one_ascii_line(raw.strip()) or "").lower()
 _BLOCKER = re.compile(r"^[ \t>*_#]*BLOCKER:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 _REASON = re.compile(r"^[ \t>*_#]*REASON:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 # #818: the two facts a `paused` tick must name, reusing the field names
