@@ -240,9 +240,9 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
    `sed -n` invocation above would need the same audit. `-E` is POSIX extended-regex mode and
    both BSD and GNU `sed` implement it.
 
-   Four shapes, and only the first two are worth a line in the tick record — the other two are
-   this check correctly declining to answer, exactly as narrow as #942 itself says the whole
-   question is:
+   Five shapes, and only the first is worth a line in the tick record — the other four are
+   this check correctly declining to say anything is wrong, exactly as narrow as #942 itself
+   says the whole question is:
 
    - **`SKEW …`** — the checkout and the installed copy differ, and the sentence at its end
      names both manifests' declared versions. Report this prominently before anything else
@@ -251,12 +251,19 @@ no `ScheduleWakeup` tool, and it is gone by the time step 7 would run.
      diagnosed it.
    - **`the copy that answered … and the checkout being diagnosed … are identical`** — nothing
      to report; the install is current with the repo it is managing.
+   - **`doctor.py answered from the checkout being diagnosed …, so there is no installed-copy/
+     clone split to report here`** — also nothing to report, and also clean, not
+     could-not-tell: this is what a maintainer developing this plugin against its own working
+     tree looks like (`$DOCTOR_ROOT` resolved to the same directory `--root .` names), the
+     literal scenario #942's own motivation describes. A self-review on this same change caught
+     an earlier draft of this list treating this exact shape as `could not be determined`,
+     which would have reported a spurious ambiguity on the ticks #942 cares about most.
    - **`… is not a checkout of this plugin …`** — not applicable. The repo being ticked is not
      this plugin itself, so "behind the repo it manages" has no meaning here; say nothing
      further.
    - anything else (`could not be determined`, an empty `$PLUGIN_COPY`, doctor.py's own output
      not carrying the line at all) — could-not-tell, not clean. Say so rather than reading
-     silence as "identical".
+     silence as one of the four states above.
 
    Four answers, not three. `unchanged` — proceed, say nothing further. `changed` — report it
    prominently before anything else this tick; whether to re-run the rest of doctor's diagnostic

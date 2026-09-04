@@ -100,6 +100,35 @@ def test_plugin_provenance_names_both_versions_on_a_lagging_install(tmp_path):
     assert "0.19.0" in copy_lines[0] and "0.20.0" in copy_lines[0]
 
 
+def test_tick_names_the_same_tree_shape_as_clean_not_ambiguous():
+    """Self-review finding: an earlier draft of this prose enumerated only three
+    non-SKEW shapes and fell through to could-not-tell for the fourth --
+    doctor.py answering from the SAME directory it is diagnosing, which is
+    exactly what a maintainer developing this plugin against its own working
+    tree looks like (the literal scenario #942 is about). That must read as
+    clean, not as an ambiguity to report.
+    """
+    text = _text()
+    assert "no installed-copy/" in text and "clone split to report here" in text
+    assert "could-not-tell: this is what a maintainer developing this plugin" in text
+
+
+def test_plugin_provenance_reports_the_same_tree_case_as_clean(tmp_path):
+    """Positive control for the finding above, against the real mechanism rather
+    than only the prose: doctor.py's own plugin_provenance() must actually
+    produce the "no installed-copy/clone split" sentence when script_root and
+    project_dir are the same directory, not a SKEW or a could-not-tell shape.
+    """
+    _write_plugin(tmp_path, "0.20.0")
+    lines = doctor.plugin_provenance(
+        tmp_path, tmp_path, attested=str(tmp_path), attested_source="CLAUDE_PLUGIN_ROOT"
+    )
+    copy_lines = [msg for _level, msg in lines if msg.startswith("plugin copy: ")]
+    assert copy_lines, "no 'plugin copy:' line at all: {!r}".format(lines)
+    assert "no installed-copy/clone split to report here" in copy_lines[0]
+    assert "SKEW" not in copy_lines[0]
+
+
 def test_plugin_provenance_is_quiet_on_an_unrelated_repo():
     """Negative control: a repo that is not a checkout of this plugin must not be
     told it is "behind" anything -- #942 itself says the scope is narrow.
