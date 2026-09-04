@@ -29,7 +29,12 @@ DECLARED = {"filed_by_loop": "filed-by-loop", "priority": ["priority-high", "pri
 
 
 def _issue(number, labels=None, **extra):
-    row = {"number": number, "labels": labels or []}
+    # #993: a non-loop issue needs a readable author association to rank.
+    # This suite is about the other joins `select()` composes, not the
+    # author axis itself, so a fixture that does not care which value it
+    # carries defaults to "maintainer" -- overridable via `extra` for a test
+    # that does care.
+    row = {"number": number, "labels": labels or [], "author_association": "maintainer"}
     row.update(extra)
     return row
 
@@ -130,6 +135,38 @@ def test_an_unrankable_issue_is_dropped_and_named():
     assert result["dropped"][0]["disposition"] == "unrankable"
 
 
+def test_a_non_loop_issue_with_no_readable_association_is_unrankable_993():
+    """#993, one layer up from `dispatch_rank.rank` itself: a payload that
+    never wired up `author_association` for a non-loop issue must not be
+    silently ranked as though it were the maintainer's own -- it is dropped
+    `unrankable`, the same disposition an undeclared label axis produces."""
+    payload = {
+        "declared": DECLARED,
+        "issues": [{"number": 1, "labels": ["priority-high"]}],
+    }
+    result = select_issues.select(payload, checker=_no_op_checker)
+    assert result["state"] == "none-available", result
+    assert result["dropped"][0]["disposition"] == "unrankable", result
+    assert "association" in result["dropped"][0]["why"], result
+
+
+def test_an_external_issue_outranks_a_maintainer_one_at_the_same_band_993():
+    """Positive control for the test above, and #993's own headline claim:
+    given a real association reading, an external report does place ahead
+    of a maintainer one of the same priority band."""
+    payload = {
+        "declared": DECLARED,
+        "issues": [
+            _issue(1, ["priority-high"], author_association="maintainer"),
+            _issue(2, ["priority-high"], author_association="external"),
+        ],
+    }
+    result = select_issues.select(payload, checker=_no_op_checker)
+    assert result["state"] == "candidates", result
+    numbers = [c["number"] for c in result["candidates"]]
+    assert numbers == [2, 1], numbers
+
+
 def test_an_assigned_issue_is_dropped_and_named():
     def checker(numbers, mode, run=None, repo=None):
         return [{"issue": n, "state": "assigned", "assignees": ["someone"]} for n in numbers]
@@ -155,6 +192,30 @@ def test_a_lane_collision_is_dropped_and_named():
     assert "scripts/held.py" in result["dropped"][0]["why"]
 
 
+def test_a_refused_lane_pattern_forces_could_not_select_998():
+    """#998: a lane pattern `resolve_lane` could not read at all -- `refused`,
+    the same state `_lane_pattern_problem` also produces for a bad literal or
+    a glob-and-OSError -- must not read as "this lane resolved to no files,
+    therefore no overlap". An unreadable input is dark, not clean."""
+    def resolve(repo, patterns):
+        return {
+            "patterns": [
+                {"pattern": patterns[0], "state": "refused", "files": [],
+                 "detail": "ValueError: bad pattern"}
+            ],
+            "files": [],
+        }
+
+    payload = {
+        "declared": DECLARED,
+        "issues": [_issue(1, ["priority-high"], lane_patterns=["[unterminated"])],
+        "held_files": ["scripts/held.py"],
+    }
+    result = select_issues.select(payload, checker=_no_op_checker, resolve_lane=resolve)
+    assert result["state"] == "could-not-select"
+    assert "#1" in result["why"]
+
+
 def test_eligible_candidates_are_ranked_best_first():
     payload = {
         "declared": DECLARED,
@@ -167,7 +228,9 @@ def test_eligible_candidates_are_ranked_best_first():
     result = select_issues.select(payload, checker=_no_op_checker)
     assert result["state"] == "candidates"
     numbers = [c["number"] for c in result["candidates"]]
-    # human/high (2) outranks loop/high (3) outranks human/low (1) -- ROWS order.
+    # maintainer/high (2) outranks loop/high (3) outranks maintainer/low (1) --
+    # ROWS order (#993: "human" split into external/maintainer; _issue()'s own
+    # default author_association is "maintainer").
     assert numbers == [2, 3, 1]
     for c in result["candidates"]:
         assert c["disposition"] == "eligible"
@@ -218,7 +281,9 @@ def test_main_on_an_ordinary_piped_board_prints_candidates(monkeypatch, capsys):
     point.
     """
     monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
-    board = {"declared": DECLARED, "issues": [{"number": 5, "labels": ["priority-high"]}]}
+    board = {"declared": DECLARED, "issues": [
+        {"number": 5, "labels": ["priority-high"], "author_association": "maintainer"},
+    ]}
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
     code = select_issues.main()
     out = json.loads(capsys.readouterr().out)
@@ -259,7 +324,7 @@ def test_a_non_ascii_label_does_not_crash_the_print(monkeypatch, capsys):
     monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
     board = {
         "declared": DECLARED,
-        "issues": [{"number": 6, "labels": ["priority-hïgh"]}],
+        "issues": [{"number": 6, "labels": ["priority-hïgh"], "author_association": "maintainer"}],
     }
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
     code = select_issues.main()

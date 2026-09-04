@@ -232,6 +232,37 @@ def test_an_uncommitted_fragment_cannot_have_soaked(repo):
     assert "14.fixed.md" in row["detail"]
 
 
+def test_an_undatable_fragment_is_named_not_dropped_from_the_receipt_997(repo):
+    """#997: `undated` was already carried on the condition row, but
+    `receipt()`'s printed-key list did not include it, so a partially-dated
+    fragment set rendered identically to a cleanly-read one -- the reader had
+    no way to see that one fragment went unread while another still fired the
+    condition."""
+    _fragment(repo, "16.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=72))
+    Path(repo, "changelog.d", "17.fixed.md").write_text("- y (#17)\n", encoding="utf-8")
+    row = release_trigger.user_visible_soak_condition(
+        repo, 48, Path(repo, "changelog.d")
+    )
+    assert row["state"] == release_trigger.MET, row
+    assert row["undated"], row
+    payload = release_trigger.compute(
+        repo, config=_config(merged_prs=5, soak_hours=48), findings=[]
+    )
+    text = release_trigger.receipt(payload)
+    assert "17.fixed.md" in text, text
+
+
+def test_the_receipt_says_nothing_about_undated_when_everything_dated(repo):
+    """The must-not-fire half: a cleanly-dated fragment set must not grow an
+    `undated=` mention it does not have anything to report."""
+    _fragment(repo, "18.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=72))
+    payload = release_trigger.compute(
+        repo, config=_config(merged_prs=5, soak_hours=48), findings=[]
+    )
+    text = release_trigger.receipt(payload)
+    assert "undated=" not in text, text
+
+
 def test_a_chore_shaped_fragment_is_not_user_visible(repo):
     """The rule #966 records as a decision: the section name is what says
     whether a change is user-visible."""

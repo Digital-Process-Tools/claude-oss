@@ -28,7 +28,8 @@ read, and name which one went dark instead.
 
 `eligible` / `assigned` / `assignee-unreadable` / `stale` (a preflight
 pattern matched -- the defect is already fixed) / `unrankable`
-(`dispatch_rank.rank` could not place it -- an undeclared label axis, most
+(`dispatch_rank.rank` could not place it -- an undeclared label axis, or a
+non-loop issue whose `author_association` this payload never carried, most
 often) / `lane-collision` (its own declared files overlap a lane already
 claimed).
 
@@ -121,7 +122,8 @@ def select(payload, checker=None, search=None, resolve_lane=None):
 
     for item in ranked:
         number = item.get("number")
-        answer = dispatch_rank.rank(item.get("labels") or [], declared)
+        answer = dispatch_rank.rank(item.get("labels") or [], declared,
+                                     item.get("author_association"))
         if answer["rank"] is None:
             dropped.append({"number": number, "disposition": "unrankable", "why": answer["why"]})
             continue
@@ -146,6 +148,21 @@ def select(payload, checker=None, search=None, resolve_lane=None):
         lane_patterns = item.get("lane_patterns")
         if lane_patterns and held_files:
             resolved = resolve_lane(Path("."), lane_patterns)
+            refused = [
+                entry for entry in resolved["patterns"] if entry["state"] == "refused"
+            ]
+            if refused:
+                # #998: a refused member contributes `files: []`, and an empty
+                # union used to read as "no overlap" -- the same defect class
+                # #970 closed for the assignee read, one input over: an
+                # unreadable lane pattern is dark, never a clean disjointness
+                # result reached by accident.
+                dark_inputs.append(
+                    "lane pattern for #{0}: {1}".format(
+                        number, "; ".join(entry["detail"] for entry in refused)
+                    )
+                )
+                continue
             overlap = lane_setup.lane_overlap(resolved["files"], held_files)
             if overlap:
                 dropped.append({

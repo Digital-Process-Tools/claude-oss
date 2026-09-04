@@ -164,7 +164,7 @@ def agent_call(primary_issue, issues, phrase, subagent_type, model=None,
 
     parts = ['subagent_type: "{}"'.format(subagent_type)]
     if model:
-        parts.append('model: "{}"'.format(model))
+        parts.append('model: "{}"'.format(_quote_for_call(model)))
     parts.append(
         "run_in_background: {}".format("true" if run_in_background else "false")
     )

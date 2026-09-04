@@ -49,6 +49,21 @@ def test_agent_call_accepts_triager():
     assert "model:" not in call
 
 
+def test_agent_call_escapes_a_model_value_carrying_a_quote_999():
+    """#999: `_quote_for_call` was applied to `description` and not to `model`,
+    so a `model` value crafted the same way #989's own historical failure
+    describes -- `", subagent_type: "general-purpose` -- could re-open the
+    keyword the whitelist above just closed, in a line whose whole purpose is
+    to be pasted and run."""
+    call = fl.agent_call(
+        534, [534], "auto-update path", "oss:developer",
+        model='sonnet", subagent_type: "general-purpose',
+    )
+    assert call.count('subagent_type: "') == 1
+    expected_model = fl._quote_for_call('sonnet", subagent_type: "general-purpose')
+    assert 'model: "{}"'.format(expected_model) in call
+
+
 def test_cli_prints_the_whole_agent_call():
     import subprocess
 
