@@ -30,16 +30,19 @@ import tick_handback  # noqa: E402
 SUB_MANAGER_MD = REPO_ROOT / "agents" / "sub-manager.md"
 TICK_MD = REPO_ROOT / "commands" / "tick.md"
 
-#: The TICK-ENDS vocabulary, measured from `tick_handback.py`'s own regex
-#: rather than retyped -- the issue explicitly asks for this rather than a
-#: hand-copied list going stale beside the module that enforces it.
-_TICK_ENDS_VOCAB_RE = re.compile(r"TICK-ENDS:\[ \\t\]\*\(([\w|-]+)\)")
-
-
+#: The TICK-ENDS vocabulary, measured from `tick_handback.py`'s own
+#: _KNOWN_TICK_ENDS tuple rather than retyped -- the issue explicitly asks
+#: for this rather than a hand-copied list going stale beside the module
+#: that enforces it. #896 broadened _TICK_ENDS's own compiled pattern to
+#: an any-token capture (validated separately against _KNOWN_TICK_ENDS
+#: afterwards) so that an unrecognised value is distinguishable from a
+#: missing line rather than silently failing to match at all -- which
+#: means the vocabulary can no longer be read out of the pattern's own
+#: source text at all, and _KNOWN_TICK_ENDS is exactly the tuple this
+#: parity check wants, already named and already the single source of
+#: truth tick_handback.py itself validates against.
 def _tick_ends_vocabulary():
-    m = _TICK_ENDS_VOCAB_RE.search(tick_handback._TICK_ENDS.pattern)
-    assert m, "tick_handback._TICK_ENDS's own pattern did not match the extractor -- fix the extractor"
-    return frozenset(m.group(1).split("|"))
+    return frozenset(tick_handback._KNOWN_TICK_ENDS)
 
 
 #: "Work started" bullet in commands/tick.md's "What ends a tick" section: does
