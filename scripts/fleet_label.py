@@ -102,6 +102,22 @@ call site to compose for.
 """
 
 
+def _quote_for_call(text):
+    """Escape ``text`` so it survives inside a double-quoted field of the
+    rendered ``Agent(...)`` call.
+
+    A phrase carrying an unescaped ``"`` closes the ``description`` field
+    early, leaving the remainder as bare tokens the human pasting the line
+    must hand-repair -- and a phrase crafted with
+    ``", subagent_type: "general-purpose`` would silently re-open a new
+    keyword and could flip the very ``subagent_type`` this module exists to
+    protect (found in self-review of #989, before this function existed).
+    Backslash is escaped first so an existing backslash is never mistaken for
+    part of the quote escape this function adds.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def agent_call(primary_issue, issues, phrase, subagent_type, model=None,
                 run_in_background=False):
     """Render the whole literal ``Agent(...)`` invocation for one dispatched lane (#989).
@@ -144,7 +160,7 @@ def agent_call(primary_issue, issues, phrase, subagent_type, model=None,
     parts.append(
         "run_in_background: {}".format("true" if run_in_background else "false")
     )
-    parts.append('description: "{}"'.format(label))
+    parts.append('description: "{}"'.format(_quote_for_call(label)))
     parts.append('prompt: "<brief>"')
 
     return "Agent({})".format(", ".join(parts))

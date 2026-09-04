@@ -80,6 +80,31 @@ def test_cli_refuses_an_unknown_agent_type():
     assert result.returncode != 0
 
 
+def test_agent_call_escapes_a_quote_in_the_phrase():
+    # oss:auditor finding (#989 self-review): an unescaped quote in ``phrase``
+    # closed the ``description`` field early and left the rest of the phrase as
+    # bare tokens after the paste -- a phrase crafted with
+    # ``", subagent_type: "general-purpose`` would silently re-open a new
+    # keyword and could flip the very subagent_type this module exists to
+    # protect, live through the field the module never validated.
+    call = fl.agent_call(534, [534], 'do "the thing" now', "oss:developer")
+    assert call == (
+        'Agent(subagent_type: "oss:developer", run_in_background: false, '
+        'description: "Lane 534  do \\"the thing\\" now", prompt: "<brief>")'
+    )
+    # A follow-up field-count check was tried and dropped: the exact-string
+    # assertion above already pins the escaped output completely, and a
+    # separate substring count over an escaped string is fragile in exactly
+    # the way this fix is about (see #989 self-review).
+
+
+def test_agent_call_escapes_a_backslash_in_the_phrase():
+    # A trailing backslash must not swallow the escaped closing quote.
+    call = fl.agent_call(534, [534], "trailing backslash \\", "oss:developer")
+    assert call.endswith(
+        'description: "Lane 534  trailing backslash \\\\", prompt: "<brief>")'
+    )
+
 def test_cli_without_agent_type_still_prints_only_the_label():
     # Positive control -- the original three-argument form is untouched.
     import subprocess
