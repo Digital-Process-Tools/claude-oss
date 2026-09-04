@@ -762,6 +762,13 @@ def _payload():
     }
 
 
+#: A backslash followed by an n, spelled through chr() rather than a string
+#: escape for the same reason report_schema.py spells it that way: no reader,
+#: and no payload carrying this source through another serialisation, has to
+#: count backslashes to know what it is (#685, #724).
+BACKSLASH_N = chr(92) + "n"
+
+
 # `closes-nothing` by default, because the default payload body carries no closing
 # keyword and every fixture below is about something other than #274. Saying so
 # explicitly rather than leaving it out is the point of the field: an absent `closes`
@@ -943,6 +950,26 @@ def _disk_mutations(tmp_path):
                 body="A body about something else entirely.",
                 anchor="the docstring above the helper is wider than the code under it",
                 name="unrecorded.pr.json",
+            ),
+            tmp_path,
+        ),
+        # #724: a payload whose body is more escaped than formatted -- doubled
+        # backslash-n sequences standing in for a paragraph break, with no real
+        # newline anywhere in the body to back them up. Nothing else in this
+        # table can refuse it: the payload parses, matches the shape, and the
+        # closes claim is self-consistent. Only the content check can see it.
+        "pr-body-body-is-no-more-escaped-than-formatted": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t",
+                    "body": (BACKSLASH_N * 2).join(
+                        "Paragraph {}.".format(n) for n in range(1, 5)
+                    ),
+                    "head": "fix/123",
+                    "base": "main",
+                },
+                name="escaped-newlines.pr.json",
             ),
             tmp_path,
         ),
