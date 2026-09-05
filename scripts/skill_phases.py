@@ -107,8 +107,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # 45059 B after two more bare-mention fixes an auditor spawn found
     # (`preflight_check.py`/`dispatch_rank.py` with no `scripts/` prefix).
     # Budget unchanged.
+    # Re-baselined a third time (maintainer review): 45059 B became 45029 B
+    # -- the dispatch table's --label cell moved from four named flags back
+    # to positional arguments (fleet_label.py's own old shape), a net
+    # shrink even after the mode-selecting --label token. Budget unchanged.
     SPINE: (
-        45059,
+        45029,
         46900,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -200,8 +204,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # spawn found (`issue_claim.py`/`dispatch_rank.py`/`preflight_check.py`
     # with no `scripts/` prefix, invisible to the prose guard's own Tier 1
     # regex). Budget unchanged.
+    # Re-baselined a third time (maintainer review): 58993 B became 58916 B
+    # -- --label's two worked examples moved from four named flags back to
+    # positional arguments, matching fleet_label.py's own old call length
+    # plus the one unavoidable --label mode-selector token. A net shrink.
+    # Budget unchanged.
     "skills/manager/phases/dispatch.md": (
-        58993,
+        58916,
         64200,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -300,8 +309,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # preflight_check.py/issue_claim.py/fleet_label.py call sites rewritten
     # for select_issues.py/lane_setup.py's own two-entry-point shape. Budget
     # unchanged; comfortably under it.
+    # Re-baselined again (maintainer review): 39490 B became 39460 B -- the
+    # --label worked example moved from named flags to positional arguments.
+    # Budget unchanged.
     "skills/manager/phases/tick-order.md": (
-        39490,
+        39460,
         43100,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

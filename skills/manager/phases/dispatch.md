@@ -64,7 +64,7 @@ a stronger sentence here -- it is not composing the call by hand at all. `script
 already refuses to compose a *description* from an incomplete issue bundle (#539); its
 `agent_call` does the same for the **whole call**:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --label --label-issues 534,537,495 --label-phrase "auto-update path" --label-subagent oss:developer --model sonnet
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --label 534,537,495 "auto-update path" oss:developer --model sonnet
     -> Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false, description: "Lane 534 x3  auto-update path", prompt: "<brief>")
 
 Paste that line and fill in `prompt` with the brief -- the one part only the caller can write.
@@ -425,7 +425,7 @@ considered and rejected: it describes only the phrase's own issue and leaves a b
 invisible as the count-free label did.
 
 Compose it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label
---label-issues <issue1,issue2,...> --label-phrase "<phrase>"` rather than typing it by hand, and
+<issue1,issue2,...> "<phrase>"` rather than typing it by hand, and
 paste its stdout as the `Agent` call's `description`.
 The label is a string handed to a tool parameter — nothing in this repository can inspect it again
 once the lane is running, which is why a guard has to sit in the one function that composes it rather

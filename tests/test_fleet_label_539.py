@@ -81,9 +81,7 @@ def test_cli_prints_the_label(tmp_path):
             str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
             "--label",
-            "--label-issues",
             "534,537,495",
-            "--label-phrase",
             "auto-update path",
         ],
         stdout=subprocess.PIPE,
@@ -103,9 +101,7 @@ def test_cli_refuses_without_full_bundle():
             str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
             "--label",
-            "--label-issues",
             "537,495",
-            "--label-phrase",
             "auto-update path",
         ],
         stdout=subprocess.PIPE,
@@ -134,7 +130,7 @@ def test_cli_survives_a_console_that_cannot_encode_the_phrase(monkeypatch):
     monkeypatch.setattr(sys, "stdout", stream)
 
     exit_code = lane_setup.main(
-        ["534", "--label", "--label-issues", "534", "--label-phrase", "auto-update path → continued"]
+        ["534", "--label", "534", "auto-update path → continued"]
     )
     stream.flush()
 
@@ -152,7 +148,7 @@ def test_cli_still_prints_a_representable_phrase_verbatim(monkeypatch):
     monkeypatch.setattr(sys, "stdout", stream)
 
     exit_code = lane_setup.main(
-        ["534", "--label", "--label-issues", "534", "--label-phrase", "auto-update path"]
+        ["534", "--label", "534", "auto-update path"]
     )
     stream.flush()
 

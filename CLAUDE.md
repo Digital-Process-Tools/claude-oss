@@ -333,11 +333,11 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 45,059 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 58,993 B | 64,200 B |
+| `skills/manager/SKILL.md` | 45,029 B | 46,900 B |
+| `skills/manager/phases/dispatch.md` | 58,916 B | 64,200 B |
 | `skills/manager/phases/handback.md` | 19,598 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,789 B | 24,500 B |
-| `skills/manager/phases/tick-order.md` | 39,490 B | 43,100 B |
+| `skills/manager/phases/tick-order.md` | 39,460 B | 43,100 B |
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
@@ -439,12 +439,15 @@ sentence by hand. **Re-summed for #1037: 189,517 B became 230,672 B, +21.7% (+88
 original 122,423 B)** — #1037 added a new row, `skills/manager/phases/tick-order.md` (a
 sub-manager's own steps 1-6 and "how a tick closes", moved out of `commands/tick.md`), rather than
 growing an existing one, so this jump is a new phase file joining the split, not a paragraph nobody
-trimmed. **Re-summed for #1069: 230,672 B became 232,053 B, +0.6%** — five existing rows grew
+trimmed. **Re-summed for #1069: 230,672 B became 231,916 B, +0.5%** — five existing rows grew
 (`SKILL.md`, `dispatch.md`, `handback.md`, `tick-order.md`, `accounting.md`), each by the same
 call-site rewrite (`dispatch_rank.py`/`issue_claim.py`/`preflight_check.py`/`fleet_label.py`
 collapsed to `select_issues.py`/`lane_setup.py`'s own two entry points), plus a second pass in the
 same lane's own self-review round fixing several bare-mention (no `scripts/` prefix) stale call
-sites an auditor spawn found; no new row. The spine's directive blocks and each phase file's own header are a second, shorter statement
+sites an auditor spawn found, then a third pass (maintainer review) putting `--label`'s two worked
+examples back on positional arguments -- matching `fleet_label.py`'s own old call length plus the
+one unavoidable `--label` mode-selector token -- which shrank three of the five rows again; no new
+row. The spine's directive blocks and each phase file's own header are a second, shorter statement
 of what the phase file then argues at length, and that is a real cost paid on every read of the phase
 file. It buys the number that actually matters here — what a session loads before it knows which
 phase it will reach. **122,423 B became 44,358 B, -63.8%**, in three rounds: the original split, then

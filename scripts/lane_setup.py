@@ -1008,6 +1008,33 @@ def main(argv=None):
         help="the issue number this lane implements -- omit only together with "
         "--suggest-companions, which carries its own issue number as its argument",
     )
+    parser.add_argument(
+        "label_issues",
+        nargs="?",
+        default=None,
+        metavar="ISSUES",
+        help="with --label: every issue this lane carries, primary included, "
+        "comma-separated -- positional, so composing a label costs no more "
+        "typing than fleet_label.py's own three-positional call did (#1069). "
+        "Ignored without --label.",
+    )
+    parser.add_argument(
+        "label_phrase",
+        nargs="?",
+        default=None,
+        metavar="PHRASE",
+        help="with --label: the short description of what the lane is doing. "
+        "Ignored without --label.",
+    )
+    parser.add_argument(
+        "label_subagent",
+        nargs="?",
+        default=None,
+        metavar="SUBAGENT_TYPE",
+        help="with --label: given, renders the whole literal Agent(...) call "
+        "(#989) instead of only the description string. Ignored without "
+        "--label.",
+    )
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
     parser.add_argument(
         "--remote", default="origin", help="remote to fetch from (default: origin)"
@@ -1074,29 +1101,10 @@ def main(argv=None):
         action="store_true",
         help="compose this lane's own fleet-view label instead of computing "
         "setup facts (#1069, folded in from fleet_label.py) -- the positional "
-        "issue is the lane's primary issue. Requires --label-issues and "
-        "--label-phrase; every other flag is ignored when this is given.",
-    )
-    parser.add_argument(
-        "--label-issues",
-        default=None,
-        metavar="N,N,...",
-        help="every issue this lane carries, primary included, comma-separated "
-        "-- an omitted or partial bundle is exactly the label #539 was filed "
-        "about, so this is required together with --label.",
-    )
-    parser.add_argument(
-        "--label-phrase",
-        default=None,
-        metavar="PHRASE",
-        help="the short description of what the lane is doing.",
-    )
-    parser.add_argument(
-        "--label-subagent",
-        default=None,
-        metavar="TYPE",
-        help="given together with --label, render the whole literal "
-        "Agent(...) call (#989) instead of only the description string.",
+        "issue is the lane's primary issue, and label_issues/label_phrase/ "
+        "label_subagent (below) carry the rest, positionally, the same shape "
+        "fleet_label.py's own CLI always used. Requires label_issues and "
+        "label_phrase; every other flag is ignored when this is given.",
     )
     parser.add_argument(
         "--model",

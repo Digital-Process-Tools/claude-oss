@@ -435,8 +435,8 @@ tool, and you are gone by the time step 7 would run.
    **Compose each spawn's `description` with `scripts/lane_setup.py --label`, not by hand (#539,
    folded in for #1069).** A lane carrying three issues and a lane carrying one used to render
    identically in the fleet view — the label named only the first issue. `python3
-   "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label --label-issues <every issue this
-   lane carries, comma-separated> --label-phrase "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
+   "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label <every issue this
+   lane carries, comma-separated> "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
    and refuses to print anything when the bundle is incomplete — *Run a fleet, not a queue* in
    `skills/manager/phases/dispatch.md` has the full convention. Paste its stdout as the `Agent`
    call's `description`.
