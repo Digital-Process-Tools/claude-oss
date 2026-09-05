@@ -1498,6 +1498,59 @@ def _rule_layer_file_named(root, name):
     return directory
 
 
+def test_layer_scan_reports_a_symlinked_layer_as_unreadable_not_as_removals(tmp_path):
+    """#1110: `os.listdir` follows a directory symlink, so a committed
+    `.claude/jit-context/<dimension>/01-oss` link used to have its TARGET's files
+    walked and reported in `present` -- which `_main`'s plan loop then printed as
+    `remove` rows the maintainer approves believing they describe THIS repository's
+    own stale files, not a decoy the link happens to point at.
+
+    The decoy's file must not show up in `present` at all: reporting it as `unreadable`
+    instead is what stops the lying `remove` row, and a bare "present is empty" would
+    also pass if `_layer_scan` simply skipped every layer, symlinked or not -- see the
+    positive control below for what rules that out.
+    """
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    (decoy / "something.md").write_text("decoy\n", encoding="utf-8")
+
+    link = tmp_path / scaffold.RULES_LAYER_DIR / "paths" / scaffold.oss_rules.LAYER
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether _layer_scan refuses to follow a symlinked layer "
+            "into its target".format(getattr(exc, "errno", None), type(exc).__name__)
+        )
+
+    present, unreadable = scaffold._layer_scan(tmp_path, {"paths": {}})
+
+    assert present == [], present
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert unreadable == [
+        {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
+    ], unreadable
+
+
+def test_layer_scan_still_lists_an_ordinary_real_directory_layer(tmp_path):
+    """The positive control for the test above: this confirms `_layer_scan` still does
+    its normal job -- listing stale files as `present` -- for a real directory, so
+    "present is empty" above is a claim about the symlink case specifically rather
+    than about `_layer_scan` never finding anything.
+    """
+    directory = tmp_path / scaffold.RULES_LAYER_DIR / "paths" / scaffold.oss_rules.LAYER
+    directory.mkdir(parents=True)
+    (directory / "stale.md").write_text("stale\n", encoding="utf-8")
+
+    present, unreadable = scaffold._layer_scan(tmp_path, {"paths": {}})
+
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert present == ["{}/stale.md".format(relative)], present
+    assert unreadable == [], unreadable
+
+
 def _receipt(tmp_path, monkeypatch, *extra):
     """Everything the CLI printed, with the one network seam pinned."""
     project, local = oss_config.split(_config())
