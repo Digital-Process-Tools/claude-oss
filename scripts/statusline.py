@@ -1648,7 +1648,19 @@ def _gh_rollups(repo):
     A separate call from the counts above because the search API does not carry a check
     rollup. It is bounded, and the bound is visible in the output rather than silent: the
     remainder lands in the `?` group, which is what a page limit actually produced.
+
+    Refuses (returns ``None``, never calling ``gh``) when `repo` is malformed
+    (#1055's round-2 audit comment): every other `repo`-only call site in
+    this module already guards through `_malformed_repo` (#1035, #1051) --
+    this was the one it did not reach, in the same file, in the same commit.
+    `repo` here is a `--repo` FLAG value, not a REST path segment, so a
+    malformed value cannot redirect this call to a different endpoint the
+    way the guarded sites' path-segment interpolation could; it is guarded
+    anyway because a value `_malformed_repo` refuses is not a legitimate
+    `--repo` value either.
     """
+    if _malformed_repo(repo):
+        return None
     out = _run(
         [
             "gh",

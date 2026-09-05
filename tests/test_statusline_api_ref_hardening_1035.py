@@ -262,3 +262,31 @@ def test_latest_release_still_calls_with_well_formed_repo(monkeypatch):
     assert seen, "nothing was asked -- must-fire control failed"
     asked = " ".join(seen[0])
     assert "contents/.claude-plugin/plugin.json" in asked, asked
+
+
+# ------------------------------------------------------------------ _gh_rollups
+
+
+def test_gh_rollups_refuses_malformed_repo(monkeypatch):
+    """#1055's round-2 audit comment: the one `repo`-only call site in this
+    file #1051's own sweep did not reach."""
+
+    def fail(*a, **k):
+        raise AssertionError("must not call _run with a malformed repo")
+
+    monkeypatch.setattr(statusline, "_run", fail)
+    assert statusline._gh_rollups("../secret") is None
+
+
+def test_gh_rollups_still_calls_with_well_formed_repo(monkeypatch):
+    seen = []
+
+    def fake_run(command, timeout=None):
+        seen.append(list(command))
+        return None
+
+    monkeypatch.setattr(statusline, "_run", fake_run)
+    statusline._gh_rollups("owner/name")
+    assert seen, "nothing was asked -- must-fire control failed"
+    asked = " ".join(seen[0])
+    assert "--repo owner/name" in asked, asked

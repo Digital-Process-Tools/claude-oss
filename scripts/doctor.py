@@ -8178,6 +8178,83 @@ def check_dependency_resolution(record=None, repos=None):
             )
 
 
+def _malformed_repo(repo):
+    """True when `repo` cannot safely fill an `owner/name` REST path segment
+    (#1055, following #1035's `statusline._malformed_repo`).
+
+    `_resolve_slug` in each `doctor_check_*.py` sibling module interpolates
+    its return straight into a `gh api repos/{}/...` call after nothing but
+    an `isinstance(str)` check -- a traversal-shaped value
+    (`"../secret"`, `"owner/.."`) passes that check and would silently
+    address a different endpoint than the one `.oss.json` configured.
+
+    Reuses `oss_config.repo_problem` for the base `owner/name` shape check
+    rather than vendoring `statusline._REPO_RE` a second time -- this module
+    already imports `oss_config` (with the same `None`-on-import-failure
+    fallback every other `oss_config` use here already handles) where
+    `statusline.py` deliberately does not, for its own standalone-vendoring
+    reason.
+
+    `repo_problem` alone is not enough, and neither is a bare `".." in
+    repo.split("/")` check ported unchanged from `statusline._malformed_repo`
+    -- #1055's own round-2 audit exercises FOUR shapes `repo_problem`
+    accepts, and a literal `..` segment only accounts for two of them
+    (`"../secret"`, `"a/.."`). The other two are refused per-segment here,
+    each for its own reason:
+
+    * `"..%2f/x"` -- a percent-encoded segment, in EITHER position. `gh api`
+      does not decode this locally, but GitHub's own REST endpoint decodes
+      percent-encoding SERVER-SIDE, and whether `%2f`/`%2e` decodes into a
+      traversal there is "not established... out of scope for a read-only
+      audit" per the issue's own text -- refused regardless of whether the
+      edge case is provably exploitable, per this project's own rule for
+      exactly this shape of open question.
+    * `"-X/POST"` -- the OWNER segment (`segments[0]`) starting with `-`.
+      GitHub bars a leading hyphen from a username but NOT from a repository
+      name (self-review finding: an earlier version of this check applied
+      the leading-dash refusal to both segments and asserted in this
+      docstring that doing so was never a false positive -- that assertion
+      was wrong, and `"someowner/-legit-repo"` is a real, GitHub-permitted
+      slug a two-segment check would have refused). Checking only the owner
+      position still forecloses the option-injection shape this refusal
+      exists for: an owner segment is always `segments[0]`, the position an
+      argv parser reads first, so a hyphen anywhere else in the slug cannot
+      be mistaken for a leading flag the way one there could.
+
+    Checked as an exact-segment comparison for `.`/`..`, not `".." in
+    repo` -- a segment that merely CONTAINS `..` (`owner/na..me`) is not a
+    traversal, and `repo_problem`'s own character class already forbids a
+    slash from appearing inside a segment, so `".."` can only ever occur
+    here as a whole segment.
+
+    The `oss_config is None` fallback (self-review finding: shipped
+    untested in the first version of this function) reuses the same
+    two-segment, no-slash/backslash/whitespace-within-a-segment character
+    class `oss_config.REPO_RE` applies on the primary path, vendored inline
+    rather than imported -- `oss_config` being unavailable is exactly the
+    condition under which importing anything from it would fail -- so the
+    two paths reject the same set of shapes instead of the fallback
+    silently accepting a backslash or embedded whitespace `repo_problem`
+    would have refused.
+    """
+    if not isinstance(repo, str) or not repo:
+        return True
+    if oss_config is not None:
+        if oss_config.repo_problem(repo) is not None:
+            return True
+    elif not re.match(r"\A[^/\\s]+/[^/\\s]+\Z", repo):
+        return True
+    segments = repo.split("/")
+    for segment in segments:
+        if segment in ("", ".", ".."):
+            return True
+        if "%" in segment:
+            return True
+    if segments[0].startswith("-"):
+        return True
+    return False
+
+
 def _origin_slug(project_dir, run=None):
     """``(owner/repo, None)`` from `origin`'s URL, or ``(None, reason)``.
 

@@ -98,6 +98,27 @@ def _classify_gh_api_status(returncode, stdout, stderr):
 SETTINGS_PAGE_URL = "https://github.com/{}/settings/branches"
 
 
+def _resolve_slug(project_dir, config, run):
+    """``(slug, reason)`` -- ``.oss.json``'s ``repo`` key, else the ``origin``
+    remote. Same shape as the sibling `doctor_check_*.py` modules' own
+    `_resolve_slug` (`doctor_check_security_alerts.py`,
+    `doctor_check_security_settings.py`, `doctor_check_codeql_scan.py`).
+    Refused (#1055) when the resolved value is not a safe ``owner/name``
+    shape for a `gh api repos/{}/...` path segment -- see
+    `doctor._malformed_repo`.
+    """
+    slug = (config or {}).get("repo") if config else None
+    if slug is not None and not isinstance(slug, str):
+        return None, "the repo value in .oss.json is not a string"
+    if not slug:
+        slug, reason = doctor._origin_slug(project_dir, run=run)
+        if slug is None:
+            return None, reason
+    if doctor._malformed_repo(slug):
+        return None, "repo {!r} is not a safe 'owner/name' shape".format(slug)
+    return slug, None
+
+
 def branch_protection_state(project_dir, config=None, run=None):
     """Is the default branch actually protected? ``"protected"`` /
     ``"not-protected"`` / ``"could-not-tell"``, gated on the same local facts
@@ -123,13 +144,9 @@ def branch_protection_state(project_dir, config=None, run=None):
     run = subprocess.run if run is None else run
     if shutil.which("gh") is None:
         return "could-not-tell", "gh is not on PATH"
-    slug = (config or {}).get("repo") if config else None
-    if slug is not None and not isinstance(slug, str):
-        return "could-not-tell", "the repo value in .oss.json is not a string"
-    if not slug:
-        slug, reason = doctor._origin_slug(project_dir, run=run)
-        if slug is None:
-            return "could-not-tell", reason
+    slug, reason = _resolve_slug(project_dir, config, run)
+    if slug is None:
+        return "could-not-tell", reason
     branch = (config or {}).get("default_branch") if config else None
     if branch is not None and not isinstance(branch, str):
         return "could-not-tell", "the default_branch value in .oss.json is not a string"
