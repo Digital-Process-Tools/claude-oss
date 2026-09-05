@@ -321,12 +321,12 @@ def test_main_on_an_ordinary_piped_board_prints_candidates(monkeypatch, capsys):
     into `could-not-select` -- the exact could-not-select/none-available
     confusion #970 exists to prevent, one level up, in a *test* mistaking
     tool unavailability for ground truth). Calling `main()` directly and
-    monkeypatching `select_issues.issue_claim.check` removes the live `gh`
+    monkeypatching `select_issues.select_issues_claim_read.check` removes the live `gh`
     dependency without touching what this test is actually proving: that an
     ordinary piped board reaches `candidates` through the real CLI entry
     point.
     """
-    monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
+    monkeypatch.setattr(select_issues.select_issues_claim_read, "check", _no_op_checker)
     board = {
         "declared": DECLARED,
         "issues": [
@@ -338,7 +338,7 @@ def test_main_on_an_ordinary_piped_board_prints_candidates(monkeypatch, capsys):
         ],
     }
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
-    code = select_issues.main()
+    code = select_issues.main([])
     out = json.loads(capsys.readouterr().out)
     assert out["state"] == "candidates"
     assert out["candidates"][0]["number"] == 5
@@ -374,7 +374,7 @@ def test_a_non_ascii_label_does_not_crash_the_print(monkeypatch, capsys):
     without the non-ASCII text ever being printed at all. Stubbing
     `issue_claim.check` here too, and asserting on the actual candidate
     `why`, closes that gap the same way the sibling test's fix does."""
-    monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
+    monkeypatch.setattr(select_issues.select_issues_claim_read, "check", _no_op_checker)
     board = {
         "declared": DECLARED,
         "issues": [
@@ -386,7 +386,7 @@ def test_a_non_ascii_label_does_not_crash_the_print(monkeypatch, capsys):
         ],
     }
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
-    code = select_issues.main()
+    code = select_issues.main([])
     out = json.loads(capsys.readouterr().out)
     # The positive half: the non-ASCII label really did reach the printed
     # output (escaped, per json.dumps's default) rather than being dropped

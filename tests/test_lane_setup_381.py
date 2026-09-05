@@ -89,7 +89,7 @@ def _capture(monkeypatch):
         calls.append({"repo": str(repo), "args": list(args)})
         return 1, "", "stubbed: nothing ran"
 
-    monkeypatch.setattr(lane_setup, "_git", _recorder)
+    monkeypatch.setattr(lane_setup.lane_setup_worktree, "_git", _recorder)
     monkeypatch.setattr(
         lane_setup,
         "read_board",

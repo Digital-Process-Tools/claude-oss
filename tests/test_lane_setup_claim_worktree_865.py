@@ -27,13 +27,40 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "lane_setup.py"
 
 
-def _run(args, cwd):
+def _fake_gh_bin(tmp_path):
+    """#1069: `--claim` now also writes the GitHub assignee
+    (`lane_setup_claim.claim_and_register`), so a subprocess test of the
+    worktree-safety refusal alone must not depend on a real, authenticated
+    `gh` -- a fake `gh` on PATH, answering only the two calls
+    `select_issues_claim_read.py` makes, keeps the assignee half a fixed
+    `claimed` so the worktree check is the only thing varying under test.
+    """
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    gh_path = bin_dir / "gh"
+    gh_path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"api\" ]; then echo tester; exit 0; fi\n"
+        "if [ \"$1\" = \"issue\" ] && [ \"$2\" = \"view\" ]; then "
+        "echo '{\"assignees\": []}'; exit 0; fi\n"
+        "if [ \"$1\" = \"issue\" ] && [ \"$2\" = \"edit\" ]; then exit 0; fi\n"
+        "exit 1\n"
+    )
+    gh_path.chmod(0o755)
+    return bin_dir
+
+
+def _run(args, cwd, extra_path=None):
+    env = dict(os.environ)
+    if extra_path is not None:
+        env["PATH"] = str(extra_path) + os.pathsep + env.get("PATH", "")
     return subprocess.run(
         [sys.executable, str(SCRIPT)] + args,
         cwd=str(cwd),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
+        env=env,
     )
 
 
@@ -81,10 +108,11 @@ def clone(tmp_path):
     return repo
 
 
-def test_claim_from_the_clone_records(clone):
+def test_claim_from_the_clone_records(clone, tmp_path):
     """Positive control: run from the clone -- a real working tree, not a
     linked one -- and the claim must actually record."""
-    result = _run(["999", "--claim", "--lane", "README.md"], cwd=clone)
+    fake_bin = _fake_gh_bin(tmp_path)
+    result = _run(["999", "--claim", "--lane", "README.md"], cwd=clone, extra_path=fake_bin)
     assert result.returncode == 0, result.stdout
     assert "not recorded" not in result.stdout, result.stdout
 
@@ -122,7 +150,7 @@ def test_could_not_tell_refuses_the_claim_too(clone, monkeypatch):
     repository states everywhere else: an absence produced by the tool must
     never read as an absence in the world."""
     monkeypatch.setattr(
-        lane_setup,
+        lane_setup.lane_setup_worktree,
         "linked_worktree_state",
         lambda repo: (lane_setup.WORKTREE_COULD_NOT_TELL, "git would not answer"),
     )

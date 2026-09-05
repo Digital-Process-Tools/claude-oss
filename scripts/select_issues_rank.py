@@ -83,13 +83,22 @@ spellings has no bands, and inventing `priority-high` for it would be a fact
 about one repository living in shared code -- forbidden here for the reason
 `CLAUDE.md` gives at length.
 
+## No longer a standalone CLI (#1069)
+
+This module used to carry its own `main()` -- a maintainer or a prose call site
+ran `python3 dispatch_rank.py` directly, piping a board in on stdin, to see the
+whole-board ranking receipt or to check a dispatched lane's size. Both are pure
+library functions now (`render_board_receipt`, `check_lane`); `select_issues.py`
+is the one entry point that reaches them (`--board`, `--check-lane`), the same
+way it already reaches `rank`/`order` for its own JSON result. Renamed from
+`dispatch_rank.py` to `select_issues_rank.py` in the same change, following the
+`doctor_check_*` precedent: the prefix names the entry point that owns this
+submodule.
+
 Python 3.9 compatible.
 """
 
-import argparse
-import json
 import os
-import sys
 
 
 #: rank -> (author, band). The single source for the table above; `rank()`
@@ -500,104 +509,19 @@ def check_lane(issues, short_reason, candidates=None, adjacent=None):
     return {"state": "ok", "size": size, "short_reason": short_reason, "why": None}
 
 
-def main(argv=None):
-    """Rank a board handed in on stdin as JSON.
-
-    Input is `{"declared": {...}, "issues": [{"number": N, "labels": [...],
-    "author_association": "external"|"maintainer"|null}]}`. The
-    `author_association` field is optional per issue and is only consulted
-    for a non-loop issue; an issue omitting it, or carrying anything outside
-    `ASSOCIATIONS`, could not have its author association read. Prints one
-    line per issue, best first.
+def render_board_receipt(issues, declared):
+    """The human-readable, whole-board ranking receipt -- one line per issue,
+    best first, plus a closing summary line -- folded in from this module's
+    former standalone CLI (#1069). `select_issues.py --board` is the one
+    place this is reachable from now; nothing here reads stdin or argv, it
+    only renders what `order()`/`rank()`/`reserved()` already compute, so a
+    caller (or a test) can get the same text without shelling out.
     """
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--lane",
-        metavar="N",
-        type=int,
-        nargs="*",
-        help="check a lane of these issue numbers instead of ranking a board",
-    )
-    parser.add_argument("--short-reason", default=None, choices=SHORT_REASONS)
-    parser.add_argument(
-        "--candidates",
-        type=int,
-        default=None,
-        metavar="N",
-        help="file-disjoint candidates found still open on the board (#871) -- "
-        "checked against a 'board-exhausted' --short-reason; omit when the "
-        "board was not measured",
-    )
-    args = parser.parse_args(argv)
-
-    # The sibling idiom used by lane_setup.py, tree_snapshot.py, ranking_table.py,
-    # checklist_skew.py, release_delta.py, release_version.py, scaffold.py and
-    # rename_changelog_fragment.py (#794, #834): a receipt line can carry an
-    # arbitrary issue label or title, and a console codepage that cannot encode
-    # one of them must not crash this print -- a UnicodeEncodeError here used to
-    # exit 1 after the ranking was already computed, indistinguishable from a
-    # genuine refusal.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="backslashreplace")
-        except (AttributeError, ValueError):  # pragma: no cover - very old Python
-            pass
-
-    if args.lane is not None:
-        answer = check_lane(args.lane, args.short_reason, candidates=args.candidates)
-        print(
-            "{}: {} issue(s){}".format(
-                answer["state"].upper(),
-                answer["size"],
-                "" if not answer["why"] else " -- " + answer["why"],
-            )
-        )
-        return 0 if answer["state"] == "ok" else 2
-
-    # JSON is UTF-8 by spec (RFC 8259); decoding stdin with whatever the
-    # console's codepage happens to be is itself the bug, not a fact to route
-    # around -- on a cp1252 console it fails to decode a perfectly valid UTF-8
-    # payload the moment a label or title carries a non-ASCII character.
-    # Forcing UTF-8 here makes the tool accept what it is documented to
-    # accept, on every platform, rather than merely explaining a decode
-    # failure caused by reading it wrong in the first place.
-    # #846: `sys.stdin` is `None` when the harness hands the process a closed
-    # or unopenable standard input, so `.reconfigure` raises `AttributeError`
-    # before the `except (AttributeError, ValueError): pass` below can help --
-    # that guard was written for a *stream* that refuses to reconfigure, not
-    # for the absence of a stream. Past that, `json.load(None)` would raise
-    # `AttributeError` uncaught, exiting 1 with none of this module's own
-    # states. Check for `None` first and answer `COULD NOT READ`, the state
-    # that already exists for exactly this (#405's fix, same class).
-    if sys.stdin is None:
-        print(
-            "COULD NOT READ: stdin is not JSON (no readable stdin: the "
-            "process was handed a closed or unopenable standard input)"
-        )
-        return 2
-
-    try:
-        sys.stdin.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper
-        pass
-
-    try:
-        payload = json.load(sys.stdin)
-    except UnicodeDecodeError as err:
-        # UnicodeDecodeError is a ValueError, not a JSON-syntax error -- caught
-        # separately so this never renders as "stdin is not JSON" when stdin
-        # was JSON and simply could not be decoded (#834).
-        print("COULD NOT READ: stdin could not be decoded as UTF-8 ({})".format(err))
-        return 2
-    except ValueError as err:
-        print("COULD NOT READ: stdin is not JSON ({})".format(err))
-        return 2
-    declared = payload.get("declared") or {}
-    issues = payload.get("issues") or []
     ranked = order(issues, declared)
+    lines = []
     unrankable = 0
     reserved_count = 0
-    reserved_spelling = declared.get("reserved")
+    reserved_spelling = (declared or {}).get("reserved")
     reserved_declared = bool(reserved_spelling) and isinstance(reserved_spelling, str)
     for item in ranked:
         answer = rank(
@@ -606,25 +530,16 @@ def main(argv=None):
         is_reserved = reserved(item.get("labels") or [], declared)
         if is_reserved:
             reserved_count += 1
-        # #844: a reservation is a fourth fact selection cannot read off
-        # assignees alone -- printed on every row, ranked or not, because an
-        # unrankable issue can be reserved too and dropping the marker there
-        # would silently let it back onto a candidate list.
         marker = "  [RESERVED]" if is_reserved else ""
         if answer["rank"] is None:
             unrankable += 1
-            print(
+            lines.append(
                 "  ?  #{}  could not rank -- {}{}".format(
                     item.get("number"), answer["why"], marker
                 )
             )
         else:
-            # `why` is non-None on a *ranked* issue only for #826's
-            # unrecognised-priority case. Dropping it here would compute the
-            # one signal #826 exists to surface and then render it
-            # identically to silence -- which is the whole defect, moved one
-            # layer out into the receipt a maintainer actually reads.
-            print(
+            lines.append(
                 "  {}  #{}  {} / {}{}{}".format(
                     answer["rank"],
                     item.get("number"),
@@ -634,7 +549,7 @@ def main(argv=None):
                     marker,
                 )
             )
-    print(
+    lines.append(
         "{} issue(s), {} unrankable, {}".format(
             len(ranked),
             unrankable,
@@ -644,8 +559,4 @@ def main(argv=None):
             "read off the board",
         )
     )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return "\n".join(lines)

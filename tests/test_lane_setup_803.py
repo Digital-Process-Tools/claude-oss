@@ -110,7 +110,7 @@ def test_arm_c_no_local_file_stays_benign_and_differs_from_arm_a(tmp_path):
 
     payload = _release(tmp_path)
 
-    assert payload["state"] == "not-found", payload
+    assert payload["record"]["state"] == "not-found", payload
 
     malformed_dir = tmp_path.parent / (tmp_path.name + "-arm-a")
     malformed_dir.mkdir()
@@ -119,7 +119,7 @@ def test_arm_c_no_local_file_stays_benign_and_differs_from_arm_a(tmp_path):
     arm_a_payload = _release(malformed_dir)
 
     assert arm_a_payload["state"] == "could-not-release"
-    assert arm_a_payload["detail"] != payload["detail"]
+    assert arm_a_payload["detail"] != payload["record"]["detail"]
 
 
 def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
@@ -137,8 +137,8 @@ def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
 
     payload = _release(tmp_path)
 
-    assert payload["state"] == "not-found", payload
-    assert "could not" not in payload["detail"]
+    assert payload["record"]["state"] == "not-found", payload
+    assert "could not" not in payload["record"]["detail"]
 
 
 def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_release(
@@ -171,5 +171,5 @@ def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_releas
 
     payload = _release(tmp_path)
 
-    assert payload["state"] == "not-found", payload
-    assert "worktree_root is not known" not in payload["detail"]
+    assert payload["record"]["state"] == "not-found", payload
+    assert "worktree_root is not known" not in payload["record"]["detail"]

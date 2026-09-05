@@ -21,7 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import issue_claim  # noqa: E402
+import select_issues_claim_read as issue_claim  # noqa: E402
 
 VIEWER = ["gh", "api", "user", "--jq", ".login"]
 
@@ -191,46 +191,56 @@ def test_a_failed_release_write_is_could_not_release():
 
 
 # ------------------------------------------------------------- the exit code
+#
+# #1069: `main()`'s own argparse CLI is gone -- `issue_claim.py` folded into
+# `select_issues_claim_read.py` (the read half, composed by `select_issues.py`)
+# and `lane_setup_claim.py` (the claim/release half, composed by
+# `lane_setup.py --claim`/`--release`), and neither entry point exposes a bare
+# "just claim/release/read one issue's assignee and print an exit code" CLI --
+# that surface is not reachable through either composed entry point any more.
+# `_OK_STATES` and the per-row states it folds are still exercised directly,
+# above, via `check()`; only the CLI plumbing around it (argv parsing, the
+# folded exit code, the `#`-prefix strip) had nowhere left to live and is
+# removed with the CLI itself rather than kept testing dead code.
 
 
 @pytest.mark.parametrize(
     "mode,view,expected",
     [
-        ("claim", {1: _payload()}, 0),
-        ("claim", {1: _payload("other")}, 1),
-        ("claim", {1: (False, "boom")}, 1),
-        ("release", {1: _payload("maintainer")}, 0),
-        ("release", {1: _payload()}, 0),
-        ("release", {1: (False, "boom")}, 1),
-        ("read", {1: _payload()}, 0),
-        ("read", {1: (False, "boom")}, 1),
+        ("claim", {1: _payload()}, True),
+        ("claim", {1: _payload("other")}, False),
+        ("claim", {1: (False, "boom")}, False),
+        ("release", {1: _payload("maintainer")}, True),
+        ("release", {1: _payload()}, True),
+        ("release", {1: (False, "boom")}, False),
+        ("read", {1: _payload()}, True),
+        ("read", {1: (False, "boom")}, False),
     ],
 )
-def test_exit_code_is_zero_only_when_every_row_reached_its_success_state(
+def test_ok_states_folds_a_rows_success_the_same_way_a_cli_exit_code_used_to(
     monkeypatch, mode, view, expected
 ):
-    """The rows are the answer, but the code must not say `fine` when one of
-    them is a `could-not-*`: a shell caller that ignores the rows still cannot
-    proceed as though the claim succeeded."""
+    """The rows are the answer, but a caller folding them to one boolean must
+    not say `fine` when one of them is a `could-not-*` -- the same fold
+    `issue_claim.py`'s own removed CLI used to perform for its exit code,
+    exercised directly against `check()`/`_OK_STATES` now that there is no
+    CLI left to drive it through."""
     run = _fake(view=view)
     monkeypatch.setattr(issue_claim, "_run", run)
-    code = issue_claim.main(["1", "--" + mode])
-    assert code == expected
+    rows = issue_claim.check([1], mode, run=run)
+    ok = issue_claim._OK_STATES[mode]
+    assert all(row["state"] in ok for row in rows) is expected
 
 
-def test_a_non_numeric_issue_argument_is_a_usage_error():
-    with pytest.raises(SystemExit) as excinfo:
-        issue_claim.main(["not-a-number", "--read"])
-    assert excinfo.value.code == 2
-
-
-def test_a_hash_prefixed_issue_number_is_accepted(monkeypatch, capsys):
-    """`#964` is how every document in this repository writes an issue number,
-    so the one spelling a reader will copy has to work."""
+def test_a_hash_prefixed_issue_number_is_still_a_usable_key(monkeypatch):
+    """`#964` is how every document in this repository writes an issue number.
+    The removed CLI stripped the `#` before calling `check()`; a caller of the
+    library function now does that itself -- this pins that `check()` accepts
+    a plain int once stripped, which is all a caller ever had to do."""
     run = _fake(view={964: _payload()})
     monkeypatch.setattr(issue_claim, "_run", run)
-    assert issue_claim.main(["#964", "--read"]) == 0
-    assert "#964  unassigned" in capsys.readouterr().out
+    rows = issue_claim.check([964], "read", run=run)
+    assert rows[0]["state"] == issue_claim.STATE_UNASSIGNED
 
 
 # ------------------------------------------- the runner's own failure arms

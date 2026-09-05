@@ -62,8 +62,8 @@ def test_release_with_absent_config_names_the_absence(tmp_path):
     )
     done = _cli(tmp_path, 999, "--release")
     payload = json.loads(done.stdout)
-    assert payload["state"] == "not-found", payload
-    valid_missing_detail = payload["detail"]
+    assert payload["record"]["state"] == "not-found", payload
+    valid_missing_detail = payload["record"]["detail"]
 
     no_config_dir = tmp_path / "no-config"
     no_config_dir.mkdir()

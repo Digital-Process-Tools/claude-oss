@@ -27,6 +27,19 @@ ASSEMBLER = REPO_ROOT / "scripts" / "assemble_changelog.py"
 RENAMER = REPO_ROOT / "scripts" / "rename_changelog_fragment.py"
 LANE_SETUP = REPO_ROOT / "scripts" / "lane_setup.py"
 OSS_CONFIG = REPO_ROOT / "scripts" / "oss_config.py"
+# #1069: lane_setup.py split into an entry point plus these submodules
+# (none with a __main__ of their own); every one of them is imported
+# unconditionally at module scope, so all have to be vendored alongside it
+# for `import lane_setup` to resolve here.
+LANE_SETUP_SUBMODULES = [
+    "lane_setup_claim.py",
+    "lane_setup_label.py",
+    "lane_setup_patterns.py",
+    "lane_setup_worktree.py",
+    "select_issues_claim_read.py",
+    "select_issues_companions.py",
+    "select_issues_overlap.py",
+]
 
 OK, REFUSED = 0, 3
 
@@ -45,6 +58,8 @@ def _vendor(tmp_path):
     # which imports oss_config -- both stdlib-only, so vendored alongside it.
     shutil.copy(LANE_SETUP, script_dir / "lane_setup.py")
     shutil.copy(OSS_CONFIG, script_dir / "oss_config.py")
+    for name in LANE_SETUP_SUBMODULES:
+        shutil.copy(REPO_ROOT / "scripts" / name, script_dir / name)
     (root / "changelog.d").mkdir()
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
     subprocess.run(

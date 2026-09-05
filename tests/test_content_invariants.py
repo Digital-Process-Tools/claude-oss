@@ -3524,13 +3524,21 @@ def test_the_op_table_rows_are_found_at_all():
 #: section; the release happens at handback, in the report section -- two
 #: sites, and prose is not a guard, so this pins both rather than one.
 #:
-#: #964 moved the call itself into `scripts/issue_claim.py`, so what these pin
-#: is the mode rather than the `gh` flag. The flags are still pinned, one layer
-#: down, by `tests/test_issue_claim_964.py`, which asserts the exact argv the
-#: script issues -- so nothing stopped being checked, it is checked where the
-#: call now lives. Pinning the raw flag here after the move would have been a
-#: guard demanding that the prose keep an incantation the loop no longer runs.
-_CLAIM_CALL = "issue_claim.py"
+#: #964 moved the call itself into `scripts/issue_claim.py`; #1069 moved it
+#: again, into `scripts/lane_setup.py --claim`/`--release` (the same script
+#: `agents/developer.md` legitimately names for its own, unrelated setup-facts
+#: read, with neither flag) -- so what these pin is the mode rather than the
+#: `gh` flag or a bare script name. The flags are still pinned, one layer
+#: down, by `tests/test_lane_setup_claim_worktree_865.py` and its siblings --
+#: so nothing stopped being checked, it is checked where the call now lives.
+#: Pinning the raw flag here after the move would have been a guard demanding
+#: that the prose keep an incantation the loop no longer runs.
+_CLAIM_CALL = "lane_setup.py"
+#: #1069: naming `lane_setup.py` alone is no longer diagnostic -- the
+#: developer's own setup-facts call is the same script with neither flag --
+#: so the forbidden shape in `agents/*.md` is specifically `lane_setup.py`
+#: paired with `--claim` or `--release` on the same line.
+_CLAIM_FLAGS = ("--claim", "--release")
 _DISPATCH_SECTION_HEADING = "Run a fleet, not a queue"
 _HANDBACK_SECTION_HEADING = "What comes back is a file, not a document"
 
@@ -3592,13 +3600,21 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     )
     for path in AGENTS:
         text = path.read_text(encoding="utf-8")
+        # #1069: a bare `lane_setup.py` mention is no longer forbidden -- the
+        # developer legitimately runs it, with neither flag, for its own
+        # setup facts (agents/developer.md). What must never appear is that
+        # script paired with --claim/--release on the same line.
+        claim_call_with_flag = any(
+            _CLAIM_CALL in line and any(flag in line for flag in _CLAIM_FLAGS)
+            for line in text.splitlines()
+        )
         assert (
             "--add-assignee" not in text
             and "--remove-assignee" not in text
-            and _CLAIM_CALL not in text
+            and not claim_call_with_flag
         ), (
-            "{} names an assignee call -- the claim and release belong to the "
-            "manager, not to the developer it spawns (#461, #964)".format(path)
+            "{} names an assignee claim/release call -- those belong to the "
+            "manager, not to the developer it spawns (#461, #964, #1069)".format(path)
         )
 
 

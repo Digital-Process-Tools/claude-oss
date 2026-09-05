@@ -39,7 +39,6 @@ ceiling, and a lane dispatched short says why in one of three words.
 Python 3.9 compatible.
 """
 
-import io
 import json
 import os
 import re
@@ -51,7 +50,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import dispatch_rank  # noqa: E402
+import select_issues_rank as dispatch_rank  # noqa: E402
 import manager_docs  # noqa: E402
 from agent_budgets import repo_root  # noqa: E402
 
@@ -362,13 +361,17 @@ def test_mixed_length_declared_spellings_do_not_let_a_short_one_over_match_838()
 
 
 def _run_main(issues, capsys, monkeypatch, declared=None):
-    """`main()` over a board on stdin, returning `(exit_code, stdout)`.
+    """`render_board_receipt` over a board, returning `(exit_code, stdout)`.
 
-    Reaches the CLI rather than the library call on purpose: the two
-    reviewers of #826 both found that `rank()` computed the unrecognised
-    priority signal and `main()` then dropped it, so a test that only calls
-    `rank()` cannot see the seam. Nothing in this file exercised `main()`
-    before -- a scoped coverage run reported its whole body uncovered."""
+    #1069: this used to reach `dispatch_rank.py`'s own CLI (`main([])` over
+    stdin) on purpose -- the two reviewers of #826 both found that `rank()`
+    computed the unrecognised priority signal and `main()` then dropped it,
+    so a test that only calls `rank()` cannot see the seam. `main()` is gone
+    now (folded into `select_issues.py --board`, #1069); this calls the
+    library function the CLI used to wrap, `render_board_receipt`, which is
+    the one place that seam still exists -- `capsys`/`monkeypatch` are kept
+    as unused parameters so every call site below is untouched."""
+    del capsys, monkeypatch
     # #993: a non-loop issue now needs a readable author association to rank
     # at all. Tests in this file that are not about the association axis
     # itself do not care which value it carries, only that ranking succeeds
@@ -377,13 +380,10 @@ def _run_main(issues, capsys, monkeypatch, declared=None):
     issues = [dict(item) for item in issues]
     for item in issues:
         item.setdefault("author_association", "maintainer")
-    payload = {
-        "declared": declared if declared is not None else DECLARED,
-        "issues": issues,
-    }
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
-    code = dispatch_rank.main([])
-    return code, capsys.readouterr().out
+    out = dispatch_rank.render_board_receipt(
+        issues, declared if declared is not None else DECLARED
+    )
+    return 0, out
 
 
 def test_the_cli_receipt_names_an_unrecognised_priority_label(capsys, monkeypatch):
@@ -695,8 +695,13 @@ def test_the_prose_check_fires_on_a_silent_instruction():
 # ---------------------------------------------------------- #834: encoding
 
 
-def _dispatch_rank_script():
-    return str(repo_root() / "scripts" / "dispatch_rank.py")
+def _select_issues_script():
+    # #1069: dispatch_rank.py's own CLI (and the #834 stdin/stdout encoding
+    # fixes that lived in it) is gone -- folded into select_issues.py's
+    # `--board` mode, which carries the identical `_reconfigure_streams`/
+    # `_read_stdin_json` guards. Every test below drives that script with
+    # `--board` instead.
+    return str(repo_root() / "scripts" / "select_issues.py")
 
 
 def test_stdout_survives_an_unencodable_character_834():
@@ -719,7 +724,7 @@ def test_stdout_survives_an_unencodable_character_834():
     )
     env = dict(os.environ, PYTHONIOENCODING="ascii")
     result = subprocess.run(
-        [sys.executable, _dispatch_rank_script()],
+        [sys.executable, _select_issues_script(), "--board"],
         input=payload.encode("utf-8"),
         capture_output=True,
         env=env,
@@ -736,17 +741,18 @@ def test_stdout_crashes_without_the_fix_positive_control_834():
     invocation that would pass even with the guard removed. Skips rather
     than asserting on a platform where `ascii` cannot be forced onto
     stdout, instead of silently passing."""
-    script = repo_root() / "scripts" / "dispatch_rank.py"
+    script = repo_root() / "scripts" / "select_issues.py"
     original = script.read_text(encoding="utf-8")
     if "backslashreplace" not in original:
         pytest.skip("fix already absent -- nothing to prove a control against")
     broken = original.replace(
+        "def _reconfigure_streams():\n"
         "    for stream in (sys.stdout, sys.stderr):\n"
         "        try:\n"
         '            stream.reconfigure(errors="backslashreplace")\n'
         "        except (AttributeError, ValueError):  # pragma: no cover - very old Python\n"
-        "            pass\n\n",
-        "",
+        "            pass\n",
+        "def _reconfigure_streams():\n    pass\n",
         1,
     )
     assert broken != original, "the reconfigure block was not found to remove"
@@ -764,9 +770,13 @@ def test_stdout_crashes_without_the_fix_positive_control_834():
                 "issues": [{"number": 1, "labels": ["priority-héllo"]}],
             }
         )
-        env = dict(os.environ, PYTHONIOENCODING="ascii")
+        env = dict(
+            os.environ,
+            PYTHONIOENCODING="ascii",
+            PYTHONPATH=str(repo_root() / "scripts"),
+        )
         result = subprocess.run(
-            [sys.executable, broken_path],
+            [sys.executable, broken_path, "--board"],
             input=payload.encode("utf-8"),
             capture_output=True,
             env=env,
@@ -802,7 +812,7 @@ def test_stdin_is_decoded_as_utf8_regardless_of_console_codepage_834():
     )
     env = dict(os.environ, PYTHONIOENCODING="cp1252")
     result = subprocess.run(
-        [sys.executable, _dispatch_rank_script()],
+        [sys.executable, _select_issues_script(), "--board"],
         input=payload.encode("utf-8"),
         capture_output=True,
         env=env,
@@ -819,28 +829,25 @@ def test_stdin_reads_as_malformed_without_the_fix_positive_control_834():
     inside `json.load(sys.stdin)`, and the pre-fix `except ValueError` around
     it renders that as 'stdin is not JSON' -- proving the harness can see
     the exact defect #834 reports, not merely a plausible-sounding one."""
-    script = repo_root() / "scripts" / "dispatch_rank.py"
+    script = repo_root() / "scripts" / "select_issues.py"
     original = script.read_text(encoding="utf-8")
     fixed_block = (
         "    try:\n"
         '        sys.stdin.reconfigure(encoding="utf-8")\n'
         "    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper\n"
         "        pass\n"
-        "\n"
         "    try:\n"
-        "        payload = json.load(sys.stdin)\n"
-        "    except UnicodeDecodeError as err:\n"
-        "        # UnicodeDecodeError is a ValueError, not a JSON-syntax error -- caught\n"
-        '        # separately so this never renders as "stdin is not JSON" when stdin\n'
-        "        # was JSON and simply could not be decoded (#834).\n"
-        '        print("COULD NOT READ: stdin could not be decoded as UTF-8 ({})".format(err))\n'
-        "        return 2\n"
-        "    except ValueError as err:\n"
+        "        return json.load(sys.stdin), None\n"
+        "    except UnicodeDecodeError as exc:\n"
+        "        return None, _could_not_select(\n"
+        '            "stdin: could not be decoded as UTF-8 ({0})".format(exc)\n'
+        "        )\n"
+        "    except ValueError as exc:\n"
     )
     pre_fix_block = (
         "    try:\n"
-        "        payload = json.load(sys.stdin)\n"
-        "    except ValueError as err:\n"
+        "        return json.load(sys.stdin), None\n"
+        "    except ValueError as exc:\n"
     )
     assert fixed_block in original, "the fixed try/except block was not found to remove"
     broken = original.replace(fixed_block, pre_fix_block, 1)
@@ -860,9 +867,13 @@ def test_stdin_reads_as_malformed_without_the_fix_positive_control_834():
             },
             ensure_ascii=False,
         )
-        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        env = dict(
+            os.environ,
+            PYTHONIOENCODING="cp1252",
+            PYTHONPATH=str(repo_root() / "scripts"),
+        )
         result = subprocess.run(
-            [sys.executable, broken_path],
+            [sys.executable, broken_path, "--board"],
             input=payload.encode("utf-8"),
             capture_output=True,
             env=env,

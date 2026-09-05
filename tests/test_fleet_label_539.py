@@ -18,7 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import fleet_label as fl  # noqa: E402
+import lane_setup_label as fl  # noqa: E402
 
 
 def test_single_issue_lane_carries_no_multiplier():
@@ -62,15 +62,28 @@ def test_refuses_blank_phrase():
         fl.fleet_label(534, [534], "   ")
 
 
+# #1069: `fleet_label.py`'s own CLI is gone -- folded into `lane_setup.py
+# --label --label-issues ... --label-phrase ...`, the entry point for the
+# whole family. `lane_setup` is imported here (rather than only invoked as a
+# subprocess, the way `fleet_label.py`'s own CLI tests did) so the
+# console-codepage tests below can drive `lane_setup.main` directly with a
+# monkeypatched `sys.stdout`, the same shape `select_issues.py`'s own tests
+# use.
+import lane_setup  # noqa: E402
+
+
 def test_cli_prints_the_label(tmp_path):
     import subprocess
 
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
+            "--label-issues",
             "534,537,495",
+            "--label-phrase",
             "auto-update path",
         ],
         stdout=subprocess.PIPE,
@@ -87,9 +100,12 @@ def test_cli_refuses_without_full_bundle():
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
+            "--label-issues",
             "537,495",
+            "--label-phrase",
             "auto-update path",
         ],
         stdout=subprocess.PIPE,
@@ -107,13 +123,19 @@ def test_cli_survives_a_console_that_cannot_encode_the_phrase(monkeypatch):
     # source file's"). An em dash is representable in cp1252 and would not have
     # reproduced this -- an arrow is the positive control that actually triggers the
     # encode failure. A text stream opened strict/cp1252 is the same failure mode
-    # without needing a Windows runner to prove it.
+    # without needing a Windows runner to prove it. `lane_setup.main` reconfigures
+    # both streams to `backslashreplace` before dispatching any mode (#1069),
+    # the same guard every other entry point in this plugin uses -- the CLI-only
+    # `_print` fallback `fleet_label.py` used to carry is gone with the rest of
+    # its CLI.
     import io
 
     stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     monkeypatch.setattr(sys, "stdout", stream)
 
-    exit_code = fl._main(["534", "534", "auto-update path → continued"])
+    exit_code = lane_setup.main(
+        ["534", "--label", "--label-issues", "534", "--label-phrase", "auto-update path → continued"]
+    )
     stream.flush()
 
     assert exit_code == 0
@@ -129,7 +151,9 @@ def test_cli_still_prints_a_representable_phrase_verbatim(monkeypatch):
     stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     monkeypatch.setattr(sys, "stdout", stream)
 
-    exit_code = fl._main(["534", "534", "auto-update path"])
+    exit_code = lane_setup.main(
+        ["534", "--label", "--label-issues", "534", "--label-phrase", "auto-update path"]
+    )
     stream.flush()
 
     assert exit_code == 0

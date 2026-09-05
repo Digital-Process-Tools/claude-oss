@@ -29,10 +29,18 @@ agent types. What still cannot be inspected after the fact is the call actually 
 ``agent_call`` only makes the correct call cheaper to produce than a wrong one typed
 from memory.
 
+
+## No longer a standalone CLI (#1069)
+
+`fleet_label.py`'s own `_main`/argparse-free argv parser is gone -- folded
+into `lane_setup.py`'s `--label` mode (repo-facing, since composing a lane's
+own label is a lane fact, the issue's own framing). `_print` (the codepage-
+safe print helper) moved with it, since it was CLI-only plumbing; `lane_setup`
+already has its own `backslashreplace` stream reconfigure for the same reason
+and reuses that instead. Renamed from `fleet_label.py` to `lane_setup_label.py`.
+
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
-
-import sys
 
 
 class FleetLabelError(ValueError):
@@ -173,94 +181,3 @@ def agent_call(
     parts.append('prompt: "<brief>"')
 
     return "Agent({})".format(", ".join(parts))
-
-
-def _print(text, stream=None):
-    """Print ``text`` without dying on the console's own codepage.
-
-    ``print`` encodes with the stream's encoding, not the source file's, and on
-    Windows that is typically cp1252 -- a phrase carrying a character cp1252 cannot
-    represent (an arrow, for instance; an em dash is representable and would not
-    have caught this) raises ``UnicodeEncodeError`` and kills the process at this
-    call, after every validation in ``fleet_label`` already passed. Round-tripped
-    through the stream's own encoding first, with ``backslashreplace`` on the way
-    out, so an unrepresentable character survives as an escape somebody can read
-    instead of ending the process -- the same shape ``oss_state._say`` already uses
-    for the same reason.
-    """
-    stream = sys.stdout if stream is None else stream
-    encoding = getattr(stream, "encoding", None)
-    if encoding:
-        text = text.encode(encoding, "backslashreplace").decode(encoding, "replace")
-    print(text, file=stream)
-
-
-def _main(argv=None):
-    """CLI: ``fleet_label.py PRIMARY ISSUE1,ISSUE2,... "phrase" [SUBAGENT_TYPE]``.
-
-    Named in the brief instead of composed by hand -- the whole point is that the
-    guard runs even when the caller is a maintainer typing a spawn call, not only a
-    test.
-
-    The fourth positional argument is optional and is what turns this from "print
-    the description" into "print the whole ``Agent(...)`` call" (#989): give it and
-    the CLI prints ``agent_call``'s output instead of ``fleet_label``'s, refusing an
-    unresolvable agent type exactly as ``agent_call`` does. Omit it and the CLI
-    behaves exactly as before -- the original three-argument form is untouched.
-    """
-    argv = sys.argv[1:] if argv is None else list(argv)
-
-    model = None
-    background = False
-    positional = []
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg == "--model":
-            i += 1
-            if i >= len(argv):
-                sys.stderr.write("--model needs a value\n")
-                return 2
-            model = argv[i]
-        elif arg == "--background":
-            background = True
-        else:
-            positional.append(arg)
-        i += 1
-
-    if len(positional) == 3:
-        primary_text, issues_text, phrase = positional
-        subagent_type = None
-    elif len(positional) == 4:
-        primary_text, issues_text, phrase, subagent_type = positional
-    else:
-        sys.stderr.write(
-            "usage: fleet_label.py PRIMARY_ISSUE ISSUE1,ISSUE2,... PHRASE "
-            "[SUBAGENT_TYPE] [--model MODEL] [--background]\n"
-        )
-        return 2
-
-    issues = [part.strip() for part in issues_text.split(",") if part.strip()]
-
-    try:
-        if subagent_type is None:
-            output = fleet_label(primary_text, issues, phrase)
-        else:
-            output = agent_call(
-                primary_text,
-                issues,
-                phrase,
-                subagent_type,
-                model=model,
-                run_in_background=background,
-            )
-    except FleetLabelError as exc:
-        sys.stderr.write(str(exc) + "\n")
-        return 1
-
-    _print(output)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(_main())

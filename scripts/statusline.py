@@ -820,7 +820,7 @@ def _symbols(ascii_only):
 def _unlabelled_field(board):
     """`0np 1nl` -- open issues with no priority label, then open issues with no lane
     label (#1079), reported separately per the issue's own instruction:
-    `dispatch_rank.py` cannot rank an issue with no priority label, and a lane-less
+    `select_issues_rank.py` cannot rank an issue with no priority label, and a lane-less
     issue is simply one no triage sweep has placed. Summing the two would answer
     neither question, so this never does.
 
@@ -1604,7 +1604,7 @@ def _gh_unlabelled_issue_counts(repo, total, priority_labels, lane_labels):
     """How many open issues carry none of `priority_labels`, and how many carry none
     of `lane_labels` -- reported separately, as two independent counts (#1079).
 
-    `dispatch_rank.py` cannot rank an issue with no priority label, and an issue with
+    `select_issues_rank.py` cannot rank an issue with no priority label, and an issue with
     no lane label is simply one no triage sweep has placed; summing the two answers
     neither question, so this never folds them into one number.
 
@@ -1618,7 +1618,7 @@ def _gh_unlabelled_issue_counts(repo, total, priority_labels, lane_labels):
     Each axis independently: `None` when its own repo declares no spellings for it
     at all (`priority_labels`/`lane_labels` empty). There is no generic way to tell
     a label that was meant as a priority (or a lane) from an unrelated one by name
-    alone -- the same refusal `dispatch_rank._priority_prefix` documents one script
+    alone -- the same refusal `select_issues_rank._priority_prefix` documents one script
     over -- and guessing from no signal is worse than reporting that the axis could
     not be read. Returns `None` outright, never calling `gh`, when neither axis has
     anything declared: there is nothing this call could answer.
@@ -2122,7 +2122,7 @@ def refresh(root, now=None):
         document["prs"] = _gh_count(repo, "pr")
         document["issues"] = _gh_count(repo, "issue")
         document["issues_external"] = _gh_external_issue_count(repo, document["issues"])
-        # Two separate counts, never summed (#1079): `dispatch_rank.py` cannot rank an
+        # Two separate counts, never summed (#1079): `select_issues_rank.py` cannot rank an
         # issue with no priority label, and a lane-less issue is simply one no sweep
         # placed -- one number covering both would answer neither question. Cached
         # alongside the rest of the board, per this module's own no-network-call-at-

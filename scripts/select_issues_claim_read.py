@@ -67,14 +67,22 @@ Exit codes:
   1   at least one row did not -- including every `could-not-*` row
   2   argparse usage error
 
+## No longer a standalone CLI (#1069)
+
+`main()`'s argparse CLI is gone. `select_issues.py` is the one entry point
+that reaches `check(..., "read")`, for the same reason `select_issues_rank.py`
+and `select_issues_preflight.py` lost theirs. The write half (`--claim`,
+`--release`) is now `lane_setup.py`'s own job -- `lane_setup_claim.py` imports
+`check`/`claim_one`/`release_one` from here rather than re-implementing the
+`gh` calls, so this stays the one place that talks to `gh issue view`/`edit`
+for the assignee field. Renamed from `issue_claim.py` to
+`select_issues_claim_read.py`, following the `doctor_check_*` precedent.
+
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
-import argparse
 import json
-import os
 import subprocess
-import sys
 
 STATE_UNASSIGNED = "unassigned"
 STATE_ASSIGNED = "assigned"
@@ -309,52 +317,3 @@ def _render(rows, mode):
         "{0}: {1} row(s), {2} not {3}".format(mode, len(rows), len(bad), "/".join(ok))
     )
     return "\n".join(lines)
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("issues", nargs="+", help="one or more issue numbers")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--read", action="store_true", help="report the assignee field")
-    group.add_argument(
-        "--claim", action="store_true", help="assign to the authenticated user"
-    )
-    group.add_argument(
-        "--release", action="store_true", help="unassign the authenticated user"
-    )
-    parser.add_argument(
-        "--repo", default=None, help="OWNER/NAME; defaults to the cwd's remote"
-    )
-    parser.add_argument("--json", action="store_true", help="emit the rows as JSON")
-    args = parser.parse_args(argv)
-
-    # Same guard, same reason, as scripts/ranking_table.py and its siblings: a
-    # console codepage that cannot encode a login would otherwise crash at the
-    # print, after the claim had already been written.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="backslashreplace")
-        except (AttributeError, ValueError):  # pragma: no cover - very old Python
-            pass
-
-    numbers = []
-    for raw in args.issues:
-        text = raw.lstrip("#")
-        if not text.isdigit():
-            parser.error("not an issue number: {0!r}".format(raw))
-        numbers.append(int(text))
-
-    mode = "read" if args.read else "claim" if args.claim else "release"
-    rows = check(numbers, mode, repo=args.repo or os.environ.get("OSS_CLAIM_REPO"))
-
-    if args.json:
-        sys.stdout.write(json.dumps(rows, indent=2) + "\n")
-    else:
-        sys.stdout.write(_render(rows, mode) + "\n")
-
-    ok = _OK_STATES[mode]
-    return 0 if all(row["state"] in ok for row in rows) else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

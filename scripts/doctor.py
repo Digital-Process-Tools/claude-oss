@@ -6868,12 +6868,12 @@ def check_release_authority(project_dir, config):
 def check_filed_by_loop(project_dir, config):
     """#990: three states for `labels.filed_by_loop`, and what `not-declared` costs.
 
-    `dispatch_rank.rank` (#798) refuses to rank ANY issue on a board where this key is
+    `select_issues_rank.rank` (#798) refuses to rank ANY issue on a board where this key is
     undeclared -- every issue reads as unlabelled, and reading them all as human would
     confidently promote the loop's own backlog, so the refusal is correct. But the
     refusal is permanent on a repo that never received the key, and it renders exactly
     like a board with nothing rankable on it today unless something says what it costs.
-    So `not-declared` names the `dispatch_rank`/`could-not-rank` consequence rather than
+    So `not-declared` names the `select_issues_rank`/`could-not-rank` consequence rather than
     only "a key is missing" -- a maintainer reading "labels.filed_by_loop is not set"
     otherwise has no way to know that sentence describes a dead selection order.
 
@@ -6907,7 +6907,7 @@ def check_filed_by_loop(project_dir, config):
     elif value is None:
         report(
             "WARN",
-            "labels.filed_by_loop: not-declared -- dispatch_rank.rank answers "
+            "labels.filed_by_loop: not-declared -- select_issues_rank.rank answers "
             "could-not-rank for EVERY issue on this board (#798) until this key names "
             "a label; the dispatch order is inert, not merely today's ranking. Run "
             "/oss:setup to probe for a loop-filed spelling, or set labels.filed_by_loop "
@@ -6917,7 +6917,7 @@ def check_filed_by_loop(project_dir, config):
         report(
             "WARN",
             "labels.filed_by_loop: could-not-tell -- the value {!r} is not a usable "
-            "label name (expected a non-empty string or null). dispatch_rank.rank "
+            "label name (expected a non-empty string or null). select_issues_rank.rank "
             "treats this the same as undeclared: could-not-rank for every "
             "issue.".format(value),
         )
