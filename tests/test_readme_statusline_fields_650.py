@@ -36,7 +36,7 @@ def _status_line_section():
 # The literal prefix each field's own format string in statusline.py opens
 # with -- read from the source strings themselves, not retyped from memory,
 # so a rename of the prefix breaks this test rather than agreeing with it.
-FIELD_PREFIXES = ("pr ", "rel ", "tick ", "last ", "plug ", "ch")
+FIELD_PREFIXES = ("pr ", "np ", "nl ", "rel ", "trap ", "last ", "plug ", "ch")
 
 
 def test_readme_status_line_section_exists():

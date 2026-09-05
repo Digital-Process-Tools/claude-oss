@@ -32,10 +32,6 @@ import sys
 import time
 from pathlib import Path
 
-#: How much of the transcript tail is scanned for the last ScheduleWakeup. A transcript
-#: is append-only and can reach tens of megabytes, and this runs once per message.
-DEFAULT_TAIL_BYTES = 2 * 1024 * 1024
-
 #: How old a cached board reading may be before a refresh is forked, in seconds. Short,
 #: because this is the half a maintainer watches move: at 300 the line showed a merged pull
 #: request and three still-open issues that had just been closed (#515).
@@ -392,13 +388,26 @@ def board_from_cache(cache, now=None):
     for `checks` at all.
     """
     if not isinstance(cache, dict):
-        return {"prs": None, "issues": None, "issues_external": None, "age": None}
+        return {
+            "prs": None,
+            "issues": None,
+            "issues_external": None,
+            "issues_no_priority": None,
+            "issues_no_lane": None,
+            "age": None,
+        }
     prs = cache.get("prs")
     issues = cache.get("issues")
     issues_external = cache.get("issues_external")
+    issues_no_priority = cache.get("issues_no_priority")
+    issues_no_lane = cache.get("issues_no_lane")
     prs = prs if isinstance(prs, int) else None
     issues = issues if isinstance(issues, int) else None
     issues_external = issues_external if isinstance(issues_external, int) else None
+    issues_no_priority = (
+        issues_no_priority if isinstance(issues_no_priority, int) else None
+    )
+    issues_no_lane = issues_no_lane if isinstance(issues_no_lane, int) else None
     checks = cache.get("pr_checks")
     if not (
         isinstance(checks, dict)
@@ -418,6 +427,8 @@ def board_from_cache(cache, now=None):
         "prs": prs,
         "issues": issues,
         "issues_external": issues_external,
+        "issues_no_priority": issues_no_priority,
+        "issues_no_lane": issues_no_lane,
         "checks": checks,
         "age": age,
     }
@@ -690,106 +701,42 @@ def read_cache(path):
         return None
 
 
-# ------------------------------------------------------------------------ next tick
+# ------------------------------------------------------------------------- trap.d
 
 
-def _wakeup_input(record):
-    message = record.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if not isinstance(content, list):
-        return None
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("name") == "ScheduleWakeup" and isinstance(
-            block.get("input"), dict
-        ):
-            return block["input"]
-    return None
+def _trap_count(root):
+    """How many fragments in `trap.d/` are waiting for `/oss:curate` (#1079).
 
+    A plain local directory listing -- no forge call, no credentials -- unlike the
+    unlabelled-issue counts above, so this is taken at render time rather than
+    cached, per the issue's own instruction. It still has to fail into a third state
+    rather than `0`: a directory that could not be listed and a directory holding
+    nothing waiting are the same defect this module is named after if they render
+    alike (module docstring, lines 9-15).
 
-def _tail_lines(path, max_bytes):
-    """The last ``max_bytes`` of a file as whole lines, plus whether anything was cut.
+    Same split `scripts/trap_curate.py`'s own `waiting()` already makes for this
+    exact question, one script over, and for the same reason: a *missing*
+    `trap.d/` (`FileNotFoundError`) means nobody has logged anything there yet --
+    a real, measured `0` -- while any other `OSError` (a permission error,
+    `trap.d/` replaced by a file) means this listing could not be taken at all,
+    and folds to `None` so it renders `?` rather than a zero it never measured.
+    Read separately rather than imported from `trap_curate` -- this module is
+    vendored standalone into `.oss/statusline.py` in repositories that install
+    nothing else to run it, and `trap_curate.py` is not part of what gets copied
+    there.
 
-    The truncation flag is the load-bearing return value. Without it a wakeup armed
-    above the window is indistinguishable from no wakeup at all, and the status line
-    would confidently report an unarmed loop.
+    Counts `*.md` files not starting with `.`, matching `trap_curate.waiting`'s own
+    filter -- `.gitkeep` (and any other dotfile) is excluded by the leading-dot
+    check alone, with no separate name check needed.
     """
-    size = os.path.getsize(path)
-    truncated = size > max_bytes
-    with open(path, "rb") as handle:
-        if truncated:
-            handle.seek(size - max_bytes)
-            handle.readline()  # discard the partial line the seek landed inside
-        return handle.read().splitlines(), truncated
-
-
-def _scan_transcript(transcript_path, max_bytes):
-    """The transcript tail, read once, for callers that each need their own answer
-    out of it (#504). It had two callers -- ``next_tick`` and the user-age field #513
-    removed -- and keeping the split is what makes the error state one thing rather
-    than each caller's own guess at why a file could not be read.
-
-    Returns ``(lines, truncated, error)``; on error the first two are ``None`` and
-    ``error`` is the detail string a caller's ``unknown`` state should carry.
-    """
-    if not transcript_path:
-        return None, None, "no transcript path in the payload"
+    path = Path(root) / "trap.d"
     try:
-        lines, truncated = _tail_lines(transcript_path, max_bytes)
-    except OSError as exc:
-        return None, None, "transcript unreadable: {}".format(exc)
-    return lines, truncated, None
-
-
-def next_tick(transcript_path, now=None, max_bytes=DEFAULT_TAIL_BYTES):
-    """When the next tick fires, from the last ScheduleWakeup in the transcript.
-
-    Five states: ``armed`` (seconds left), ``due`` (its time has passed and nothing has
-    fired yet, which is worth seeing), ``stopped`` (the loop was stopped deliberately),
-    ``none`` (the whole file was read and holds no wakeup), and ``unknown`` -- no
-    transcript, an unreadable one, or a tail scan that did not reach the top of the file.
-    """
-    lines, truncated, error = _scan_transcript(transcript_path, max_bytes)
-    if error is not None:
-        return {"state": "unknown", "detail": error}
-    return _next_tick_from_lines(lines, truncated, now=now)
-
-
-def _next_tick_from_lines(lines, truncated, now=None):
-    now = time.time() if now is None else now
-    found = None
-    for raw in lines:
-        if b"ScheduleWakeup" not in raw:
-            continue
-        try:
-            record = json.loads(raw.decode("utf-8", "replace"))
-        except ValueError:
-            continue
-        payload = _wakeup_input(record)
-        if payload is not None:
-            found = (record, payload)
-
-    if found is None:
-        if truncated:
-            return {
-                "state": "unknown",
-                "detail": "the tail scan did not reach the top of the transcript",
-            }
-        return {"state": "none", "detail": "no wakeup in this transcript"}
-
-    record, payload = found
-    if payload.get("stop"):
-        return {"state": "stopped", "detail": "the loop was stopped"}
-    delay = payload.get("delaySeconds")
-    stamp = parse_timestamp(record.get("timestamp"))
-    if not isinstance(delay, (int, float)) or stamp is None:
-        return {"state": "unknown", "detail": "the wakeup carried no readable delay"}
-    seconds = stamp + delay - now
-    state = "armed" if seconds > 0 else "due"
-    return {"state": state, "seconds": seconds, "reason": payload.get("reason")}
+        names = os.listdir(str(path))
+    except FileNotFoundError:
+        return 0
+    except OSError:
+        return None
+    return sum(1 for name in names if name.endswith(".md") and not name.startswith("."))
 
 
 def _render_stamp(now):
@@ -866,30 +813,40 @@ def _symbols(ascii_only):
     }
 
 
-def _duration(seconds):
-    seconds = int(abs(seconds))
-    if seconds < 90:
-        return "{}s".format(seconds)
-    minutes = seconds // 60
-    if minutes < 90:
-        return "{}m".format(minutes)
-    return "{}h{:02d}".format(minutes // 60, minutes % 60)
+def _unlabelled_field(board):
+    """`0np 1nl` -- open issues with no priority label, then open issues with no lane
+    label (#1079), reported separately per the issue's own instruction:
+    `dispatch_rank.py` cannot rank an issue with no priority label, and a lane-less
+    issue is simply one no triage sweep has placed. Summing the two would answer
+    neither question, so this never does.
+
+    Cached, forge-reading -- `refresh()` populates it alongside the rest of the
+    board -- and folded through the same `?` convention every other count on this
+    line already uses: a repository that declares no priority (or lane) spellings
+    at all folds to the same `?` as a count the forge could not answer, because
+    neither is a real measurement.
+
+    A separate block rather than folded into `_board_field` (#595's own two-
+    population split, one field over): every existing `_board_field` fixture
+    asserts an exact rendered string, and burying a third and fourth count inside
+    it would silently widen what those fixtures were ever asserting.
+    """
+    no_priority = board.get("issues_no_priority")
+    no_lane = board.get("issues_no_lane")
+    return "{}np {}nl".format(
+        "?" if not isinstance(no_priority, int) else no_priority,
+        "?" if not isinstance(no_lane, int) else no_lane,
+    )
 
 
-def _tick_field(tick):
-    state = (tick or {}).get("state")
-    if state == "armed":
-        seconds = tick.get("seconds")
-        if not isinstance(seconds, (int, float)):
-            seconds = 0
-        return "tick " + _duration(seconds)
-    if state == "due":
-        return "tick due"
-    if state == "stopped":
-        return "tick off"
-    if state == "none":
-        return "tick -"
-    return "tick ?"
+def _trap_field(traps):
+    """`trap 3` / `trap ?` -- fragments in `trap.d/` awaiting `/oss:curate` (#1079).
+
+    `?`, never `0`, for a directory this render could not list -- the same rule
+    every other count on this line already follows, applied to the one count here
+    that is read straight off the filesystem rather than off a cache.
+    """
+    return "trap " + ("?" if not isinstance(traps, int) else str(traps))
 
 
 def _last_field(stamp):
@@ -1236,9 +1193,11 @@ def render(facts, ascii_only=False, color=False):
         where.append("v" + _one_line(str(facts["version"])))
     blocks.append(" ".join(where))
 
-    blocks.append(_board_field(facts.get("board") or {}, symbols, color))
+    board = facts.get("board") or {}
+    blocks.append(_board_field(board, symbols, color))
+    blocks.append(_unlabelled_field(board))
     blocks.append(_release_field(facts.get("release")))
-    blocks.append(_tick_field(facts.get("tick")))
+    blocks.append(_trap_field(facts.get("traps")))
     blocks.append(_last_field(facts.get("last")))
 
     blocks.append(_plugins_field(facts.get("plugins") or [], symbols, color))
@@ -1635,6 +1594,89 @@ def _gh_external_issue_count(repo, total):
         if assoc.upper() not in _INSIDE_ASSOCIATIONS:
             external += 1
     return external
+
+
+def _gh_unlabelled_issue_counts(repo, total, priority_labels, lane_labels):
+    """How many open issues carry none of `priority_labels`, and how many carry none
+    of `lane_labels` -- reported separately, as two independent counts (#1079).
+
+    `dispatch_rank.py` cannot rank an issue with no priority label, and an issue with
+    no lane label is simply one no triage sweep has placed; summing the two answers
+    neither question, so this never folds them into one number.
+
+    Same shape as `_gh_external_issue_count` right above: one paginated REST call,
+    one line per open issue (pull requests dropped server-side), cross-checked
+    against `total` so a rate limit, a truncated page, or the tracker growing
+    between the two calls never undercounts as if it were a real reading -- `None`
+    for the whole call in that case, matching the convention every count in this
+    module already uses.
+
+    Each axis independently: `None` when its own repo declares no spellings for it
+    at all (`priority_labels`/`lane_labels` empty). There is no generic way to tell
+    a label that was meant as a priority (or a lane) from an unrelated one by name
+    alone -- the same refusal `dispatch_rank._priority_prefix` documents one script
+    over -- and guessing from no signal is worse than reporting that the axis could
+    not be read. Returns `None` outright, never calling `gh`, when neither axis has
+    anything declared: there is nothing this call could answer.
+    """
+    if not isinstance(total, int):
+        return None
+    if _malformed_repo(repo):
+        return None
+    priority_set = (
+        {str(label) for label in priority_labels} if priority_labels else set()
+    )
+    lane_set = {str(label) for label in lane_labels} if lane_labels else set()
+    if not priority_set and not lane_set:
+        return None
+    out = _run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "-X",
+            "GET",
+            "repos/{}/issues".format(repo),
+            "-f",
+            "state=open",
+            "-f",
+            "per_page=100",
+            "--jq",
+            ".[] | select(.pull_request == null)"
+            ' | "L:" + ([.labels[].name] | join(","))',
+        ],
+        timeout=25,
+    )
+    if out is None:
+        return None
+    # The "L:" prefix on every line (rather than a bare comma-joined list) is not
+    # decoration -- `_run` strips the whole blob's leading/trailing whitespace, and
+    # an issue with zero labels would otherwise print a genuinely empty line. That
+    # line is real data (one issue read, and it carries neither axis's label), but a
+    # *trailing* empty line -- the last open issue in the page happening to carry no
+    # labels -- is indistinguishable from ordinary trailing whitespace and would be
+    # silently stripped away, undercounting `lines` by one against `total` below and
+    # failing the cross-check for a page that was, in fact, read completely. Every
+    # line is non-empty by construction with the prefix in place, so `.strip()` never
+    # eats one.
+    lines = out.split("\n") if out else []
+    if len(lines) != total:
+        return None
+    no_priority = 0
+    no_lane = 0
+    for line in lines:
+        if not line.startswith("L:"):
+            return None
+        names = set(line[2:].split(",")) if line[2:] else set()
+        names.discard("")
+        if priority_set and not (names & priority_set):
+            no_priority += 1
+        if lane_set and not (names & lane_set):
+            no_lane += 1
+    return {
+        "no_priority": no_priority if priority_set else None,
+        "no_lane": no_lane if lane_set else None,
+    }
 
 
 #: How many open pull requests one rollup page carries. Anything past it is counted as
@@ -2072,6 +2114,23 @@ def refresh(root, now=None):
         document["prs"] = _gh_count(repo, "pr")
         document["issues"] = _gh_count(repo, "issue")
         document["issues_external"] = _gh_external_issue_count(repo, document["issues"])
+        # Two separate counts, never summed (#1079): `dispatch_rank.py` cannot rank an
+        # issue with no priority label, and a lane-less issue is simply one no sweep
+        # placed -- one number covering both would answer neither question. Cached
+        # alongside the rest of the board, per this module's own no-network-call-at-
+        # render rule, and read from the labels this repo's own `.oss.json` declares
+        # rather than a hardcoded spelling (the fact-about-one-repo rule, CLAUDE.md).
+        labels_config = config.get("labels")
+        labels_config = labels_config if isinstance(labels_config, dict) else {}
+        priority_labels = labels_config.get("priority")
+        priority_labels = priority_labels if isinstance(priority_labels, list) else []
+        lane_labels = labels_config.get("lanes")
+        lane_labels = lane_labels if isinstance(lane_labels, list) else []
+        unlabelled = _gh_unlabelled_issue_counts(
+            repo, document["issues"], priority_labels, lane_labels
+        )
+        document["issues_no_priority"] = (unlabelled or {}).get("no_priority")
+        document["issues_no_lane"] = (unlabelled or {}).get("no_lane")
         document["pr_checks"] = check_rollup_counts(_gh_rollups(repo), document["prs"])
         # Same call group, same `fetched_at`, same `stale_after` (#856): the default
         # branch's own CI state is exactly as time-sensitive as the pull-request board
@@ -2382,17 +2441,6 @@ def gather(payload, root, now=None):
             now,
         )
 
-    # One tail read shared by both transcript-derived facts (#504) -- a render
-    # happens on every message, so a second full scan would be a doubled,
-    # unmeasured cost paid every time rather than an occasional one.
-    lines, truncated, error = _scan_transcript(
-        payload.get("transcript_path"), DEFAULT_TAIL_BYTES
-    )
-    if error is not None:
-        tick = {"state": "unknown", "detail": error}
-    else:
-        tick = _next_tick_from_lines(lines, truncated, now=now)
-
     return {
         "model": ((payload.get("model") or {}).get("display_name") or "").split(" ")[0]
         or None,
@@ -2403,7 +2451,7 @@ def gather(payload, root, now=None):
         "version": repo_version(root),
         "board": board,
         "release": git_release_progress(root),
-        "tick": tick,
+        "traps": _trap_count(root),
         "last": _render_stamp(now),
         "plugins": plugin_facts(
             loop_name, installed_plugins(root), latest, stale=stale_latest
