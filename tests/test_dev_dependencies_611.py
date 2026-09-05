@@ -58,8 +58,10 @@ def _workflow_installed_packages():
     """What `.github/workflows/tests.yml`'s own install steps name -- ground truth for what
     a green CI run actually required, independent of anything this repo says about itself.
 
-    #1040: this workflow has more than one job, and each job runs its own `pip
-    install` line -- `lint`'s came after `pytest`'s the one time it mattered (#635).
+    #1040: this workflow has more than one job, and more than one of them runs
+    its own `pip install` line -- `lint`'s came after `pytest`'s the one time it
+    mattered (#635). (`shell` runs no `pip install` line at all, deliberately --
+    see that job's own #303 comment.)
     A dependency declared only on a later job's line is exactly as real a
     requirement as one declared on the first line CI happens to run, so every
     matching line is read and unioned rather than trusting whichever one is found
