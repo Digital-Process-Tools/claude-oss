@@ -2694,8 +2694,7 @@ from doctor_check_security_alerts import (
 # scripts/doctor_check_codeql_scan.py for why these are two modules rather
 # than folded into doctor_check_security_alerts.py above.
 from doctor_check_security_settings import (
-    secret_scanning_state,
-    secret_scanning_push_protection_state,
+    security_and_analysis_feature_state,
     automated_security_fixes_state,
     vulnerability_alerts_state,
     check_secret_scanning,

@@ -78,7 +78,7 @@ def _run_dispatch(repo_response, endpoint_response):
 
 def test_secret_scanning_could_not_tell_when_gh_is_not_on_path(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
-    state, detail = doctor.secret_scanning_state(tmp_path, config=_config())
+    state, detail = doctor.security_and_analysis_feature_state(tmp_path, "secret_scanning", config=_config())
     assert state == "could-not-tell"
     assert "gh is not on PATH" in detail
 
@@ -104,7 +104,7 @@ def _sec_analysis_body(secret_scanning=None, push_protection=None):
 
 def test_secret_scanning_enabled(tmp_path):
     run = _run_once(0, _sec_analysis_body(secret_scanning="enabled"), "")
-    state, detail = doctor.secret_scanning_state(tmp_path, config=_config(), run=run)
+    state, detail = doctor.security_and_analysis_feature_state(tmp_path, "secret_scanning", config=_config(), run=run)
     assert state == "enabled"
     assert "secret_scanning" in detail
 
@@ -112,13 +112,13 @@ def test_secret_scanning_enabled(tmp_path):
 def test_secret_scanning_disabled(tmp_path):
     """Must-fire pair for the enabled case above."""
     run = _run_once(0, _sec_analysis_body(secret_scanning="disabled"), "")
-    state, _detail = doctor.secret_scanning_state(tmp_path, config=_config(), run=run)
+    state, _detail = doctor.security_and_analysis_feature_state(tmp_path, "secret_scanning", config=_config(), run=run)
     assert state == "disabled"
 
 
 def test_push_protection_enabled_independent_of_secret_scanning_field(tmp_path):
     run = _run_once(0, _sec_analysis_body(secret_scanning="disabled", push_protection="enabled"), "")
-    state, _detail = doctor.secret_scanning_push_protection_state(tmp_path, config=_config(), run=run)
+    state, _detail = doctor.security_and_analysis_feature_state(tmp_path, "secret_scanning_push_protection", config=_config(), run=run)
     assert state == "enabled"
 
 
@@ -127,14 +127,14 @@ def test_missing_security_and_analysis_object_is_could_not_tell_not_disabled(tmp
     That must never render as `disabled` -- the two are indistinguishable in
     the JSON, and only `could-not-tell` is the claim this check can make."""
     run = _run_once(0, json.dumps({"name": "repo", "private": False}), "")
-    state, detail = doctor.secret_scanning_state(tmp_path, config=_config(), run=run)
+    state, detail = doctor.security_and_analysis_feature_state(tmp_path, "secret_scanning", config=_config(), run=run)
     assert state == "could-not-tell"
     assert "admin" in detail
 
 
 def test_secret_scanning_403_is_could_not_tell_never_disabled(tmp_path):
     run = _run_once(1, "", "gh: Resource not accessible by integration (HTTP 403)")
-    state, detail = doctor.secret_scanning_state(tmp_path, config=_config(), run=run)
+    state, detail = doctor.security_and_analysis_feature_state(tmp_path, "secret_scanning", config=_config(), run=run)
     assert state == "could-not-tell"
     assert state != "disabled"
     assert "403" in detail

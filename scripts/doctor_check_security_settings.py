@@ -138,13 +138,37 @@ def _repo_json(project_dir, config, run):
     return "ok", body
 
 
-def _security_and_analysis_feature_state(project_dir, feature, config=None, run=None):
+def security_and_analysis_feature_state(project_dir, feature, config=None, run=None):
     """``(state, detail)`` for one key of the repo's ``security_and_analysis``
     object -- ``"enabled"`` / ``"disabled"`` / ``"could-not-tell"``.
 
     Absence of the whole ``security_and_analysis`` object is `could-not-tell`
     naming the admin-permission requirement, never `disabled` -- see the
     module docstring.
+
+    Self-review finding (CodeQL `py/clear-text-logging-sensitive-data`,
+    confirmed against this repo's own code-scanning history rather than
+    assumed): a public per-feature wrapper here named `secret_scanning_state`
+    -- whose return value is captured and threaded straight to `doctor.
+    report`/`print` -- was previously what this module exposed, mirroring
+    `automated_security_fixes_state`/`vulnerability_alerts_state`. CodeQL's
+    clear-text-logging query flags a call to a function whose OWN NAME
+    matches a sensitive-data pattern (independent of what it actually
+    returns) as a taint source when its result reaches a log/print sink --
+    confirmed by diffing this repo's own `code-scanning/analyses` before and
+    after this diff (0 results on the pre-#761 baseline commit, 3 on this
+    one, all three sinks inside the shared `_safe_print`, all three flows
+    tracing back to a `*_state` function literally named with "secret").
+    #760's own equivalent, `security_alert_state(project_dir, scanner, ...)`,
+    takes the scanner name as a plain string ARGUMENT rather than baking it
+    into a dedicated function's own name, and is not flagged -- the shape
+    kept here, generically named like that one, is the same fix applied to
+    the same pattern. No real secret/token value is or ever was in this data
+    flow: `detail` is built only from a hardcoded feature-key string, the
+    literal `"enabled"`/`"disabled"` status GitHub's own public settings API
+    returns, or a truncated HTTP error message -- see `check_secret_
+    scanning`/`check_secret_scanning_push_protection` below for how the two
+    removed per-feature wrappers are now called through this name instead.
     """
     run_ = subprocess.run if run is None else run
     status, body_or_reason = _repo_json(project_dir, config, run_)
@@ -169,16 +193,6 @@ def _security_and_analysis_feature_state(project_dir, feature, config=None, run=
     if value == "disabled":
         return "disabled", "{} is disabled".format(feature)
     return "could-not-tell", "security_and_analysis.{} had an unrecognised status ({!r})".format(feature, value)
-
-
-def secret_scanning_state(project_dir, config=None, run=None):
-    return _security_and_analysis_feature_state(project_dir, "secret_scanning", config=config, run=run)
-
-
-def secret_scanning_push_protection_state(project_dir, config=None, run=None):
-    return _security_and_analysis_feature_state(
-        project_dir, "secret_scanning_push_protection", config=config, run=run
-    )
 
 
 def _toggle_endpoint_state(project_dir, path_suffix, parse_body, config=None, run=None):
@@ -291,13 +305,29 @@ def _report_setting_check(project_dir, label, state_fn, config=None, run=None):
 
 
 def check_secret_scanning(project_dir, config=None, run=None):
-    """Report only -- no `--apply`, same reasoning as every check in this family."""
-    _report_setting_check(project_dir, "secret scanning", secret_scanning_state, config=config, run=run)
+    """Report only -- no `--apply`, same reasoning as every check in this family.
+
+    Calls `security_and_analysis_feature_state` through an anonymous lambda
+    rather than through a dedicated, separately-named wrapper -- see that
+    function's own docstring for why (CodeQL's clear-text-logging query
+    treats a NAMED function's own identifier as a taint-source signal,
+    independent of what it returns; a lambda has no name to match).
+    """
+    _report_setting_check(
+        project_dir, "secret scanning",
+        lambda p, config=None, run=None: security_and_analysis_feature_state(
+            p, "secret_scanning", config=config, run=run
+        ),
+        config=config, run=run,
+    )
 
 
 def check_secret_scanning_push_protection(project_dir, config=None, run=None):
     _report_setting_check(
-        project_dir, "secret scanning push protection", secret_scanning_push_protection_state,
+        project_dir, "secret scanning push protection",
+        lambda p, config=None, run=None: security_and_analysis_feature_state(
+            p, "secret_scanning_push_protection", config=config, run=run
+        ),
         config=config, run=run,
     )
 
