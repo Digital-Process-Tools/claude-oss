@@ -51,6 +51,23 @@ to verify the assignee state of whichever issues survive ranking, staleness
 and lane-collision (checking every issue on a large board would be a `gh`
 call per issue paid for issues about to be dropped anyway).
 
+## Groups, not only a flat list (#1068)
+
+A `candidates` result also carries `groups`: `{"groups": [...], "ungrouped":
+[...]}`. Each group composes `lane_setup.suggest_companions` over one
+`candidates` entry's own resolved lane files -- board in, ranked
+**dispatchable lanes** out, the same way this module already composes
+`resolve_lane` and `issue_claim.check`. A group targets three members
+(`_GROUP_TARGET`), never pads to hit that number, and a member's own
+disposition plus a group's own three-value state
+(`candidates`/`none`/`could-not-tell`) survive per group rather than
+flattening to one verdict for the whole call. A group is a suggestion, never
+a dispatch -- the caller still decides whether it is worth a lane.
+`ungrouped` lists candidates that could not be grouped at all (no declared
+files, per #267, or files that could not be resolved), never candidates that
+were grouped and stayed alone -- a short group with a stated
+`short_reason` is a different, weaker claim than "never entered grouping".
+
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
@@ -119,7 +136,114 @@ def _could_not_select(why, dropped=None):
     }
 
 
-def select(payload, checker=None, search=None, resolve_lane=None):
+#: #1068: a group is a target of three, never a quota (the maintainer's own
+#: reply on the issue) -- the bound stays declared-file overlap, and padding a
+#: group to hit this number would invent a relationship #267 forbids this
+#: module from guessing.
+_GROUP_TARGET = 3
+
+
+def _group_candidates(candidates, issues_by_number, resolved_files_by_number,
+                       suggest_companions, board_capped, board_cap_detail):
+    """#1068: compose `lane_setup.suggest_companions` over `select()`'s own
+    ranked, eligible `candidates` -- the fourth join this module used to leave
+    to a session, the same way it already composes `resolve_lane` and
+    `issue_claim.check`. `suggest_companions` keeps its own signature and
+    stays independently callable; this only adds a caller.
+
+    **Membership is restricted to issues already in `candidates`.**
+    `suggest_companions` sweeps every OTHER open issue on the board, including
+    ones this call has already dropped as stale, assigned or colliding --
+    only a `candidates` entry has passed every one of those checks, so only
+    one is safe to hand a developer as part of the same dispatchable lane. An
+    overlap `suggest_companions` finds against a non-candidate issue is real,
+    but it is not this function's to add to a group; the maintainer still
+    sees it via that issue's own row when it is next ranked.
+
+    Returns `(groups, ungrouped)`:
+
+      groups      one entry per lead (highest-ranked first, never a
+                  candidate already claimed by an earlier group), each
+                  `{"members": [...], "state", "detail", "short_reason"}`.
+                  `members` is `candidates` entries, unmodified apart from an
+                  added `role` (`"lead"` / `"member"`) and, for a member, the
+                  overlapping files `suggest_companions` found. `state` is
+                  `suggest_companions`'s own three-value answer for this
+                  lead (`candidates` / `none` / `could-not-tell`) --
+                  preserved per group rather than flattened into one verdict
+                  for the whole call, per the issue's own requirement.
+                  `short_reason` is set (never guessed at, never blank) only
+                  when the group has not reached `_GROUP_TARGET`: it says
+                  which of the two distinct reasons applies -- no overlapping
+                  candidate was found, or the board read that fed
+                  `suggest_companions` was capped -- so a short group because
+                  nothing overlaps and a short group because the read was
+                  truncated never render as the same row.
+      ungrouped   every candidate that could not join any group at all --
+                  declares no files (#267: never guessed into one) or its own
+                  declared files could not be resolved to anything on disk --
+                  each carrying its own `why`. Not the same list as a short
+                  group's members: this is "never entered grouping",
+                  `short_reason` is "entered, and stayed alone".
+    """
+    board = {
+        "capped": bool(board_capped),
+        "cap_detail": board_cap_detail or "",
+        "issues": [
+            {"number": n, "title": row.get("title"), "body": row.get("body")}
+            for n, row in issues_by_number.items()
+        ],
+    }
+    candidates_by_number = {c["number"]: c for c in candidates}
+    taken = set()
+    groups = []
+    ungrouped = []
+    for cand in candidates:
+        number = cand["number"]
+        if number in taken:
+            continue
+        taken.add(number)
+        claimed = resolved_files_by_number.get(number)
+        if not claimed:
+            row = issues_by_number.get(number) or {}
+            why = (
+                "declares no files -- an issue's files are not derivable from "
+                "its body (#267), so it cannot be grouped"
+                if not row.get("lane_patterns")
+                else "its own declared files could not be resolved to anything on disk"
+            )
+            ungrouped.append(dict(cand, why=why))
+            continue
+        result = suggest_companions(Path("."), number, claimed, board)
+        members = [dict(cand, role="lead")]
+        if result["state"] == "candidates":
+            for entry in result["candidates"]:
+                cnum = entry["number"]
+                if cnum in taken:
+                    continue
+                other = candidates_by_number.get(cnum)
+                if other is None:
+                    continue
+                members.append(dict(other, role="member", overlap=entry["files"]))
+                taken.add(cnum)
+                if len(members) >= _GROUP_TARGET:
+                    break
+        short_reason = None
+        if len(members) < _GROUP_TARGET:
+            if result["state"] == "could-not-tell":
+                short_reason = "board sweep could not tell: {0}".format(result["detail"])
+            else:
+                short_reason = "no further overlapping candidate among the ranked issues"
+        groups.append({
+            "members": members,
+            "state": result["state"],
+            "detail": result["detail"],
+            "short_reason": short_reason,
+        })
+    return groups, ungrouped
+
+
+def select(payload, checker=None, search=None, resolve_lane=None, suggest_companions=None):
     """The join. `payload` is `{"declared": {...}, "issues": [...], ...}` --
     see the module docstring's per-issue optional fields (`preflight_pattern`
     / `preflight_roots`, `lane_patterns`) and the top-level optional
@@ -147,6 +271,9 @@ def select(payload, checker=None, search=None, resolve_lane=None):
     checker = issue_claim.check if checker is None else checker
     search = preflight_check.search if search is None else search
     resolve_lane = lane_setup.resolve_lane if resolve_lane is None else resolve_lane
+    suggest_companions = (
+        lane_setup.suggest_companions if suggest_companions is None else suggest_companions
+    )
 
     declared = payload.get("declared") or {}
 
@@ -193,6 +320,11 @@ def select(payload, checker=None, search=None, resolve_lane=None):
     dropped = []
     survivors = []  # (issue_row, rank_answer)
     dark_inputs = []
+    # #1068: captured here, once, so grouping (below) never re-resolves a lane
+    # pattern it has already paid to resolve -- only survives for a candidate
+    # whose lane pattern was neither refused nor resolved-to-nothing, which is
+    # exactly the set grouping is safe to use.
+    resolved_files_by_number = {}
 
     for item in ranked:
         number = item.get("number")
@@ -269,6 +401,7 @@ def select(payload, checker=None, search=None, resolve_lane=None):
                         "why": "overlaps already-claimed file(s): {0}".format(", ".join(overlap)),
                     })
                     continue
+            resolved_files_by_number[number] = resolved["files"]
 
         survivors.append((item, answer))
 
@@ -329,7 +462,21 @@ def select(payload, checker=None, search=None, resolve_lane=None):
         return _could_not_select("; ".join(dark_inputs), dropped=dropped)
 
     state = STATE_CANDIDATES if candidates else STATE_NONE_AVAILABLE
-    return {"state": state, "why": None, "candidates": candidates, "dropped": dropped}
+    if candidates:
+        issues_by_number = {item.get("number"): item for item in issues}
+        groups, ungrouped = _group_candidates(
+            candidates, issues_by_number, resolved_files_by_number, suggest_companions,
+            payload.get("board_capped"), payload.get("board_cap_detail"),
+        )
+    else:
+        groups, ungrouped = [], []
+    return {
+        "state": state,
+        "why": None,
+        "candidates": candidates,
+        "dropped": dropped,
+        "groups": {"groups": groups, "ungrouped": ungrouped},
+    }
 
 
 def main(argv=None):

@@ -255,6 +255,14 @@ above — reading who is claimable and writing a claim stay separate calls, the 
 preflight pattern or a lane pattern for an issue that named neither (#267): those stay
 caller-supplied input, exactly as they are for the scripts it composes.
 
+**A `candidates` result also carries `groups` (#1068) — read that, not the flat `candidates` list,
+when deciding what to dispatch.** Each group is a suggested lane, targeting three members (never
+padded to hit that number), with a per-member disposition and a per-group third state
+(`candidates`/`none`/`could-not-tell`) — a group is a suggestion, never a dispatch, so still weigh it
+against topic and judgement above. `ungrouped` names candidates a group could not be built for at all
+(no declared files, per #267, or files that could not be resolved) — distinct from a group that
+stayed short and says why.
+
 **Before #1036 this paragraph only described the script; nothing told a session to run it.**
 `commands/tick.md` step 5 named `dispatch_rank.py` and `lane_setup.py --claim` as the commands to
 run, by name, and a tick following that imperative literally got the four-scripts-joined-by-hand
