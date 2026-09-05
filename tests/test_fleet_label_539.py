@@ -222,3 +222,63 @@ def test_cli_two_label_positionals_survive_a_trailing_flag():
     )
     assert result.returncode == 0
     assert result.stdout.strip() == "Lane 534 x3  auto-update path"
+
+
+def test_help_still_documents_the_three_label_arguments():
+    # A maintainer review caught this the first time round (#1069's own CI
+    # fix): pulling ISSUES/PHRASE/SUBAGENT_TYPE out of argparse's own
+    # positional declarations silently dropped them from `--help` too --
+    # the usage line lost all three metavars, and `--label`'s own help text
+    # still said "(below)" pointing at nothing. `--help` is the only place a
+    # session running this exact call from `skills/manager/phases/
+    # dispatch.md` can check the argument order when a receipt refuses, so
+    # this must not regress silently again.
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "--help"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 0
+    for metavar in ("ISSUES", "PHRASE", "SUBAGENT_TYPE"):
+        assert metavar in result.stdout, (metavar, result.stdout)
+    assert "(below)" not in result.stdout
+
+
+def test_extra_positional_without_label_still_errors():
+    # A stray positional must still be refused loudly rather than silently
+    # absorbed -- the usage-line fix above must not have reopened that.
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "999", "extra"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode != 0
+    assert "unrecognized arguments: extra" in result.stdout
+
+
+def test_label_with_a_fourth_positional_still_errors():
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--label",
+            "a",
+            "b",
+            "c",
+            "d",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode != 0
+    assert "unrecognized arguments: d" in result.stdout

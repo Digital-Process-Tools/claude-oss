@@ -1116,10 +1116,18 @@ def main(argv=None):
         action="store_true",
         help="compose this lane's own fleet-view label instead of computing "
         "setup facts (#1069, folded in from fleet_label.py) -- the positional "
-        "issue is the lane's primary issue, and label_issues/label_phrase/ "
-        "label_subagent (below) carry the rest, positionally, the same shape "
-        "fleet_label.py's own CLI always used. Requires label_issues and "
-        "label_phrase; every other flag is ignored when this is given.",
+        "issue is the lane's primary issue, and up to three MORE plain "
+        "arguments follow --label itself, positionally, in this fixed order: "
+        "ISSUES (every issue this lane carries, primary included, "
+        "comma-separated), PHRASE (the short description of what the lane is "
+        "doing) and, optionally, SUBAGENT_TYPE (given, renders the whole "
+        "literal Agent(...) call (#989) instead of only the description "
+        "string) -- the same shape fleet_label.py's own CLI always used. "
+        "These three are consumed straight out of argv, by hand, before "
+        "argparse ever sees them (#1069's own CI fix), which is why they do "
+        "not appear as their own entries under `positional arguments:` above "
+        "-- ISSUES and PHRASE are required whenever --label is given; every "
+        "other flag is ignored when this is given.",
     )
     parser.add_argument(
         "--model",
@@ -1183,6 +1191,26 @@ def main(argv=None):
         "is omitted when this is given), and refuses every other mode flag "
         "(--claim, --release, --derive-held, --against) alongside it.",
     )
+    # #1069's own CI fix (argparse's inconsistent handling of a second run of
+    # optional positionals appearing after --label) moved ISSUES/PHRASE/
+    # SUBAGENT_TYPE out of argparse's own positional declarations, which took
+    # them out of the auto-generated usage line and `--help` too -- silently,
+    # since nothing here checked for it (a maintainer review caught it after
+    # the first commit). Splice them back into the usage line derived from
+    # the parser's real, still-registered actions, rather than hand-writing
+    # the whole usage string: hand-writing it would drift the moment a flag
+    # is added or removed anywhere above, exactly the class of fact-in-two-
+    # places bug this repository's own CLAUDE.md warns against.
+    _label_usage_suffix = " [ISSUES] [PHRASE] [SUBAGENT_TYPE]"
+    _default_usage = parser.format_usage()
+    if _default_usage.startswith("usage: "):
+        _default_usage = _default_usage[len("usage: ") :]
+    _default_usage = _default_usage.rstrip("\n")
+    if "[issue]" in _default_usage and _label_usage_suffix not in _default_usage:
+        parser.usage = _default_usage.replace(
+            "[issue]", "[issue]" + _label_usage_suffix, 1
+        )
+
     args = parser.parse_args(argv)
     args.label_issues = label_issues_value
     args.label_phrase = label_phrase_value
