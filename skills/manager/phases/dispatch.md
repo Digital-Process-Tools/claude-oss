@@ -60,11 +60,11 @@ every rule written into `agents/developer.md`.
 unprompted, that all three of its `Agent()` calls omitted `subagent_type: "oss:developer"` and ran
 as `general-purpose`, caught only because the tick happened to notice. Prose read once at the top of
 a phase file is not present at the moment a call is typed by hand, turn after turn, so the fix is not
-a stronger sentence here -- it is not composing the call by hand at all. `scripts/fleet_label.py`
+a stronger sentence here -- it is not composing the call by hand at all. `scripts/lane_setup_label.py`
 already refuses to compose a *description* from an incomplete issue bundle (#539); its
 `agent_call` does the same for the **whole call**:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" 534 534,537,495 "auto-update path" oss:developer --model sonnet
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --label 534,537,495 "auto-update path" oss:developer --model sonnet
     -> Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false, description: "Lane 534 x3  auto-update path", prompt: "<brief>")
 
 Paste that line and fill in `prompt` with the brief -- the one part only the caller can write.
@@ -261,13 +261,17 @@ when and how far to bundle is below, beside the claim it is dispatched alongside
 other lever: branch the second agent off the first's branch rather than off the default branch. It
 costs a rebase per merge. Do not stack more than two deep without a reason.
 
-**Claim before you spawn, not after** — every issue in the lane in one call:
+**Claim before you spawn, not after** — writing the primary issue's brief with `--claim` (#1069)
+writes every issue's own GitHub assignee AND registers the lane in one call:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue_claim.py" <N> [<N> ...] --claim
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane PATTERN [--lane PATTERN ...] [--claim-also <N> ...]
 
-Dispatch only what comes back `claimed` or `already-mine`. A spawn that dies on its first call must
-not leave an unclaimed issue with a worktree attached, and a lane running for hours while the issue
-reads `Assignees: none` is how two readers pick the same issue.
+Dispatch only what comes back `claimed`. A spawn that dies on its first call must not leave an
+unclaimed issue with a worktree attached, and a lane running for hours while the issue reads
+`Assignees: none` is how two readers pick the same issue. `already-claimed` /
+`could-not-claim-assignee` / `assignee-rolled-back` / `rollback-failed-assignee-still-set` are the
+named failure states -- see `lane_setup_claim.claim_and_register`'s own docstring for what each means
+and, for the last one, which issue is still assigned and needs releasing by hand.
 
 **`could-not-read` is not `unassigned`, and the script is what holds those apart** — picking an issue
 whose claim state is unknown is this repository's own defect class, one layer up. The rest of the
@@ -281,7 +285,7 @@ claimable candidates out, three states (`candidates` / `none-available` / `could
 last never rendering as the second) and a per-issue disposition (`eligible` / `assigned` /
 `assignee-unreadable` / `stale` / `unrankable` / `lane-collision`). It does not replace `--claim`
 above — reading who is claimable and writing a claim stay separate calls, the same separation
-`issue_claim.py` itself already makes between `--read` and `--claim` — and it does not invent a
+`select_issues_claim_read.py` itself already makes between its own `read` and `claim` modes — and it does not invent a
 preflight pattern or a lane pattern for an issue that named neither (#267): those stay
 caller-supplied input, exactly as they are for the scripts it composes.
 
@@ -324,7 +328,7 @@ this" — never "nobody wants it" and never "the maintainer is willing to have i
 made off the tracker — in a session handoff, from memory — is structurally invisible to a sub-manager
 spawned fresh into the repository with nothing (#695): it can only read what is on the tracker.
 `labels.reserved` in `.oss.json` is the fix, the same opt-in shape `labels.filed_by_loop` already is
-(#762) — derivable from the tracker by anyone rather than recalled — and `dispatch_rank.reserved`
+(#762) — derivable from the tracker by anyone rather than recalled — and `select_issues_rank.reserved`
 reads it back, printing `[RESERVED]` beside every issue that carries it when ranking the board. A
 repository that has not declared a spelling reads every issue as unreserved, never as `could-not-tell`
 — there is nothing ambiguous about a label field with no candidate spelling to look for.
@@ -332,7 +336,7 @@ repository that has not declared a spelling reads every issue as unreserved, nev
 **The lane's top issue is the best-ranked one, by the dispatch order in `SKILL.md`'s "Deciding what
 to build" (#798).** Author before priority within a band: a human ask outranks loop work of the same
 or lower band, and a blocking-class defect the loop found still outranks an ordinary ask. Compute it
-with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` rather than reading the table and
+with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` rather than reading the table and
 judging, and report a `could-not-rank` rather than treating it as the bottom of the board.
 **Companions are chosen by file adjacency to that top issue, whatever their own rank** — the saving a
 bundle buys is a shared worktree, and ranking companions again would break up the bundles worth having.
@@ -344,7 +348,7 @@ spawns, a full suite run — so three issues in one lane cost 16% less per issue
 and four or more is a cliff at 141 median turns and 68% worse per issue. The number was already
 right and the default was wrong: the loop picked one issue and then went looking for companions, so
 most lanes ended up carrying one. Fill to three. **Cap at three, never four**, and
-`dispatch_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
+`select_issues_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
 spawn the cost is already committed.
 
 **Run the companion search. It is a separate call from the conflict check, pointed the other way.**
@@ -420,12 +424,14 @@ convention: `Lane 534 x3  auto-update path`, never `Lane 534 (+537, +495)  …`.
 considered and rejected: it describes only the phrase's own issue and leaves a bundle's other work as
 invisible as the count-free label did.
 
-Compose it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" <primary> <issue1,issue2,...>
-"<phrase>"` rather than typing it by hand, and paste its stdout as the `Agent` call's `description`.
+Compose it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label
+<issue1,issue2,...> "<phrase>"` rather than typing it by hand, and
+paste its stdout as the `Agent` call's `description`.
 The label is a string handed to a tool parameter — nothing in this repository can inspect it again
 once the lane is running, which is why a guard has to sit in the one function that composes it rather
-than in something that checks the fleet view afterwards. `fleet_label.py` refuses to print anything
-when the caller has not named every issue the lane carries (an omitted or partial bundle), so a lane
+than in something that checks the fleet view afterwards. `lane_setup.py --label` refuses to print
+anything when the caller has not named every issue the lane carries (an omitted or partial bundle),
+so a lane
 dispatched from a script that never ran cannot silently fall back to the thin label. A lane briefed by
 hand without running it is the one case this cannot catch — the same limit named for `lane_setup.py`
 above applies here for the same reason.
@@ -653,7 +659,7 @@ what goes into a lane, the other what comes back out of it.
   the whole issue, comments included, has gone stale against what actually shipped. A lane was
   dispatched for part 3 of #81 after the fix had already landed and shipped: the body and every
   comment were read exactly as asked, and the brief was still written for finished work (#457). Before
-  writing a brief, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/preflight_check.py" --pattern
+  writing a brief, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --preflight
   PATTERN --path FILE_OR_DIR` against the
   code path the issue names — for #81 that was one grep for `could not run` in `commands/release.md`
   — and read its `state` in three, never two: **`matched`**, **`not-matched`**, or
@@ -676,14 +682,14 @@ what goes into a lane, the other what comes back out of it.
   brief that wrote *"a pre-flight returned not-matched — nothing does this today"* about a probe
   scoped to one file (`scripts/doctor.py`) sent a lane to build a second mechanism beside one that
   already existed (`tests/test_shipped_op_spellings.py`), because the sentence carried no scope for
-  the lane to catch. `preflight_check.py`'s receipt names `roots`, the paths actually searched, on
+  the lane to catch. `select_issues_preflight.py`'s receipt names `roots`, the paths actually searched, on
   every state including `could-not-search` — paste the whole line, `not-matched over 1 file
   (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
   every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
   wearing a repository-wide claim's clothes.
 - **Select in the dispatch order, and compute it rather than feel it (#798, extended by #993).**
   Two axes, author before priority within a band. `python3
-  "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the one place the table lives; call it
+  "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place the table lives; call it
   rather than re-deriving it here.
 
   | Rank | Who filed | Priority |
@@ -713,7 +719,7 @@ what goes into a lane, the other what comes back out of it.
   the same day — so a maintainer's ask sat behind the loop's own backlog, and the two maintainers no
   longer knew what the tool was doing.
 
-  **Rank 1 is prose, not a row `dispatch_rank.rank()` ever returns** — nothing here can read an
+  **Rank 1 is prose, not a row `select_issues_rank.rank()` ever returns** — nothing here can read an
   issue against the eleven-row findings table; that classification is a judgment call made when a
   finding is written up. Check the blocking-class exception before consulting the computed table,
   the way the old six-row table's rank 2 encoded it: a blocking defect must not lose to any author's

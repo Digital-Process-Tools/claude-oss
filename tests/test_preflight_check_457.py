@@ -18,7 +18,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-import preflight_check as pc  # noqa: E402
+import select_issues  # noqa: E402
+import select_issues_preflight as pc  # noqa: E402
 
 
 def test_matched_reports_the_matching_file_and_line(tmp_path):
@@ -228,23 +229,27 @@ def test_one_missing_root_among_several_is_could_not_search_even_with_a_clean_mi
 
 
 def test_main_cli_matched_and_not_matched_exit_codes(tmp_path, capsys):
+    """#1069: `preflight_check.py`'s own CLI is gone -- `select_issues.py
+    --preflight` is the one entry point that reaches `search()` now."""
     target = tmp_path / "f.txt"
     target.write_text("could not run\n", encoding="utf-8")
 
-    code = pc.main(["--pattern", "could not run", "--path", str(tmp_path)])
-    assert code == pc.EXIT_OK
+    code = select_issues.main(["--preflight", "could not run", "--path", str(tmp_path)])
+    assert code == 0
     out = json.loads(capsys.readouterr().out)
     assert out["state"] == "matched"
 
-    code = pc.main(["--pattern", "nowhere to be found", "--path", str(tmp_path)])
-    assert code == pc.EXIT_OK
+    code = select_issues.main(
+        ["--preflight", "nowhere to be found", "--path", str(tmp_path)]
+    )
+    assert code == 0
     out = json.loads(capsys.readouterr().out)
     assert out["state"] == "not-matched"
 
 
 def test_main_cli_could_not_search_exits_nonzero(tmp_path, capsys):
-    code = pc.main(["--pattern", "([unclosed", "--path", str(tmp_path)])
-    assert code == pc.EXIT_COULD_NOT_SEARCH
+    code = select_issues.main(["--preflight", "([unclosed", "--path", str(tmp_path)])
+    assert code == 2
     out = json.loads(capsys.readouterr().out)
     assert out["state"] == "could-not-search"
 

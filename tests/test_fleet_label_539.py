@@ -18,7 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import fleet_label as fl  # noqa: E402
+import lane_setup_label as fl  # noqa: E402
 
 
 def test_single_issue_lane_carries_no_multiplier():
@@ -62,14 +62,25 @@ def test_refuses_blank_phrase():
         fl.fleet_label(534, [534], "   ")
 
 
+# #1069: `fleet_label.py`'s own CLI is gone -- folded into `lane_setup.py
+# --label --label-issues ... --label-phrase ...`, the entry point for the
+# whole family. `lane_setup` is imported here (rather than only invoked as a
+# subprocess, the way `fleet_label.py`'s own CLI tests did) so the
+# console-codepage tests below can drive `lane_setup.main` directly with a
+# monkeypatched `sys.stdout`, the same shape `select_issues.py`'s own tests
+# use.
+import lane_setup  # noqa: E402
+
+
 def test_cli_prints_the_label(tmp_path):
     import subprocess
 
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
             "534,537,495",
             "auto-update path",
         ],
@@ -87,8 +98,9 @@ def test_cli_refuses_without_full_bundle():
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
             "537,495",
             "auto-update path",
         ],
@@ -107,13 +119,19 @@ def test_cli_survives_a_console_that_cannot_encode_the_phrase(monkeypatch):
     # source file's"). An em dash is representable in cp1252 and would not have
     # reproduced this -- an arrow is the positive control that actually triggers the
     # encode failure. A text stream opened strict/cp1252 is the same failure mode
-    # without needing a Windows runner to prove it.
+    # without needing a Windows runner to prove it. `lane_setup.main` reconfigures
+    # both streams to `backslashreplace` before dispatching any mode (#1069),
+    # the same guard every other entry point in this plugin uses -- the CLI-only
+    # `_print` fallback `fleet_label.py` used to carry is gone with the rest of
+    # its CLI.
     import io
 
     stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     monkeypatch.setattr(sys, "stdout", stream)
 
-    exit_code = fl._main(["534", "534", "auto-update path → continued"])
+    exit_code = lane_setup.main(
+        ["534", "--label", "534", "auto-update path → continued"]
+    )
     stream.flush()
 
     assert exit_code == 0
@@ -129,9 +147,138 @@ def test_cli_still_prints_a_representable_phrase_verbatim(monkeypatch):
     stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     monkeypatch.setattr(sys, "stdout", stream)
 
-    exit_code = fl._main(["534", "534", "auto-update path"])
+    exit_code = lane_setup.main(
+        ["534", "--label", "534", "auto-update path"]
+    )
     stream.flush()
 
     assert exit_code == 0
     written = stream.buffer.getvalue().decode("cp1252", "replace")
     assert written.strip() == "Lane 534  auto-update path"
+
+
+def test_split_label_positionals_consumes_up_to_three_plain_tokens():
+    # Regression for the CI leg this fix closes: argparse's own handling of a
+    # second run of optional positionals (ISSUES, PHRASE, SUBAGENT_TYPE)
+    # appearing after an optional flag (--label) is not consistent across
+    # interpreters -- observed to fail the exact call shape below on 3.9,
+    # 3.10 and 3.11 ("unrecognized arguments: ...") and pass on 3.12/3.13,
+    # purely as a side effect of an unrelated CPython change to argparse's
+    # own intermixed-positional handling. `_split_label_positionals` removes
+    # argparse from that decision entirely by consuming the label's own
+    # positionals out of argv by hand before argparse ever sees them, so the
+    # result must be identical on every supported interpreter -- this test
+    # exercises the splitter directly rather than through a subprocess,
+    # which is what makes it interpreter-independent; the subprocess tests
+    # above (`test_cli_prints_the_label`, `test_cli_refuses_without_full_
+    # bundle`) and `test_fleet_label_989.py::test_cli_prints_the_whole_agent_
+    # call` are what actually failed on the affected interpreters before
+    # this fix and are the ones that pin the real defect.
+    new_argv, values = lane_setup._split_label_positionals(
+        ["534", "--label", "534,537,495", "auto-update path", "oss:developer",
+         "--model", "sonnet"]
+    )
+    assert new_argv == ["534", "--label", "--model", "sonnet"]
+    assert values == ("534,537,495", "auto-update path", "oss:developer")
+
+
+def test_split_label_positionals_stops_at_the_next_flag():
+    # Only two plain tokens follow --label here -- the flag right after must
+    # not be swallowed as a third label positional.
+    new_argv, values = lane_setup._split_label_positionals(
+        ["534", "--label", "534,537,495", "auto-update path", "--background"]
+    )
+    assert new_argv == ["534", "--label", "--background"]
+    assert values == ("534,537,495", "auto-update path", None)
+
+
+def test_split_label_positionals_is_a_noop_without_the_flag():
+    # Positive control: no --label at all means nothing is pulled out.
+    argv = ["534", "--claim", "--lane", "scripts/foo.py"]
+    new_argv, values = lane_setup._split_label_positionals(argv)
+    assert new_argv == argv
+    assert values == (None, None, None)
+
+
+def test_cli_two_label_positionals_survive_a_trailing_flag():
+    # The two-positional (no SUBAGENT_TYPE) shape with a global flag
+    # immediately after it -- the second real call shape this fix must not
+    # regress, run as a subprocess the way the defect actually renders.
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "534",
+            "--label",
+            "534,537,495",
+            "auto-update path",
+            "--background",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == "Lane 534 x3  auto-update path"
+
+
+def test_help_still_documents_the_three_label_arguments():
+    # A maintainer review caught this the first time round (#1069's own CI
+    # fix): pulling ISSUES/PHRASE/SUBAGENT_TYPE out of argparse's own
+    # positional declarations silently dropped them from `--help` too --
+    # the usage line lost all three metavars, and `--label`'s own help text
+    # still said "(below)" pointing at nothing. `--help` is the only place a
+    # session running this exact call from `skills/manager/phases/
+    # dispatch.md` can check the argument order when a receipt refuses, so
+    # this must not regress silently again.
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "--help"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 0
+    for metavar in ("ISSUES", "PHRASE", "SUBAGENT_TYPE"):
+        assert metavar in result.stdout, (metavar, result.stdout)
+    assert "(below)" not in result.stdout
+
+
+def test_extra_positional_without_label_still_errors():
+    # A stray positional must still be refused loudly rather than silently
+    # absorbed -- the usage-line fix above must not have reopened that.
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "999", "extra"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode != 0
+    assert "unrecognized arguments: extra" in result.stdout
+
+
+def test_label_with_a_fourth_positional_still_errors():
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--label",
+            "a",
+            "b",
+            "c",
+            "d",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode != 0
+    assert "unrecognized arguments: d" in result.stdout

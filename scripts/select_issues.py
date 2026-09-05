@@ -1,8 +1,8 @@
 """Board in, ranked claimable candidates out -- #970.
 
 Selection used to be five scripts and a session doing the joins by hand:
-`dispatch_rank.py` for the order, `issue_claim.py --read` for who already
-holds an issue, `preflight_check.py` for whether it is stale, and
+`select_issues_rank.py` for the order, `select_issues_claim_read.py --read` for who already
+holds an issue, `select_issues_preflight.py` for whether it is stale, and
 `lane_setup.py` for whether it collides with a lane already in flight. A
 tick that finds no candidate after running all four and a tick that could
 not read one of the four inputs used to end the same way -- the `nothing
@@ -28,7 +28,7 @@ read, and name which one went dark instead.
 
 `eligible` / `assigned` / `assignee-unreadable` / `stale` (a preflight
 pattern matched -- the defect is already fixed) / `unrankable`
-(`dispatch_rank.rank` could not place it -- an undeclared label axis, or a
+(`select_issues_rank.rank` could not place it -- an undeclared label axis, or a
 non-loop issue whose `author_association` this payload never carried, most
 often) / `lane-collision` (its own declared files overlap a lane already
 claimed).
@@ -43,10 +43,10 @@ collision, which is the correct answer for an issue nobody has looked at
 that closely yet, not a silent `stale: no` or `lane-collision: no`.
 
 **This module never calls `gh` for the board itself.** The same separation
-`dispatch_rank.py` and `lane_setup.py --suggest-companions` already use: the
+`select_issues_rank.py` and `lane_setup.py --suggest-companions` already use: the
 caller (a tick, a sub-manager, a human) reads the board and hands it in as
 data, so this module's own reads never depend on network access or forge
-credentials beyond the one call it does make itself -- `issue_claim.check`,
+credentials beyond the one call it does make itself -- `select_issues_claim_read.check`,
 to verify the assignee state of whichever issues survive ranking, staleness
 and lane-collision (checking every issue on a large board would be a `gh`
 call per issue paid for issues about to be dropped anyway).
@@ -54,10 +54,10 @@ call per issue paid for issues about to be dropped anyway).
 ## Groups, not only a flat list (#1068)
 
 A `candidates` result also carries `groups`: `{"groups": [...], "ungrouped":
-[...]}`. Each group composes `lane_setup.suggest_companions` over one
+[...]}`. Each group composes `select_issues_companions.suggest_companions` over one
 `candidates` entry's own resolved lane files -- board in, ranked
 **dispatchable lanes** out, the same way this module already composes
-`resolve_lane` and `issue_claim.check`. A group targets three members
+`resolve_lane` and `select_issues_claim_read.check`. A group targets three members
 (`_GROUP_TARGET`), never pads to hit that number, and a member's own
 disposition plus a group's own three-value state
 (`candidates`/`none`/`could-not-tell`) survive per group rather than
@@ -71,6 +71,7 @@ were grouped and stayed alone -- a short group with a stated
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -78,21 +79,22 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import dispatch_rank  # noqa: E402
-import issue_claim  # noqa: E402
-import lane_setup  # noqa: E402
-import preflight_check  # noqa: E402
+import select_issues_claim_read  # noqa: E402
+import select_issues_companions  # noqa: E402
+import select_issues_preflight  # noqa: E402
+import select_issues_rank  # noqa: E402
+import select_issues_overlap  # noqa: E402
 
 STATE_CANDIDATES = "candidates"
 STATE_NONE_AVAILABLE = "none-available"
 STATE_COULD_NOT_SELECT = "could-not-select"
 
-#: #1013: `dispatch_rank.rank`'s own contract (see its module docstring)
+#: #1013: `select_issues_rank.rank`'s own contract (see its module docstring)
 #: expects an already-translated `"external"`/`"maintainer"` axis, never
 #: GitHub's own `author_association` vocabulary -- but this module is the one
 #: that reads a raw `gh api` payload, and nothing translated the field
 #: between the two, so every real board marked every non-loop issue
-#: `unrankable`. Only the two sets `dispatch_rank.py`'s own module docstring
+#: `unrankable`. Only the two sets `select_issues_rank.py`'s own module docstring
 #: names are translated here; a value in neither set -- `FIRST_TIMER`,
 #: `FIRST_TIME_CONTRIBUTOR`, `MANNEQUIN`, a typo, a missing field -- is left
 #: untranslated (`None`) on purpose, so `rank()`'s own "could not tell"
@@ -103,7 +105,7 @@ _EXTERNAL_ASSOCIATIONS = frozenset(("CONTRIBUTOR", "NONE"))
 
 
 def _translate_author_association(raw):
-    """GitHub's own `author_association` field to `dispatch_rank.rank`'s two-
+    """GitHub's own `author_association` field to `select_issues_rank.rank`'s two-
     value vocabulary (`"maintainer"` / `"external"`), or `None` for "could
     not tell" -- see the module-level comment above for which values map
     where and why an unrecognised one is never guessed.
@@ -111,10 +113,10 @@ def _translate_author_association(raw):
     A caller that already translated the field (this module's own test
     fixtures, and any caller written before this function existed) passes
     straight through unchanged: the two vocabularies never share a spelling
-    (GitHub's is all-caps, `dispatch_rank.ASSOCIATIONS` is not), so accepting
+    (GitHub's is all-caps, `select_issues_rank.ASSOCIATIONS` is not), so accepting
     either introduces no ambiguity, and it means this fix does not silently
     stop ranking a payload that was already correct."""
-    if raw in dispatch_rank.ASSOCIATIONS:
+    if raw in select_issues_rank.ASSOCIATIONS:
         return raw
     if raw in _MAINTAINER_ASSOCIATIONS:
         return "maintainer"
@@ -151,10 +153,10 @@ def _group_candidates(
     board_capped,
     board_cap_detail,
 ):
-    """#1068: compose `lane_setup.suggest_companions` over `select()`'s own
+    """#1068: compose `select_issues_companions.suggest_companions` over `select()`'s own
     ranked, eligible `candidates` -- the fourth join this module used to leave
     to a session, the same way it already composes `resolve_lane` and
-    `issue_claim.check`. `suggest_companions` keeps its own signature and
+    `select_issues_claim_read.check`. `suggest_companions` keeps its own signature and
     stays independently callable; this only adds a caller.
 
     **Membership is restricted to issues already in `candidates`.**
@@ -286,8 +288,9 @@ def select(
     see "## Groups" above).
 
     `checker`/`search`/`resolve_lane`/`suggest_companions` default to
-    `issue_claim.check`/`preflight_check.search`/`lane_setup.resolve_lane`/
-    `lane_setup.suggest_companions` -- injectable so a caller (or a test)
+    `select_issues_claim_read.check`/`select_issues_preflight.search`/
+    `select_issues_overlap.resolve_lane`/`select_issues_companions.suggest_companions` --
+    injectable so a caller (or a test)
     never needs a live `gh` session or a real tree to drive this function.
 
     #1078: an optional top-level `lane_label` narrows candidate GENERATION to
@@ -310,11 +313,13 @@ def select(
     `board_read_ok`'s own absence already gets -- so this stays additive
     rather than breaking a caller that has no lane inventory to offer at all.
     """
-    checker = issue_claim.check if checker is None else checker
-    search = preflight_check.search if search is None else search
-    resolve_lane = lane_setup.resolve_lane if resolve_lane is None else resolve_lane
+    checker = select_issues_claim_read.check if checker is None else checker
+    search = select_issues_preflight.search if search is None else search
+    resolve_lane = (
+        select_issues_overlap.resolve_lane if resolve_lane is None else resolve_lane
+    )
     suggest_companions = (
-        lane_setup.suggest_companions
+        select_issues_companions.suggest_companions
         if suggest_companions is None
         else suggest_companions
     )
@@ -367,7 +372,7 @@ def select(
     held_files = set(payload.get("held_files") or [])
     repo = payload.get("repo")
 
-    # #1013 review round: `dispatch_rank.order()` computes its own stable-sort
+    # #1013 review round: `select_issues_rank.order()` computes its own stable-sort
     # key by calling `rank()` internally (see its docstring) with whatever
     # `author_association` the item carries -- translating only inside the
     # loop below fixed each candidate's own rank/author/band fields but left
@@ -385,7 +390,7 @@ def select(
         )
         for item in issues
     ]
-    ranked = dispatch_rank.order(translated_issues, declared)
+    ranked = select_issues_rank.order(translated_issues, declared)
 
     dropped = []
     survivors = []  # (issue_row, rank_answer)
@@ -398,7 +403,7 @@ def select(
 
     for item in ranked:
         number = item.get("number")
-        answer = dispatch_rank.rank(
+        answer = select_issues_rank.rank(
             item.get("labels") or [],
             declared,
             item.get("author_association"),
@@ -451,10 +456,10 @@ def select(
                     )
                 )
                 continue
-            if lane_setup._lane_resolved_to_nothing(resolved):
+            if select_issues_overlap._lane_resolved_to_nothing(resolved):
                 # #1067: every member was well-formed and checked, but the
                 # lane still names zero files on disk (`glob-no-match`, not
-                # `refused`) -- `lane_setup.lane_overlap` against an empty
+                # `refused`) -- `select_issues_overlap.lane_overlap` against an empty
                 # union then passes as disjoint from every live lane, which
                 # is not a fact anyone checked. A lane naming nothing on disk
                 # is not a lane colliding with nothing, so this is reported
@@ -468,7 +473,9 @@ def select(
                 )
                 continue
             if held_files:
-                overlap = lane_setup.lane_overlap(resolved["files"], held_files)
+                overlap = select_issues_overlap.lane_overlap(
+                    resolved["files"], held_files
+                )
                 if overlap:
                     dropped.append(
                         {
@@ -506,7 +513,7 @@ def select(
                     "assignee read for #{0}: no row returned".format(number)
                 )
                 continue
-            if row["state"] == issue_claim.STATE_COULD_NOT_READ:
+            if row["state"] == select_issues_claim_read.STATE_COULD_NOT_READ:
                 # #970 review round: this used to fall straight into
                 # `dark_inputs` with no matching `dropped` entry -- and the
                 # whole call always returns `could-not-select` with `dropped`
@@ -527,7 +534,7 @@ def select(
                     "assignee read for #{0}: {1}".format(number, row.get("detail"))
                 )
                 continue
-            if row["state"] == issue_claim.STATE_ASSIGNED:
+            if row["state"] == select_issues_claim_read.STATE_ASSIGNED:
                 dropped.append(
                     {
                         "number": number,
@@ -574,59 +581,177 @@ def select(
     }
 
 
-def main(argv=None):
-    """Read the board (and the rest of `select`'s payload) as JSON on stdin,
-    print the result as JSON, and exit 0 (candidates), 1 (none-available) or
-    2 (could-not-select).
-
-    #846's own class, guarded here from the start rather than added after
-    the fact: `sys.stdin` is `None` when the harness hands this process a
-    closed or unopenable standard input, and `json.load(None)` raises
-    `AttributeError` uncaught -- past this module's own `could-not-select`,
-    which is exactly the state that exists for a read that failed.
-    """
-    del argv  # this module takes no flags; the payload is the whole input
-
-    # #970 review round: the sibling idiom used by dispatch_rank.py,
-    # lane_setup.py, issue_claim.py and others (#794, #834) -- a candidate's
-    # `why` can carry an issue's own label or title text (via
-    # `dispatch_rank.rank`'s `repr(unrecognised)`), and a console codepage
-    # that cannot encode one of them must not crash this print after the
-    # selection was already computed.
+def _reconfigure_streams():
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="backslashreplace")
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
 
+
+def _read_stdin_json():
+    """`(payload, error_result)`. `error_result` is `None` on success, else
+    the `could-not-select`-shaped dict to print and return for a caller that
+    reads JSON off stdin -- the same three checks every stdin-JSON entry
+    point in this plugin repeats (`select_issues_rank.py`'s former `main`,
+    `lane_setup.py --suggest-companions`, and this module's own default
+    mode): no stream at all (#846), can't decode as UTF-8, not valid JSON.
+    """
     if sys.stdin is None:
-        result = _could_not_select(
+        return None, _could_not_select(
             "stdin: no readable stdin -- the process was handed a closed or "
             "unopenable standard input"
         )
-        print(json.dumps(result, indent=2, sort_keys=True))
-        return 2
-
     try:
         sys.stdin.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper
         pass
-
     try:
-        payload = json.load(sys.stdin)
+        return json.load(sys.stdin), None
     except UnicodeDecodeError as exc:
-        # UnicodeDecodeError is a ValueError, not a JSON-syntax error --
-        # caught separately so this never renders as "not valid JSON" when
-        # stdin was JSON and simply could not be decoded (dispatch_rank.py's
-        # own #834 fix, same class).
-        result = _could_not_select(
+        return None, _could_not_select(
             "stdin: could not be decoded as UTF-8 ({0})".format(exc)
         )
-        print(json.dumps(result, indent=2, sort_keys=True))
-        return 2
     except ValueError as exc:
-        result = _could_not_select("stdin: not valid JSON ({0})".format(exc))
-        print(json.dumps(result, indent=2, sort_keys=True))
+        return None, _could_not_select("stdin: not valid JSON ({0})".format(exc))
+
+
+def _build_parser():
+    parser = argparse.ArgumentParser(
+        description="Board in, ranked claimable candidates out (#970)."
+    )
+    parser.add_argument(
+        "--board",
+        action="store_true",
+        help="print the whole-board ranking receipt instead of the JSON "
+        "candidates result (#1069, folded in from dispatch_rank.py's own "
+        "CLI) -- reads the same board shape on stdin.",
+    )
+    parser.add_argument(
+        "--check-lane",
+        type=int,
+        nargs="*",
+        default=None,
+        metavar="N",
+        help="check a dispatched lane's own size instead of selecting from "
+        "a board (#1069, folded in from dispatch_rank.py --lane) -- these "
+        "issue numbers, never read from stdin.",
+    )
+    parser.add_argument(
+        "--short-reason", default=None, choices=select_issues_rank.SHORT_REASONS
+    )
+    parser.add_argument(
+        "--candidates",
+        type=int,
+        default=None,
+        metavar="N",
+        help="file-disjoint candidates still open on the board, for --check-lane",
+    )
+    parser.add_argument(
+        "--adjacent",
+        type=int,
+        default=None,
+        metavar="N",
+        help="candidates adjacent to the lane's top issue, for --check-lane",
+    )
+    parser.add_argument(
+        "--preflight",
+        default=None,
+        metavar="PATTERN",
+        help="pre-flight code check instead of selecting from a board "
+        "(#1069, folded in from preflight_check.py) -- a regular expression "
+        "naming the code path or contract to check.",
+    )
+    parser.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        dest="paths",
+        metavar="FILE_OR_DIR",
+        help="for --preflight: a file or directory to search. Repeatable; "
+        "defaults to the current directory.",
+    )
+    parser.add_argument(
+        "--indent",
+        type=int,
+        default=2,
+        help="for --preflight: JSON indent (0 for compact).",
+    )
+    return parser
+
+
+def main(argv=None):
+    """Read the board (and the rest of `select`'s payload) as JSON on stdin,
+    print the result as JSON, and exit 0 (candidates), 1 (none-available) or
+    2 (could-not-select) -- the default mode, and the only one this module
+    had before #1069.
+
+    #846's own class, guarded here from the start rather than added after
+    the fact: `sys.stdin` is `None` when the harness hands this process a
+    closed or unopenable standard input, and `json.load(None)` raises
+    `AttributeError` uncaught -- past this module's own `could-not-select`,
+    which is exactly the state that exists for a read that failed.
+
+    `--board`, `--check-lane` and `--preflight` (#1069) are the whole-board
+    ranking receipt, the dispatched-lane-size check and the pre-flight code
+    probe folded in from `dispatch_rank.py` and `preflight_check.py`'s own
+    former CLIs -- see the module docstring's "No longer a standalone CLI"
+    note on each of `select_issues_rank.py`/`select_issues_preflight.py`.
+    Each is a separate mode from the default and from each other.
+    """
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    _reconfigure_streams()
+
+    if args.check_lane is not None:
+        answer = select_issues_rank.check_lane(
+            args.check_lane,
+            args.short_reason,
+            candidates=args.candidates,
+            adjacent=args.adjacent,
+        )
+        print(
+            "{0}: {1} issue(s){2}".format(
+                answer["state"].upper(),
+                answer["size"],
+                "" if not answer["why"] else " -- " + answer["why"],
+            )
+        )
+        return 0 if answer["state"] == "ok" else 2
+
+    if args.preflight is not None:
+        roots = [Path(p) for p in args.paths] if args.paths else [Path(".")]
+        result = select_issues_preflight.search(args.preflight, roots)
+        indent = args.indent if args.indent > 0 else None
+        print(json.dumps(result, indent=indent, sort_keys=True))
+        return (
+            2
+            if result["state"] == select_issues_preflight.STATE_COULD_NOT_SEARCH
+            else 0
+        )
+
+    if args.board:
+        payload, error_result = _read_stdin_json()
+        if error_result is not None:
+            print(json.dumps(error_result, indent=2, sort_keys=True))
+            return 2
+        declared = payload.get("declared") or {}
+        issues = payload.get("issues") or []
+        print(select_issues_rank.render_board_receipt(issues, declared))
+        return 0
+
+    # #970 review round: the sibling idiom used by select_issues_rank.py,
+    # lane_setup.py, select_issues_claim_read.py and others (#794, #834) -- a
+    # candidate's `why` can carry an issue's own label or title text (via
+    # `select_issues_rank.rank`'s `repr(unrecognised)`), and a console codepage
+    # that cannot encode one of them must not crash this print after the
+    # selection was already computed. Already handled above by
+    # `_reconfigure_streams()`, called once at the top of this function
+    # regardless of which mode runs.
+    payload, error_result = _read_stdin_json()
+    if error_result is not None:
+        print(json.dumps(error_result, indent=2, sort_keys=True))
         return 2
 
     result = select(payload)

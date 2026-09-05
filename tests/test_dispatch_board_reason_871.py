@@ -17,8 +17,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import dispatch_rank  # noqa: E402
 import oss_state  # noqa: E402
+import select_issues  # noqa: E402
+import select_issues_rank as dispatch_rank  # noqa: E402
 
 WINDOW = "lanes dispatched this tick"
 
@@ -68,18 +69,21 @@ def test_candidates_exactly_at_the_cap_refuses():
 
 
 # --------------------------------------------------------------- CLI surface
+#
+# #1069: `dispatch_rank.py --lane` is gone -- folded into
+# `select_issues.py --check-lane`, the entry point for this whole family.
 
 
 def test_cli_lane_mode_accepts_candidates_flag():
-    answer = dispatch_rank.main(
-        ["--lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "1"]
+    answer = select_issues.main(
+        ["--check-lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "1"]
     )
     assert answer == 0
 
 
 def test_cli_lane_mode_refuses_on_candidates_flag(capsys):
-    answer = dispatch_rank.main(
-        ["--lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "5"]
+    answer = select_issues.main(
+        ["--check-lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "5"]
     )
     assert answer != 0
     out = capsys.readouterr().out

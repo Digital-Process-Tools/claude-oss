@@ -1,7 +1,7 @@
 ---
 title: "The selection scripts: hand the manager dispatchable groups, not inputs to join"
 description: "select_issues.py composes the four reads so a session never joins them by hand. Group by declared-file overlap -- topic is the intent, overlap is the only mechanism a script has. Every input owes a third state."
-match: (^|/)scripts/(select_issues|dispatch_rank|lane_setup|issue_claim|preflight_check)\.py$
+match: (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$
 ---
 
 **What this family is for.** Do everything a script can do toward *which issues should a developer be
@@ -16,11 +16,16 @@ nothing else overlaps. Report **why** a group is short -- no overlapping candida
 board read -- rather than returning a short group silently, which reads identically to a lane
 nobody could fill.
 
-**`select_issues.py` composes, never reimplements.** `dispatch_rank.order/rank` for the order,
-`preflight_check.search` for staleness, `lane_setup.resolve_lane/lane_overlap` for collision,
-`issue_claim.check` for who holds it. Add a caller, never a second copy of one of those answers.
-It makes exactly one `gh` call, on survivors only; the board itself is handed in as data, so a probe
-never depends on credentials.
+**`select_issues.py` composes, never reimplements.** `select_issues_rank.order/rank` for the
+order, `select_issues_preflight.search` for staleness, `select_issues_overlap.resolve_lane/
+lane_overlap` and `select_issues_companions.suggest_companions` for collision and bundling,
+`select_issues_claim_read.check` for who holds it -- all five owned by this entry point (#1069).
+`lane_setup.py` (and its own `lane_setup_claim.py`/`lane_setup_worktree.py`/
+`lane_setup_patterns.py`/`lane_setup_label.py` submodules) is the sibling entry point -- setup and
+claim, not selection -- and imports `select_issues_overlap` back for its own registration and
+disjointness-report needs, the one cross-import in this family. Add a caller, never a second copy
+of one of those answers. It makes exactly one `gh` call, on survivors only; the board itself is
+handed in as data, so a probe never depends on credentials.
 
 **Group by declared-file overlap. Topic is the intent, overlap is the mechanism (#1068).** A script
 cannot read topic -- #267 settled that an issue's files are not derivable from its body, and that
@@ -41,7 +46,8 @@ three inputs on the collision path do not --
 * the `refused`-pattern dark check sits inside `if lane_patterns and held_files:`, so an empty
   inventory skips the guard rather than the comparison;
 * a member resolving to `glob-no-match` contributes `files: []` and reads as disjoint --
-  `lane_setup._lane_resolved_to_nothing()` exists for exactly this and is never called from here.
+  `select_issues_overlap._lane_resolved_to_nothing()` exists for exactly this and is never called
+  from here.
 
 When grouping lands, each member's own state has to survive into the group rather than being
 flattened: a capped board read makes the whole grouping `could-not-tell`, because members may exist

@@ -40,7 +40,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 # (script relative to REPO, argv after the script name, ordinary stdin payload)
 SWEPT_SCRIPTS = [
-    ("scripts/dispatch_rank.py", [], '{"declared": {}, "issues": []}'),
+    ("scripts/select_issues.py", ["--board"], '{"declared": {}, "issues": []}'),
     ("scripts/statusline.py", [], "{}"),
     ("scripts/batch_hint.py", [], "{}"),
     ("scripts/review_return.py", ["-"], "NO FINDINGS: nothing to check"),

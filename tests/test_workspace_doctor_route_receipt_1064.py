@@ -3,7 +3,7 @@ word + plugin version), so a WARN nothing can clear (#1062 is the worked example
 does not pin every future launch to /oss:doctor forever.
 
 Unlike `tests/test_workspace_doctor_gate.py`, this drives the launcher against a
-REAL `scripts/doctor.py`/`oss_config.py`/`oss_state.py`/`dispatch_rank.py` copied
+REAL `scripts/doctor.py`/`oss_config.py`/`oss_state.py`/`select_issues_rank.py` copied
 into the fake plugin root -- the receipt logic imports those modules by name, and
 `test_workspace_doctor_gate.py`'s own stub-only plugin root deliberately has none
 of them, which is exactly the fixture asserting the launcher FAILS OPEN (routes,
@@ -42,13 +42,13 @@ DOCTOR_MODE = 0o644
 
 # Everything the receipt logic actually imports by name: doctor.py for
 # `plugin_identity`, oss_config.py to resolve `state_file`, oss_state.py for the
-# receipt itself, dispatch_rank.py because oss_state.py imports it
+# receipt itself, select_issues_rank.py because oss_state.py imports it
 # unconditionally at module scope, and every `doctor_check_*.py` because
 # doctor.py imports each of THOSE unconditionally too (the per-check module
 # convention, #497/#630) -- omit even one and `import doctor` itself raises
 # ModuleNotFoundError, which is a real state this suite tests separately
 # (`real_modules=False`), not one to trip into by accident here.
-_REAL_MODULES = ["doctor.py", "oss_config.py", "oss_state.py", "dispatch_rank.py"]
+_REAL_MODULES = ["doctor.py", "oss_config.py", "oss_state.py", "select_issues_rank.py"]
 _REAL_MODULES += sorted(
     p.name for p in (REPO_ROOT / "scripts").glob("doctor_check_*.py")
 )

@@ -5,8 +5,8 @@
 *claim before you spawn* and give the call: `gh issue edit <N> --add-assignee
 @me`. `skills/manager/phases/handback.md` gives the release half. All three are
 prose, and they are the only dispatch-time judgement in this loop with no
-script behind it -- `lane_setup.py` computes disjointness, `dispatch_rank.py`
-the order, `preflight_check.py` staleness, and each exists because prose
+script behind it -- `lane_setup.py` computes disjointness, `select_issues_rank.py`
+the order, `select_issues_preflight.py` staleness, and each exists because prose
 stating three states does not produce three states.
 
 ## The state this exists for
@@ -67,14 +67,23 @@ Exit codes:
   1   at least one row did not -- including every `could-not-*` row
   2   argparse usage error
 
+## No longer a standalone CLI (#1069)
+
+`main()`'s argparse CLI is gone. `select_issues.py` is the one entry point
+that reaches `check(..., "read")`, for the same reason `select_issues_rank.py`
+and `select_issues_preflight.py` lost theirs. The write half (`--claim`,
+`--release`) is now `lane_setup.py`'s own job -- `lane_setup_claim.py` imports
+`check`/`claim_one`/`release_one` from here rather than re-implementing the
+`gh` calls, so this stays the one place that talks to `gh issue view`/`edit`
+for the assignee field. Renamed from `issue_claim.py` to
+`select_issues_claim_read.py`, following the `doctor_check_*` precedent.
+
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
-import argparse
 import json
-import os
+import shutil
 import subprocess
-import sys
 
 STATE_UNASSIGNED = "unassigned"
 STATE_ASSIGNED = "assigned"
@@ -118,9 +127,26 @@ def _run(args, timeout=_TIMEOUT):
     "it failed" cannot tell an unauthenticated session from an absent tool, and
     would report the same `could-not-read` for both.
     """
+    # #1069/PR #1107: resolve the executable via `shutil.which` before
+    # spawning it, the same precedent `lane_setup.py.read_board` already
+    # sets for `supertool` (#317). `subprocess.run(["gh", ...])` on POSIX
+    # hands the bare name to `execvp`, which searches `PATH` for a match of
+    # any extension -- but on Windows it reaches `CreateProcess`, which only
+    # auto-appends `.exe` for an extensionless name and never `.cmd`/`.bat`.
+    # A `gh` on PATH that is actually a `.cmd`/`.bat` launcher (this
+    # repository's own CI fixtures, or a real `gh` install via certain
+    # package managers) was therefore invisible to every call this function
+    # makes, read as an absent binary. `shutil.which` performs the full
+    # PATHEXT-aware search on Windows and returns a fully-qualified path
+    # `subprocess.run` can spawn directly; when it cannot resolve anything
+    # (the binary is genuinely absent), the bare name is kept so the
+    # existing `FileNotFoundError` -> "is not on PATH" detail below still
+    # fires exactly as before.
+    resolved = shutil.which(args[0])
+    argv = [resolved] + list(args[1:]) if resolved else args
     try:
         proc = subprocess.run(
-            args,
+            argv,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
@@ -309,52 +335,3 @@ def _render(rows, mode):
         "{0}: {1} row(s), {2} not {3}".format(mode, len(rows), len(bad), "/".join(ok))
     )
     return "\n".join(lines)
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("issues", nargs="+", help="one or more issue numbers")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--read", action="store_true", help="report the assignee field")
-    group.add_argument(
-        "--claim", action="store_true", help="assign to the authenticated user"
-    )
-    group.add_argument(
-        "--release", action="store_true", help="unassign the authenticated user"
-    )
-    parser.add_argument(
-        "--repo", default=None, help="OWNER/NAME; defaults to the cwd's remote"
-    )
-    parser.add_argument("--json", action="store_true", help="emit the rows as JSON")
-    args = parser.parse_args(argv)
-
-    # Same guard, same reason, as scripts/ranking_table.py and its siblings: a
-    # console codepage that cannot encode a login would otherwise crash at the
-    # print, after the claim had already been written.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="backslashreplace")
-        except (AttributeError, ValueError):  # pragma: no cover - very old Python
-            pass
-
-    numbers = []
-    for raw in args.issues:
-        text = raw.lstrip("#")
-        if not text.isdigit():
-            parser.error("not an issue number: {0!r}".format(raw))
-        numbers.append(int(text))
-
-    mode = "read" if args.read else "claim" if args.claim else "release"
-    rows = check(numbers, mode, repo=args.repo or os.environ.get("OSS_CLAIM_REPO"))
-
-    if args.json:
-        sys.stdout.write(json.dumps(rows, indent=2) + "\n")
-    else:
-        sys.stdout.write(_render(rows, mode) + "\n")
-
-    ok = _OK_STATES[mode]
-    return 0 if all(row["state"] in ok for row in rows) else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

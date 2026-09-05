@@ -19,7 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import fleet_label as fl  # noqa: E402
+import lane_setup_label as fl  # noqa: E402
 
 
 def test_agent_call_renders_the_whole_invocation():
@@ -75,8 +75,9 @@ def test_cli_prints_the_whole_agent_call():
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
             "534,537,495",
             "auto-update path",
             "oss:developer",
@@ -101,8 +102,9 @@ def test_cli_refuses_an_unknown_agent_type():
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
             "534",
             "auto-update path",
             "general-purpose",
@@ -141,14 +143,15 @@ def test_agent_call_escapes_a_backslash_in_the_phrase():
 
 
 def test_cli_without_agent_type_still_prints_only_the_label():
-    # Positive control -- the original three-argument form is untouched.
+    # Positive control -- omitting --label-subagent still prints only the label.
     import subprocess
 
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
             "534",
+            "--label",
             "534,537,495",
             "auto-update path",
         ],

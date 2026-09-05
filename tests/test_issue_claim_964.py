@@ -21,7 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import issue_claim  # noqa: E402
+import select_issues_claim_read as issue_claim  # noqa: E402
 
 VIEWER = ["gh", "api", "user", "--jq", ".login"]
 
@@ -191,46 +191,56 @@ def test_a_failed_release_write_is_could_not_release():
 
 
 # ------------------------------------------------------------- the exit code
+#
+# #1069: `main()`'s own argparse CLI is gone -- `issue_claim.py` folded into
+# `select_issues_claim_read.py` (the read half, composed by `select_issues.py`)
+# and `lane_setup_claim.py` (the claim/release half, composed by
+# `lane_setup.py --claim`/`--release`), and neither entry point exposes a bare
+# "just claim/release/read one issue's assignee and print an exit code" CLI --
+# that surface is not reachable through either composed entry point any more.
+# `_OK_STATES` and the per-row states it folds are still exercised directly,
+# above, via `check()`; only the CLI plumbing around it (argv parsing, the
+# folded exit code, the `#`-prefix strip) had nowhere left to live and is
+# removed with the CLI itself rather than kept testing dead code.
 
 
 @pytest.mark.parametrize(
     "mode,view,expected",
     [
-        ("claim", {1: _payload()}, 0),
-        ("claim", {1: _payload("other")}, 1),
-        ("claim", {1: (False, "boom")}, 1),
-        ("release", {1: _payload("maintainer")}, 0),
-        ("release", {1: _payload()}, 0),
-        ("release", {1: (False, "boom")}, 1),
-        ("read", {1: _payload()}, 0),
-        ("read", {1: (False, "boom")}, 1),
+        ("claim", {1: _payload()}, True),
+        ("claim", {1: _payload("other")}, False),
+        ("claim", {1: (False, "boom")}, False),
+        ("release", {1: _payload("maintainer")}, True),
+        ("release", {1: _payload()}, True),
+        ("release", {1: (False, "boom")}, False),
+        ("read", {1: _payload()}, True),
+        ("read", {1: (False, "boom")}, False),
     ],
 )
-def test_exit_code_is_zero_only_when_every_row_reached_its_success_state(
+def test_ok_states_folds_a_rows_success_the_same_way_a_cli_exit_code_used_to(
     monkeypatch, mode, view, expected
 ):
-    """The rows are the answer, but the code must not say `fine` when one of
-    them is a `could-not-*`: a shell caller that ignores the rows still cannot
-    proceed as though the claim succeeded."""
+    """The rows are the answer, but a caller folding them to one boolean must
+    not say `fine` when one of them is a `could-not-*` -- the same fold
+    `issue_claim.py`'s own removed CLI used to perform for its exit code,
+    exercised directly against `check()`/`_OK_STATES` now that there is no
+    CLI left to drive it through."""
     run = _fake(view=view)
     monkeypatch.setattr(issue_claim, "_run", run)
-    code = issue_claim.main(["1", "--" + mode])
-    assert code == expected
+    rows = issue_claim.check([1], mode, run=run)
+    ok = issue_claim._OK_STATES[mode]
+    assert all(row["state"] in ok for row in rows) is expected
 
 
-def test_a_non_numeric_issue_argument_is_a_usage_error():
-    with pytest.raises(SystemExit) as excinfo:
-        issue_claim.main(["not-a-number", "--read"])
-    assert excinfo.value.code == 2
-
-
-def test_a_hash_prefixed_issue_number_is_accepted(monkeypatch, capsys):
-    """`#964` is how every document in this repository writes an issue number,
-    so the one spelling a reader will copy has to work."""
+def test_a_hash_prefixed_issue_number_is_still_a_usable_key(monkeypatch):
+    """`#964` is how every document in this repository writes an issue number.
+    The removed CLI stripped the `#` before calling `check()`; a caller of the
+    library function now does that itself -- this pins that `check()` accepts
+    a plain int once stripped, which is all a caller ever had to do."""
     run = _fake(view={964: _payload()})
     monkeypatch.setattr(issue_claim, "_run", run)
-    assert issue_claim.main(["#964", "--read"]) == 0
-    assert "#964  unassigned" in capsys.readouterr().out
+    rows = issue_claim.check([964], "read", run=run)
+    assert rows[0]["state"] == issue_claim.STATE_UNASSIGNED
 
 
 # ------------------------------------------- the runner's own failure arms
@@ -241,4 +251,68 @@ def test_a_missing_gh_binary_is_could_not_read_with_a_reason_naming_it():
     and each keeps its own sentence. A caller told only `it failed` cannot tell
     an unauthenticated session from an absent tool."""
     detail = issue_claim._run(["definitely-not-a-real-binary-964"])[2]
+    assert "not on PATH" in detail
+
+
+# ---------------------------------------------------- PATH resolution (#1069)
+
+
+def test_run_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
+    """PR #1107, Windows-only CI failure: `_run` passed the literal string
+    ``"gh"`` straight to `subprocess.run`. On POSIX, `subprocess` hands an
+    extensionless name to `execvp`, which itself walks `PATH` and finds any
+    executable regardless of extension -- so a fake `gh` shebang script (or,
+    after #1069's own fix, a fake `gh.cmd`) is found either way. On Windows,
+    `subprocess.run(["gh", ...])` reaches `CreateProcess` with no directory
+    and no extension, and `CreateProcess` only auto-appends `.exe` -- never
+    `.cmd`/`.bat` -- so the CI fixture's `gh.cmd` was never spawned at all,
+    read as an absent `gh`, and turned the whole assignee-write half of
+    `--claim` into `could-not-claim-assignee` (exit code 3, observed on
+    windows-latest 3.9/3.11/3.12; reasoned, not observed, that this fires
+    identically on any `.cmd`/`.bat` launcher, since it is `CreateProcess`'s
+    own documented search rule and not particular to this one fixture).
+
+    `lane_setup.py.read_board` already resolves `supertool` via
+    `shutil.which` before spawning it, for the identical PATHEXT gap (#317).
+    This pins `_run` doing the same for `gh`: given a `shutil.which` that
+    resolves to some other, fully-qualified path, `subprocess.run` must be
+    called with *that* path, not the bare name.
+    """
+    calls = []
+
+    class _FakeCompleted:
+        returncode = 0
+        stdout = b"tester\n"
+        stderr = b""
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return _FakeCompleted()
+
+    monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        issue_claim.shutil, "which", lambda name: r"C:\fake\bin\gh.cmd"
+    )
+    ok, out, detail = issue_claim._run(["gh", "api", "user", "--jq", ".login"])
+    assert ok, detail
+    assert calls == [
+        [r"C:\fake\bin\gh.cmd", "api", "user", "--jq", ".login"]
+    ], calls
+
+
+def test_run_still_attempts_the_bare_name_when_which_finds_nothing(monkeypatch):
+    """Positive-control pairing for the test above: when the binary is
+    genuinely absent, `_run` must not resolve to `None` (which would crash
+    `subprocess.run` with a `TypeError` rather than reporting `could-not-*`)
+    -- it falls back to the bare name, so `subprocess`'s own
+    `FileNotFoundError` still reaches the existing "is not on PATH" detail."""
+
+    def fake_run(args, **kwargs):
+        assert args[0] == "gh", args
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
+    monkeypatch.setattr(issue_claim.shutil, "which", lambda name: None)
+    ok, out, detail = issue_claim._run(["gh", "api", "user", "--jq", ".login"])
+    assert not ok
     assert "not on PATH" in detail

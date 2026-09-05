@@ -1,5 +1,5 @@
 """#990: `/oss:setup` (`oss_config.build()`) must not leave `labels.filed_by_loop`
-unemitted. `dispatch_rank.rank` (#798) refuses to rank anything when the key is
+unemitted. `select_issues_rank.rank` (#798) refuses to rank anything when the key is
 undeclared, and on every repository but this one -- where it was hand-added -- the key
 never arrives, because `build()` never wrote it. Never invents a name not seen in the
 probe (`commands/setup.md:101`): a match against the labels the probe already
@@ -59,13 +59,13 @@ def test_the_emitted_key_still_validates_clean():
     assert oss_config.validate(null_config) == []
 
 
-def test_null_filed_by_loop_prints_a_note_naming_the_dispatch_rank_consequence(capsys):
+def test_null_filed_by_loop_prints_a_note_naming_the_select_issues_rank_consequence(capsys):
     config = oss_config.build(_probe(labels=["priority-high"]))
     oss_config._report_probe_notes(_probe(labels=["priority-high"]), config)
     printed = capsys.readouterr().err
     note_line = [line for line in printed.splitlines() if "filed_by_loop" in line]
     assert note_line, "no NOTE at all about the undeclared key: {!r}".format(printed)
-    assert "dispatch_rank" in note_line[0]
+    assert "select_issues_rank" in note_line[0]
     assert "could-not-rank" in note_line[0] or "cannot rank" in note_line[0]
 
 

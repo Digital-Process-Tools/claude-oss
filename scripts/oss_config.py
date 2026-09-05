@@ -2445,7 +2445,7 @@ def build(probe):
             # collected, or an emitted `null` with the same visible-but-undeclared
             # shape `changelog_untagged` above already uses. Without this, no
             # repository onboarded through /oss:setup ever received the key, and
-            # dispatch_rank.rank (#798) refused to rank anything on every one of them
+            # select_issues_rank.rank (#798) refused to rank anything on every one of them
             # but this repo, where the key was hand-added.
             "filed_by_loop": _infer_filed_by_loop_label(labels),
         },
@@ -3469,13 +3469,13 @@ def _report_probe_notes(probe, config):
     # "filed-by-loop"), so labels.filed_by_loop ships null -- visible, not omitted,
     # the same shape as changelog_untagged above. Said out loud because a null the
     # maintainer never notices is a dispatch order that never ranks anything: see
-    # dispatch_rank.rank (#798), which answers could-not-rank for EVERY issue on a
+    # select_issues_rank.rank (#798), which answers could-not-rank for EVERY issue on a
     # board where this key is undeclared.
     if (config.get("labels") or {}).get("filed_by_loop") is None:
         print(
             "NOTE labels.filed_by_loop: no label on this repo matched a loop-filed "
             "spelling, so this key ships null. Until it names a label, "
-            "dispatch_rank.rank cannot rank ANY issue on this board (#798) -- create "
+            "select_issues_rank.rank cannot rank ANY issue on this board (#798) -- create "
             "a label (e.g. `gh label create filed-by-loop`) and set it by hand, or "
             "re-run /oss:setup once the label exists.",
             file=sys.stderr,

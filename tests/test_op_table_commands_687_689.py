@@ -47,7 +47,7 @@ import manager_docs  # noqa: E402
 SKILL_MD = manager_docs.repo_root() / "skills" / "manager" / "SKILL.md"
 DISPATCH_MD = manager_docs.repo_root() / "skills" / "manager" / "phases" / "dispatch.md"
 
-TABLE_ANCHOR = "Three calls stand in for judgement here"
+TABLE_ANCHOR = "calls stand in for judgement here"  # #1069: SKILL.md now says "Four"
 
 _UNQUOTED_ROOT = re.compile(r'(?<!")\$\{CLAUDE_PLUGIN_ROOT\}')
 _SCRIPT_CALL = re.compile(
@@ -160,29 +160,33 @@ def test_script_invocations_match_their_own_executable_bit():
 
 
 def test_fleet_label_row_matches_dispatch_md_invocation():
-    """The SKILL.md table's fleet_label.py cell and dispatch.md's own compose
+    """The SKILL.md table's dispatching cell and dispatch.md's own compose
     line must invoke the script the same way -- #687 was exactly these two
-    documents disagreeing about how to run the identical file.
+    documents disagreeing about how to run the identical file. #1069 folded
+    fleet_label.py into lane_setup.py --label; the row to compare is the one
+    naming --label now, not "fleet_label.py" (gone with the rest of that
+    file's own CLI).
     """
     rows = _table_rows(SKILL_MD.read_text(encoding="utf-8"))
-    skill_row = next(r for r in rows if "fleet_label.py" in r)
+    skill_row = next(r for r in rows if "--label" in r)
     skill_call = _SCRIPT_CALL.search(skill_row)
-    assert skill_call, "no fleet_label.py invocation found in the SKILL.md table row"
+    assert skill_call, "no lane_setup.py --label invocation found in the SKILL.md table row"
 
     dispatch_text = DISPATCH_MD.read_text(encoding="utf-8")
     dispatch_calls = [
         m
         for m in _SCRIPT_CALL.finditer(dispatch_text)
-        if m.group(2) == "fleet_label.py"
+        if m.group(2) == "lane_setup.py"
+        and "--label" in dispatch_text[m.start() : m.start() + 200]
     ]
-    assert dispatch_calls, "no fleet_label.py invocation found in dispatch.md"
+    assert dispatch_calls, "no lane_setup.py --label invocation found in dispatch.md"
     dispatch_call = dispatch_calls[0]
 
     skill_prefix, skill_script = skill_call.groups()
     dispatch_prefix, dispatch_script = dispatch_call.groups()
-    assert skill_script == dispatch_script == "fleet_label.py"
+    assert skill_script == dispatch_script == "lane_setup.py"
     assert bool(skill_prefix) == bool(dispatch_prefix), (
-        "SKILL.md and dispatch.md disagree on whether fleet_label.py needs "
+        "SKILL.md and dispatch.md disagree on whether lane_setup.py --label needs "
         "a python3 prefix: {0!r} vs {1!r}".format(skill_row, dispatch_call.group(0))
     )
 

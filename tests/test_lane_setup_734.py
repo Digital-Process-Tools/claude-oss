@@ -138,12 +138,17 @@ def _cli(tmp_path, issue, *extra_args):
 
 
 def test_cli_release_removes_the_record_and_exits_ok(tmp_path):
+    """#1069: `--release` now also releases the GitHub assignee in the same
+    call (`lane_setup_claim.release_lane_and_assignee`), so `--json` prints
+    the combined `{"record": ..., "assignee": ..., "also_released": [...]}`
+    payload rather than the bare record -- the exit code still gates on the
+    record's own state only, unchanged."""
     worktree_root = tmp_path / "wt"
     _write_record(worktree_root, 694, files=["commands/tick.md"])
     done = _cli(tmp_path, 694, "--release")
     assert done.returncode == 0, done.stderr
     payload = json.loads(done.stdout)
-    assert payload["state"] == "released"
+    assert payload["record"]["state"] == "released"
     assert not os.path.exists(lane_setup.lane_registry_dir(worktree_root) + "/694.json")
 
 
@@ -154,7 +159,7 @@ def test_cli_release_of_an_unclaimed_issue_still_exits_ok(tmp_path):
     done = _cli(tmp_path, 999, "--release")
     assert done.returncode == 0, done.stderr
     payload = json.loads(done.stdout)
-    assert payload["state"] == "not-found"
+    assert payload["record"]["state"] == "not-found"
 
 
 # --- held_from_live_lanes: route 3, a corroborating local branch check -----------

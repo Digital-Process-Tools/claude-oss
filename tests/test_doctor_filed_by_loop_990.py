@@ -1,11 +1,11 @@
 """#990: `/oss:doctor` reports whether `labels.filed_by_loop` is declared, and what it
-costs when it is not -- `dispatch_rank.rank` (#798) refuses to rank ANY issue on a
+costs when it is not -- `select_issues_rank.rank` (#798) refuses to rank ANY issue on a
 board where this key is undeclared, and that refusal is permanent and indistinguishable
 from a board with nothing rankable on it today unless something says so out loud.
 
 Three states: `declared` (a non-empty string), `not-declared` (absent, null, or the key
 missing from `labels` entirely), `could-not-tell` (present but not a usable label name --
-a bool, an empty string, a number). `not-declared` must name the `dispatch_rank`
+a bool, an empty string, a number). `not-declared` must name the `select_issues_rank`
 consequence; a positive control (`declared`) proves the same fixture does NOT trip that
 consequence line when the label is actually set.
 """
@@ -32,17 +32,17 @@ def test_declared_reports_ok_and_names_the_label():
     state, message = doctor.FINDINGS[-1]
     assert state == "OK"
     assert "filed-by-loop" in message
-    assert "dispatch_rank" not in message
+    assert "select_issues_rank" not in message
     doctor.FINDINGS.clear()
 
 
-def test_missing_key_reports_warn_and_names_the_dispatch_rank_consequence():
+def test_missing_key_reports_warn_and_names_the_select_issues_rank_consequence():
     doctor.FINDINGS.clear()
     doctor.check_filed_by_loop("/tmp", _config({"priority": ["priority-high"]}))
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
     assert "not-declared" in message
-    assert "dispatch_rank" in message
+    assert "select_issues_rank" in message
     assert "could-not-rank" in message
     doctor.FINDINGS.clear()
 
@@ -53,7 +53,7 @@ def test_null_value_reports_warn_same_as_missing():
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
     assert "not-declared" in message
-    assert "dispatch_rank" in message
+    assert "select_issues_rank" in message
     doctor.FINDINGS.clear()
 
 

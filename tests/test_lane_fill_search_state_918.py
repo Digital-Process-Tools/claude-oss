@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
-import dispatch_rank  # noqa: E402
+import select_issues_rank as dispatch_rank  # noqa: E402
 
 
 def test_did_not_search_is_a_declarable_reason():
@@ -183,7 +183,7 @@ def test_a_count_on_a_full_lane_is_refused_rather_than_dropped():
     is about, surviving two rounds of its own fix.
     """
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
-    import dispatch_rank  # noqa: E402
+    import select_issues_rank as dispatch_rank  # noqa: E402
     import oss_state  # noqa: E402
 
     with pytest.raises(oss_state.StateError) as caught:
@@ -197,7 +197,7 @@ def test_a_count_on_a_full_lane_is_refused_rather_than_dropped():
 def test_a_full_lane_with_no_count_is_still_recorded():
     """Positive control: refusing the stray count must not refuse the lane."""
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
-    import dispatch_rank  # noqa: E402
+    import select_issues_rank as dispatch_rank  # noqa: E402
     import oss_state  # noqa: E402
 
     record = oss_state.lane_fill(

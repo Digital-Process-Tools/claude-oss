@@ -43,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import dispatch_rank as _dispatch_rank  # noqa: E402
+import select_issues_rank as _dispatch_rank  # noqa: E402
 
 MAX_DECISION = 200
 

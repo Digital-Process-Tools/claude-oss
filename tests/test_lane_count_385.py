@@ -256,7 +256,7 @@ def test_a_record_vanishing_between_listdir_and_open_is_not_unreadable(
             os.remove(vanishing_path)
         return real_open(path, *a, **k)
 
-    monkeypatch.setattr(lane_setup, "open", racing_open, raising=False)
+    monkeypatch.setattr(lane_setup.lane_setup_claim, "open", racing_open, raising=False)
 
     result = lane_setup.lane_count(root)
 

@@ -79,7 +79,7 @@ def _capture(monkeypatch):
         calls.append(list(args))
         return 1, "", "stubbed: nothing ran"
 
-    monkeypatch.setattr(lane_setup, "_git", _recorder)
+    monkeypatch.setattr(lane_setup.lane_setup_worktree, "_git", _recorder)
     monkeypatch.setattr(
         lane_setup,
         "read_board",
@@ -199,7 +199,7 @@ def test_blocked_is_true_and_the_control_is_false(tmp_path, monkeypatch):
 
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        lane_setup,
+        lane_setup.lane_setup_worktree,
         "_git",
         lambda repo, *args: (calls.append(list(args)), (0, "a" * 40, ""))[1],
     )
@@ -218,7 +218,7 @@ def test_branch_occupancy_never_puts_a_name_in_the_flag_position(monkeypatch):
     """
     calls = []
     monkeypatch.setattr(
-        lane_setup,
+        lane_setup.lane_setup_worktree,
         "_git",
         lambda repo, *args: (calls.append(list(args)), (1, "", ""))[1],
     )

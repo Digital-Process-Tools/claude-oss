@@ -73,8 +73,11 @@ its own window, exactly like the inline-span case.
 ## Flags are derived from the script's own source, never hand-listed
 
 Most scripts under `scripts/` build an `argparse.ArgumentParser` inside
-`main()`; a few (`plugin_update.py`, `select_issues.py`, `fleet_label.py`)
-parse `sys.argv` by hand and never construct one at all. Importing the module
+`main()`; a few (`plugin_update.py`, `lane_setup.py`) parse `sys.argv` by
+hand and never construct one at all -- `select_issues.py` and `fleet_label.py`
+were two more of that few until #1069 gave `select_issues.py` its own
+`argparse.ArgumentParser` and folded `fleet_label.py`'s CLI into
+`lane_setup.py`'s. Importing the module
 and calling `main()` to read the built parser -- the literal reading of
 "derived by importing the module" -- would run the script's own side
 effects to get there, which a diagnostic must not do. `script_flags()`

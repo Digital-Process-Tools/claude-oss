@@ -113,15 +113,20 @@ could-not-search into a single verdict for the whole issue, which is exactly
 the whole-issue-verdict mistake #457's own body names (#81 had three parts
 in three different states).
 
+## No longer a standalone CLI (#1069)
+
+`_build_parser`/`main` used to make this a script a maintainer ran directly
+before writing a brief. `select_issues.py --preflight` is the one entry point
+that reaches `search()` now, the same way it already reaches `rank`/`order`
+and `check`. Renamed from `preflight_check.py` to `select_issues_preflight.py`
+in the same change, following the `doctor_check_*` precedent.
+
 Python 3.9 compatible -- this project's CI runs 3.9 through 3.12.
 """
 
-import argparse
-import json
 import os
 import re
 import stat
-import sys
 from pathlib import Path
 
 EXIT_OK = 0
@@ -219,7 +224,7 @@ def search(pattern, roots):
     for path in all_files:
         try:
             raw = path.read_bytes()
-        except OSError as exc:
+        except OSError:
             unreadable_files.append(str(path))
             continue
         try:
@@ -317,45 +322,3 @@ def search(pattern, roots):
             "no match found, but not every path was searched -- " + "; ".join(problems)
         )
     return result
-
-
-def _build_parser():
-    parser = argparse.ArgumentParser(
-        description=__doc__.splitlines()[0] if __doc__ else ""
-    )
-    parser.add_argument(
-        "--pattern",
-        required=True,
-        help="Regular expression naming the code path or contract to check.",
-    )
-    parser.add_argument(
-        "--path",
-        action="append",
-        default=[],
-        dest="paths",
-        help="File or directory to search. Repeatable; defaults to the current directory.",
-    )
-    parser.add_argument(
-        "--indent", type=int, default=2, help="JSON indent (0 for compact)."
-    )
-    return parser
-
-
-def main(argv=None):
-    parser = _build_parser()
-    try:
-        args = parser.parse_args(argv)
-    except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else EXIT_USAGE
-
-    roots = [Path(p) for p in args.paths] if args.paths else [Path(".")]
-    result = search(args.pattern, roots)
-    indent = args.indent if args.indent > 0 else None
-    print(json.dumps(result, indent=indent, sort_keys=True))
-    return (
-        EXIT_COULD_NOT_SEARCH if result["state"] == STATE_COULD_NOT_SEARCH else EXIT_OK
-    )
-
-
-if __name__ == "__main__":
-    sys.exit(main())

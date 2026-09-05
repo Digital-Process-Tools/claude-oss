@@ -99,8 +99,20 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1037: 44679 B on disk against a stale 44358 declared
     # baseline -- the new tick-order.md row above and its accompanying
     # pointer sentence grew this file. Budget unchanged; comfortably under it.
+    # Re-baselined for #1069: 45046 B on disk -- the claim/label call-site
+    # rewrites (dispatch_rank.py/issue_claim.py/preflight_check.py/
+    # fleet_label.py folded into select_issues.py/lane_setup.py) grew this by
+    # 367 B. Budget unchanged; comfortably under it.
+    # Re-baselined again for #1069's own self-review round: 45046 B became
+    # 45059 B after two more bare-mention fixes an auditor spawn found
+    # (`preflight_check.py`/`dispatch_rank.py` with no `scripts/` prefix).
+    # Budget unchanged.
+    # Re-baselined a third time (maintainer review): 45059 B became 45029 B
+    # -- the dispatch table's --label cell moved from four named flags back
+    # to positional arguments (fleet_label.py's own old shape), a net
+    # shrink even after the mode-selecting --label token. Budget unchanged.
     SPINE: (
-        44679,
+        45029,
         46900,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -184,15 +196,31 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # after two small precision fixes to the new subsection's cross-reference
     # wording (radar's board-member row is established at tick-order.md's
     # step 4, not inside "What ends a tick" itself). Budget unchanged.
+    # Re-baselined for #1069: 58392 B became 58947 B -- the six claim/label/
+    # rank/preflight call-site rewrites (the family collapsed to two entry
+    # points, #1069) grew this file by 555 B. Budget unchanged; comfortably
+    # under it. Re-baselined again in the same lane's own self-review round:
+    # 58947 B became 58993 B after four more bare-mention fixes an auditor
+    # spawn found (`issue_claim.py`/`dispatch_rank.py`/`preflight_check.py`
+    # with no `scripts/` prefix, invisible to the prose guard's own Tier 1
+    # regex). Budget unchanged.
+    # Re-baselined a third time (maintainer review): 58993 B became 58916 B
+    # -- --label's two worked examples moved from four named flags back to
+    # positional arguments, matching fleet_label.py's own old call length
+    # plus the one unavoidable --label mode-selector token. A net shrink.
+    # Budget unchanged.
     "skills/manager/phases/dispatch.md": (
-        58392,
+        58916,
         64200,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
+    # Re-baselined for #1069: 19369 B became 19598 B -- the release call
+    # (issue_claim.py --release folded into lane_setup.py --release, the
+    # mirror of --claim) grew by 229 B. Budget unchanged; comfortably under it.
     "skills/manager/phases/handback.md": (
-        19369,
+        19598,
         20700,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),
@@ -263,8 +291,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1037: 22779 B on disk against a stale 22741 declared
     # baseline -- the two step-1 pointer updates landed in this file. Budget
     # unchanged; comfortably under it.
+    # Re-baselined for #1069: 22779 B became 22789 B -- two dispatch_rank.py
+    # mentions renamed to select_issues_rank.py in the same call-site rewrite.
+    # Budget unchanged; comfortably under it.
     "skills/manager/phases/accounting.md": (
-        22779,
+        22789,
         24500,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
@@ -274,8 +305,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already measured and split for the manager skill, one file over. Moved
     # here wholesale (39119 B), no content dropped; ~10% headroom over the
     # measured size, same terms as every other row.
+    # Re-baselined for #1069: 39329 B became 39490 B -- the dispatch_rank.py/
+    # preflight_check.py/issue_claim.py/fleet_label.py call sites rewritten
+    # for select_issues.py/lane_setup.py's own two-entry-point shape. Budget
+    # unchanged; comfortably under it.
+    # Re-baselined again (maintainer review): 39490 B became 39460 B -- the
+    # --label worked example moved from named flags to positional arguments.
+    # Budget unchanged.
     "skills/manager/phases/tick-order.md": (
-        39329,
+        39460,
         43100,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

@@ -211,7 +211,10 @@ def test_control_windows_style_single_backslash_separator_is_not_an_escape(tmp_p
 
 
 def test_lane_report_docstring_names_resolved_to_nothing():
-    source = (REPO_ROOT / "scripts" / "lane_setup.py").read_text(encoding="utf-8")
+    # #1069: lane_report moved to lane_setup_patterns.py in the entry-point split.
+    source = (REPO_ROOT / "scripts" / "lane_setup_patterns.py").read_text(
+        encoding="utf-8"
+    )
     def_start = source.index("\ndef lane_report(")
     doc_open = source.index('"""', def_start)
     doc_close = source.index('"""', doc_open + 3)

@@ -40,7 +40,6 @@ scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.WORKTREE_REMOVE_OP
 scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.branch_delete_permission_state` imported but unused
 scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.worktree_remove_permission_state` imported but unused
 scripts/doctor.py	F401	`time` imported but unused
-scripts/preflight_check.py	F841	Local variable `exc` is assigned to but never used
 scripts/release_trigger.py	F401	`datetime.timedelta` imported but unused
 tests/test_ask_consumer_546.py	F401	`json` imported but unused
 tests/test_batch_hint_537.py	F401	`json` imported but unused
@@ -66,7 +65,6 @@ tests/test_lane_setup_809.py	F841	Local variable `against` is assigned to but ne
 tests/test_lane_setup_809.py	F841	Local variable `st` is assigned to but never used
 tests/test_lane_setup_845.py	F401	`stat` imported but unused
 tests/test_lane_setup_845.py	F401	`subprocess` imported but unused
-tests/test_lane_setup_claim_worktree_865.py	F401	`os` imported but unused
 tests/test_lane_setup_claim_worktree_865.py	F401	`pathlib.Path` imported but unused
 tests/test_lane_setup_swallow_383.py	F401	`stat` imported but unused
 tests/test_launcher_path_measurement_526.py	F401	`sys` imported but unused

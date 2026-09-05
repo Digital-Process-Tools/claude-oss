@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import dispatch_rank as _dispatch_rank  # noqa: E402
+import select_issues_rank as _dispatch_rank  # noqa: E402
 from test_content_invariants import _collapse  # noqa: E402
 
 SUB_MANAGER_MD = REPO_ROOT / "agents" / "sub-manager.md"

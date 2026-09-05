@@ -31,6 +31,12 @@ brief exists, so a rename lands green and every stale call site becomes an exit-
 mid-lane with the brief still telling it to. Update the prose in the same diff as the rename, and
 if you are moving several, add the forward guard (#1069) with a positive control.
 
-**Two vocabularies for one act is the same defect one level up.** `issue_claim.py --claim` writes
-the assignee; `lane_setup.py --claim` registers the lane; both mean *this issue is taken*, and the
-split is why rolling back a half-finished lane lives in prose rather than in either script.
+**Two vocabularies for one act was the same defect one level up, and #1069 is the fix, not a new
+trap to watch for.** `issue_claim.py --claim` used to write the assignee while `lane_setup.py
+--claim` registered the lane -- two scripts, two calls, both meaning *this issue is taken* -- and
+the split was why rolling back a half-finished lane lived in prose (a jit-context reminder to run
+`gh issue edit --remove-assignee @me` by hand) rather than in either script. `lane_setup.py --claim`
+now does both in one call (`lane_setup_claim.claim_and_register`), rolling the assignee write back
+in code when registration fails, named states throughout. The general lesson survives the specific
+fix: **two names for one act is a signal to fold them**, checked the next time a script grows a
+second vocabulary for something another script already claims to do.

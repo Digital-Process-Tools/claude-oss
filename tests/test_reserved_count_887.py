@@ -21,21 +21,23 @@ pass if the count were deleted outright.
 Python 3.9 compatible.
 """
 
-import io
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-import dispatch_rank  # noqa: E402
+import select_issues_rank as dispatch_rank  # noqa: E402
 
 
 def _run_main(issues, capsys, monkeypatch, declared):
-    payload = {"declared": declared, "issues": issues}
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
-    code = dispatch_rank.main([])
-    return code, capsys.readouterr().out
+    """#1069: `dispatch_rank.py`'s own CLI is gone (folded into
+    `select_issues.py --board`); this calls the library function that used
+    to sit behind it, `render_board_receipt`, directly -- `capsys`/
+    `monkeypatch` are kept as unused parameters so every call site below
+    stays untouched."""
+    del capsys, monkeypatch
+    out = dispatch_rank.render_board_receipt(issues, declared)
+    return 0, out
 
 
 def test_undeclared_reserved_spelling_is_not_rendered_as_zero(capsys, monkeypatch):

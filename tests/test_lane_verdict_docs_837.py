@@ -16,7 +16,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-LANE_SETUP = REPO_ROOT / "scripts" / "lane_setup.py"
+# #1069: lane_report moved to lane_setup_patterns.py in the entry-point split.
+LANE_SETUP_PATTERNS = REPO_ROOT / "scripts" / "lane_setup_patterns.py"
 
 DISPATCH_MD = REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md"
 
@@ -63,7 +64,7 @@ def _named_in_doc(states, doc_text):
 
 
 def test_every_availability_state_is_named_in_dispatch_md():
-    source = LANE_SETUP.read_text(encoding="utf-8")
+    source = LANE_SETUP_PATTERNS.read_text(encoding="utf-8")
     lane_report_source = _lane_report_source(source)
     states = _availability_states(lane_report_source)
     assert states, (
@@ -94,7 +95,7 @@ def test_control_fires_on_the_real_shape_of_the_defect():
     against a doc snippet that is missing that one word -- the exact silence
     #837 reported.
     """
-    source = LANE_SETUP.read_text(encoding="utf-8")
+    source = LANE_SETUP_PATTERNS.read_text(encoding="utf-8")
     lane_report_source = _lane_report_source(source)
     states = _availability_states(lane_report_source)
     doc_without_the_new_state = (
