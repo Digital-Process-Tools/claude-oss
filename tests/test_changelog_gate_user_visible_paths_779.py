@@ -183,6 +183,37 @@ def test_a_brace_interval_magnitude_at_or_below_the_grep_limit_still_validates(p
     assert oss_config.user_visible_paths_problem([pattern]) is None, pattern
 
 
+@pytest.mark.parametrize("pattern", [
+    "[{]",     # a bracket expression whose sole content is `{`
+    "[a{]",    # `{` alongside an ordinary character inside the brackets
+    "[^{]",    # negated bracket expression containing `{`
+    "[]{]",    # leading `]` per POSIX bracket-expression rules -- literal `]`
+    "[^]{]",   # negated leading `]` -- literal `]`, then `{`
+])
+def test_a_brace_inside_a_bracket_expression_is_not_an_interval_opener(pattern):
+    """#1059: `_brace_interval_problem` did not track bracket-expression
+    (`[...]`) state while scanning for `{`/`}`, so a `{` inside one was
+    misread as an interval opener and the whole value refused with a reason
+    that is not true of it -- `{` can never be an interval bound inside a
+    POSIX ERE bracket expression, and `grep -Eq '[{]'` is an ordinary
+    (non-erroring, exit 1 on no match) pattern, not a syntax error. `[]abc]`
+    and `[^]abc]` both start their bracket content after that leading `]`,
+    per POSIX bracket-expression rules, so it must not be read as the
+    closing bracket."""
+    assert oss_config.user_visible_paths_problem([pattern]) is None, pattern
+
+
+def test_a_genuine_interval_outside_any_bracket_is_still_correctly_validated():
+    """Positive control for the bracket-expression skip above: a real
+    interval bound sitting outside any `[...]` must still be scanned and
+    validated exactly as before -- both the malformed and well-formed
+    cases."""
+    assert oss_config.user_visible_paths_problem(["[abc]{1,3}"]) is None
+    problem = oss_config.user_visible_paths_problem(["[abc]{"])
+    assert problem is not None
+    assert "unbalanced" in problem
+
+
 @pytest.mark.parametrize("byte", ["\r", "\u2028", "\x0b"])
 def test_a_yaml_line_break_character_is_refused(byte):
     """#1018: the previous validator denylisted `'` and `\\n` individually and
