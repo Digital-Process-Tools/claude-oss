@@ -334,14 +334,14 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 44,679 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 56,058 B | 57,900 B |
+| `skills/manager/phases/dispatch.md` | 58,344 B | 64,200 B |
 | `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,779 B | 24,500 B |
 | `skills/manager/phases/tick-order.md` | 39,329 B | 43,100 B |
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
-| `skills/manager/phases/merge.md` | 14,455 B | 14,500 B |
+| `skills/manager/phases/merge.md` | 16,671 B | 18,300 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -366,6 +366,12 @@ warrant. `tests/test_claude_md_phase_budget_table_725.py` now holds this table a
 `skill_phases.DOCUMENTS` the same way `tests/test_claude_md_budget_table_709.py` already held the
 agent table above against `agent_budgets.BUDGETS` — closing the gap #725 filed: two hand-copied
 tables and nothing that compared either one to its source.
+
+**Raised again for #1084**: 56,058 B became 58,344 B, a 444 B overage past the 57,900 B ceiling.
+The new subsection states the four (really five) cases for whether a pending vs red default branch
+should block dispatch, merge or release — a rule this repository was following by habit rather than
+by instruction. Too small an overage to be worth trimming something else in the same file to absorb,
+so the ceiling moved to 64,200 B, ~10% headroom over the new size, rather than cutting anything.
 
 **`accounting.md`'s budget was raised for #694 and #762, landed together because both touch the same
 intake paragraph and the same `--decision` call.** #762 gives the intake numerator a mechanism
@@ -392,6 +398,17 @@ Re-baselined again for #1029: 13,198 B on disk drifted to 14,455 B after #1026 g
 (#976's push-to-main rule, #1017's worktree-reap fix) without updating this table or
 `scripts/skill_phases.py`, leaving `tests/test_baseline_matches_disk_1014.py` red on `main`.
 Budget unchanged; the file is still under it, but only by 45 B.
+
+**Raised again for #1085/#1056**, exactly the overage #1029's own note flagged as coming: 14,455 B
+became 16,671 B against a 14,500 B ceiling that had 45 B of headroom left. Two additions landed
+together because both touch the same worktree-cleanup and merge-gate material -- #1085 writes down
+the merge policy (green and mergeable means merge; no pre-merge rebase, `git merge origin/main`,
+force-push or fresh matrix run absent a real reason) and #1056 fixes the #1007 HEAD-comparison
+guard, whose `git-worktrees`-first fallback could never fire because that op never emits a commit
+SHA, so the guard was nominally on and effectively off. Neither could be trimmed to make room for
+the other -- one is a new policy statement with its own safety argument, the other closes a
+data-loss guard silently left open -- so the ceiling moved to 18,300 B, ~10% headroom over the new
+size, rather than cutting either down.
 
 **The total grew: 122,423 B became 189,517 B, +54.8%** — re-derived by summing the table's own
 "measured (baseline)" column above, not by editing the prior figure (186,769 B / +52.6%, itself a
