@@ -99,13 +99,21 @@ def _classify_gh_api_status(returncode, stdout, stderr):
 
 def _resolve_slug(project_dir, config, run):
     """``(slug, reason)`` -- ``.oss.json``'s ``repo`` key, else the ``origin``
-    remote. Shared shape, see `doctor_check_security_alerts._resolve_slug`."""
+    remote. Shared shape, see `doctor_check_security_alerts._resolve_slug`.
+    Refused (#1055) when the resolved value is not a safe ``owner/name``
+    shape for a `gh api repos/{}/...` path segment -- see
+    `doctor._malformed_repo`.
+    """
     slug = (config or {}).get("repo") if config else None
     if slug is not None and not isinstance(slug, str):
         return None, "the repo value in .oss.json is not a string"
-    if slug:
-        return slug, None
-    return doctor._origin_slug(project_dir, run=run)
+    if not slug:
+        slug, reason = doctor._origin_slug(project_dir, run=run)
+        if slug is None:
+            return None, reason
+    if doctor._malformed_repo(slug):
+        return None, "repo {!r} is not a safe 'owner/name' shape".format(slug)
+    return slug, None
 
 
 SECURITY_SETTINGS_URL = "https://github.com/{}/settings/security_analysis"

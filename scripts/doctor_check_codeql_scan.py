@@ -97,12 +97,21 @@ def _classify_gh_api_status(returncode, stdout, stderr):
 
 
 def _resolve_slug(project_dir, config, run):
+    """``(slug, reason)`` -- ``.oss.json``'s ``repo`` key, else the ``origin``
+    remote, refused (#1055) when the resolved value is not a safe
+    ``owner/name`` shape for a `gh api repos/{}/...` path segment -- see
+    `doctor._malformed_repo`.
+    """
     slug = (config or {}).get("repo") if config else None
     if slug is not None and not isinstance(slug, str):
         return None, "the repo value in .oss.json is not a string"
-    if slug:
-        return slug, None
-    return doctor._origin_slug(project_dir, run=run)
+    if not slug:
+        slug, reason = doctor._origin_slug(project_dir, run=run)
+        if slug is None:
+            return None, reason
+    if doctor._malformed_repo(slug):
+        return None, "repo {!r} is not a safe 'owner/name' shape".format(slug)
+    return slug, None
 
 
 #: Snapshot, not a live query -- see the module docstring's second bullet.
@@ -221,8 +230,20 @@ def _local_families_outside_owned(project_dir, owned_dir):
     root = Path(project_dir)
     families = set()
     owned_files_outside_dir = _owned_files_outside_owned_dir(owned_dir)
+
+    def _raise(exc):
+        # `os.walk` defaults to `onerror=None`, which silently swallows every
+        # `scandir`/`listdir` failure it hits mid-walk -- an unreadable
+        # subtree then renders identically to a genuinely empty one, and the
+        # `except OSError` below never fires (#1054). Passing this callback
+        # is what makes that arm reachable: `os.walk` calls it instead of
+        # swallowing the error, and re-raising here lets the `try/except`
+        # around the walk catch it exactly as it already does for a failure
+        # on the root itself.
+        raise exc
+
     try:
-        for dirpath, dirnames, filenames in os.walk(str(root)):
+        for dirpath, dirnames, filenames in os.walk(str(root), onerror=_raise):
             relroot = os.path.relpath(dirpath, str(root)).replace(os.sep, "/")
             if relroot == ".":
                 relroot = ""

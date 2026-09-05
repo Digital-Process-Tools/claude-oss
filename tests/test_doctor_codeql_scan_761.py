@@ -12,6 +12,7 @@ both inside and outside the owned path must never render as `owned-only`.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -425,3 +426,61 @@ def test_check_codeql_scan_reports_ok_for_default_setup_coverage(tmp_path, capsy
     assert doctor.FINDINGS[-1][0] == "OK"
     assert out.startswith("OK ")
     assert "consider adding a CodeQL workflow" not in out
+
+
+# --------------------------------------------------------- _local_families_outside_owned
+
+
+def test_local_families_outside_owned_positive_control_empty_tree(tmp_path):
+    """Must-fire control paired with the unreadable-subtree case below: a
+    genuinely empty, fully-readable checkout still reports a clean
+    ``(set(), None)`` -- `problem` is not set just because nothing was found."""
+    families, problem = doctor_check_codeql_scan._local_families_outside_owned(
+        tmp_path, ".oss"
+    )
+    assert families == set()
+    assert problem is None
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="chmod 000 does not deny access on this platform"
+)
+def test_local_families_outside_owned_reports_problem_for_unreadable_subtree(tmp_path):
+    """#1054: `os.walk` defaults to `onerror=None`, which silently swallows
+    every `scandir` failure -- the `except OSError` arm was unreachable in
+    practice, so an unreadable subtree rendered identically to a genuinely
+    empty one and `problem` was always `None`. Windows behaviour here is
+    reasoned, not observed, per the issue's own framing -- chmod 0o000 does
+    not deny traversal there, so this fixture is POSIX-only.
+    """
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip(
+            "running as root, which ignores the directory mode bits -- this "
+            "fixture would pass without exercising the denial at all"
+        )
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.py").write_text("# real code", encoding="utf-8")
+    os.chmod(str(src), 0o000)
+    try:
+        families, problem = doctor_check_codeql_scan._local_families_outside_owned(
+            tmp_path, ".oss"
+        )
+    finally:
+        os.chmod(str(src), 0o755)
+    assert families == set()
+    assert problem is not None
+    assert "could not be walked" in problem
+
+
+def test_local_families_outside_owned_reports_problem_for_unreadable_root(tmp_path):
+    """Must-fire control for the root itself, platform-independent: an absent
+    root is a real `OSError` from `os.walk` on every platform, not just
+    POSIX."""
+    absent = tmp_path / "does-not-exist"
+    families, problem = doctor_check_codeql_scan._local_families_outside_owned(
+        absent, ".oss"
+    )
+    assert families == set()
+    assert problem is not None
+    assert "could not be walked" in problem
