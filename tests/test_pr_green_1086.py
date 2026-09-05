@@ -402,3 +402,106 @@ def test_cli_requires_pr_numbers_or_all_open(monkeypatch, capsys):
     monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
     with pytest.raises(SystemExit):
         pr_green.main([], run=_run_sequence([]))
+
+
+# ------------------------------------------ self-review fixes (#1086) ------------------------------------------
+# Two real defects found by the review spawns and fixed in the same commit:
+# (1) a legacy StatusContext rollup row (no `status`/`conclusion` keys, only
+#     `state`) was misread as a failing CheckRun and turned a green PR red;
+# (2) an unreadable workflows directory rendered identically to one that
+#     genuinely declares zero pull_request-triggered workflows -- this
+#     repository's own named defect class, an absence the tool produced
+#     read as an absence in the world.
+
+
+def _status_context_row(context, state="SUCCESS", target_url=None):
+    row = {"context": context, "state": state}
+    if target_url is not None:
+        row["targetUrl"] = target_url
+    return row
+
+
+def test_read_pr_green_with_a_passing_legacy_status_context_row():
+    """A StatusContext row (e.g. Codecov, a preview-deploy bot) has no
+    `status`/`conclusion` keys at all -- reading them as `None` must not
+    turn a passing legacy check into a failure."""
+    rows = [_row("tests", "tests"), _status_context_row("codecov/project")]
+    run = _run_sequence([(0, _rollup_json(707, "fix/707", "aa11", rows), "")])
+    entry = pr_green.read_pr(707, "gh", run, workflows_dir=None)
+    assert entry["state"] == pr_green.STATE_GREEN
+
+
+def test_read_pr_red_with_a_failing_legacy_status_context_row():
+    rows = [_status_context_row("codecov/project", state="FAILURE")]
+    run = _run_sequence([(0, _rollup_json(708, "fix/708", "bb22", rows), "")])
+    entry = pr_green.read_pr(708, "gh", run, workflows_dir=None)
+    assert entry["state"] == pr_green.STATE_RED
+    assert entry["failing"][0]["name"] == "codecov/project"
+
+
+def test_read_pr_pending_with_a_pending_legacy_status_context_row():
+    rows = [_status_context_row("codecov/project", state="PENDING")]
+    run = _run_sequence([(0, _rollup_json(709, "fix/709", "cc33", rows), "")])
+    entry = pr_green.read_pr(709, "gh", run, workflows_dir=None)
+    assert entry["state"] == pr_green.STATE_PENDING
+
+
+def test_declared_pr_workflow_names_reports_ok_true_on_a_readable_directory(tmp_path):
+    wf_dir = _workflows_dir(tmp_path, names=("tests",))
+    names, ok = pr_green._declared_pr_workflow_names(wf_dir)
+    assert ok is True
+    assert names == {"tests"}
+
+
+def test_declared_pr_workflow_names_reports_ok_false_on_an_unreadable_directory(
+    tmp_path,
+):
+    """Paired with the positive control above: a genuinely empty, readable
+    directory must render differently from one that could not be listed at
+    all -- an unreadable directory must never render as 'declares nothing'."""
+    missing = tmp_path / "does-not-exist"
+    names, ok = pr_green._declared_pr_workflow_names(missing)
+    assert ok is False
+    assert names == set()
+
+
+def test_read_pr_green_missing_workflows_is_none_when_the_directory_is_unreadable(
+    tmp_path,
+):
+    """The end-to-end version of the same case: `missing_workflows` must be
+    `None` (could not determine), never `[]` (checked, none missing) --
+    those are two different facts and must not render identically."""
+    rows = [_row("tests", "tests")]
+    run = _run_sequence([(0, _rollup_json(710, "fix/710", "dd44", rows), "")])
+    entry = pr_green.read_pr(710, "gh", run, workflows_dir=tmp_path / "does-not-exist")
+    assert entry["state"] == pr_green.STATE_GREEN
+    assert entry["missing_workflows"] is None
+
+
+def test_read_pr_green_missing_workflows_is_the_real_empty_list_when_checked_clean(
+    tmp_path,
+):
+    """The positive control for the case above: a readable directory that
+    genuinely declares every workflow already seen renders `[]`, not
+    `None`."""
+    wf_dir = _workflows_dir(tmp_path, names=("tests",))
+    rows = [_row("tests", "tests")]
+    run = _run_sequence([(0, _rollup_json(711, "fix/711", "ee55", rows), "")])
+    entry = pr_green.read_pr(711, "gh", run, workflows_dir=wf_dir)
+    assert entry["state"] == pr_green.STATE_GREEN
+    assert entry["missing_workflows"] == []
+
+
+def test_cli_notes_could_not_determine_missing_workflows_on_an_unreadable_directory(
+    monkeypatch, capsys, tmp_path
+):
+    rows = [_row("tests", "tests")]
+    run = _run_sequence([(0, _rollup_json(712, "fix/712", "ff66", rows), "")])
+    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    rc = pr_green.main(
+        ["712", "--project-dir", str(tmp_path / "does-not-exist")],
+        run=run,
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "could not determine" in out

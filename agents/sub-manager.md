@@ -276,9 +276,9 @@ not a local suite run.
 **Never hand-write a CI wait loop (#1086).** `until ... | grep -qE "ALL GREEN|failed"` is #1066's
 own trap: the op prints `NOT ALL GREEN`, which *contains* `ALL GREEN`, so the loop exited green
 with checks still pending. Call
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_green.py" NUM [NUM...] --all-open --wait` instead --
-states as exit codes (`green`=0 `red`=1 `pending`=2 `could-not-read`=3), never prose to grep. It
-scans in order, stopping at the first pull request not pending -- no wait-for-all, so a red one is
-reported the instant it is seen rather than behind a slower neighbour. Its `red` line already
-carries the branch, failing legs, sha and the shortest decisive log line -- brief a developer
-straight from it. `could-not-read` is never `pending` (spins forever) or `green` (blind merge).
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_green.py" NUM [NUM...] --wait` (or `--all-open`)
+instead -- states as exit codes (`green`=0 `red`=1 `pending`=2 `could-not-read`=3), never prose to
+grep. It scans in order, stopping at the first pull request not pending -- no wait-for-all, so red
+is reported the instant it is seen, not behind a slower neighbour. Its `red` line already carries
+the branch, failing legs, sha and the shortest decisive log line -- brief a developer straight from
+it. `could-not-read` is never `pending` (spins forever) or `green` (blind merge).

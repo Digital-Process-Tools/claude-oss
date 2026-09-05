@@ -22,14 +22,21 @@ any one of them is not.
 
 ## The four states
 
-  green            every leg in the check rollup concluded and passed. A
-                    declared, pull_request-triggered workflow that produced
-                    no row in the rollup at all is named under
-                    `missing_workflows`, never silently folded into "every
-                    leg passed" -- in this repo `changelog` is the workflow
-                    most likely to be the one that produced nothing (#1086's
-                    own worked example, there about a push commit rather
-                    than a pull request, but the same defect class).
+  green            every leg in the check rollup concluded and passed --
+                    the exit code, still `green`. A declared,
+                    pull_request-triggered workflow that produced no row in
+                    the rollup at all does not change the exit code, but is
+                    named on the printed line under `missing_workflows`
+                    rather than silently absorbed into "every leg passed" --
+                    in this repo `changelog` is the workflow most likely to
+                    be the one that produced nothing (#1086's own worked
+                    example, there about a push commit rather than a pull
+                    request, but the same defect class). A caller that reads
+                    only the exit code never sees this; one that reads the
+                    line does. `missing_workflows` is `None`, not `[]`, when
+                    the check itself could not run (an unreadable workflows
+                    directory) -- an unreadable directory and a directory
+                    that genuinely declares nothing are not the same fact.
   red              at least one leg failed (or completed with a conclusion
                     this module has never seen -- an unrecognised state is a
                     finding, never a silent pass). Reported the instant it
@@ -84,6 +91,13 @@ EXIT_CODES = {
 # conclusion pins this).
 _PASSING_CONCLUSIONS = frozenset(("SUCCESS", "NEUTRAL", "SKIPPED"))
 
+# The legacy commit-status ("StatusContext") shape carries `state` rather
+# than `status`/`conclusion` -- a different vocabulary for the same three
+# outcomes. Anything not in either set below (an unrecognised `state`, same
+# rule as `_PASSING_CONCLUSIONS`) is treated as failing.
+_PASSING_STATUS_CONTEXT_STATES = frozenset(("SUCCESS",))
+_PENDING_STATUS_CONTEXT_STATES = frozenset(("PENDING", "EXPECTED"))
+
 _JOB_URL_RE = re.compile(r"/actions/runs/(\d+)/job/(\d+)")
 
 _PR_VIEW_FIELDS = "number,headRefName,headRefOid,state,statusCheckRollup"
@@ -121,17 +135,25 @@ def _gh(gh, args, run, timeout=30):
 
 
 def _declared_pr_workflow_names(workflows_dir):
-    """Workflow ``name:`` values under ``workflows_dir`` that trigger on
-    ``pull_request`` (or ``pull_request_target``). Best-effort only: a
-    workflow this function cannot read is a workflow it cannot warn about,
-    never one it silently claims is covered -- so any read failure just
-    excludes that file rather than raising.
+    """``(names, ok)`` -- the workflow ``name:`` values under ``workflows_dir``
+    that trigger on ``pull_request`` (or ``pull_request_target``), and
+    whether the directory itself could be read at all.
+
+    ``ok`` is ``False`` only when ``workflows_dir`` could not be listed
+    (missing, a permission denial, not a directory). That is deliberately
+    NOT the same fact as "listed cleanly and genuinely declares zero such
+    workflows" -- folding the two into one empty set is this repository's
+    own named defect class, an absence the tool produced read as an absence
+    in the world. A single unreadable *file* inside a readable directory is
+    a smaller failure and stays best-effort: it just excludes that one file,
+    the same way it always has, since a caller can still trust every file
+    that *was* read.
     """
     names = set()
     try:
         entries = os.listdir(str(workflows_dir))
     except OSError:
-        return names
+        return names, False
     for entry in entries:
         if not entry.endswith((".yml", ".yaml")):
             continue
@@ -146,7 +168,7 @@ def _declared_pr_workflow_names(workflows_dir):
         match = re.search(r"^name:\s*(.+)$", text, re.MULTILINE)
         if match:
             names.add(match.group(1).strip().strip('"').strip("'"))
-    return names
+    return names, True
 
 
 def _failure_log_line(gh, run, details_url):
@@ -178,9 +200,11 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
 
     ``workflows_dir`` and ``declared_workflows`` are two ways to supply the
     same fact (a directory to derive it from, or the set already derived) --
-    passing neither just means `missing_workflows` is always empty, which is
+    passing neither just means `missing_workflows` is always `[]`, which is
     a real, honest answer rather than a guess: this function was not told
-    what "every leg" should contain.
+    what "every leg" should contain. Passing ``workflows_dir`` for a
+    directory that cannot be listed makes it `None` instead -- "could not
+    check" is a third answer, never silently folded into "checked and clean".
     """
     out, _err, detail = _gh(
         gh, ["pr", "view", str(number), "--json", _PR_VIEW_FIELDS], run
@@ -227,25 +251,56 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
         if workflow:
             seen_workflows.add(workflow)
         name = row.get("name") or row.get("context") or "?"
-        status = row.get("status")
-        conclusion = row.get("conclusion")
-        if status is not None and status != "COMPLETED":
-            pending_legs.append(name)
-            continue
-        if conclusion in _PASSING_CONCLUSIONS:
-            continue
-        failing.append(
-            {
-                "name": name,
-                "workflow": workflow,
-                "conclusion": conclusion or "unknown",
-                "detailsUrl": row.get("detailsUrl"),
-            }
-        )
+        details_url = row.get("detailsUrl") or row.get("targetUrl")
+        if "status" in row or "conclusion" in row:
+            # CheckRun shape (a GitHub Actions job).
+            status = row.get("status")
+            conclusion = row.get("conclusion")
+            if status is not None and status != "COMPLETED":
+                pending_legs.append(name)
+                continue
+            if conclusion in _PASSING_CONCLUSIONS:
+                continue
+            failing.append(
+                {
+                    "name": name,
+                    "workflow": workflow,
+                    "conclusion": conclusion or "unknown",
+                    "detailsUrl": details_url,
+                }
+            )
+        else:
+            # StatusContext shape (a legacy commit-status check -- Codecov,
+            # a preview-deploy bot, anything posted via the Statuses API
+            # rather than Actions). No `status`/`conclusion` keys exist on
+            # this row at all, only `state`; reading the CheckRun keys above
+            # would read both as `None` and misclassify every passing
+            # legacy check as a failure (#1086 self-review finding).
+            state_value = row.get("state")
+            if state_value in _PASSING_STATUS_CONTEXT_STATES:
+                continue
+            if state_value in _PENDING_STATUS_CONTEXT_STATES:
+                pending_legs.append(name)
+                continue
+            failing.append(
+                {
+                    "name": name,
+                    "workflow": workflow,
+                    "conclusion": state_value or "unknown",
+                    "detailsUrl": details_url,
+                }
+            )
 
+    workflows_checked = True
     if declared_workflows is None and workflows_dir is not None:
-        declared_workflows = _declared_pr_workflow_names(workflows_dir)
-    missing_workflows = sorted((declared_workflows or set()) - seen_workflows)
+        declared_workflows, workflows_checked = _declared_pr_workflow_names(
+            workflows_dir
+        )
+    missing_workflows = (
+        sorted((declared_workflows or set()) - seen_workflows)
+        if workflows_checked
+        else None
+    )
 
     if failing:
         state = STATE_RED
@@ -351,6 +406,8 @@ def _render(entry):
             line += "\n  unknown (produced no run): {0}".format(
                 ", ".join(entry["missing_workflows"])
             )
+        elif entry["missing_workflows"] is None:
+            line += "\n  could not determine whether every declared workflow ran"
         return line
     if entry["state"] == STATE_RED:
         lines = [

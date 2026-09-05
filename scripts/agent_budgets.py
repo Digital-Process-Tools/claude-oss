@@ -103,7 +103,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # another sentence restating the rule. Trimmed once already to fit as
     # much of the addition as possible; nothing else in this file was safe
     # to cut without losing a still-live rule, so the ceiling moves instead.
-    "agents/sub-manager.md": (18697, 18700),
+    "agents/sub-manager.md": (18691, 18700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
