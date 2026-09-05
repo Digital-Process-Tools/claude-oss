@@ -2703,7 +2703,6 @@ from doctor_check_security_settings import (
     check_vulnerability_alerts,
 )
 from doctor_check_codeql_scan import (
-    CODEQL_LANGUAGE_FAMILIES,
     codeql_scan_state,
     check_codeql_scan,
 )
