@@ -161,7 +161,7 @@ def current_version():
 def test_the_scanner_fires_on_the_shape_that_cost_a_release():
     """Positive control. Without it the sweep below passes on an empty tree, on an
     AST walk that visits nothing, and on a comparison that is never true."""
-    source = "def test_x():\n    assert ours_version == \"0.0.0-scanner-control\"\n"
+    source = 'def test_x():\n    assert ours_version == "0.0.0-scanner-control"\n'
     assert scan_source(source, CONTROL) == [2]
 
 
@@ -169,16 +169,16 @@ def test_the_scanner_does_not_fire_on_the_two_legitimate_shapes():
     """The must-not-fire half, and the half that decides whether this guard survives
     contact: both shapes below exist in this repository today."""
     # A cache-path fixture pinned at an old release -- #350's own named trap.
-    fixture = "def test_x():\n    assert seg(\"/oss/0.1.0/bin/x\") == \"0.1.0\"\n"
+    fixture = 'def test_x():\n    assert seg("/oss/0.1.0/bin/x") == "0.1.0"\n'
     assert scan_source(fixture, CONTROL) == []
 
     # Narrative prose in a docstring, and in a comment, about a release that
     # happened. Neither can be rewritten and neither is a defect.
     narrative = (
-        "\"\"\"What went wrong during the 0.0.0-scanner-control gate.\"\"\"\n"
+        '"""What went wrong during the 0.0.0-scanner-control gate."""\n'
         "\n"
         "def test_x():\n"
-        "    \"\"\"The 0.0.0-scanner-control cycle is why this exists.\"\"\"\n"
+        '    """The 0.0.0-scanner-control cycle is why this exists."""\n'
         "    # 0.0.0-scanner-control shipped this by accident.\n"
         "    assert True\n"
     )
@@ -186,7 +186,7 @@ def test_the_scanner_does_not_fire_on_the_two_legitimate_shapes():
 
     # And the same literal in CODE in that same file is still caught, so excluding
     # docstrings excused the sentence rather than the file.
-    assert scan_source(narrative + "    x = \"0.0.0-scanner-control\"\n", CONTROL) == [7]
+    assert scan_source(narrative + '    x = "0.0.0-scanner-control"\n', CONTROL) == [7]
 
 
 def _python_files(root=None):
@@ -397,9 +397,7 @@ def sweep(version, root=None):
         scanned += 1
         for bucket, lines in ((pins, file_pins), (collisions, file_collisions)):
             if lines:
-                bucket.append(
-                    "{}:{}".format(rel, ",".join(str(n) for n in lines))
-                )
+                bucket.append("{}:{}".format(rel, ",".join(str(n) for n in lines)))
     return pins, collisions, unscannable, scanned
 
 
@@ -412,15 +410,15 @@ def test_a_pin_and_a_colliding_literal_are_told_apart_in_one_sweep(tmp_path):
     root = tmp_path / "tests"
     root.mkdir()
     (root / "test_pin.py").write_text(
-        'import doctor\n'
-        'def test_x():\n'
-        '    assert doctor.plugin_version(doctor.PLUGIN_ROOT) == '
+        "import doctor\n"
+        "def test_x():\n"
+        "    assert doctor.plugin_version(doctor.PLUGIN_ROOT) == "
         '"0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
     (root / "test_collision.py").write_text(
-        'import doctor\n'
-        'def test_y():\n'
+        "import doctor\n"
+        "def test_y():\n"
         '    assert doctor.compare_versions("0.0.0-scanner-control", '
         '"0.0.0-later") == "behind"\n',
         encoding="utf-8",
@@ -467,7 +465,7 @@ def test_a_route_named_only_in_a_docstring_is_not_a_route(tmp_path):
     root.mkdir()
     (root / "test_prose.py").write_text(
         '"""Describes .claude-plugin/plugin.json and never opens it."""\n'
-        'def test_x():\n'
+        "def test_x():\n"
         '    assert value == "0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
@@ -475,7 +473,7 @@ def test_a_route_named_only_in_a_docstring_is_not_a_route(tmp_path):
     (root / "test_code.py").write_text(
         '"""Describes .claude-plugin/plugin.json and then opens it."""\n'
         'MANIFEST = ".claude-plugin/plugin.json"\n'
-        'def test_x():\n'
+        "def test_x():\n"
         '    assert value == "0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
@@ -501,8 +499,8 @@ def test_a_route_renamed_on_import_is_still_a_route(tmp_path):
     root = tmp_path / "tests"
     root.mkdir()
     (root / "test_aliased.py").write_text(
-        'from doctor import PLUGIN_ROOT as here\n'
-        'def test_x():\n'
+        "from doctor import PLUGIN_ROOT as here\n"
+        "def test_x():\n"
         '    assert str(here) == "0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
@@ -510,8 +508,8 @@ def test_a_route_renamed_on_import_is_still_a_route(tmp_path):
     # under the same alias. Without it this passes on a scan that calls every
     # `from ... import ... as ...` a route.
     (root / "test_unrelated.py").write_text(
-        'from doctor import compare_versions as here\n'
-        'def test_x():\n'
+        "from doctor import compare_versions as here\n"
+        "def test_x():\n"
         '    assert str(here) == "0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
@@ -535,13 +533,12 @@ def test_the_split_loses_nothing(tmp_path):
     root.mkdir()
     (root / "test_routed.py").write_text(
         'MANIFEST = ".claude-plugin/plugin.json"\n'
-        'def test_x():\n'
+        "def test_x():\n"
         '    assert value == "0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
     (root / "test_unrouted.py").write_text(
-        'def test_x():\n'
-        '    assert value == "0.0.0-scanner-control"\n',
+        'def test_x():\n    assert value == "0.0.0-scanner-control"\n',
         encoding="utf-8",
     )
     seen = 0
@@ -688,9 +685,7 @@ def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
 def test_no_test_file_pins_the_current_version():
     version = current_version()
     pins, collisions, unscannable, scanned = sweep(version)
-    offenders = [
-        entry for entry in pins if entry.rsplit(":", 1)[0] not in ALLOWED
-    ]
+    offenders = [entry for entry in pins if entry.rsplit(":", 1)[0] not in ALLOWED]
 
     assert not unscannable, (
         "these test files could not be scanned, so whether they pin the current "
@@ -758,7 +753,9 @@ def test_every_exception_is_still_an_exception():
         # while ALLOWED is empty the #399 rewiring is never reached. Exercise it
         # on a synthetic entry of each shape, or an allow-list entry excused by a
         # broken classifier the day somebody adds one would go unnoticed.
-        routed = 'M = ".claude-plugin/plugin.json"\ndef test_x():\n    assert v == "{}"\n'
+        routed = (
+            'M = ".claude-plugin/plugin.json"\ndef test_x():\n    assert v == "{}"\n'
+        )
         assert classify_source(routed.format(version), version) == ([3], []), (
             "a routed literal is a pin, and the staleness check reads pins"
         )
@@ -809,7 +806,9 @@ def test_a_literal_two_minors_out_warns_rather_than_fails(tmp_path):
 
     clean = tmp_path / "clean"
     clean.mkdir()
-    (clean / "test_y.py").write_text("def test_y():\n    assert True\n", encoding="utf-8")
+    (clean / "test_y.py").write_text(
+        "def test_y():\n    assert True\n", encoding="utf-8"
+    )
     pins2, _c2, _u2, _s2 = sweep(horizon, root=clean)
     assert pins2 == [], "the must-not-fire control pins the horizon literal too"
     with warnings.catch_warnings(record=True) as caught:

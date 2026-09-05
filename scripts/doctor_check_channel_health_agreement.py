@@ -110,8 +110,9 @@ def _health_words(raw_state, source, age):
     return "{}{} reading: {}".format(source, aged, raw_state)
 
 
-def resolve_channel_health_reading(project_dir, allow_probe=False, probe=None, now=None,
-                                    max_age=None):
+def resolve_channel_health_reading(
+    project_dir, allow_probe=False, probe=None, now=None, max_age=None
+):
     """``(raw_state, source, age)`` for the health half of the comparison.
 
     ``source`` is ``"probed"``, ``"cached"``, ``"cached-stale"`` or ``None``
@@ -147,7 +148,8 @@ def resolve_channel_health_reading(project_dir, allow_probe=False, probe=None, n
         return None, None, None
     age = now - fetched_at
     limit = (
-        max_age if max_age is not None
+        max_age
+        if max_age is not None
         else getattr(statusline, "CHANNEL_REFRESH_AFTER", _FALLBACK_MAX_AGE)
     )
     if age > limit:
@@ -155,8 +157,9 @@ def resolve_channel_health_reading(project_dir, allow_probe=False, probe=None, n
     return channel.get("raw_state"), "cached", age
 
 
-def channel_health_agreement_state(census_state, census_detail, health_raw_state,
-                                    health_source, health_age=None):
+def channel_health_agreement_state(
+    census_state, census_detail, health_raw_state, health_source, health_age=None
+):
     """``(state, detail)`` -- ``agree`` / ``disagree`` / ``could-not-compare``.
 
     Never picks a winner on `disagree`: naming both readings verbatim is the
@@ -172,7 +175,9 @@ def channel_health_agreement_state(census_state, census_detail, health_raw_state
     """
     census_signal = _census_signal(census_state)
     health_signal = (
-        _health_signal(health_raw_state) if health_source in ("probed", "cached") else None
+        _health_signal(health_raw_state)
+        if health_source in ("probed", "cached")
+        else None
     )
     census_words = _census_words(census_state, census_detail)
     health_words = _health_words(health_raw_state, health_source, health_age)
@@ -190,7 +195,10 @@ def channel_health_agreement_state(census_state, census_detail, health_raw_state
             verdict, census_words, health_words
         )
     detail = "census: {}. channel:health: {}.".format(census_words, health_words)
-    if census_state == "single" and health_raw_state in ("cannot_determine", "contradicted"):
+    if census_state == "single" and health_raw_state in (
+        "cannot_determine",
+        "contradicted",
+    ):
         # #913: this exact combination has one overwhelmingly likely cause,
         # claude-supertool#2208 -- its own subscription probe spawns a second
         # instance of the consumer server, that instance cannot take the live
@@ -227,8 +235,9 @@ def _preset_disabled(project_dir):
         return False
 
 
-def check_channel_health_agreement(project_dir, run=None, which=None, env=None,
-                                    allow_probe=None, now=None, probe=None):
+def check_channel_health_agreement(
+    project_dir, run=None, which=None, env=None, allow_probe=None, now=None, probe=None
+):
     """One line: does doctor's own channel census agree with `channel:health`?
 
     Never `OK` on `could-not-compare` -- named explicitly rather than
@@ -250,7 +259,9 @@ def check_channel_health_agreement(project_dir, run=None, which=None, env=None,
     env = os.environ if env is None else env
     if allow_probe is None:
         allow_probe = bool(env.get(CHANNEL_HEALTH_PROBE_ENV))
-    census_state, census_detail = channel_consumer_census_state(run=run, which=which, env=env)
+    census_state, census_detail = channel_consumer_census_state(
+        run=run, which=which, env=env
+    )
     health_raw_state, health_source, health_age = resolve_channel_health_reading(
         project_dir, allow_probe=allow_probe, probe=probe, now=now
     )

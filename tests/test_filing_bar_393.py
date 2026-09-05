@@ -59,7 +59,9 @@ class TestBarIsDefined:
     """The intake section defines the bar instead of gesturing at one."""
 
     def test_positive_control_intake_section_exists(self):
-        assert "Raising the bar on what counts as a finding is not throttling" in _text(SKILL)
+        assert "Raising the bar on what counts as a finding is not throttling" in _text(
+            SKILL
+        )
 
     def test_bar_definition_present(self):
         assert "The bar, stated so it can be applied" in _text(SKILL)

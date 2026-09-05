@@ -101,8 +101,9 @@ class DeveloperBrief:
         paths, unreadable = documents(self._root)
         if unreadable:
             raise RuntimeError(
-                "developer_docs: phases directory could not be listed: "
-                "{0}".format(unreadable)
+                "developer_docs: phases directory could not be listed: {0}".format(
+                    unreadable
+                )
             )
         return paths
 

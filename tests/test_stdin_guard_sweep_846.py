@@ -41,8 +41,8 @@ REPO = Path(__file__).resolve().parent.parent
 # (script relative to REPO, argv after the script name, ordinary stdin payload)
 SWEPT_SCRIPTS = [
     ("scripts/dispatch_rank.py", [], '{"declared": {}, "issues": []}'),
-    ("scripts/statusline.py", [], '{}'),
-    ("scripts/batch_hint.py", [], '{}'),
+    ("scripts/statusline.py", [], "{}"),
+    ("scripts/batch_hint.py", [], "{}"),
     ("scripts/review_return.py", ["-"], "NO FINDINGS: nothing to check"),
     (
         "scripts/lane_setup.py",
@@ -79,7 +79,9 @@ def test_a_closed_stdin_never_raises_uncaught():
         proc = _run_with_closed_stdin(script, argv)
         err = proc.stderr.decode("utf-8", errors="replace")
         if "Traceback" in err:
-            failures.append("{0}: still raises on a closed stdin\n{1}".format(script, err))
+            failures.append(
+                "{0}: still raises on a closed stdin\n{1}".format(script, err)
+            )
     assert not failures, "\n\n".join(failures)
 
 
@@ -95,6 +97,8 @@ def test_an_ordinary_piped_payload_still_works():
         err = proc.stderr.decode("utf-8", errors="replace")
         if "Traceback" in err:
             failures.append(
-                "{0}: an ordinary piped payload should not crash either\n{1}".format(script, err)
+                "{0}: an ordinary piped payload should not crash either\n{1}".format(
+                    script, err
+                )
             )
     assert not failures, "\n\n".join(failures)

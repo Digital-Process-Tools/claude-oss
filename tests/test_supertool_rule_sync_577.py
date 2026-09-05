@@ -28,7 +28,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import oss_rules  # noqa: E402
 
-RULE_MD = REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss" / "supertool-required.md"
+RULE_MD = (
+    REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss" / "supertool-required.md"
+)
 
 
 def _normalize(text):
@@ -81,7 +83,9 @@ def test_the_md_file_is_readable_and_substantial():
     pins.
     """
     body = RULE_MD.read_text(encoding="utf-8")
-    assert len(body) > 400, "the rule body is suspiciously short: {} bytes".format(len(body))
+    assert len(body) > 400, "the rule body is suspiciously short: {} bytes".format(
+        len(body)
+    )
     assert "supertool" in body
 
 

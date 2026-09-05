@@ -117,24 +117,34 @@ def test_a_target_left_alone_must_say_what_it_was_read_against():
         "that is the sentence a run which never opened the file also writes"
     )
 
-    withy = _with_docs([
-        {
-            "path": "README.md",
-            "state": "no-change-needed",
-            "why": "the command table names each command's outputs; this diff adds none",
-        }
-    ])
+    withy = _with_docs(
+        [
+            {
+                "path": "README.md",
+                "state": "no-change-needed",
+                "why": "the command table names each command's outputs; this diff adds none",
+            }
+        ]
+    )
     assert report_schema.validate(withy) == [], report_schema.validate(withy)
 
 
 def test_an_unread_target_must_say_why_and_is_not_a_pass():
     """must-not-fire / must-fire pair on `not-read`."""
     without = _with_docs([{"path": "README.md", "state": "not-read"}])
-    assert report_schema.validate(without), "an unread target with no reason was accepted"
+    assert report_schema.validate(without), (
+        "an unread target with no reason was accepted"
+    )
 
-    withy = _with_docs([
-        {"path": "README.md", "state": "not-read", "why": "held by another lane this run"}
-    ])
+    withy = _with_docs(
+        [
+            {
+                "path": "README.md",
+                "state": "not-read",
+                "why": "held by another lane this run",
+            }
+        ]
+    )
     assert report_schema.validate(withy) == [], report_schema.validate(withy)
 
 
@@ -154,8 +164,12 @@ def test_a_target_state_outside_the_three_is_refused():
 
 
 def test_a_docs_target_may_not_carry_an_undeclared_key():
-    report = _with_docs([{"path": "README.md", "state": "updated", "mood": "confident"}])
-    assert report_schema.validate(report), "an unknown key on a docs target was accepted"
+    report = _with_docs(
+        [{"path": "README.md", "state": "updated", "mood": "confident"}]
+    )
+    assert report_schema.validate(report), (
+        "an unknown key on a docs target was accepted"
+    )
 
 
 def test_a_docs_target_must_name_its_path():

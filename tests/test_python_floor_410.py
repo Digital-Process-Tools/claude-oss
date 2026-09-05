@@ -119,7 +119,9 @@ def _requires_python_spec():
         match = _REQUIRES_RE.match(stripped)
         if match:
             return match.group(1), ""
-    return None, "no `requires-python` key under a `[project]` table in {}".format(PYPROJECT)
+    return None, "no `requires-python` key under a `[project]` table in {}".format(
+        PYPROJECT
+    )
 
 
 def declared_floor():
@@ -356,7 +358,9 @@ def test_every_docstring_claim_states_the_declared_floor():
 # Derived site 4: doctor.sh's interpreter walk
 # --------------------------------------------------------------------------- #
 
-_CANDIDATE_LINE_RE = re.compile(r"^\s*for candidate in (python3.*?); do\s*$", re.MULTILINE)
+_CANDIDATE_LINE_RE = re.compile(
+    r"^\s*for candidate in (python3.*?); do\s*$", re.MULTILINE
+)
 
 
 def _doctor_sh_explicit_minors():

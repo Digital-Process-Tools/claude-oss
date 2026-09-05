@@ -99,7 +99,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1037: 44679 B on disk against a stale 44358 declared
     # baseline -- the new tick-order.md row above and its accompanying
     # pointer sentence grew this file. Budget unchanged; comfortably under it.
-    SPINE: (44679, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
+    SPINE: (
+        44679,
+        46900,
+        "the loop itself: what is decided every tick, and where each phase's rules live",
+    ),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
@@ -169,24 +173,48 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # declared baseline -- the #1036 select_issues.py directive and the #1037
     # step-5 pointer update both landed in this file. Budget unchanged;
     # comfortably under it.
-    "skills/manager/phases/dispatch.md": (56058, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
+    "skills/manager/phases/dispatch.md": (
+        56058,
+        57900,
+        "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
+    ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
-    "skills/manager/phases/handback.md": (19369, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
+    "skills/manager/phases/handback.md": (
+        19369,
+        20700,
+        "a lane reported back: reading the report, pushing, opening the pull request",
+    ),
     # Raised (#960): measured 13,992 B against the prior 12,800 B budget -- the
     # spine's cross-platform band moved in, being what a reviewer audits a diff
     # against rather than something every tick needs loaded.
-    "skills/manager/phases/review.md": (13992, 15400, "reviewing a returned diff, and what an issue body filed out of one looks like"),
-    "skills/manager/phases/findings.md": (11620, 12800, "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board"),
+    "skills/manager/phases/review.md": (
+        13992,
+        15400,
+        "reviewing a returned diff, and what an issue body filed out of one looks like",
+    ),
+    "skills/manager/phases/findings.md": (
+        11620,
+        12800,
+        "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board",
+    ),
     # Re-baselined for #1029: 14455 B on disk against a stale 13198 declared
     # baseline -- #1026 grew this file (#976's push-to-main rule, #1017's
     # worktree-reap fix) without touching this table. Budget unchanged; the
     # file is still under it, though only by 45 B (worth a fresh headroom
     # raise the next time this file grows, out of scope here).
-    "skills/manager/phases/merge.md": (14455, 14500, "merging: the gates, the call itself, and what is still owed after green"),
+    "skills/manager/phases/merge.md": (
+        14455,
+        14500,
+        "merging: the gates, the call itself, and what is still owed after green",
+    ),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
     # baseline. Budget unchanged; comfortably under it either way.
-    "skills/manager/phases/release.md": (10381, 11200, "cutting a release: the six gates and what the tag does and does not deliver"),
+    "skills/manager/phases/release.md": (
+        10381,
+        11200,
+        "cutting a release: the six gates and what the tag does and does not deliver",
+    ),
     # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two
     # relocations, both about closing a tick: the cadence section, and the loop
     # doctrine's argument (the #209 incident and the #337/#477/#565 state-file
@@ -200,14 +228,22 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1037: 22779 B on disk against a stale 22741 declared
     # baseline -- the two step-1 pointer updates landed in this file. Budget
     # unchanged; comfortably under it.
-    "skills/manager/phases/accounting.md": (22779, 24500, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
+    "skills/manager/phases/accounting.md": (
+        22779,
+        24500,
+        "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
+    ),
     # New for #1037: `commands/tick.md` used to inject its own numbered steps 1-6
     # plus "What ends a tick" into the scheduler's context on every tick, though
     # only a sub-manager's own context ever executes them -- the same shape #695
     # already measured and split for the manager skill, one file over. Moved
     # here wholesale (39119 B), no content dropped; ~10% headroom over the
     # measured size, same terms as every other row.
-    "skills/manager/phases/tick-order.md": (39329, 43100, "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one"),
+    "skills/manager/phases/tick-order.md": (
+        39329,
+        43100,
+        "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
+    ),
 }
 
 

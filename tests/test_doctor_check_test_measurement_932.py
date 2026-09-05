@@ -31,7 +31,9 @@ import doctor_check_test_measurement as check  # noqa: E402
 
 def _capture(monkeypatch):
     seen = []
-    monkeypatch.setattr(doctor, "report", lambda state, message: seen.append((state, message)))
+    monkeypatch.setattr(
+        doctor, "report", lambda state, message: seen.append((state, message))
+    )
     return seen
 
 
@@ -53,7 +55,7 @@ def test_false_is_a_finding(tmp_path, monkeypatch):
 def test_true_with_readable_pytest_config_is_ok(tmp_path, monkeypatch):
     lines = [
         "[tool.pytest.ini_options]",
-        "addopts = \"--durations=25 --cov\"",
+        'addopts = "--durations=25 --cov"',
         "",
     ]
     (tmp_path / "pyproject.toml").write_text("\n".join(lines), encoding="utf-8")
@@ -63,7 +65,9 @@ def test_true_with_readable_pytest_config_is_ok(tmp_path, monkeypatch):
     assert "pyproject.toml" in seen[0][1]
 
 
-def test_true_with_no_readable_pytest_config_is_unknown_not_silently_ok(tmp_path, monkeypatch):
+def test_true_with_no_readable_pytest_config_is_unknown_not_silently_ok(
+    tmp_path, monkeypatch
+):
     """The must-fire half: nothing in `tmp_path` looks like a pytest config at
     all, so an attestation of `true` cannot be corroborated even minimally and
     must render as a distinct third state rather than a blind OK."""
@@ -76,7 +80,11 @@ def test_true_with_no_readable_pytest_config_is_unknown_not_silently_ok(tmp_path
 
 def test_config_none_is_unmeasured(monkeypatch):
     seen = []
-    monkeypatch.setattr(doctor, "unmeasured", lambda label, reason=doctor.NO_CONFIG: seen.append((label, reason)))
+    monkeypatch.setattr(
+        doctor,
+        "unmeasured",
+        lambda label, reason=doctor.NO_CONFIG: seen.append((label, reason)),
+    )
     check.check_test_measurement("/nonexistent", None)
     assert seen, "a None config must report the third state, never silently pass"
 
@@ -118,7 +126,9 @@ def test_non_pytest_test_command_is_not_applicable_cargo(tmp_path, monkeypatch):
 def test_pytest_test_command_still_fires_finding(tmp_path, monkeypatch):
     """A pytest-shaped `test_command` keeps the existing finding/OK behavior."""
     seen = _capture(monkeypatch)
-    check.check_test_measurement(str(tmp_path), {"test_command": "python3 -m pytest tests/ -q"})
+    check.check_test_measurement(
+        str(tmp_path), {"test_command": "python3 -m pytest tests/ -q"}
+    )
     assert seen[0][0] == "WARN", seen
     assert "not applicable" not in seen[0][1], seen
 

@@ -62,7 +62,9 @@ def _real_git_repo(tmp_path):
         universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {}".format(done.stderr.strip() or done.returncode)
+        )
 
 
 def _check_ignore(repo, name):
@@ -113,8 +115,8 @@ def test_the_supertool_symlink_is_still_ignored(tmp_path):
     scaffold.apply(tmp_path, _config())
 
     ignored, detail = _check_ignore(tmp_path, "supertool")
-    assert ignored is True, "the machine-specific /supertool symlink must stay ignored: {}".format(
-        detail
+    assert ignored is True, (
+        "the machine-specific /supertool symlink must stay ignored: {}".format(detail)
     )
 
 

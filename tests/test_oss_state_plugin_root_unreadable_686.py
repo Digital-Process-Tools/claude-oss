@@ -28,6 +28,7 @@ bit; some filesystems ignore it too) -- if `chmod 0` does not actually
 produce a PermissionError on this machine, the unreadable-arm assertion is
 skipped rather than faked, carrying what went untested.
 """
+
 import os
 import sys
 from pathlib import Path

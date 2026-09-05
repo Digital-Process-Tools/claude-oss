@@ -23,7 +23,9 @@ def _write_halves(root, config):
     project, local = oss_config.split(config)
     path = root / oss_config.CONFIG_NAME
     path.write_text(json.dumps(project), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
     return path
 
 
@@ -77,7 +79,10 @@ def test_the_plan_distinguishes_present_from_create(tmp_path, capsys):
 
 def test_apply_writes_and_reports_what_it_wrote(tmp_path, capsys):
     config = _write_config(tmp_path)
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert "WROTE:" in out
     assert (tmp_path / "CLAUDE.md").is_file()
@@ -92,7 +97,9 @@ def test_apply_leaves_an_existing_file_alone(tmp_path):
 
 
 def test_a_missing_config_is_a_named_failure(tmp_path, capsys):
-    result = scaffold._main(["--root", str(tmp_path), "--config", str(tmp_path / "absent.json")])
+    result = scaffold._main(
+        ["--root", str(tmp_path), "--config", str(tmp_path / "absent.json")]
+    )
     assert result == 1
     assert "not found" in capsys.readouterr().out
 
@@ -100,7 +107,9 @@ def test_a_missing_config_is_a_named_failure(tmp_path, capsys):
 def test_an_invalid_config_refuses_before_writing_anything(tmp_path, capsys):
     path = tmp_path / ".oss.json"
     path.write_text(json.dumps({"repo": "owner/name"}), encoding="utf-8")
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(path), "--apply"]) == 1
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(path), "--apply"]) == 1
+    )
     assert "FAIL" in capsys.readouterr().out
     assert not (tmp_path / "CLAUDE.md").exists()
 
@@ -115,7 +124,9 @@ def test_apply_works_with_a_relative_root(tmp_path, monkeypatch, capsys):
     assert scaffold._main(["--root", ".", "--config", str(config), "--apply"]) == 0
     out = capsys.readouterr().out
     assert "01-oss" in out
-    assert (tmp_path / ".claude" / "jit-context" / "paths" / "01-oss" / "00-index.tsv").is_file()
+    assert (
+        tmp_path / ".claude" / "jit-context" / "paths" / "01-oss" / "00-index.tsv"
+    ).is_file()
 
 
 def test_apply_replaces_the_rule_layer_and_says_so(tmp_path, capsys):
@@ -172,7 +183,10 @@ def test_the_generated_claude_md_names_the_configured_repo(tmp_path):
 
 def test_show_prints_content_and_writes_nothing(tmp_path, capsys):
     config = _write_config(tmp_path, repo="acme/widget")
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert "CLAUDE.md" in out
     assert "acme/widget" in out
@@ -181,9 +195,12 @@ def test_show_prints_content_and_writes_nothing(tmp_path, capsys):
 
 def test_show_one_path_prints_only_that_file(tmp_path, capsys):
     config = _write_config(tmp_path)
-    assert scaffold._main(
-        ["--root", str(tmp_path), "--config", str(config), "--show", "SECURITY.md"]
-    ) == 0
+    assert (
+        scaffold._main(
+            ["--root", str(tmp_path), "--config", str(config), "--show", "SECURITY.md"]
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     assert "Security Policy" in out
     assert "CLAUDE.md" not in out
@@ -202,13 +219,22 @@ def test_show_and_apply_together_is_refused_before_writing(tmp_path, capsys):
 def test_show_of_an_unknown_path_is_a_named_failure(tmp_path, capsys):
     config = _write_config(tmp_path)
     result = scaffold._main(
-        ["--root", str(tmp_path), "--config", str(config), "--show", "NOT_A_TEMPLATE.md"]
+        [
+            "--root",
+            str(tmp_path),
+            "--config",
+            str(config),
+            "--show",
+            "NOT_A_TEMPLATE.md",
+        ]
     )
     assert result == 1
     assert "FAIL" in capsys.readouterr().out
 
 
-def test_show_includes_owned_files_even_when_every_template_already_exists(tmp_path, capsys):
+def test_show_includes_owned_files_even_when_every_template_already_exists(
+    tmp_path, capsys
+):
     """The sharp case from the coordinator review: with every template already on disk,
     the bare `--show` this command tells the caller to run must still name the three
     files `apply` overwrites unconditionally -- printing nothing here reads as "apply
@@ -216,7 +242,9 @@ def test_show_includes_owned_files_even_when_every_template_already_exists(tmp_p
     """
     config = _write_config(tmp_path)
     scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
-    result = scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+    result = scaffold._main(
+        ["--root", str(tmp_path), "--config", str(config), "--show"]
+    )
     assert result == 0
     out = capsys.readouterr().out
     assert ".oss/README.md" in out
@@ -261,7 +289,10 @@ def test_the_plan_reports_a_decline_when_a_gate_already_exists(tmp_path, capsys)
 def test_apply_reports_what_it_declined_and_does_not_write_it(tmp_path, capsys):
     config = _write_config(tmp_path)
     _with_other_gate(tmp_path)
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert "declined" in out
     assert "--force-owned" in out
@@ -271,9 +302,19 @@ def test_apply_reports_what_it_declined_and_does_not_write_it(tmp_path, capsys):
 def test_force_owned_flag_writes_the_trio_despite_a_detected_gate(tmp_path, capsys):
     config = _write_config(tmp_path)
     _with_other_gate(tmp_path)
-    assert scaffold._main(
-        ["--root", str(tmp_path), "--config", str(config), "--apply", "--force-owned"]
-    ) == 0
+    assert (
+        scaffold._main(
+            [
+                "--root",
+                str(tmp_path),
+                "--config",
+                str(config),
+                "--apply",
+                "--force-owned",
+            ]
+        )
+        == 0
+    )
     assert (tmp_path / ".github" / "workflows" / "oss-changelog.yml").is_file()
 
 
@@ -287,9 +328,12 @@ def test_the_dry_run_stops_advising_the_flag_that_was_just_passed(tmp_path, caps
     config = _write_config(tmp_path)
     _with_other_gate(tmp_path)
 
-    assert scaffold._main(
-        ["--root", str(tmp_path), "--config", str(config), "--force-owned"]
-    ) == 0
+    assert (
+        scaffold._main(
+            ["--root", str(tmp_path), "--config", str(config), "--force-owned"]
+        )
+        == 0
+    )
     forced = capsys.readouterr().out
     assert forced.count("replace ") >= 3, forced
     assert "decline " not in forced, forced
@@ -301,19 +345,34 @@ def test_the_dry_run_stops_advising_the_flag_that_was_just_passed(tmp_path, caps
     assert "Pass --force-owned to override" in unforced, unforced
 
 
-def test_the_preview_stops_hiding_the_three_files_the_apply_would_overwrite(tmp_path, capsys):
+def test_the_preview_stops_hiding_the_three_files_the_apply_would_overwrite(
+    tmp_path, capsys
+):
     config = _write_config(tmp_path)
     _with_other_gate(tmp_path)
 
-    assert scaffold._main(
-        ["--root", str(tmp_path), "--config", str(config), "--force-owned", "--show"]
-    ) == 0
+    assert (
+        scaffold._main(
+            [
+                "--root",
+                str(tmp_path),
+                "--config",
+                str(config),
+                "--force-owned",
+                "--show",
+            ]
+        )
+        == 0
+    )
     forced = capsys.readouterr().out
     assert forced.count("would replace") >= 3, forced
     for name in sorted(scaffold.OWNED):
         assert name in forced, forced
 
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+        == 0
+    )
     unforced = capsys.readouterr().out
     # Narrowed from a bare `"would replace" not in unforced` in #182: the rule layer is
     # replaced wholesale on every run and now previews as such, so a blanket assertion
@@ -325,7 +384,9 @@ def test_the_preview_stops_hiding_the_three_files_the_apply_would_overwrite(tmp_
     # Positive control, so the loop above cannot pass on an empty preview: the run does
     # still show something it would replace, and it is the layer.
     assert unforced.count("would replace") >= 1, unforced
-    assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" in unforced, unforced
+    assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" in unforced, (
+        unforced
+    )
 
 
 def test_the_dry_run_survives_a_workflow_directory_it_cannot_read(tmp_path, capsys):
@@ -349,7 +410,9 @@ def test_the_dry_run_survives_a_workflow_directory_it_cannot_read(tmp_path, caps
         else:
             pytest.skip(
                 "chmod 000 still allows listing {} -- root, or a platform that does not "
-                "enforce the mode bit. The unreadable dry run went untested.".format(directory)
+                "enforce the mode bit. The unreadable dry run went untested.".format(
+                    directory
+                )
             )
         assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
         out = capsys.readouterr().out
@@ -382,7 +445,9 @@ def _installed_changelog_rule(root):
     return " ".join(body.split())
 
 
-def test_the_installed_rule_describes_the_repo_the_gate_decision_produced(tmp_path, capsys):
+def test_the_installed_rule_describes_the_repo_the_gate_decision_produced(
+    tmp_path, capsys
+):
     """Both arms, one test: a repo whose trio was declined, and a repo that got it. The
     declined arm alone would still pass if rule emission stopped describing anything.
     """
@@ -390,14 +455,20 @@ def test_the_installed_rule_describes_the_repo_the_gate_decision_produced(tmp_pa
     gated.mkdir()
     gated_config = _write_config(gated)
     _with_other_gate(gated)
-    assert scaffold._main(["--root", str(gated), "--config", str(gated_config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(gated), "--config", str(gated_config), "--apply"])
+        == 0
+    )
     capsys.readouterr()
     gated_rule = _installed_changelog_rule(gated)
 
     clean = tmp_path / "clean"
     clean.mkdir()
     clean_config = _write_config(clean)
-    assert scaffold._main(["--root", str(clean), "--config", str(clean_config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(clean), "--config", str(clean_config), "--apply"])
+        == 0
+    )
     capsys.readouterr()
     clean_rule = _installed_changelog_rule(clean)
 
@@ -415,16 +486,28 @@ def test_the_installed_rule_describes_the_repo_the_gate_decision_produced(tmp_pa
     assert "will not put one here" not in clean_rule, clean_rule
 
 
-def test_force_owned_does_not_leave_the_rule_calling_the_write_a_decline(tmp_path, capsys):
+def test_force_owned_does_not_leave_the_rule_calling_the_write_a_decline(
+    tmp_path, capsys
+):
     """With the flag the trio IS written, so the gate detection still says `found` while
     nothing was declined. Reporting the decline anyway would be the same false sentence
     pointing the other way.
     """
     config = _write_config(tmp_path)
     _with_other_gate(tmp_path)
-    assert scaffold._main(
-        ["--root", str(tmp_path), "--config", str(config), "--apply", "--force-owned"]
-    ) == 0
+    assert (
+        scaffold._main(
+            [
+                "--root",
+                str(tmp_path),
+                "--config",
+                str(config),
+                "--apply",
+                "--force-owned",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
 
     body = _installed_changelog_rule(tmp_path)

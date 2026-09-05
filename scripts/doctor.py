@@ -233,7 +233,9 @@ def _safe_print(line):
         pass
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     try:
-        safe = line.encode(encoding, errors="backslashreplace").decode(encoding, errors="replace")
+        safe = line.encode(encoding, errors="backslashreplace").decode(
+            encoding, errors="replace"
+        )
     except LookupError:
         safe = line
     try:
@@ -284,7 +286,9 @@ def report_with_remedy(state, prose, remedy):
     docstring scopes the exemption to -- skips the ASCII fold.
     """
     folded = _one_line(prose, limit=REPORT_LIMIT + 1)
-    safe_remedy = _one_line_keep_unicode(remedy, limit=REPORT_LIMIT + 1) if remedy else ""
+    safe_remedy = (
+        _one_line_keep_unicode(remedy, limit=REPORT_LIMIT + 1) if remedy else ""
+    )
     flat = "{} {}".format(folded, safe_remedy).strip() if safe_remedy else folded
     if len(flat) > REPORT_LIMIT:
         flat = flat[: REPORT_LIMIT - 4] + " ..."
@@ -358,7 +362,9 @@ def plugin_version():
     return "unknown" if state == "no-version-field" else "unreadable"
 
 
-NO_CONFIG = "not checked -- .oss.json was not found, so there was nothing to check it against"
+NO_CONFIG = (
+    "not checked -- .oss.json was not found, so there was nothing to check it against"
+)
 
 
 def unmeasured(label, reason=NO_CONFIG):
@@ -371,9 +377,7 @@ def unmeasured(label, reason=NO_CONFIG):
     report("WARN", "{}: {}".format(label, reason))
 
 
-NO_SCAFFOLD = (
-    "not checked -- scripts/scaffold.py could not be imported, and the comparison lives there"
-)
+NO_SCAFFOLD = "not checked -- scripts/scaffold.py could not be imported, and the comparison lives there"
 
 
 def _os_error_detail(exc):
@@ -501,7 +505,10 @@ def config_search_path(project_dir):
 
 def check_config(project_dir):
     if oss_config is None:
-        report("FAIL", "scripts/oss_config.py could not be imported; config was not checked")
+        report(
+            "FAIL",
+            "scripts/oss_config.py could not be imported; config was not checked",
+        )
         return None
     display = Path(os.path.abspath(str(Path(project_dir) / oss_config.CONFIG_NAME)))
     search, widened = config_search_path(project_dir)
@@ -513,7 +520,7 @@ def check_config(project_dir):
             # This output gets pasted somewhere the cwd is not known, so say the
             # absolute one.
             if problem.startswith(prefix):
-                problem = "{}: {}".format(display, problem[len(prefix):])
+                problem = "{}: {}".format(display, problem[len(prefix) :])
             report("FAIL", problem)
         if not widened:
             # The third state for the search itself. `Run /oss:setup to write it` is
@@ -583,7 +590,9 @@ def check_gitignore_hides_config(project_dir):
         return
     search, _widened = config_search_path(project_dir)
     _config, _problems, origin, resolved = oss_config.load_from(search)
-    check_dir = resolved.parent if origin == "clone" and resolved is not None else project_dir
+    check_dir = (
+        resolved.parent if origin == "clone" and resolved is not None else project_dir
+    )
     state, detail = oss_config._ignore_rule(check_dir, oss_config.CONFIG_NAME)
     if state == "clear":
         report("OK", ".oss.json: not ignored by .gitignore (trackable)")
@@ -730,7 +739,9 @@ def translation_state(system=None):
             None,
             "no translation probe is implemented for {} -- the Darwin probe is the "
             "sysctl.proc_translated flag, and qemu-user (Linux) and Windows-on-ARM "
-            "expose no equivalent this script reads".format(_one_line(system, limit=40)),
+            "expose no equivalent this script reads".format(
+                _one_line(system, limit=40)
+            ),
         )
     translated, errno = _sysctl("sysctl.proc_translated")
     if translated is None and errno != _SYSCTL_ABSENT:
@@ -1098,19 +1109,32 @@ def tool_binary_architecture(path, run=None, which=None):
     run = subprocess.run if run is None else run
     file_bin = which("file")
     if file_bin is None:
-        return None, "the `file` command is not on PATH here, so a spawned tool's own architecture could not be read"
+        return (
+            None,
+            "the `file` command is not on PATH here, so a spawned tool's own architecture could not be read",
+        )
     try:
         completed = run(
-            [file_bin, str(path)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
+            [file_bin, str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "`file {}` did not run ({})".format(path, exc)
     stdout = completed.stdout
-    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+    text = (
+        stdout.decode("utf-8", "replace")
+        if isinstance(stdout, bytes)
+        else str(stdout or "")
+    )
     tokens = _ARCH_TOKEN_RE.findall(text)
     if not tokens:
-        return None, "`file` output did not name a recognisable architecture: {}".format(
-            _one_line(text, limit=200)
+        return (
+            None,
+            "`file` output did not name a recognisable architecture: {}".format(
+                _one_line(text, limit=200)
+            ),
         )
     archs = []
     for token in tokens:
@@ -1120,7 +1144,9 @@ def tool_binary_architecture(path, run=None, which=None):
     return tuple(archs), None
 
 
-def gh_binary_findings(system, resolved, gh_version, host=None, archs=None, arch_reason=None):
+def gh_binary_findings(
+    system, resolved, gh_version, host=None, archs=None, arch_reason=None
+):
     """[(level, message)] for the `gh` binary -- architecture against this host,
     then version -- pure given its inputs so every branch is testable without a
     Rosetta machine to reproduce it on. The probing lives in `check_gh_binary`.
@@ -1211,7 +1237,10 @@ def _gh_version_text(resolved):
     """The first line of `gh --version`, or None -- never raises."""
     try:
         completed = subprocess.run(
-            [resolved, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20
+            [resolved, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -1261,7 +1290,9 @@ def check_tool(name, probe):
     into a finding about the user's toolchain.
     """
     if shutil.which(name) is None:
-        report("WARN", "{}: not on PATH; anything needing it will be skipped".format(name))
+        report(
+            "WARN", "{}: not on PATH; anything needing it will be skipped".format(name)
+        )
         return
     try:
         done = subprocess.run(
@@ -1422,7 +1453,9 @@ def _rglob_md(root):
 
     def _onerror(exc):
         failed = os.path.normpath(getattr(exc, "filename", None) or root_str)
-        if failed == root_str and isinstance(exc, (FileNotFoundError, NotADirectoryError)):
+        if failed == root_str and isinstance(
+            exc, (FileNotFoundError, NotADirectoryError)
+        ):
             return
         unreadable.append(_one_line(str(exc)))
 
@@ -1795,7 +1828,9 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
         # filesystem to explain why the first failed.
         return "dangling", resolved
     except OSError as exc:
-        return "unreadable", "{} ({})".format(resolved, exc.strerror or exc.__class__.__name__)
+        return "unreadable", "{} ({})".format(
+            resolved, exc.strerror or exc.__class__.__name__
+        )
 
     entries = plugin_supertool_entries(cache_root=cache_root, record=record)
     if not entries:
@@ -1810,7 +1845,9 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
             undecidable = True
             continue
         if same:
-            active = active_versions([SUPERTOOL_ENTRY], record=record).get(SUPERTOOL_ENTRY)
+            active = active_versions([SUPERTOOL_ENTRY], record=record).get(
+                SUPERTOOL_ENTRY
+            )
             if active and active != version:
                 return "stale-version", "{} (cached {}, active {})".format(
                     resolved, version, active
@@ -1823,13 +1860,17 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
 
 def check_supertool_entry_point(project_dir, cache_root=None, record=None):
     """One line, in every state. Never raises: `supertool_entry_point` returns."""
-    state, detail = supertool_entry_point(project_dir, cache_root=cache_root, record=record)
+    state, detail = supertool_entry_point(
+        project_dir, cache_root=cache_root, record=record
+    )
     if state == "own-tree":
         report(
             "OK",
             "./supertool: not expected here -- this is a supertool checkout, so its "
             "session-start hook deliberately creates no wrapper (one would run the "
-            "plugin core against this tree's presets). Call {} directly.".format(detail),
+            "plugin core against this tree's presets). Call {} directly.".format(
+                detail
+            ),
         )
     elif state == "own-tree-ok":
         report(
@@ -2251,7 +2292,11 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
         # CONFIRMED different install on the strength of an absence in our own
         # reading is this repository's own defect class, one input over from the one
         # `matched-elsewhere` exists to fix.
-        if their_version is not None and our_version is not None and their_version != our_version:
+        if (
+            their_version is not None
+            and our_version is not None
+            and their_version != our_version
+        ):
             return "matched-elsewhere", (resolved, their_version)
         return "matched", resolved
 
@@ -2464,7 +2509,11 @@ def check_directory(label, value, config_found=True, origin=None):
         unmeasured(label)
         return
     if not value:
-        if origin is not None and oss_config is not None and origin[0] == oss_config.LOCAL_STATE_COULD_NOT_DERIVE:
+        if (
+            origin is not None
+            and oss_config is not None
+            and origin[0] == oss_config.LOCAL_STATE_COULD_NOT_DERIVE
+        ):
             report(
                 "WARN",
                 "{}: could not derive from the repository root ({}); not set in "
@@ -2519,10 +2568,16 @@ def check_state_file(project_dir, config, origin=None):
         return
     value = config.get("state_file")
     if not value:
-        if origin is not None and oss_config is not None and origin[0] == oss_config.LOCAL_STATE_COULD_NOT_DERIVE:
+        if (
+            origin is not None
+            and oss_config is not None
+            and origin[0] == oss_config.LOCAL_STATE_COULD_NOT_DERIVE
+        ):
             report(
                 "WARN",
-                "state_file: could not derive from the repository root ({})".format(origin[2]),
+                "state_file: could not derive from the repository root ({})".format(
+                    origin[2]
+                ),
             )
         else:
             report("WARN", "state_file: not set in config")
@@ -2535,7 +2590,8 @@ def check_state_file(project_dir, config, origin=None):
     suffix = _local_origin_suffix(origin)
     if found["state"] == oss_state.STATE_OK:
         report(
-            "OK", "state_file: {} ({} entries){}".format(path, len(found["entries"]), suffix)
+            "OK",
+            "state_file: {} ({} entries){}".format(path, len(found["entries"]), suffix),
         )
     elif found["state"] == oss_state.STATE_ABSENT:
         report(
@@ -2577,7 +2633,11 @@ from doctor_check_latest_skew import check_latest_skew
 # Moved to scripts/doctor_check_statusline.py (#497) -- see that module for
 # the check, its private helper and their docstrings, unchanged; this is a
 # pure relocation.
-from doctor_check_statusline import _POSIX_VAR_RE, _statusline_windows_gap, check_statusline
+from doctor_check_statusline import (
+    _POSIX_VAR_RE,
+    _statusline_windows_gap,
+    check_statusline,
+)
 
 
 # Moved to scripts/doctor_check_fragments_readme.py (#497) -- see that module
@@ -2649,6 +2709,7 @@ from doctor_check_merge_permission import (
     supertool_permission_state,
     check_supertool_permission,
 )
+
 # #787: sibling to the import above, for the two hand commands gh-pr-merge's own
 # |cleanup falls back to on a refused reap -- see
 # scripts/doctor_check_worktree_reap_permission.py for the check and why it is
@@ -2662,6 +2723,7 @@ from doctor_check_worktree_reap_permission import (
     check_worktree_remove_permission,
     check_branch_delete_permission,
 )
+
 # #763: a new check, written directly into its own module per the per-check
 # module convention (#497, #630) rather than added here -- see
 # scripts/doctor_check_clone_head.py.
@@ -2669,6 +2731,7 @@ from doctor_check_clone_head import (
     clone_head_state,
     check_clone_head,
 )
+
 # #759: same convention, same reason -- see
 # scripts/doctor_check_branch_protection.py.
 from doctor_check_branch_protection import (
@@ -2676,6 +2739,7 @@ from doctor_check_branch_protection import (
     branch_protection_state,
     check_branch_protection,
 )
+
 # #760: same convention, same reason -- see
 # scripts/doctor_check_security_alerts.py.
 from doctor_check_security_alerts import (
@@ -2880,7 +2944,7 @@ def _radar_merged_document(doc):
 
 
 def _radar_merged_note(doc):
-    """" The whole file, corrected: {...}" or "" when `_radar_merged_document`
+    """ " The whole file, corrected: {...}" or "" when `_radar_merged_document`
     declined -- appended to a WARN's message, never on its own line."""
     merged = _radar_merged_document(doc)
     if merged is None:
@@ -2922,8 +2986,10 @@ def _supertool_document(project_dir):
     except FileNotFoundError:
         return None, None, ""
     except (OSError, ValueError, UnicodeDecodeError):
-        return None, "unreadable", "{} is there and could not be read".format(
-            WATCH_CONFIG
+        return (
+            None,
+            "unreadable",
+            "{} is there and could not be read".format(WATCH_CONFIG),
         )
     if not isinstance(doc, dict):
         # Same sentence `scaffold.check_radar` already prints for this shape, and
@@ -2962,13 +3028,17 @@ def _declared_watch_names(project_dir):
         # one's name -- the file read and parsed perfectly. That is #216's row,
         # one caller over from the one it tabulated.
         return set(), "malformed", "`ops` in {} is not an object".format(WATCH_CONFIG)
-    return {
-        block["watch_name"]
-        for block in ops.values()
-        if isinstance(block, dict)
-        and isinstance(block.get("watch_name"), str)
-        and block["watch_name"]
-    }, None, ""
+    return (
+        {
+            block["watch_name"]
+            for block in ops.values()
+            if isinstance(block, dict)
+            and isinstance(block.get("watch_name"), str)
+            and block["watch_name"]
+        },
+        None,
+        "",
+    )
 
 
 # The push budget states (#295). Not applicable is the state #295's own
@@ -3027,14 +3097,18 @@ def _resolved_git_common_dir(project_dir):
             return None, ""
         text = dot_git.read_text(encoding="utf-8")
     except OSError as exc:
-        return None, "{} could not be examined ({})".format(dot_git, _os_error_detail(exc))
+        return None, "{} could not be examined ({})".format(
+            dot_git, _os_error_detail(exc)
+        )
     except UnicodeDecodeError as exc:
         return None, "{} could not be decoded as UTF-8 ({})".format(dot_git, exc)
     lines = text.strip().splitlines()
     line = lines[0] if lines else ""
     if not line.startswith("gitdir:"):
-        return None, "{} is a file but its first line is not 'gitdir: ...'".format(dot_git)
-    gitdir = Path(line[len("gitdir:"):].strip())
+        return None, "{} is a file but its first line is not 'gitdir: ...'".format(
+            dot_git
+        )
+    gitdir = Path(line[len("gitdir:") :].strip())
     if not gitdir.is_absolute():
         gitdir = Path(project_dir) / gitdir
     try:
@@ -3045,7 +3119,9 @@ def _resolved_git_common_dir(project_dir):
         try:
             return gitdir.resolve(), ""
         except OSError as exc:
-            return None, "{} could not be resolved ({})".format(gitdir, _os_error_detail(exc))
+            return None, "{} could not be resolved ({})".format(
+                gitdir, _os_error_detail(exc)
+            )
     except (OSError, UnicodeDecodeError) as exc:
         return None, "{} could not be read ({})".format(gitdir / "commondir", exc)
     common = Path(commondir_text)
@@ -3054,7 +3130,9 @@ def _resolved_git_common_dir(project_dir):
     try:
         return common.resolve(), ""
     except OSError as exc:
-        return None, "{} could not be resolved ({})".format(common, _os_error_detail(exc))
+        return None, "{} could not be resolved ({})".format(
+            common, _os_error_detail(exc)
+        )
 
 
 def _pre_push_hook_present(project_dir):
@@ -3131,8 +3209,9 @@ def git_push_budget_state(project_dir):
             "{}s default applies".format(WATCH_CONFIG, GIT_PUSH_DEFAULT_BUDGET)
         )
     if not isinstance(block, dict):
-        return GIT_PUSH_BUDGET_COULD_NOT_TELL, "ops.git-push in {} is not an object".format(
-            WATCH_CONFIG
+        return (
+            GIT_PUSH_BUDGET_COULD_NOT_TELL,
+            "ops.git-push in {} is not an object".format(WATCH_CONFIG),
         )
 
     def _number(value, label):
@@ -3197,7 +3276,10 @@ def check_git_push_budget(project_dir):
     """
     state, detail = git_push_budget_state(project_dir)
     if state == GIT_PUSH_BUDGET_NOT_APPLICABLE:
-        report("OK", "git-push budget: {} -- the default budget is fine here".format(detail))
+        report(
+            "OK",
+            "git-push budget: {} -- the default budget is fine here".format(detail),
+        )
         return
     if state == GIT_PUSH_BUDGET_CONFIGURED:
         report("OK", "git-push budget: {}".format(detail))
@@ -3532,14 +3614,21 @@ def channel_consumer_pin_state(target, record=None, cache_root=None):
             "you are running is not the one you installed"
         )
     else:
-        identity_clause = "whether the two files are byte-identical could not be established"
+        identity_clause = (
+            "whether the two files are byte-identical could not be established"
+        )
     return "SKEW", "pinned to {}, active install is {} -- {}".format(
         pinned_version, active, identity_clause
     )
 
 
 def check_channel_consumer_pin(
-    server=None, run=None, which=None, env=None, record=None, cache_root=None,
+    server=None,
+    run=None,
+    which=None,
+    env=None,
+    record=None,
+    cache_root=None,
     precomputed=None,
 ):
     """Report `channel_consumer_pin_state`, only when the registration itself
@@ -3559,13 +3648,18 @@ def check_channel_consumer_pin(
     this file already exercises.
     """
     state, detail = (
-        precomputed if precomputed is not None
-        else mcp_channel_registration_state(server=server, run=run, which=which, env=env)
+        precomputed
+        if precomputed is not None
+        else mcp_channel_registration_state(
+            server=server, run=run, which=which, env=env
+        )
     )
     if state != "registered":
         return
     label = server or CHANNEL_SERVER
-    pin_state, pin_detail = channel_consumer_pin_state(detail, record=record, cache_root=cache_root)
+    pin_state, pin_detail = channel_consumer_pin_state(
+        detail, record=record, cache_root=cache_root
+    )
     if pin_state == "current":
         report(
             "OK",
@@ -3651,7 +3745,9 @@ def publish_confirm_state(project_dir, env=None):
 
     presets = doc.get("presets")
     if isinstance(presets, list) and all(isinstance(p, str) for p in presets):
-        routed = sorted(op for name, op in PUBLISH_OP_PRESETS.items() if name in presets)
+        routed = sorted(
+            op for name, op in PUBLISH_OP_PRESETS.items() if name in presets
+        )
         if routed:
             reach = "it {} {} here today".format(verb, ", ".join(routed))
         else:
@@ -3787,7 +3883,11 @@ def _derivable_watch_name(project_dir):
         # something is wrong with a value it has just made unidentifiable, and the
         # remedy is to correct that exact value. `backslashreplace` first means
         # `_one_line` receives ASCII and changes nothing.
-        return "refused", "", problem.encode("ascii", "backslashreplace").decode("ascii")
+        return (
+            "refused",
+            "",
+            problem.encode("ascii", "backslashreplace").decode("ascii"),
+        )
     return "yes", name, ""
 
 
@@ -3869,8 +3969,11 @@ def _watch_declaration_split(project_dir):
             rule_path = candidate
             break
     if not rule_path:
-        return "unknown", (), (), (
-            "none of {} holds presets/watch/naming.py".format(", ".join(installs))
+        return (
+            "unknown",
+            (),
+            (),
+            ("none of {} holds presets/watch/naming.py".format(", ".join(installs))),
         )
 
     try:
@@ -3881,8 +3984,11 @@ def _watch_declaration_split(project_dir):
         spec.loader.exec_module(module)
         declared = module.declared_names(str(project_dir))
     except (Exception, SystemExit) as err:
-        return "unknown", (), (), "{} could not be read ({})".format(
-            rule_path, type(err).__name__
+        return (
+            "unknown",
+            (),
+            (),
+            "{} could not be read ({})".format(rule_path, type(err).__name__),
         )
     return declared.state, declared.declaring_ops, declared.silent_ops, declared.why
 
@@ -4066,8 +4172,12 @@ def watch_channel_state(project_dir, env=None):
                 "erroring anywhere: it reads a private board over a "
                 "default-channel one, identically to a healthy empty "
                 "board.".format(
-                    WATCH_CONFIG, declared, WATCH_CONFIG, ", ".join(declaring_ops),
-                    len(silent_ops), ", ".join(silent_ops),
+                    WATCH_CONFIG,
+                    declared,
+                    WATCH_CONFIG,
+                    ", ".join(declaring_ops),
+                    len(silent_ops),
+                    ", ".join(silent_ops),
                 )
             )
         if split_state in ("unknown", "unreadable"):
@@ -4149,8 +4259,11 @@ def watch_channel_state(project_dir, env=None):
     # the SHARED one because there was nothing to derive from.
     derivable, _derived, why = _derivable_watch_name(project_dir)
     if derivable == "yes":
-        return "derived", "nothing declared in {} and {} unset, and {} carries a repo".format(
-            WATCH_CONFIG, WATCH_NAME_ENV, OSS_CONFIG
+        return (
+            "derived",
+            "nothing declared in {} and {} unset, and {} carries a repo".format(
+                WATCH_CONFIG, WATCH_NAME_ENV, OSS_CONFIG
+            ),
         )
     # One state, six remedies -- write a config, unblock a config, reshape a config,
     # add a key, correct a value, repair this tool. The reason travels in the detail
@@ -4527,8 +4640,10 @@ def _jit_keywords(value):
     for raw in value.split(","):
         if any(ord(ch) > 127 for ch in raw):
             return None
-        lowered = "".join(ch if ch in "abcdefghijklmnopqrstuvwxyz0123456789 -" else " "
-                          for ch in raw.lower())
+        lowered = "".join(
+            ch if ch in "abcdefghijklmnopqrstuvwxyz0123456789 -" else " "
+            for ch in raw.lower()
+        )
         collapsed = " ".join(lowered.split())
         if collapsed:
             keywords.add(collapsed)
@@ -4588,7 +4703,10 @@ def jit_index_drift(dimension, entries, index_text):
             derived = _jit_keywords(value) if value else set()
             if derived is None:
                 undecidable.append(
-                    (name, "its keywords: carry non-ASCII, which the indexer folds first")
+                    (
+                        name,
+                        "its keywords: carry non-ASCII, which the indexer folds first",
+                    )
                 )
                 continue
             if {row.split("\t")[0] for row in indexed} - derived:
@@ -4601,18 +4719,27 @@ def jit_index_drift(dimension, entries, index_text):
             expected = set()  # the builder writes no row, and neither do we
         elif _jit_macro(match):
             undecidable.append(
-                (name, "its match: is an invocation macro, expanded at index time and "
-                       "not expanded here")
+                (
+                    name,
+                    "its match: is an invocation macro, expanded at index time and "
+                    "not expanded here",
+                )
             )
             continue
         elif dimension == "tools":
-            expected = {"\t".join([
-                tool, match, name,
-                _jit_field(text, "mode") or "remind",
-                _jit_field(text, "require") or "",
-                _jit_field(text, "forbid") or "",
-                _jit_field(text, "requires") or "",
-            ])}
+            expected = {
+                "\t".join(
+                    [
+                        tool,
+                        match,
+                        name,
+                        _jit_field(text, "mode") or "remind",
+                        _jit_field(text, "require") or "",
+                        _jit_field(text, "forbid") or "",
+                        _jit_field(text, "requires") or "",
+                    ]
+                )
+            }
         else:
             expected = {"{}\t{}".format(match, name)}
 
@@ -4625,7 +4752,9 @@ def jit_index_drift(dimension, entries, index_text):
         # arity nobody populated is a no-op here, and a row that gained a
         # POPULATED trailing column is still caught, because it is no longer
         # trailing-empty on the side that carries it.
-        if _strip_trailing_empty_columns(expected) != _strip_trailing_empty_columns(indexed):
+        if _strip_trailing_empty_columns(expected) != _strip_trailing_empty_columns(
+            indexed
+        ):
             drift.append(name)
 
     return sorted(set(drift)), undecidable
@@ -4682,7 +4811,9 @@ def check_jit_rules(project_dir):
         report(
             "WARN",
             "{}: no rules for this repo. Project conventions are not being injected; "
-            "nothing is broken, but nothing is being carried either.".format(JIT_RULES_DIR),
+            "nothing is broken, but nothing is being carried either.".format(
+                JIT_RULES_DIR
+            ),
         )
         return
 
@@ -4811,7 +4942,9 @@ def check_jit_rules(project_dir):
                 "{}: cannot say whether {} is current. {} changed after the last "
                 "rebuild and could not be derived -- {}. Timestamps are all the "
                 "evidence there is here.".format(
-                    name, JIT_INDEX, ", ".join(sorted(set(unchecked) & set(newer))[:3]),
+                    name,
+                    JIT_INDEX,
+                    ", ".join(sorted(set(unchecked) & set(newer))[:3]),
                     "{}: {}".format(first, reason),
                 ),
             )
@@ -4922,7 +5055,16 @@ MAX_EFFECT_SECTIONS = 4
 #: Suffixes where a line is inert exactly when it is blank or a `#` comment. Anything
 #: not listed here -- and not `.md`, handled separately -- is treated as behavioural,
 #: because the failure to be silent about is the one that calls a real change cosmetic.
-HASH_COMMENT_SUFFIXES = (".yml", ".yaml", ".py", ".sh", ".bash", ".toml", ".cfg", ".ini")
+HASH_COMMENT_SUFFIXES = (
+    ".yml",
+    ".yaml",
+    ".py",
+    ".sh",
+    ".bash",
+    ".toml",
+    ".cfg",
+    ".ini",
+)
 
 
 def _normalise_newlines(text):
@@ -5061,8 +5203,16 @@ def owned_effect(current_text, shipped_text, path):
     # changed line -- and carried explicitly, because looking the flags back up by the
     # identity of the list they belong to is a correctness argument nobody should have
     # to reconstruct.
-    theirs_side = (theirs, _inert_lines(theirs, suffix), _yaml_literal_lines(theirs) if yaml else None)
-    ours_side = (ours, _inert_lines(ours, suffix), _yaml_literal_lines(ours) if yaml else None)
+    theirs_side = (
+        theirs,
+        _inert_lines(theirs, suffix),
+        _yaml_literal_lines(theirs) if yaml else None,
+    )
+    ours_side = (
+        ours,
+        _inert_lines(ours, suffix),
+        _yaml_literal_lines(ours) if yaml else None,
+    )
 
     sections = []
     behavioural = False
@@ -5070,7 +5220,10 @@ def owned_effect(current_text, shipped_text, path):
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             continue
-        for (lines, flags, literal), start, stop in ((theirs_side, i1, i2), (ours_side, j1, j2)):
+        for (lines, flags, literal), start, stop in (
+            (theirs_side, i1, i2),
+            (ours_side, j1, j2),
+        ):
             for index in range(start, stop):
                 if flags[index]:
                     continue
@@ -5086,7 +5239,9 @@ def owned_effect(current_text, shipped_text, path):
     kept = [
         section
         for section in sections
-        if not any(other != section and other.startswith(section + ".") for other in sections)
+        if not any(
+            other != section and other.startswith(section + ".") for other in sections
+        )
     ]
     # Truncation that does not say it truncated is this repo's own defect: a list of
     # four reads as the whole answer whether or not four was all there was, and the
@@ -5123,10 +5278,8 @@ def _drift_detail(name, effect):
     if dropped:
         named.append("and {} more".format(dropped))
     where = " -- {}".format(", ".join(named)) if named else ""
-    return (
-        "{}: re-running /oss:scaffold would change what it does{}. {}".format(
-            name, where, caveat
-        )
+    return "{}: re-running /oss:scaffold would change what it does{}. {}".format(
+        name, where, caveat
     )
 
 
@@ -5289,7 +5442,9 @@ def owned_drift(repo_root, config, plugin_root=None):
                     {
                         "path": name,
                         "state": "absent",
-                        "detail": "{}: not in this repo. Run /oss:scaffold.".format(name),
+                        "detail": "{}: not in this repo. Run /oss:scaffold.".format(
+                            name
+                        ),
                     }
                 )
                 continue
@@ -5324,7 +5479,9 @@ def owned_drift(repo_root, config, plugin_root=None):
                     {
                         "path": name,
                         "state": "absent",
-                        "detail": "{}: not in this repo. Run /oss:scaffold.".format(name),
+                        "detail": "{}: not in this repo. Run /oss:scaffold.".format(
+                            name
+                        ),
                     }
                 )
             continue
@@ -5401,7 +5558,7 @@ def owned_drift_summary(findings):
     for finding in findings:
         detail = finding["detail"]
         prefix = "{}: ".format(finding["path"])
-        shared = detail[len(prefix):] if detail.startswith(prefix) else detail
+        shared = detail[len(prefix) :] if detail.startswith(prefix) else detail
         if shared == finding["path"]:
             # A detail that is just the path says nothing beyond it -- that is what a
             # `current` finding carries -- and re-appending it would print it twice.
@@ -5433,7 +5590,12 @@ def owned_drift_summary(findings):
             lines.append((level, body))
         else:
             lines.append(
-                (level, "{} owned files -- {}: {}".format(len(paths), ", ".join(paths), shared))
+                (
+                    level,
+                    "{} owned files -- {}: {}".format(
+                        len(paths), ", ".join(paths), shared
+                    ),
+                )
             )
     return lines
 
@@ -5479,12 +5641,15 @@ def active_versions(names, record=None):
         if name not in names or not isinstance(entries, list):
             continue
         # One entry per scope; take the highest, which is the one that wins at load.
-        versions = [e.get("version") for e in entries if isinstance(e, dict) and e.get("version")]
+        versions = [
+            e.get("version")
+            for e in entries
+            if isinstance(e, dict) and e.get("version")
+        ]
         for version in versions:
             if name not in found or compare_versions(found[name], version) == "behind":
                 found[name] = version
     return found
-
 
 
 def dependency_repositories(names):
@@ -5497,7 +5662,9 @@ def dependency_repositories(names):
     repos = {}
     root = Path(os.path.expanduser("~/.claude/plugins/cache"))
     for name in names:
-        for manifest in sorted(root.glob("*/{}/*/.claude-plugin/plugin.json".format(name))):
+        for manifest in sorted(
+            root.glob("*/{}/*/.claude-plugin/plugin.json".format(name))
+        ):
             try:
                 doc = json.loads(manifest.read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -5536,7 +5703,9 @@ def loop_repository(plugin_root=None):
     """
     root = Path(plugin_root) if plugin_root is not None else PLUGIN_ROOT
     try:
-        doc = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        doc = json.loads(
+            (root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
     except (OSError, ValueError):
         return None, "unreadable"
     value = doc.get("repository") if isinstance(doc, dict) else None
@@ -5573,7 +5742,9 @@ def check_loop_repository(plugin_root=None):
             "WARN",
             "loop repository: this plugin's manifest at {} could not be read, so where a "
             "defect in the loop's own tooling should be filed is unknown -- not "
-            "absent.".format(Path(plugin_root) if plugin_root is not None else PLUGIN_ROOT),
+            "absent.".format(
+                Path(plugin_root) if plugin_root is not None else PLUGIN_ROOT
+            ),
         )
 
 
@@ -5587,8 +5758,13 @@ def published_versions(repos):
         slug = str(url).rstrip("/").replace("https://github.com/", "")
         try:
             done = subprocess.run(
-                ["gh", "api", "repos/{}/contents/.claude-plugin/plugin.json".format(slug),
-                 "--jq", ".content"],
+                [
+                    "gh",
+                    "api",
+                    "repos/{}/contents/.claude-plugin/plugin.json".format(slug),
+                    "--jq",
+                    ".content",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 universal_newlines=True,
@@ -5759,8 +5935,11 @@ def dependency_diagnostic_state(
                 name, version, timeout
             )
         except OSError as exc:
-            return "could-not-run", "{} {}'s diagnostic could not be started ({})".format(
-                name, version, exc.strerror or exc.__class__.__name__
+            return (
+                "could-not-run",
+                "{} {}'s diagnostic could not be started ({})".format(
+                    name, version, exc.strerror or exc.__class__.__name__
+                ),
             )
         # Bytes, decoded here with `errors="replace"` -- NOT `universal_newlines=True`,
         # which decodes under `errors="strict"` with the runner's locale codec and
@@ -5768,7 +5947,11 @@ def dependency_diagnostic_state(
         # `subprocess.run` on one byte a real tool banner can plausibly print. This is
         # the exact trap `_gh_version_text` above is already written to avoid, and this
         # diagnostic carries the same "exit 0 always" contract that trap would break.
-        output = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
+        output = (
+            done.stdout.decode("utf-8", "replace")
+            if isinstance(done.stdout, bytes)
+            else (done.stdout or "")
+        )
         if done.returncode != 0:
             return "could-not-run", "{} {}'s diagnostic exited {} -- {}".format(
                 name, version, done.returncode, _last_nonblank_line(output)
@@ -5778,7 +5961,9 @@ def dependency_diagnostic_state(
         )
 
     # spec["kind"] == "script"
-    roots, version = dependency_install_roots(name, record=record, cache_root=cache_root)
+    roots, version = dependency_install_roots(
+        name, record=record, cache_root=cache_root
+    )
     if not version:
         return "not-installed", "{} is declared but not installed".format(name)
     if not roots:
@@ -5833,12 +6018,18 @@ def dependency_diagnostic_state(
     # for why `universal_newlines=True` is not used: a script this diagnostic
     # does not control can print a byte this runner's locale cannot decode,
     # and that must not raise out of a check contracted to exit 0 always.
-    output = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
+    output = (
+        done.stdout.decode("utf-8", "replace")
+        if isinstance(done.stdout, bytes)
+        else (done.stdout or "")
+    )
     verdict_line = _last_line_with_prefix(output, "VERDICT:")
     if name == JIT_PLUGIN:
         if done.returncode in (0, 1, 2):
             return "relayed", "{} {}: exit {} -- {}".format(
-                name, version, done.returncode,
+                name,
+                version,
+                done.returncode,
                 verdict_line or _last_nonblank_line(output),
             )
         return "could-not-run", (
@@ -5870,8 +6061,13 @@ def check_dependency_diagnostics(
         return
     for name in names:
         state, detail = dependency_diagnostic_state(
-            name, project_dir, record=record, cache_root=cache_root,
-            timeout=timeout, run=run, which=which,
+            name,
+            project_dir,
+            record=record,
+            cache_root=cache_root,
+            timeout=timeout,
+            run=run,
+            which=which,
         )
         if state == "relayed":
             report("OK", "dependency diagnostic -- {}".format(detail))
@@ -6398,9 +6594,7 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             if JIT_LAYER_DIR_GLOB.search(line):
                 globbing.append(_one_line("{}:{}".format(path.name, number)))
             for filtered in JIT_LAYER_NAME_FILTER.findall(line):
-                filters.append(
-                    (_one_line("{}:{}".format(path.name, number)), filtered)
-                )
+                filters.append((_one_line("{}:{}".format(path.name, number)), filtered))
 
     if naming:
         # A positive answer stands on its own evidence: one enumeration naming the layer
@@ -6412,7 +6606,12 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             # dimensions and more rules than that.
             "{} names {} in its layer list ({}), so the {} dimension(s) under {}/*/{}/ are "
             "reachable".format(
-                named, layer, ", ".join(naming[:3]), len(dimensions), JIT_RULES_DIR, layer
+                named,
+                layer,
+                ", ".join(naming[:3]),
+                len(dimensions),
+                JIT_RULES_DIR,
+                layer,
             ),
         )
 
@@ -6427,9 +6626,7 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "could-not-determine",
             "{} hook file(s) under {} would not be read, or were declared or sourced and "
             "not found ({}), so the scan is incomplete and nothing here says whether {} "
-            "is read".format(
-                len(incomplete), named, "; ".join(incomplete[:3]), layer
-            ),
+            "is read".format(len(incomplete), named, "; ".join(incomplete[:3]), layer),
         )
 
     if omitting:
@@ -6440,8 +6637,13 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "read by nothing. The fix belongs to that plugin "
             "(Digital-Process-Tools/claude-jit-context#176); until an installed version "
             "carries it, treat those rules as inert rather than as active.".format(
-                named, layer, ", ".join(omitting[:3]), JIT_RULES_DIR, layer,
-                len(dimensions), ", ".join(dimensions),
+                named,
+                layer,
+                ", ".join(omitting[:3]),
+                JIT_RULES_DIR,
+                layer,
+                len(dimensions),
+                ", ".join(dimensions),
             ),
         )
 
@@ -6468,8 +6670,13 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
                 "{} hook line(s) of {} enumerate a directory by glob ({}), but {} line(s) "
                 "then filter what is visited by literal layer name and none of them names "
                 "{} ({}), so the glob does not establish that {} is reached".format(
-                    len(globbing), named, ", ".join(globbing[:3]), len(excluding),
-                    layer, ", ".join(excluding[:3]), layer,
+                    len(globbing),
+                    named,
+                    ", ".join(globbing[:3]),
+                    len(excluding),
+                    layer,
+                    ", ".join(excluding[:3]),
+                    layer,
                 ),
             )
         return (
@@ -6478,7 +6685,11 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "list ({}), so the {} dimension(s) under {}/*/{}/ are reachable -- every "
             "directory under the dimension base is visited, and no filter narrowing that "
             "to a set of literal layer names was found in the hook set{}".format(
-                named, ", ".join(globbing[:3]), len(dimensions), JIT_RULES_DIR, layer,
+                named,
+                ", ".join(globbing[:3]),
+                len(dimensions),
+                JIT_RULES_DIR,
+                layer,
                 ". This is the glob's own evidence, not a layer list: it establishes "
                 "what the hooks enumerate, not what the loop body then does with each "
                 "directory it visits",
@@ -6516,7 +6727,12 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "never executes, typically that plugin's own test fixtures, which name {} "
             "whether or not anything enumerates it. So this is unknown, not a pass: a "
             "fixture answered this check for a whole release (#241).{}{}".format(
-                len(scripts), named, ", ".join(outside[:3]), layer, partial, glob_note,
+                len(scripts),
+                named,
+                ", ".join(outside[:3]),
+                layer,
+                partial,
+                glob_note,
             ),
         )
 
@@ -6618,7 +6834,10 @@ def check_release_authority(project_dir, config):
     in the same words.
     """
     if oss_config is None:
-        report("WARN", "release authority: not checked (scripts/oss_config.py could not be imported)")
+        report(
+            "WARN",
+            "release authority: not checked (scripts/oss_config.py could not be imported)",
+        )
         return
     if config is None:
         report("WARN", "release authority: not checked (.oss.json could not be read)")
@@ -6642,7 +6861,7 @@ def check_release_authority(project_dir, config):
             "OK",
             "release authority: not-declared (release.authority is absent, unreadable, "
             "or an unrecognised value) -- tagging and publishing stop, the same as "
-            "maintainer. Set release.authority to \"loop\" in .oss.json to change that.",
+            'maintainer. Set release.authority to "loop" in .oss.json to change that.',
         )
 
 
@@ -6670,7 +6889,9 @@ def check_filed_by_loop(project_dir, config):
         )
         return
     if config is None:
-        report("WARN", "labels.filed_by_loop: not checked (.oss.json could not be read)")
+        report(
+            "WARN", "labels.filed_by_loop: not checked (.oss.json could not be read)"
+        )
         return
     labels = config.get("labels") if isinstance(config, dict) else None
     if not isinstance(labels, dict) or "filed_by_loop" not in labels:
@@ -6938,7 +7159,9 @@ def check_freshness(project_dir, config):
     else:
         installed = active_versions(names)
         repos = dependency_repositories(names)
-        for finding in dependency_findings(installed, published_versions(repos), declared=names):
+        for finding in dependency_findings(
+            installed, published_versions(repos), declared=names
+        ):
             report("OK" if finding["state"] == "current" else "WARN", finding["detail"])
 
     if config is None:
@@ -6999,37 +7222,37 @@ COMPARED_DIRECTORIES = ("agents", "commands", "hooks", "schemas", "scripts", "sk
 #: checked complement gets the coverage without the noise.
 NOT_COMPARED_TOP_LEVEL = {
     ".claude": "this repository's own session rule layers; a managed repo's copy is "
-               "written by scaffold and is not part of any plugin copy",
+    "written by scaffold and is not part of any plugin copy",
     ".claude-plugin": "its plugin.json is compared as a file above; nothing else in "
-                      "there is read at runtime",
+    "there is read at runtime",
     ".gitattributes": "a checkout's own bookkeeping (line-ending normalization), not "
-                      "read at runtime by an installed plugin copy",
+    "read at runtime by an installed plugin copy",
     ".github": "runs in this repository's CI, never in an install",
     ".gitignore": "a checkout's own bookkeeping, not read at runtime",
     ".oss.json": "the config of whatever repo is being diagnosed, not of a plugin copy",
     ".supertool.json": "op configuration for a checkout, not read from a plugin copy",
     "CHANGELOG.md": "release history; a copy behind the clone is expected to differ and "
-                    "the difference decides nothing",
+    "the difference decides nothing",
     "CLAUDE.md": "prose for a session in this repository",
     "CODE_OF_CONDUCT.md": "project prose, read by people",
     "CONTRIBUTING.md": "prose for a contributor to this repository, and a "
-                       "`defaults`-class file everywhere else -- scaffold writes it "
-                       "once into a managed repo and it is that maintainer's "
-                       "afterwards, so a copy differing from ours is the designed "
-                       "state rather than a skew worth reporting",
+    "`defaults`-class file everywhere else -- scaffold writes it "
+    "once into a managed repo and it is that maintainer's "
+    "afterwards, so a copy differing from ours is the designed "
+    "state rather than a skew worth reporting",
     "LICENSE": "project prose, read by people",
     "README.md": "project prose, read by people",
     "SECURITY.md": "project prose, read by people",
     "bin": "the launcher is copied onto PATH rather than read from the tree, so WHICH "
-           "copy of it runs is the `launcher` check's question and not this one",
+    "copy of it runs is the `launcher` check's question and not this one",
     "changelog.d": "unreleased fragments, emptied at every fold; a copy at the tag "
-                   "holding none of them is the healthy state",
+    "holding none of them is the healthy state",
     "docs": "prose for people; nothing dispatches or executes it",
     "pyproject.toml": "test and lint configuration for this checkout",
     "requirements-dev.txt": "development and test dependencies declared for this "
-                            "checkout, like pyproject.toml; installed by CI's own "
-                            "install step and by a contributor's own environment, "
-                            "never read at runtime by an installed plugin copy",
+    "checkout, like pyproject.toml; installed by CI's own "
+    "install step and by a contributor's own environment, "
+    "never read at runtime by an installed plugin copy",
     "tests": "not shipped by every install and never read at runtime",
     "trap.d": "traps logged by a lane and not yet curated; emptied at every /oss:curate pass, so a copy holding none of them is the healthy state, exactly like changelog.d above",
 }
@@ -7129,7 +7352,9 @@ def plugin_tree_digest(root):
     def onerror(exc):
         if isinstance(exc, FileNotFoundError):
             return
-        unreadable[_relative_key(root, getattr(exc, "filename", "?"))] = exc.__class__.__name__
+        unreadable[_relative_key(root, getattr(exc, "filename", "?"))] = (
+            exc.__class__.__name__
+        )
 
     targets = []
     for name in COMPARED_DIRECTORIES:
@@ -7171,7 +7396,9 @@ def plugin_tree_digest(root):
             unreadable[key] = exc.__class__.__name__
             continue
         if stat.S_ISLNK(status.st_mode):
-            unreadable[key] = "declined: it is a symlink, so what it points at was not read"
+            unreadable[key] = (
+                "declined: it is a symlink, so what it points at was not read"
+            )
             continue
         if not stat.S_ISREG(status.st_mode):
             unreadable[key] = (
@@ -7229,8 +7456,12 @@ def _tree_identity(root, files, unreadable=()):
         digest.update(b"\n")
     incomplete = ""
     if unreadable:
-        incomplete = ", and {} path(s) could not be read ({}), so this digest is over " \
-            "less than the whole tree".format(len(unreadable), _named_few(_detail_list(unreadable)))
+        incomplete = (
+            ", and {} path(s) could not be read ({}), so this digest is over "
+            "less than the whole tree".format(
+                len(unreadable), _named_few(_detail_list(unreadable))
+            )
+        )
     return "{}, content {} over {} file(s){}".format(
         _git_head(root), digest.hexdigest()[:12], len(files), incomplete
     )
@@ -7359,8 +7590,10 @@ def _named_few(names, limit=3):
 
 def _version_sentence(ours, theirs):
     if ours == theirs:
-        return "Both manifests declare version {}, which is why comparing versions " \
+        return (
+            "Both manifests declare version {}, which is why comparing versions "
             "cannot see this.".format(_one_line(ours, limit=40))
+        )
     return "The manifests declare {} and {}.".format(
         _one_line(ours, limit=40), _one_line(theirs, limit=40)
     )
@@ -7400,7 +7633,9 @@ def declared_contract(root):
     except FileNotFoundError:
         return None, "it ships no {}".format(relative)
     except (OSError, UnicodeDecodeError) as exc:
-        return None, "its {} could not be read ({})".format(relative, exc.__class__.__name__)
+        return None, "its {} could not be read ({})".format(
+            relative, exc.__class__.__name__
+        )
     try:
         doc = json.loads(raw)
     except ValueError:
@@ -7434,17 +7669,20 @@ def schema_contract_sentence(script_root, project_dir):
     if ours is None or theirs is None:
         return (
             " Which agent-report contract each copy implements was not established: "
-            "for the copy that answered, {}; for the checkout being diagnosed, {}."
-            .format(
+            "for the copy that answered, {}; for the checkout being diagnosed, {}.".format(
                 "it declares version {}".format(ours) if our_why is None else our_why,
-                "it declares version {}".format(theirs) if their_why is None else their_why,
+                "it declares version {}".format(theirs)
+                if their_why is None
+                else their_why,
             )
         )
     if ours == theirs:
         return (
             " Both copies' {} declares contract version {}, so an agent report is not "
             "refused by either on its number -- though that is what they DECLARE, and a "
-            "schema can change without its number moving.".format(SCHEMA_CONTRACT_FILE, ours)
+            "schema can change without its number moving.".format(
+                SCHEMA_CONTRACT_FILE, ours
+            )
         )
     return (
         " The copy that answered declares agent-report contract version {} and the "
@@ -7455,8 +7693,9 @@ def schema_contract_sentence(script_root, project_dir):
     )
 
 
-def plugin_provenance(script_root, project_dir, attested=None, attested_source=None,
-                       script_tree=None):
+def plugin_provenance(
+    script_root, project_dir, attested=None, attested_source=None, script_tree=None
+):
     """``[(level, message)]`` -- two lines, and neither may be silent.
 
     Returns rather than prints, so every state is testable.
@@ -7523,7 +7762,11 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
                     "plugin copy scope: {} names {}, and whether that is the tree "
                     "doctor.py ran from ({}) could not be determined -- {}. The tree "
                     "reported below is the one that ran. {}".format(
-                        attested_source, Path(attested), script_root, why, SESSION_CAVEAT
+                        attested_source,
+                        Path(attested),
+                        script_root,
+                        why,
+                        SESSION_CAVEAT,
                     ),
                 )
             )
@@ -7531,7 +7774,9 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
     ours, our_reason = plugin_manifest(script_root)
     theirs, their_reason = plugin_manifest(project_dir)
 
-    files, unreadable = plugin_tree_digest(script_root) if script_tree is None else script_tree
+    files, unreadable = (
+        plugin_tree_digest(script_root) if script_tree is None else script_tree
+    )
     identity = _tree_identity(script_root, files, unreadable)
 
     if theirs is None and their_reason == "it has no .claude-plugin/plugin.json":
@@ -7540,7 +7785,9 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
                 "OK",
                 "plugin copy: doctor.py answered from {} ({}); the repo being "
                 "diagnosed is not a checkout of this plugin -- {} -- so there was "
-                "nothing to compare it against.".format(script_root, identity, their_reason),
+                "nothing to compare it against.".format(
+                    script_root, identity, their_reason
+                ),
             )
         )
         return lines
@@ -7550,7 +7797,9 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
                 "WARN",
                 "plugin copy: whether the repo being diagnosed is a checkout of this "
                 "plugin could not be determined -- {} -- so nothing was compared. "
-                "doctor.py answered from {} ({}).".format(their_reason, script_root, identity),
+                "doctor.py answered from {} ({}).".format(
+                    their_reason, script_root, identity
+                ),
             )
         )
         return lines
@@ -7621,14 +7870,18 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
     # separately below, because "we could not look at this one" is its own state.
     blocked = _merge_unreadable(unreadable, their_unreadable)
     every = {
-        key for key in (set(files) | set(their_files)) if not _under_blocked(key, blocked)
+        key
+        for key in (set(files) | set(their_files))
+        if not _under_blocked(key, blocked)
     }
     differing = sorted(key for key in every if files.get(key) != their_files.get(key))
     version = _version_sentence(ours.get("version"), theirs.get("version"))
     incomplete = ""
     if blocked:
-        incomplete = " {} path(s) could not be read ({}), so this did not compare the " \
+        incomplete = (
+            " {} path(s) could not be read ({}), so this did not compare the "
             "whole tree.".format(len(blocked), _named_few(_detail_list(blocked)))
+        )
 
     # The consequence rides on the detection rather than on a line of its own (#415).
     # A second line would be a second mechanism reporting the same difference, and the
@@ -7694,8 +7947,9 @@ def plugin_provenance(script_root, project_dir, attested=None, attested_source=N
     return lines
 
 
-def check_plugin_copy(project_dir, script_root=None, attested=None, attested_source=None,
-                       script_tree=None):
+def check_plugin_copy(
+    project_dir, script_root=None, attested=None, attested_source=None, script_tree=None
+):
     for level, message in plugin_provenance(
         script_root or PLUGIN_ROOT,
         project_dir,
@@ -7852,7 +8106,9 @@ def dependency_resolution_state(names, record=None, repos=None):
         elif repos.get(name):
             findings.append({"name": name, "state": "resolves", "version": version})
         else:
-            findings.append({"name": name, "state": "contract-unknown", "version": version})
+            findings.append(
+                {"name": name, "state": "contract-unknown", "version": version}
+            )
     return findings
 
 
@@ -7875,11 +8131,15 @@ def check_dependency_resolution(record=None, repos=None):
     if not names:
         manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
         try:
-            readable = isinstance(json.loads(manifest.read_text(encoding="utf-8")), dict)
+            readable = isinstance(
+                json.loads(manifest.read_text(encoding="utf-8")), dict
+            )
         except (OSError, ValueError):
             readable = False
         if readable:
-            report("OK", "declared dependencies: none named in this plugin's own manifest")
+            report(
+                "OK", "declared dependencies: none named in this plugin's own manifest"
+            )
         else:
             report(
                 "WARN",
@@ -7889,7 +8149,9 @@ def check_dependency_resolution(record=None, repos=None):
             )
         return
     computed_repos = dependency_repositories(names) if repos is None else repos
-    for finding in dependency_resolution_state(names, record=record, repos=computed_repos):
+    for finding in dependency_resolution_state(
+        names, record=record, repos=computed_repos
+    ):
         name = finding["name"]
         if finding["state"] == "resolves":
             report(
@@ -7910,7 +8172,9 @@ def check_dependency_resolution(record=None, repos=None):
             report(
                 "WARN",
                 "dependency {}: not active in the install record -- missing, not "
-                "stale. Run `claude plugin install {}@<marketplace>`.".format(name, name),
+                "stale. Run `claude plugin install {}@<marketplace>`.".format(
+                    name, name
+                ),
             )
 
 
@@ -7983,8 +8247,13 @@ def label_vocabulary_state(project_dir, config=None, run=None):
     try:
         rows = json.loads(done.stdout or "[]")
     except ValueError:
-        return "could-not-tell", "gh label list returned output that did not parse as JSON"
-    names = [row.get("name") for row in rows if isinstance(row, dict) and row.get("name")]
+        return (
+            "could-not-tell",
+            "gh label list returned output that did not parse as JSON",
+        )
+    names = [
+        row.get("name") for row in rows if isinstance(row, dict) and row.get("name")
+    ]
     classified = oss_config.classify_labels(names)
     if classified["priority"]:
         return "satisfied", (slug, classified["priority"], classified["lanes"])
@@ -8035,7 +8304,10 @@ def run_install_audit(project_dir, plugin_root=None, record=None, run=None):
     project_dir = Path(project_dir)
 
     own_tree = plugin_tree_digest(plugin_root)
-    report("OK", "oss plugin version {}".format(plugin_identity(plugin_root, tree=own_tree)))
+    report(
+        "OK",
+        "oss plugin version {}".format(plugin_identity(plugin_root, tree=own_tree)),
+    )
 
     config = check_oss_json_presence(project_dir, run=run)
 
@@ -8066,7 +8338,9 @@ def run_install_audit(project_dir, plugin_root=None, record=None, run=None):
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
     warns = sum(1 for state, _ in FINDINGS if state == "WARN")
     if fails:
-        verdict = "install incomplete -- {} failure(s), {} warning(s)".format(fails, warns)
+        verdict = "install incomplete -- {} failure(s), {} warning(s)".format(
+            fails, warns
+        )
     elif warns:
         verdict = "install usable with gaps -- {} warning(s)".format(warns)
     else:
@@ -8117,10 +8391,15 @@ def parse_args(argv):
         parsed = parser.parse_args(list(argv))
         return parsed.root, parsed.plugin_root, parsed.install_audit, []
     except ValueError as exc:
-        return None, None, False, [
-            "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
-            "directory, so the tree below may not be the one you meant.".format(exc)
-        ]
+        return (
+            None,
+            None,
+            False,
+            [
+                "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
+                "directory, so the tree below may not be the one you meant.".format(exc)
+            ],
+        )
 
 
 def resolve_project_dir(root, env_value, cwd):
@@ -8199,7 +8478,9 @@ def resolve_project_dir(root, env_value, cwd):
                 (
                     "FAIL",
                     "--root {}: not a directory, so there is nothing here to "
-                    "diagnose. Every check below reports itself unmeasured.".format(chosen),
+                    "diagnose. Every check below reports itself unmeasured.".format(
+                        chosen
+                    ),
                 )
             )
         else:
@@ -8255,7 +8536,9 @@ def main(argv=None):
     path as an unrecognised argument. A library entry point does not get to read the
     process's arguments; the script entry point at the bottom passes them in.
     """
-    root, plugin_root, install_audit, arg_problems = parse_args([] if argv is None else argv)
+    root, plugin_root, install_audit, arg_problems = parse_args(
+        [] if argv is None else argv
+    )
     project_dir, resolution = resolve_project_dir(
         root, os.environ.get("CLAUDE_PROJECT_DIR"), os.getcwd()
     )
@@ -8281,7 +8564,10 @@ def main(argv=None):
     # `PLUGIN_ROOT` tree, and a diagnostic meant to run before every session
     # should not do that twice a run.
     own_tree = plugin_tree_digest(PLUGIN_ROOT)
-    report("OK", "oss plugin version {}".format(plugin_identity(PLUGIN_ROOT, tree=own_tree)))
+    report(
+        "OK",
+        "oss plugin version {}".format(plugin_identity(PLUGIN_ROOT, tree=own_tree)),
+    )
     for problem in arg_problems:
         report("FAIL", problem)
     for state, message in resolution:
@@ -8295,8 +8581,10 @@ def main(argv=None):
         plugin_root, os.environ.get("CLAUDE_PLUGIN_ROOT")
     )
     check_plugin_copy(
-        project_dir, attested=attested, attested_source=attested_source,
-        script_tree=own_tree
+        project_dir,
+        attested=attested,
+        attested_source=attested_source,
+        script_tree=own_tree,
     )
 
     config = check_config(project_dir)
@@ -8349,11 +8637,15 @@ def main(argv=None):
     # script guessed from the repository root never print the same OK shape.
     local_states = _local_key_states_for(project_dir) if found else {}
     check_directory(
-        "clone", config.get("clone") if found else None, config_found=found,
+        "clone",
+        config.get("clone") if found else None,
+        config_found=found,
         origin=local_states.get("clone"),
     )
     check_directory(
-        "worktree_root", config.get("worktree_root") if found else None, config_found=found,
+        "worktree_root",
+        config.get("worktree_root") if found else None,
+        config_found=found,
         origin=local_states.get("worktree_root"),
     )
     # #763: the clone check above reports the configured PATH and stops -- it

@@ -78,7 +78,9 @@ def test_a_link_into_a_superseded_cached_version_is_not_reported_ok(tmp_path):
     assert state == "stale-version", (state, detail)
     assert "0.47.0" in detail and "0.51.0" in detail, detail
 
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", (level, message)
     assert "0.47.0" in message and "0.51.0" in message, message
@@ -102,6 +104,8 @@ def test_a_link_into_the_active_version_is_still_ok(tmp_path):
     )
     assert state == "ok", (state, detail)
 
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "OK", (level, message)

@@ -50,6 +50,8 @@ def _manager_loop_text():
     moved into `skills/manager/phases/accounting.md`; a check pinned to the
     spine alone would have gone quiet on its own subject."""
     return MANAGER_LOOP.read_text(encoding="utf-8")
+
+
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import oss_state  # noqa: E402
@@ -92,7 +94,9 @@ def test_zero_filings_is_measured_and_uncounted_filings_is_not():
 
 def test_an_uncounted_denominator_is_could_not_count_too():
     assert (
-        oss_state.intake(6, None, window=WINDOW, why="the state file was absent")["state"]
+        oss_state.intake(6, None, window=WINDOW, why="the state file was absent")[
+            "state"
+        ]
         == oss_state.INTAKE_COULD_NOT_COUNT
     )
 
@@ -187,11 +191,21 @@ def test_a_partial_trend_does_not_render_as_a_plain_ratio():
     when one did not.
     """
     complete = oss_state.intake_trend(
-        [{"at": STAMP, "decision": "d", "detail": {"intake": oss_state.intake(3, 4, window=WINDOW)}}]
+        [
+            {
+                "at": STAMP,
+                "decision": "d",
+                "detail": {"intake": oss_state.intake(3, 4, window=WINDOW)},
+            }
+        ]
     )
     holed = oss_state.intake_trend(
         [
-            {"at": STAMP, "decision": "d", "detail": {"intake": oss_state.intake(3, 4, window=WINDOW)}},
+            {
+                "at": STAMP,
+                "decision": "d",
+                "detail": {"intake": oss_state.intake(3, 4, window=WINDOW)},
+            },
             {"at": STAMP, "decision": "d"},
         ]
     )
@@ -202,7 +216,9 @@ def test_a_partial_trend_does_not_render_as_a_plain_ratio():
     assert "unrecognised" not in partial_line
 
 
-def test_the_cli_prints_the_sentence_to_stderr_and_the_record_to_stdout(tmp_path, capsys):
+def test_the_cli_prints_the_sentence_to_stderr_and_the_record_to_stdout(
+    tmp_path, capsys
+):
     """A caller piping into `jq` still gets JSON; a human still gets the sentence."""
     path = tmp_path / "state.json"
     assert (
@@ -411,9 +427,7 @@ def test_the_cli_refuses_half_an_intake_record(tmp_path, capsys):
     """``--filings`` alone would write a numerator with no denominator and no window."""
     path = tmp_path / "state.json"
     assert (
-        oss_state._main(
-            [str(path), "--decision", "d", "--at", STAMP, "--filings", "6"]
-        )
+        oss_state._main([str(path), "--decision", "d", "--at", STAMP, "--filings", "6"])
         == 1
     )
     out = capsys.readouterr().out
@@ -462,7 +476,16 @@ def test_intake_flags_on_a_read_mode_are_refused_rather_than_ignored(tmp_path, c
     path = tmp_path / "state.json"
     assert (
         oss_state._main(
-            [str(path), "--read", "--filings", "6", "--merged-prs", "11", "--window", WINDOW]
+            [
+                str(path),
+                "--read",
+                "--filings",
+                "6",
+                "--merged-prs",
+                "11",
+                "--window",
+                WINDOW,
+            ]
         )
         == 1
     )
@@ -546,14 +569,18 @@ def _intake_argv(path, detail):
     ]
 
 
-def test_the_cli_refuses_to_bury_an_intake_record_in_a_non_object_detail(tmp_path, capsys):
+def test_the_cli_refuses_to_bury_an_intake_record_in_a_non_object_detail(
+    tmp_path, capsys
+):
     path = tmp_path / "state.json"
     assert oss_state._main(_intake_argv(path, '"a string"')) == 1
     assert "JSON object" in capsys.readouterr().out
     assert not path.exists()
 
 
-def test_the_cli_refuses_to_overwrite_an_intake_key_the_caller_supplied(tmp_path, capsys):
+def test_the_cli_refuses_to_overwrite_an_intake_key_the_caller_supplied(
+    tmp_path, capsys
+):
     """Silently winning would replace a record somebody wrote with one it computed."""
     path = tmp_path / "state.json"
     assert oss_state._main(_intake_argv(path, '{"intake": "mine"}')) == 1
@@ -615,12 +642,7 @@ def test_the_manager_skill_states_that_no_target_ratio_is_claimed():
 
 def test_the_manager_skill_carries_the_per_page_aggregation_trap():
     """It lived only in the triager, and the manager is what computes the tick metric."""
-    assert (
-        _missing(
-            _manager_loop_text(), ["--paginate", "one number per page"]
-        )
-        == []
-    )
+    assert _missing(_manager_loop_text(), ["--paginate", "one number per page"]) == []
 
 
 def test_the_tick_command_names_the_flags_that_record_it():
@@ -630,7 +652,6 @@ def test_the_tick_command_names_the_flags_that_record_it():
         _read("skills/manager/phases/tick-order.md"),
         ["--filings", "--merged-prs", "--window", "--trend"],
     )
-    assert missing == [], (
-        "skills/manager/phases/tick-order.md does not say: {}".format(missing)
+    assert missing == [], "skills/manager/phases/tick-order.md does not say: {}".format(
+        missing
     )
-

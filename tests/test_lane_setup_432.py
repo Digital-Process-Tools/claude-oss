@@ -43,7 +43,9 @@ def test_known_guards_is_five_distinct_test_files():
     known = lane_setup.known_guards()
     test_paths = [entry["test"] for entry in known]
     assert len(test_paths) == 5
-    assert test_paths == sorted(set(test_paths)), "guard list must be deduplicated and sorted"
+    assert test_paths == sorted(set(test_paths)), (
+        "guard list must be deduplicated and sorted"
+    )
 
 
 def test_every_known_guard_test_file_exists_in_this_tree():
@@ -51,7 +53,9 @@ def test_every_known_guard_test_file_exists_in_this_tree():
     tell a developer to run a test file that does not exist, silently."""
     for entry in lane_setup.known_guards():
         assert (REPO_ROOT / entry["test"]).is_file(), entry["test"]
-        assert entry["triggers"], "a guard with no stated trigger cannot be reached by files"
+        assert entry["triggers"], (
+            "a guard with no stated trigger cannot be reached by files"
+        )
 
 
 # --- guards_for_files: must fire, paired with must not fire ----------------------
@@ -95,11 +99,15 @@ def test_a_brand_new_script_still_trips_the_gate_state_guard():
     is exactly the PR #431 shape this issue exists to close: a brand-new
     `scripts/` file that starts calling the gate would trip the real guard on CI
     while this mechanism stayed silent about it."""
-    hits = lane_setup.guards_for_files(["scripts/a_file_that_has_never_existed_before.py"])
+    hits = lane_setup.guards_for_files(
+        ["scripts/a_file_that_has_never_existed_before.py"]
+    )
     tests_hit = [entry["test"] for entry in hits]
     assert "tests/test_gate_state_consumers_328.py" in tests_hit
 
-    hits = lane_setup.guards_for_files(["commands/a_command_that_has_never_existed_before.md"])
+    hits = lane_setup.guards_for_files(
+        ["commands/a_command_that_has_never_existed_before.md"]
+    )
     tests_hit = [entry["test"] for entry in hits]
     assert "tests/test_gate_state_consumers_328.py" in tests_hit
 
@@ -178,7 +186,13 @@ def _cli(tmp_path, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "432", "--repo", str(tmp_path)]
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "432",
+            "--repo",
+            str(tmp_path),
+        ]
         + list(extra_args),
         subject="the guard set lane_setup.py's receipt names for this lane",
         capture_output=True,

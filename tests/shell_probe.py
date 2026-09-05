@@ -33,12 +33,7 @@ from pathlib import Path
 # `echo` rather than `printf`, because the escape this needs would have to survive
 # a Python string, a TOML payload and the shell in turn, and each layer that
 # processes one is a layer that can silently eat it.
-PROBE = (
-    "echo shell\n"
-    "for p in \"$@\"; do\n"
-    "    if [ -f \"$p\" ]; then echo sees; fi\n"
-    "done\n"
-)
+PROBE = 'echo shell\nfor p in "$@"; do\n    if [ -f "$p" ]; then echo sees; fi\ndone\n'
 
 _CACHE = {}
 
@@ -78,8 +73,14 @@ def candidates():
             home = None
         if home is not None:
             for base in (home, home.parent):
-                for rel in ("bash", "bash.exe", "bin/bash", "bin/bash.exe",
-                            "usr/bin/bash", "usr/bin/bash.exe"):
+                for rel in (
+                    "bash",
+                    "bash.exe",
+                    "bin/bash",
+                    "bin/bash.exe",
+                    "usr/bin/bash",
+                    "usr/bin/bash.exe",
+                ):
                     add(base.joinpath(*rel.split("/")))
     return seen
 

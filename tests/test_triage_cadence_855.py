@@ -26,7 +26,9 @@ SPINE = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(encoding="utf-
 # spine. Reading only the spine after that move is a guard about where the prose used to
 # be, which is the shape `manager_docs` exists to remove.
 SKILL = manager_docs.ManagerLoop(REPO_ROOT).read_text(encoding="utf-8")
-ACCOUNTING = (REPO_ROOT / "skills" / "manager" / "phases" / "accounting.md").read_text(encoding="utf-8")
+ACCOUNTING = (REPO_ROOT / "skills" / "manager" / "phases" / "accounting.md").read_text(
+    encoding="utf-8"
+)
 
 # --------------------------------------------------------- positive controls
 
@@ -63,8 +65,10 @@ def test_accounting_points_at_the_cadence_from_the_cluster_consuming_step():
     say the sweep behind them is expected to postdate the last release,
     rather than being silent about when it ran."""
     idx = ACCOUNTING.find("proposed clusters are this rule arriving late")
-    assert idx != -1, "accounting.md no longer carries the clusters-consumer paragraph this points from"
-    window = ACCOUNTING[idx:idx + 900]
+    assert idx != -1, (
+        "accounting.md no longer carries the clusters-consumer paragraph this points from"
+    )
+    window = ACCOUNTING[idx : idx + 900]
     assert "#855" in window
     assert re.search(r"after the previous release", window, re.IGNORECASE)
 
@@ -82,7 +86,7 @@ def test_skill_names_the_enforced_and_unbuilt_halves_of_the_mechanism_separately
     would pass on either document holding both, which is what the split rules out."""
     idx = SPINE.find("## Cadence")
     assert idx != -1, "the spine no longer carries a Cadence directive"
-    window = SPINE[idx:idx + 2000]
+    window = SPINE[idx : idx + 2000]
     assert "--last-triage" in window
     assert "--triage-recorded" in window
     assert "skills/manager/phases/accounting.md" in window, (

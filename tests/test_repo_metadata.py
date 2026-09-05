@@ -24,7 +24,10 @@ def _fields(findings):
 
 def test_a_repo_with_both_is_clean():
     findings = scaffold.check_metadata(
-        {"description": "Batched file operations for autonomous runs.", "topics": ["a", "b", "c"]}
+        {
+            "description": "Batched file operations for autonomous runs.",
+            "topics": ["a", "b", "c"],
+        }
     )
     assert findings == []
 
@@ -36,7 +39,9 @@ def test_a_missing_description_is_reported():
 
 
 def test_a_whitespace_description_counts_as_missing():
-    findings = scaffold.check_metadata({"description": "   ", "topics": ["a", "b", "c"]})
+    findings = scaffold.check_metadata(
+        {"description": "   ", "topics": ["a", "b", "c"]}
+    )
     assert findings[0]["state"] == "missing"
 
 
@@ -44,7 +49,9 @@ def test_an_absent_description_key_counts_as_missing():
     """The forge omits the key rather than sending null, and an omission read as
     'nothing to report' is the defect this whole plugin is about.
     """
-    assert _fields(scaffold.check_metadata({"topics": ["a", "b", "c"]})) == {"description"}
+    assert _fields(scaffold.check_metadata({"topics": ["a", "b", "c"]})) == {
+        "description"
+    }
 
 
 def test_an_over_long_description_is_reported_as_truncated_not_missing():
@@ -121,7 +128,11 @@ def test_nothing_is_ever_suggested():
 def test_repositoryTopics_shape_from_gh_is_read():
     probe = {
         "description": "Batched file operations for autonomous runs.",
-        "repositoryTopics": [{"name": "ai"}, {"name": "claude"}, {"name": "automation"}],
+        "repositoryTopics": [
+            {"name": "ai"},
+            {"name": "claude"},
+            {"name": "automation"},
+        ],
     }
     assert scaffold.check_metadata(probe) == []
 
@@ -139,7 +150,10 @@ def test_repositoryTopics_of_dicts_does_not_raise_attributeerror():
     outright -- two topics is genuinely thin (MIN_TOPICS is 3), which is the correct
     answer once the crash is gone, not "missing" and not silence.
     """
-    probe = {"description": "ok", "repositoryTopics": [{"name": "ai"}, {"name": "claude"}]}
+    probe = {
+        "description": "ok",
+        "repositoryTopics": [{"name": "ai"}, {"name": "claude"}],
+    }
     findings = scaffold.check_metadata(probe)
     assert findings[0]["state"] == "thin"
 
@@ -172,6 +186,7 @@ def test_repositoryTopics_takes_precedence_over_legacy_topics_key():
     }
     assert scaffold.check_metadata(probe) == []
 
+
 def test_the_metadata_vocabulary_is_keyed_by_field_and_state_together():
     """The control behind the registered `missing` collision (#134).
 
@@ -186,7 +201,9 @@ def test_the_metadata_vocabulary_is_keyed_by_field_and_state_together():
     this test as what makes it true, so the sentence is not self-certifying.
     """
     findings = scaffold.check_metadata({"description": "", "topics": []})
-    assert len(findings) == 2, "the collision is not reachable, so nothing below is a test"
+    assert len(findings) == 2, (
+        "the collision is not reachable, so nothing below is a test"
+    )
 
     states = sorted(f["state"] for f in findings)
     assert states == ["missing", "missing"], (
@@ -218,7 +235,9 @@ def test_every_finding_this_vocabulary_can_emit_carries_a_field():
     seen = set()
     for probe in probes:
         findings = scaffold.check_metadata(probe)
-        assert findings, "probe {!r} produced nothing -- the loop below is vacuous".format(probe)
+        assert findings, (
+            "probe {!r} produced nothing -- the loop below is vacuous".format(probe)
+        )
         for finding in findings:
             assert finding.get("field"), "no field on {!r}".format(finding)
             seen.add(finding["state"])

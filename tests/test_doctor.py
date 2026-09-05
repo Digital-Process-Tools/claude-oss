@@ -55,7 +55,9 @@ def test_prints_the_plugin_version_even_when_everything_else_fails(tmp_path):
     """The version is read straight off the manifest, independent of any path
     resolution, so it survives the failure that made the user run this.
     """
-    manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
     assert manifest["version"] in run(tmp_path).stdout
 
 
@@ -63,14 +65,18 @@ def test_every_line_is_one_of_four_states(tmp_path):
     """#764 added NOTICE beside OK/WARN/FAIL -- a check that already knows, in
     its own text, that it is structurally unable to ever answer."""
     out = run(tmp_path).stdout
-    body = [ln for ln in out.splitlines() if ln.strip() and not ln.startswith("VERDICT")]
+    body = [
+        ln for ln in out.splitlines() if ln.strip() and not ln.startswith("VERDICT")
+    ]
     assert body, "doctor printed no findings"
     for line in body:
         assert line.split()[0] in ("OK", "NOTICE", "WARN", "FAIL"), line
 
 
 def test_ends_on_exactly_one_verdict_line(tmp_path):
-    verdicts = [ln for ln in run(tmp_path).stdout.splitlines() if ln.startswith("VERDICT")]
+    verdicts = [
+        ln for ln in run(tmp_path).stdout.splitlines() if ln.startswith("VERDICT")
+    ]
     assert len(verdicts) == 1
     assert run(tmp_path).stdout.rstrip().splitlines()[-1].startswith("VERDICT")
 
@@ -158,7 +164,9 @@ def test_root_points_the_run_at_another_tree(tmp_path):
     done = run(elsewhere, args=["--root", target])
     assert done.returncode == 0
     assert str(target) in done.stdout
-    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")], done.stdout
+    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")], (
+        done.stdout
+    )
 
 
 def test_a_root_that_is_not_a_repo_is_a_finding_and_still_exits_zero(tmp_path):
@@ -167,7 +175,11 @@ def test_a_root_that_is_not_a_repo_is_a_finding_and_still_exits_zero(tmp_path):
     done = run(tmp_path, args=["--root", absent])
     assert done.returncode == 0
     assert "Traceback" not in done.stdout
-    assert [ln for ln in done.stdout.splitlines() if ln.startswith("FAIL") and "directory" in ln]
+    assert [
+        ln
+        for ln in done.stdout.splitlines()
+        if ln.startswith("FAIL") and "directory" in ln
+    ]
     assert len([ln for ln in done.stdout.splitlines() if ln.startswith("VERDICT")]) == 1
 
 
@@ -181,7 +193,9 @@ def test_root_disagreeing_with_the_environment_is_reported(tmp_path):
     done = run(tmp_path, args=["--root", flagged], project_dir=env_dir)
     assert done.returncode == 0
     disagreements = [
-        ln for ln in done.stdout.splitlines() if "CLAUDE_PROJECT_DIR" in ln and "WARN" in ln
+        ln
+        for ln in done.stdout.splitlines()
+        if "CLAUDE_PROJECT_DIR" in ln and "WARN" in ln
     ]
     assert disagreements, done.stdout
     assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")]
@@ -195,7 +209,9 @@ def test_the_environment_still_wins_over_cwd_when_no_root_is_given(tmp_path):
     done = run(tmp_path, project_dir=target)
     assert done.returncode == 0
     assert not [ln for ln in done.stdout.splitlines() if "disagree" in ln]
-    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")], done.stdout
+    assert [ln for ln in done.stdout.splitlines() if ln.startswith("OK .oss.json")], (
+        done.stdout
+    )
 
 
 # --- #62: unmeasured, end to end -------------------------------------------------
@@ -238,7 +254,13 @@ def test_a_hostile_settings_file_cannot_add_a_verdict_line(tmp_path):
     assert any("gh-pr-merge" in ln for ln in lines), lines
 
 
-CONFIG_DEPENDENT = ("clone", "worktree_root", "state_file", "CI enforcement", "owned files")
+CONFIG_DEPENDENT = (
+    "clone",
+    "worktree_root",
+    "state_file",
+    "CI enforcement",
+    "owned files",
+)
 
 
 def test_no_config_leaves_no_config_dependent_check_silent(tmp_path):
@@ -278,7 +300,9 @@ def _write_config(root, overrides=None, extra=None):
     config.update(overrides or {})
     config.update(extra or {})
     project, local = oss_config.split(config)
-    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
+    (root / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project, indent=2), encoding="utf-8"
+    )
     (root / oss_config.LOCAL_CONFIG_NAME).write_text(
         json.dumps(local, indent=2), encoding="utf-8"
     )

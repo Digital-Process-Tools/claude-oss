@@ -166,7 +166,7 @@ def test_migrate_keeps_the_original_beside_the_converted_file(tmp_path):
 
 
 def test_the_backup_is_the_original_bytes_not_a_re_encoding_of_them(tmp_path):
-    """"Kept whole" has to mean the bytes.
+    """ "Kept whole" has to mean the bytes.
 
     `read_text` translates newlines, so a state file written on Windows round-trips
     through the backup with its CRLFs replaced -- a copy that is not what it is a copy
@@ -387,7 +387,9 @@ def test_a_failed_write_leaves_the_original_the_receipt_calls_unchanged(
 
     result = oss_state.migrate(path)
 
-    assert result["state"] == oss_state.CANNOT_MIGRATE, "the injected failure never fired"
+    assert result["state"] == oss_state.CANNOT_MIGRATE, (
+        "the injected failure never fired"
+    )
     assert "No space left on device" in result["reason"]
     # The sentence the receipt makes, checked against the file rather than the string.
     assert path.read_bytes() == original

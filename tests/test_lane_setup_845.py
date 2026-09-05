@@ -104,7 +104,9 @@ def test_expired_record_is_not_checked(tmp_path):
     root.mkdir()
     lane_dir = root / "408"
     lane_dir.mkdir()
-    _write_record(root, 408, str(lane_dir), age_seconds=lane_setup.LANE_RECORD_TTL_SECONDS + 10)
+    _write_record(
+        root, 408, str(lane_dir), age_seconds=lane_setup.LANE_RECORD_TTL_SECONDS + 10
+    )
     lane_dir.rmdir()
 
     result = lane_setup.detect_vanished_worktrees(str(root))
@@ -147,7 +149,15 @@ def _cli_check_vanished(tmp_path, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), "--check-vanished", "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--check-vanished",
+            "--repo",
+            str(tmp_path),
+            "--json",
+        ]
+        + list(extra_args),
         subject="lane_setup.py --check-vanished",
         capture_output=True,
         text=True,
@@ -222,9 +232,15 @@ def test_cli_check_vanished_refuses_alongside_suggest_companions(tmp_path):
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     done = spawn_guard.run(
         [
-            sys.executable, str(SCRIPT),
-            "--suggest-companions", "100", "--lane", "scripts/foo.py",
-            "--check-vanished", "--repo", str(tmp_path),
+            sys.executable,
+            str(SCRIPT),
+            "--suggest-companions",
+            "100",
+            "--lane",
+            "scripts/foo.py",
+            "--check-vanished",
+            "--repo",
+            str(tmp_path),
         ],
         subject="lane_setup.py --suggest-companions + --check-vanished",
         capture_output=True,

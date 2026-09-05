@@ -68,7 +68,10 @@ def _governing_files():
             continue
         if parts[0] == "tests" and rel.name == "test_git_count_proxy_236.py":
             continue
-        if parts[0] in ("skills", "agents", "commands", "scripts") or str(rel) == "CLAUDE.md":
+        if (
+            parts[0] in ("skills", "agents", "commands", "scripts")
+            or str(rel) == "CLAUDE.md"
+        ):
             files.append(path)
     return files
 
@@ -76,15 +79,21 @@ def _governing_files():
 def test_governing_files_exist():
     """A suite that silently found no files would pass the check below vacuously."""
     files = _governing_files()
-    assert files, "no governing prose/scripts found -- the sweep below would check nothing"
+    assert files, (
+        "no governing prose/scripts found -- the sweep below would check nothing"
+    )
 
 
 def test_anti_pattern_detector_fires_on_the_broken_form():
     """Positive control: the regex must actually be able to catch the class it guards."""
     offending = "commits = len(subprocess.check_output(['git', 'log', '--oneline']).splitlines())"
     also_offending = "rtk git log v0.5.0..main --oneline | wc -l"
-    not_offending = "piping `git log` through `wc -l` corrupts an empty range through the proxy"
-    assert not ANTI_PATTERN.search(offending)  # this shape needs its own guard; not this one
+    not_offending = (
+        "piping `git log` through `wc -l` corrupts an empty range through the proxy"
+    )
+    assert not ANTI_PATTERN.search(
+        offending
+    )  # this shape needs its own guard; not this one
     assert ANTI_PATTERN.search(also_offending), (
         "the detector must fire on a piped git log | wc -l count -- if it does not, "
         "the sweep below is checking nothing"

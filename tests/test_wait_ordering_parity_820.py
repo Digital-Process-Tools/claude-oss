@@ -74,7 +74,9 @@ def test_step_3_specifically_carries_the_fact_not_just_the_document():
     step 3 itself, where dispatch is decided, not merely somewhere in the
     2000-line file."""
     text = TICK_MD.read_text(encoding="utf-8")
-    step_3_start = text.index("3. **Act on what is open before starting anything new.**")
+    step_3_start = text.index(
+        "3. **Act on what is open before starting anything new.**"
+    )
     step_4_start = text.index("4. **Take the handback")
     step_3_body = text[step_3_start:step_4_start]
     assert _states_wait_is_not_an_act(step_3_body), (

@@ -49,7 +49,9 @@ DOCTOR_MODE = 0o644
 # ModuleNotFoundError, which is a real state this suite tests separately
 # (`real_modules=False`), not one to trip into by accident here.
 _REAL_MODULES = ["doctor.py", "oss_config.py", "oss_state.py", "dispatch_rank.py"]
-_REAL_MODULES += sorted(p.name for p in (REPO_ROOT / "scripts").glob("doctor_check_*.py"))
+_REAL_MODULES += sorted(
+    p.name for p in (REPO_ROOT / "scripts").glob("doctor_check_*.py")
+)
 
 
 def _require_shell():
@@ -59,7 +61,9 @@ def _require_shell():
 
 def _require_git():
     if GIT is None:
-        pytest.skip("no git on PATH, so no repository can be built to open a session over")
+        pytest.skip(
+            "no git on PATH, so no repository can be built to open a session over"
+        )
 
 
 def _executable(path, text):
@@ -71,7 +75,9 @@ def _executable(path, text):
 def _doctor(log, body, status=0):
     return (
         "#!/bin/sh\n"
-        + 'for a in "$@"; do echo "$a" >> "' + str(log) + '"; done\n'
+        + 'for a in "$@"; do echo "$a" >> "'
+        + str(log)
+        + '"; done\n'
         + body
         + "exit %d\n" % status
     )
@@ -92,7 +98,9 @@ def _plugin(tmp_path, doctor_body, real_modules=True):
     path.chmod(DOCTOR_MODE)
     if real_modules:
         for name in _REAL_MODULES:
-            shutil.copy2(str(REPO_ROOT / "scripts" / name), str(root / "scripts" / name))
+            shutil.copy2(
+                str(REPO_ROOT / "scripts" / name), str(root / "scripts" / name)
+            )
     return root, log
 
 
@@ -113,7 +121,9 @@ def run(repo, plugin_root, env_extra=None):
         bindir / "claude",
         "#!/bin/sh\n"
         + 'if [ "${1:-}" = "mcp" ]; then exit 1; fi\n'
-        + 'for a in "$@"; do echo "$a" >> "' + str(argv_log) + '"; done\n'
+        + 'for a in "$@"; do echo "$a" >> "'
+        + str(argv_log)
+        + '"; done\n'
         + "exit 0\n",
     )
     home = Path(repo).parent / "_home"
@@ -136,7 +146,9 @@ def run(repo, plugin_root, env_extra=None):
         stderr=subprocess.PIPE,
         universal_newlines=True,
     )
-    argv = argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    argv = (
+        argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    )
     return done, argv
 
 

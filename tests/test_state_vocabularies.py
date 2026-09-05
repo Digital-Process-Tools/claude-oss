@@ -260,7 +260,9 @@ def _module_states(source, label="<source>"):
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
-        if not (isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)):
+        if not (
+            isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+        ):
             continue
         for target in node.targets:
             if isinstance(target, ast.Name):
@@ -445,7 +447,9 @@ def test_a_module_that_will_not_read_is_could_not_enumerate_and_never_clean():
     # Windows that write is encoded with the console's codepage: an em dash or a
     # non-ASCII path in an OS error would raise UnicodeEncodeError and take the run
     # out at the report rather than at the fault.
-    detailed = sweep({"gone.py": None}, {"gone.py": _printable("OSError: — café\nline 2")})
+    detailed = sweep(
+        {"gone.py": None}, {"gone.py": _printable("OSError: — café\nline 2")}
+    )
     assert detailed["errors"] == ["gone.py: could not be read: OSError: ? caf? line 2"]
     assert all(32 <= ord(ch) < 127 for ch in detailed["errors"][0])
 
@@ -483,12 +487,7 @@ def test_the_enumerator_sees_a_collision_a_reader_can_see():
 
 def test_a_state_set_by_assignment_is_seen_not_missed():
     """`payload["state"] = X` is how release_publish.execute reaches two of its five."""
-    source = (
-        "DONE = 'created'\n"
-        "def execute(p):\n"
-        "    p['state'] = DONE\n"
-        "    return p\n"
-    )
+    source = "DONE = 'created'\ndef execute(p):\n    p['state'] = DONE\n    return p\n"
     report = sweep({"m.py": source})
     assert report["vocabularies"]["m.py"]["execute"] == {"created": [3]}
 
@@ -538,7 +537,10 @@ def test_every_multi_site_state_is_registered_with_a_reason(shipped):
         "MULTI_SITE_STATES: {0}. Either rename one site so the two situations are "
         "tellable apart by a caller that branches on `state`, or add an entry saying "
         "why they are one thing.".format(
-            ["{0}:{1}:{2} at {3}".format(m, f, s, seen[(m, f, s)]) for m, f, s in unregistered]
+            [
+                "{0}:{1}:{2} at {3}".format(m, f, s, seen[(m, f, s)])
+                for m, f, s in unregistered
+            ]
         )
     )
     stale = sorted(key for key in MULTI_SITE_STATES if key not in seen)
@@ -549,8 +551,10 @@ def test_every_multi_site_state_is_registered_with_a_reason(shipped):
     )
     for key in sorted(MULTI_SITE_STATES):
         count, why = MULTI_SITE_STATES[key]
-        assert len(seen[key]) == count, "{0} now has {1} site(s), registered as {2}: {3}".format(
-            key, len(seen[key]), count, seen[key]
+        assert len(seen[key]) == count, (
+            "{0} now has {1} site(s), registered as {2}: {3}".format(
+                key, len(seen[key]), count, seen[key]
+            )
         )
         assert why.strip(), "{0} is registered with no reason".format(key)
 
@@ -579,6 +583,7 @@ def test_release_publish_keeps_its_two_vocabularies_under_different_keys(shipped
         "notes_section emits `state` again; its vocabulary (found/empty/missing) is "
         "not the publish lifecycle's and must not share the key"
     )
+
 
 # --- vocabularies that arrive merged, and states that arrive fanned in ---------
 
@@ -691,7 +696,9 @@ def test_every_fan_in_state_is_single_site_and_names_a_guard_that_exists(shipped
         label, function, state = key
         causes, guard_file, guard_test = FAN_IN_STATES[key]
         sites = shipped["vocabularies"].get(label, {}).get(function, {}).get(state)
-        assert sites, "{0}:{1} no longer emits {2!r} at all".format(label, function, state)
+        assert sites, "{0}:{1} no longer emits {2!r} at all".format(
+            label, function, state
+        )
         assert len(sites) == 1, (
             "{0}:{1}:{2} is now emitted from {3} sites, so the static sweep can see "
             "it and MULTI_SITE_STATES is where it belongs -- not here".format(

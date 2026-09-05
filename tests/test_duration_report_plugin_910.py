@@ -47,14 +47,18 @@ def _run_stub_test(extra_args, keep=None):
     stub_path = stub_dir / "test_stub.py"
     try:
         stub_path.write_text(_STUB_TEST_BODY, encoding="utf-8")
-        args = [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-q",
-            "-o",
-            "addopts=" + _STUB_ADDOPTS,
-        ] + extra_args + [str(stub_path)]
+        args = (
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "-o",
+                "addopts=" + _STUB_ADDOPTS,
+            ]
+            + extra_args
+            + [str(stub_path)]
+        )
         result = spawn_guard.run(
             args,
             subject="whether duration_report_plugin's terminal summary appears for this stub run",
@@ -71,7 +75,9 @@ def _run_stub_test(extra_args, keep=None):
         shutil.rmtree(stub_dir, ignore_errors=True)
 
 
-def test_a_normal_run_with_no_baseline_reports_no_baseline_and_the_real_numbers(tmp_path):
+def test_a_normal_run_with_no_baseline_reports_no_baseline_and_the_real_numbers(
+    tmp_path,
+):
     baseline_path = tmp_path / "nope.json"
     output = _run_stub_test(["--duration-baseline-path", str(baseline_path)])
     assert "test-durations: no-baseline" in output, output
@@ -84,11 +90,15 @@ def test_a_collect_only_run_reports_could_not_measure(tmp_path):
     suite. This is the issue's own acceptance criterion, driven end to end
     rather than only asserted on the pure function."""
     baseline_path = tmp_path / "nope.json"
-    output = _run_stub_test(["--collect-only", "--duration-baseline-path", str(baseline_path)])
+    output = _run_stub_test(
+        ["--collect-only", "--duration-baseline-path", str(baseline_path)]
+    )
     assert "test-durations: could-not-measure" in output, output
 
 
-def test_a_run_with_an_existing_baseline_reports_measured_and_compares_against_it(tmp_path):
+def test_a_run_with_an_existing_baseline_reports_measured_and_compares_against_it(
+    tmp_path,
+):
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
         '{"slowest_share": 0.5, "slowest_nodeid": "tests/x.py::y", "total_seconds": 2.0}',

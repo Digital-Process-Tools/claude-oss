@@ -28,7 +28,9 @@ def _assistant(model="claude-sonnet-5", content=None, usage=None, attribution=No
         "type": "assistant",
         "message": {
             "model": model,
-            "content": content if content is not None else [{"type": "text", "text": "hi"}],
+            "content": content
+            if content is not None
+            else [{"type": "text", "text": "hi"}],
             "usage": usage
             or {
                 "cache_read_input_tokens": 100,
@@ -46,9 +48,7 @@ def _user_tool_result(text, is_error=False):
     return {
         "type": "user",
         "message": {
-            "content": [
-                {"type": "tool_result", "content": text, "is_error": is_error}
-            ]
+            "content": [{"type": "tool_result", "content": text, "is_error": is_error}]
         },
     }
 
@@ -90,7 +90,7 @@ REAL_REFUSAL_TEXTS = {
     ),
     "jit-context-block": (
         "# JIT Context: supertool-required.md (matched: ~.*)\n---\n"
-        "title: \"Read, Edit, Write, Glob and Grep go through supertool\""
+        'title: "Read, Edit, Write, Glob and Grep go through supertool"'
     ),
     "plain-op-error": "--- read:missing.py ---\nERROR: no such file: missing.py",
 }
@@ -177,7 +177,16 @@ def test_analyze_transcript_splits_turns_by_tool_use_and_no_tool_shape(tmp_path)
     _write_jsonl(
         path,
         [
-            _assistant(content=[{"type": "tool_use", "name": "Bash", "input": {"command": "supertool 'read:a.py'"}}], attribution="oss:developer"),
+            _assistant(
+                content=[
+                    {
+                        "type": "tool_use",
+                        "name": "Bash",
+                        "input": {"command": "supertool 'read:a.py'"},
+                    }
+                ],
+                attribution="oss:developer",
+            ),
             _assistant(content=[{"type": "thinking", "thinking": "hmm"}]),
             _assistant(content=[{"type": "text", "text": "done"}]),
         ],
@@ -279,7 +288,9 @@ def test_aggregate_reports_no_transcripts_found_distinctly_from_zero_refusals(tm
     assert report_empty["state"] == "no-transcripts-found"
 
     populated_root = tmp_path / "populated"
-    _write_jsonl(populated_root / "agent-6.jsonl", [_assistant(attribution="oss:developer")])
+    _write_jsonl(
+        populated_root / "agent-6.jsonl", [_assistant(attribution="oss:developer")]
+    )
     report_measured = tr.run(roots=[populated_root])
     assert report_measured["state"] == "measured"
     assert report_measured["transcripts_found"] == 1
@@ -299,10 +310,14 @@ def test_run_reports_unreadable_files_separately_from_clean_ones(tmp_path):
     assert report["state"] == "measured"
     assert report["transcripts_found"] == 2
     # The unreadable one is named, not silently dropped from the count.
-    assert any(item["path"].endswith("agent-bad.jsonl") for item in report["unreadable_files"])
+    assert any(
+        item["path"].endswith("agent-bad.jsonl") for item in report["unreadable_files"]
+    )
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ")
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ"
+)
 def test_discover_transcripts_reports_an_unreadable_directory_with_a_control(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
@@ -337,7 +352,9 @@ def test_discover_transcripts_reports_an_unreadable_directory_with_a_control(tmp
         os.chmod(blocked_sub, old_mode)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ")
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ"
+)
 def test_discover_transcripts_reports_a_root_whose_own_path_is_unreadable(tmp_path):
     """Regression, found by audit: `Path.exists()` swallows PermissionError on
     some interpreter versions (CLAUDE.md documents this exact class for
@@ -372,7 +389,9 @@ def test_discover_transcripts_reports_a_root_whose_own_path_is_unreadable(tmp_pa
             )
         files, unreadable_dirs = tr.discover_transcripts([root])
         assert files == []
-        assert unreadable_dirs, "an inaccessible root must be named, not silently treated as absent"
+        assert unreadable_dirs, (
+            "an inaccessible root must be named, not silently treated as absent"
+        )
     finally:
         os.chmod(parent, old_mode)
 
@@ -531,9 +550,8 @@ def test_filtered_run_does_not_report_the_filtered_out_files_as_unparsed(tmp_pat
         "a file the filter excluded was never offered to the parser and must "
         "not be counted as unparsed"
     )
-    assert (
-        filtered["transcripts_found"] - filtered["transcripts_parsed"]
-        == len(filtered["unreadable_files"])
+    assert filtered["transcripts_found"] - filtered["transcripts_parsed"] == len(
+        filtered["unreadable_files"]
     )
     # ...and the filter is still visible, in its own named field, so a filtered
     # run cannot be mistaken for an unfiltered one now that found == parsed.
@@ -616,14 +634,15 @@ def test_a_filtered_run_still_fills_unreadable_files_for_a_real_failure(tmp_path
     assert [item["path"] for item in filtered["unreadable_files"]] == [
         str(root / "agent-broken.jsonl")
     ]
-    assert (
-        filtered["transcripts_found"] - filtered["transcripts_parsed"]
-        == len(filtered["unreadable_files"])
+    assert filtered["transcripts_found"] - filtered["transcripts_parsed"] == len(
+        filtered["unreadable_files"]
     )
     assert filtered["transcripts_matched_agent_filter"] == 1
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ")
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX permission bits; Windows chmod semantics differ"
+)
 def test_a_filtered_run_names_a_file_it_could_not_open_at_all(tmp_path):
     """Control 2, the stronger form: a file that cannot be *opened* (not merely
     one whose bytes do not parse) under a filtered run. Kept in its own test

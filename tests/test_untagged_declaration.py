@@ -77,6 +77,7 @@ def _config(**overrides):
 # .oss.json: the key exists, and its shape is refused rather than escaped
 # --------------------------------------------------------------------------- #
 
+
 def _untagged_problems(value, absent=False):
     config = _config()
     if not absent:
@@ -104,16 +105,19 @@ def test_absent_null_and_empty_are_all_accepted():
     assert _untagged_problems(["0.1.0", "0.2.0"]) == []
 
 
-@pytest.mark.parametrize("value", [
-    HOSTILE,                 # a command substitution, and not a list either
-    "0.1.0",                 # a bare string where a list belongs
-    ["0.1"],                 # not x.y.z
-    ["v0.1.0"],              # the tag spelling, not the version
-    ["0.1.0 0.2.0"],         # space-separated inside one entry
-    [17],                    # not a string at all
-    ["0.1.0,0.2.0"],         # the comma belongs between list entries
-    [HOSTILE],
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        HOSTILE,  # a command substitution, and not a list either
+        "0.1.0",  # a bare string where a list belongs
+        ["0.1"],  # not x.y.z
+        ["v0.1.0"],  # the tag spelling, not the version
+        ["0.1.0 0.2.0"],  # space-separated inside one entry
+        [17],  # not a string at all
+        ["0.1.0,0.2.0"],  # the comma belongs between list entries
+        [HOSTILE],
+    ],
+)
 def test_an_untagged_declaration_that_is_not_a_list_of_versions_is_refused(value):
     problems = _untagged_problems(value)
     assert problems, "accepted {!r}".format(value)
@@ -129,11 +133,15 @@ def test_the_refusal_names_the_key_and_the_offending_value():
 # The generated workflow carries it, and the three states render apart
 # --------------------------------------------------------------------------- #
 
+
 def _check_links_line(config):
     """The generated workflow's `--check-links` command line, on its own."""
     body = scaffold.render_owned(GENERATED_WORKFLOW, config, plugin_root=REPO_ROOT)
-    lines = [line.strip() for line in body.splitlines()
-             if "--check-links" in line and not line.strip().startswith("#")]
+    lines = [
+        line.strip()
+        for line in body.splitlines()
+        if "--check-links" in line and not line.strip().startswith("#")
+    ]
     assert len(lines) == 1, lines
     return lines[0]
 
@@ -164,11 +172,16 @@ def test_the_workflow_says_which_of_the_three_states_it_was_built_from():
     the same on a command line and are not the same decision."""
     bodies = {
         "absent": scaffold.render_owned(
-            GENERATED_WORKFLOW, _config(), plugin_root=REPO_ROOT),
+            GENERATED_WORKFLOW, _config(), plugin_root=REPO_ROOT
+        ),
         "empty": scaffold.render_owned(
-            GENERATED_WORKFLOW, _config(changelog_untagged=[]), plugin_root=REPO_ROOT),
+            GENERATED_WORKFLOW, _config(changelog_untagged=[]), plugin_root=REPO_ROOT
+        ),
         "declared": scaffold.render_owned(
-            GENERATED_WORKFLOW, _config(changelog_untagged=["0.1.0"]), plugin_root=REPO_ROOT),
+            GENERATED_WORKFLOW,
+            _config(changelog_untagged=["0.1.0"]),
+            plugin_root=REPO_ROOT,
+        ),
     }
     assert len(set(bodies.values())) == 3, "two of the three states render identically"
     for name, body in bodies.items():
@@ -181,11 +194,15 @@ def test_a_hostile_untagged_never_reaches_a_generated_run_line():
     the refusal is repeated here -- the same reasoning as `changelog_dir` (#31)."""
     with pytest.raises(scaffold.ScaffoldError) as refusal:
         scaffold.render_owned(
-            GENERATED_WORKFLOW, _config(changelog_untagged=[HOSTILE]),
-            plugin_root=REPO_ROOT)
+            GENERATED_WORKFLOW,
+            _config(changelog_untagged=[HOSTILE]),
+            plugin_root=REPO_ROOT,
+        )
     assert "changelog_untagged" in str(refusal.value)
     # The control: a well-formed declaration in the same position renders.
-    assert "--untagged '0.1.0'" in _check_links_line(_config(changelog_untagged=["0.1.0"]))
+    assert "--untagged '0.1.0'" in _check_links_line(
+        _config(changelog_untagged=["0.1.0"])
+    )
 
 
 def test_the_whole_scaffold_refuses_a_hostile_untagged(tmp_path):
@@ -194,12 +211,15 @@ def test_the_whole_scaffold_refuses_a_hostile_untagged(tmp_path):
         scaffold.plan(tmp_path, hostile)
     with pytest.raises(scaffold.ScaffoldError):
         scaffold.apply(tmp_path, hostile, plugin_root=REPO_ROOT)
-    assert not (tmp_path / ".github").exists(), "the scaffold wrote files before refusing"
+    assert not (tmp_path / ".github").exists(), (
+        "the scaffold wrote files before refusing"
+    )
 
 
 # --------------------------------------------------------------------------- #
 # The shipped rule names the repository's own answer
 # --------------------------------------------------------------------------- #
+
 
 def test_the_shipped_rule_names_this_repositorys_untagged_versions(tmp_path):
     """The rule explained the flag generically, which is a rule about a tool
@@ -207,17 +227,27 @@ def test_the_shipped_rule_names_this_repositorys_untagged_versions(tmp_path):
     (tmp_path / ".oss").mkdir()
     (tmp_path / ".oss" / "assemble_changelog.py").write_text("", encoding="utf-8")
     oss_rules.install(tmp_path, fragments_dir="changelog.d", untagged=["0.1.0"])
-    rule = (tmp_path / ".claude" / "jit-context" / "paths" / oss_rules.LAYER
-            / "changelog-fragments.md").read_text(encoding="utf-8")
+    rule = (
+        tmp_path
+        / ".claude"
+        / "jit-context"
+        / "paths"
+        / oss_rules.LAYER
+        / "changelog-fragments.md"
+    ).read_text(encoding="utf-8")
     assert "--untagged '0.1.0'" in rule, rule
 
 
 def test_the_rules_three_states_render_apart():
     def _rule(untagged):
-        return oss_rules.changelog_fragments(".oss/assemble_changelog.py",
-                                             "changelog.d", untagged)
+        return oss_rules.changelog_fragments(
+            ".oss/assemble_changelog.py", "changelog.d", untagged
+        )
+
     absent, empty, declared = _rule(None), _rule([]), _rule(["0.1.0"])
-    assert len({absent, empty, declared}) == 3, "two of the three states render identically"
+    assert len({absent, empty, declared}) == 3, (
+        "two of the three states render identically"
+    )
     assert "--untagged" not in absent, absent
     assert "--untagged " + chr(39) * 2 in empty, empty
     assert "--untagged '0.1.0'" in declared, declared
@@ -251,8 +281,8 @@ TAGGED = """# Changelog
 #: The same file with 0.1.0 definition removed: the state
 #: `Digital-Process-Tools/claude-jit-context` is in, and cannot get out of.
 UNTAGGED_FIRST = "".join(
-    line for line in TAGGED.splitlines(True)
-    if not line.startswith("[0.1.0]:"))
+    line for line in TAGGED.splitlines(True) if not line.startswith("[0.1.0]:")
+)
 
 
 def _repo(tmp_path, text, name="repo"):
@@ -266,9 +296,19 @@ def _repo(tmp_path, text, name="repo"):
 
 def _check_links(root, *extra):
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--check-links",
-         "--dir", "changelog.d", "--changelog", "CHANGELOG.md", *extra],
-        cwd=str(root), capture_output=True, text=True,
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--check-links",
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+            *extra,
+        ],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
 
 
@@ -343,6 +383,7 @@ def test_a_declared_version_with_no_section_is_a_finding(tmp_path):
 # The declaration survives a round trip through the config file
 # --------------------------------------------------------------------------- #
 
+
 def test_a_declared_version_reaches_the_audit_that_reads_it(tmp_path):
     """End to end, because every layer above passes on its own while the chain
     between them is broken: config -> generated workflow -> the command CI runs."""
@@ -352,7 +393,9 @@ def test_a_declared_version_reaches_the_audit_that_reads_it(tmp_path):
     arguments = shlex.split(tail.split("||")[0])
     result = subprocess.run(
         [sys.executable, str(SCRIPT), *arguments],
-        cwd=str(root), capture_output=True, text=True,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == OK, result.stdout + result.stderr
     assert result.stdout.startswith("assemble    : ok"), result.stdout
@@ -362,24 +405,28 @@ def test_build_emits_the_key_so_a_maintainer_can_see_it():
     """Written as null rather than omitted. The probe cannot measure which
     sections were never tagged, and a key absent from the file it is supposed
     to be declared in is a key nobody finds."""
-    config = oss_config.build({
-        "repo": "owner/name",
-        "default_branch": "main",
-        "clone": "/src/name",
-        "files": [],
-        "labels": [],
-        "milestones": [],
-        "tags": [],
-        "merge_method": "squash",
-        "version_evidence": {},
-        "workflow_jobs": [],
-    })
+    config = oss_config.build(
+        {
+            "repo": "owner/name",
+            "default_branch": "main",
+            "clone": "/src/name",
+            "files": [],
+            "labels": [],
+            "milestones": [],
+            "tags": [],
+            "merge_method": "squash",
+            "version_evidence": {},
+            "workflow_jobs": [],
+        }
+    )
     assert "changelog_untagged" in config
     assert config["changelog_untagged"] is None
+
 
 # --------------------------------------------------------------------------- #
 # This repository's own two declarations, held against each other
 # --------------------------------------------------------------------------- #
+
 
 def test_this_repositorys_workflow_and_config_declare_the_same_versions():
     """`.github/workflows/changelog.yml` is this repository's own file rather
@@ -389,9 +436,10 @@ def test_this_repositorys_workflow_and_config_declare_the_same_versions():
     what keeps them equal.
     """
     import json
-    declared = json.loads(
-        (REPO_ROOT / ".oss.json").read_text(encoding="utf-8")
-    ).get("changelog_untagged")
+
+    declared = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8")).get(
+        "changelog_untagged"
+    )
     assert declared is not None, (
         ".oss.json declares no changelog_untagged. This repository has an "
         "untagged 0.1.0 -- an absent key here means the comparison below has "
@@ -423,8 +471,10 @@ def test_this_repositorys_workflow_and_config_declare_the_same_versions():
         assert versions == sorted(declared), (
             "{} declares {} and .oss.json declares {} -- the two answers to "
             "'which versions were never tagged' have drifted".format(
-                name, versions, sorted(declared))
+                name, versions, sorted(declared)
+            )
         )
+
 
 # --------------------------------------------------------------------------- #
 # The collapse, guarded where it actually happened
@@ -438,7 +488,8 @@ def test_this_repositorys_workflow_and_config_declare_the_same_versions():
 #: in review rather than by a test, which is why there is now a test.
 _EMPTY_LITERALS = r"\[\s*\]|" + chr(34) * 2 + "|" + chr(39) * 2
 COLLAPSE_RE = re.compile(
-    r"changelog_untagged[^\n]{0,80}?\bor\b\s*(?:" + _EMPTY_LITERALS + r")")
+    r"changelog_untagged[^\n]{0,80}?\bor\b\s*(?:" + _EMPTY_LITERALS + r")"
+)
 
 #: Every surface that could build the declaration into a command.
 COLLAPSE_SURFACES = (
@@ -455,7 +506,8 @@ def test_the_collapse_detector_fires_on_the_expression_it_is_named_for():
     """The control. A regex that matches nothing turns the sweep below into a
     sweep that never looked -- which is this repository's whole subject."""
     assert COLLAPSE_RE.search(
-        'join(json.load(open(".oss.json")).get("changelog_untagged") or [])')
+        'join(json.load(open(".oss.json")).get("changelog_untagged") or [])'
+    )
     assert COLLAPSE_RE.search('u = config.get("changelog_untagged") or []')
     # The must-not-fire half, in the same fixture: reading the key without
     # collapsing it, and an unrelated `or []`, are both fine.

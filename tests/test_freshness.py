@@ -99,12 +99,16 @@ def test_non_ascii_digits_do_not_raise_or_silently_compare_equal():
 
 
 def test_a_current_dependency_reports_ok():
-    findings = doctor.dependency_findings({"remember": "0.19.0"}, {"remember": "0.19.0"})
+    findings = doctor.dependency_findings(
+        {"remember": "0.19.0"}, {"remember": "0.19.0"}
+    )
     assert [f["state"] for f in findings] == ["current"]
 
 
 def test_a_behind_dependency_names_both_versions_and_the_fix():
-    findings = doctor.dependency_findings({"remember": "0.18.0"}, {"remember": "0.19.0"})
+    findings = doctor.dependency_findings(
+        {"remember": "0.18.0"}, {"remember": "0.19.0"}
+    )
     finding = findings[0]
     assert finding["state"] == "behind"
     assert "0.18.0" in finding["detail"] and "0.19.0" in finding["detail"]
@@ -150,8 +154,12 @@ def test_the_active_version_comes_from_the_install_record(tmp_path):
             {
                 "version": 2,
                 "plugins": {
-                    "supertool@dpt-plugins": [{"version": "0.40.0", "installPath": "/x"}],
-                    "remember@dpt-plugins": [{"version": "0.20.0", "installPath": "/y"}],
+                    "supertool@dpt-plugins": [
+                        {"version": "0.40.0", "installPath": "/x"}
+                    ],
+                    "remember@dpt-plugins": [
+                        {"version": "0.20.0", "installPath": "/y"}
+                    ],
                 },
             }
         ),
@@ -181,12 +189,20 @@ def test_the_newest_entry_wins_when_a_plugin_is_recorded_twice(tmp_path):
     record = tmp_path / "installed_plugins.json"
     record.write_text(
         json.dumps(
-            {"plugins": {"supertool@dpt-plugins": [
-                {"version": "0.9.0"}, {"version": "0.40.0"}]}}
+            {
+                "plugins": {
+                    "supertool@dpt-plugins": [
+                        {"version": "0.9.0"},
+                        {"version": "0.40.0"},
+                    ]
+                }
+            }
         ),
         encoding="utf-8",
     )
-    assert doctor.active_versions(["supertool"], record=record) == {"supertool": "0.40.0"}
+    assert doctor.active_versions(["supertool"], record=record) == {
+        "supertool": "0.40.0"
+    }
 
 
 # ------------------------------------------------------------------- owned drift
@@ -200,8 +216,13 @@ def test_owned_files_matching_what_is_shipped_are_current(tmp_path):
 
 def test_an_edited_owned_file_is_reported_as_drifted(tmp_path):
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
-    (tmp_path / ".oss" / "README.md").write_text("someone edited this\n", encoding="utf-8")
-    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    (tmp_path / ".oss" / "README.md").write_text(
+        "someone edited this\n", encoding="utf-8"
+    )
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     assert findings[".oss/README.md"]["state"] == "drifted"
     assert "/oss:scaffold" in findings[".oss/README.md"]["detail"]
 
@@ -212,7 +233,10 @@ def test_a_missing_owned_file_is_reported_as_absent(tmp_path):
     """
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     (tmp_path / ".oss" / "assemble_changelog.py").unlink()
-    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     assert findings[".oss/assemble_changelog.py"]["state"] == "absent"
 
 
@@ -225,7 +249,9 @@ def test_drift_is_never_reported_as_current_when_it_cannot_be_rendered(tmp_path)
     """If the shipped version cannot be produced, there is nothing to compare against
     and the honest answer is unknown.
     """
-    findings = doctor.owned_drift(tmp_path, _config(), plugin_root=tmp_path / "not-a-plugin")
+    findings = doctor.owned_drift(
+        tmp_path, _config(), plugin_root=tmp_path / "not-a-plugin"
+    )
     assert {f["state"] for f in findings} == {"unknown"}
 
 
@@ -248,7 +274,10 @@ def test_an_owned_file_that_cannot_be_looked_at_is_unknown_and_not_absent(tmp_pa
     # Positive control, same fixture: readable, the file is found and reported current.
     # Without this, the unknown assertion below also passes when owned_drift breaks
     # entirely and reports nothing about this path at all.
-    before = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    before = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     assert before[".oss/assemble_changelog.py"]["state"] == "current"
 
     os.chmod(str(tmp_path / ".oss"), 0o000)
@@ -264,7 +293,8 @@ def test_an_owned_file_that_cannot_be_looked_at_is_unknown_and_not_absent(tmp_pa
             )
 
         findings = {
-            f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+            f["path"]: f
+            for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
         }
     finally:
         os.chmod(str(tmp_path / ".oss"), 0o755)
@@ -320,7 +350,10 @@ def test_a_declined_trio_is_declined_and_an_ungated_repo_still_warns(tmp_path):
     """
     gated = _gated(tmp_path / "gated")
     scaffold.apply(gated, _config(), plugin_root=REPO_ROOT)
-    findings = {f["path"]: f for f in doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)
+    }
     # Scoped to the files the gate is an answer about (#479). The ungated owned files
     # were written by the same `apply` above, so they report `current` and say nothing
     # about the decline either way.
@@ -335,12 +368,16 @@ def test_a_declined_trio_is_declined_and_an_ungated_repo_still_warns(tmp_path):
     ungated.mkdir(parents=True, exist_ok=True)
     scaffold.apply(ungated, _config(), plugin_root=REPO_ROOT)
     (ungated / ".oss" / "assemble_changelog.py").unlink()
-    control = {f["path"]: f for f in doctor.owned_drift(ungated, _config(), plugin_root=REPO_ROOT)}
+    control = {
+        f["path"]: f
+        for f in doctor.owned_drift(ungated, _config(), plugin_root=REPO_ROOT)
+    }
     assert control[".oss/assemble_changelog.py"]["state"] == "absent"
     assert "Run /oss:scaffold." in control[".oss/assemble_changelog.py"]["detail"]
-    assert ("WARN", ".oss/assemble_changelog.py: not in this repo. Run /oss:scaffold.") in (
-        doctor.owned_drift_summary(list(control.values()))
-    )
+    assert (
+        "WARN",
+        ".oss/assemble_changelog.py: not in this repo. Run /oss:scaffold.",
+    ) in (doctor.owned_drift_summary(list(control.values())))
 
 
 def test_a_present_owned_file_is_still_compared_even_when_the_gate_declines(tmp_path):
@@ -351,13 +388,18 @@ def test_a_present_owned_file_is_still_compared_even_when_the_gate_declines(tmp_
     gated = _gated(tmp_path / "forced")
     scaffold.apply(gated, _config(), plugin_root=REPO_ROOT, force_owned=True)
     (gated / ".oss" / "README.md").write_text("someone edited this\n", encoding="utf-8")
-    findings = {f["path"]: f for f in doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(gated, _config(), plugin_root=REPO_ROOT)
+    }
     assert findings[".oss/README.md"]["state"] == "drifted"
     # Positive control: the other two were written by the same forced run and match.
     assert findings[".oss/assemble_changelog.py"]["state"] == "current"
 
 
-def test_a_gate_that_could_not_be_detected_is_unknown_and_never_declined(tmp_path, monkeypatch):
+def test_a_gate_that_could_not_be_detected_is_unknown_and_never_declined(
+    tmp_path, monkeypatch
+):
     """The third state of the thing doctor is now asking.
 
     scaffold declines the trio when detection returns `unknown` too -- but that is a
@@ -370,13 +412,17 @@ def test_a_gate_that_could_not_be_detected_is_unknown_and_never_declined(tmp_pat
         "check_changelog_gate",
         lambda root, config: [{"state": "unknown", "detail": "could not read: x.yml"}],
     )
-    findings = _gated_findings(doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT))
+    findings = _gated_findings(
+        doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    )
     assert {f["state"] for f in findings} == {"unknown"}, findings
     assert all("Run /oss:scaffold." not in f["detail"] for f in findings)
     assert {state for state, _ in doctor.owned_drift_summary(findings)} == {"WARN"}
 
 
-def test_a_gate_state_this_doctor_has_never_heard_of_lands_in_unknown(tmp_path, monkeypatch):
+def test_a_gate_state_this_doctor_has_never_heard_of_lands_in_unknown(
+    tmp_path, monkeypatch
+):
     """`_detect_changelog_gate` is being changed concurrently (#124) and may grow a
     fourth state. An unrecognised state must be an addition rather than a break, and
     it must not fall through to `absent` -- which is the exact wrong answer, because
@@ -385,14 +431,20 @@ def test_a_gate_state_this_doctor_has_never_heard_of_lands_in_unknown(tmp_path, 
     monkeypatch.setattr(
         scaffold,
         "check_changelog_gate",
-        lambda root, config: [{"state": "a-state-invented-tomorrow", "detail": "who knows"}],
+        lambda root, config: [
+            {"state": "a-state-invented-tomorrow", "detail": "who knows"}
+        ],
     )
-    findings = _gated_findings(doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT))
+    findings = _gated_findings(
+        doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    )
     assert {f["state"] for f in findings} == {"unknown"}, findings
     assert all("Run /oss:scaffold." not in f["detail"] for f in findings)
 
 
-def test_a_gate_check_that_raises_is_unknown_rather_than_a_traceback(tmp_path, monkeypatch):
+def test_a_gate_check_that_raises_is_unknown_rather_than_a_traceback(
+    tmp_path, monkeypatch
+):
     """doctor's whole contract is exit 0 and one VERDICT line. A consultation of
     somebody else's module must not be the thing that breaks it.
     """
@@ -401,7 +453,9 @@ def test_a_gate_check_that_raises_is_unknown_rather_than_a_traceback(tmp_path, m
         raise OSError("the tree could not be walked")
 
     monkeypatch.setattr(scaffold, "check_changelog_gate", _boom)
-    findings = _gated_findings(doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT))
+    findings = _gated_findings(
+        doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    )
     assert {f["state"] for f in findings} == {"unknown"}, findings
 
 
@@ -429,7 +483,9 @@ def test_the_changelog_gate_governs_the_changelog_owned_files_and_only_those(tmp
     plain = tmp_path / "coupling-plain"
     plain.mkdir(parents=True, exist_ok=True)
     plain_entries = {e["path"]: e["action"] for e in scaffold.plan(plain, _config())}
-    assert {plain_entries[name] for name in scaffold.OWNED} == {"replace"}, plain_entries
+    assert {plain_entries[name] for name in scaffold.OWNED} == {"replace"}, (
+        plain_entries
+    )
 
 
 # ------------------------------------------------- one gap, one fix, one line
@@ -445,8 +501,14 @@ def test_three_files_missing_for_one_reason_report_as_one_finding():
     findings and counted three times in the verdict.
     """
     lines = doctor.owned_drift_summary(
-        [_finding(name, "absent", "not in this repo. Run /oss:scaffold.")
-         for name in (".oss/README.md", ".oss/x.py", ".github/workflows/oss-changelog.yml")]
+        [
+            _finding(name, "absent", "not in this repo. Run /oss:scaffold.")
+            for name in (
+                ".oss/README.md",
+                ".oss/x.py",
+                ".github/workflows/oss-changelog.yml",
+            )
+        ]
     )
     assert len(lines) == 1, lines
     state, message = lines[0]
@@ -463,9 +525,15 @@ def test_different_facts_are_never_folded_into_one_line():
     """
     lines = doctor.owned_drift_summary(
         [
-            _finding(".oss/README.md", "absent", "not in this repo. Run /oss:scaffold."),
+            _finding(
+                ".oss/README.md", "absent", "not in this repo. Run /oss:scaffold."
+            ),
             _finding(".oss/x.py", "drifted", "differs from what the plugin ships."),
-            _finding(".github/workflows/oss-changelog.yml", "unknown", "no comparison was made"),
+            _finding(
+                ".github/workflows/oss-changelog.yml",
+                "unknown",
+                "no comparison was made",
+            ),
         ]
     )
     assert len(lines) == 3, lines
@@ -479,8 +547,10 @@ def test_a_check_that_could_not_look_is_never_reported_as_clean():
     """`unknown` is the third state this repo is named after. Grouping must not turn
     "I could not compare" into silence, which reads as "current"."""
     lines = doctor.owned_drift_summary(
-        [_finding(name, "unknown", "no comparison was made")
-         for name in (".oss/README.md", ".oss/x.py")]
+        [
+            _finding(name, "unknown", "no comparison was made")
+            for name in (".oss/README.md", ".oss/x.py")
+        ]
     )
     assert [state for state, _ in lines] == ["WARN"]
     assert "no comparison was made" in lines[0][1]
@@ -490,8 +560,10 @@ def test_current_files_still_report_one_ok_line_each():
     """The clean repo's output is not the thing being fixed, and a summary that
     swallowed it would make this test's siblings pass on an empty list."""
     lines = doctor.owned_drift_summary(
-        [{"path": name, "state": "current", "detail": name}
-         for name in (".oss/README.md", ".oss/x.py")]
+        [
+            {"path": name, "state": "current", "detail": name}
+            for name in (".oss/README.md", ".oss/x.py")
+        ]
     )
     assert lines == [("OK", ".oss/README.md"), ("OK", ".oss/x.py")]
 
@@ -594,7 +666,9 @@ def test_markdown_prose_is_cosmetic_and_a_fenced_command_is_not():
     assert doctor.owned_effect(prose_theirs, prose_ours, "r.md")["kind"] == "cosmetic"
 
     fence = "# Running it\n\n```\npython3 .oss/assemble_changelog.py {}\n```\n"
-    effect = doctor.owned_effect(fence.format("--check"), fence.format("--check-links"), "r.md")
+    effect = doctor.owned_effect(
+        fence.format("--check"), fence.format("--check-links"), "r.md"
+    )
     assert effect["kind"] == "behaviour", effect
     assert "Running it" in effect["sections"], effect
 
@@ -631,7 +705,10 @@ def test_a_crlf_checkout_of_an_owned_file_is_not_drift(tmp_path):
     target.write_bytes(lf.replace(b"\n", b"\r\n"))
     on_disk = target.read_bytes()
     assert b"\r\n" in on_disk and b"\r\r" not in on_disk, on_disk[:200]
-    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     assert findings[".oss/README.md"]["state"] == "current", findings[".oss/README.md"]
 
 
@@ -641,7 +718,10 @@ def test_an_undecodable_owned_file_is_unknown_rather_than_a_crash(tmp_path):
     that says so, not a traceback out of check_freshness."""
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     (tmp_path / ".oss" / "README.md").write_bytes(b"\xff\xfe not utf-8 \x00")
-    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     assert findings[".oss/README.md"]["state"] == "unknown", findings[".oss/README.md"]
     assert "could not be read" in findings[".oss/README.md"]["detail"]
 
@@ -653,7 +733,10 @@ def test_the_drift_line_never_claims_the_maintainer_wrote_nothing(tmp_path):
     case it cannot rule out."""
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     (tmp_path / ".oss" / "README.md").write_text("mine now\n", encoding="utf-8")
-    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     detail = findings[".oss/README.md"]["detail"]
     assert "nothing you wrote is at risk" not in detail, detail
     assert "/oss:scaffold" in detail
@@ -667,7 +750,10 @@ def test_a_drifted_workflow_says_what_re_running_would_change(tmp_path):
     target.write_text(
         target.read_text(encoding="utf-8").replace("exit 1", "exit 0"), encoding="utf-8"
     )
-    findings = {f["path"]: f for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    findings = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     finding = findings[".github/workflows/oss-changelog.yml"]
     assert finding["state"] == "drifted", finding
     assert "what it does" in finding["detail"], finding["detail"]
@@ -687,7 +773,9 @@ def test_a_key_shaped_line_inside_a_run_block_is_not_read_as_a_key():
         "jobs:\n  build:\n    steps:\n      - name: go\n        run: |\n"
         "          status: {}\n"
     )
-    effect = doctor.owned_effect(template.format("old"), template.format("new"), "w.yml")
+    effect = doctor.owned_effect(
+        template.format("old"), template.format("new"), "w.yml"
+    )
     assert effect["sections"] == ["jobs.build.steps.name.run"], effect
 
 
@@ -699,20 +787,23 @@ def test_a_backtick_fence_inside_a_tilde_fence_does_not_desync_the_tracker():
     tracker only ever looked at the first three characters, so a fixture that indented
     or prefixed it reproduced nothing.
     """
-    template = (
-        "# Title\n\n~~~\n```markdown\n~~~\n\nProse that {} the same meaning.\n"
+    template = "# Title\n\n~~~\n```markdown\n~~~\n\nProse that {} the same meaning.\n"
+    effect = doctor.owned_effect(
+        template.format("keeps"), template.format("holds"), "r.md"
     )
-    effect = doctor.owned_effect(template.format("keeps"), template.format("holds"), "r.md")
     assert effect["kind"] == "cosmetic", effect
 
 
 def test_a_truncated_section_list_says_it_was_truncated():
     """Four names read as the whole answer whether or not four was all there was, and
     the region that got cut is as likely as any to be the one worth re-running for."""
+
     def doc(marker):
         return "".join(
-            "job{}:\n  runs-on: {}\n".format(n, marker) for n in range(doctor.MAX_EFFECT_SECTIONS + 3)
+            "job{}:\n  runs-on: {}\n".format(n, marker)
+            for n in range(doctor.MAX_EFFECT_SECTIONS + 3)
         )
+
     effect = doctor.owned_effect(doc("old"), doc("new"), "w.yml")
     assert len(effect["sections"]) == doctor.MAX_EFFECT_SECTIONS, effect
     assert effect["more"] == 3, effect
@@ -732,10 +823,14 @@ def test_a_cosmetically_drifted_owned_file_says_so_instead(tmp_path):
     that changes no behaviour must not read like one that does."""
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     target = tmp_path / ".github" / "workflows" / "oss-changelog.yml"
-    target.write_text("# a note somebody added\n" + target.read_text(encoding="utf-8"),
-                      encoding="utf-8")
-    finding = {f["path"]: f for f in doctor.owned_drift(
-        tmp_path, _config(), plugin_root=REPO_ROOT)}[".github/workflows/oss-changelog.yml"]
+    target.write_text(
+        "# a note somebody added\n" + target.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    finding = {
+        f["path"]: f
+        for f in doctor.owned_drift(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }[".github/workflows/oss-changelog.yml"]
     assert finding["state"] == "drifted", finding
     assert "nothing it does changes" in finding["detail"], finding["detail"]
     assert "what it does" not in finding["detail"], finding["detail"]

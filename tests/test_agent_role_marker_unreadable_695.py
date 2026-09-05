@@ -64,7 +64,9 @@ def _init_repo(tmp_path):
     commit` that never returned leaves this file's subject exactly as unmeasured as
     one that returned the wrong thing.
     """
-    subject = "the role marker, in a git repository this fixture never finished creating"
+    subject = (
+        "the role marker, in a git repository this fixture never finished creating"
+    )
     spawn_guard.run(
         ["git", "init", "-q", str(tmp_path)], subject=subject, check=True, timeout=30
     )
@@ -82,7 +84,10 @@ def _init_repo(tmp_path):
     )
     (tmp_path / "README.md").write_text("x", encoding="utf-8")
     spawn_guard.run(
-        ["git", "-C", str(tmp_path), "add", "-A"], subject=subject, check=True, timeout=30
+        ["git", "-C", str(tmp_path), "add", "-A"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
     spawn_guard.run(
         ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],

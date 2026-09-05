@@ -123,7 +123,9 @@ def test_a_newline_in_branch_pattern_forges_no_line(tmp_path, stubbed):
         "expected exactly one extra line (the branch_pattern problem sentence); "
         "got {}: {}".format(len(forged) - len(clean), forged)
     )
-    warn = [ln for ln in forged if ln.startswith("config warn:") and "branch_pattern" in ln]
+    warn = [
+        ln for ln in forged if ln.startswith("config warn:") and "branch_pattern" in ln
+    ]
     assert len(warn) == 1, forged
     # The branch row still renders -- `compute()` reports the problem and continues,
     # it does not stop deriving the branch -- and it is still exactly one line.
@@ -187,7 +189,9 @@ def test_a_forged_repo_row_renders_as_one_line(tmp_path, stubbed):
     payload = _payload(tmp_path)
     clean = len(lane_setup.receipt(payload).splitlines())
     payload["repo"] = payload["repo"] + FORGE
-    assert len(lane_setup.receipt(payload).splitlines()) == clean, lane_setup.receipt(payload)
+    assert len(lane_setup.receipt(payload).splitlines()) == clean, lane_setup.receipt(
+        payload
+    )
 
 
 def test_a_forged_worktree_path_renders_as_one_line(tmp_path, stubbed):
@@ -200,7 +204,9 @@ def test_a_forged_worktree_path_renders_as_one_line(tmp_path, stubbed):
         "detail": "",
         "exists": False,
     }
-    assert len(lane_setup.receipt(payload).splitlines()) == clean, lane_setup.receipt(payload)
+    assert len(lane_setup.receipt(payload).splitlines()) == clean, lane_setup.receipt(
+        payload
+    )
 
 
 def test_a_forged_sha_row_renders_as_one_line(tmp_path, stubbed):
@@ -213,7 +219,9 @@ def test_a_forged_sha_row_renders_as_one_line(tmp_path, stubbed):
         "sha": "0" * 40 + FORGE,
         "detail": "",
     }
-    assert len(lane_setup.receipt(payload).splitlines()) == clean, lane_setup.receipt(payload)
+    assert len(lane_setup.receipt(payload).splitlines()) == clean, lane_setup.receipt(
+        payload
+    )
 
 
 def test_the_payload_route_still_renders_those_rows(tmp_path, stubbed):
@@ -252,7 +260,11 @@ def test_a_line_cut_by_the_fold_says_so(tmp_path, stubbed):
     """
     payload = _payload(tmp_path)
     payload["repo"] = "r" * 9000
-    row = [ln for ln in lane_setup.receipt(payload).splitlines() if ln.startswith("repo      :")]
+    row = [
+        ln
+        for ln in lane_setup.receipt(payload).splitlines()
+        if ln.startswith("repo      :")
+    ]
     assert len(row) == 1, row
     assert row[0].endswith("[truncated]"), row[0][-40:]
 

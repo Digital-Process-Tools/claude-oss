@@ -40,7 +40,13 @@ def _remember_record(tmp_path, root):
     record = tmp_path / "installed_plugins.json"
     record.write_text(
         json.dumps(
-            {"plugins": {"remember@dpt-plugins": [{"version": "0.23.0", "installPath": str(root)}]}}
+            {
+                "plugins": {
+                    "remember@dpt-plugins": [
+                        {"version": "0.23.0", "installPath": str(root)}
+                    ]
+                }
+            }
         ),
         encoding="utf-8",
     )

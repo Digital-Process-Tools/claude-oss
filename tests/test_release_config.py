@@ -163,7 +163,9 @@ def test_no_tags_means_no_inferred_pattern():
 
 def test_the_merge_method_comes_from_the_probe_and_is_null_when_unobserved():
     assert oss_config.build(_probe())["release"]["merge_method"] == "squash"
-    assert oss_config.build(_probe(merge_method=None))["release"]["merge_method"] is None
+    assert (
+        oss_config.build(_probe(merge_method=None))["release"]["merge_method"] is None
+    )
 
 
 def test_the_derived_release_block_validates():
@@ -171,7 +173,9 @@ def test_the_derived_release_block_validates():
 
 
 def test_the_derived_block_validates_on_a_bare_repo_too():
-    assert oss_config.validate(oss_config.build(_probe(tags=[], merge_method=None))) == []
+    assert (
+        oss_config.validate(oss_config.build(_probe(tags=[], merge_method=None))) == []
+    )
 
 
 # ------------------------------------------------------------------- a null commit_subject
@@ -190,7 +194,9 @@ def test_a_null_commit_subject_resolves_to_the_plugin_default():
     """
     config = _valid()
     config["release"] = _release(commit_subject=None)
-    assert oss_config.release_commit_subject(config) == oss_config.DEFAULT_COMMIT_SUBJECT
+    assert (
+        oss_config.release_commit_subject(config) == oss_config.DEFAULT_COMMIT_SUBJECT
+    )
 
 
 def test_a_configured_commit_subject_wins_over_the_default():
@@ -200,7 +206,9 @@ def test_a_configured_commit_subject_wins_over_the_default():
 
 
 def test_a_config_with_no_release_block_still_gets_the_default():
-    assert oss_config.release_commit_subject(_valid()) == oss_config.DEFAULT_COMMIT_SUBJECT
+    assert (
+        oss_config.release_commit_subject(_valid()) == oss_config.DEFAULT_COMMIT_SUBJECT
+    )
 
 
 def test_the_default_commit_subject_survives_the_validator_that_guards_the_key():

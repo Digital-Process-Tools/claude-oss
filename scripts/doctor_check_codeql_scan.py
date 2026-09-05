@@ -67,8 +67,16 @@ def _gh_api(path, run):
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "", "", exc
-    stdout = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
-    stderr = done.stderr.decode("utf-8", "replace") if isinstance(done.stderr, bytes) else (done.stderr or "")
+    stdout = (
+        done.stdout.decode("utf-8", "replace")
+        if isinstance(done.stdout, bytes)
+        else (done.stdout or "")
+    )
+    stderr = (
+        done.stderr.decode("utf-8", "replace")
+        if isinstance(done.stderr, bytes)
+        else (done.stderr or "")
+    )
     return done.returncode, stdout, stderr, None
 
 
@@ -120,14 +128,24 @@ CODEQL_LANGUAGE_FAMILIES = {
 #: "present outside the owned paths" locally -- see the module docstring's
 #: third bullet for what this can and cannot claim.
 _EXTENSION_FAMILIES = {
-    ".c": "c-cpp", ".h": "c-cpp", ".cc": "c-cpp", ".cpp": "c-cpp",
-    ".cxx": "c-cpp", ".hpp": "c-cpp", ".hxx": "c-cpp",
+    ".c": "c-cpp",
+    ".h": "c-cpp",
+    ".cc": "c-cpp",
+    ".cpp": "c-cpp",
+    ".cxx": "c-cpp",
+    ".hpp": "c-cpp",
+    ".hxx": "c-cpp",
     ".cs": "csharp",
     ".go": "go",
-    ".java": "java-kotlin", ".kt": "java-kotlin", ".kts": "java-kotlin",
-    ".js": "javascript-typescript", ".jsx": "javascript-typescript",
-    ".mjs": "javascript-typescript", ".cjs": "javascript-typescript",
-    ".ts": "javascript-typescript", ".tsx": "javascript-typescript",
+    ".java": "java-kotlin",
+    ".kt": "java-kotlin",
+    ".kts": "java-kotlin",
+    ".js": "javascript-typescript",
+    ".jsx": "javascript-typescript",
+    ".mjs": "javascript-typescript",
+    ".cjs": "javascript-typescript",
+    ".ts": "javascript-typescript",
+    ".tsx": "javascript-typescript",
     ".py": "python",
     ".rb": "ruby",
     ".swift": "swift",
@@ -211,7 +229,9 @@ def _local_families_outside_owned(project_dir, owned_dir):
             pruned = []
             for name in dirnames:
                 child = "{}/{}".format(relroot, name) if relroot else name
-                if name in _SKIP_DIR_NAMES or _is_owned_relpath(child, owned_dir, owned_files_outside_dir):
+                if name in _SKIP_DIR_NAMES or _is_owned_relpath(
+                    child, owned_dir, owned_files_outside_dir
+                ):
                     pruned.append(name)
             for name in pruned:
                 dirnames.remove(name)
@@ -266,11 +286,94 @@ def _workflow_files_mention(project_dir, needle):
     return None if unreadable else False
 
 
+def _default_setup_state(slug, run):
+    """#1062: ``("configured", [languages])`` / ``("not-configured", None)`` /
+    ``("unknown", reason)`` for ``GET /repos/{slug}/code-scanning/default-setup``.
+
+    GitHub's **default setup** enables CodeQL with no workflow file in the
+    repository at all, so the local walk this module performs cannot see it:
+    a fully scanned repository and an unscanned one are byte-identical from
+    inside the checkout. That is this repository's own named defect class --
+    an absence produced by where the tool looked, read as an absence in the
+    world -- and asking the forge is the only thing that separates them.
+
+    The third state is never folded into either answer. A 403 from a
+    permission-limited token, a call that would not run and a body that did
+    not parse all answer ``unknown``: a read that could not see the setting
+    must not render as a setting confirmed absent, the same rule
+    `doctor_check_branch_protection.branch_protection_state` already follows.
+    A clean 404 IS an answer -- the endpoint reports no default setup here --
+    and is the issue's own second outcome.
+    """
+    rc, out, err, exc = _gh_api(
+        "repos/{}/code-scanning/default-setup".format(slug), run
+    )
+    if exc is not None:
+        return (
+            "unknown",
+            "gh api .../code-scanning/default-setup did not run ({})".format(exc),
+        )
+    status = _classify_gh_api_status(rc, out, err)
+    if status == "not-found":
+        return "not-configured", None
+    if status == "forbidden":
+        return (
+            "unknown",
+            "reading code-scanning/default-setup for {} returned a permission error "
+            "(HTTP 403), which renders identically to a token that cannot see the "
+            "setting on a repo where default setup IS configured".format(slug),
+        )
+    if status != "ok":
+        return (
+            "unknown",
+            "reading code-scanning/default-setup for {} returned an unrecognised "
+            "response ({})".format(slug, (err or out).strip()[:200]),
+        )
+    try:
+        body = json.loads(out or "{}")
+    except ValueError:
+        return (
+            "unknown",
+            "the code-scanning/default-setup response did not parse as JSON",
+        )
+    if not isinstance(body, dict):
+        return (
+            "unknown",
+            "the code-scanning/default-setup response was not a JSON object",
+        )
+    state = body.get("state")
+    if state == "configured":
+        languages = body.get("languages")
+        if not isinstance(languages, list):
+            return (
+                "unknown",
+                "code-scanning/default-setup reports state=configured for {} and carried "
+                "no languages list, so which families it covers could not be read".format(
+                    slug
+                ),
+            )
+        return "configured", [
+            name.lower() for name in languages if isinstance(name, str)
+        ]
+    if state == "not-configured":
+        return "not-configured", None
+    return (
+        "unknown",
+        "code-scanning/default-setup for {} carried no recognised state (got {!r})".format(
+            slug, state
+        ),
+    )
+
+
 def codeql_scan_state(project_dir, config=None, run=None):
     """``(state, detail)`` -- one of the issue's four named outcomes:
 
     * ``"uncovered-outside-owned"`` -- a supported language exists outside
-      the owned paths;
+      the owned paths and GitHub's code-scanning default setup does not
+      cover it;
+    * ``"default-setup-covers"`` (#1062) -- a supported language exists
+      outside the owned paths and default setup already scans every one of
+      them, so there is nothing to add;
     * ``"owned-only"`` -- the only supported language present is entirely
       inside the owned paths;
     * ``"no-supported-language"`` -- CodeQL has no analyser for anything
@@ -286,10 +389,17 @@ def codeql_scan_state(project_dir, config=None, run=None):
         return "could-not-tell", reason
     rc, out, err, exc = _gh_api("repos/{}/languages".format(slug), run_)
     if exc is not None:
-        return "could-not-tell", "gh api repos/{}/languages did not run ({})".format(slug, exc)
+        return "could-not-tell", "gh api repos/{}/languages did not run ({})".format(
+            slug, exc
+        )
     status = _classify_gh_api_status(rc, out, err)
     if status == "forbidden":
-        return "could-not-tell", "reading repos/{}/languages returned a permission error (HTTP 403)".format(slug)
+        return (
+            "could-not-tell",
+            "reading repos/{}/languages returned a permission error (HTTP 403)".format(
+                slug
+            ),
+        )
     if status != "ok":
         return (
             "could-not-tell",
@@ -300,14 +410,22 @@ def codeql_scan_state(project_dir, config=None, run=None):
     try:
         languages = json.loads(out or "{}")
     except ValueError:
-        return "could-not-tell", "repos/{}/languages response did not parse as JSON".format(slug)
+        return (
+            "could-not-tell",
+            "repos/{}/languages response did not parse as JSON".format(slug),
+        )
     if not isinstance(languages, dict):
-        return "could-not-tell", "repos/{}/languages response was not a JSON object".format(slug)
+        return (
+            "could-not-tell",
+            "repos/{}/languages response was not a JSON object".format(slug),
+        )
 
     supported_families = {
         CODEQL_LANGUAGE_FAMILIES[name]
         for name, byte_count in languages.items()
-        if name in CODEQL_LANGUAGE_FAMILIES and isinstance(byte_count, int) and byte_count > 0
+        if name in CODEQL_LANGUAGE_FAMILIES
+        and isinstance(byte_count, int)
+        and byte_count > 0
     }
     owned_dir = _default_owned_dir()
     #: Self-review finding: `CODEQL_LANGUAGE_FAMILIES` is a hardcoded
@@ -369,6 +487,40 @@ def codeql_scan_state(project_dir, config=None, run=None):
         return "could-not-tell", problem
     covered = sorted(supported_families & local_families)
     if covered:
+        #: #1062: ask the forge before recommending a workflow. Default setup
+        #: and advanced setup (a workflow file) are mutually exclusive on
+        #: GitHub, so the WARN below, acted on by a maintainer whose repo is
+        #: already scanned by default setup, either fails to enable or
+        #: DISPLACES the scanner already running -- a remedy that leaves the
+        #: repository worse than ignoring the line.
+        setup_state, setup_payload = _default_setup_state(slug, run_)
+        if setup_state == "unknown":
+            return (
+                "could-not-tell",
+                "CodeQL-supported language(s) {} appear outside {}/, and whether GitHub's "
+                "code-scanning default setup already covers them is unknown -- {}. Not read "
+                "as uncovered: a workflow recommended here would displace a default setup "
+                "that may be running".format(covered, owned_dir, setup_payload),
+            )
+        if setup_state == "configured":
+            setup_languages = set(setup_payload or ())
+            gap = [family for family in covered if family not in setup_languages]
+            if not gap:
+                return (
+                    "default-setup-covers",
+                    "GitHub's code-scanning default setup is configured on {} and covers "
+                    "every CodeQL-supported language found outside {}/ ({}); it ships no "
+                    "workflow file, which is why a checkout walk alone cannot see it".format(
+                        slug, owned_dir, covered
+                    ),
+                )
+            return (
+                "uncovered-outside-owned",
+                "GitHub's code-scanning default setup is configured on {} but does not list "
+                "{}, found outside {}/ (it covers {})".format(
+                    slug, sorted(gap), owned_dir, sorted(setup_languages) or "nothing"
+                ),
+            )
         existing = _workflow_files_mention(project_dir, "codeql")
         if existing is None:
             note = " (whether a CodeQL workflow already exists could not be told)"
@@ -399,6 +551,9 @@ def check_codeql_scan(project_dir, config=None, run=None):
     maintainer to make, never something this diagnostic writes.
     """
     state, detail = codeql_scan_state(project_dir, config=config, run=run)
+    if state == "default-setup-covers":
+        doctor.report("OK", "CodeQL coverage: {}".format(detail))
+        return
     if state == "uncovered-outside-owned":
         doctor.report(
             "WARN",

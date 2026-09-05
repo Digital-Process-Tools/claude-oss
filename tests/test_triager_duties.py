@@ -136,7 +136,9 @@ def test_the_patch_sweep_fires_on_a_document_that_prescribes_it_bare():
 
 
 def test_no_document_prescribes_the_patch_label_write_without_the_warning():
-    assert EXECUTABLE_PROSE, "no executable prose found -- this check would vacuously pass"
+    assert EXECUTABLE_PROSE, (
+        "no executable prose found -- this check would vacuously pass"
+    )
     offenders = [
         str(path.relative_to(REPO_ROOT))
         for path in EXECUTABLE_PROSE
@@ -345,6 +347,7 @@ def test_the_disagreement_check_fires_on_the_brief_without_it():
 
 # --------------------------------------------------------------- anchors bite
 
+
 @pytest.mark.parametrize(
     "anchors",
     [
@@ -364,8 +367,8 @@ def test_every_anchor_is_already_flattened(anchors):
     statement about the file.
     """
     for anchor in anchors:
-        assert anchor == _flatten(anchor), "anchor is not in flattened form: {!r}".format(
-            anchor
+        assert anchor == _flatten(anchor), (
+            "anchor is not in flattened form: {!r}".format(anchor)
         )
 
 
@@ -402,7 +405,6 @@ def test_every_anchor_matches_exactly_one_place_in_the_document():
         "guard is red for a reason unrelated to the rule, and more than 1 means it "
         "can survive the rule's deletion: {}".format(wrong)
     )
-
 
 
 # ------------------------------------------------ the command doc must not disagree
@@ -504,7 +506,9 @@ def test_these_command_doc_guards_are_not_vacuous():
     says, and a deleted section would not turn one red.
     """
     sibling = REPO_ROOT / "commands" / "doctor.md"
-    assert sibling.is_file(), "commands/doctor.md is missing -- no control to compare against"
+    assert sibling.is_file(), (
+        "commands/doctor.md is missing -- no control to compare against"
+    )
     folded = _flatten(sibling.read_text(encoding="utf-8"))
     ambient = [
         phrase

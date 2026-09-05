@@ -50,7 +50,9 @@ def test_a_file_named_only_in_prose_is_still_compared(tmp_path):
     (plugin_root / "agents" / "auditor.md").write_text(reference_text, encoding="utf-8")
     (repo / "agents" / "auditor.md").write_text(reference_text, encoding="utf-8")
 
-    (plugin_root / "agents" / "developer.md").write_text("old platform band", encoding="utf-8")
+    (plugin_root / "agents" / "developer.md").write_text(
+        "old platform band", encoding="utf-8"
+    )
     (repo / "agents" / "developer.md").write_text("new platform band", encoding="utf-8")
 
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
@@ -75,7 +77,9 @@ def test_a_file_not_referenced_anywhere_is_not_added(tmp_path):
     (plugin_root / "agents").mkdir(parents=True)
     (repo / "agents").mkdir(parents=True)
 
-    (plugin_root / "agents" / "auditor.md").write_text("no references here", encoding="utf-8")
+    (plugin_root / "agents" / "auditor.md").write_text(
+        "no references here", encoding="utf-8"
+    )
     (repo / "agents" / "auditor.md").write_text("no references here", encoding="utf-8")
 
     # Present on disk, unreferenced anywhere, and different content -- if the
@@ -116,7 +120,9 @@ def test_a_reference_found_only_in_the_installed_copy_is_still_derived(tmp_path)
     (plugin_root / "agents" / "auditor.md").write_text(
         "Read `agents/developer.md`.", encoding="utf-8"
     )
-    (plugin_root / "agents" / "developer.md").write_text("installed only", encoding="utf-8")
+    (plugin_root / "agents" / "developer.md").write_text(
+        "installed only", encoding="utf-8"
+    )
 
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))
 
@@ -147,12 +153,16 @@ def test_a_reference_named_only_in_the_other_copy_is_still_derived(tmp_path):
     (repo / "agents").mkdir(parents=True)
 
     # repo's copy is stale: no delegation yet.
-    (repo / "agents" / "auditor.md").write_text("no references here yet", encoding="utf-8")
+    (repo / "agents" / "auditor.md").write_text(
+        "no references here yet", encoding="utf-8"
+    )
     # plugin_root's copy already grew the delegation this issue is about.
     (plugin_root / "agents" / "auditor.md").write_text(
         "Read `agents/developer.md`.", encoding="utf-8"
     )
-    (plugin_root / "agents" / "developer.md").write_text("installed copy", encoding="utf-8")
+    (plugin_root / "agents" / "developer.md").write_text(
+        "installed copy", encoding="utf-8"
+    )
     (repo / "agents" / "developer.md").write_text("repo copy", encoding="utf-8")
 
     payload = checklist_skew.compute(repo=str(repo), plugin_root=str(plugin_root))

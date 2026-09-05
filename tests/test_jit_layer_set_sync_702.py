@@ -167,7 +167,9 @@ def test_every_dimension_ships_exactly_the_entries_it_carries_on_disk():
             findings.append(
                 "{}/{}: in this repository's layer and shipped by nobody -- "
                 "install() deletes the layer before rewriting it, so the next "
-                "/oss:scaffold --apply discards this file (#702)".format(dimension, name)
+                "/oss:scaffold --apply discards this file (#702)".format(
+                    dimension, name
+                )
             )
         for name in shipped_only:
             findings.append(
@@ -194,7 +196,9 @@ def test_every_static_rule_body_matches_its_tracked_copy():
             try:
                 on_disk = tracked.read_text(encoding="utf-8")
             except OSError as exc:
-                findings.append("{}/{}: could not be read -- {}".format(dimension, name, exc))
+                findings.append(
+                    "{}/{}: could not be read -- {}".format(dimension, name, exc)
+                )
                 continue
             if _normalize(on_disk) != _normalize(oss_rules.RULES[dimension][name]):
                 findings.append(

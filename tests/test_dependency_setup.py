@@ -51,7 +51,9 @@ def test_a_project_with_no_memory_store_warns_with_the_fix(tmp_path):
     assert "remember" in _messages()
 
 
-def _memory(root, identity=True, data_dir=".remember", stray=False, local_install=False):
+def _memory(
+    root, identity=True, data_dir=".remember", stray=False, local_install=False
+):
     """The real layout: `config.json` in `.claude/remember/`, sessions in the `data_dir`
     that config names.
 
@@ -73,7 +75,9 @@ def _memory(root, identity=True, data_dir=".remember", stray=False, local_instal
     )
     (root / data_dir).mkdir(parents=True, exist_ok=True)
     if identity:
-        (root / data_dir / "identity.md").write_text("who the agent is\n", encoding="utf-8")
+        (root / data_dir / "identity.md").write_text(
+            "who the agent is\n", encoding="utf-8"
+        )
     if stray:
         (config_dir / "identity.md").write_text("never injected\n", encoding="utf-8")
     if local_install:
@@ -163,7 +167,9 @@ def test_the_identity_warning_names_both_directories_it_read(tmp_path):
     assert _states() == ["WARN"]
     message = _messages()
     for named in (".remember", ".claude/remember"):
-        assert named in message, "the warning does not name {}, which it read".format(named)
+        assert named in message, "the warning does not name {}, which it read".format(
+            named
+        )
 
 
 def test_a_custom_data_dir_from_the_config_is_honoured(tmp_path):
@@ -244,7 +250,9 @@ def test_the_index_is_looked_for_inside_the_layer_not_at_the_root(tmp_path):
     """An index at the rules root does not satisfy a layer that has none of its own."""
     layer = _layer(tmp_path)
     (layer / "conventions.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
-    (tmp_path / ".claude" / "jit-context" / "00-index.tsv").write_text("x\ty\n", encoding="utf-8")
+    (tmp_path / ".claude" / "jit-context" / "00-index.tsv").write_text(
+        "x\ty\n", encoding="utf-8"
+    )
     doctor.check_jit_rules(tmp_path)
     assert _states() == ["FAIL"]
 
@@ -406,7 +414,9 @@ def test_a_row_that_cannot_be_derived_is_named_rather_than_judged(tmp_path):
         "---\ntool: Bash\nmatch: ~@invocation git push\n---\n", encoding="utf-8"
     )
     index = layer / "00-index.tsv"
-    index.write_text("Bash\t(^|[;&|] *)git push\tpush-anchor.md\tremind\t\t\n", encoding="utf-8")
+    index.write_text(
+        "Bash\t(^|[;&|] *)git push\tpush-anchor.md\tremind\t\t\n", encoding="utf-8"
+    )
     _touched_after(index, entry)
 
     doctor.check_jit_rules(tmp_path)

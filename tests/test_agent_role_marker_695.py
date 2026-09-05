@@ -39,7 +39,9 @@ def _init_repo(tmp_path):
     commit` that never returned leaves this file's subject exactly as unmeasured as
     one that returned the wrong thing.
     """
-    subject = "the role marker, in a git repository this fixture never finished creating"
+    subject = (
+        "the role marker, in a git repository this fixture never finished creating"
+    )
     spawn_guard.run(
         ["git", "init", "-q", str(tmp_path)], subject=subject, check=True, timeout=30
     )
@@ -57,7 +59,10 @@ def _init_repo(tmp_path):
     )
     (tmp_path / "README.md").write_text("x", encoding="utf-8")
     spawn_guard.run(
-        ["git", "-C", str(tmp_path), "add", "-A"], subject=subject, check=True, timeout=30
+        ["git", "-C", str(tmp_path), "add", "-A"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
     spawn_guard.run(
         ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
@@ -71,7 +76,14 @@ def test_marker_survives_across_two_wholly_separate_processes(tmp_path):
     _init_repo(tmp_path)
 
     write = spawn_guard.run(
-        [sys.executable, str(SCRIPT), "--write", "sub-manager", "--root", str(tmp_path)],
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--write",
+            "sub-manager",
+            "--root",
+            str(tmp_path),
+        ],
         subject="whether --write records a role a second process can read back",
         capture_output=True,
         text=True,
@@ -83,16 +95,22 @@ def test_marker_survives_across_two_wholly_separate_processes(tmp_path):
     # in-memory state shared. This is what a later Bash tool call actually
     # looks like from the target script's point of view.
     read_back = spawn_guard.run(
-        [sys.executable, "-c", (
-            "import sys; sys.path.insert(0, {0!r}); import agent_role; "
-            "print(agent_role.current_role(root={1!r}))"
-        ).format(str(REPO / "scripts"), str(tmp_path))],
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.path.insert(0, {0!r}); import agent_role; "
+                "print(agent_role.current_role(root={1!r}))"
+            ).format(str(REPO / "scripts"), str(tmp_path)),
+        ],
         subject="what a wholly separate process reads back as the current role",
         capture_output=True,
         text=True,
         timeout=30,
     )
-    assert read_back.stdout.strip() == "sub-manager", read_back.stdout + read_back.stderr
+    assert read_back.stdout.strip() == "sub-manager", (
+        read_back.stdout + read_back.stderr
+    )
 
 
 def test_marker_works_inside_a_worktree_where_git_is_a_file(tmp_path):
@@ -120,16 +138,22 @@ def test_marker_works_inside_a_worktree_where_git_is_a_file(tmp_path):
     assert write.returncode == 0, write.stdout + write.stderr
 
     read_back = spawn_guard.run(
-        [sys.executable, "-c", (
-            "import sys; sys.path.insert(0, {0!r}); import agent_role; "
-            "print(agent_role.current_role(root={1!r}))"
-        ).format(str(REPO / "scripts"), str(wt))],
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.path.insert(0, {0!r}); import agent_role; "
+                "print(agent_role.current_role(root={1!r}))"
+            ).format(str(REPO / "scripts"), str(wt)),
+        ],
         subject="what a separate process reads back as the role inside a worktree",
         capture_output=True,
         text=True,
         timeout=30,
     )
-    assert read_back.stdout.strip() == "sub-manager", read_back.stdout + read_back.stderr
+    assert read_back.stdout.strip() == "sub-manager", (
+        read_back.stdout + read_back.stderr
+    )
 
 
 def test_no_marker_and_no_env_is_none(tmp_path):
@@ -148,7 +172,9 @@ def test_environment_still_wins_when_both_are_present(monkeypatch, tmp_path):
     assert agent_role.current_role(root=str(tmp_path)) == "sub-manager"
 
 
-def test_role_forbids_release_reads_the_marker_when_no_env_is_set(monkeypatch, tmp_path):
+def test_role_forbids_release_reads_the_marker_when_no_env_is_set(
+    monkeypatch, tmp_path
+):
     monkeypatch.delenv(agent_role.ROLE_ENV, raising=False)
     _init_repo(tmp_path)
     agent_role.write_role_marker("sub-manager", root=str(tmp_path))

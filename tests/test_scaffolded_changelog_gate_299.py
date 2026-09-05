@@ -175,7 +175,9 @@ def test_an_unreadable_workflows_directory_is_unknown_not_absent(tmp_path):
     own CLAUDE.md is named after, one function down from where it usually bites."""
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
-    (workflows / "oss-changelog.yml").write_text("name: oss changelog\n", encoding="utf-8")
+    (workflows / "oss-changelog.yml").write_text(
+        "name: oss changelog\n", encoding="utf-8"
+    )
 
     with _denied(workflows):
         state, detail = oss_config.scaffolded_changelog_gate(tmp_path)

@@ -39,12 +39,15 @@ def _read():
 # is checked for zero occurrences, so the command cannot quietly leak back into
 # the trimmed file the way #451 originally found it duplicated.
 
+
 def _ln_sf_count(text):
     return len(re.findall(r"ln -sf", text))
 
 
 def test_the_install_command_appears_once_in_docs_install():
-    assert INSTALL_DOC.is_file(), "docs/install.md is gone -- this check would vacuously pass"
+    assert INSTALL_DOC.is_file(), (
+        "docs/install.md is gone -- this check would vacuously pass"
+    )
     text = INSTALL_DOC.read_text(encoding="utf-8")
     count = _ln_sf_count(text)
     assert count == 1, (
@@ -86,8 +89,17 @@ def test_the_install_command_detector_actually_counts_a_duplicate():
 # permissive about what sits between the count and the noun, so a stray `` `oss:` ``
 # cannot hide a stale number from it again.
 
-_COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-                "seven": 7, "eight": 8, "both": 2}
+_COUNT_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "both": 2,
+}
 
 #: A count word may be followed by exactly one inline-code span before the noun (the
 #: shape the actual pre-#451 sentence used: "four `oss:` agents"), but nothing wider --
@@ -99,7 +111,9 @@ _SKILL_COUNT_RE = re.compile(
     re.I,
 )
 _COMMAND_COUNT_RE = re.compile(
-    r"\b(one|two|three|four|five|six|seven|eight|both|\d+)\b" + _BRIDGE + r"commands?\b",
+    r"\b(one|two|three|four|five|six|seven|eight|both|\d+)\b"
+    + _BRIDGE
+    + r"commands?\b",
     re.I,
 )
 
@@ -119,7 +133,9 @@ def test_the_count_detectors_read_words_and_digits():
     """The detector before the assertion that leans on it."""
     assert _stated_counts(_SKILL_COUNT_RE, "all seven `oss:` skills resolve") == [7]
     assert _stated_counts(_COMMAND_COUNT_RE, "ships 7 commands and one skill") == [7]
-    assert _stated_counts(_SKILL_COUNT_RE, "the loop, its skills, the config layer") == []
+    assert (
+        _stated_counts(_SKILL_COUNT_RE, "the loop, its skills, the config layer") == []
+    )
 
 
 def test_readme_states_no_skill_or_command_count_that_disagrees_with_the_tree():
@@ -129,8 +145,12 @@ def test_readme_states_no_skill_or_command_count_that_disagrees_with_the_tree():
     """
     actual_skills = len(sorted((REPO_ROOT / "skills").glob("*/SKILL.md")))
     actual_commands = len(sorted((REPO_ROOT / "commands").glob("*.md")))
-    assert actual_skills, "no skills/*/SKILL.md found -- this check would compare against zero"
-    assert actual_commands, "no commands/*.md found -- this check would compare against zero"
+    assert actual_skills, (
+        "no skills/*/SKILL.md found -- this check would compare against zero"
+    )
+    assert actual_commands, (
+        "no commands/*.md found -- this check would compare against zero"
+    )
     text = _read()
     stated_skills = _stated_counts(_SKILL_COUNT_RE, text)
     stated_commands = _stated_counts(_COMMAND_COUNT_RE, text)
@@ -180,10 +200,15 @@ def _doctor_cell(text):
 # #795 moved the whole Commands table out of README.md and into
 # docs/commands.md, so the table these two checks read now lives there.
 
+
 def test_the_doctor_row_is_found_at_all():
-    assert COMMANDS_DOC.is_file(), "docs/commands.md is gone -- this check would vacuously pass"
+    assert COMMANDS_DOC.is_file(), (
+        "docs/commands.md is gone -- this check would vacuously pass"
+    )
     cell = _doctor_cell(COMMANDS_DOC.read_text(encoding="utf-8"))
-    assert cell is not None, "the /oss:doctor row was not found -- this check would vacuously pass"
+    assert cell is not None, (
+        "the /oss:doctor row was not found -- this check would vacuously pass"
+    )
 
 
 def test_the_doctor_cell_is_no_longer_a_release_note():
@@ -196,7 +221,9 @@ def test_the_doctor_cell_is_no_longer_a_release_note():
     assert cell is not None
     assert len(cell) < 1200, (
         "the /oss:doctor cell is {} bytes; #451 was filed against one nearly 4x that. "
-        "Move mechanism into commands/doctor.md and leave an index here.".format(len(cell))
+        "Move mechanism into commands/doctor.md and leave an index here.".format(
+            len(cell)
+        )
     )
 
 

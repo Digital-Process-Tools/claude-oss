@@ -40,7 +40,7 @@ CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 def _frontmatter_match(text):
     for line in text.splitlines():
         if line.startswith("match:"):
-            return line[len("match:"):].strip()
+            return line[len("match:") :].strip()
     raise AssertionError("no match: line found in frontmatter")
 
 

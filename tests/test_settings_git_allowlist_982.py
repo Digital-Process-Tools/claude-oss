@@ -158,7 +158,9 @@ def test_the_blanket_git_wildcard_is_gone():
         assert content not in ("git *", "git*"), entry
 
 
-@pytest.mark.parametrize("subcommand,source", sorted(REQUIRED_SUBCOMMAND_GRANTS.items()))
+@pytest.mark.parametrize(
+    "subcommand,source", sorted(REQUIRED_SUBCOMMAND_GRANTS.items())
+)
 def test_every_real_subcommand_invocation_stays_covered(subcommand, source):
     """Must-fire half: every subcommand the loop's own briefs actually invoke keeps a
     working grant after the narrowing, or the next lane to run that call gets stopped
@@ -167,10 +169,8 @@ def test_every_real_subcommand_invocation_stays_covered(subcommand, source):
     place in the table."""
     entries = _allow_entries()
     expected = "Bash({}:*)".format(subcommand)
-    assert expected in entries, (
-        "{} is invoked at {} but no {} grant is present".format(
-            subcommand, source, expected
-        )
+    assert expected in entries, "{} is invoked at {} but no {} grant is present".format(
+        subcommand, source, expected
     )
 
 
@@ -178,8 +178,8 @@ def test_every_real_subcommand_invocation_stays_covered(subcommand, source):
 def test_every_real_op_level_invocation_stays_covered(op, source):
     entries = _allow_entries()
     expected = "Bash({}:*)".format(op)
-    assert expected in entries, (
-        "{} is invoked at {} but no {} grant is present".format(op, source, expected)
+    assert expected in entries, "{} is invoked at {} but no {} grant is present".format(
+        op, source, expected
     )
 
 

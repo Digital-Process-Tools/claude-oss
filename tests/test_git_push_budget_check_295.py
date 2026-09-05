@@ -10,6 +10,7 @@ get right: a repo with NO pre-push hook is `not-applicable`, reported OK --
 not a gap, because the 300s default is correct there and a checker that warns
 on every correctly configured repo is worthless by the time anyone reads it.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -69,9 +70,7 @@ def test_hook_present_and_budget_not_under_an_explicit_timeout_is_actionable(tmp
     would be refused by the op itself (not strictly under the timeout from
     the same merged entry) must not be reported as satisfied."""
     _hook(tmp_path)
-    _supertool_config(
-        tmp_path, {"ops": {"git-push": {"budget": 1000, "timeout": 900}}}
-    )
+    _supertool_config(tmp_path, {"ops": {"git-push": {"budget": 1000, "timeout": 900}}})
     state, detail = doctor.git_push_budget_state(tmp_path)
     assert state == doctor.GIT_PUSH_BUDGET_ACTIONABLE
     assert "1000" in detail and "900" in detail
@@ -81,9 +80,7 @@ def test_hook_present_and_budget_equal_to_explicit_timeout_is_actionable(tmp_pat
     """Strictly under, not under-or-equal -- same refusal supertool's own
     git-push op makes; equal must not read as configured."""
     _hook(tmp_path)
-    _supertool_config(
-        tmp_path, {"ops": {"git-push": {"budget": 900, "timeout": 900}}}
-    )
+    _supertool_config(tmp_path, {"ops": {"git-push": {"budget": 900, "timeout": 900}}})
     state, _detail = doctor.git_push_budget_state(tmp_path)
     assert state == doctor.GIT_PUSH_BUDGET_ACTIONABLE
 
@@ -178,9 +175,7 @@ def test_check_git_push_budget_never_measures_the_hook_by_running_it(tmp_path):
 def _worktree_git_file(worktree_root, gitdir):
     """The `.git` FILE a real `git worktree add` writes -- a single
     `gitdir: <path>` line, no trailing directory."""
-    (worktree_root / ".git").write_text(
-        "gitdir: {}\n".format(gitdir), encoding="utf-8"
-    )
+    (worktree_root / ".git").write_text("gitdir: {}\n".format(gitdir), encoding="utf-8")
 
 
 def _worktree_gitdir(clone_root, name):
@@ -215,7 +210,9 @@ def test_worktree_git_file_finds_the_shared_hook_must_fire(tmp_path):
     assert state == doctor.GIT_PUSH_BUDGET_CONFIGURED
 
 
-def test_worktree_with_no_hook_in_the_clone_is_still_not_applicable_must_not_fire(tmp_path):
+def test_worktree_with_no_hook_in_the_clone_is_still_not_applicable_must_not_fire(
+    tmp_path,
+):
     """MUST NOT FIRE: the paired negative control -- a worktree whose CLONE
     genuinely has no pre-push hook must still read not-applicable, not
     actionable and not could-not-tell."""

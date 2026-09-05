@@ -60,7 +60,13 @@ def test_a_fresh_receipt_stands_down_and_makes_no_network_call(tmp_path):
     """The must-fire half: within the debounce window, `update()` never reaches
     `runner` at all -- not the marketplace refresh, not the per-plugin update."""
     now = time.time()
-    receipt = {"state": "current", "at": now - 5, "plugin": "oss", "from": "9.9.9", "to": "9.9.9"}
+    receipt = {
+        "state": "current",
+        "at": now - 5,
+        "plugin": "oss",
+        "from": "9.9.9",
+        "to": "9.9.9",
+    }
     runner = _Runner([(True, "")])
     document = plugin_update.update(
         root=str(tmp_path),
@@ -79,8 +85,13 @@ def test_a_stale_receipt_does_not_debounce(tmp_path):
     """The must-not-fire control: a receipt older than the window is not "just ran",
     so a real check still happens."""
     now = time.time()
-    receipt = {"state": "current", "at": now - plugin_update.DEBOUNCE_SECONDS - 1,
-               "plugin": "oss", "from": "9.9.9", "to": "9.9.9"}
+    receipt = {
+        "state": "current",
+        "at": now - plugin_update.DEBOUNCE_SECONDS - 1,
+        "plugin": "oss",
+        "from": "9.9.9",
+        "to": "9.9.9",
+    }
     runner = _Runner([(True, "")])
     document = plugin_update.update(
         root=str(tmp_path),
@@ -140,7 +151,13 @@ def test_debouncing_does_not_slide_the_window_forever(tmp_path):
     runner = _Runner([(True, "")])
     now = time.time()
     real_at = now
-    receipt = {"state": "current", "at": real_at, "plugin": "oss", "from": "9.9.9", "to": "9.9.9"}
+    receipt = {
+        "state": "current",
+        "at": real_at,
+        "plugin": "oss",
+        "from": "9.9.9",
+        "to": "9.9.9",
+    }
     for _ in range(5):
         now += plugin_update.DEBOUNCE_SECONDS / 10  # 5 hops stay well inside the window
         receipt = plugin_update.update(
@@ -166,7 +183,9 @@ def test_debouncing_does_not_slide_the_window_forever(tmp_path):
         now=now,
         receipt=receipt,
     )
-    assert runner.calls, "the window never expired even once past the real check's own age"
+    assert runner.calls, (
+        "the window never expired even once past the real check's own age"
+    )
 
 
 def test_a_receipt_from_the_future_does_not_debounce(tmp_path):
@@ -190,17 +209,32 @@ def test_main_reads_the_real_receipt_and_threads_it_through(tmp_path, monkeypatc
     """`main()` is the one production caller that opts a run into debouncing --
     it reads the existing receipt once and hands it to `update()`."""
     now = time.time()
-    fresh = {"state": "updated", "at": now - 1, "plugin": "oss", "from": "0.1.0", "to": "0.2.0"}
+    fresh = {
+        "state": "updated",
+        "at": now - 1,
+        "plugin": "oss",
+        "from": "0.1.0",
+        "to": "0.2.0",
+    }
     monkeypatch.setattr(plugin_update, "read_receipt", lambda path=None: fresh)
     captured = {}
 
-    def fake_update(root=None, plugin_root=None, plugins_root=None, env=None,
-                     runner=None, now=None, receipt=None):
+    def fake_update(
+        root=None,
+        plugin_root=None,
+        plugins_root=None,
+        env=None,
+        runner=None,
+        now=None,
+        receipt=None,
+    ):
         captured["receipt"] = receipt
         return {"state": "updated", "at": now or time.time(), "debounced": True}
 
     monkeypatch.setattr(plugin_update, "update", fake_update)
-    monkeypatch.setattr(plugin_update, "write_receipt", lambda document, path=None: None)
+    monkeypatch.setattr(
+        plugin_update, "write_receipt", lambda document, path=None: None
+    )
     plugin_update.main(["--root", str(tmp_path)])
     assert captured["receipt"] == fresh
 
@@ -209,18 +243,28 @@ def test_a_receipt_unreadable_is_not_threaded_as_a_dict(tmp_path, monkeypatch):
     """`ReceiptUnreadable` must not be mistaken for a fresh dict receipt -- it is
     the OPPOSITE fact (something is there and broken, not "just ran cleanly")."""
     monkeypatch.setattr(
-        plugin_update, "read_receipt",
+        plugin_update,
+        "read_receipt",
         lambda path=None: plugin_update.ReceiptUnreadable("boom"),
     )
     captured = {}
 
-    def fake_update(root=None, plugin_root=None, plugins_root=None, env=None,
-                     runner=None, now=None, receipt=None):
+    def fake_update(
+        root=None,
+        plugin_root=None,
+        plugins_root=None,
+        env=None,
+        runner=None,
+        now=None,
+        receipt=None,
+    ):
         captured["receipt"] = receipt
         return {"state": "could-not-check", "at": time.time()}
 
     monkeypatch.setattr(plugin_update, "update", fake_update)
-    monkeypatch.setattr(plugin_update, "write_receipt", lambda document, path=None: None)
+    monkeypatch.setattr(
+        plugin_update, "write_receipt", lambda document, path=None: None
+    )
     plugin_update.main(["--root", str(tmp_path)])
     assert captured["receipt"] is None
 
@@ -237,7 +281,9 @@ def test_print_state_emits_one_tab_separated_line(tmp_path, monkeypatch, capsys)
         "detail": "line one\twith a tab\nand a newline",
     }
     monkeypatch.setattr(plugin_update, "update", lambda **kw: document)
-    monkeypatch.setattr(plugin_update, "write_receipt", lambda document, path=None: None)
+    monkeypatch.setattr(
+        plugin_update, "write_receipt", lambda document, path=None: None
+    )
     plugin_update.main(["--root", str(tmp_path), "--print-state"])
     out = capsys.readouterr().out
     lines = out.splitlines()
@@ -251,11 +297,20 @@ def test_print_state_emits_one_tab_separated_line(tmp_path, monkeypatch, capsys)
     assert "\n" not in fields[3]
 
 
-def test_print_state_renders_none_versions_as_empty_fields(tmp_path, monkeypatch, capsys):
+def test_print_state_renders_none_versions_as_empty_fields(
+    tmp_path, monkeypatch, capsys
+):
     monkeypatch.setattr(plugin_update, "read_receipt", lambda path=None: None)
-    document = {"state": "could-not-check", "from": None, "to": None, "detail": "offline"}
+    document = {
+        "state": "could-not-check",
+        "from": None,
+        "to": None,
+        "detail": "offline",
+    }
     monkeypatch.setattr(plugin_update, "update", lambda **kw: document)
-    monkeypatch.setattr(plugin_update, "write_receipt", lambda document, path=None: None)
+    monkeypatch.setattr(
+        plugin_update, "write_receipt", lambda document, path=None: None
+    )
     plugin_update.main(["--root", str(tmp_path), "--print-state"])
     fields = capsys.readouterr().out.splitlines()[0].split("\t")
     assert fields == ["could-not-check", "", "", "offline"]

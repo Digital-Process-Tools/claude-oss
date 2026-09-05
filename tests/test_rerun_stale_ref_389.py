@@ -72,4 +72,6 @@ def test_skill_does_not_recommend_rerun_for_a_moved_base():
         and re.search(r"re-resolve|does not re-resolve", fake_fix)
         and re.search(r"run id", fake_fix, re.IGNORECASE)
         and "update-branch" in fake_fix
-    ), "the positive control itself must fail all four checks -- otherwise they check nothing"
+    ), (
+        "the positive control itself must fail all four checks -- otherwise they check nothing"
+    )

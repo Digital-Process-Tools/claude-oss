@@ -33,7 +33,9 @@ def _read():
 
 def test_readme_is_under_eighty_lines():
     lines = _read().splitlines()
-    assert len(lines) < 80, "README.md is {} lines, not under 80 (#795)".format(len(lines))
+    assert len(lines) < 80, "README.md is {} lines, not under 80 (#795)".format(
+        len(lines)
+    )
 
 
 # --------------------------------------------------------------------------- #

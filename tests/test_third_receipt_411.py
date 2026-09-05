@@ -58,7 +58,9 @@ def _third_receipt_unmet(text):
     """
     missing = []
     if VALUE not in text:
-        missing.append("the value `{}` the third receipt is recorded under".format(VALUE))
+        missing.append(
+            "the value `{}` the third receipt is recorded under".format(VALUE)
+        )
     if ANCHOR_FIELD not in text:
         missing.append(
             "`{}`, the quoted fragment that makes the pull-request receipt "
@@ -70,7 +72,9 @@ def _third_receipt_unmet(text):
 def test_the_documents_that_route_findings_exist():
     """A vanished file would pass every "not in" below for the wrong reason."""
     for name, path in DOCUMENTS:
-        assert path.is_file(), "{} is gone; the checks below would be vacuous".format(name)
+        assert path.is_file(), "{} is gone; the checks below would be vacuous".format(
+            name
+        )
     assert SCHEMA.is_file()
 
 

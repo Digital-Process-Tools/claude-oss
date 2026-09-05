@@ -29,7 +29,10 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import select_issues  # noqa: E402
 
-DECLARED = {"filed_by_loop": "filed-by-loop", "priority": ["priority-high", "priority-medium", "priority-low"]}
+DECLARED = {
+    "filed_by_loop": "filed-by-loop",
+    "priority": ["priority-high", "priority-medium", "priority-low"],
+}
 
 
 def _issue(number, labels=None, **extra):
@@ -39,12 +42,16 @@ def _issue(number, labels=None, **extra):
 
 
 def _no_op_checker(numbers, mode, run=None, repo=None):
-    return [{"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"} for n in numbers]
+    return [
+        {"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"}
+        for n in numbers
+    ]
 
 
 # ---------------------------------------------------------------------------
 # 1: `lanes_read_ok` / `lanes_read_why` -- held_files gets a real third state
 # ---------------------------------------------------------------------------
+
 
 def test_lanes_read_ok_false_forces_could_not_select_never_none_available():
     """The negative half: a lane inventory that could not be read must never
@@ -75,6 +82,7 @@ def test_lanes_read_ok_true_with_a_real_collision_still_finds_it():
     """`lanes_read_ok: True` alongside a genuine, populated `held_files` must
     still run collision detection normally -- the new check does not
     accidentally short-circuit the existing path."""
+
     def resolve(repo, patterns):
         return {"patterns": [], "files": list(patterns)}
 
@@ -93,15 +101,21 @@ def test_lanes_read_ok_true_with_a_real_collision_still_finds_it():
 # 2: the #998 guard must fire regardless of whether held_files is populated
 # ---------------------------------------------------------------------------
 
+
 def test_a_refused_lane_pattern_is_dark_even_with_no_held_files():
     """The gap #1067 found: with `held_files` empty (lane 1 of any tick), a
     refused lane pattern used to never be looked at -- the `and held_files`
     condition skipped the whole block, #998's guard included."""
+
     def resolve(repo, patterns):
         return {
             "patterns": [
-                {"pattern": patterns[0], "state": "refused", "files": [],
-                 "detail": "ValueError: bad pattern"}
+                {
+                    "pattern": patterns[0],
+                    "state": "refused",
+                    "files": [],
+                    "detail": "ValueError: bad pattern",
+                }
             ],
             "files": [],
         }
@@ -120,9 +134,13 @@ def test_a_readable_lane_pattern_with_no_held_files_still_finds_candidates():
     held files at all (nothing to collide with) must still reach
     `candidates` -- the hoist must not turn every lane-pattern-bearing issue
     dark."""
+
     def resolve(repo, patterns):
         return {
-            "patterns": [{"pattern": p, "state": "literal", "files": [p], "detail": ""} for p in patterns],
+            "patterns": [
+                {"pattern": p, "state": "literal", "files": [p], "detail": ""}
+                for p in patterns
+            ],
             "files": list(patterns),
         }
 
@@ -139,13 +157,22 @@ def test_a_readable_lane_pattern_with_no_held_files_still_finds_candidates():
 # 3: a lane pattern that resolves to nothing is dark, not disjoint
 # ---------------------------------------------------------------------------
 
+
 def test_a_lane_pattern_resolving_to_nothing_is_dark_not_disjoint():
     """A well-formed, checked lane pattern that names zero files on disk
     (`glob-no-match`) must not pass as disjoint from every live lane -- there
     is no file set here to have compared."""
+
     def resolve(repo, patterns):
         return {
-            "patterns": [{"pattern": patterns[0], "state": "glob-no-match", "files": [], "detail": ""}],
+            "patterns": [
+                {
+                    "pattern": patterns[0],
+                    "state": "glob-no-match",
+                    "files": [],
+                    "detail": "",
+                }
+            ],
             "files": [],
         }
 
@@ -164,9 +191,13 @@ def test_a_lane_pattern_that_resolves_to_real_files_is_the_positive_control():
     """The pair to the test above: a lane pattern that DOES resolve to real
     files, and does not overlap what is held, is a genuine disjoint result
     and must still produce a candidate."""
+
     def resolve(repo, patterns):
         return {
-            "patterns": [{"pattern": p, "state": "literal", "files": [p], "detail": ""} for p in patterns],
+            "patterns": [
+                {"pattern": p, "state": "literal", "files": [p], "detail": ""}
+                for p in patterns
+            ],
             "files": list(patterns),
         }
 

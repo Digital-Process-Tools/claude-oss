@@ -79,7 +79,9 @@ def test_the_other_three_ops_in_the_block_are_untouched():
     match = BOARD_READ_RE.search(_text())
     assert match, "board-read block not found (see first test)"
     gh_prs_suffix, gh_branch_suffix, worktrees_suffix = (
-        match.group(1), match.group(3), match.group(4)
+        match.group(1),
+        match.group(3),
+        match.group(4),
     )
     assert gh_prs_suffix == "" and gh_branch_suffix == "" and worktrees_suffix == "", (
         "gh-prs, gh-branch and git-worktrees must stay bare in the board-read "

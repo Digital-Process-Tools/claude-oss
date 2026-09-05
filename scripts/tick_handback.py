@@ -190,13 +190,19 @@ def _normalize_enum_value(raw):
     # untrusted excerpt on this receipt already gets (`quoted`, `detail`,
     # the value named inside `reason`) rather than reaching a terminal raw.
     return (_rr.fold_to_one_ascii_line(raw.strip()) or "").lower()
+
+
 _BLOCKER = re.compile(r"^[ \t>*_#]*BLOCKER:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 _REASON = re.compile(r"^[ \t>*_#]*REASON:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 # #818: the two facts a `paused` tick must name, reusing the field names
 # scripts/oss_state.py's --wait-dispatch/--wait-observable already give a
 # tick closing blocked (#337) rather than inventing a second vocabulary.
-_WAIT_DISPATCH = re.compile(r"^[ \t>*_#]*WAIT-DISPATCH:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
-_WAIT_OBSERVABLE = re.compile(r"^[ \t>*_#]*WAIT-OBSERVABLE:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
+_WAIT_DISPATCH = re.compile(
+    r"^[ \t>*_#]*WAIT-DISPATCH:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE
+)
+_WAIT_OBSERVABLE = re.compile(
+    r"^[ \t>*_#]*WAIT-OBSERVABLE:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE
+)
 # #773: which of "What ends a tick"'s three states (skills/manager/SKILL.md) this
 # completed tick is in -- required, not optional, for the same reason BLOCKER:/
 # REASON: are required on their own states: an *optional* field gives "absent" and
@@ -343,7 +349,7 @@ def classify(message):
     # did) let a stale BLOCKER:/REASON: line sitting before the real header
     # be read as that header's own detail, even once the header itself was
     # picked correctly.
-    tail = text[header.end():]
+    tail = text[header.end() :]
 
     if declared == "completed":
         match, count = _find_field(_TICK_ENDS, tail)
@@ -458,7 +464,8 @@ def classify(message):
     wait_observable_match, wait_observable_count = _find_field(_WAIT_OBSERVABLE, tail)
     if wait_dispatch_count != 1 or wait_observable_count != 1:
         problems = [
-            "no {0} line".format(name) if count == 0
+            "no {0} line".format(name)
+            if count == 0
             else "{0} {1} lines, not one".format(count, name)
             for name, count in (
                 ("WAIT-DISPATCH:", wait_dispatch_count),

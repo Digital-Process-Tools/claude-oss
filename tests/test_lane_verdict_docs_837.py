@@ -66,7 +66,9 @@ def test_every_availability_state_is_named_in_dispatch_md():
     source = LANE_SETUP.read_text(encoding="utf-8")
     lane_report_source = _lane_report_source(source)
     states = _availability_states(lane_report_source)
-    assert states, "extraction found nothing -- the scoping regex is broken, not the doc"
+    assert states, (
+        "extraction found nothing -- the scoping regex is broken, not the doc"
+    )
     assert {
         "available",
         "blocked",

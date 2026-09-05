@@ -53,18 +53,30 @@ def _real_git_repo(tmp_path):
     repo.mkdir()
     done = subprocess.run(
         ["git", "init", "--quiet", str(repo)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {0}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {0}".format(done.stderr.strip() or done.returncode)
+        )
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True
+    )
     (repo / "README.md").write_text("x\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True
+    )
     return repo
 
 
@@ -97,7 +109,9 @@ def test_held_from_live_lanes_still_prunes_on_a_successful_removal(tmp_path):
     repo = _real_git_repo(tmp_path)
     subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
-    record_path = _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    record_path = _write_record(
+        worktree_root, 694, files=["commands/tick.md"], branch="fix/694"
+    )
 
     first = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     assert first["state"] == "resolved"
@@ -127,7 +141,9 @@ def test_held_from_live_lanes_reports_a_failed_prune_separately(tmp_path):
 
     root = lane_setup.lane_registry_dir(worktree_root)
     if not _confirm_directory_write_denied(root):
-        pytest.skip("this platform/filesystem does not deny a write via the directory mode bit")
+        pytest.skip(
+            "this platform/filesystem does not deny a write via the directory mode bit"
+        )
 
     os.chmod(root, 0o500)
     try:
@@ -176,6 +192,7 @@ def test_held_from_live_lanes_treats_filenotfounderror_as_success_not_failure(tm
         return real_remove(path)
 
     import lane_setup as _ls
+
     orig = _ls.os.remove
     _ls.os.remove = _fake_remove
     try:
@@ -193,17 +210,32 @@ def _minimal_payload(repo, derived_held, lane_patterns):
         "repo": str(repo),
         "config": {"state": "ok", "problems": []},
         "base": {
-            "state": "resolved", "remote": "origin", "ref": "origin/main",
-            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "detail": "",
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "detail": "",
         },
         "branch": {
-            "state": "resolved", "pattern": "fix/{issue}", "name": "fix/792",
-            "detail": "", "exists_local": False, "exists_remote": False,
+            "state": "resolved",
+            "pattern": "fix/{issue}",
+            "name": "fix/792",
+            "detail": "",
+            "exists_local": False,
+            "exists_remote": False,
         },
-        "worktree": {"state": "resolved", "root": "/tmp", "path": "/tmp/792", "detail": "", "exists": False},
+        "worktree": {
+            "state": "resolved",
+            "root": "/tmp",
+            "path": "/tmp/792",
+            "detail": "",
+            "exists": False,
+        },
         "board": {"state": "ok", "lines": []},
         "lanes": None,
-        "lane": lane_setup.lane_report(repo, lane_patterns, None, derived_held=derived_held),
+        "lane": lane_setup.lane_report(
+            repo, lane_patterns, None, derived_held=derived_held
+        ),
     }
 
 
@@ -218,7 +250,13 @@ def test_receipt_names_a_failed_prune_so_it_is_never_read_as_a_release(tmp_path)
         "held": {},
         "lanes": {
             "stale_pruned": [],
-            "prune_failed": [{"issue": 42, "branch": "fix/42", "detail": "PermissionError: [Errno 13] denied"}],
+            "prune_failed": [
+                {
+                    "issue": 42,
+                    "branch": "fix/42",
+                    "detail": "PermissionError: [Errno 13] denied",
+                }
+            ],
         },
         "detail": "",
     }

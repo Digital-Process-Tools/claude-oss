@@ -102,7 +102,9 @@ def test_a_frontmatter_with_no_tools_line_is_not_read_as_no_bash_grant(tmp_path)
 
 
 def test_agents_directory_is_not_empty():
-    assert list(AGENTS_DIR.glob("*.md")), "no agents/*.md found -- every check below would vacuously pass"
+    assert list(AGENTS_DIR.glob("*.md")), (
+        "no agents/*.md found -- every check below would vacuously pass"
+    )
 
 
 def test_every_bash_granted_agent_is_accounted_for():
@@ -123,8 +125,12 @@ def test_developer_and_triager_are_still_the_named_exceptions():
     """Pin the two exclusions so a future edit that widens either set is a
     deliberate change to this file, not a silent one."""
     granted = bash_granted_agent_names()
-    assert "developer.md" in granted, "agents/developer.md no longer grants Bash -- re-check the #874 exclusion"
-    assert "triager.md" in granted, "agents/triager.md no longer grants Bash -- re-check the no-test-concern exclusion"
+    assert "developer.md" in granted, (
+        "agents/developer.md no longer grants Bash -- re-check the #874 exclusion"
+    )
+    assert "triager.md" in granted, (
+        "agents/triager.md no longer grants Bash -- re-check the no-test-concern exclusion"
+    )
 
 
 def _assert_marker_with_control(name, marker):
@@ -134,7 +140,9 @@ def _assert_marker_with_control(name, marker):
         "(#877) appears to be missing or reworded".format(name, marker)
     )
     without_it = text.replace(marker, "")
-    assert without_it != text, "fixture construction did not remove the marker -- control is void"
+    assert without_it != text, (
+        "fixture construction did not remove the marker -- control is void"
+    )
     assert marker not in without_it
 
 
@@ -146,7 +154,9 @@ def test_auditor_bounds_test_behaviour_to_reasoned_not_run():
 
 
 def test_release_auditor_bounds_test_behaviour_to_reasoned_not_run():
-    _assert_marker_with_control("release-auditor.md", REQUIRED_MARKER["release-auditor.md"])
+    _assert_marker_with_control(
+        "release-auditor.md", REQUIRED_MARKER["release-auditor.md"]
+    )
     text = _text("release-auditor.md")
     assert "may not run the suite" in text
     assert "`reasoned`" in text and "`observed`" in text

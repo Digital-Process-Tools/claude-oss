@@ -196,6 +196,7 @@ def test_a_breaking_declaration_outranks_every_other_section(tmp_path):
     assert payload["change_class"] == "breaking"
     assert payload["bump"] == "major"
 
+
 # --------------------------------------------------------------- the third state
 
 
@@ -393,7 +394,9 @@ def test_a_compatibility_line_with_no_reason_cannot_decide(tmp_path):
     """The flag without the sentence is the same unsourced verdict one field along.
     #171's fragment already carried the sentence; the field only makes it findable."""
     root = _repo(tmp_path)
-    _frag(root, "113.removed.md", "- a key is gone (#113).\n- Compatibility: compatible\n")
+    _frag(
+        root, "113.removed.md", "- a key is gone (#113).\n- Compatibility: compatible\n"
+    )
 
     code, payload = _payload(["--repo", str(root), "--current", "0.4.0"])
 
@@ -424,6 +427,7 @@ def test_the_assumption_behind_an_undeclared_fragment_is_counted_and_named(tmp_p
     assert code == PROPOSED
     assert payload["assumed_compatible"] == 1
     assert "assumed" in out
+
 
 # ------------------------------------------------------- the third state names nothing
 
@@ -520,6 +524,7 @@ def test_a_refusal_about_the_fragments_outranks_a_missing_baseline(tmp_path):
 
     assert code == COULD_NOT_DECIDE
     assert payload["state"] == "could-not-decide"
+
 
 # ------------------------------------------------- deriving the baseline from a tag
 
@@ -680,7 +685,9 @@ def test_nothing_from_inside_a_fragment_reaches_the_receipt(tmp_path):
     assert "113.removed.md" in out
 
 
-def test_a_forged_verdict_in_a_compatibility_reason_does_not_reach_the_receipt(tmp_path):
+def test_a_forged_verdict_in_a_compatibility_reason_does_not_reach_the_receipt(
+    tmp_path,
+):
     root = _repo(tmp_path)
     _frag(
         root,
@@ -742,6 +749,7 @@ def test_every_payload_carries_every_key(tmp_path):
     _, no_baseline = _payload(["--repo", str(root), "--current", "0.4"])
 
     assert set(refused) == set(proposed) == set(no_baseline)
+
 
 # ------------------------------------------------- the rule is written down, twice
 #
@@ -811,7 +819,7 @@ def test_the_version_rule_anchors_fire_on_the_gate_as_it_was_stated_before():
     """
     the_unsourced_gate = (
         "4. **Every site in `version_sites` bumped**, swept **unfiltered**:\n\n"
-        "   ```bash\n   git grep -n \"<the new version>\"\n   ```\n\n"
+        '   ```bash\n   git grep -n "<the new version>"\n   ```\n\n'
         "   A sweep keyed on the *outgoing* version only finds sites that are "
         "half-bumped. It cannot find one frozen at some third value, which is the "
         "one most likely to be wrong. A README is not a `.json`, so an allowlist by "
@@ -878,6 +886,7 @@ def test_this_repos_own_removal_fragment_declares_its_compatibility():
         + repr(undeclared)
     )
 
+
 def test_a_fragment_that_cannot_be_read_is_reported_rather_than_dropped(tmp_path):
     """`Path.is_file` swallows every OSError and answers False, so a filter built on
     it drops the entry it could not stat and the count comes back one short -- a
@@ -914,6 +923,7 @@ def test_the_same_directory_proposes_once_the_unreadable_entry_is_a_file(tmp_pat
     assert payload["fragments"] == 2
     assert payload["version"] == "0.5.0"
 
+
 # The rule an agent is *given* is a fourth place the convention lives, and it is the
 # one that reaches an author at the moment they write a fragment. The three documents
 # above are pulled; this one is pushed. It came back as a review finding on this very
@@ -922,7 +932,12 @@ def test_the_same_directory_proposes_once_the_unreadable_entry_is_a_file(tmp_pat
 # handed would omit the field and stop the next release.
 
 RULE_LAYER = (
-    REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
+    REPO_ROOT
+    / ".claude"
+    / "jit-context"
+    / "paths"
+    / "01-oss"
+    / "changelog-fragments.md"
 )
 
 

@@ -74,7 +74,9 @@ def test_a_decision_is_kept_short(tmp_path):
     refusal, not a truncation: truncating would silently lose the half that mattered.
     """
     with pytest.raises(oss_state.StateError):
-        oss_state.append(tmp_path / "state.json", STAMP, "x" * (oss_state.MAX_DECISION + 1))
+        oss_state.append(
+            tmp_path / "state.json", STAMP, "x" * (oss_state.MAX_DECISION + 1)
+        )
 
 
 def test_last_returns_the_most_recent_entry(tmp_path):
@@ -101,7 +103,9 @@ def test_append_refuses_a_detail_that_is_not_serialisable(tmp_path):
     the tick that broke it is already over.
     """
     with pytest.raises(oss_state.StateError):
-        oss_state.append(tmp_path / "state.json", STAMP, "ok", detail={"fn": lambda: None})
+        oss_state.append(
+            tmp_path / "state.json", STAMP, "ok", detail={"fn": lambda: None}
+        )
 
 
 def test_a_failed_append_leaves_the_previous_history_intact(tmp_path):

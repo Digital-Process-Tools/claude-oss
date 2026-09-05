@@ -158,7 +158,11 @@ KNOWN_AGENT_TYPES = ("oss:developer", "oss:triager")
 DISPATCH_STATE_DISPATCHED = "dispatched"
 DISPATCH_STATE_RESUMED = "resumed"
 DISPATCH_STATE_AGENT_UNREACHABLE = "agent-unreachable"
-DISPATCH_STATES = (DISPATCH_STATE_DISPATCHED, DISPATCH_STATE_RESUMED, DISPATCH_STATE_AGENT_UNREACHABLE)
+DISPATCH_STATES = (
+    DISPATCH_STATE_DISPATCHED,
+    DISPATCH_STATE_RESUMED,
+    DISPATCH_STATE_AGENT_UNREACHABLE,
+)
 
 # A dispatched lane's own fill (#852): how many issues it carried, and -- when that is
 # fewer than dispatch_rank.MAX_LANE -- why, from the same closed vocabulary
@@ -478,7 +482,7 @@ def _entry_from(key, value):
     this code does not understand survives the conversion. Only `at` and `decision` are
     derived, and `decision` is derived only when the source plainly carried one.
     """
-    at = key[len("tick_"):] if key.startswith("tick_") else key
+    at = key[len("tick_") :] if key.startswith("tick_") else key
     decision = value.get("decision")
     if not isinstance(decision, str) or not decision.strip():
         decision = NO_DECISION
@@ -514,7 +518,9 @@ def _discard(tmp):
     except FileNotFoundError:
         return ""
     except OSError as exc:
-        return "; a partial copy was left at {} and can be deleted ({})".format(tmp, exc)
+        return "; a partial copy was left at {} and can be deleted ({})".format(
+            tmp, exc
+        )
     return ""
 
 
@@ -789,8 +795,18 @@ def _count(value, label):
     return value
 
 
-def tick_cost(session, window, start_ctx, calls, context_carried, is_first=False,
-              prior_floor=None, session_has_prior=False, why=None, rate=None):
+def tick_cost(
+    session,
+    window,
+    start_ctx,
+    calls,
+    context_carried,
+    is_first=False,
+    prior_floor=None,
+    session_has_prior=False,
+    why=None,
+    rate=None,
+):
     """What one tick cost to *carry* (#694): its own start context, calls, context
     carried, and -- when it can be told -- the session floor and what was inherited.
 
@@ -922,7 +938,9 @@ def tick_cost_line(record):
 def _tick_cost_sentence(record):
     """`tick_cost_line`'s branches. Unfolded on purpose -- it has one caller."""
     if not isinstance(record, dict):
-        raise StateError("tick_cost_line takes a tick_cost record, not {!r}".format(record))
+        raise StateError(
+            "tick_cost_line takes a tick_cost record, not {!r}".format(record)
+        )
     state = record.get("state")
     window = record.get("window") or "an unstated window"
     session = record.get("session") or "an unstated session"
@@ -931,7 +949,9 @@ def _tick_cost_sentence(record):
     if state == TICK_COST_COULD_NOT_MEASURE:
         return head + (
             "could not measure ({}) -- no start context, no calls, no context "
-            "carried, and this is not zero".format(record.get("why") or "no reason recorded")
+            "carried, and this is not zero".format(
+                record.get("why") or "no reason recorded"
+            )
         )
     if state == TICK_COST_FLOOR_UNKNOWN:
         return head + (
@@ -955,7 +975,9 @@ def _tick_cost_sentence(record):
                 _cost_suffix(record),
             )
         )
-    return head + "unrecognised tick-cost state {!r}, so nothing is claimed".format(state)
+    return head + "unrecognised tick-cost state {!r}, so nothing is claimed".format(
+        state
+    )
 
 
 def _session_tick_cost_floor(path, session):
@@ -1217,10 +1239,17 @@ def lane_models(lanes, window, why=None):
         }
 
     if not isinstance(lanes, list):
-        raise StateError("lanes must be a list of mappings or None, not {!r}".format(lanes))
+        raise StateError(
+            "lanes must be a list of mappings or None, not {!r}".format(lanes)
+        )
 
     if not lanes:
-        return {"state": LANES_NONE_DISPATCHED, "window": window, "lanes": [], "why": None}
+        return {
+            "state": LANES_NONE_DISPATCHED,
+            "window": window,
+            "lanes": [],
+            "why": None,
+        }
 
     normalized = []
     for position, lane in enumerate(lanes, start=1):
@@ -1240,7 +1269,9 @@ def lane_models(lanes, window, why=None):
 
         model = lane.get("model")
         if not model or not str(model).strip():
-            raise StateError("lane {}: model is required and must not be empty".format(position))
+            raise StateError(
+                "lane {}: model is required and must not be empty".format(position)
+            )
 
         choice = lane.get("choice")
         if choice not in (CHOICE_DEFAULT, CHOICE_OVERRIDE):
@@ -1259,10 +1290,14 @@ def lane_models(lanes, window, why=None):
                 )
             lane_why = str(lane_why).strip()
         else:
-            lane_why = str(lane_why).strip() if lane_why and str(lane_why).strip() else None
+            lane_why = (
+                str(lane_why).strip() if lane_why and str(lane_why).strip() else None
+            )
 
         agent_type = lane.get("agent_type")
-        agent_type = str(agent_type).strip() if agent_type and str(agent_type).strip() else None
+        agent_type = (
+            str(agent_type).strip() if agent_type and str(agent_type).strip() else None
+        )
 
         # #880: `dispatch_state` is optional and defaults to DISPATCH_STATE_DISPATCHED
         # -- every entry recorded before this field existed is read as an ordinary
@@ -1273,8 +1308,9 @@ def lane_models(lanes, window, why=None):
             dispatch_state = DISPATCH_STATE_DISPATCHED
         elif dispatch_state not in DISPATCH_STATES:
             raise StateError(
-                "lane {} (issue {}): dispatch_state must be one of {}, not "
-                "{!r}".format(position, issue, ", ".join(DISPATCH_STATES), dispatch_state)
+                "lane {} (issue {}): dispatch_state must be one of {}, not {!r}".format(
+                    position, issue, ", ".join(DISPATCH_STATES), dispatch_state
+                )
             )
 
         dispatch_why = lane.get("dispatch_state_why")
@@ -1290,7 +1326,9 @@ def lane_models(lanes, window, why=None):
             dispatch_why = str(dispatch_why).strip()
         else:
             dispatch_why = (
-                str(dispatch_why).strip() if dispatch_why and str(dispatch_why).strip() else None
+                str(dispatch_why).strip()
+                if dispatch_why and str(dispatch_why).strip()
+                else None
             )
 
         normalized.append(
@@ -1330,7 +1368,11 @@ def lane_models(lanes, window, why=None):
             dispatched_counts[key] = dispatched_counts.get(key, 0) + 1
             dispatched_display.setdefault(key, lane["issue"])
     redispatched = sorted(
-        (dispatched_display[key] for key, count in dispatched_counts.items() if count > 1),
+        (
+            dispatched_display[key]
+            for key, count in dispatched_counts.items()
+            if count > 1
+        ),
         key=str,
     )
     if redispatched:
@@ -1362,7 +1404,9 @@ def lane_models_line(record):
 def _lane_models_sentence(record):
     """`lane_models_line`'s branches. Unfolded on purpose -- it has one caller."""
     if not isinstance(record, dict):
-        raise StateError("lane_models_line takes a lane record, not {!r}".format(record))
+        raise StateError(
+            "lane_models_line takes a lane record, not {!r}".format(record)
+        )
     state = record.get("state")
     window = record.get("window") or "an unstated window"
     head = "lane models {}: ".format(window)
@@ -1400,11 +1444,14 @@ def _lane_models_sentence(record):
             # agent went unreachable, is exactly the silent absence this repository is
             # named after.
             resumed = sum(
-                1 for lane in lanes
-                if isinstance(lane, dict) and lane.get("dispatch_state") == DISPATCH_STATE_RESUMED
+                1
+                for lane in lanes
+                if isinstance(lane, dict)
+                and lane.get("dispatch_state") == DISPATCH_STATE_RESUMED
             )
             unreachable = sum(
-                1 for lane in lanes
+                1
+                for lane in lanes
                 if isinstance(lane, dict)
                 and lane.get("dispatch_state") == DISPATCH_STATE_AGENT_UNREACHABLE
             )
@@ -1436,11 +1483,17 @@ def _lane_models_sentence(record):
             # Deliberately not the recorded sentence with a caveat appended -- a reader
             # skimming for the mix would take the mix and leave the caveat, which is a
             # partial sum read as a total (the same trap `intake_line` guards against).
-            return "PARTIAL, " + mix[len(head):] + " -- {}".format(
-                record.get("why") or "some ticks contributed no record"
+            return (
+                "PARTIAL, "
+                + mix[len(head) :]
+                + " -- {}".format(
+                    record.get("why") or "some ticks contributed no record"
+                )
             )
         return mix
-    return head + "unrecognised lane models state {!r}, so nothing is claimed".format(state)
+    return head + "unrecognised lane models state {!r}, so nothing is claimed".format(
+        state
+    )
 
 
 def lane_model_trend(entries):
@@ -1517,7 +1570,9 @@ def lane_model_trend(entries):
         trend["state"] = LANES_COULD_NOT_ESTABLISH
         trend["why"] = (
             "no tick in this history recorded a lane model mix ({} could not "
-            "establish, {} said nothing about their lanes)".format(uncounted, without_record)
+            "establish, {} said nothing about their lanes)".format(
+                uncounted, without_record
+            )
         )
         return trend
     if uncounted or without_record:
@@ -1581,19 +1636,30 @@ def lane_fill(entries, window, why=None):
 
     if not isinstance(entries, list):
         raise StateError(
-            "lane fill entries must be a list of mappings or None, not {!r}".format(entries)
+            "lane fill entries must be a list of mappings or None, not {!r}".format(
+                entries
+            )
         )
 
     if not entries:
-        return {"state": LANE_FILL_NONE_DISPATCHED, "window": window, "lanes": [], "why": None}
+        return {
+            "state": LANE_FILL_NONE_DISPATCHED,
+            "window": window,
+            "lanes": [],
+            "why": None,
+        }
 
     normalized = []
     for position, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
-            raise StateError("lane fill {} is not a mapping ({!r})".format(position, entry))
+            raise StateError(
+                "lane fill {} is not a mapping ({!r})".format(position, entry)
+            )
 
         primary = entry.get("primary")
-        primary_blank = primary is None or (isinstance(primary, str) and not primary.strip())
+        primary_blank = primary is None or (
+            isinstance(primary, str) and not primary.strip()
+        )
         if isinstance(primary, bool) or primary_blank:
             raise StateError(
                 "lane fill {}: primary issue is required and must not be a bool "
@@ -1625,7 +1691,9 @@ def lane_fill(entries, window, why=None):
                 "{!r} was given".format(position, primary, count, reason)
             )
         candidates = entry.get("candidates")
-        if candidates is not None and (isinstance(candidates, bool) or not isinstance(candidates, int)):
+        if candidates is not None and (
+            isinstance(candidates, bool) or not isinstance(candidates, int)
+        ):
             raise StateError(
                 "lane fill {} (issue {}): candidates must be a whole number, not "
                 "{!r}".format(position, primary, candidates)
@@ -1685,14 +1753,18 @@ def lane_fill(entries, window, why=None):
         if reason == "no-adjacent":
             check = _dispatch_rank.check_lane(range(count), reason, adjacent=candidates)
         else:
-            check = _dispatch_rank.check_lane(range(count), reason, candidates=candidates)
+            check = _dispatch_rank.check_lane(
+                range(count), reason, candidates=candidates
+            )
         if check["state"] != "ok":
             raise StateError(
                 "lane fill {} (issue {}): {}".format(position, primary, check["why"])
             )
 
         lane_record = {
-            "primary": primary, "count": count, "reason": check["short_reason"],
+            "primary": primary,
+            "count": count,
+            "reason": check["short_reason"],
         }
         # #953: `candidates` was used to validate the short-lane claim above and
         # then dropped here -- a claim corroborated against a measured 0 and one
@@ -1705,7 +1777,12 @@ def lane_fill(entries, window, why=None):
             lane_record["candidates"] = candidates
         normalized.append(lane_record)
 
-    return {"state": LANE_FILL_RECORDED, "window": window, "lanes": normalized, "why": None}
+    return {
+        "state": LANE_FILL_RECORDED,
+        "window": window,
+        "lanes": normalized,
+        "why": None,
+    }
 
 
 def lane_fill_line(record):
@@ -1717,7 +1794,9 @@ def lane_fill_line(record):
 def _lane_fill_sentence(record):
     """`lane_fill_line`'s branches. Unfolded on purpose -- it has one caller."""
     if not isinstance(record, dict):
-        raise StateError("lane_fill_line takes a lane fill record, not {!r}".format(record))
+        raise StateError(
+            "lane_fill_line takes a lane fill record, not {!r}".format(record)
+        )
     state = record.get("state")
     window = record.get("window") or "an unstated window"
     head = "lane fill {}: ".format(window)
@@ -1752,11 +1831,17 @@ def _lane_fill_sentence(record):
             # Deliberately not the recorded sentence with a caveat appended -- same trap
             # `lane_models_line`'s own PARTIAL arm guards against: a reader skimming for
             # the mix would take the mix and leave the caveat.
-            return "PARTIAL, " + mix[len(head):] + " -- {}".format(
-                record.get("why") or "some ticks contributed no record"
+            return (
+                "PARTIAL, "
+                + mix[len(head) :]
+                + " -- {}".format(
+                    record.get("why") or "some ticks contributed no record"
+                )
             )
         return mix
-    return head + "unrecognised lane fill state {!r}, so nothing is claimed".format(state)
+    return head + "unrecognised lane fill state {!r}, so nothing is claimed".format(
+        state
+    )
 
 
 #: #866: a citation-shaped token inside a declined-dispatch reason -- a
@@ -1815,7 +1900,11 @@ def decline_reason_state(reason):
 def decline_reason_line(record):
     """One line a tick report can print, same shape as `lane_fill_line`."""
     if not isinstance(record, dict) or record.get("state") not in ("cited", "uncited"):
-        raise StateError("decline_reason_line takes a decline_reason_state record, not {!r}".format(record))
+        raise StateError(
+            "decline_reason_line takes a decline_reason_state record, not {!r}".format(
+                record
+            )
+        )
     if record["state"] == "cited":
         return "CITED -- names a call made this tick; the decline stands"
     return "UNCITED -- no call cited; this is not a reason, the issue dispatches"
@@ -1957,8 +2046,9 @@ def cleanup_override_line(record):
     """One line a tick report can print for a cleanup-override record."""
     if not isinstance(record, list) or not record:
         raise StateError(
-            "cleanup_override_line takes a non-empty list of records, not "
-            "{!r}".format(record)
+            "cleanup_override_line takes a non-empty list of records, not {!r}".format(
+                record
+            )
         )
     return _receipt_line(
         "cleanup override: {} worktree(s) force-removed over |cleanup's own "
@@ -2178,8 +2268,10 @@ def check_wait(record, state, cleared_by=None, why=None):
     all, which must never render the same as ``holds``: ``holds`` is a measurement that
     came back negative, this is no measurement.
     """
-    if not isinstance(record, dict) or not record.get("dispatch") or not record.get(
-        "observable"
+    if (
+        not isinstance(record, dict)
+        or not record.get("dispatch")
+        or not record.get("observable")
     ):
         raise StateError(
             "check_wait needs a wait record carrying dispatch and observable, not "
@@ -2373,7 +2465,9 @@ def _triage_sentence(record):
         raise StateError("triage_line takes a triage record, not {!r}".format(record))
     state = record.get("state")
     if state == TRIAGE_RECORDED:
-        return "last triaged: {}".format(record.get("recorded_at") or "an unstated time")
+        return "last triaged: {}".format(
+            record.get("recorded_at") or "an unstated time"
+        )
     if state == TRIAGE_NEVER:
         return "last triaged: never"
     if state == TRIAGE_COULD_NOT_READ:
@@ -2481,7 +2575,9 @@ def _plugin_identity_sentence(record):
     """`plugin_identity_line`'s branches. Unfolded on purpose -- it has one caller."""
     if not isinstance(record, dict):
         raise StateError(
-            "plugin_identity_line takes a plugin identity record, not {!r}".format(record)
+            "plugin_identity_line takes a plugin identity record, not {!r}".format(
+                record
+            )
         )
     state = record.get("state")
     head = "plugin identity: "
@@ -2499,8 +2595,9 @@ def _plugin_identity_sentence(record):
         return head + "route mismatch, not comparable -- {}".format(
             record.get("why") or "no reason recorded"
         )
-    return head + "unrecognised plugin identity state {!r}, so nothing is claimed".format(
-        state
+    return (
+        head
+        + "unrecognised plugin identity state {!r}, so nothing is claimed".format(state)
     )
 
 
@@ -2625,7 +2722,11 @@ def _last_doctor_route(path):
         if not isinstance(detail, dict):
             continue
         if "doctor_route_verdict" in detail:
-            return entry, detail["doctor_route_verdict"], detail.get("doctor_route_plugin_identity")
+            return (
+                entry,
+                detail["doctor_route_verdict"],
+                detail.get("doctor_route_plugin_identity"),
+            )
     return None, None, None
 
 
@@ -2667,9 +2768,7 @@ def record_plugin_root(path, root):
             tmp.unlink()
         except OSError:
             pass
-        raise StateError(
-            "could not record the plugin root snapshot ({})".format(exc)
-        )
+        raise StateError("could not record the plugin root snapshot ({})".format(exc))
     return {"root": root}
 
 
@@ -2771,8 +2870,18 @@ def check_plugin_root(path, current):
         }
     prior = str(prior).strip()
     if current == prior:
-        return {"current": current, "prior": prior, "state": PLUGIN_ROOT_UNCHANGED, "why": None}
-    return {"current": current, "prior": prior, "state": PLUGIN_ROOT_CHANGED, "why": None}
+        return {
+            "current": current,
+            "prior": prior,
+            "state": PLUGIN_ROOT_UNCHANGED,
+            "why": None,
+        }
+    return {
+        "current": current,
+        "prior": prior,
+        "state": PLUGIN_ROOT_CHANGED,
+        "why": None,
+    }
 
 
 def plugin_root_line(record):
@@ -2787,14 +2896,19 @@ def plugin_root_line(record):
         return _receipt_line(head + "unchanged ({})".format(record.get("current")))
     if state == PLUGIN_ROOT_CHANGED:
         return _receipt_line(
-            head + "changed -- was {}, now {}".format(record.get("prior"), record.get("current"))
+            head
+            + "changed -- was {}, now {}".format(
+                record.get("prior"), record.get("current")
+            )
         )
     if state == PLUGIN_ROOT_COULD_NOT_READ:
         return _receipt_line(
-            head + "could not read -- {}".format(record.get("why") or "no reason recorded")
+            head
+            + "could not read -- {}".format(record.get("why") or "no reason recorded")
         )
     return _receipt_line(
-        head + "unrecognised plugin root state {!r}, so nothing is claimed".format(state)
+        head
+        + "unrecognised plugin root state {!r}, so nothing is claimed".format(state)
     )
 
 
@@ -2819,7 +2933,9 @@ def _count_argument(text):
             "{!r} is neither a whole number nor 'unknown'".format(text)
         )
     if value < 0:
-        raise argparse.ArgumentTypeError("a count cannot be negative ({})".format(value))
+        raise argparse.ArgumentTypeError(
+            "a count cannot be negative ({})".format(value)
+        )
     return value
 
 
@@ -2830,7 +2946,9 @@ def _cohort_count_argument(text):
     import argparse
 
     if "=" not in text:
-        raise argparse.ArgumentTypeError("{!r} is not ROUTE=N or ROUTE=unknown".format(text))
+        raise argparse.ArgumentTypeError(
+            "{!r} is not ROUTE=N or ROUTE=unknown".format(text)
+        )
     route, _, value_text = text.partition("=")
     route = route.strip()
     if not route:
@@ -2844,10 +2962,14 @@ def _cohort_count_argument(text):
         value = int(value_text)
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "{!r}: {!r} is neither a whole number nor 'unknown'".format(text, value_text)
+            "{!r}: {!r} is neither a whole number nor 'unknown'".format(
+                text, value_text
+            )
         )
     if value < 0:
-        raise argparse.ArgumentTypeError("{!r}: a count cannot be negative".format(text))
+        raise argparse.ArgumentTypeError(
+            "{!r}: a count cannot be negative".format(text)
+        )
     return (route, value)
 
 
@@ -3087,11 +3209,15 @@ def _main(argv=None):
     """
     import argparse
 
-    parser = argparse.ArgumentParser(description="Read and append maintainer tick state.")
+    parser = argparse.ArgumentParser(
+        description="Read and append maintainer tick state."
+    )
     parser.add_argument("path", help="the state file, from .oss.json's state_file")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--read", action="store_true", help="print the whole history")
-    group.add_argument("--last", action="store_true", help="print the most recent entry")
+    group.add_argument(
+        "--last", action="store_true", help="print the most recent entry"
+    )
     group.add_argument("--decision", help="append an entry with this decision")
     group.add_argument(
         "--trend",
@@ -3170,7 +3296,9 @@ def _main(argv=None):
         "the tick's own report is what makes an uncited decline visible. Takes "
         "no state file reading; path is still required but unused",
     )
-    parser.add_argument("--at", help="ISO timestamp for the appended entry (required with --decision)")
+    parser.add_argument(
+        "--at", help="ISO timestamp for the appended entry (required with --decision)"
+    )
     parser.add_argument("--detail", help="optional JSON object attached to the entry")
     parser.add_argument(
         "--filings",
@@ -3259,7 +3387,8 @@ def _main(argv=None):
         "was judged safe. Repeatable, one per forced worktree.",
     )
     parser.add_argument(
-        "--cohort", help="the frozen cohort's label, e.g. cohort-6 -- required with --cohort-count"
+        "--cohort",
+        help="the frozen cohort's label, e.g. cohort-6 -- required with --cohort-count",
     )
     parser.add_argument(
         "--cohort-count",
@@ -3602,7 +3731,12 @@ def _main(argv=None):
             return 0
         if args.record_plugin_root is not None:
             record = record_plugin_root(args.path, args.record_plugin_root)
-            _say(_receipt_line("RECORDED plugin root (within this tick): {}".format(record["root"])), sys.stderr)
+            _say(
+                _receipt_line(
+                    "RECORDED plugin root (within this tick): {}".format(record["root"])
+                ),
+                sys.stderr,
+            )
             print(json.dumps(record, indent=2))
             return 0
         if args.check_plugin_root is not None:
@@ -3638,9 +3772,7 @@ def _main(argv=None):
                 return refuse(
                     "the most recently recorded wait's detail.wait is not a "
                     "recognised wait record ({!r}) -- this is not the same as no "
-                    "wait ever being recorded, and must not print as one".format(
-                        record
-                    )
+                    "wait ever being recorded, and must not print as one".format(record)
                 )
             if record["state"] in (WAIT_HOLDS, WAIT_COULD_NOT_EVALUATE):
                 # #443: could-not-evaluate is no measurement at all, exactly as
@@ -3759,7 +3891,9 @@ def _main(argv=None):
             pending_tick_cost = tick_cost(
                 args.tick_cost_session,
                 args.tick_cost_window,
-                None if args.tick_cost_start_ctx is UNKNOWN_COUNT else args.tick_cost_start_ctx,
+                None
+                if args.tick_cost_start_ctx is UNKNOWN_COUNT
+                else args.tick_cost_start_ctx,
                 None if args.tick_cost_calls is UNKNOWN_COUNT else args.tick_cost_calls,
                 None
                 if args.tick_cost_context_carried is UNKNOWN_COUNT
@@ -3883,7 +4017,9 @@ def _main(argv=None):
         elif args.lanes == "none":
             pending_lanes = lane_models([], window=args.lane_window)
         elif args.lanes == "unknown":
-            pending_lanes = lane_models(None, window=args.lane_window, why=args.lane_why)
+            pending_lanes = lane_models(
+                None, window=args.lane_window, why=args.lane_why
+            )
         if args.lane_fill is not None and args.lane_fills is not None:
             return refuse(
                 "--lane-fill and --lane-fills cannot both be given; use --lane-fill "
@@ -3954,7 +4090,9 @@ def _main(argv=None):
                     "a wait record needs both --wait-dispatch and --wait-observable; "
                     "either alone is a claim nothing can test"
                 )
-            pending_wait_record = wait(args.wait_dispatch, args.wait_observable, args.at)
+            pending_wait_record = wait(
+                args.wait_dispatch, args.wait_observable, args.at
+            )
         elif args.check_wait is not None:
             # `found_entry` is the sentinel, not `previous_wait` (found by audit,
             # #436): a hand-authored entry can carry a `detail.wait` key whose value
@@ -3967,7 +4105,10 @@ def _main(argv=None):
                     "--check-wait was given but no entry has ever recorded a wait; "
                     "there is nothing to re-derive"
                 )
-            if not isinstance(previous_wait, dict) or previous_wait.get("state") != WAIT_HOLDS:
+            if (
+                not isinstance(previous_wait, dict)
+                or previous_wait.get("state") != WAIT_HOLDS
+            ):
                 # The `{}` slot names the state actually found on disk, not the
                 # required `WAIT_HOLDS` constant -- found by audit alongside #436: the
                 # old message filled it with the literal `WAIT_HOLDS`, in a position
@@ -4044,13 +4185,11 @@ def _main(argv=None):
                 detail = {}
             if not isinstance(detail, dict):
                 return refuse(
-                    "--detail must be a JSON object when a lane fill record is "
-                    "attached"
+                    "--detail must be a JSON object when a lane fill record is attached"
                 )
             if "lane_fill" in detail:
                 return refuse(
-                    "--detail already carries a 'lane_fill' key; pass one or the "
-                    "other"
+                    "--detail already carries a 'lane_fill' key; pass one or the other"
                 )
             detail["lane_fill"] = pending_lane_fill
         if pending_cleanup_override is not None:
@@ -4098,8 +4237,7 @@ def _main(argv=None):
                 detail = {}
             if not isinstance(detail, dict):
                 return refuse(
-                    "--detail must be a JSON object when a plugin identity is "
-                    "attached"
+                    "--detail must be a JSON object when a plugin identity is attached"
                 )
             if "plugin_identity" in detail:
                 return refuse(
@@ -4131,13 +4269,11 @@ def _main(argv=None):
                 detail = {}
             if not isinstance(detail, dict):
                 return refuse(
-                    "--detail must be a JSON object when a tick-cost record is "
-                    "attached"
+                    "--detail must be a JSON object when a tick-cost record is attached"
                 )
             if "tick_cost" in detail:
                 return refuse(
-                    "--detail already carries a 'tick_cost' key; pass one or the "
-                    "other"
+                    "--detail already carries a 'tick_cost' key; pass one or the other"
                 )
             detail["tick_cost"] = pending_tick_cost
         entry = append(args.path, args.at, args.decision, detail=detail)

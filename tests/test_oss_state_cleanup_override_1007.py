@@ -45,7 +45,12 @@ def test_an_override_with_no_reason_is_refused():
 
 def test_an_override_with_a_reason_is_recorded():
     record = oss_state.cleanup_overrides(
-        [{"worktree": "/tmp/wt/1007", "reason": "cannot tell, HEAD unchanged since merge"}]
+        [
+            {
+                "worktree": "/tmp/wt/1007",
+                "reason": "cannot tell, HEAD unchanged since merge",
+            }
+        ]
     )
     assert record[0]["worktree"] == "/tmp/wt/1007"
     assert record[0]["reason"] == "cannot tell, HEAD unchanged since merge"

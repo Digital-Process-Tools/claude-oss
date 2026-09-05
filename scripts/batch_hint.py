@@ -55,12 +55,10 @@ THRESHOLD = 3
 # measurement; the number to change first if it fires too often is this one.
 
 _MUTATION_MARKER = "@-"  # edit:@-, paste:@-, batch:@- -- fallback for an op this
-                          # module does not recognise by name (see below)
+# module does not recognise by name (see below)
 _CHAIN_OPERATORS = re.compile(r"(?<!\\)(&&|\|\||;)")
 _CD_PREFIX = re.compile(r"^\s*cd\s+\S+\s*&&\s*")
-_SUPERTOOL_CALL = re.compile(
-    r"^(?:\./)?supertool\s+((?:'[^']*'\s*)+)$"
-)
+_SUPERTOOL_CALL = re.compile(r"^(?:\./)?supertool\s+((?:'[^']*'\s*)+)$")
 _QUOTED_ARG = re.compile(r"'([^']*)'")
 
 # Derived from `supertool 'ops:roster'` itself, not a hand-copied snapshot
@@ -75,7 +73,9 @@ _QUOTED_ARG = re.compile(r"'([^']*)'")
 # never considered were "every call" (rejected, correctly, as too
 # expensive) and "cache the derived answer" (never weighed at all).
 _ROSTER_CACHE_NAME = "oss-batch-hint-roster.json"
-_ROSTER_CACHE_TTL = 6 * 60 * 60  # seconds; the roster only moves with a supertool release
+_ROSTER_CACHE_TTL = (
+    6 * 60 * 60
+)  # seconds; the roster only moves with a supertool release
 _ROSTER_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*[*!]?$")
 
 _UNSET = object()  # in-process memo: distinct from "derived, and the answer is None"
@@ -180,7 +180,9 @@ def _load_cached_roster(max_age: float = _ROSTER_CACHE_TTL):
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or not all(k in data for k in ("write", "external", "read")):
+    if not isinstance(data, dict) or not all(
+        k in data for k in ("write", "external", "read")
+    ):
         return None
     return data
 

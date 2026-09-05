@@ -38,7 +38,9 @@ def _text():
 
 
 def test_developer_md_exists():
-    assert DEVELOPER.exists(), "agents/developer.md is missing -- every check below would vacuously pass"
+    assert DEVELOPER.exists(), (
+        "agents/developer.md is missing -- every check below would vacuously pass"
+    )
 
 
 def test_a_delegated_test_run_verdict_is_never_treated_as_a_receipt():
@@ -51,10 +53,10 @@ def test_a_delegated_test_run_verdict_is_never_treated_as_a_receipt():
     )
     # Negative control: the identical file with that one sentence removed
     # must fail the same assertion, or the check is not testing anything.
-    without_it = text.replace(
-        "**A test run's verdict is never delegated (#874).**", ""
+    without_it = text.replace("**A test run's verdict is never delegated (#874).**", "")
+    assert without_it != text, (
+        "fixture construction did not remove the sentence -- control is void"
     )
-    assert without_it != text, "fixture construction did not remove the sentence -- control is void"
     assert "verdict is never delegated" not in without_it
 
 
@@ -67,9 +69,12 @@ def test_names_what_a_spawned_agent_may_not_be_asked_for():
         "be asked for (locate/explain), only what it may not (#874)"
     )
     without_it = text.replace(
-        "A spawned agent may locate a failing test,\n   explain one, or review a diff", "<removed>"
+        "A spawned agent may locate a failing test,\n   explain one, or review a diff",
+        "<removed>",
     )
-    assert without_it != text, "fixture construction did not remove the target text -- control is void"
+    assert without_it != text, (
+        "fixture construction did not remove the target text -- control is void"
+    )
 
 
 def test_explains_why_explore_specifically_is_the_wrong_shape():
@@ -84,7 +89,9 @@ def test_explains_why_explore_specifically_is_the_wrong_shape():
     without_it = text.replace(
         "a summary written by an agent whose job is to summarise", "a summary"
     )
-    assert without_it != text, "fixture construction did not remove the target text -- control is void"
+    assert without_it != text, (
+        "fixture construction did not remove the target text -- control is void"
+    )
     assert "summary written by an agent whose job is to summarise" not in without_it
 
 
@@ -105,7 +112,9 @@ def test_states_the_enforceability_limit_rather_than_implying_it():
     # Negative control: delete the cross-reference alone and the same
     # assertion must fail, not just the presence check above.
     without_it = text.replace("tests/test_agent_grant_is_total.py", "<removed>")
-    assert without_it != text, "fixture construction did not remove the target text -- control is void"
+    assert without_it != text, (
+        "fixture construction did not remove the target text -- control is void"
+    )
     without_scoped = without_it.split("verdict is never delegated", 1)[1][:2000]
     assert "test_agent_grant_is_total.py" not in without_scoped
 
@@ -132,5 +141,9 @@ def test_full_suite_guidance_is_not_duplicated_or_contradicted():
     )
     # Negative control: a section that restates the imperative must fail the
     # same assertion, or the check above is not testing anything.
-    injected_section = section + "\nDo not run the repo's whole `test_command` here too."
-    assert "Do not run the repo's whole" in injected_section, "fixture construction failed -- control is void"
+    injected_section = (
+        section + "\nDo not run the repo's whole `test_command` here too."
+    )
+    assert "Do not run the repo's whole" in injected_section, (
+        "fixture construction failed -- control is void"
+    )

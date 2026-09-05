@@ -169,16 +169,22 @@ def snapshot(root="."):
     head, head_error = _run_git(["rev-parse", "HEAD"], root)
     if head_error is not None:
         return {
-            "root": resolved_root, "root_resolved": root_resolved,
-            "head": None, "status": None, "error": head_error,
+            "root": resolved_root,
+            "root_resolved": root_resolved,
+            "head": None,
+            "status": None,
+            "error": head_error,
         }
     status, status_error = _run_git(
         ["status", "--porcelain=v2", "--untracked-files=all"], root
     )
     if status_error is not None:
         return {
-            "root": resolved_root, "root_resolved": root_resolved,
-            "head": None, "status": None, "error": status_error,
+            "root": resolved_root,
+            "root_resolved": root_resolved,
+            "head": None,
+            "status": None,
+            "error": status_error,
         }
     return {
         "root": resolved_root,
@@ -206,7 +212,13 @@ def _one_line(text, limit=2000):
 
 
 def _verdict(state, reason, **extra):
-    out = {"state": state, "reason": reason, "added": [], "removed": [], "head_moved": False}
+    out = {
+        "state": state,
+        "reason": reason,
+        "added": [],
+        "removed": [],
+        "head_moved": False,
+    }
     out.update(extra)
     return out
 
@@ -295,7 +307,9 @@ def _read_before(source):
         except FileNotFoundError as exc:
             return None, "no such file: {0}".format(exc.strerror or "not found")
         except OSError as exc:
-            return None, "unreadable: {0}".format(exc.strerror or exc.__class__.__name__)
+            return None, "unreadable: {0}".format(
+                exc.strerror or exc.__class__.__name__
+            )
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:

@@ -63,8 +63,7 @@ SITES = (
         "id": "watch-name",
         "module": "oss_config",
         "symbol": "watch_name_problem / watch_channel_name",
-        "claim": "what a watch channel name may be, safe to export as a path "
-        "component",
+        "claim": "what a watch channel name may be, safe to export as a path component",
         "authority": "supertool's own accepted-name rule (length, first character), "
         "which is a fact about the installed dependency and not about this "
         "repository",
@@ -173,7 +172,11 @@ def validate_sites(sites):
     """
     problems = []
     for position, site in enumerate(sites):
-        label = site.get("id", "site {}".format(position)) if isinstance(site, dict) else "site {}".format(position)
+        label = (
+            site.get("id", "site {}".format(position))
+            if isinstance(site, dict)
+            else "site {}".format(position)
+        )
         if not isinstance(site, dict):
             problems.append("{}: not a mapping ({!r})".format(label, site))
             continue
@@ -265,7 +268,11 @@ def render(sites):
                 "stale".format(site_id, state, module_name, symbol)
             )
             continue
-        note = " -- {}".format(site["note"]) if state == STATE_UNMEASURED and site.get("note") else ""
+        note = (
+            " -- {}".format(site["note"])
+            if state == STATE_UNMEASURED and site.get("note")
+            else ""
+        )
         lines.append(
             "{} [{}] {}.{}{}".format(site_id, state, module_name, symbol, note)
         )

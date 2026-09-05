@@ -54,8 +54,16 @@ def _gh_api(path, run):
     # own two subprocess reads already carry for the identical trap. See
     # `doctor_check_security_alerts._gh_api`, which shares this call verbatim
     # (#1019, swept across both).
-    stdout = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
-    stderr = done.stderr.decode("utf-8", "replace") if isinstance(done.stderr, bytes) else (done.stderr or "")
+    stdout = (
+        done.stdout.decode("utf-8", "replace")
+        if isinstance(done.stdout, bytes)
+        else (done.stdout or "")
+    )
+    stderr = (
+        done.stderr.decode("utf-8", "replace")
+        if isinstance(done.stderr, bytes)
+        else (done.stderr or "")
+    )
     return done.returncode, stdout, stderr, None
 
 
@@ -131,7 +139,9 @@ def branch_protection_state(project_dir, config=None, run=None):
             "no default_branch configured, so which branch to check is unknown",
         )
 
-    rc, out, err, exc = _gh_api("repos/{}/branches/{}/protection".format(slug, branch), run)
+    rc, out, err, exc = _gh_api(
+        "repos/{}/branches/{}/protection".format(slug, branch), run
+    )
     if exc is not None:
         return (
             "could-not-tell",
@@ -163,18 +173,24 @@ def branch_protection_state(project_dir, config=None, run=None):
     if status2 == "forbidden":
         return (
             "could-not-tell",
-            "reading rulesets for {} returned a permission error (HTTP "
-            "403)".format(slug),
+            "reading rulesets for {} returned a permission error (HTTP 403)".format(
+                slug
+            ),
         )
     if status2 != "ok":
         return (
             "could-not-tell",
-            "reading rulesets for {} failed ({})".format(slug, (err2 or out2).strip()[:200]),
+            "reading rulesets for {} failed ({})".format(
+                slug, (err2 or out2).strip()[:200]
+            ),
         )
     try:
         rulesets = json.loads(out2 or "[]")
     except ValueError:
-        return "could-not-tell", "rulesets response for {} did not parse as JSON".format(slug)
+        return (
+            "could-not-tell",
+            "rulesets response for {} did not parse as JSON".format(slug),
+        )
     if not isinstance(rulesets, list):
         return "could-not-tell", "rulesets response for {} was not a list".format(slug)
     # Self-review finding: the list endpoint's own entries carry an
@@ -188,7 +204,8 @@ def branch_protection_state(project_dir, config=None, run=None):
     # the doubt here, the same asymmetry `_classify_gh_api_status` applies to
     # an HTTP status this function cannot place.
     active = [
-        item for item in rulesets
+        item
+        for item in rulesets
         if isinstance(item, dict) and item.get("enforcement") == "active"
     ]
     if active:
@@ -235,7 +252,9 @@ def check_branch_protection(project_dir, config=None, run=None):
             else "Configure a branch protection rule or ruleset requiring the CI "
             "checks before merge, from the repo's Settings > Branches page."
         )
-        doctor.report("WARN", "branch protection: {} -- {} {}".format(detail, "not enforced.", remedy))
+        doctor.report(
+            "WARN",
+            "branch protection: {} -- {} {}".format(detail, "not enforced.", remedy),
+        )
         return
     doctor.report("WARN", "branch protection: could not tell -- {}".format(detail))
-

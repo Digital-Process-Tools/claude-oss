@@ -24,6 +24,7 @@ import lane_setup  # noqa: E402
 def _write_record(worktree_root, issue, path, branch=None, age_seconds=0):
     root = lane_setup.lane_registry_dir(str(worktree_root))
     import os
+
     os.makedirs(root, exist_ok=True)
     record_path = os.path.join(root, "{0}.json".format(issue))
     payload = {
@@ -45,7 +46,9 @@ def _doctor_line(project_dir, config):
     return buf.getvalue().strip()
 
 
-def test_doctor_reports_a_genuine_skip_as_warn_not_ok_when_worktree_root_is_unknown(tmp_path):
+def test_doctor_reports_a_genuine_skip_as_warn_not_ok_when_worktree_root_is_unknown(
+    tmp_path,
+):
     """Found by this lane's own auditor round (#845): a run that never called
     `detect_vanished_worktrees` at all (no derivable worktree_root -- the
     ordinary state for a fresh install or a config-less tree) used to print

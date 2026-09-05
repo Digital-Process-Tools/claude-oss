@@ -37,7 +37,11 @@ REQUIRED_KEYS = {
 }
 
 OPTIONAL_KEYS = {
-    "milestones", "notes", "release", "changelog_untagged", "watch_channel",
+    "milestones",
+    "notes",
+    "release",
+    "changelog_untagged",
+    "watch_channel",
     # #932: a maintainer attestation that this repo's own pytest run measures
     # test duration and coverage -- see doctor_check_test_measurement.py's
     # module docstring for why this is never derived from the config's
@@ -204,7 +208,9 @@ RELEASE_DEFAULTS = {"commit_subject": DEFAULT_COMMIT_SUBJECT}
 # A config file is committed. Nothing in it may look like a credential, and an
 # unfamiliar key that does is refused rather than ignored -- ignoring it is how a
 # token ends up in git history with everyone assuming the schema rejected it.
-SECRET_RE = re.compile(r"(token|password|passwd|secret|api[_-]?key|credential)", re.IGNORECASE)
+SECRET_RE = re.compile(
+    r"(token|password|passwd|secret|api[_-]?key|credential)", re.IGNORECASE
+)
 
 # `\A...\Z`, not `^...$`, here and for every pattern below that validates a value
 # destined for a file this plugin writes. Python's `$` matches **before** a trailing
@@ -467,9 +473,7 @@ def test_command_problem(value):
 #: function against `git check-ref-format` itself instead of asserting the claim.
 _REF_CONTROLS = frozenset(chr(point) for point in range(0x20)) | {"\x7f"}
 
-_REF_FORBIDDEN = (
-    frozenset(" ~^:?*[") | {"\\"} | _REF_CONTROLS | frozenset(LINE_BREAKS)
-)
+_REF_FORBIDDEN = frozenset(" ~^:?*[") | {"\\"} | _REF_CONTROLS | frozenset(LINE_BREAKS)
 
 
 #: What a watch channel name may not carry, chosen from the harm rather than from a
@@ -533,8 +537,8 @@ def watch_name_problem(value):
     hands back: this validates and never derives, so there is no second value.
     """
     if not isinstance(value, str):
-        return (
-            "watch name: expected the channel name as a string, got {!r}".format(value)
+        return "watch name: expected the channel name as a string, got {!r}".format(
+            value
         )
     if not value:
         return (
@@ -585,10 +589,8 @@ def _git_ref_problem(name):
         return "it ends with a dot"
     for component in name.split("/"):
         if component.startswith(".") or component.endswith(".lock"):
-            return (
-                "the component {!r} starts with a dot or ends with '.lock'".format(
-                    component
-                )
+            return "the component {!r} starts with a dot or ends with '.lock'".format(
+                component
             )
     return None
 
@@ -616,9 +618,8 @@ def default_branch_problem(value):
     if value is None:
         return None
     if not isinstance(value, str):
-        return (
-            "default_branch: expected the branch name as a string; got "
-            "{!r}.".format(value)
+        return "default_branch: expected the branch name as a string; got {!r}.".format(
+            value
         )
     problem = _git_ref_problem(value)
     if problem:
@@ -659,7 +660,9 @@ def branch_pattern_problem(value):
     if value is None:
         return None
     if not isinstance(value, str):
-        return "branch_pattern: expected the pattern as a string; got {!r}.".format(value)
+        return "branch_pattern: expected the pattern as a string; got {!r}.".format(
+            value
+        )
     problem = _git_ref_problem(value)
     if problem:
         return (
@@ -907,7 +910,9 @@ def scaffolded_changelog_gate(repo_root):
     if len(directories) > 1:
         return "unknown", (
             "{} names more than one --dir value ({}); which fragments this gate "
-            "polices could not be determined".format(path, ", ".join(sorted(directories)))
+            "polices could not be determined".format(
+                path, ", ".join(sorted(directories))
+            )
         )
     named = next(iter(directories))
     problem = changelog_dir_problem(named)
@@ -981,10 +986,15 @@ def changelog_untagged_problem(value):
         return (
             "changelog_untagged: expected a list of x.y.z version strings, or null "
             "when nothing has been declared; got {!r}. An empty list is a legal and "
-            "different answer -- it says every release section was tagged.".format(value)
+            "different answer -- it says every release section was tagged.".format(
+                value
+            )
         )
-    bad = [item for item in value
-           if not (isinstance(item, str) and CHANGELOG_UNTAGGED_RE.match(item))]
+    bad = [
+        item
+        for item in value
+        if not (isinstance(item, str) and CHANGELOG_UNTAGGED_RE.match(item))
+    ]
     if bad:
         return (
             "changelog_untagged: every entry must be an x.y.z version, one per list "
@@ -1096,7 +1106,7 @@ def _brace_interval_problem(pattern):
             close = pattern.find("}", index + 1)
             if close == -1:
                 return "has an unbalanced `{` with no matching `}`"
-            content = pattern[index + 1:close]
+            content = pattern[index + 1 : close]
             match = re.match(r"\A(\d+)(,(\d*))?\Z", content)
             if not match:
                 return (
@@ -1473,7 +1483,9 @@ def _toml_section_version(text, section):
 # shipping `_supertool.py` carried its version in `VERSION = "0.43.0"` at column zero,
 # and the fixed manifest whitelist below had nowhere to put it, so a release from the
 # derived config bumped every candidate but that one.
-_PY_VERSION_CONST_RE = re.compile(r"""(?m)^(?:__version__|VERSION)\s*=\s*["'](.+?)["']""")
+_PY_VERSION_CONST_RE = re.compile(
+    r"""(?m)^(?:__version__|VERSION)\s*=\s*["'](.+?)["']"""
+)
 
 
 def _version_state(path, kind):
@@ -1509,7 +1521,9 @@ def _version_state(path, kind):
             return "version"
         return "none"
     if kind.startswith("toml:"):
-        return "version" if _toml_section_version(text, kind.split(":", 1)[1]) else "none"
+        return (
+            "version" if _toml_section_version(text, kind.split(":", 1)[1]) else "none"
+        )
     if kind == "py-const":
         match = _PY_VERSION_CONST_RE.search(text)
         return "version" if match and VERSION_RE.search(match.group(1)) else "none"
@@ -1522,7 +1536,8 @@ def _root_python_modules(files):
     scanning the whole tree trades one false negative for a false-positive machine.
     """
     return [
-        name for name in files
+        name
+        for name in files
         if isinstance(name, str) and "/" not in name and name.endswith(".py")
     ]
 
@@ -1569,7 +1584,9 @@ def probe_problems(probe):
         if not isinstance(value, types):
             problems.append(
                 "probe.{}: expected {}, got {!r}. See --help for the schema, or use "
-                "--probe REPO.".format(key, " or ".join(t.__name__ for t in types), value)
+                "--probe REPO.".format(
+                    key, " or ".join(t.__name__ for t in types), value
+                )
             )
 
     for key in sorted(set(probe) - set(PROBE_KEYS)):
@@ -1634,8 +1651,11 @@ def _enclosing_clone(start):
     except OSError as exc:
         return None, "{} could not be resolved ({})".format(common, exc)
     if common.name != ".git":
-        return None, "{} is not a .git directory, so this checkout has no working tree beside it".format(
-            common
+        return (
+            None,
+            "{} is not a .git directory, so this checkout has no working tree beside it".format(
+                common
+            ),
         )
     return common.parent, ""
 
@@ -1719,7 +1739,9 @@ def resolve_config_path(path, start=None):
         return (
             None,
             "unsearchable",
-            "{} is not a directory, so it is in no clone that could be searched.".format(base),
+            "{} is not a directory, so it is in no clone that could be searched.".format(
+                base
+            ),
         )
 
     # git is asked from the directory the path points into, but that directory need not
@@ -1742,14 +1764,20 @@ def resolve_config_path(path, start=None):
     except OSError:
         same = False
     if same:
-        return None, "missing", "This directory is the clone. Run /oss:setup to write it."
+        return (
+            None,
+            "missing",
+            "This directory is the clone. Run /oss:setup to write it.",
+        )
     candidate = clone / given
     if candidate.is_file():
         return candidate, "clone", str(clone)
     return (
         None,
         "missing",
-        "Not in the enclosing clone at {} either. Run /oss:setup to write it.".format(clone),
+        "Not in the enclosing clone at {} either. Run /oss:setup to write it.".format(
+            clone
+        ),
     )
 
 
@@ -1777,7 +1805,9 @@ def split(config):
     schema change, and `validate` names it there; hidden in an untracked file it would
     be one maintainer's private mystery.
     """
-    project = dict((key, value) for key, value in config.items() if key not in LOCAL_KEYS)
+    project = dict(
+        (key, value) for key, value in config.items() if key not in LOCAL_KEYS
+    )
     local = dict((key, value) for key, value in config.items() if key in LOCAL_KEYS)
     return project, local
 
@@ -1917,7 +1947,10 @@ def local_key_states(path):
     project, problem = _read_json_object(path)
     if project is None:
         reason = problem or "{}: not found".format(path)
-        return {key: (LOCAL_STATE_COULD_NOT_DERIVE, None, reason) for key in sorted(LOCAL_KEYS)}
+        return {
+            key: (LOCAL_STATE_COULD_NOT_DERIVE, None, reason)
+            for key in sorted(LOCAL_KEYS)
+        }
     local_path = local_config_path(path)
     local, local_problem = _read_json_object(local_path)
     return _local_key_states(project, local, local_problem, path)
@@ -2028,7 +2061,10 @@ def validate(config):
     for key in sorted(set(config) - KNOWN_KEYS):
         problems.extend(
             _unknown_key_problems(
-                key, "{}: unknown key (typo, or a schema change nobody wrote down)".format(key)
+                key,
+                "{}: unknown key (typo, or a schema change nobody wrote down)".format(
+                    key
+                ),
             )
         )
 
@@ -2062,7 +2098,11 @@ def validate(config):
         else:
             for field in ("priority", "lanes"):
                 if not isinstance(labels.get(field), list):
-                    problems.append("labels.{}: expected a list (an empty one is fine)".format(field))
+                    problems.append(
+                        "labels.{}: expected a list (an empty one is fine)".format(
+                            field
+                        )
+                    )
             # #762: the label the loop attaches to every issue it files, so the intake
             # metric's numerator is read off the tracker instead of recalled from a
             # tick's own memory. Optional and null-is-fine, same shape as
@@ -2227,7 +2267,9 @@ def _validate_release(release):
                 value = triggers[key]
                 if value is not None and not isinstance(value, int):
                     problems.append(
-                        "release.triggers.{}: expected a number, got {!r}".format(key, value)
+                        "release.triggers.{}: expected a number, got {!r}".format(
+                            key, value
+                        )
                     )
 
     return problems
@@ -2375,7 +2417,9 @@ def build(probe):
         "repo": probe.get("repo"),
         "default_branch": probe.get("default_branch"),
         "clone": probe.get("clone"),
-        "worktree_root": "{}-wt".format(probe.get("clone")) if probe.get("clone") else None,
+        "worktree_root": "{}-wt".format(probe.get("clone"))
+        if probe.get("clone")
+        else None,
         "branch_pattern": "fix/{issue}",
         "test_command": test_command,
         "version_sites": version_sites,
@@ -2408,7 +2452,9 @@ def build(probe):
         "milestones": list(probe.get("milestones") or []),
         # No `ci` block. See LEGACY_KEYS: the job-declaration count this used to emit
         # was not the merge gate's number and could not be made into one (#113, #85).
-        "state_file": ".max/{}-watch.json".format(repo_name) if repo_name else ".max/oss-watch.json",
+        "state_file": ".max/{}-watch.json".format(repo_name)
+        if repo_name
+        else ".max/oss-watch.json",
         "release": {
             # Both derived from what the repo already does. Null means the probe could
             # not tell, and /oss:release refuses on a null rather than inventing one.
@@ -2452,7 +2498,9 @@ def _repoint_git_exclude(root):
         return []
     exclude.write_text(after, encoding="utf-8")
     return [
-        ".git/info/exclude: {} excluded, {} no longer".format(LOCAL_CONFIG_NAME, CONFIG_NAME)
+        ".git/info/exclude: {} excluded, {} no longer".format(
+            LOCAL_CONFIG_NAME, CONFIG_NAME
+        )
     ]
 
 
@@ -2524,7 +2572,9 @@ def _ignore_rule(root, name):
     if done.returncode == 1:
         return "clear", ""
     stderr = _decode_output(done.stderr).strip().splitlines()
-    return "unknown", stderr[-1] if stderr else "git check-ignore exited {}".format(done.returncode)
+    return "unknown", stderr[-1] if stderr else "git check-ignore exited {}".format(
+        done.returncode
+    )
 
 
 def _derive_local_config(document, root):
@@ -2555,7 +2605,9 @@ def _derive_local_config(document, root):
         "clone": clone,
         "worktree_root": "{}-wt".format(clone),
         "state_file": (
-            ".max/{}-watch.json".format(repo_name) if repo_name else ".max/oss-watch.json"
+            ".max/{}-watch.json".format(repo_name)
+            if repo_name
+            else ".max/oss-watch.json"
         ),
     }
 
@@ -2630,7 +2682,9 @@ def split_config_file(path):
     elif state == "ignored":
         notes.append(
             "{}: still ignored by {} -- that rule is yours to change, and until it does "
-            "`git add` refuses the project half without saying so".format(path.name, detail)
+            "`git add` refuses the project half without saying so".format(
+                path.name, detail
+            )
         )
     else:
         notes.append(
@@ -2856,7 +2910,12 @@ def _kill_process_tree(proc, job=None):
                 kernel32.TerminateJobObject.restype = wintypes.BOOL
                 kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
                 killed = bool(kernel32.TerminateJobObject(job, 1))
-            except (ImportError, OSError, AttributeError, ValueError):  # pragma: no cover
+            except (
+                ImportError,
+                OSError,
+                AttributeError,
+                ValueError,
+            ):  # pragma: no cover
                 killed = False
         if killed:
             confirmed = True
@@ -2905,7 +2964,10 @@ def verify_test_command(command, cwd, timeout=120):
     reporting broken would send someone to debug a suite that is merely slow.
     """
     if not command:
-        return {"state": "none", "detail": "no test command detected; nothing to verify"}
+        return {
+            "state": "none",
+            "detail": "no test command detected; nothing to verify",
+        }
 
     # The runner is resolved before anything runs, because the shell's own
     # "command not found" code is not portable: POSIX shells answer 127, cmd.exe
@@ -2914,7 +2976,9 @@ def verify_test_command(command, cwd, timeout=120):
     # which is the one confusion these states exist to prevent. Only for a plain
     # command: with an operator in it the first word is not the whole story, and a
     # shell builtin resolves to no file at all.
-    if not any(token in command for token in ("&&", "||", "|", ";", ">", "<", "$(", "`")):
+    if not any(
+        token in command for token in ("&&", "||", "|", ";", ">", "<", "$(", "`")
+    ):
         try:
             words = shlex.split(command, posix=os.name != "nt")
         except ValueError:
@@ -2954,7 +3018,10 @@ def verify_test_command(command, cwd, timeout=120):
             **popen_kwargs,
         )
     except OSError as exc:
-        return {"state": "not-found", "detail": "{!r} would not start ({})".format(command, exc)}
+        return {
+            "state": "not-found",
+            "detail": "{!r} would not start ({})".format(command, exc),
+        }
 
     # Assigned after the spawn because there is no way to start a process suspended
     # through `subprocess` and resume it afterwards; `_windows_assign_job` documents
@@ -3051,7 +3118,9 @@ def resolve_worktree(root, target):
         raise ContainmentError("worktree target {!r} is a traversal".format(target))
     if "/" in target or "\\" in target:
         raise ContainmentError(
-            "worktree target {!r} contains a path separator; expected a bare name".format(target)
+            "worktree target {!r} contains a path separator; expected a bare name".format(
+                target
+            )
         )
     if os.path.isabs(target) or re.match(r"^[A-Za-z]:", target):
         raise ContainmentError("worktree target {!r} is not relative".format(target))
@@ -3062,7 +3131,9 @@ def resolve_worktree(root, target):
         resolved.relative_to(root)
     except ValueError:
         raise ContainmentError(
-            "worktree target {!r} resolves to {} which is outside {}".format(target, resolved, root)
+            "worktree target {!r} resolves to {} which is outside {}".format(
+                target, resolved, root
+            )
         )
     return resolved
 
@@ -3084,7 +3155,9 @@ def _run(command, cwd=None):
             False,
             "",
             "{} exited {}: {}".format(
-                " ".join(command[:3]), done.returncode, lines[-1] if lines else "no output"
+                " ".join(command[:3]),
+                done.returncode,
+                lines[-1] if lines else "no output",
             ),
         )
     # `git ls-files` prints filenames, so this helper carries the same undecodable byte
@@ -3148,7 +3221,9 @@ def _workflow_jobs(root, files):
     problems = []
     absent = []
     for rel in sorted(files):
-        if not rel.startswith(".github/workflows/") or not rel.endswith((".yml", ".yaml")):
+        if not rel.startswith(".github/workflows/") or not rel.endswith(
+            (".yml", ".yaml")
+        ):
             continue
         try:
             text = (Path(root) / rel).read_text(encoding="utf-8")
@@ -3255,10 +3330,16 @@ def gather(root):
         ],
     )
     if not ok or not isinstance(view, dict):
-        return None, ["could not read the repo from gh: {}".format(detail or view)], notes
+        return (
+            None,
+            ["could not read the repo from gh: {}".format(detail or view)],
+            notes,
+        )
 
     repo = view.get("nameWithOwner")
-    ok, label_rows, detail = _gh_json(root, ["label", "list", "--json", "name", "--limit", "200"])
+    ok, label_rows, detail = _gh_json(
+        root, ["label", "list", "--json", "name", "--limit", "200"]
+    )
     if not ok:
         problems.append("could not read the labels from gh: {}".format(detail))
         label_rows = []
@@ -3289,7 +3370,9 @@ def gather(root):
         "files": files,
         "tags": tags,
         "labels": [row.get("name") for row in label_rows or [] if row.get("name")],
-        "milestones": [row.get("title") for row in milestone_rows or [] if row.get("title")],
+        "milestones": [
+            row.get("title") for row in milestone_rows or [] if row.get("title")
+        ],
         "workflow_jobs": jobs,
         "merge_method": _merge_method(view),
         "version_evidence": inspect_version_sites(root, files),
@@ -3415,7 +3498,9 @@ def _main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--validate", metavar="PATH", help="validate an existing .oss.json")
+    group.add_argument(
+        "--validate", metavar="PATH", help="validate an existing .oss.json"
+    )
     group.add_argument(
         "--split",
         metavar="PATH",

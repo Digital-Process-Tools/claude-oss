@@ -62,7 +62,7 @@ def vendored_filenames():
     """
     prefix = scaffold.OWNED_DIR + "/"
     return sorted(
-        name[len(prefix):] for name in scaffold.OWNED if name.startswith(prefix)
+        name[len(prefix) :] for name in scaffold.OWNED if name.startswith(prefix)
     )
 
 
@@ -76,7 +76,7 @@ def unlisted(body, filenames):
     start = body.find(SECTION)
     if start < 0:
         return list(filenames)
-    rest = body[start + len(SECTION):]
+    rest = body[start + len(SECTION) :]
     end = re.search(r"^## ", rest, re.MULTILINE)
     section = rest[: end.start()] if end else rest
     return [name for name in filenames if name not in section]
@@ -134,7 +134,9 @@ def test_the_owned_readme_names_every_file_scaffold_vendors_beside_it():
     assert missing == [], (
         "{}/README.md's 'What is here' section does not name {} -- and the README "
         "is replaced wholesale on every scaffold run, so a maintainer who notices "
-        "cannot fix it in their own repository (#693)".format(scaffold.OWNED_DIR, missing)
+        "cannot fix it in their own repository (#693)".format(
+            scaffold.OWNED_DIR, missing
+        )
     )
 
 

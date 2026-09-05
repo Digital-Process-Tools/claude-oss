@@ -47,7 +47,9 @@ _LAUNCHER_TEXT = LAUNCHER.read_text(encoding="utf-8")
 # Read out of the launcher rather than copied, so a change to the sentinel makes these
 # tests fail loudly instead of quietly measuring a string nothing uses any more.
 _SENTINEL_MATCH = re.search(r'^SENTINEL="([^"]+)"', _LAUNCHER_TEXT, re.MULTILINE)
-assert _SENTINEL_MATCH, "doctor.sh no longer defines SENTINEL in the shape this test reads"
+assert _SENTINEL_MATCH, (
+    "doctor.sh no longer defines SENTINEL in the shape this test reads"
+)
 SENTINEL = _SENTINEL_MATCH.group(1)
 
 
@@ -184,10 +186,12 @@ def test_the_failure_message_names_the_order_actually_walked():
     assert len(loops) == 1, loops
     candidates = loops[0].split()
     failure = [
-        line for line in _LAUNCHER_TEXT.splitlines() if "no working Python found" in line
+        line
+        for line in _LAUNCHER_TEXT.splitlines()
+        if "no working Python found" in line
     ]
     assert len(failure) == 1, failure
     for name in candidates:
-        assert name in failure[0], "{} is tried but the FAIL line does not name it".format(
-            name
+        assert name in failure[0], (
+            "{} is tried but the FAIL line does not name it".format(name)
         )

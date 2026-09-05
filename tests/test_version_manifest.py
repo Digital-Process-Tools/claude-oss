@@ -67,7 +67,9 @@ def _changelog_versions():
 
 def test_manifest_version_is_semver():
     version = _manifest()["version"]
-    assert SEMVER_RE.match(version), "plugin.json version is not semver: {!r}".format(version)
+    assert SEMVER_RE.match(version), "plugin.json version is not semver: {!r}".format(
+        version
+    )
 
 
 def test_changelog_has_released_versions():
@@ -130,7 +132,9 @@ def test_manager_skill_frontmatter_version_matches_manifest():
     assert version == _manifest()["version"], (
         "skills/manager/SKILL.md declares version {} but the manifest declares {}. "
         "A release that bumps the listed sites and not this one leaves the skill "
-        "claiming a version that shipped earlier.".format(version, _manifest()["version"])
+        "claiming a version that shipped earlier.".format(
+            version, _manifest()["version"]
+        )
     )
 
 

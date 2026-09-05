@@ -146,14 +146,35 @@ def test_the_receipt_says_unknown_not_free(denied):
         "issue": 373,
         "repo": ".",
         "config": {"state": "ok", "problems": []},
-        "base": {"state": "could-not-resolve", "remote": "origin", "ref": None, "sha": None, "detail": "x"},
-        "branch": {"state": "unknown", "pattern": None, "name": None, "detail": "x",
-                   "exists_local": None, "exists_remote": None},
-        "worktree": {"state": "resolved", "root": str(child.parent), "path": str(child),
-                     "detail": "", "exists": lane_setup.worktree_occupancy(str(child))},
+        "base": {
+            "state": "could-not-resolve",
+            "remote": "origin",
+            "ref": None,
+            "sha": None,
+            "detail": "x",
+        },
+        "branch": {
+            "state": "unknown",
+            "pattern": None,
+            "name": None,
+            "detail": "x",
+            "exists_local": None,
+            "exists_remote": None,
+        },
+        "worktree": {
+            "state": "resolved",
+            "root": str(child.parent),
+            "path": str(child),
+            "detail": "",
+            "exists": lane_setup.worktree_occupancy(str(child)),
+        },
         "board": {"state": "could-not-run", "lines": [], "detail": "x"},
     }
-    row = [ln for ln in lane_setup.receipt(payload).splitlines() if ln.startswith("worktree  :")]
+    row = [
+        ln
+        for ln in lane_setup.receipt(payload).splitlines()
+        if ln.startswith("worktree  :")
+    ]
     assert len(row) == 1, row
     assert row[0].endswith("[unknown]"), row[0]
     assert "[free]" not in row[0], row[0]

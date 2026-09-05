@@ -175,9 +175,13 @@ def test_a_completely_unrelated_path_still_does_not_match():
     of `actionlint`.
     """
     validators = _load_config()["validators"]
-    assert REAL_MATCHER._match_glob(
-        "notbin/oss-workspace", validators["bash-check-launcher"]["match"]
-    ) is False
-    assert REAL_MATCHER._match_glob(
-        "CHANGELOG.yml", validators["actionlint"]["match"]
-    ) is False
+    assert (
+        REAL_MATCHER._match_glob(
+            "notbin/oss-workspace", validators["bash-check-launcher"]["match"]
+        )
+        is False
+    )
+    assert (
+        REAL_MATCHER._match_glob("CHANGELOG.yml", validators["actionlint"]["match"])
+        is False
+    )

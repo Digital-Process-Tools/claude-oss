@@ -62,7 +62,11 @@ def _verify_home_redirect(env, home):
     skip reason naming what did not take.
     """
     done = subprocess.run(
-        [sys.executable, "-c", "import os,sys; sys.stdout.write(os.path.expanduser('~'))"],
+        [
+            sys.executable,
+            "-c",
+            "import os,sys; sys.stdout.write(os.path.expanduser('~'))",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
@@ -70,11 +74,14 @@ def _verify_home_redirect(env, home):
     )
     resolved = done.stdout
     expected = str(home)
-    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(os.path.normpath(expected)):
+    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(
+        os.path.normpath(expected)
+    ):
         return (
             "os.path.expanduser('~') resolved to %r instead of the fixture's "
             "%r on this platform (python %s) -- the HOME/USERPROFILE redirect "
-            "did not take, so this shape is untested here" % (resolved, expected, sys.version.split()[0])
+            "did not take, so this shape is untested here"
+            % (resolved, expected, sys.version.split()[0])
         )
     return None
 
@@ -144,7 +151,9 @@ def _run_ask_consumer(tmp_path, content):
 
 
 @pytest.mark.parametrize("shape", sorted(CRASHES_TODAY))
-def test_a_crashing_registry_shape_must_reach_cannot_ask_not_a_traceback(tmp_path, shape):
+def test_a_crashing_registry_shape_must_reach_cannot_ask_not_a_traceback(
+    tmp_path, shape
+):
     """The positive control: each of the five measured crashing shapes must now
     produce the loud `cannot_ask()` sentence instead of an unhandled traceback.
     """
@@ -163,6 +172,7 @@ def test_a_benign_registry_shape_still_exits_quietly(tmp_path, shape):
     done = _run_ask_consumer(tmp_path, SHAPES[shape])
     assert done.stdout == "" and done.stderr == "", (shape, done.stdout, done.stderr)
     assert done.returncode == 0, (shape, done.returncode)
+
 
 # --- FIND_CONSUMER: the same unguarded pattern, one block down (adjacent finding) --
 #
@@ -200,7 +210,9 @@ def _run_find_consumer(tmp_path, content):
 
 
 @pytest.mark.parametrize("shape", sorted(CRASHES_TODAY))
-def test_find_consumer_a_crashing_shape_reaches_a_clean_message_not_a_traceback(tmp_path, shape):
+def test_find_consumer_a_crashing_shape_reaches_a_clean_message_not_a_traceback(
+    tmp_path, shape
+):
     """The same positive control against FIND_CONSUMER: no traceback, and a
     stderr line naming the registry rather than a Python exception.
     """
@@ -221,4 +233,3 @@ def test_find_consumer_a_benign_shape_reports_no_supertool_install(tmp_path, sha
     assert "Traceback" not in done.stderr, (shape, done.stderr)
     assert done.stdout == "", (shape, done.stdout)
     assert "lists no supertool install" in done.stderr, (shape, done.stderr)
-

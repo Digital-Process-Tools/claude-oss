@@ -15,6 +15,7 @@ change (both would otherwise look "not armed... nothing to report"), so
 `no-receipt` and `unchanged` are kept apart even though a caller only cares about
 the derived `armed` boolean in practice.
 """
+
 import sys
 from pathlib import Path
 
@@ -37,7 +38,9 @@ def test_doctor_route_check_needs_a_current_plugin_identity():
     with pytest.raises(oss_state.StateError):
         oss_state.doctor_route_check("usable with gaps -- 1 warning(s)", "", None, None)
     with pytest.raises(oss_state.StateError):
-        oss_state.doctor_route_check("usable with gaps -- 1 warning(s)", None, None, None)
+        oss_state.doctor_route_check(
+            "usable with gaps -- 1 warning(s)", None, None, None
+        )
 
 
 def test_doctor_route_check_arms_with_no_prior_receipt():
@@ -103,7 +106,9 @@ def test_last_doctor_route_reads_the_most_recent_receipt_behind_other_entries(tm
     decision that landed after it."""
     path = tmp_path / "state.json"
     oss_state.append(
-        path, "2026-01-01T00:00:00Z", "doctor-route: usable with gaps",
+        path,
+        "2026-01-01T00:00:00Z",
+        "doctor-route: usable with gaps",
         detail={
             "doctor_route_verdict": "usable with gaps -- 1 warning(s)",
             "doctor_route_plugin_identity": "0.24.0, content abc",
@@ -111,7 +116,9 @@ def test_last_doctor_route_reads_the_most_recent_receipt_behind_other_entries(tm
     )
     oss_state.append(path, "2026-01-02T00:00:00Z", "an unrelated tick decision")
     oss_state.append(
-        path, "2026-01-03T00:00:00Z", "intake",
+        path,
+        "2026-01-03T00:00:00Z",
+        "intake",
         detail={"intake": {"filed": 1, "merged": 2}},
     )
     entry, verdict, identity = oss_state._last_doctor_route(path)
@@ -128,14 +135,18 @@ def test_last_doctor_route_finds_the_newest_of_two_receipts():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "state.json"
         oss_state.append(
-            path, "2026-01-01T00:00:00Z", "doctor-route: first",
+            path,
+            "2026-01-01T00:00:00Z",
+            "doctor-route: first",
             detail={
                 "doctor_route_verdict": "usable with gaps -- 1 warning(s)",
                 "doctor_route_plugin_identity": "0.24.0, content abc",
             },
         )
         oss_state.append(
-            path, "2026-01-02T00:00:00Z", "doctor-route: second",
+            path,
+            "2026-01-02T00:00:00Z",
+            "doctor-route: second",
             detail={
                 "doctor_route_verdict": "not usable -- 1 failure(s)",
                 "doctor_route_plugin_identity": "0.25.0, content def",

@@ -42,6 +42,7 @@ def _one(body):
 
 # --- refused -------------------------------------------------------------------------
 
+
 def test_javascript_link_is_refused():
     """The payload the audit named. There is no `link_open` token for it under a stock
     parser, so a token walk alone does not see this one."""
@@ -110,6 +111,7 @@ def test_javascript_autolink_is_refused():
 
 # --- allowed -------------------------------------------------------------------------
 
+
 def test_relative_link_is_allowed():
     assert _scan("- see [the docs](./docs/releasing.md) for the order\n") == []
 
@@ -139,18 +141,24 @@ def test_https_autolink_is_allowed():
 
 # --- the rule is not over-broad ------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "fragment",
-    sorted(p for p in (REPO_ROOT / "changelog.d").glob("*.md") if p.name != "README.md"),
+    sorted(
+        p for p in (REPO_ROOT / "changelog.d").glob("*.md") if p.name != "README.md"
+    ),
     ids=lambda p: p.name,
 )
 def test_every_fragment_in_this_repo_still_passes(fragment):
     """The negative control. A URL rule wide enough to refuse the repo's own pending
     fragments would be discovered at release time, by the release."""
-    assert ac.scan_fragment_body(fragment.name, fragment.read_text(encoding="utf-8")) == []
+    assert (
+        ac.scan_fragment_body(fragment.name, fragment.read_text(encoding="utf-8")) == []
+    )
 
 
 # --- the second layer, over the assembled file ---------------------------------------
+
 
 def test_verify_written_reports_a_destination_the_release_added():
     """`_verify_written` is the backstop for a per-fragment guard that has been wrong
@@ -159,7 +167,9 @@ def test_verify_written_reports_a_destination_the_release_added():
     before = "# Changelog\n\n## [Unreleased]\n"
     after = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- a ![](https://evil.example/p.gif)\n"
     findings = ac._verify_written(before, after, ["### Fixed"], [])
-    assert findings, "the assembled file gained a remote image and the verifier said nothing"
+    assert findings, (
+        "the assembled file gained a remote image and the verifier said nothing"
+    )
     assert "evil.example" in "\n".join(findings)
 
 
@@ -181,6 +191,7 @@ def test_verify_written_destination_check_is_load_bearing(monkeypatch):
 
 # --- the receipt says what was established -------------------------------------------
 
+
 def test_ok_receipt_states_that_destinations_were_checked(capsys, tmp_path):
     """The defect underneath the defect: a checker that closes every other hole in a
     class silently is read as closing the class. Nothing in the output said URLs were
@@ -195,6 +206,8 @@ def test_ok_receipt_states_that_destinations_were_checked(capsys, tmp_path):
 
 
 def test_the_readme_example_body_still_passes():
-    body = ("- The tag pattern is inferred from tags that already exist and stays null "
-            "when none are recognised.\n")
+    body = (
+        "- The tag pattern is inferred from tags that already exist and stays null "
+        "when none are recognised.\n"
+    )
     assert _scan(body) == []

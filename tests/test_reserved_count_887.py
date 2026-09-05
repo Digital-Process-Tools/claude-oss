@@ -44,7 +44,8 @@ def test_undeclared_reserved_spelling_is_not_rendered_as_zero(capsys, monkeypatc
     was actually measured and found clean."""
     declared = {"priority": [], "filed_by_loop": "loop-filed"}
     code, out = _run_main(
-        [{"number": 1, "labels": ["reserved"]}], capsys, monkeypatch, declared)
+        [{"number": 1, "labels": ["reserved"]}], capsys, monkeypatch, declared
+    )
     assert code == 0, out
     last_line = out.strip().splitlines()[-1]
     assert "0 reserved" not in last_line, last_line
@@ -59,10 +60,11 @@ def test_declared_reserved_spelling_with_zero_matches_still_renders_a_count(
     test that only covers the undeclared arm also passes if the count is
     removed entirely."""
     declared = {
-        "priority": [], "filed_by_loop": "loop-filed", "reserved": "reserved",
+        "priority": [],
+        "filed_by_loop": "loop-filed",
+        "reserved": "reserved",
     }
-    code, out = _run_main(
-        [{"number": 1, "labels": []}], capsys, monkeypatch, declared)
+    code, out = _run_main([{"number": 1, "labels": []}], capsys, monkeypatch, declared)
     assert code == 0, out
     last_line = out.strip().splitlines()[-1]
     assert "0 reserved" in last_line, last_line
@@ -73,10 +75,13 @@ def test_declared_reserved_spelling_with_a_match_still_counts_correctly(
     capsys, monkeypatch
 ):
     declared = {
-        "priority": [], "filed_by_loop": "loop-filed", "reserved": "reserved",
+        "priority": [],
+        "filed_by_loop": "loop-filed",
+        "reserved": "reserved",
     }
     code, out = _run_main(
-        [{"number": 1, "labels": ["reserved"]}], capsys, monkeypatch, declared)
+        [{"number": 1, "labels": ["reserved"]}], capsys, monkeypatch, declared
+    )
     assert code == 0, out
     last_line = out.strip().splitlines()[-1]
     assert "1 reserved" in last_line, last_line

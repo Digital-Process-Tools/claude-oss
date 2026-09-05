@@ -42,7 +42,7 @@ def test_uppercase_extension_is_found(tmp_path):
 def test_lowercase_extension_still_found(tmp_path):
     """Must-not-fire control: the ordinary case this function already handled must
     keep working once the match is folded."""
-    (tmp_path / "rules.md" ).write_text("# rules\n", encoding="utf-8")
+    (tmp_path / "rules.md").write_text("# rules\n", encoding="utf-8")
 
     files, unreadable = doctor._rglob_md(tmp_path)
 

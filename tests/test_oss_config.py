@@ -82,7 +82,13 @@ def test_a_changelog_dir_that_is_not_a_plain_relative_path_is_refused(value):
 # Nested is not exotic and must keep working: `_write` creates parent directories and
 # the scaffold plans `docs/changelog.d/README.md` happily. A check tight enough to
 # forbid it would refuse a legitimate repo to close a hole quoting already closes.
-ACCEPTED_CHANGELOG_DIRS = ["changelog.d", "news.d", "docs/changelog.d", "doc/news/fragments", None]
+ACCEPTED_CHANGELOG_DIRS = [
+    "changelog.d",
+    "news.d",
+    "docs/changelog.d",
+    "doc/news/fragments",
+    None,
+]
 
 
 @pytest.mark.parametrize("value", ACCEPTED_CHANGELOG_DIRS, ids=lambda v: repr(v)[:40])
@@ -109,7 +115,9 @@ def test_every_required_key_is_required(key):
     config = _valid()
     del config[key]
     problems = oss_config.validate(config)
-    assert any(key in p for p in problems), "dropping {!r} produced {!r}".format(key, problems)
+    assert any(key in p for p in problems), "dropping {!r} produced {!r}".format(
+        key, problems
+    )
 
 
 def test_repo_must_be_owner_slash_name():
@@ -239,10 +247,14 @@ def test_an_underscore_prefixed_key_hidden_in_the_local_file_is_flagged(tmp_path
     local["_milestones_note"] = "kept for the release train, not because they're open"
     project_path = tmp_path / oss_config.CONFIG_NAME
     project_path.write_text(json.dumps(project), encoding="utf-8")
-    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
 
     reloaded, problems = oss_config.load(project_path)
-    assert any("_milestones_note" in p and oss_config.LOCAL_CONFIG_NAME in p for p in problems), problems
+    assert any(
+        "_milestones_note" in p and oss_config.LOCAL_CONFIG_NAME in p for p in problems
+    ), problems
     assert "_milestones_note" not in reloaded
 
 
@@ -296,7 +308,9 @@ def test_read_json_object_reports_undecodable_bytes_not_a_crash(tmp_path):
     bites hardest on Windows and a macOS/Linux run cannot reach it naturally (#78).
     """
     bad = tmp_path / "bad.json"
-    bad.write_bytes(b"\x80not-utf8")  # a lone continuation byte: invalid at any position
+    bad.write_bytes(
+        b"\x80not-utf8"
+    )  # a lone continuation byte: invalid at any position
     document, problem = oss_config._read_json_object(bad)
     assert document is None
     assert problem is not None
@@ -343,7 +357,9 @@ def _evidence_for(files):
     """Every candidate present gets a state. A candidate with no state is 'could not
     answer', and the probe contract refuses it rather than reading it as a negative.
     """
-    return {f: ("version" if f in _CARRIES else "none") for f in files if f in _CANDIDATES}
+    return {
+        f: ("version" if f in _CARRIES else "none") for f in files if f in _CANDIDATES
+    }
 
 
 def _probe(**overrides):
@@ -353,7 +369,12 @@ def _probe(**overrides):
         "labels": ["priority-high", "priority-low", "lane-hooks", "bug"],
         "milestones": ["v0.2.0"],
         "workflow_jobs": ["pytest", "shellcheck"],
-        "files": ["pyproject.toml", "README.md", "CHANGELOG.md", "changelog.d/1.fixed.md"],
+        "files": [
+            "pyproject.toml",
+            "README.md",
+            "CHANGELOG.md",
+            "changelog.d/1.fixed.md",
+        ],
         "clone": "/src/name",
         "tags": ["v0.2.0"],
         "merge_method": None,
@@ -421,7 +442,9 @@ def test_a_plain_unittest_layout_is_detected():
     reported `null`, which is honest and still a miss -- the tests are right there.
     Marker-based detection only sees the markers somebody thought of.
     """
-    config = oss_config.build(_probe(files=["tests/test_window_spread.py", "README.md"]))
+    config = oss_config.build(
+        _probe(files=["tests/test_window_spread.py", "README.md"])
+    )
     assert config["test_command"] == "python3 -m unittest discover -s tests"
 
 
@@ -452,7 +475,7 @@ def test_probe_output_validates():
 PY = subprocess.list2cmdline([sys.executable])
 PASSES = PY + " -c pass"
 FAILS = PY + ' -c "raise SystemExit(3)"'
-SLEEPS = PY + ' -c "import time; time.sleep(5)"' 
+SLEEPS = PY + ' -c "import time; time.sleep(5)"'
 
 
 def test_a_working_command_verifies_ok(tmp_path):
@@ -518,6 +541,7 @@ def test_a_swallowed_kill_failure_is_reported_unconfirmed(tmp_path, monkeypatch)
             lambda *a, **k: subprocess.CompletedProcess(a, 1),
         )
     else:
+
         def _raise(*_a, **_k):
             raise OSError("simulated: kill primitive failed")
 
@@ -718,7 +742,9 @@ def test_build_refuses_a_candidate_it_was_told_nothing_about():
 
 def test_build_refuses_an_evidence_state_it_does_not_know():
     with pytest.raises(oss_config.ProbeError) as excinfo:
-        oss_config.build(_probe(files=["README.md"], version_evidence={"README.md": "probably"}))
+        oss_config.build(
+            _probe(files=["README.md"], version_evidence={"README.md": "probably"})
+        )
     assert "probably" in str(excinfo.value)
 
 
@@ -729,7 +755,10 @@ def test_a_candidate_that_carries_no_version_is_not_a_version_site():
     config = oss_config.build(
         _probe(
             files=[".claude-plugin/plugin.json", "README.md"],
-            version_evidence={".claude-plugin/plugin.json": "version", "README.md": "none"},
+            version_evidence={
+                ".claude-plugin/plugin.json": "version",
+                "README.md": "none",
+            },
         )
     )
     assert config["version_sites"] == [".claude-plugin/plugin.json"]
@@ -807,7 +836,9 @@ def test_inspecting_a_tree_says_which_candidates_carry_a_version(tmp_path):
     (tmp_path / ".claude-plugin" / "plugin.json").write_text(
         '{"name": "oss", "version": "0.2.1"}', encoding="utf-8"
     )
-    (tmp_path / "README.md").write_text("# thing\n\nno version anywhere\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "# thing\n\nno version anywhere\n", encoding="utf-8"
+    )
     (tmp_path / "package.json").write_text("{ not json at all", encoding="utf-8")
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "x"\nversion = "1.4.0"\n', encoding="utf-8"
@@ -923,9 +954,7 @@ def test_a_json_candidate_that_parses_to_a_non_object_is_malformed(tmp_path):
     """
     (tmp_path / "package.json").write_text('["not", "an", "object"]', encoding="utf-8")
     evidence = oss_config.inspect_version_sites(tmp_path, ["package.json"])
-    assert evidence["package.json"] == "malformed", (
-        "got {!r}".format(evidence)
-    )
+    assert evidence["package.json"] == "malformed", "got {!r}".format(evidence)
 
 
 def test_the_setup_receipt_says_absent_and_unreadable_in_different_words(capsys):
@@ -948,7 +977,9 @@ def test_the_setup_receipt_says_absent_and_unreadable_in_different_words(capsys)
     printed = capsys.readouterr().err
 
     absent_line = [line for line in printed.splitlines() if "CHANGELOG.md" in line]
-    assert absent_line, "the absent candidate was not named at all: {!r}".format(printed)
+    assert absent_line, "the absent candidate was not named at all: {!r}".format(
+        printed
+    )
     assert "could not read" not in absent_line[0], (
         "an uncommitted delete is being reported as a read that failed, which is the "
         "wrong receipt #396 was filed for: {!r}".format(absent_line[0])
@@ -959,7 +990,9 @@ def test_the_setup_receipt_says_absent_and_unreadable_in_different_words(capsys)
     assert unreadable_line, "the unreadable candidate vanished: {!r}".format(printed)
     assert "could not read" in unreadable_line[0], (
         "the control: a file that is there and will not read must keep its own "
-        "sentence, or absence has renamed every refusal: {!r}".format(unreadable_line[0])
+        "sentence, or absence has renamed every refusal: {!r}".format(
+            unreadable_line[0]
+        )
     )
 
     malformed_line = [line for line in printed.splitlines() if "Cargo.toml" in line]
@@ -1018,7 +1051,11 @@ def test_labels_that_matched_nothing_are_named_rather_than_dropped():
 
 
 def test_a_repo_with_no_labels_has_nothing_unclassified():
-    assert oss_config.classify_labels([]) == {"priority": [], "lanes": [], "unclassified": []}
+    assert oss_config.classify_labels([]) == {
+        "priority": [],
+        "lanes": [],
+        "unclassified": [],
+    }
 
 
 def test_a_label_is_classified_once():
@@ -1118,11 +1155,15 @@ def test_gathering_a_directory_that_is_not_a_repo_is_a_refusal(tmp_path):
 
 
 @needs_git
-def test_gathering_refuses_when_the_remote_half_cannot_be_measured(tmp_path, monkeypatch):
+def test_gathering_refuses_when_the_remote_half_cannot_be_measured(
+    tmp_path, monkeypatch
+):
     """Half a probe is the underspecified probe this whole contract exists to stop."""
     _git_repo(tmp_path, {"README.md": "# thing\n"})
     monkeypatch.setattr(
-        oss_config, "_gh_json", lambda root, args: (False, None, "gh: not authenticated")
+        oss_config,
+        "_gh_json",
+        lambda root, args: (False, None, "gh: not authenticated"),
     )
     probe, problems, _ = oss_config.gather(tmp_path)
     assert probe is None
@@ -1196,8 +1237,9 @@ def test_a_null_repo_is_refused_here_though_repo_problem_defers_it():
     assert "None" in problem
 
 
-@pytest.mark.parametrize("value", ["owner/name", "../..", "./..", "-a/-b",
-                                   "Org.Name/re+po"])
+@pytest.mark.parametrize(
+    "value", ["owner/name", "../..", "./..", "-a/-b", "Org.Name/re+po"]
+)
 def test_no_accepted_slug_derives_a_name_that_is_a_traversal(value):
     """The property the refusal buys, stated rather than left to the three values.
 
@@ -1238,7 +1280,9 @@ def test_the_job_object_helper_answers_for_this_platform():
     """
     job = oss_config._windows_job_object()
     if os.name == "nt":
-        assert job, "no job object on Windows means every timeout falls back to taskkill"
+        assert job, (
+            "no job object on Windows means every timeout falls back to taskkill"
+        )
         oss_config._windows_close_job(job)
     else:
         assert job is None
@@ -1309,7 +1353,9 @@ def test_posix_never_reaches_taskkill(monkeypatch):
     a POSIX machine, the Windows arm is not taken at all -- so a test that passed
     because the branch was never entered would fail here."""
     calls = []
-    monkeypatch.setattr(oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    monkeypatch.setattr(
+        oss_config.subprocess, "run", lambda argv, **kw: calls.append(argv)
+    )
     monkeypatch.setattr(oss_config.os, "killpg", lambda pid, sig: None)
 
     class _Proc(object):

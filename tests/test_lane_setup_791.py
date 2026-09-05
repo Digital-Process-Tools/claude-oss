@@ -24,7 +24,8 @@ def _cli(tmp_path, issue, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), str(issue), "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [sys.executable, str(SCRIPT), str(issue), "--repo", str(tmp_path), "--json"]
+        + list(extra_args),
         subject="lane_setup.py --release",
         capture_output=True,
         text=True,

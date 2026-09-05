@@ -29,8 +29,15 @@ def test_clean_plugin_identity_value_produces_its_own_receipt_line(tmp_path, cap
     """Positive control: a clean value must still be recorded and reported."""
     path = tmp_path / "state.json"
     rc = oss_state._main(
-        [str(path), "--decision", "a tick", "--at", STAMP,
-         "--plugin-identity", "0.14.0 clean"]
+        [
+            str(path),
+            "--decision",
+            "a tick",
+            "--at",
+            STAMP,
+            "--plugin-identity",
+            "0.14.0 clean",
+        ]
     )
     assert rc == 0
     err = capsys.readouterr().err
@@ -39,11 +46,12 @@ def test_clean_plugin_identity_value_produces_its_own_receipt_line(tmp_path, cap
     assert "0.14.0 clean" in lines[0]
 
 
-def test_a_newline_in_plugin_identity_cannot_forge_a_second_receipt_line(tmp_path, capsys):
+def test_a_newline_in_plugin_identity_cannot_forge_a_second_receipt_line(
+    tmp_path, capsys
+):
     path = tmp_path / "state.json"
     rc = oss_state._main(
-        [str(path), "--decision", "a tick", "--at", STAMP,
-         "--plugin-identity", FORGED]
+        [str(path), "--decision", "a tick", "--at", STAMP, "--plugin-identity", FORGED]
     )
     assert rc == 0
     err = capsys.readouterr().err
@@ -54,4 +62,7 @@ def test_a_newline_in_plugin_identity_cannot_forge_a_second_receipt_line(tmp_pat
     # newline onward is still readable text (only the newline itself became `?`),
     # which is the point: the fold prevents a second receipt line, not disclosure.
     assert "?" in lines[0]
-    assert "RECORDED plugin identity: 0.14.0 abc?RECORDED plugin identity: 9.9.9 forged" == lines[0]
+    assert (
+        "RECORDED plugin identity: 0.14.0 abc?RECORDED plugin identity: 9.9.9 forged"
+        == lines[0]
+    )

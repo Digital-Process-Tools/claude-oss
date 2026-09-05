@@ -83,7 +83,7 @@ def _embargo_classes(text):
         return None
     names = []
     seen_list = False
-    for line in lines[start + 1:]:
+    for line in lines[start + 1 :]:
         match = EMBARGO_BULLET.match(line)
         if match:
             seen_list = True
@@ -136,13 +136,19 @@ def _embargo_join_problems(rows, classes, embargoed, not_embargoed):
     both = sorted(set(embargoed) & set(not_embargoed))
     if both:
         problems.append(
-            "these rows are declared both embargoed and deliberately not: {!r}".format(both)
+            "these rows are declared both embargoed and deliberately not: {!r}".format(
+                both
+            )
         )
 
-    reasonless = sorted(row for row, why in not_embargoed.items() if not (why or "").strip())
+    reasonless = sorted(
+        row for row, why in not_embargoed.items() if not (why or "").strip()
+    )
     if reasonless:
         problems.append(
-            "these rows are declared outside the embargo with no reason: {!r}".format(reasonless)
+            "these rows are declared outside the embargo with no reason: {!r}".format(
+                reasonless
+            )
         )
 
     for row in sorted(blocking):
@@ -188,7 +194,9 @@ def test_the_embargo_list_is_findable_and_named():
         "every check below would pass vacuously".format(EMBARGO_MARKER)
     )
     assert classes, "SECURITY.md's embargo list parsed as empty"
-    assert len(classes) == len(set(classes)), "duplicate embargo classes: {!r}".format(classes)
+    assert len(classes) == len(set(classes)), "duplicate embargo classes: {!r}".format(
+        classes
+    )
 
 
 def test_the_security_policy_and_the_ranking_table_agree_about_the_embargo():
@@ -259,10 +267,18 @@ def test_the_security_policy_and_the_ranking_table_agree_about_the_embargo():
         (None, ["destroys"], {}, {}, "no ranking table"),
         ([("destroys", RANKING_BLOCKS)], None, {}, {}, "no embargo class list"),
         ([], [], {}, {}, "no classes on either side"),
-        ([("misreports", "can ship behind a filed issue")], [], {}, {}, "no classes on either side"),
+        (
+            [("misreports", "can ship behind a filed issue")],
+            [],
+            {},
+            {},
+            "no classes on either side",
+        ),
     ],
 )
-def test_the_embargo_join_fires(rows, classes, embargoed, not_embargoed, expected_fragment):
+def test_the_embargo_join_fires(
+    rows, classes, embargoed, not_embargoed, expected_fragment
+):
     """Positive controls, one per arm. A join assertion over two lists parsed out of two
     files passes just as readily when both parsers return nothing, so every way it is
     meant to complain is run against input that is wrong on purpose.
@@ -285,16 +301,19 @@ def test_the_embargo_join_is_quiet_when_the_two_agree():
         ("ships-local-state", RANKING_BLOCKS),
         ("misreports", "can ship behind a filed issue"),
     ]
-    assert _embargo_join_problems(
-        rows,
-        ["destroys", "containment"],
-        {
-            "destroys": "destroys",
-            "containment (read)": "containment",
-            "containment (write)": "containment",
-        },
-        {"ships-local-state": "already public in the artifact"},
-    ) == ()
+    assert (
+        _embargo_join_problems(
+            rows,
+            ["destroys", "containment"],
+            {
+                "destroys": "destroys",
+                "containment (read)": "containment",
+                "containment (write)": "containment",
+            },
+            {"ships-local-state": "already public in the artifact"},
+        )
+        == ()
+    )
 
 
 def test_the_scaffolded_template_carries_the_same_classes_as_this_repos_policy():
@@ -306,7 +325,9 @@ def test_the_scaffolded_template_carries_the_same_classes_as_this_repos_policy()
     ours = _embargo_classes(SECURITY_MD.read_text(encoding="utf-8"))
     template = _embargo_classes(scaffold.SECURITY_MD)
     assert template is not None, (
-        "scripts/scaffold.py's SECURITY_MD no longer contains {!r}".format(EMBARGO_MARKER)
+        "scripts/scaffold.py's SECURITY_MD no longer contains {!r}".format(
+            EMBARGO_MARKER
+        )
     )
     assert ours == template, (
         "this repo's SECURITY.md and the scaffolded template disagree about the embargo "

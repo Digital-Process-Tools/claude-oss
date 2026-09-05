@@ -63,7 +63,9 @@ def _write_config(root):
     project, local = oss_config.split(config)
     path = root / oss_config.CONFIG_NAME
     path.write_text(json.dumps(project), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
     return path
 
 
@@ -95,6 +97,7 @@ def _rule_bodies(shown):
         if path.startswith(".claude/jit-context/")
     }
 
+
 # --------------------------------------------------------------- the plan lists them
 
 
@@ -113,13 +116,16 @@ def test_the_plan_lists_the_rule_files_the_run_would_replace(tmp_path):
 
 def test_the_preview_covers_exactly_the_files_install_writes(tmp_path):
     """The preview and the write are the same list, or the preview is decoration."""
-    previewed = set(_paths(scaffold.plan_rules(tmp_path, _config())["entries"], "replace"))
+    previewed = set(
+        _paths(scaffold.plan_rules(tmp_path, _config())["entries"], "replace")
+    )
     assert previewed, "nothing previewed -- both sides of the comparison would be empty"
     written = oss_rules.install(
         tmp_path, fragments_dir="changelog.d", untagged=["0.1.0"], gate=("none", "")
     )
     actual = set(
-        os.path.relpath(str(path), str(tmp_path)).replace(os.sep, "/") for path in written
+        os.path.relpath(str(path), str(tmp_path)).replace(os.sep, "/")
+        for path in written
     )
     assert previewed == actual
 
@@ -127,10 +133,15 @@ def test_the_preview_covers_exactly_the_files_install_writes(tmp_path):
 # ------------------------------------------------- the sharp case from the issue body
 
 
-def test_a_run_whose_only_effect_is_the_rule_layer_does_not_read_as_a_no_op(tmp_path, capsys):
+def test_a_run_whose_only_effect_is_the_rule_layer_does_not_read_as_a_no_op(
+    tmp_path, capsys
+):
     config = _write_config(tmp_path)
     _foreign_gate(tmp_path)
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+        == 0
+    )
     capsys.readouterr()
 
     assert scaffold._main(["--root", str(tmp_path), "--config", str(config)]) == 0
@@ -163,7 +174,10 @@ def test_the_previewed_bodies_are_byte_identical_to_what_apply_writes(tmp_path, 
     previewed = _rule_bodies(scaffold.show(tmp_path, _config()))
     assert previewed, "nothing previewed -- the loop below would assert nothing"
 
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+        == 0
+    )
     capsys.readouterr()
     for path, body in previewed.items():
         assert (tmp_path / path).read_text(encoding="utf-8") == body, path
@@ -176,10 +190,14 @@ def test_the_previewed_bodies_match_apply_when_the_trio_is_declined(tmp_path, ca
     previewed = _rule_bodies(scaffold.show(tmp_path, _config()))
     assert previewed, "nothing previewed -- the loop below would assert nothing"
 
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+        == 0
+    )
     capsys.readouterr()
     for path, body in previewed.items():
         assert (tmp_path / path).read_text(encoding="utf-8") == body, path
+
 
 # ------------------------------------- the branch that depends on this run's own writes
 
@@ -206,10 +224,14 @@ def test_the_preview_names_the_assembler_this_run_would_create(tmp_path):
     assert "could not be located" not in body
     # Derived, and said to be derived rather than presented as something read off disk.
     assert not (tmp_path / ".oss" / "assemble_changelog.py").exists()
-    assert any(".oss/assemble_changelog.py" in line for line in result["basis"]), result["basis"]
+    assert any(".oss/assemble_changelog.py" in line for line in result["basis"]), (
+        result["basis"]
+    )
 
 
-def test_the_preview_renders_the_could_not_locate_rule_when_the_trio_is_declined(tmp_path):
+def test_the_preview_renders_the_could_not_locate_rule_when_the_trio_is_declined(
+    tmp_path,
+):
     """The positive control for the test above: the other of the two answers.
 
     Same function, same fixture family, opposite verdict. Without this one a preview
@@ -247,7 +269,10 @@ def test_a_rule_file_this_version_no_longer_ships_is_previewed_as_a_removal(tmp_
     assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" not in removed
     assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" in replaced
 
-def test_a_layer_directory_that_cannot_be_listed_is_reported_not_reported_empty(tmp_path):
+
+def test_a_layer_directory_that_cannot_be_listed_is_reported_not_reported_empty(
+    tmp_path,
+):
     """A directory this process cannot enter is not a directory with nothing in it.
 
     The deny is measured rather than assumed: root ignores the mode bit, some
@@ -258,10 +283,14 @@ def test_a_layer_directory_that_cannot_be_listed_is_reported_not_reported_empty(
     base = tmp_path / ".claude" / "jit-context"
     readable = base / "tools" / oss_rules.LAYER
     readable.mkdir(parents=True)
-    (readable / "retired-tool-rule.md").write_text("---\ntitle: old\n---\n", encoding="utf-8")
+    (readable / "retired-tool-rule.md").write_text(
+        "---\ntitle: old\n---\n", encoding="utf-8"
+    )
     denied = base / "paths" / oss_rules.LAYER
     denied.mkdir(parents=True)
-    (denied / "retired-path-rule.md").write_text("---\ntitle: old\n---\n", encoding="utf-8")
+    (denied / "retired-path-rule.md").write_text(
+        "---\ntitle: old\n---\n", encoding="utf-8"
+    )
 
     original = stat.S_IMODE(os.stat(str(denied)).st_mode)
     try:
@@ -353,10 +382,14 @@ def test_show_can_render_one_rule_by_path(tmp_path):
 def test_the_show_output_names_the_rule_files(tmp_path, capsys):
     config = _write_config(tmp_path)
     _foreign_gate(tmp_path)
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert ".claude/jit-context/paths/01-oss/changelog-fragments.md" in out
     assert "would replace (rewritten every run)" in out
+
 
 # ------------------------------------------- what the repo under inspection gets to say
 
@@ -378,7 +411,9 @@ def test_a_newline_in_a_filename_cannot_start_a_line_of_its_own_in_the_layer_not
     config = _write_config(tmp_path)
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
-    body = "on: [pull_request]\njobs:\n  x:\n    steps:\n      - run: assemble_changelog\n"
+    body = (
+        "on: [pull_request]\njobs:\n  x:\n    steps:\n      - run: assemble_changelog\n"
+    )
     # The positive control, and the reason an empty `layer` line cannot pass this test:
     # an ordinary name that must appear in the detail whatever happens to the odd one.
     (workflows / "ordinary.yml").write_text(body, encoding="utf-8")
@@ -436,4 +471,6 @@ def test_show_accepts_a_path_with_the_local_separator(tmp_path):
     with pytest.raises(scaffold.ScaffoldError):
         scaffold.show(tmp_path, _config(), path="NOT_A_TEMPLATE.md")
     with pytest.raises(scaffold.ScaffoldError):
-        scaffold.show(tmp_path, _config(), path=".claude\\jit-context\\paths\\01-oss\\nope.md")
+        scaffold.show(
+            tmp_path, _config(), path=".claude\\jit-context\\paths\\01-oss\\nope.md"
+        )

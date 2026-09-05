@@ -68,7 +68,7 @@ def _permission_grants(text):
         if line.rstrip() != "permissions:":
             continue
         grants = []
-        for following in lines[index + 1:]:
+        for following in lines[index + 1 :]:
             if not following.strip():
                 continue
             if not following.startswith(" "):
@@ -80,17 +80,26 @@ def _permission_grants(text):
 
 def _named_workflows():
     """Every workflow whose permissions this repo is responsible for, ours first."""
-    pairs = [(str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8")) for path in OUR_WORKFLOWS]
+    pairs = [
+        (str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8"))
+        for path in OUR_WORKFLOWS
+    ]
     pairs.append(("generated " + GENERATED_WORKFLOW, _generated()))
     return pairs
 
 
 def test_there_are_workflows_to_check():
     """A glob that found nothing would make every check below pass having read no file."""
-    assert OUR_WORKFLOWS, "no .github/workflows/*.yml found -- the checks below are vacuous"
+    assert OUR_WORKFLOWS, (
+        "no .github/workflows/*.yml found -- the checks below are vacuous"
+    )
 
 
-@pytest.mark.parametrize("name,text", _named_workflows(), ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "")
+@pytest.mark.parametrize(
+    "name,text",
+    _named_workflows(),
+    ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "",
+)
 def test_every_workflow_declares_a_permissions_block(name, text):
     grants = _permission_grants(text)
     assert grants is not None, (
@@ -113,7 +122,11 @@ _DELIBERATELY_WIDER = {
 }
 
 
-@pytest.mark.parametrize("name,text", _named_workflows(), ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "")
+@pytest.mark.parametrize(
+    "name,text",
+    _named_workflows(),
+    ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "",
+)
 def test_no_workflow_grants_more_than_reading_the_contents(name, text):
     grants = _permission_grants(text)
     expected = _DELIBERATELY_WIDER.get(name, ["contents: read"])
@@ -129,7 +142,11 @@ def test_no_workflow_grants_more_than_reading_the_contents(name, text):
 # ------------------------------------------- what the audit found correct, pinned here
 
 
-@pytest.mark.parametrize("name,text", _named_workflows(), ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "")
+@pytest.mark.parametrize(
+    "name,text",
+    _named_workflows(),
+    ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "",
+)
 def test_no_workflow_triggers_on_pull_request_target(name, text):
     assert "pull_request_target" not in text, (
         "{}: `pull_request_target` runs the base repository's workflow with a write "
@@ -138,7 +155,11 @@ def test_no_workflow_triggers_on_pull_request_target(name, text):
     )
 
 
-@pytest.mark.parametrize("name,text", _named_workflows(), ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "")
+@pytest.mark.parametrize(
+    "name,text",
+    _named_workflows(),
+    ids=lambda value: value if isinstance(value, str) and len(value) < 60 else "",
+)
 def test_the_base_ref_reaches_the_shell_through_env_and_not_an_expansion(name, text):
     expansion = "${{ github.event.pull_request.base.ref }}"
     carriers = [line.strip() for line in text.splitlines() if expansion in line]

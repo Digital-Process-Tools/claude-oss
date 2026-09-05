@@ -79,7 +79,9 @@ def test_guard_refuses_when_destination_cannot_be_stat_d(tmp_path):
     try:
         os.symlink(str(dest), str(dest))
     except (OSError, NotImplementedError) as exc:
-        pytest.skip("platform would not construct a self-referential symlink: {}".format(exc))
+        pytest.skip(
+            "platform would not construct a self-referential symlink: {}".format(exc)
+        )
 
     try:
         os.stat(str(dest))
@@ -109,10 +111,14 @@ def test_git_mv_survives_a_leading_dash_directory(tmp_path):
     old = dashdir / "7.fixed.md"
     old.write_text("- source (#7)\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(root), check=True)
     subprocess.run(["git", "add", "-A"], cwd=str(root), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "add fragment"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "add fragment"], cwd=str(root), check=True
+    )
 
     cwd = os.getcwd()
     os.chdir(str(root))

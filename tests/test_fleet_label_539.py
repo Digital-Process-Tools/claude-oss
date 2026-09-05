@@ -25,7 +25,9 @@ def test_single_issue_lane_carries_no_multiplier():
     # Positive control for the "must" half: a genuine one-issue lane renders plainly,
     # so the x1 case is never written and a bundled label's xN is not noise everyone
     # writes out of habit.
-    assert fl.fleet_label(534, [534], "auto-update path") == "Lane 534  auto-update path"
+    assert (
+        fl.fleet_label(534, [534], "auto-update path") == "Lane 534  auto-update path"
+    )
 
 
 def test_bundled_lane_carries_the_count():
@@ -64,8 +66,13 @@ def test_cli_prints_the_label(tmp_path):
     import subprocess
 
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "fleet_label.py"),
-         "534", "534,537,495", "auto-update path"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            "534",
+            "534,537,495",
+            "auto-update path",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
@@ -78,8 +85,13 @@ def test_cli_refuses_without_full_bundle():
     import subprocess
 
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "fleet_label.py"),
-         "534", "537,495", "auto-update path"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            "534",
+            "537,495",
+            "auto-update path",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,

@@ -189,7 +189,9 @@ def test_a_marked_test_that_asserts_normally_does_not_fail_the_session(pytester)
     assert "must_assert_on" not in "\n".join(result.outlines)
 
 
-def test_a_marked_test_that_skips_on_a_different_platform_does_not_fail_the_session(pytester):
+def test_a_marked_test_that_skips_on_a_different_platform_does_not_fail_the_session(
+    pytester,
+):
     """A skip is correct and permanent on a platform the marker does not
     name -- e.g. a POSIX leg with no Windows junction to measure. This must
     stay green: the check is not "any skip is a defect", it is "a skip on
@@ -272,7 +274,9 @@ def test_an_unmarked_skip_does_not_fail_the_session(pytester):
     assert result.ret == 0
 
 
-def test_a_child_that_could_not_import_pytest_is_skipped_not_asserted_on(pytester, monkeypatch):
+def test_a_child_that_could_not_import_pytest_is_skipped_not_asserted_on(
+    pytester, monkeypatch
+):
     """Must-fire control for #719's own detection.
 
     `runpytest_subprocess()` is monkeypatched to hand back exactly the
@@ -320,7 +324,11 @@ def test_a_child_that_ran_normally_is_not_skipped(pytester, monkeypatch):
     """
     real_result = pytest.RunResult(
         ret=0,
-        outlines=["collected 1 item", "test_probe.py::test_it PASSED", "1 passed in 0.01s"],
+        outlines=[
+            "collected 1 item",
+            "test_probe.py::test_it PASSED",
+            "1 passed in 0.01s",
+        ],
         errlines=[],
         duration=0.05,
     )
@@ -356,7 +364,9 @@ def test_a_missing_plugin_import_failure_is_not_mistaken_for_the_child_import_fa
         ],
         duration=0.05,
     )
-    monkeypatch.setattr(pytester, "runpytest_subprocess", lambda *a, **kw: plugin_failure)
+    monkeypatch.setattr(
+        pytester, "runpytest_subprocess", lambda *a, **kw: plugin_failure
+    )
     try:
         outcome = _run(pytester)
     except pytest.skip.Exception as exc:

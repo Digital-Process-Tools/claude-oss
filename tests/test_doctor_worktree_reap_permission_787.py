@@ -184,7 +184,9 @@ def test_branch_delete_permission_reads_user_scope_too(tmp_path):
 # --------------------------------------------------------- report lines
 
 
-def test_check_worktree_remove_permission_reports_ok_and_never_the_entry_text(tmp_path, capsys):
+def test_check_worktree_remove_permission_reports_ok_and_never_the_entry_text(
+    tmp_path, capsys
+):
     doctor.FINDINGS.clear()
     _settings(
         tmp_path / ".claude" / "settings.local.json",
@@ -234,7 +236,9 @@ def test_check_worktree_remove_permission_says_it_could_not_look(tmp_path, capsy
     doctor.FINDINGS.clear()
 
 
-def test_check_branch_delete_permission_reports_ok_and_never_the_entry_text(tmp_path, capsys):
+def test_check_branch_delete_permission_reports_ok_and_never_the_entry_text(
+    tmp_path, capsys
+):
     doctor.FINDINGS.clear()
     _settings(
         tmp_path / ".claude" / "settings.local.json",

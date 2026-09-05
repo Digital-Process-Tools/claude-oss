@@ -55,7 +55,10 @@ def test_readable_tree_reports_every_document_positive_control(tmp_path):
     assert [p.name for p in paths] == ["SKILL.md", "dispatch.md", "review.md"]
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod does not deny a directory listing the way this fixture needs")
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX permission bits; Windows chmod does not deny a directory listing the way this fixture needs",
+)
 def test_unreadable_phases_directory_is_reported_not_silently_narrowed(tmp_path):
     """The deny case. Confirmed by attempting the exact operation the code
     under test performs -- `iterdir()` on the phases directory -- before
@@ -91,7 +94,10 @@ def test_unreadable_phases_directory_is_reported_not_silently_narrowed(tmp_path)
         os.chmod(phases_dir, original_mode)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod does not deny a directory listing the way this fixture needs")
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX permission bits; Windows chmod does not deny a directory listing the way this fixture needs",
+)
 def test_text_raises_rather_than_silently_narrowing(tmp_path):
     """Self-review finding on the #571 round: `text()` and `ManagerLoop`
     used to discard `unreadable` and concatenate the narrowed set anyway --

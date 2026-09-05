@@ -31,7 +31,10 @@ from test_brief_schema_967 import GOOD  # noqa: E402
 
 def test_a_leftover_placeholder_marker_is_a_finding():
     """The recorded failure, verbatim."""
-    text = GOOD + "\n\nSupertool required: {{PASTE THE FULL CONTENTS OF <scratchpad path> HERE}}\n"
+    text = (
+        GOOD
+        + "\n\nSupertool required: {{PASTE THE FULL CONTENTS OF <scratchpad path> HERE}}\n"
+    )
     payload = brief_schema.check_text(text)
     assert payload["state"] == brief_schema.STATE_FINDINGS
     assert "placeholder" in payload["missing"]
@@ -62,7 +65,10 @@ def test_a_placeholder_spanning_a_line_wrap_is_still_caught():
     excluded a newline inside the braces, so a marker wrapped across a line
     -- an ordinary thing for prose to do -- fell through to the same clean
     payload as no marker at all."""
-    text = GOOD + "\n\nSupertool required: {{PASTE THE FULL CONTENTS OF\n<scratchpad path> HERE}}\n"
+    text = (
+        GOOD
+        + "\n\nSupertool required: {{PASTE THE FULL CONTENTS OF\n<scratchpad path> HERE}}\n"
+    )
     payload = brief_schema.check_text(text)
     assert "placeholder" in payload["missing"]
 

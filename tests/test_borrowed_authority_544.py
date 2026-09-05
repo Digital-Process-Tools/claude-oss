@@ -41,6 +41,7 @@ def _site(**over):
 
 # --- shape and state validation -------------------------------------------------
 
+
 def test_a_known_good_site_validates_clean():
     problems = ba.validate_sites([_site()])
     assert problems == []
@@ -76,6 +77,7 @@ def test_missing_field_is_refused():
 
 
 # --- drift: a censused site whose symbol moved or vanished ----------------------
+
 
 def test_a_real_site_resolves():
     # Must: an entry naming a symbol that actually exists in the named module is not
@@ -115,6 +117,7 @@ def test_a_multi_symbol_entry_checks_every_name():
 
 # --- the real census: every entry resolves, and the whole set is well-formed ----
 
+
 def test_the_real_census_has_no_shape_problems():
     assert ba.validate_sites(ba.SITES) == []
 
@@ -136,6 +139,7 @@ def test_the_real_census_carries_both_known_resolved_and_known_open_sites():
 
 
 # --- render: clean sites reported as loudly as the ones found wanting -----------
+
 
 def test_render_lists_every_site_not_only_problems():
     lines = ba.render(
@@ -164,6 +168,7 @@ def test_render_marks_a_drifted_site_distinctly_from_a_clean_one():
 
 
 # --- CLI ---------------------------------------------------------------------
+
 
 def test_closing_keyword_site_records_what_the_keywords_are_used_for():
     """#556: the note beside the closing-keyword site must say more than "no reason

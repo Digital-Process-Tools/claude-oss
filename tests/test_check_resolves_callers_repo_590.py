@@ -55,7 +55,8 @@ def test_bare_check_from_a_different_repo_never_answers_about_the_vendor_tree(tm
     (vendor / ".git").mkdir()
     (vendor / "changelog.d").mkdir()
     (vendor / "changelog.d" / "1.added.md").write_text(
-        "- adds a vendor-only thing (#1)\n", encoding="utf-8")
+        "- adds a vendor-only thing (#1)\n", encoding="utf-8"
+    )
 
     caller = tmp_path / "c" / "caller"
     _make_repo(caller, "2.fixed.md", "- fixes a caller-owned thing (#2)\n")
@@ -70,7 +71,9 @@ def test_bare_check_from_a_different_repo_never_answers_about_the_vendor_tree(tm
     assert result.returncode == 0
 
 
-def test_bare_check_outside_any_repository_refuses_rather_than_answering_for_the_vendor(tmp_path):
+def test_bare_check_outside_any_repository_refuses_rather_than_answering_for_the_vendor(
+    tmp_path,
+):
     """No `.git` anywhere above the caller's cwd: must say so, never fall
     back to the script's own install tree."""
     vendor = tmp_path / "d" / "vendor"
@@ -81,14 +84,15 @@ def test_bare_check_outside_any_repository_refuses_rather_than_answering_for_the
     (vendor / ".git").mkdir()
     (vendor / "changelog.d").mkdir()
     (vendor / "changelog.d" / "1.added.md").write_text(
-        "- adds a vendor-only thing (#1)\n", encoding="utf-8")
+        "- adds a vendor-only thing (#1)\n", encoding="utf-8"
+    )
 
     orphan = tmp_path / "f" / "orphan"
     orphan.mkdir(parents=True)
     # Deliberately no .git anywhere under tmp_path / "f".
 
     result = _run(script_path, orphan, "--check")
-    combined = (result.stdout + result.stderr)
+    combined = result.stdout + result.stderr
 
     assert "1.added.md" not in combined
     assert result.returncode != 0

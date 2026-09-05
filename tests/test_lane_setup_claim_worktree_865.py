@@ -38,8 +38,12 @@ def _run(args, cwd):
 
 
 def _git(cwd, *args):
-    subprocess.run(["git", "-C", str(cwd)] + list(args), check=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "-C", str(cwd)] + list(args),
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 @pytest.fixture
@@ -54,17 +58,21 @@ def clone(tmp_path):
     _git(tmp_path, "clone", "-q", str(origin), str(repo))
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
-    (repo / ".oss.json").write_text(json.dumps({
-        "repo": "owner/name",
-        "default_branch": "main",
-        "branch_pattern": "fix/{issue}",
-        "test_command": "pytest",
-        "changelog_dir": "changelog.d",
-        "docs_targets": [],
-        "version_sites": [],
-        "labels": {"priority": [], "lanes": []},
-        "state_file": ".max/oss-watch.json",
-    }))
+    (repo / ".oss.json").write_text(
+        json.dumps(
+            {
+                "repo": "owner/name",
+                "default_branch": "main",
+                "branch_pattern": "fix/{issue}",
+                "test_command": "pytest",
+                "changelog_dir": "changelog.d",
+                "docs_targets": [],
+                "version_sites": [],
+                "labels": {"priority": [], "lanes": []},
+                "state_file": ".max/oss-watch.json",
+            }
+        )
+    )
     (repo / "README.md").write_text("hi\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "init")
@@ -114,10 +122,13 @@ def test_could_not_tell_refuses_the_claim_too(clone, monkeypatch):
     repository states everywhere else: an absence produced by the tool must
     never read as an absence in the world."""
     monkeypatch.setattr(
-        lane_setup, "linked_worktree_state",
+        lane_setup,
+        "linked_worktree_state",
         lambda repo: (lane_setup.WORKTREE_COULD_NOT_TELL, "git would not answer"),
     )
-    payload = lane_setup.compute(str(clone), 999, claim=True, lane_patterns=["README.md"])
+    payload = lane_setup.compute(
+        str(clone), 999, claim=True, lane_patterns=["README.md"]
+    )
     assert lane_setup.blocked(payload), payload
     assert payload["lanes"]["record"]["state"] != "recorded", payload
 

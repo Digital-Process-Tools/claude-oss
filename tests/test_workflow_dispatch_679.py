@@ -85,7 +85,7 @@ def _on_block(text):
             continue
         keys = []
         base_indent = None
-        for following in lines[index + 1:]:
+        for following in lines[index + 1 :]:
             stripped = following.strip()
             if not stripped:
                 continue
@@ -120,7 +120,11 @@ def test_on_block_parses_known_triggers_correctly():
     is the case the comment-skipping and indent-tracking logic exists for.
     """
     assert _on_block(_text("changelog.yml")) == ["pull_request"]
-    assert _on_block(_text("tests.yml")) == ["push", "pull_request", "workflow_dispatch"]
+    assert _on_block(_text("tests.yml")) == [
+        "push",
+        "pull_request",
+        "workflow_dispatch",
+    ]
 
 
 def test_tests_workflow_declares_workflow_dispatch():
@@ -129,8 +133,9 @@ def test_tests_workflow_declares_workflow_dispatch():
     assert triggers is not None, "tests.yml: no `on:` block found"
     assert "workflow_dispatch" in triggers, (
         "tests.yml: expected `workflow_dispatch` under `on:`, got {!r}. Without it, "
-        "a dropped run on main (#679) has no remedy short of an empty commit."
-        .format(triggers)
+        "a dropped run on main (#679) has no remedy short of an empty commit.".format(
+            triggers
+        )
     )
 
 
@@ -216,14 +221,8 @@ def test_tests_workflow_reads_no_event_context_outside_the_concurrency_flag():
     # And the event context is read in exactly one place, which the docstring above
     # accounts for event by event. `${{` is what turns `github.event...` from prose
     # (this file's own comments discuss the fact) into a live expression.
-    live = [
-        line.strip()
-        for line in text.splitlines()
-        if "${{ github.event" in line
-    ]
-    assert live == [
-        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"
-    ], (
+    live = [line.strip() for line in text.splitlines() if "${{ github.event" in line]
+    assert live == ["cancel-in-progress: ${{ github.event_name == 'pull_request' }}"], (
         "tests.yml evaluates a github.event.* expression this test has not reckoned "
         "with: {!r}. Add the event-by-event reasoning to the docstring above rather "
         "than widening this list.".format(live)

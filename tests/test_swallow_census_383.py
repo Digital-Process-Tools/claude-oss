@@ -202,7 +202,9 @@ def _fake_plugin(root, documents, agents):
     return root
 
 
-def test_agent_dispatch_unreadable_directory_is_reported_injected(monkeypatch, tmp_path):
+def test_agent_dispatch_unreadable_directory_is_reported_injected(
+    monkeypatch, tmp_path
+):
     root = _fake_plugin(
         tmp_path,
         {
@@ -329,7 +331,9 @@ def test_plugin_supertool_entries_survives_one_unreadable_entry(monkeypatch, tmp
 
     # Before the fix: this raises out of plugin_supertool_entries instead of
     # dropping the one bad candidate the way #363's other filter sites do.
-    _raise_for(monkeypatch, "is_file", bad_entry, PermissionError(errno.EACCES, "denied"))
+    _raise_for(
+        monkeypatch, "is_file", bad_entry, PermissionError(errno.EACCES, "denied")
+    )
 
     found = doctor.plugin_supertool_entries(cache_root=str(cache))
     versions = [v for v, _ in found]
@@ -422,7 +426,9 @@ def test_compute_range_genuinely_absent_repo_path_still_could_not_run(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_agent_dispatch_unreadable_agents_directory_is_reported_injected(monkeypatch, tmp_path):
+def test_agent_dispatch_unreadable_agents_directory_is_reported_injected(
+    monkeypatch, tmp_path
+):
     root = _fake_plugin(
         tmp_path,
         {"commands/release.md": 'Agent(subagent_type: "oss:developer")'},

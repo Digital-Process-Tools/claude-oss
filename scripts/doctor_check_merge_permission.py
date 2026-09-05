@@ -213,9 +213,7 @@ def check_merge_permission(project_dir, home=None):
 # middle, and `(?:[A-Za-z]:)?` accepts an optional leading drive letter.
 SUPERTOOL_OP = "supertool"
 SUPERTOOL_RULE_FILE = ".claude/settings.json"
-SUPERTOOL_ENTRY_RE = re.compile(
-    r"^Bash\((?:\./|(?:[A-Za-z]:)?[/\\].*[/\\])?supertool:"
-)
+SUPERTOOL_ENTRY_RE = re.compile(r"^Bash\((?:\./|(?:[A-Za-z]:)?[/\\].*[/\\])?supertool:")
 
 
 def supertool_permission_state(project_dir, home=None):

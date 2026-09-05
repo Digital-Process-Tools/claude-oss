@@ -66,7 +66,9 @@ def _write_record(worktree_root, issue, files=None, age_seconds=0):
 
 
 def test_record_lane_stores_files_when_given(tmp_path):
-    result = lane_setup.record_lane(tmp_path, 558, "fix/558", str(tmp_path / "558"), files=["a.py", "b.py"])
+    result = lane_setup.record_lane(
+        tmp_path, 558, "fix/558", str(tmp_path / "558"), files=["a.py", "b.py"]
+    )
     assert result["state"] == "recorded"
     with open(result["path"]) as fh:
         assert json.load(fh)["files"] == ["a.py", "b.py"]
@@ -78,7 +80,9 @@ def test_record_lane_preserves_files_across_a_later_plain_call(tmp_path):
     passes no `--lane` at all. The second call must not blank out the first call's
     files, or the held-set derivation degrades back to could-not-derive on its own
     the moment the brief is written."""
-    lane_setup.record_lane(tmp_path, 558, "fix/558", str(tmp_path / "558"), files=["a.py", "b.py"])
+    lane_setup.record_lane(
+        tmp_path, 558, "fix/558", str(tmp_path / "558"), files=["a.py", "b.py"]
+    )
     result = lane_setup.record_lane(tmp_path, 558, "fix/558", str(tmp_path / "558"))
     assert result["state"] == "recorded"
     with open(result["path"]) as fh:
@@ -89,13 +93,19 @@ def test_record_lane_files_empty_list_is_stored_as_given(tmp_path):
     """A `--lane` that genuinely resolved to zero files is a real, distinct state
     from "no --lane was given at all" -- must not be confused with the preserve
     case above."""
-    lane_setup.record_lane(tmp_path, 558, "fix/558", str(tmp_path / "558"), files=["a.py"])
-    result = lane_setup.record_lane(tmp_path, 558, "fix/558", str(tmp_path / "558"), files=[])
+    lane_setup.record_lane(
+        tmp_path, 558, "fix/558", str(tmp_path / "558"), files=["a.py"]
+    )
+    result = lane_setup.record_lane(
+        tmp_path, 558, "fix/558", str(tmp_path / "558"), files=[]
+    )
     with open(result["path"]) as fh:
         assert json.load(fh)["files"] == []
 
 
-def test_record_lane_degrades_to_could_not_derive_when_the_prior_record_is_corrupt(tmp_path):
+def test_record_lane_degrades_to_could_not_derive_when_the_prior_record_is_corrupt(
+    tmp_path,
+):
     """The preserve is best-effort: a corrupt previous record cannot be read back,
     so a plain call after it stores `files=None` rather than raising or claiming a
     file list it cannot verify. That is a real, if rare, loss -- but the very next
@@ -156,7 +166,12 @@ def test_held_from_live_lanes_unknown_when_registry_never_written(tmp_path):
 
 
 def test_held_from_live_lanes_prunes_expired_records_from_the_held_set(tmp_path):
-    _write_record(tmp_path, 4, files=["scripts/old.py"], age_seconds=lane_setup.LANE_RECORD_TTL_SECONDS + 3600)
+    _write_record(
+        tmp_path,
+        4,
+        files=["scripts/old.py"],
+        age_seconds=lane_setup.LANE_RECORD_TTL_SECONDS + 3600,
+    )
     result = lane_setup.held_from_live_lanes(tmp_path)
     assert result["state"] == "unknown"
     assert result["held"] == {}
@@ -173,12 +188,21 @@ class _FakeCompletedProcess:
 
 
 def test_held_from_open_prs_resolved_with_open_prs(monkeypatch):
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh" if name == "gh" else None)
+    monkeypatch.setattr(
+        lane_setup.shutil, "which", lambda name: "/usr/bin/gh" if name == "gh" else None
+    )
     payload = json.dumps(
-        [{"number": 12, "files": [{"path": "scripts/foo.py"}, {"path": "scripts/bar.py"}]}]
+        [
+            {
+                "number": 12,
+                "files": [{"path": "scripts/foo.py"}, {"path": "scripts/bar.py"}],
+            }
+        ]
     )
     monkeypatch.setattr(
-        lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, payload, "")
+        lane_setup.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompletedProcess(0, payload, ""),
     )
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "resolved"
@@ -190,7 +214,9 @@ def test_held_from_open_prs_resolved_with_zero_open_prs(monkeypatch):
     """Must fire the positive control: zero open PRs is a confirmed zero, not an
     absence to fold into could-not-derive."""
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
-    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "[]", ""))
+    monkeypatch.setattr(
+        lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "[]", "")
+    )
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "resolved"
     assert result["held"] == {}
@@ -207,7 +233,9 @@ def test_held_from_open_prs_could_not_derive_on_nonzero_exit(monkeypatch):
     confident, empty held set."""
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
     monkeypatch.setattr(
-        lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(1, "", "boom: not authenticated")
+        lane_setup.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompletedProcess(1, "", "boom: not authenticated"),
     )
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "could-not-derive"
@@ -216,7 +244,11 @@ def test_held_from_open_prs_could_not_derive_on_nonzero_exit(monkeypatch):
 
 def test_held_from_open_prs_could_not_derive_on_unparseable_output(monkeypatch):
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
-    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "not json", ""))
+    monkeypatch.setattr(
+        lane_setup.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompletedProcess(0, "not json", ""),
+    )
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "could-not-derive"
 
@@ -229,9 +261,16 @@ def test_held_from_open_prs_could_not_derive_when_the_page_limit_is_hit(monkeypa
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
     limit = lane_setup._PR_LIST_LIMIT
     payload = json.dumps(
-        [{"number": n, "files": [{"path": "scripts/f{0}.py".format(n)}]} for n in range(limit)]
+        [
+            {"number": n, "files": [{"path": "scripts/f{0}.py".format(n)}]}
+            for n in range(limit)
+        ]
     )
-    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, payload, ""))
+    monkeypatch.setattr(
+        lane_setup.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompletedProcess(0, payload, ""),
+    )
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "could-not-derive"
 
@@ -242,7 +281,11 @@ def test_held_from_open_prs_resolved_when_under_the_page_limit(monkeypatch):
     from a broken derivation."""
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
     payload = json.dumps([{"number": 1, "files": [{"path": "scripts/f.py"}]}])
-    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, payload, ""))
+    monkeypatch.setattr(
+        lane_setup.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompletedProcess(0, payload, ""),
+    )
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "resolved"
 
@@ -253,7 +296,11 @@ def test_held_from_open_prs_resolved_when_under_the_page_limit(monkeypatch):
 def test_derive_held_set_resolved_combines_both_sources(tmp_path, monkeypatch):
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
     payload = json.dumps([{"number": 5, "files": [{"path": "scripts/pr_file.py"}]}])
-    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, payload, ""))
+    monkeypatch.setattr(
+        lane_setup.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompletedProcess(0, payload, ""),
+    )
     _write_record(tmp_path, 9, files=["scripts/lane_file.py"])
     result = lane_setup.derive_held_set("owner/repo", tmp_path)
     assert result["state"] == "resolved"
@@ -261,15 +308,21 @@ def test_derive_held_set_resolved_combines_both_sources(tmp_path, monkeypatch):
     assert "scripts/lane_file.py" in result["held"]
 
 
-def test_derive_held_set_could_not_derive_when_the_forge_call_fails(tmp_path, monkeypatch):
+def test_derive_held_set_could_not_derive_when_the_forge_call_fails(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: None)
     result = lane_setup.derive_held_set("owner/repo", tmp_path)
     assert result["state"] == "could-not-derive"
 
 
-def test_derive_held_set_could_not_derive_when_a_lane_record_is_untrustworthy(tmp_path, monkeypatch):
+def test_derive_held_set_could_not_derive_when_a_lane_record_is_untrustworthy(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
-    monkeypatch.setattr(lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "[]", ""))
+    monkeypatch.setattr(
+        lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "[]", "")
+    )
     _write_record(tmp_path, 9, files=None)
     result = lane_setup.derive_held_set("owner/repo", tmp_path)
     assert result["state"] == "could-not-derive"
@@ -278,11 +331,19 @@ def test_derive_held_set_could_not_derive_when_a_lane_record_is_untrustworthy(tm
 # --- lane_report availability: control pair --------------------------------------
 
 
-def test_lane_report_availability_available_when_disjoint_from_the_derived_set(tmp_path):
+def test_lane_report_availability_available_when_disjoint_from_the_derived_set(
+    tmp_path,
+):
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "free_file.py").write_text("x\n")
-    derived = {"state": "resolved", "held": {"scripts/other.py": ["PR #1"]}, "detail": ""}
-    report = lane_setup.lane_report(tmp_path, ["scripts/free_file.py"], None, derived_held=derived)
+    derived = {
+        "state": "resolved",
+        "held": {"scripts/other.py": ["PR #1"]},
+        "detail": "",
+    }
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/free_file.py"], None, derived_held=derived
+    )
     assert report["availability"]["state"] == "available"
 
 
@@ -291,18 +352,28 @@ def test_lane_report_availability_blocked_when_the_derived_set_overlaps(tmp_path
     the file and its holder(s), the way #558 asks."""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "shared.py").write_text("x\n")
-    derived = {"state": "resolved", "held": {"scripts/shared.py": ["PR #9"]}, "detail": ""}
-    report = lane_setup.lane_report(tmp_path, ["scripts/shared.py"], None, derived_held=derived)
+    derived = {
+        "state": "resolved",
+        "held": {"scripts/shared.py": ["PR #9"]},
+        "detail": "",
+    }
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/shared.py"], None, derived_held=derived
+    )
     assert report["availability"]["state"] == "blocked"
     assert report["availability"]["files"] == ["scripts/shared.py"]
     assert "PR #9" in report["availability"]["holders"]
 
 
-def test_lane_report_availability_could_not_derive_never_reads_as_available_or_blocked(tmp_path):
+def test_lane_report_availability_could_not_derive_never_reads_as_available_or_blocked(
+    tmp_path,
+):
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "shared.py").write_text("x\n")
     derived = {"state": "could-not-derive", "held": {}, "detail": "gh is not on PATH"}
-    report = lane_setup.lane_report(tmp_path, ["scripts/shared.py"], None, derived_held=derived)
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/shared.py"], None, derived_held=derived
+    )
     assert report["availability"]["state"] == "could-not-derive-the-held-set"
     assert report["availability"]["state"] not in ("available", "blocked")
 
@@ -328,24 +399,43 @@ def _minimal_payload(repo, derived_held, lane_patterns):
         "repo": str(repo),
         "config": {"state": "ok", "problems": []},
         "base": {
-            "state": "resolved", "remote": "origin", "ref": "origin/main",
-            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "detail": "",
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "detail": "",
         },
         "branch": {
-            "state": "resolved", "pattern": "fix/{issue}", "name": "fix/558",
-            "detail": "", "exists_local": False, "exists_remote": False,
+            "state": "resolved",
+            "pattern": "fix/{issue}",
+            "name": "fix/558",
+            "detail": "",
+            "exists_local": False,
+            "exists_remote": False,
         },
-        "worktree": {"state": "resolved", "root": "/tmp", "path": "/tmp/558", "detail": "", "exists": False},
+        "worktree": {
+            "state": "resolved",
+            "root": "/tmp",
+            "path": "/tmp/558",
+            "detail": "",
+            "exists": False,
+        },
         "board": {"state": "ok", "lines": []},
         "lanes": None,
-        "lane": lane_setup.lane_report(repo, lane_patterns, None, derived_held=derived_held),
+        "lane": lane_setup.lane_report(
+            repo, lane_patterns, None, derived_held=derived_held
+        ),
     }
 
 
 def test_receipt_names_the_holder_when_blocked(tmp_path):
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "shared.py").write_text("x\n")
-    derived = {"state": "resolved", "held": {"scripts/shared.py": ["PR #9"]}, "detail": ""}
+    derived = {
+        "state": "resolved",
+        "held": {"scripts/shared.py": ["PR #9"]},
+        "detail": "",
+    }
     payload = _minimal_payload(tmp_path, derived, ["scripts/shared.py"])
     text = lane_setup.receipt(payload)
     assert "verdict : BLOCKED" in text
@@ -355,7 +445,11 @@ def test_receipt_names_the_holder_when_blocked(tmp_path):
 def test_receipt_says_available_when_disjoint(tmp_path):
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "free.py").write_text("x\n")
-    derived = {"state": "resolved", "held": {"scripts/other.py": ["PR #1"]}, "detail": ""}
+    derived = {
+        "state": "resolved",
+        "held": {"scripts/other.py": ["PR #1"]},
+        "detail": "",
+    }
     payload = _minimal_payload(tmp_path, derived, ["scripts/free.py"])
     text = lane_setup.receipt(payload)
     assert "verdict : available" in text
@@ -372,11 +466,17 @@ def test_receipt_says_could_not_derive_never_available_or_blocked(tmp_path):
     assert "verdict : BLOCKED" not in text
 
 
-def test_receipt_does_not_reuse_the_only_one_side_given_wording_when_no_lane_given(tmp_path):
+def test_receipt_does_not_reuse_the_only_one_side_given_wording_when_no_lane_given(
+    tmp_path,
+):
     """#558 review round: `--derive-held` with no `--lane` is "nothing to check",
     not "only the against side is missing" -- the pre-#558 sentence, reused
     unchanged, would misdescribe a call that never named a candidate at all."""
-    derived = {"state": "resolved", "held": {"scripts/other.py": ["PR #1"]}, "detail": ""}
+    derived = {
+        "state": "resolved",
+        "held": {"scripts/other.py": ["PR #1"]},
+        "detail": "",
+    }
     payload = _minimal_payload(tmp_path, derived, None)
     text = lane_setup.receipt(payload)
     assert "only one side given" not in text
@@ -408,7 +508,13 @@ def _cli(tmp_path, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "lane_setup.py"), "558", "--repo", str(tmp_path)]
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "558",
+            "--repo",
+            str(tmp_path),
+        ]
         + list(extra_args),
         subject="what lane_setup.py's CLI answers for this tree and these flags",
         capture_output=True,

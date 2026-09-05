@@ -61,8 +61,16 @@ def test_last_triage_finds_the_most_recent_sweep_past_other_entries():
     the sweep -- the same shape `_last_wait` is already tested against, and the
     exact failure #436 fixed for waits: a one-entry-lifetime read."""
     entries = [
-        {"at": "2026-09-01T00:00:00Z", "decision": "sweep", "detail": {"triage": {"recorded_at": "2026-09-01T00:00:00Z"}}},
-        {"at": "2026-09-01T05:00:00Z", "decision": "dispatch", "detail": {"lanes": {"state": "recorded", "lanes": []}}},
+        {
+            "at": "2026-09-01T00:00:00Z",
+            "decision": "sweep",
+            "detail": {"triage": {"recorded_at": "2026-09-01T00:00:00Z"}},
+        },
+        {
+            "at": "2026-09-01T05:00:00Z",
+            "decision": "dispatch",
+            "detail": {"lanes": {"state": "recorded", "lanes": []}},
+        },
         {"at": "2026-09-01T09:00:00Z", "decision": "close", "detail": {}},
     ]
 
@@ -86,7 +94,11 @@ def test_last_triage_with_no_sweep_entry_anywhere_is_never():
     """Negative control for the scan above: a history with real entries, none
     of them a triage record, is a real `never`, not a `could-not-read`."""
     entries = [
-        {"at": "2026-09-01T05:00:00Z", "decision": "dispatch", "detail": {"lanes": {"state": "recorded", "lanes": []}}},
+        {
+            "at": "2026-09-01T05:00:00Z",
+            "decision": "dispatch",
+            "detail": {"lanes": {"state": "recorded", "lanes": []}},
+        },
     ]
     original_read = oss_state.read
     try:
@@ -206,7 +218,12 @@ def test_cli_last_triage_finds_the_sweep_behind_a_later_ordinary_tick(tmp_path):
 
 def test_cli_refuses_triage_recorded_in_a_reading_mode(tmp_path):
     result = _piped(
-        [str(tmp_path / "state.json"), "--read", "--triage-recorded", "2026-09-02T22:10:00Z"]
+        [
+            str(tmp_path / "state.json"),
+            "--read",
+            "--triage-recorded",
+            "2026-09-02T22:10:00Z",
+        ]
     )
     assert result.returncode != 0
     assert "only recorded with --decision" in result.stdout
@@ -216,5 +233,7 @@ def test_cli_triage_recorded_needs_decision():
     """Negative control for the reading-mode refusal above: --triage-recorded
     with no --decision and no reading-mode flag at all is a different failure
     (argparse's own required group), never a silent no-op."""
-    result = _piped(["/nonexistent/state.json", "--triage-recorded", "2026-09-02T22:10:00Z"])
+    result = _piped(
+        ["/nonexistent/state.json", "--triage-recorded", "2026-09-02T22:10:00Z"]
+    )
     assert result.returncode != 0

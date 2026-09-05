@@ -131,7 +131,13 @@ def test_load_baseline_absent_file_reports_absent_not_an_error(tmp_path):
 def test_load_baseline_present_and_valid(tmp_path):
     path = tmp_path / "baseline.json"
     path.write_text(
-        json.dumps({"slowest_share": 0.21, "slowest_nodeid": "tests/x.py::y", "total_seconds": 10.0}),
+        json.dumps(
+            {
+                "slowest_share": 0.21,
+                "slowest_nodeid": "tests/x.py::y",
+                "total_seconds": 10.0,
+            }
+        ),
         encoding="utf-8",
     )
     baseline, error = test_durations.load_baseline(path)
@@ -190,7 +196,9 @@ def test_load_baseline_an_exists_check_that_raises_os_error_is_unreadable_not_a_
 
 def test_write_baseline_round_trips_through_load_baseline(tmp_path):
     path = tmp_path / "baseline.json"
-    shape = test_durations.compute_shape([("tests/x.py::y", 9.0), ("tests/z.py::w", 1.0)])
+    shape = test_durations.compute_shape(
+        [("tests/x.py::y", 9.0), ("tests/z.py::w", 1.0)]
+    )
     test_durations.write_baseline(path, shape)
     baseline, error = test_durations.load_baseline(path)
     assert error is None
@@ -212,7 +220,9 @@ def test_report_state_is_no_baseline_when_shape_exists_but_baseline_does_not():
     against -- said out loud as its own state, never silently folded into
     'measured' or 'nothing changed'."""
     shape = test_durations.compute_shape([("a", 1.0)])
-    assert test_durations.report_state(shape, None, "absent") == test_durations.NO_BASELINE
+    assert (
+        test_durations.report_state(shape, None, "absent") == test_durations.NO_BASELINE
+    )
 
 
 def test_report_state_is_could_not_measure_when_shape_is_none_even_with_a_baseline_present():
@@ -221,21 +231,30 @@ def test_report_state_is_could_not_measure_when_shape_is_none_even_with_a_baseli
     or 'no-baseline' -- both would print exactly like a healthy comparison
     when nothing was actually observed."""
     baseline = {"slowest_share": 0.5, "slowest_nodeid": "a", "total_seconds": 2.0}
-    assert test_durations.report_state(None, baseline, None) == test_durations.COULD_NOT_MEASURE
+    assert (
+        test_durations.report_state(None, baseline, None)
+        == test_durations.COULD_NOT_MEASURE
+    )
 
 
 # ------------------------------------------------------------------------ format_report
 
 
 def test_format_report_names_the_state_could_not_measure_explicitly():
-    lines = test_durations.format_report(None, None, "absent", test_durations.COULD_NOT_MEASURE)
+    lines = test_durations.format_report(
+        None, None, "absent", test_durations.COULD_NOT_MEASURE
+    )
     joined = "\n".join(lines)
     assert "could-not-measure" in joined.lower()
 
 
 def test_format_report_names_the_state_no_baseline_explicitly():
-    shape = test_durations.compute_shape([("tests/x.py::y", 9.0), ("tests/z.py::w", 1.0)])
-    lines = test_durations.format_report(shape, None, "absent", test_durations.NO_BASELINE)
+    shape = test_durations.compute_shape(
+        [("tests/x.py::y", 9.0), ("tests/z.py::w", 1.0)]
+    )
+    lines = test_durations.format_report(
+        shape, None, "absent", test_durations.NO_BASELINE
+    )
     joined = "\n".join(lines)
     assert "no-baseline" in joined.lower()
     assert "tests/x.py::y" in joined
@@ -244,8 +263,14 @@ def test_format_report_names_the_state_no_baseline_explicitly():
 def test_format_report_names_the_state_measured_explicitly():
     """Must-fire pair for the state-naming assertion above: the measured
     state prints its own name too, not just the other two."""
-    shape = test_durations.compute_shape([("tests/x.py::y", 9.0), ("tests/z.py::w", 1.0)])
-    baseline = {"slowest_share": 0.5, "slowest_nodeid": "tests/x.py::y", "total_seconds": 2.0}
+    shape = test_durations.compute_shape(
+        [("tests/x.py::y", 9.0), ("tests/z.py::w", 1.0)]
+    )
+    baseline = {
+        "slowest_share": 0.5,
+        "slowest_nodeid": "tests/x.py::y",
+        "total_seconds": 2.0,
+    }
     lines = test_durations.format_report(shape, baseline, None, test_durations.MEASURED)
     joined = "\n".join(lines)
     assert "measured" in joined.lower()

@@ -74,8 +74,10 @@ def test_verdict_line_is_single_line_for_multiline_git_stderr(tmp_path, capsys):
     # Confirm the fixture actually produces multi-line stderr from git
     # itself, so this is measured rather than assumed.
     probe = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=str(root),
-        capture_output=True, text=True,
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
     assert probe.returncode != 0
     if "\n" not in probe.stderr.strip():

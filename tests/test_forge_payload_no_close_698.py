@@ -52,8 +52,12 @@ def test_no_close_true_with_a_non_closing_body_validates_clean(tmp_path):
         "no_close": True,
     }
     report = _report_with_payload(
-        tmp_path, payload,
-        closes={"state": "closes-nothing", "reason": "Part of #695; the wiring is a separate PR."},
+        tmp_path,
+        payload,
+        closes={
+            "state": "closes-nothing",
+            "reason": "Part of #695; the wiring is a separate PR.",
+        },
     )
     assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []
 
@@ -71,7 +75,10 @@ def test_an_unrelated_unknown_key_is_still_refused(tmp_path):
         "totally_unknown_field": True,
     }
     report = _report_with_payload(
-        tmp_path, payload, closes={"state": "closes", "issues": [1]}, name="unknown.pr.json"
+        tmp_path,
+        payload,
+        closes={"state": "closes", "issues": [1]},
+        name="unknown.pr.json",
     )
     errors = report_schema.validate_pr_body(report, base_dir=tmp_path)
     assert errors, "an unknown key must still be refused"
@@ -90,7 +97,9 @@ def test_no_close_true_beside_a_bound_closing_keyword_is_refused(tmp_path):
         "no_close": True,
     }
     report = _report_with_payload(
-        tmp_path, payload, closes={"state": "closes", "issues": [999]},
+        tmp_path,
+        payload,
+        closes={"state": "closes", "issues": [999]},
         name="contradiction.pr.json",
     )
     errors = report_schema.validate_pr_body(report, base_dir=tmp_path)
@@ -109,6 +118,9 @@ def test_no_close_false_beside_a_bound_closing_keyword_is_fine(tmp_path):
         "base": "main",
     }
     report = _report_with_payload(
-        tmp_path, payload, closes={"state": "closes", "issues": [1]}, name="ordinary.pr.json"
+        tmp_path,
+        payload,
+        closes={"state": "closes", "issues": [1]},
+        name="ordinary.pr.json",
     )
     assert report_schema.validate_pr_body(report, base_dir=tmp_path) == []

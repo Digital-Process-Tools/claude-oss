@@ -61,7 +61,9 @@ def test_identical_roots_report_the_same_identity(tmp_path):
     assert doctor.plugin_identity(a) == doctor.plugin_identity(b)
 
 
-def test_identity_folds_the_two_unreadable_manifest_states_like_plugin_version(tmp_path):
+def test_identity_folds_the_two_unreadable_manifest_states_like_plugin_version(
+    tmp_path,
+):
     """The failure states must never render as a version-shaped string (#350s rule,
     carried over here rather than reopened)."""
     root = tmp_path / "broken"

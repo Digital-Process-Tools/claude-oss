@@ -668,7 +668,6 @@ written to close.
 """
 
 
-
 #: #245 step 1: the "Merge gates" section skills/manager/SKILL.md carried in full on every
 #: tick, keyed instead on the one tool call it actually governs -- a `command` matching
 #: `gh-pr-merge`. `mode: remind` rather than `block`: refusing the merge call outright is
@@ -750,7 +749,9 @@ less than it appears to: `skills/manager/phases/handback.md`.
 """
 
 
-def rules(repo_root=None, fragments_dir=None, untagged=None, gate=None, assembler=_DERIVE):
+def rules(
+    repo_root=None, fragments_dir=None, untagged=None, gate=None, assembler=_DERIVE
+):
     """dimension -> {filename: body}, rendered for the tree it is going into.
 
     `repo_root` is what makes the changelog rule correct in more than one repository: the

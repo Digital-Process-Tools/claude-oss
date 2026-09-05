@@ -46,7 +46,9 @@ def test_build_never_invents_a_spelling_not_in_the_probe():
     """Negative control: a probe that carries nothing resembling the loop-filed
     convention must never produce a guessed label name.
     """
-    config = oss_config.build(_probe(labels=["priority-high", "lane-hooks", "bug", "wontfix"]))
+    config = oss_config.build(
+        _probe(labels=["priority-high", "lane-hooks", "bug", "wontfix"])
+    )
     assert config["labels"]["filed_by_loop"] is None
 
 

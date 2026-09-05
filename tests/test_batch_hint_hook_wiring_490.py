@@ -60,12 +60,14 @@ def test_wrapper_script_end_to_end_through_the_real_shell_invocation(tmp_path):
     # Drives hooks/batch-hint.sh itself (not scripts/batch_hint.py directly),
     # the way the harness actually would, with CLAUDE_PLUGIN_ROOT set the way
     # a real plugin install sets it.
-    payload = json.dumps({
-        "session_id": "wiring-test-490",
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Bash",
-        "tool_input": {"command": "supertool 'read:a.py'"},
-    })
+    payload = json.dumps(
+        {
+            "session_id": "wiring-test-490",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "supertool 'read:a.py'"},
+        }
+    )
     env = dict(os.environ)
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["BATCH_HINT_STATE_DIR"] = str(tmp_path)

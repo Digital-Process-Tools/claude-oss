@@ -25,7 +25,10 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import select_issues  # noqa: E402
 
-DECLARED = {"filed_by_loop": "filed-by-loop", "priority": ["priority-high", "priority-medium", "priority-low"]}
+DECLARED = {
+    "filed_by_loop": "filed-by-loop",
+    "priority": ["priority-high", "priority-medium", "priority-low"],
+}
 
 
 def _issue(number, labels=None, **extra):
@@ -41,16 +44,25 @@ def _issue(number, labels=None, **extra):
 
 def _no_op_checker(numbers, mode, run=None, repo=None):
     """A stand-in for `issue_claim.check` that reads every issue as unassigned."""
-    return [{"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"} for n in numbers]
+    return [
+        {"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"}
+        for n in numbers
+    ]
 
 
 # ---------------------------------------------------------------------------
 # could-not-select vs none-available -- the pairing the issue is about
 # ---------------------------------------------------------------------------
 
+
 def test_an_unreadable_board_is_could_not_select_never_none_available():
-    result = select_issues.select({"declared": DECLARED, "board_read_ok": False,
-                                    "board_read_why": "gh-issues timed out"})
+    result = select_issues.select(
+        {
+            "declared": DECLARED,
+            "board_read_ok": False,
+            "board_read_why": "gh-issues timed out",
+        }
+    )
     assert result["state"] == "could-not-select"
     assert "gh-issues timed out" in result["why"]
 
@@ -63,7 +75,10 @@ def test_a_genuinely_empty_board_is_none_available_the_positive_control():
 
 def test_an_unreadable_assignee_field_forces_could_not_select():
     def checker(numbers, mode, run=None, repo=None):
-        return [{"issue": n, "state": "could-not-read", "detail": "gh timed out"} for n in numbers]
+        return [
+            {"issue": n, "state": "could-not-read", "detail": "gh timed out"}
+            for n in numbers
+        ]
 
     payload = {"declared": DECLARED, "issues": [_issue(1, ["priority-high"])]}
     result = select_issues.select(payload, checker=checker)
@@ -73,18 +88,25 @@ def test_an_unreadable_assignee_field_forces_could_not_select():
     # dropped row behind, carrying the disposition the module's own
     # docstring promises -- not silently discarded the way the overall
     # could-not-select return used to hardcode `dropped: []`.
-    assert result["dropped"] == [{
-        "number": 1,
-        "disposition": "assignee-unreadable",
-        "why": "assignee read failed: gh timed out",
-    }]
+    assert result["dropped"] == [
+        {
+            "number": 1,
+            "disposition": "assignee-unreadable",
+            "why": "assignee read failed: gh timed out",
+        }
+    ]
 
 
 def test_an_unmatched_preflight_pattern_still_produces_candidates():
     """The positive control for the could-not-search case below: an ordinary,
     successful preflight read that finds nothing does not block selection."""
+
     def search(pattern, roots):
-        return {"state": "not-matched", "pattern": pattern, "roots": [str(r) for r in roots]}
+        return {
+            "state": "not-matched",
+            "pattern": pattern,
+            "roots": [str(r) for r in roots],
+        }
 
     payload = {
         "declared": DECLARED,
@@ -97,8 +119,12 @@ def test_an_unmatched_preflight_pattern_still_produces_candidates():
 
 def test_a_preflight_that_could_not_search_forces_could_not_select():
     def search(pattern, roots):
-        return {"state": "could-not-search", "pattern": pattern,
-                "roots": [str(r) for r in roots], "problem": "root(s) missing: /nope"}
+        return {
+            "state": "could-not-search",
+            "pattern": pattern,
+            "roots": [str(r) for r in roots],
+            "problem": "root(s) missing: /nope",
+        }
 
     payload = {
         "declared": DECLARED,
@@ -113,9 +139,14 @@ def test_a_preflight_that_could_not_search_forces_could_not_select():
 # per-issue disposition
 # ---------------------------------------------------------------------------
 
+
 def test_a_stale_issue_is_dropped_with_its_pattern_named():
     def search(pattern, roots):
-        return {"state": "matched", "pattern": pattern, "matches": [{"path": "x.py", "line": 1, "text": "..."}]}
+        return {
+            "state": "matched",
+            "pattern": pattern,
+            "matches": [{"path": "x.py", "line": 1, "text": "..."}],
+        }
 
     payload = {
         "declared": DECLARED,
@@ -123,8 +154,13 @@ def test_a_stale_issue_is_dropped_with_its_pattern_named():
     }
     result = select_issues.select(payload, checker=_no_op_checker, search=search)
     assert result["state"] == "none-available"
-    assert result["dropped"] == [{"number": 1, "disposition": "stale",
-                                   "why": "preflight pattern matched: already fixed"}]
+    assert result["dropped"] == [
+        {
+            "number": 1,
+            "disposition": "stale",
+            "why": "preflight pattern matched: already fixed",
+        }
+    ]
 
 
 def test_an_unrankable_issue_is_dropped_and_named():
@@ -169,7 +205,9 @@ def test_an_external_issue_outranks_a_maintainer_one_at_the_same_band_993():
 
 def test_an_assigned_issue_is_dropped_and_named():
     def checker(numbers, mode, run=None, repo=None):
-        return [{"issue": n, "state": "assigned", "assignees": ["someone"]} for n in numbers]
+        return [
+            {"issue": n, "state": "assigned", "assignees": ["someone"]} for n in numbers
+        ]
 
     payload = {"declared": DECLARED, "issues": [_issue(1, ["priority-high"])]}
     result = select_issues.select(payload, checker=checker)
@@ -197,11 +235,16 @@ def test_a_refused_lane_pattern_forces_could_not_select_998():
     the same state `_lane_pattern_problem` also produces for a bad literal or
     a glob-and-OSError -- must not read as "this lane resolved to no files,
     therefore no overlap". An unreadable input is dark, not clean."""
+
     def resolve(repo, patterns):
         return {
             "patterns": [
-                {"pattern": patterns[0], "state": "refused", "files": [],
-                 "detail": "ValueError: bad pattern"}
+                {
+                    "pattern": patterns[0],
+                    "state": "refused",
+                    "files": [],
+                    "detail": "ValueError: bad pattern",
+                }
             ],
             "files": [],
         }
@@ -240,6 +283,7 @@ def test_eligible_candidates_are_ranked_best_first():
 # main() / CLI: closed stdin does not crash (same class as #846)
 # ---------------------------------------------------------------------------
 
+
 def test_main_on_a_closed_stdin_answers_could_not_select_not_a_traceback():
     driver = (
         "import os, runpy, sys\n"
@@ -251,7 +295,9 @@ def test_main_on_a_closed_stdin_answers_could_not_select_not_a_traceback():
         "except SystemExit as exc:\n"
         "    raise SystemExit(exc.code)\n"
     ).format(str(REPO / "scripts" / "select_issues.py"))
-    proc = subprocess.run([sys.executable, "-c", driver], stdin=subprocess.DEVNULL, capture_output=True)
+    proc = subprocess.run(
+        [sys.executable, "-c", driver], stdin=subprocess.DEVNULL, capture_output=True
+    )
     err = proc.stderr.decode("utf-8", errors="replace")
     out = proc.stdout.decode("utf-8", errors="replace")
     assert "Traceback" not in err, err
@@ -281,9 +327,16 @@ def test_main_on_an_ordinary_piped_board_prints_candidates(monkeypatch, capsys):
     point.
     """
     monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
-    board = {"declared": DECLARED, "issues": [
-        {"number": 5, "labels": ["priority-high"], "author_association": "maintainer"},
-    ]}
+    board = {
+        "declared": DECLARED,
+        "issues": [
+            {
+                "number": 5,
+                "labels": ["priority-high"],
+                "author_association": "maintainer",
+            },
+        ],
+    }
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
     code = select_issues.main()
     out = json.loads(capsys.readouterr().out)
@@ -324,7 +377,13 @@ def test_a_non_ascii_label_does_not_crash_the_print(monkeypatch, capsys):
     monkeypatch.setattr(select_issues.issue_claim, "check", _no_op_checker)
     board = {
         "declared": DECLARED,
-        "issues": [{"number": 6, "labels": ["priority-hïgh"], "author_association": "maintainer"}],
+        "issues": [
+            {
+                "number": 6,
+                "labels": ["priority-hïgh"],
+                "author_association": "maintainer",
+            }
+        ],
     }
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(board)))
     code = select_issues.main()

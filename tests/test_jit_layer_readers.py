@@ -123,7 +123,11 @@ def _cache(
     """
     root = tmp_path / "cache"
     root.mkdir(parents=True, exist_ok=True)
-    plugin = (tmp_path / "elsewhere" / version) if stray else (root / "dpt-plugins" / name / version)
+    plugin = (
+        (tmp_path / "elsewhere" / version)
+        if stray
+        else (root / "dpt-plugins" / name / version)
+    )
     (plugin / "scripts").mkdir(parents=True)
     for filename, body in hooks.items():
         _write(plugin / "scripts" / filename, body)
@@ -238,7 +242,9 @@ def test_hooks_that_enumerate_at_runtime_are_not_unread(tmp_path):
     assert "fixed list" in finding["detail"]
 
 
-def test_a_directory_glob_in_the_hook_set_is_named_not_only_the_absence_of_a_list(tmp_path):
+def test_a_directory_glob_in_the_hook_set_is_named_not_only_the_absence_of_a_list(
+    tmp_path,
+):
     """#616: a stale `unknown` and a genuinely open one must not read identically.
 
     `ENUMERATED` is a hook that enumerates its dimension directory with a shell glob
@@ -361,7 +367,10 @@ def test_a_glob_in_the_hook_set_outranks_a_fixed_list_outside_it(tmp_path):
     cache, record = _cache(
         tmp_path / "control",
         {"pre-tool-hook.sh": NEITHER},
-        extra={"tests/test-layer-enumeration.sh": FIXTURE, "vendor/helper.sh": ENUMERATED},
+        extra={
+            "tests/test-layer-enumeration.sh": FIXTURE,
+            "vendor/helper.sh": ENUMERATED,
+        },
     )
     finding = _one(_project(tmp_path), cache, record)
     assert finding["state"] == "could-not-determine", finding
@@ -467,7 +476,9 @@ def test_a_manifest_the_plugin_json_names_is_the_one_looked_for(tmp_path):
     assert _one(_project(tmp_path), cache, record)["state"] == "reads"
 
 
-def test_a_manifest_path_the_plugin_declared_and_this_cannot_resolve_is_not_a_fallback(tmp_path):
+def test_a_manifest_path_the_plugin_declared_and_this_cannot_resolve_is_not_a_fallback(
+    tmp_path,
+):
     """A declaration this cannot resolve is a non-answer, not a licence to guess.
 
     Falling back to the convention measures a file the plugin did not name, which is the
@@ -504,7 +515,9 @@ def test_a_manifest_path_the_plugin_declared_and_this_cannot_resolve_is_not_a_fa
     assert "../../etc/hooks.json" in finding["detail"], finding["detail"]
 
 
-def test_a_hook_manifest_that_will_not_parse_says_so_rather_than_that_it_named_nothing(tmp_path):
+def test_a_hook_manifest_that_will_not_parse_says_so_rather_than_that_it_named_nothing(
+    tmp_path,
+):
     """Unreadable and empty are two states and used to share one sentence.
 
     Both halves are must-fire, on the same fixture shape: a manifest that will not parse,
@@ -635,7 +648,9 @@ def test_a_manifest_component_that_would_leave_the_install_root_resolves_to_noth
 
 
 @pytest.mark.parametrize("running_sep", ["/", "\\"])
-def test_a_declared_manifest_path_resolves_the_same_way_on_every_platform(monkeypatch, running_sep):
+def test_a_declared_manifest_path_resolves_the_same_way_on_every_platform(
+    monkeypatch, running_sep
+):
     """The components a declaration resolves to must not depend on who is running the check.
 
     #258. `_jit_path_parts` used to split on `os.sep`, so `custom\\hooks.json` was two
@@ -795,7 +810,9 @@ def test_an_unreadable_install_record_is_could_not_determine(tmp_path):
 def test_an_installed_version_whose_tree_is_gone_is_could_not_determine(tmp_path):
     """The record says a version runs and nothing is on disk under it."""
     cache, record = _cache(tmp_path, {"pre-tool-hook.sh": OMITS})
-    for path in sorted((cache / "dpt-plugins" / PLUGIN / VERSION / "scripts").iterdir()):
+    for path in sorted(
+        (cache / "dpt-plugins" / PLUGIN / VERSION / "scripts").iterdir()
+    ):
         path.unlink()
     finding = _one(_project(tmp_path), cache, record)
     assert finding["state"] == "could-not-determine"
@@ -842,11 +859,17 @@ def test_every_state_this_check_emits_has_a_level(tmp_path):
         cache, record = _cache(tmp_path / str(index), hooks)
         project = _project(tmp_path / str(index), layer=layer)
         seen.add(
-            doctor.jit_layer_readers(project, record=record, cache_root=cache)[0]["state"]
+            doctor.jit_layer_readers(project, record=record, cache_root=cache)[0][
+                "state"
+            ]
         )
 
     assert seen == {
-        "reads", "reads-by-glob", "unread", "could-not-determine", "no-layer",
+        "reads",
+        "reads-by-glob",
+        "unread",
+        "could-not-determine",
+        "no-layer",
     }
     assert seen <= set(doctor.JIT_LAYER_LEVELS)
     assert set(doctor.JIT_LAYER_LEVELS.values()) <= {"OK", "WARN", "FAIL"}
@@ -872,7 +895,8 @@ def test_the_layer_name_is_not_a_second_copy_of_it(tmp_path, monkeypatch):
     monkeypatch.setattr(oss_rules, "LAYER", renamed)
 
     cache, record = _cache(
-        tmp_path, {"pre-tool-hook.sh": 'split("00-manual {}", layers, " ")\n'.format(renamed)}
+        tmp_path,
+        {"pre-tool-hook.sh": 'split("00-manual {}", layers, " ")\n'.format(renamed)},
     )
     project = _project(tmp_path, layer=renamed)
     assert _one(project, cache, record)["state"] == "reads"
@@ -912,7 +936,7 @@ GLOB_THEN_FILTERS_US_OUT = (
     '  name="${d##*/}"\n'
     '  [ "$name" = "00-manual" ] || continue\n'
     '  echo "$name"\n'
-    'done\n'
+    "done\n"
 )
 #: The positive control for it: the same filter, naming our layer instead of excluding it.
 GLOB_THEN_FILTERS_US_IN = GLOB_THEN_FILTERS_US_OUT.replace('"00-manual"', '"01-oss"')
@@ -926,8 +950,8 @@ GLOB_BESIDE_AN_INDEX_FILENAME = (
     'for d in "$JIT_BASE/$dim"/*/; do\n'
     '  for tsv in "$d/00-index.tsv" "$d/01-paths.tsv"; do\n'
     '    tsv="$base/$layer/00-index.tsv"\n'
-    '  done\n'
-    'done\n'
+    "  done\n"
+    "done\n"
 )
 
 
@@ -987,7 +1011,9 @@ def test_a_glob_narrowed_by_a_name_filter_that_excludes_us_is_not_ok_743(tmp_pat
 
     # Positive control, same shape one token different: a filter that names our layer
     # is not a reason to withhold the answer.
-    cache, record = _cache(tmp_path / "in", {"pre-tool-hook.sh": GLOB_THEN_FILTERS_US_IN})
+    cache, record = _cache(
+        tmp_path / "in", {"pre-tool-hook.sh": GLOB_THEN_FILTERS_US_IN}
+    )
     finding = _one(_project(tmp_path), cache, record)
     assert finding["state"] == "reads-by-glob", finding
 

@@ -87,7 +87,9 @@ def receipt_dir():
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         return Path(base) / "oss-statusline"
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache"
+    )
     return Path(base) / "oss-statusline"
 
 
@@ -376,7 +378,9 @@ def installed_scopes(name, project_root, plugins_root=None):
 
     import statusline
 
-    project = statusline._normalized_path(project_root) if project_root is not None else None
+    project = (
+        statusline._normalized_path(project_root) if project_root is not None else None
+    )
     scopes = []
     for plugin_key, entries in (doc.get("plugins") or {}).items():
         if plugin_key.split("@", 1)[0] != name:
@@ -401,7 +405,7 @@ def qualified_name(name, plugins_root=None):
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return name
-    for plugin_key in (doc.get("plugins") or {}):
+    for plugin_key in doc.get("plugins") or {}:
         if plugin_key.split("@", 1)[0] == name:
             return plugin_key
     return name
@@ -434,7 +438,9 @@ def installed_version(name, project_root, plugins_root=None):
 
     import statusline
 
-    project = statusline._normalized_path(project_root) if project_root is not None else None
+    project = (
+        statusline._normalized_path(project_root) if project_root is not None else None
+    )
 
     def key(text):
         parts = []
@@ -641,8 +647,15 @@ def _update_one(name, root, plugins_root, runner, scope_fallback):
     }
 
 
-def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None,
-           now=None, receipt=None):
+def update(
+    root=None,
+    plugin_root=None,
+    plugins_root=None,
+    env=None,
+    runner=None,
+    now=None,
+    receipt=None,
+):
     """Refresh the marketplace, update this plugin and its declared dependencies (#605).
 
     The marketplace refresh comes first and its failure is fatal to the run: without it
@@ -695,7 +708,11 @@ def update(root=None, plugin_root=None, plugins_root=None, env=None, runner=None
             return document
     status, where = opt_out(root, env)
     if status == "off":
-        return {"state": "off", "at": stamp, "detail": "switched off by {}".format(where)}
+        return {
+            "state": "off",
+            "at": stamp,
+            "detail": "switched off by {}".format(where),
+        }
     if status == "unknown":
         # Whether an opt-out was declared could not be told, and the docstring's
         # reversibility promise is the one that must not be risked by a guess: modifying
@@ -823,13 +840,21 @@ def main(argv=None):
         # about to start. The launcher composes its own sentence from the raw
         # versions instead.
         def _flat(value):
-            return str(value if value is not None else "").replace("\t", " ").replace("\n", " ").replace("\r", " ")
-        sys.stdout.write("{}\t{}\t{}\t{}\n".format(
-            _flat(document.get("state")),
-            _flat(document.get("from")),
-            _flat(document.get("to")),
-            _flat(document.get("detail")),
-        ))
+            return (
+                str(value if value is not None else "")
+                .replace("\t", " ")
+                .replace("\n", " ")
+                .replace("\r", " ")
+            )
+
+        sys.stdout.write(
+            "{}\t{}\t{}\t{}\n".format(
+                _flat(document.get("state")),
+                _flat(document.get("from")),
+                _flat(document.get("to")),
+                _flat(document.get("detail")),
+            )
+        )
     return 0
 
 

@@ -51,7 +51,9 @@ def test_exists_raising_must_not_crash_the_run(tmp_path, monkeypatch):
     exception decides the arm."""
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8")
+    settings.write_text(
+        json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8"
+    )
     _raise_for(monkeypatch, "exists", settings, PermissionError(13, "denied"))
     _raise_for(monkeypatch, "read_text", settings, PermissionError(13, "denied"))
 
@@ -67,7 +69,9 @@ def test_exists_swallowing_to_false_must_not_create(tmp_path, monkeypatch):
     never read. `read_text`'s own exception is the one asked, not `exists()`'s."""
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8")
+    settings.write_text(
+        json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8"
+    )
     real_exists = Path.exists
 
     def fake_exists(self):
@@ -126,7 +130,9 @@ def test_a_real_chmod_deny_is_measured_not_assumed(tmp_path):
     """
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8")
+    settings.write_text(
+        json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8"
+    )
     _deny_read(settings)
     try:
         try:

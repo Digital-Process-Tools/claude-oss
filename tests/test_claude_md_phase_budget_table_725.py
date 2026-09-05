@@ -66,12 +66,17 @@ def _module_pairs():
     """`{path: (baseline, budget)}` from `skill_phases.DOCUMENTS`, dropping the
     third element (`governs`) -- the table renders only the numbers.
     """
-    return {path: (baseline, budget) for path, (baseline, budget, _governs) in skill_phases.DOCUMENTS.items()}
+    return {
+        path: (baseline, budget)
+        for path, (baseline, budget, _governs) in skill_phases.DOCUMENTS.items()
+    }
 
 
 def test_phase_budget_table_names_exactly_the_files_skill_phases_declares():
     rows = _table_rows()
-    assert rows, "no rows matched under the phase budget table header -- the parser or the table moved"
+    assert rows, (
+        "no rows matched under the phase budget table header -- the parser or the table moved"
+    )
     table_paths = {path for path, _, _ in rows}
     module_paths = set(skill_phases.DOCUMENTS)
     assert table_paths == module_paths, (
@@ -85,13 +90,17 @@ def test_phase_budget_table_names_exactly_the_files_skill_phases_declares():
 
 def test_phase_budget_table_numbers_match_skill_phases_exactly():
     rows = _table_rows()
-    assert rows, "no rows matched under the phase budget table header -- the parser or the table moved"
+    assert rows, (
+        "no rows matched under the phase budget table header -- the parser or the table moved"
+    )
     module_pairs = _module_pairs()
     mismatches = []
     for path, table_baseline, table_budget in rows:
         real_baseline, real_budget = module_pairs.get(path, (None, None))
         if (table_baseline, table_budget) != (real_baseline, real_budget):
-            mismatches.append((path, (table_baseline, table_budget), (real_baseline, real_budget)))
+            mismatches.append(
+                (path, (table_baseline, table_budget), (real_baseline, real_budget))
+            )
     assert not mismatches, (
         "CLAUDE.md's manager-skill budget table disagrees with skill_phases.DOCUMENTS "
         "(table vs. real): " + ", ".join(f"{p}: {t} != {r}" for p, t, r in mismatches)

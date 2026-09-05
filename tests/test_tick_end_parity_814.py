@@ -31,6 +31,7 @@ SUB_MANAGER_MD = REPO_ROOT / "agents" / "sub-manager.md"
 # #1037: "What ends a tick" moved out of commands/tick.md into its own phase file.
 TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
+
 #: The TICK-ENDS vocabulary, measured from `tick_handback.py`'s own
 #: _KNOWN_TICK_ENDS tuple rather than retyped -- the issue explicitly asks
 #: for this rather than a hand-copied list going stale beside the module
@@ -49,9 +50,7 @@ def _tick_ends_vocabulary():
 #: "Work started" bullet in commands/tick.md's "What ends a tick" section: does
 #: it say the tick continues (dispatch alone does not end it) or does it say
 #: dispatching itself closes the tick out?
-_WORK_STARTED_BULLET_RE = re.compile(
-    r"Work started[^-]*—\s*(.*?)(?=- \*\*Blocked\*\*)"
-)
+_WORK_STARTED_BULLET_RE = re.compile(r"Work started[^-]*—\s*(.*?)(?=- \*\*Blocked\*\*)")
 
 
 def _tick_md_dispatch_ends_tick(text):
@@ -73,6 +72,8 @@ def _tick_md_dispatch_ends_tick(text):
 _REPORT_TRIGGER_RE = re.compile(
     r"[Ww]hen your tick is done\s*--\s*(.*?)\s*--\s*write your final message"
 )
+
+
 def _sub_manager_dispatch_ends_tick(text):
     """True only if "dispatched" appears as a bare, standalone item in the
     comma-separated list of things that end a tick -- not merely present
@@ -121,8 +122,12 @@ def test_the_facts_are_findable_in_both_documents():
     sub = _collapse(SUB_MANAGER_MD.read_text(encoding="utf-8"))
     tick = _collapse(TICK_MD.read_text(encoding="utf-8"))
     for name, (sub_fn, tick_fn) in FACT_EXTRACTORS.items():
-        assert sub_fn(sub) is not None, "agents/sub-manager.md does not state: {}".format(name)
-        assert tick_fn(tick) is not None, "commands/tick.md does not state: {}".format(name)
+        assert sub_fn(sub) is not None, (
+            "agents/sub-manager.md does not state: {}".format(name)
+        )
+        assert tick_fn(tick) is not None, "commands/tick.md does not state: {}".format(
+            name
+        )
 
 
 def test_sub_manager_ticks_ends_vocabulary_matches_tick_handback_py():
@@ -154,7 +159,9 @@ def test_the_parity_check_fires_on_the_buggy_wording():
     )
     assert _sub_manager_dispatch_ends_tick(buggy) is True
     assert _tick_md_dispatch_ends_tick(_TICK_MD_SNIPPET) is False
-    assert _sub_manager_dispatch_ends_tick(buggy) != _tick_md_dispatch_ends_tick(_TICK_MD_SNIPPET)
+    assert _sub_manager_dispatch_ends_tick(buggy) != _tick_md_dispatch_ends_tick(
+        _TICK_MD_SNIPPET
+    )
 
 
 def test_the_facts_are_findable_in_the_control_snippets():

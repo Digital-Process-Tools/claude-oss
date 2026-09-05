@@ -137,7 +137,9 @@ def test_a_dash_prefixed_remote_reaches_no_git_argv(tmp_path, monkeypatch):
     assert payload["base"]["state"] == "could-not-resolve"
 
 
-def test_the_hostile_remote_reaches_no_unprefixed_argument_anywhere(tmp_path, monkeypatch):
+def test_the_hostile_remote_reaches_no_unprefixed_argument_anywhere(
+    tmp_path, monkeypatch
+):
     """`branch_occupancy` still runs with the same hostile remote, deliberately -- it
     interpolates it into `refs/remotes/<remote>/<name>`, so this pins that the value is
     absent from the flag position rather than absent from the process.
@@ -192,7 +194,10 @@ def test_the_detail_says_why_rather_than_reporting_a_git_error(tmp_path, monkeyp
     assert "stubbed" not in detail, (
         "the detail is git's own failure, which means git was called: " + detail
     )
-    assert detail[:60] == lane_setup._one_line(lane_setup.remote_problem(HOSTILE_DASH))[:60]
+    assert (
+        detail[:60]
+        == lane_setup._one_line(lane_setup.remote_problem(HOSTILE_DASH))[:60]
+    )
 
 
 def test_the_receipt_and_blocked_agree(tmp_path, monkeypatch):
@@ -238,7 +243,9 @@ def test_no_input_can_occupy_an_option_position_at_any_argv_site(tmp_path, monke
     """
     hostile_repo_dir = tmp_path / "-repo"
     hostile_repo_dir.mkdir(exist_ok=True)
-    (hostile_repo_dir / ".oss.json").write_bytes((_repo(tmp_path) / ".oss.json").read_bytes())
+    (hostile_repo_dir / ".oss.json").write_bytes(
+        (_repo(tmp_path) / ".oss.json").read_bytes()
+    )
 
     def _hostile_repo_args():
         # Relative, from `tmp_path`, so `str(repo)` really is `-repo`. An absolute path
@@ -269,7 +276,9 @@ def test_no_input_can_occupy_an_option_position_at_any_argv_site(tmp_path, monke
 
     control = _capture(monkeypatch)
     lane_setup.compute(_repo(tmp_path), 381, WELL_FORMED)
-    assert control, "the harness produced no calls at all, so the sweep measured nothing"
+    assert control, (
+        "the harness produced no calls at all, so the sweep measured nothing"
+    )
 
     for name, hostile, build in sites:
         # The premise of the site, asserted rather than assumed. A site whose "hostile"
@@ -285,7 +294,9 @@ def test_no_input_can_occupy_an_option_position_at_any_argv_site(tmp_path, monke
         # A site that produced no argv at all passes every assertion below without
         # measuring anything, which is this repository's own defect class pointed at
         # its own sweep. Measured at the time of writing: 2, 2, 4 and 4 calls.
-        assert calls, "the {0} site produced no git argv, so nothing was swept".format(name)
+        assert calls, "the {0} site produced no git argv, so nothing was swept".format(
+            name
+        )
         for call in calls:
             for arg in call["args"]:
                 assert not arg.startswith("-") or arg in LITERAL_FLAGS, (

@@ -137,7 +137,10 @@ def test_several_at_once_are_all_named():
 
 def test_the_glyphs_are_used_where_the_console_encodes_them():
     field = statusline._plugins_field(
-        [("oss", _status("current")), ("claude-supertool", _status("behind", "0.48.0", "0.49.0"))],
+        [
+            ("oss", _status("current")),
+            ("claude-supertool", _status("behind", "0.48.0", "0.49.0")),
+        ],
         statusline._symbols(False),
     )
     # #550: distinct shape, not just distinct colour -- `↥` (arrow from bar) rather
@@ -155,7 +158,10 @@ def test_the_whole_line_carries_the_collapsed_block():
         "default_branch": "main",
         "board": {"prs": 1, "issues": 2, "checks": None},
         "release": {"state": "measured", "since": 4, "typical": 17},
-        "plugins": [("oss", _status("current")), ("claude-supertool", _status("current"))],
+        "plugins": [
+            ("oss", _status("current")),
+            ("claude-supertool", _status("current")),
+        ],
     }
     line = statusline.render(facts, ascii_only=True)
     assert "plug 2ok" in line

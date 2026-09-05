@@ -172,8 +172,7 @@ def extract_ranking_table(text):
         return (
             STATE_NOT_FOUND,
             None,
-            "the ranking table header and divider were found but no data "
-            "rows followed",
+            "the ranking table header and divider were found but no data rows followed",
         )
 
     table = "".join(row_lines)

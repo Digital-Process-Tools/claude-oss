@@ -37,6 +37,7 @@ only `--repo`/`--match`/`--config`) -- it has no internal env-var fallback to
 degrade, so it is out of scope for this fix; noted rather than silently
 skipped.
 """
+
 import re
 import subprocess
 import sys
@@ -77,7 +78,8 @@ def test_gate3_resolves_the_plugin_root_before_using_it():
 def test_checklist_skew_call_passes_plugin_root_explicitly():
     text = _text()
     calls = [
-        line for line in text.splitlines()
+        line
+        for line in text.splitlines()
         if "scripts/checklist_skew.py" in line and "python3" in line
     ]
     assert calls, "no checklist_skew.py invocation found in commands/release.md"
@@ -92,7 +94,8 @@ def test_checklist_skew_call_passes_plugin_root_explicitly():
 def test_ranking_table_call_passes_plugin_root_explicitly():
     text = _text()
     calls = [
-        line for line in text.splitlines()
+        line
+        for line in text.splitlines()
         if "scripts/ranking_table.py" in line and "python3" in line
     ]
     assert calls, "no ranking_table.py invocation found in commands/release.md"
@@ -111,7 +114,9 @@ def test_release_delta_has_no_plugin_root_flag_to_add():
     scope for this fix."""
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "release_delta.py"), "--help"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     assert "--plugin-root" not in result.stdout
 
@@ -121,12 +126,13 @@ def test_pre_fix_recipe_would_have_failed_this_check():
     through the same check, must fail -- proving the assertions above are not
     vacuously true."""
     bad = (
-        '   ```bash\n'
+        "   ```bash\n"
         '   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --json\n'
-        '   ```\n'
+        "   ```\n"
     )
     calls = [
-        line for line in bad.splitlines()
+        line
+        for line in bad.splitlines()
         if "scripts/checklist_skew.py" in line and "python3" in line
     ]
     assert calls
@@ -175,7 +181,7 @@ def test_split_block_form_would_have_failed_the_same_check():
         "```bash\n"
         'RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" '
         '--print-resolved-root --root . 2>/dev/null)"\n'
-        "GATE3_ROOT=\"$RESOLVED_ROOT\"\n"
+        'GATE3_ROOT="$RESOLVED_ROOT"\n'
         "```\n\n"
         "text between\n\n"
         "```bash\n"

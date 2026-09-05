@@ -40,22 +40,34 @@ def hook_path():
     """
     roots, version = doctor.jit_hook_roots()
     if not roots:
-        return None, version, (
-            "the claude-jit-context dependency is not installed here, so nothing about "
-            "what its PreToolUse hook does was measured on this runner"
+        return (
+            None,
+            version,
+            (
+                "the claude-jit-context dependency is not installed here, so nothing about "
+                "what its PreToolUse hook does was measured on this runner"
+            ),
         )
     hooks = [root.joinpath(*HOOK_RELATIVE) for root in roots]
     hooks = [hook for hook in hooks if hook.is_file()]
     if not hooks:
-        return None, version, (
-            "the dependency ({}) is installed but ships no {} where its install record "
-            "points, so nothing was driven".format(version, "/".join(HOOK_RELATIVE))
+        return (
+            None,
+            version,
+            (
+                "the dependency ({}) is installed but ships no {} where its install record "
+                "points, so nothing was driven".format(version, "/".join(HOOK_RELATIVE))
+            ),
         )
     if shutil.which("bash") is None:
-        return None, version, (
-            "no bash on PATH, so the PreToolUse hook of {} could not be driven".format(
-                version
-            )
+        return (
+            None,
+            version,
+            (
+                "no bash on PATH, so the PreToolUse hook of {} could not be driven".format(
+                    version
+                )
+            ),
         )
     return hooks[0], version, None
 

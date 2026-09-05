@@ -64,19 +64,28 @@ def _carries_the_permission(opening):
     """#905's finding: the thing that stops a lesson being logged is not the format, it is the
     hesitation about whether it counts. The opening has to answer that, not just name the path."""
     lowered = opening.lower()
-    return "do not need to be sure" in lowered or "no decision" in lowered or "decides that" in lowered
+    return (
+        "do not need to be sure" in lowered
+        or "no decision" in lowered
+        or "decides that" in lowered
+    )
 
 
 CHECKS = (
     ("addresses the agent reading it", _addresses_the_agent),
-    ("states why this is written rather than remembered", _states_the_blank_session_constraint),
+    (
+        "states why this is written rather than remembered",
+        _states_the_blank_session_constraint,
+    ),
     ("names trap.d/", _reaches_the_trap_invitation),
     ("gives permission to log without being sure", _carries_the_permission),
 )
 
 
 def test_claude_md_is_readable():
-    assert CLAUDE_MD.is_file(), "CLAUDE.md is missing -- every check below would vacuously pass"
+    assert CLAUDE_MD.is_file(), (
+        "CLAUDE.md is missing -- every check below would vacuously pass"
+    )
 
 
 @pytest.mark.parametrize("label,check", CHECKS, ids=[c[0] for c in CHECKS])
@@ -109,5 +118,7 @@ def test_the_opening_is_actually_the_opening():
     text = CLAUDE_MD.read_text(encoding="utf-8")
     opening = _opening(text)
     assert opening.startswith("# claude-oss"), opening[:80]
-    assert SECTION_MARK not in opening, "the opening span ran past the first section heading"
+    assert SECTION_MARK not in opening, (
+        "the opening span ran past the first section heading"
+    )
     assert len(opening) < len(text), "the opening span swallowed the whole file"

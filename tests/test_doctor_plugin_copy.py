@@ -71,15 +71,19 @@ def _plugin_tree(root, name="oss", version="0.5.0", contract="1"):
 
 def _line(lines, label):
     """The one line carrying `label`, or a failure naming everything that printed."""
-    matched = [(level, message) for level, message in lines if message.startswith(label)]
-    assert len(matched) == 1, "expected exactly one {!r} line, got {!r}".format(label, lines)
+    matched = [
+        (level, message) for level, message in lines if message.startswith(label)
+    ]
+    assert len(matched) == 1, "expected exactly one {!r} line, got {!r}".format(
+        label, lines
+    )
     return matched[0]
 
 
 def _manifest_version(root):
-    return json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))[
-        "version"
-    ]
+    return json.loads(
+        (root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )["version"]
 
 
 def _skewed_pair(tmp_path):
@@ -107,7 +111,9 @@ def _provenance(answered, checkout, attested="flag"):
 # --------------------------------------------------------------------------
 
 
-def test_version_equality_cannot_separate_the_two_fixtures_and_this_check_does(tmp_path):
+def test_version_equality_cannot_separate_the_two_fixtures_and_this_check_does(
+    tmp_path,
+):
     skew_answered, skew_checkout = _skewed_pair(tmp_path / "a")
     same_answered, same_checkout = _identical_pair(tmp_path / "b")
 
@@ -143,7 +149,9 @@ def test_identical_trees_report_identical_rather_than_silence(tmp_path):
 
 def test_a_difference_outside_scripts_is_seen_too(tmp_path):
     answered, checkout = _identical_pair(tmp_path)
-    (checkout / "skills" / "manager.md").write_text("the loop, revised\n", encoding="utf-8")
+    (checkout / "skills" / "manager.md").write_text(
+        "the loop, revised\n", encoding="utf-8"
+    )
 
     level, message = _line(_provenance(answered, checkout), COPY)
     assert level == "WARN", message
@@ -173,7 +181,9 @@ def test_line_endings_alone_are_not_reported_as_a_skew(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_a_repo_that_is_not_a_checkout_of_this_plugin_says_so_rather_than_nothing(tmp_path):
+def test_a_repo_that_is_not_a_checkout_of_this_plugin_says_so_rather_than_nothing(
+    tmp_path,
+):
     answered = _plugin_tree(tmp_path / "installed")
     plain = tmp_path / "some-managed-repo"
     plain.mkdir()
@@ -196,7 +206,9 @@ def test_a_different_plugin_is_not_compared(tmp_path):
 def test_a_manifest_that_will_not_parse_is_unknown_rather_than_clean(tmp_path):
     answered = _plugin_tree(tmp_path / "installed")
     checkout = _plugin_tree(tmp_path / "clone")
-    (checkout / ".claude-plugin" / "plugin.json").write_text("{ not json", encoding="utf-8")
+    (checkout / ".claude-plugin" / "plugin.json").write_text(
+        "{ not json", encoding="utf-8"
+    )
 
     level, message = _line(_provenance(answered, checkout), COPY)
     assert level == "WARN", message
@@ -261,7 +273,9 @@ def test_an_unreadable_file_is_not_counted_into_a_real_difference(tmp_path):
     unreadable path is not counted into the tally.
     """
     answered, checkout = _identical_pair(tmp_path)
-    (checkout / "skills" / "manager.md").write_text("the loop, revised\n", encoding="utf-8")
+    (checkout / "skills" / "manager.md").write_text(
+        "the loop, revised\n", encoding="utf-8"
+    )
     victim = checkout / "scripts" / "report_schema.py"
     if not _deny_read(victim):
         pytest.skip(
@@ -296,7 +310,9 @@ def test_a_symlinked_compared_directory_is_declined_rather_than_followed(tmp_pat
         victim.symlink_to(outside, target_is_directory=True)
     except (OSError, NotImplementedError) as exc:
         pytest.skip(
-            "symlink refused ({}); the declined-symlink branch went untested".format(exc)
+            "symlink refused ({}); the declined-symlink branch went untested".format(
+                exc
+            )
         )
 
     level, message = _line(_provenance(answered, checkout), COPY)
@@ -514,7 +530,10 @@ def test_scope_is_ok_when_the_invocation_named_the_root_that_ran(tmp_path):
 def test_scope_reports_a_named_root_that_is_not_the_tree_that_ran(tmp_path):
     answered, checkout = _identical_pair(tmp_path)
     lines = doctor.plugin_provenance(
-        answered, checkout, attested=tmp_path / "elsewhere", attested_source="--plugin-root"
+        answered,
+        checkout,
+        attested=tmp_path / "elsewhere",
+        attested_source="--plugin-root",
     )
     level, message = _line(lines, SCOPE)
 
@@ -533,7 +552,10 @@ def test_every_scope_state_says_it_covers_one_command_only(tmp_path, attested):
 def test_scope_disagreement_state_also_says_it(tmp_path):
     answered, checkout = _identical_pair(tmp_path)
     lines = doctor.plugin_provenance(
-        answered, checkout, attested=tmp_path / "elsewhere", attested_source="--plugin-root"
+        answered,
+        checkout,
+        attested=tmp_path / "elsewhere",
+        attested_source="--plugin-root",
     )
     _, message = _line(lines, SCOPE)
     assert SESSION_CAVEAT in message, message
@@ -555,8 +577,14 @@ def test_the_environment_is_named_when_it_is_what_attested(tmp_path):
 
 
 def test_the_flag_wins_over_the_environment():
-    assert doctor.plugin_attestation("/flag", "/env") == (Path("/flag"), "--plugin-root")
-    assert doctor.plugin_attestation(None, "/env") == (Path("/env"), "CLAUDE_PLUGIN_ROOT")
+    assert doctor.plugin_attestation("/flag", "/env") == (
+        Path("/flag"),
+        "--plugin-root",
+    )
+    assert doctor.plugin_attestation(None, "/env") == (
+        Path("/env"),
+        "CLAUDE_PLUGIN_ROOT",
+    )
     assert doctor.plugin_attestation(None, None) == (None, None)
     assert doctor.plugin_attestation(None, "") == (None, None)
 
@@ -589,13 +617,18 @@ def test_main_still_exits_zero_with_one_verdict_and_prints_the_new_lines(
     assert any(COPY in line for line in lines), out
 
 
-def test_a_plugin_root_that_does_not_exist_still_produces_both_lines(tmp_path, capsys, monkeypatch):
+def test_a_plugin_root_that_does_not_exist_still_produces_both_lines(
+    tmp_path, capsys, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
     monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
 
-    assert doctor.main(["--root", str(tmp_path), "--plugin-root", str(tmp_path / "nope")]) == 0
+    assert (
+        doctor.main(["--root", str(tmp_path), "--plugin-root", str(tmp_path / "nope")])
+        == 0
+    )
     out = capsys.readouterr().out
     assert SCOPE in out, out
     assert COPY in out, out

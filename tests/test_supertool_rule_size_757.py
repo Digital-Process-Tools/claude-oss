@@ -21,7 +21,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import oss_rules  # noqa: E402
 
-RULE_MD = REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss" / "supertool-required.md"
+RULE_MD = (
+    REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss" / "supertool-required.md"
+)
 README_MD = REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss" / "00-README.md"
 
 BYTE_CEILING = 1024
@@ -109,9 +111,13 @@ def test_moved_prose_landed_in_the_readme():
     deleted -- it has to be readable somewhere, and 00-README.md is unindexed by the rule
     engine (JIT_ENTRY_SKIP), so it costs nothing per refusal.
     """
-    assert README_MD.exists(), "00-README.md does not exist -- the moved prose has nowhere to land"
+    assert README_MD.exists(), (
+        "00-README.md does not exist -- the moved prose has nowhere to land"
+    )
     readme_body = README_MD.read_text(encoding="utf-8")
-    still_missing = [marker for marker in MOVED_PROSE_MARKERS if marker not in readme_body]
+    still_missing = [
+        marker for marker in MOVED_PROSE_MARKERS if marker not in readme_body
+    ]
     assert not still_missing, (
         "prose expected to have moved to 00-README.md is not there either -- it was deleted, "
         "not moved: {}".format(still_missing)
@@ -134,8 +140,11 @@ def test_the_readme_body_matches_the_constant_shipped_into_scaffolded_repos():
     normalises them -- a Windows checkout's CRLF is not drift -- and nothing else is,
     so a one-sided wording edit still fails.
     """
+
     def _normalise(text):
-        return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n"))
+        return "\n".join(
+            line.rstrip() for line in text.replace("\r\n", "\n").split("\n")
+        )
 
     disk = _normalise(README_MD.read_text(encoding="utf-8"))
     constant = _normalise(oss_rules.TOOLS_AGENT_RULE_DECISION)
@@ -151,8 +160,11 @@ def test_the_readme_parity_check_would_catch_a_one_sided_edit():
     """The positive control for the comparison above: a sameness assertion also passes
     when the normaliser flattens everything, so this proves it can still fail.
     """
+
     def _normalise(text):
-        return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n"))
+        return "\n".join(
+            line.rstrip() for line in text.replace("\r\n", "\n").split("\n")
+        )
 
     disk = README_MD.read_text(encoding="utf-8")
     assert _normalise(disk) != _normalise(disk + "a one-sided edit\n"), (

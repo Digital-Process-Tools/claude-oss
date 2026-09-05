@@ -48,10 +48,14 @@ def _git_repo(tmp_path, name, body):
     frag = root / "changelog.d" / name
     frag.write_text(body, encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(root), check=True)
     subprocess.run(["git", "add", "-A"], cwd=str(root), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "add fragment"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "add fragment"], cwd=str(root), check=True
+    )
     return root, frag
 
 
@@ -97,7 +101,9 @@ def test_a_failed_git_add_does_not_render_as_the_success_receipt(tmp_path, monke
         state,
         message,
     )
-    assert new_path is not None, "the rename and rewrite did happen; only staging failed"
+    assert new_path is not None, (
+        "the rename and rewrite did happen; only staging failed"
+    )
     new = root / "changelog.d" / "222.fixed.md"
     assert new.exists() and "#222" in new.read_text(encoding="utf-8")
 
@@ -170,7 +176,9 @@ def _fold_stat(monkeypatch, target):
         except (TypeError, OSError, ValueError):
             key = None
         if key == wanted:
-            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(value))
+            raise FileNotFoundError(
+                errno.ENOENT, "No such file or directory", str(value)
+            )
         return real_stat(value, *fargs, **fkwargs)
 
     monkeypatch.setattr(os, "stat", fake_stat)
@@ -315,7 +323,9 @@ def test_source_present_answers_could_not_look_for_an_embedded_null(tmp_path):
     assert rcf._source_present(bad) is None
 
 
-def test_a_git_add_that_cannot_even_run_returns_refused_not_a_traceback(tmp_path, monkeypatch):
+def test_a_git_add_that_cannot_even_run_returns_refused_not_a_traceback(
+    tmp_path, monkeypatch
+):
     """Reviewer finding on this same fix: `git mv` is wrapped in
     `except (OSError, ValueError)` to survive git becoming unspawnable mid-run,
     but the new `git add` call was not -- so an unspawnable `git` between the two
@@ -342,7 +352,9 @@ def test_a_git_add_that_cannot_even_run_returns_refused_not_a_traceback(tmp_path
     assert "add" in message.lower()
 
 
-def test_an_unwritable_rewrite_does_not_overclaim_the_on_disk_state(tmp_path, monkeypatch):
+def test_an_unwritable_rewrite_does_not_overclaim_the_on_disk_state(
+    tmp_path, monkeypatch
+):
     """Reviewer finding on this same fix: `Path.write_text` truncates on open
     before writing, so an `OSError` raised *during* the write (disk full mid-
     flush) can leave the file empty or partially written, not holding the OLD

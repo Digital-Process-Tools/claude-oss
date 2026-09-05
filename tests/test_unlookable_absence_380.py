@@ -106,7 +106,9 @@ def _fold(monkeypatch, target):
 
     def fake_path_stat(self, *args, **kwargs):
         if _key(self) == wanted:
-            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(self))
+            raise FileNotFoundError(
+                errno.ENOENT, "No such file or directory", str(self)
+            )
         return real_path_stat(self, *args, **kwargs)
 
     monkeypatch.setattr(os, "stat", fake_os_stat)
@@ -181,17 +183,35 @@ def test_the_receipt_says_unknown_not_free_for_a_folded_name(folded):
         "issue": 380,
         "repo": ".",
         "config": {"state": "ok", "problems": []},
-        "base": {"state": "could-not-resolve", "remote": "origin", "ref": None,
-                 "sha": None, "detail": "x"},
-        "branch": {"state": "unknown", "pattern": None, "name": None, "detail": "x",
-                   "exists_local": None, "exists_remote": None},
-        "worktree": {"state": "resolved", "root": str(folded.parent),
-                     "path": str(folded), "detail": "",
-                     "exists": lane_setup.worktree_occupancy(str(folded))},
+        "base": {
+            "state": "could-not-resolve",
+            "remote": "origin",
+            "ref": None,
+            "sha": None,
+            "detail": "x",
+        },
+        "branch": {
+            "state": "unknown",
+            "pattern": None,
+            "name": None,
+            "detail": "x",
+            "exists_local": None,
+            "exists_remote": None,
+        },
+        "worktree": {
+            "state": "resolved",
+            "root": str(folded.parent),
+            "path": str(folded),
+            "detail": "",
+            "exists": lane_setup.worktree_occupancy(str(folded)),
+        },
         "board": {"state": "could-not-run", "lines": [], "detail": "x"},
     }
-    row = [ln for ln in lane_setup.receipt(payload).splitlines()
-           if ln.startswith("worktree  :")]
+    row = [
+        ln
+        for ln in lane_setup.receipt(payload).splitlines()
+        if ln.startswith("worktree  :")
+    ]
     assert len(row) == 1, row
     assert row[0].endswith("[unknown]"), row[0]
     assert "[free]" not in row[0], row[0]
@@ -292,8 +312,11 @@ def test_a_real_long_path_is_measured_rather_than_assumed(tmp_path):
             "one-character components: {} (errno {}). UNTESTED here: what the two "
             "classifiers answer for a real path at that length. platform={} "
             "python={}".format(
-                len(str(deep)), type(exc).__name__, exc.errno, sys.platform,
-                sys.version.split()[0]
+                len(str(deep)),
+                type(exc).__name__,
+                exc.errno,
+                sys.platform,
+                sys.version.split()[0],
             )
         )
 
@@ -303,7 +326,8 @@ def test_a_real_long_path_is_measured_rather_than_assumed(tmp_path):
         # The platform reached its own limit on a path that exists. Whatever it
         # called it, the honest answer is the third state.
         assert lane_setup.worktree_occupancy(str(deep)) is None, (
-            type(exc).__name__, exc.errno
+            type(exc).__name__,
+            exc.errno,
         )
         assert doctor._dir_state(deep)[0] == "unreadable"
         return

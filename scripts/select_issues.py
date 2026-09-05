@@ -143,8 +143,14 @@ def _could_not_select(why, dropped=None):
 _GROUP_TARGET = 3
 
 
-def _group_candidates(candidates, issues_by_number, resolved_files_by_number,
-                       suggest_companions, board_capped, board_cap_detail):
+def _group_candidates(
+    candidates,
+    issues_by_number,
+    resolved_files_by_number,
+    suggest_companions,
+    board_capped,
+    board_cap_detail,
+):
     """#1068: compose `lane_setup.suggest_companions` over `select()`'s own
     ranked, eligible `candidates` -- the fourth join this module used to leave
     to a session, the same way it already composes `resolve_lane` and
@@ -251,19 +257,27 @@ def _group_candidates(candidates, issues_by_number, resolved_files_by_number,
         short_reason = None
         if len(members) < _GROUP_TARGET:
             if result["state"] == "could-not-tell":
-                short_reason = "board sweep could not tell: {0}".format(result["detail"])
+                short_reason = "board sweep could not tell: {0}".format(
+                    result["detail"]
+                )
             else:
-                short_reason = "no further overlapping candidate among the ranked issues"
-        groups.append({
-            "members": members,
-            "state": result["state"],
-            "detail": result["detail"],
-            "short_reason": short_reason,
-        })
+                short_reason = (
+                    "no further overlapping candidate among the ranked issues"
+                )
+        groups.append(
+            {
+                "members": members,
+                "state": result["state"],
+                "detail": result["detail"],
+                "short_reason": short_reason,
+            }
+        )
     return groups, ungrouped
 
 
-def select(payload, checker=None, search=None, resolve_lane=None, suggest_companions=None):
+def select(
+    payload, checker=None, search=None, resolve_lane=None, suggest_companions=None
+):
     """The join. `payload` is `{"declared": {...}, "issues": [...], ...}` --
     see the module docstring's per-issue optional fields (`preflight_pattern`
     / `preflight_roots`, `lane_patterns`) and the top-level optional
@@ -294,13 +308,17 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
     search = preflight_check.search if search is None else search
     resolve_lane = lane_setup.resolve_lane if resolve_lane is None else resolve_lane
     suggest_companions = (
-        lane_setup.suggest_companions if suggest_companions is None else suggest_companions
+        lane_setup.suggest_companions
+        if suggest_companions is None
+        else suggest_companions
     )
 
     declared = payload.get("declared") or {}
 
     if payload.get("board_read_ok") is False:
-        why = payload.get("board_read_why") or "the caller reported the board read failed"
+        why = (
+            payload.get("board_read_why") or "the caller reported the board read failed"
+        )
         return _could_not_select("board: {0}".format(why))
 
     issues = payload.get("issues")
@@ -318,7 +336,10 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
     # absent pair -- a caller that never populated it -- still reads as "not
     # attempted", not as a failure.
     if payload.get("lanes_read_ok") is False:
-        why = payload.get("lanes_read_why") or "the caller reported the lane inventory read failed"
+        why = (
+            payload.get("lanes_read_why")
+            or "the caller reported the lane inventory read failed"
+        )
         return _could_not_select("lanes: {0}".format(why))
 
     held_files = set(payload.get("held_files") or [])
@@ -334,7 +355,12 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
     # a shallow-copied issue list, means both `order()`'s key and the loop's
     # own `rank()` call see the same already-translated value.
     translated_issues = [
-        dict(item, author_association=_translate_author_association(item.get("author_association")))
+        dict(
+            item,
+            author_association=_translate_author_association(
+                item.get("author_association")
+            ),
+        )
         for item in issues
     ]
     ranked = dispatch_rank.order(translated_issues, declared)
@@ -351,11 +377,14 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
     for item in ranked:
         number = item.get("number")
         answer = dispatch_rank.rank(
-            item.get("labels") or [], declared,
+            item.get("labels") or [],
+            declared,
             item.get("author_association"),
         )
         if answer["rank"] is None:
-            dropped.append({"number": number, "disposition": "unrankable", "why": answer["why"]})
+            dropped.append(
+                {"number": number, "disposition": "unrankable", "why": answer["why"]}
+            )
             continue
 
         pattern = item.get("preflight_pattern")
@@ -363,11 +392,13 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
             roots = [Path(r) for r in (item.get("preflight_roots") or ["."])]
             result = search(pattern, roots)
             if result["state"] == "matched":
-                dropped.append({
-                    "number": number,
-                    "disposition": "stale",
-                    "why": "preflight pattern matched: {0}".format(pattern),
-                })
+                dropped.append(
+                    {
+                        "number": number,
+                        "disposition": "stale",
+                        "why": "preflight pattern matched: {0}".format(pattern),
+                    }
+                )
                 continue
             if result["state"] == "could-not-search":
                 dark_inputs.append(
@@ -417,11 +448,15 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
             if held_files:
                 overlap = lane_setup.lane_overlap(resolved["files"], held_files)
                 if overlap:
-                    dropped.append({
-                        "number": number,
-                        "disposition": "lane-collision",
-                        "why": "overlaps already-claimed file(s): {0}".format(", ".join(overlap)),
-                    })
+                    dropped.append(
+                        {
+                            "number": number,
+                            "disposition": "lane-collision",
+                            "why": "overlaps already-claimed file(s): {0}".format(
+                                ", ".join(overlap)
+                            ),
+                        }
+                    )
                     continue
             resolved_files_by_number[number] = resolved["files"]
 
@@ -438,12 +473,16 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
             number = item.get("number")
             row = rows.get(number)
             if row is None:
-                dropped.append({
-                    "number": number,
-                    "disposition": "assignee-unreadable",
-                    "why": "no row returned by the assignee checker",
-                })
-                dark_inputs.append("assignee read for #{0}: no row returned".format(number))
+                dropped.append(
+                    {
+                        "number": number,
+                        "disposition": "assignee-unreadable",
+                        "why": "no row returned by the assignee checker",
+                    }
+                )
+                dark_inputs.append(
+                    "assignee read for #{0}: no row returned".format(number)
+                )
                 continue
             if row["state"] == issue_claim.STATE_COULD_NOT_READ:
                 # #970 review round: this used to fall straight into
@@ -455,30 +494,38 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
                 # inspects a partial/aborted run (or a future caller that
                 # keeps going past the first dark input) sees the real
                 # per-issue reason rather than nothing.
-                dropped.append({
-                    "number": number,
-                    "disposition": "assignee-unreadable",
-                    "why": "assignee read failed: {0}".format(row.get("detail")),
-                })
+                dropped.append(
+                    {
+                        "number": number,
+                        "disposition": "assignee-unreadable",
+                        "why": "assignee read failed: {0}".format(row.get("detail")),
+                    }
+                )
                 dark_inputs.append(
                     "assignee read for #{0}: {1}".format(number, row.get("detail"))
                 )
                 continue
             if row["state"] == issue_claim.STATE_ASSIGNED:
-                dropped.append({
-                    "number": number,
-                    "disposition": "assigned",
-                    "why": "already assigned to {0}".format(", ".join(row.get("assignees") or [])),
-                })
+                dropped.append(
+                    {
+                        "number": number,
+                        "disposition": "assigned",
+                        "why": "already assigned to {0}".format(
+                            ", ".join(row.get("assignees") or [])
+                        ),
+                    }
+                )
                 continue
-            candidates.append({
-                "number": number,
-                "disposition": "eligible",
-                "rank": answer["rank"],
-                "author": answer["author"],
-                "band": answer["band"],
-                "why": answer["why"],
-            })
+            candidates.append(
+                {
+                    "number": number,
+                    "disposition": "eligible",
+                    "rank": answer["rank"],
+                    "author": answer["author"],
+                    "band": answer["band"],
+                    "why": answer["why"],
+                }
+            )
 
     if dark_inputs:
         return _could_not_select("; ".join(dark_inputs), dropped=dropped)
@@ -487,8 +534,12 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
     if candidates:
         issues_by_number = {item.get("number"): item for item in issues}
         groups, ungrouped = _group_candidates(
-            candidates, issues_by_number, resolved_files_by_number, suggest_companions,
-            payload.get("board_capped"), payload.get("board_cap_detail"),
+            candidates,
+            issues_by_number,
+            resolved_files_by_number,
+            suggest_companions,
+            payload.get("board_capped"),
+            payload.get("board_cap_detail"),
         )
     else:
         groups, ungrouped = [], []
@@ -546,7 +597,9 @@ def main(argv=None):
         # caught separately so this never renders as "not valid JSON" when
         # stdin was JSON and simply could not be decoded (dispatch_rank.py's
         # own #834 fix, same class).
-        result = _could_not_select("stdin: could not be decoded as UTF-8 ({0})".format(exc))
+        result = _could_not_select(
+            "stdin: could not be decoded as UTF-8 ({0})".format(exc)
+        )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 2
     except ValueError as exc:

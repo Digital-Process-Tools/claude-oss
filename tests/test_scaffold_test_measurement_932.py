@@ -109,9 +109,7 @@ def test_a_command_naming_pytest_only_incidentally_gets_no_pytest_flags():
     specifically: it must never name pytest's own flags on the strength of a
     substring match.
     """
-    text = scaffold.render(
-        "CLAUDE.md", _config(test_command="npm test --grep pytest")
-    )
+    text = scaffold.render("CLAUDE.md", _config(test_command="npm test --grep pytest"))
     assert "--durations" not in text and "--cov" not in text, (
         "a substring match on the word 'pytest' inside an npm invocation wrote "
         "pytest-specific flag advice into a non-Python repo's CLAUDE.md"

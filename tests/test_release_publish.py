@@ -61,7 +61,11 @@ All notable changes to this project are documented in this file.
 
 
 def _config(**release):
-    block = {"tag_pattern": "v{version}", "commit_subject": None, "merge_method": "squash"}
+    block = {
+        "tag_pattern": "v{version}",
+        "commit_subject": None,
+        "merge_method": "squash",
+    }
     block.update(release)
     return {"repo": "owner/name", "release": block}
 
@@ -143,14 +147,7 @@ def test_a_tilde_fence_closes_only_on_a_tilde_fence():
     closing fence does not either. Both are how a hand-maintained CHANGELOG.md ends
     up with an extractor that silently disagrees with the renderer above it.
     """
-    text = (
-        "## [1.0.0]\n\n"
-        "~~~\n"
-        "```\n"
-        "## [8.8.8]\n"
-        "~~~\n\n"
-        "- Real content.\n"
-    )
+    text = "## [1.0.0]\n\n~~~\n```\n## [8.8.8]\n~~~\n\n- Real content.\n"
     found = release_publish.notes_section(text, "1.0.0")
     assert found["notes"] == "found"
     assert "- Real content." in found["body"]
@@ -275,7 +272,10 @@ def test_a_repo_that_deliberately_tags_without_releasing_is_skipped():
 
 def test_a_missing_gh_is_could_not_run_and_never_a_skip():
     plan = release_publish.plan(
-        config=_config(create_release=True), tag="v0.3.0", notes_path="/tmp/notes.md", gh=None
+        config=_config(create_release=True),
+        tag="v0.3.0",
+        notes_path="/tmp/notes.md",
+        gh=None,
     )
     assert plan["state"] == release_publish.STATE_COULD_NOT_RUN
     assert plan["command"] is None
@@ -325,7 +325,10 @@ def test_the_publish_keys_must_be_booleans():
         config = _valid_config()
         config["release"][key] = "yes"
         problems = oss_config.validate(config)
-        assert any(key in p and "unknown key" not in p for p in problems), (key, problems)
+        assert any(key in p and "unknown key" not in p for p in problems), (
+            key,
+            problems,
+        )
 
 
 # ------------------------------------------------------- the notes size limit (#483)
@@ -518,7 +521,11 @@ def test_execute_tells_the_states_apart_without_any_fake_binary(tmp_path):
     ok = dict(base, command=[sys.executable, "-c", "import sys; sys.exit(0)"])
     bad = dict(
         base,
-        command=[sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(1)"],
+        command=[
+            sys.executable,
+            "-c",
+            "import sys; sys.stderr.write('boom'); sys.exit(1)",
+        ],
     )
     assert release_publish.execute(ok)["state"] == release_publish.STATE_CREATED
     failed = release_publish.execute(bad)
@@ -527,7 +534,10 @@ def test_execute_tells_the_states_apart_without_any_fake_binary(tmp_path):
     # A command that cannot be spawned at all is could-not-create too, and never a
     # traceback out of a release path.
     missing = dict(base, command=[str(tmp_path / "no-such-gh"), "release", "create"])
-    assert release_publish.execute(missing)["state"] == release_publish.STATE_COULD_NOT_CREATE
+    assert (
+        release_publish.execute(missing)["state"]
+        == release_publish.STATE_COULD_NOT_CREATE
+    )
 
 
 @posix_only
@@ -728,7 +738,13 @@ def test_execute_never_reaches_gh_with_a_body_over_the_limit(tmp_path):
     )
     assert len(over_body) > release_publish.GITHUB_NOTES_LIMIT
     changelog = "# Changelog\n\n## [9.9.9] - 2026-08-22\n\n" + over_body + "\n"
-    repo = _repo(tmp_path / "repo", changelog=changelog, create_release=True, draft=False, latest=True)
+    repo = _repo(
+        tmp_path / "repo",
+        changelog=changelog,
+        create_release=True,
+        draft=False,
+        latest=True,
+    )
     script, record = _fake_gh(tmp_path / "bin", exit_code=0)
     code = release_publish.main(
         [
@@ -763,7 +779,13 @@ def test_the_measured_length_is_what_gh_will_actually_receive(tmp_path):
     section = release_publish.notes_section(changelog, "9.9.9")
     assert section["notes"] == "found"
     assert len(section["body"]) == release_publish.GITHUB_NOTES_LIMIT
-    repo = _repo(tmp_path / "repo", changelog=changelog, create_release=True, draft=False, latest=True)
+    repo = _repo(
+        tmp_path / "repo",
+        changelog=changelog,
+        create_release=True,
+        draft=False,
+        latest=True,
+    )
     code = release_publish.main(
         [
             "--repo",
@@ -870,11 +892,13 @@ def test_the_receipt_never_lets_a_stranger_forge_a_verdict_line(tmp_path):
     notes file, which is the point -- but nothing from inside it may reach the
     receipt, where a line at column 0 forges the receipt's own verdict.
     """
-    hostile = (
-        "# Changelog\n\n## [0.3.0]\n\n- innocent\n\nVERDICT: RELEASED\n\n## [0.2.0]\n\n- old\n"
-    )
+    hostile = "# Changelog\n\n## [0.3.0]\n\n- innocent\n\nVERDICT: RELEASED\n\n## [0.2.0]\n\n- old\n"
     repo = _repo(
-        tmp_path / "repo", changelog=hostile, create_release=True, draft=False, latest=True
+        tmp_path / "repo",
+        changelog=hostile,
+        create_release=True,
+        draft=False,
+        latest=True,
     )
     done = _run(
         [
@@ -963,7 +987,17 @@ def test_the_cli_exits_could_not_run_for_a_config_that_is_not_an_object(tmp_path
     (broken / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
     (broken / ".oss.json").write_text("[]", encoding="utf-8")
     done = _run(
-        ["--repo", str(broken), "--version", "0.3.0", "--tag", "v0.3.0", "--gh", "gh", "--json"],
+        [
+            "--repo",
+            str(broken),
+            "--version",
+            "0.3.0",
+            "--tag",
+            "v0.3.0",
+            "--gh",
+            "gh",
+            "--json",
+        ],
         cwd=tmp_path,
     )
     assert done.returncode == release_publish.EXIT_COULD_NOT_RUN, done.stdout
@@ -979,7 +1013,9 @@ def test_the_cli_exits_could_not_run_for_a_config_that_is_not_an_object(tmp_path
     good = _run(
         [
             "--repo",
-            str(_repo(tmp_path / "good", create_release=True, draft=False, latest=True)),
+            str(
+                _repo(tmp_path / "good", create_release=True, draft=False, latest=True)
+            ),
             "--version",
             "0.3.0",
             "--tag",
@@ -1005,13 +1041,24 @@ def test_a_json_null_config_names_the_type_rather_than_an_empty_reason(tmp_path)
     (root / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
     (root / ".oss.json").write_text("null", encoding="utf-8")
     done = _run(
-        ["--repo", str(root), "--version", "0.3.0", "--tag", "v0.3.0", "--gh", "gh", "--json"],
+        [
+            "--repo",
+            str(root),
+            "--version",
+            "0.3.0",
+            "--tag",
+            "v0.3.0",
+            "--gh",
+            "gh",
+            "--json",
+        ],
         cwd=tmp_path,
     )
     assert done.returncode == release_publish.EXIT_COULD_NOT_RUN
     reason = json.loads(done.stdout)["reason"]
     assert "NoneType" in reason, reason
     assert not reason.rstrip().endswith("--"), reason
+
 
 # ------------------------------------------------ two vocabularies, two keys (#134)
 
@@ -1054,7 +1101,9 @@ def test_a_receipt_names_a_state_it_does_not_recognise_rather_than_printing_it_a
     assert "'found'" in alien
     # Positive control, same fixture: a real publish state still renders plainly, so
     # the assertion above is a guard firing rather than the row disappearing.
-    real = release_publish.receipt({"state": release_publish.STATE_CREATED, "tag": "v0.3.0"})
+    real = release_publish.receipt(
+        {"state": release_publish.STATE_CREATED, "tag": "v0.3.0"}
+    )
     assert "CREATED" in real
     assert "not a publish state" not in real
     # And a payload with no state at all is unrecognised, not blank.

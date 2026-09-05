@@ -57,7 +57,9 @@ def test_a_nulled_changelog_dir_resolves_to_the_gates_named_directory(tmp_path):
     from the gate's own `--dir` line, not fall back to `changelog.d`."""
     root = _scaffolded_repo(tmp_path, "docs/frags", "docs/frags")
 
-    directory, problem = release_version._fragment_dir(root, None, {"changelog_dir": None})
+    directory, problem = release_version._fragment_dir(
+        root, None, {"changelog_dir": None}
+    )
 
     assert problem is None
     assert directory == root / "docs" / "frags"
@@ -71,9 +73,13 @@ def test_it_does_not_silently_read_a_stale_default_directory_instead(tmp_path):
     root = _scaffolded_repo(tmp_path, "docs/frags", "docs/frags")
     stale = root / "changelog.d"
     stale.mkdir()
-    (stale / "2.added.md").write_text("- a stale fragment nobody should count.\n", encoding="utf-8")
+    (stale / "2.added.md").write_text(
+        "- a stale fragment nobody should count.\n", encoding="utf-8"
+    )
 
-    directory, problem = release_version._fragment_dir(root, None, {"changelog_dir": None})
+    directory, problem = release_version._fragment_dir(
+        root, None, {"changelog_dir": None}
+    )
 
     assert problem is None
     assert directory != stale
@@ -89,7 +95,9 @@ def test_a_gate_with_no_dir_line_still_falls_back_to_the_default(tmp_path):
     workflow.write_text("name: oss changelog\n", encoding="utf-8")
     (tmp_path / "changelog.d").mkdir()
 
-    directory, problem = release_version._fragment_dir(tmp_path, None, {"changelog_dir": None})
+    directory, problem = release_version._fragment_dir(
+        tmp_path, None, {"changelog_dir": None}
+    )
 
     assert problem is None
     assert directory == tmp_path / "changelog.d"

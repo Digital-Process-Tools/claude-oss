@@ -104,7 +104,8 @@ def _repo(tmp_path, changelog_text, name="repo"):
     fragments = root / "changelog.d"
     fragments.mkdir()
     (fragments / "170.added.md").write_text(
-        "- A release heading can carry a title (#170).\n", encoding="utf-8")
+        "- A release heading can carry a title (#170).\n", encoding="utf-8"
+    )
     (root / "CHANGELOG.md").write_text(changelog_text, encoding="utf-8")
     return root, script_path
 
@@ -117,14 +118,28 @@ def _run(root, script_path, *args):
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, str(script_path), *args],
-        cwd=str(root), capture_output=True, text=True,
-        encoding="utf-8", env=env,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
     )
 
 
 def _fold(root, script_path, *extra, version="0.2.0"):
-    return _run(root, script_path, "--version", version, "--date", "2026-08-14",
-                "--dir", "changelog.d", "--changelog", "CHANGELOG.md", *extra)
+    return _run(
+        root,
+        script_path,
+        "--version",
+        version,
+        "--date",
+        "2026-08-14",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "CHANGELOG.md",
+        *extra,
+    )
 
 
 def _changelog(root):
@@ -141,13 +156,15 @@ def _heading_line(root, version="0.2.0"):
 
 def _untouched(root, before):
     """The refusal's other half: nothing written, nothing consumed."""
-    return (_changelog(root) == before
-            and (root / "changelog.d" / "170.added.md").exists())
+    return (
+        _changelog(root) == before and (root / "changelog.d" / "170.added.md").exists()
+    )
 
 
 # --------------------------------------------------------------------------
 # the flag reaches the heading
 # --------------------------------------------------------------------------
+
 
 def test_a_title_reaches_the_release_heading(tmp_path):
     root, script_path = _repo(tmp_path, DATED)
@@ -155,7 +172,8 @@ def test_a_title_reaches_the_release_heading(tmp_path):
     assert "Traceback" not in result.stderr, result.stderr
     assert result.returncode == OK, result.stdout + result.stderr
     assert _heading_line(root) == (
-        "## [0.2.0] - 2026-08-14 {0} The heading says why".format(EM))
+        "## [0.2.0] - 2026-08-14 {0} The heading says why".format(EM)
+    )
 
 
 def test_without_the_flag_the_default_heading_is_byte_identical(tmp_path):
@@ -180,6 +198,7 @@ def test_a_non_ascii_title_survives_the_round_trip(tmp_path):
 # absent, empty, and given are three states
 # --------------------------------------------------------------------------
 
+
 def test_a_titled_history_refuses_a_fold_that_was_given_no_title(tmp_path):
     """The quiet direction #170 is about: the fold succeeds and writes a
     heading, just a plainer one than the four above it, and nobody reviewing a
@@ -200,7 +219,8 @@ def test_the_same_titled_history_folds_when_a_title_is_given(tmp_path):
     result = _fold(root, script_path, "--title", "A second thing worth naming")
     assert result.returncode == OK, result.stdout + result.stderr
     assert _heading_line(root) == (
-        "## [0.2.0] - 2026-08-14 {0} A second thing worth naming".format(EM))
+        "## [0.2.0] - 2026-08-14 {0} A second thing worth naming".format(EM)
+    )
 
 
 def test_an_empty_title_is_a_decision_and_cuts_plain(tmp_path):
@@ -245,6 +265,7 @@ def test_no_release_heading_says_the_convention_could_not_be_read(tmp_path):
 # a heading is one line
 # --------------------------------------------------------------------------
 
+
 def test_a_title_holding_a_newline_is_refused(tmp_path):
     root, script_path = _repo(tmp_path, DATED)
     before = _changelog(root)
@@ -255,7 +276,8 @@ def test_a_title_holding_a_newline_is_refused(tmp_path):
     # in its usage text -- so an assertion on either alone passes against a
     # build that has none of this.
     assert result.stdout.startswith("assemble    : refused"), (
-        result.stdout + result.stderr)
+        result.stdout + result.stderr
+    )
     assert _untouched(root, before), "refused and wrote anyway"
 
 
@@ -270,19 +292,30 @@ def test_the_same_title_without_the_newline_is_accepted(tmp_path):
 # the flag is read by the fold and by nothing else
 # --------------------------------------------------------------------------
 
+
 def test_the_read_only_modes_refuse_a_title_rather_than_ignoring_it(tmp_path):
     """Same argument as `--untagged`: silently accepted where it is never
     consulted, a title that never applied is indistinguishable from one that
     did -- and here the difference is the heading a release ships with."""
     for mode in ("--check", "--check-links", "--count"):
         root, script_path = _repo(tmp_path, DATED, name="repo" + mode)
-        result = _run(root, script_path, mode, "--title", "x",
-                      "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+        result = _run(
+            root,
+            script_path,
+            mode,
+            "--title",
+            "x",
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+        )
         assert result.returncode == REFUSED, mode + ": " + result.stdout + result.stderr
         # Same reason as above: argparse's unknown-option error is also exit 2
         # and also names the flag.
         assert result.stdout.startswith("assemble    : refused"), (
-            mode + ": " + result.stdout + result.stderr)
+            mode + ": " + result.stdout + result.stderr
+        )
         assert "--title" in result.stdout, mode
 
 
@@ -291,8 +324,15 @@ def test_the_read_only_modes_still_run_without_one(tmp_path):
     the mode or the fixture."""
     for mode in ("--check", "--check-links", "--count"):
         root, script_path = _repo(tmp_path, DATED, name="ok" + mode)
-        result = _run(root, script_path, mode,
-                      "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+        result = _run(
+            root,
+            script_path,
+            mode,
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+        )
         assert result.returncode == OK, mode + ": " + result.stdout + result.stderr
 
 
@@ -300,25 +340,39 @@ def test_the_read_only_modes_still_run_without_one(tmp_path):
 # the parse side agrees
 # --------------------------------------------------------------------------
 
+
 def test_the_link_ref_audit_still_finds_a_titled_version(tmp_path):
     """`--check-links` reads release headings back. A title changes the
     heading text and must not change which version is read out of it."""
     root, script_path = _repo(tmp_path, DATED)
     assert _fold(root, script_path, "--title", "A title").returncode == OK
 
-    clean = _run(root, script_path, "--check-links",
-                 "--changelog", "CHANGELOG.md", "--dir", "changelog.d")
+    clean = _run(
+        root,
+        script_path,
+        "--check-links",
+        "--changelog",
+        "CHANGELOG.md",
+        "--dir",
+        "changelog.d",
+    )
     assert clean.returncode == OK, clean.stdout + clean.stderr
 
     # The must-fire half: delete the ref the fold wrote for the titled heading
     # and the audit has to name that version. An audit that had stopped seeing
     # the heading would report clean here too.
     text = _changelog(root)
-    kept = [line for line in text.splitlines()
-            if not line.startswith("[0.2.0]:")]
+    kept = [line for line in text.splitlines() if not line.startswith("[0.2.0]:")]
     (root / "CHANGELOG.md").write_text("\n".join(kept) + "\n", encoding="utf-8")
-    broken = _run(root, script_path, "--check-links",
-                  "--changelog", "CHANGELOG.md", "--dir", "changelog.d")
+    broken = _run(
+        root,
+        script_path,
+        "--check-links",
+        "--changelog",
+        "CHANGELOG.md",
+        "--dir",
+        "changelog.d",
+    )
     assert broken.returncode == REFUSED, broken.stdout + broken.stderr
     assert "0.2.0" in broken.stdout, broken.stdout
 
@@ -330,7 +384,8 @@ def test_a_second_fold_still_sees_the_titled_section(tmp_path):
     root, script_path = _repo(tmp_path, DATED)
     assert _fold(root, script_path, "--title", "A title").returncode == OK
     (root / "changelog.d" / "171.fixed.md").write_text(
-        "- Another entry (#171).\n", encoding="utf-8")
+        "- Another entry (#171).\n", encoding="utf-8"
+    )
     again = _fold(root, script_path, "--title", "A title")
     assert again.returncode == REFUSED, again.stdout + again.stderr
     assert "already has" in again.stdout, again.stdout
@@ -340,6 +395,7 @@ def test_a_second_fold_still_sees_the_titled_section(tmp_path):
 # the receipt describes the heading that was written
 # --------------------------------------------------------------------------
 
+
 def test_the_dry_run_receipt_quotes_the_titled_heading(tmp_path):
     """The dry run's summary formatted `## [{version}] - {date}` itself, which
     is the second source of truth for what a heading may look like that #170
@@ -348,7 +404,8 @@ def test_the_dry_run_receipt_quotes_the_titled_heading(tmp_path):
     result = _fold(root, script_path, "--dry-run", "--title", "Quoted back")
     assert result.returncode == OK, result.stdout + result.stderr
     assert "## [0.2.0] - 2026-08-14 {0} Quoted back".format(EM) in result.stdout, (
-        result.stdout)
+        result.stdout
+    )
 
 
 def test_the_dry_run_receipt_quotes_the_plain_heading_when_there_is_no_title(tmp_path):
@@ -359,6 +416,7 @@ def test_the_dry_run_receipt_quotes_the_plain_heading_when_there_is_no_title(tmp
     summary = result.stdout.splitlines()[0]
     assert "## [0.2.0] - 2026-08-14" in summary, result.stdout
     assert EM not in summary, result.stdout
+
 
 def test_the_receipt_for_a_real_fold_quotes_the_titled_heading(tmp_path):
     """The dry run was not the only place composing the heading a second time.
@@ -374,8 +432,9 @@ def test_the_receipt_for_a_real_fold_quotes_the_titled_heading(tmp_path):
     result = _fold(root, script_path, "--title", "Quoted on the write path")
     assert result.returncode == OK, result.stdout + result.stderr
     summary = result.stdout.splitlines()[0]
-    assert "## [0.2.0] - 2026-08-14 {0} Quoted on the write path".format(EM) in summary, (
-        result.stdout)
+    assert (
+        "## [0.2.0] - 2026-08-14 {0} Quoted on the write path".format(EM) in summary
+    ), result.stdout
     # And it is the heading that is on disk, which is the claim the summary is
     # making.
     assert _heading_line(root) in summary

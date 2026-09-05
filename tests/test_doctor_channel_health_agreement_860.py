@@ -224,7 +224,10 @@ def test_statusline_unavailable_is_also_the_third_state(monkeypatch):
 
 def test_allow_probe_calls_the_probe_fresh_rather_than_reading_any_cache(monkeypatch):
     fake = _FakeStatusline(
-        cache={"channel": {"raw_state": "not_delivering"}, "channel_fetched_at": 999999.0}
+        cache={
+            "channel": {"raw_state": "not_delivering"},
+            "channel_fetched_at": 999999.0,
+        }
     )
     monkeypatch.setattr(agreement, "statusline", fake)
     raw_state, source, age = agreement.resolve_channel_health_reading(
@@ -253,7 +256,9 @@ def test_check_reports_ok_on_agreement(monkeypatch):
     monkeypatch.setattr(agreement, "statusline", fake)
 
     def run(argv, **kw):
-        return _Completed(0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n")
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
 
     agreement.check_channel_health_agreement(
         "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=150.0
@@ -265,12 +270,17 @@ def test_check_reports_ok_on_agreement(monkeypatch):
 
 def test_check_reports_warn_on_disagreement(monkeypatch):
     fake = _FakeStatusline(
-        cache={"channel": {"raw_state": "cannot_determine"}, "channel_fetched_at": 100.0}
+        cache={
+            "channel": {"raw_state": "cannot_determine"},
+            "channel_fetched_at": 100.0,
+        }
     )
     monkeypatch.setattr(agreement, "statusline", fake)
 
     def run(argv, **kw):
-        return _Completed(0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n")
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
 
     agreement.check_channel_health_agreement(
         "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=150.0
@@ -287,7 +297,9 @@ def test_check_reports_warn_never_ok_on_could_not_compare(monkeypatch):
     monkeypatch.setattr(agreement, "statusline", None)
 
     def run(argv, **kw):
-        return _Completed(0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n")
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
 
     agreement.check_channel_health_agreement(
         "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=150.0
@@ -308,7 +320,9 @@ def test_check_reports_notice_when_the_watch_preset_is_plainly_disabled(monkeypa
     monkeypatch.setattr(agreement, "statusline", fake)
 
     def run(argv, **kw):
-        return _Completed(0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n")
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
 
     agreement.check_channel_health_agreement(
         "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=150.0
@@ -327,7 +341,9 @@ def test_check_stays_warn_when_the_preset_state_is_merely_unknown(monkeypatch):
     monkeypatch.setattr(agreement, "statusline", fake)
 
     def run(argv, **kw):
-        return _Completed(0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n")
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
 
     agreement.check_channel_health_agreement(
         "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=150.0

@@ -55,9 +55,13 @@ _DOES_NOT = r"(?:does\s+not|doesn['\u2019]?t)"
 NEGATIVE_CLAIM_RE = re.compile(
     r"(?:there\s+(?:is|are)\s+no|ha[sv]e?\s+no|\bno)\s+"
     r"(?:op\s+(?:for|named|called)\s+)?`(" + OP_TOKEN + r")`"
-    r"|`(" + OP_TOKEN + r")`\s+(?:"
-    + _DOES_NOT + r"\s+exist|"
-    + _NOT + r"\s+(?:an\s+op|available|shipped))"
+    r"|`("
+    + OP_TOKEN
+    + r")`\s+(?:"
+    + _DOES_NOT
+    + r"\s+exist|"
+    + _NOT
+    + r"\s+(?:an\s+op|available|shipped))"
 )
 
 # The fence marker is allowed leading whitespace: a fenced block nested in a list
@@ -122,7 +126,9 @@ def _fenced_raw_calls(text, raw_forms):
 
 
 def test_the_skill_is_readable():
-    assert SKILL.is_file(), "{}: absent -- every check below would be vacuous".format(SKILL)
+    assert SKILL.is_file(), "{}: absent -- every check below would be vacuous".format(
+        SKILL
+    )
 
 
 def test_op_names_are_found_at_all():
@@ -145,23 +151,27 @@ def test_no_op_is_asserted_not_to_exist():
 
 def test_the_negative_matcher_fires_on_the_sentence_that_rotted():
     """Positive control for the check above."""
-    assert _claimed_absent(PRE_195) == set(["gh-pr-edit"]), sorted(_claimed_absent(PRE_195))
+    assert _claimed_absent(PRE_195) == set(["gh-pr-edit"]), sorted(
+        _claimed_absent(PRE_195)
+    )
 
 
 def test_the_negative_matcher_fires_on_every_form_it_promises():
     """The docstring promises a class, not a wording. Each form is a control."""
-    missed = [form for form in ROT_FORMS if _claimed_absent(form) != set(["gh-pr-edit"])]
-    assert not missed, (
-        "NEGATIVE_CLAIM_RE let {} of {} rot forms through: {}".format(
-            len(missed), len(ROT_FORMS), missed
-        )
+    missed = [
+        form for form in ROT_FORMS if _claimed_absent(form) != set(["gh-pr-edit"])
+    ]
+    assert not missed, "NEGATIVE_CLAIM_RE let {} of {} rot forms through: {}".format(
+        len(missed), len(ROT_FORMS), missed
     )
 
 
 def test_the_negative_matcher_does_not_fire_on_ordinary_prose():
     """The other half. A matcher that fires on everything reports the same green."""
     wrong = [form for form in NON_ROT_FORMS if _claimed_absent(form)]
-    assert not wrong, "NEGATIVE_CLAIM_RE fired on prose that claims nothing: {}".format(wrong)
+    assert not wrong, "NEGATIVE_CLAIM_RE fired on prose that claims nothing: {}".format(
+        wrong
+    )
 
 
 def test_no_fenced_block_makes_a_raw_call_an_op_supersedes():

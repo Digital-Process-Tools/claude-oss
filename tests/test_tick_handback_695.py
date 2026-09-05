@@ -198,9 +198,12 @@ def test_framed_round_trip_via_module_reuse():
     import review_return
 
     raw = "TICK: completed\nTICK-ENDS: nothing-left\nnothing to do this tick"
-    framed = "\n".join(
-        review_return.FRAME_INDENT + line for line in raw.split("\n")
-    ) + "\n" + review_return.FRAME_END + "\n"
+    framed = (
+        "\n".join(review_return.FRAME_INDENT + line for line in raw.split("\n"))
+        + "\n"
+        + review_return.FRAME_END
+        + "\n"
+    )
     message, error = review_return.unframe(framed)
     assert error is None
     assert tick_handback.classify(message)["state"] == "completed"

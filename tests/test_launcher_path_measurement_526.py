@@ -26,7 +26,12 @@ CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 #: lives in the rule that fires when somebody names the launcher rather than in a file every
 #: session loads whole. The assertions below are unchanged; only the file holding the fact moved.
 LAUNCHER_RULE = (
-    REPO_ROOT / ".claude" / "jit-context" / "vocabulary" / "00-manual" / "launcher-path-reach.md"
+    REPO_ROOT
+    / ".claude"
+    / "jit-context"
+    / "vocabulary"
+    / "00-manual"
+    / "launcher-path-reach.md"
 )
 
 
@@ -45,7 +50,9 @@ def test_install_doc_records_the_526_measurement_near_the_symlink_instruction():
     body = _read(INSTALL_DOC)
     ln_at = body.index('ln -sf "$PWD/bin/oss-workspace"')
     measurement_at = body.index("#526")
-    assert measurement_at > ln_at, "the #526 note should follow the instruction it is about"
+    assert measurement_at > ln_at, (
+        "the #526 note should follow the instruction it is about"
+    )
     # Not on the opposite end of the document -- same section.
     assert body.count("\n", ln_at, measurement_at) <= 20
 

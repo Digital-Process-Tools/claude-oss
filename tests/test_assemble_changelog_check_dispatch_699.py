@@ -39,7 +39,9 @@ def _changelog_with_one_release(tmp_path, version="0.6.1"):
 def _fragment_dir_with_one_bad_fragment(tmp_path):
     d = tmp_path / "changelog.d"
     d.mkdir()
-    (d / "999.notasection.md").write_text("- an entry under an unknown section\n", encoding="utf-8")
+    (d / "999.notasection.md").write_text(
+        "- an entry under an unknown section\n", encoding="utf-8"
+    )
     return d
 
 
@@ -47,10 +49,16 @@ def test_check_and_check_links_together_is_refused(tmp_path, capsys):
     changelog = _changelog_with_one_release(tmp_path)
     directory = _fragment_dir_with_one_bad_fragment(tmp_path)
 
-    code = ac.main([
-        "--check", "--check-links",
-        "--dir", str(directory), "--changelog", str(changelog),
-    ])
+    code = ac.main(
+        [
+            "--check",
+            "--check-links",
+            "--dir",
+            str(directory),
+            "--changelog",
+            str(changelog),
+        ]
+    )
 
     assert code == ac.REFUSED
     out = capsys.readouterr().out

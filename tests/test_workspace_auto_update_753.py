@@ -37,8 +37,16 @@ from test_workspace_launcher import (  # noqa: E402
 )
 
 
-def _plugin_update_stub_claude(bindir, argv_log, registry_path, project_path,
-                                before, after, marketplace_exit=0, update_exit=0):
+def _plugin_update_stub_claude(
+    bindir,
+    argv_log,
+    registry_path,
+    project_path,
+    before,
+    after,
+    marketplace_exit=0,
+    update_exit=0,
+):
     """A `claude` whose `plugin marketplace update` and `plugin update oss ...`
     calls actually rewrite `installed_plugins.json`'s recorded version for THIS
     project -- the same file `installed_scopes`/`installed_version` read -- so
@@ -60,21 +68,29 @@ def _plugin_update_stub_claude(bindir, argv_log, registry_path, project_path,
     )
     script = (
         "#!/bin/sh\n"
-        "if [ \"${1:-}\" = \"mcp\" ]; then\n"
-        "    if [ \"${2:-}\" = \"get\" ]; then exit 1; fi\n"
-        "    if [ \"${2:-}\" = \"list\" ]; then exit 0; fi\n"
+        'if [ "${1:-}" = "mcp" ]; then\n'
+        '    if [ "${2:-}" = "get" ]; then exit 1; fi\n'
+        '    if [ "${2:-}" = "list" ]; then exit 0; fi\n'
         "    exit 0\n"
         "fi\n"
-        "if [ \"${1:-}\" = \"plugin\" ] && [ \"${2:-}\" = \"marketplace\" ]; then\n"
+        'if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "marketplace" ]; then\n'
         "    exit " + str(marketplace_exit) + "\n"
         "fi\n"
-        "if [ \"${1:-}\" = \"plugin\" ] && [ \"${2:-}\" = \"update\" ]; then\n"
-        "    " + '"$(command -v python3 || command -v python)"'
-        + " \"" + str(updater) + "\" \"" + str(registry_path) + "\" \""
-        + str(project_path) + "\" \"" + after + "\"\n"
+        'if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "update" ]; then\n'
+        "    "
+        + '"$(command -v python3 || command -v python)"'
+        + ' "'
+        + str(updater)
+        + '" "'
+        + str(registry_path)
+        + '" "'
+        + str(project_path)
+        + '" "'
+        + after
+        + '"\n'
         "    exit " + str(update_exit) + "\n"
         "fi\n"
-        "for a in \"$@\"; do printf \"%s\\n\" \"$a\" >> \"" + str(argv_log) + "\"; done\n"
+        'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
         "exit 0\n"
     )
     return _executable(bindir / "claude", script)
@@ -84,21 +100,33 @@ def _registry(home, project, before):
     registry = home / ".claude" / "plugins" / "installed_plugins.json"
     registry.parent.mkdir(parents=True, exist_ok=True)
     registry.write_text(
-        json.dumps({
-            "plugins": {
-                "oss@dpt-plugins": [
-                    {"scope": "project", "projectPath": project,
-                     "installPath": "x", "version": before}
-                ]
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@dpt-plugins": [
+                        {
+                            "scope": "project",
+                            "projectPath": project,
+                            "installPath": "x",
+                            "version": before,
+                        }
+                    ]
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
     return registry
 
 
-def _run_with_stub(repo, before="0.1.0", after="0.1.0", marketplace_exit=0,
-                    update_exit=0, no_auto_update=False):
+def _run_with_stub(
+    repo,
+    before="0.1.0",
+    after="0.1.0",
+    marketplace_exit=0,
+    update_exit=0,
+    no_auto_update=False,
+):
     _require_shell()
     bindir = repo / "_stubbin"
     bindir.mkdir(exist_ok=True)
@@ -107,8 +135,14 @@ def _run_with_stub(repo, before="0.1.0", after="0.1.0", marketplace_exit=0,
     (home / ".claude" / "plugins").mkdir(parents=True, exist_ok=True)
     registry = _registry(home, str(repo), before)
     _plugin_update_stub_claude(
-        bindir, argv_log, registry, str(repo), before, after,
-        marketplace_exit=marketplace_exit, update_exit=update_exit,
+        bindir,
+        argv_log,
+        registry,
+        str(repo),
+        before,
+        after,
+        marketplace_exit=marketplace_exit,
+        update_exit=update_exit,
     )
     env = dict(os.environ)
     env["HOME"] = str(home)
@@ -139,10 +173,16 @@ def _run_with_stub(repo, before="0.1.0", after="0.1.0", marketplace_exit=0,
         [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
     )
     done = subprocess.run(
-        [BASH, str(LAUNCHER)], cwd=str(repo), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        [BASH, str(LAUNCHER)],
+        cwd=str(repo),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
-    argv = argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    argv = (
+        argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    )
     return done, argv
 
 
@@ -181,7 +221,10 @@ def test_the_existing_opt_out_makes_this_whole_path_a_no_op(tmp_path):
     comparison, ordinary prompt, no claim about currency printed."""
     repo = _repo(tmp_path)
     done, argv = _run_with_stub(
-        repo, before="0.1.0", after="0.2.0", no_auto_update=True,
+        repo,
+        before="0.1.0",
+        after="0.2.0",
+        no_auto_update=True,
     )
     assert "/oss:tick" in argv, (argv, done.stderr)
     assert "/oss:doctor" not in argv, argv

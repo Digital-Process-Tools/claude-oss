@@ -57,9 +57,7 @@ def test_paused_is_not_blocked():
     """Negative: the issue is explicit that `blocked` is the wrong state for
     work mid-merge -- a paused tick must not collapse onto it."""
     verdict = tick_handback.classify(
-        "TICK: paused\n"
-        "WAIT-DISPATCH: PR #825\n"
-        "WAIT-OBSERVABLE: PR #825 goes green\n"
+        "TICK: paused\nWAIT-DISPATCH: PR #825\nWAIT-OBSERVABLE: PR #825 goes green\n"
     )
     assert verdict["state"] != "blocked"
 
@@ -83,9 +81,7 @@ def test_paused_missing_wait_dispatch_is_could_not_classify():
 
 
 def test_paused_missing_wait_observable_is_could_not_classify():
-    verdict = tick_handback.classify(
-        "TICK: paused\nWAIT-DISPATCH: PR #825 opened\n"
-    )
+    verdict = tick_handback.classify("TICK: paused\nWAIT-DISPATCH: PR #825 opened\n")
     assert verdict["state"] == "could-not-classify"
     assert verdict["state"] != "paused"
 
@@ -99,9 +95,7 @@ def test_positive_control_paused_with_both_fields_is_not_could_not_classify():
     """Positive control for the three tests above: the well-formed paused
     message does not fall into could-not-classify."""
     verdict = tick_handback.classify(
-        "TICK: paused\n"
-        "WAIT-DISPATCH: PR #825\n"
-        "WAIT-OBSERVABLE: PR #825 goes green\n"
+        "TICK: paused\nWAIT-DISPATCH: PR #825\nWAIT-OBSERVABLE: PR #825 goes green\n"
     )
     assert verdict["state"] != "could-not-classify"
 
@@ -144,9 +138,14 @@ def test_cli_exit_code_paused_is_distinct_from_every_other_state():
     }
     assert "VERDICT: paused" in paused.stdout
     assert len(codes) == 6, "every state must have a distinct exit code: {}".format(
-        (paused.returncode, completed.returncode, blocked.returncode,
-         could_not_run.returncode, returned_nothing.returncode,
-         could_not_classify.returncode)
+        (
+            paused.returncode,
+            completed.returncode,
+            blocked.returncode,
+            could_not_run.returncode,
+            returned_nothing.returncode,
+            could_not_classify.returncode,
+        )
     )
 
 

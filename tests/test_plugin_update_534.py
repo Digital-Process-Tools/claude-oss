@@ -28,13 +28,17 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import plugin_update  # noqa: E402
 
 
-def test_ancestor_opt_out_is_not_shadowed_by_an_intervening_managed_repo_config(tmp_path):
+def test_ancestor_opt_out_is_not_shadowed_by_an_intervening_managed_repo_config(
+    tmp_path,
+):
     """A/B from the issue: an ordinary managed-repo `.oss.json` (declaring only `repo`,
     nothing about `auto_update`) sits between the search root and a machine-wide opt-out
     one directory further up. The opt-out must still be found."""
     home = tmp_path / "home"
     home.mkdir()
-    (home / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    (home / ".oss.local.json").write_text(
+        json.dumps({"auto_update": False}), encoding="utf-8"
+    )
     proj = home / "proj"
     proj.mkdir()
     (proj / ".oss.json").write_text(json.dumps({"repo": "a/b"}), encoding="utf-8")
@@ -71,7 +75,9 @@ def test_an_unreadable_sibling_config_is_not_masked_by_an_explicit_off(tmp_path)
     return early inside the loop -- this is the must-fire half closing the gap
     between the two."""
     (tmp_path / ".oss.json").write_text("{not valid json", encoding="utf-8")
-    (tmp_path / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    (tmp_path / ".oss.local.json").write_text(
+        json.dumps({"auto_update": False}), encoding="utf-8"
+    )
 
     status, where = plugin_update.opt_out(tmp_path, env={})
     assert status == "unknown"
@@ -84,10 +90,14 @@ def test_a_declaration_still_stops_the_walk_at_the_nearest_config(tmp_path):
     something further up. Only an *undeclared* key continues the walk."""
     home = tmp_path / "home"
     home.mkdir()
-    (home / ".oss.local.json").write_text(json.dumps({"auto_update": False}), encoding="utf-8")
+    (home / ".oss.local.json").write_text(
+        json.dumps({"auto_update": False}), encoding="utf-8"
+    )
     proj = home / "proj"
     proj.mkdir()
-    (proj / ".oss.json").write_text(json.dumps({"repo": "a/b", "auto_update": True}), encoding="utf-8")
+    (proj / ".oss.json").write_text(
+        json.dumps({"repo": "a/b", "auto_update": True}), encoding="utf-8"
+    )
 
     status, where = plugin_update.opt_out(proj, env={})
     assert status == "on"

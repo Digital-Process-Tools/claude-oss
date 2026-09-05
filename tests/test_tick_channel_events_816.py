@@ -63,7 +63,9 @@ def test_rule_lives_beside_step_7_not_inside_the_sub_managers_numbered_steps():
     step7_idx = raw.find("7. **Arm the next tick")
     assert step7_idx != -1
     situational_idx = raw.find("situational awareness")
-    assert situational_idx != -1, "commands/tick.md does not state the channel-event rule at all"
+    assert situational_idx != -1, (
+        "commands/tick.md does not state the channel-event rule at all"
+    )
     assert step7_idx < situational_idx, (
         "the channel-event rule must sit in the scheduler's own half of the "
         "file, at or after step 7"

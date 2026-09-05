@@ -29,7 +29,10 @@ DECLARED = {
 
 
 def _no_op_checker(numbers, mode, run=None, repo=None):
-    return [{"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"} for n in numbers]
+    return [
+        {"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"}
+        for n in numbers
+    ]
 
 
 def _issue(number, association, labels=None):
@@ -83,7 +86,10 @@ def test_an_unrecognised_github_association_still_refuses_to_rank():
     in `dropped` as `unrankable`, never guessed into `external` or
     `maintainer`."""
     result = select_issues.select(
-        {"declared": DECLARED, "issues": [_issue(1, "FIRST_TIME_CONTRIBUTOR", ["priority-high"])]},
+        {
+            "declared": DECLARED,
+            "issues": [_issue(1, "FIRST_TIME_CONTRIBUTOR", ["priority-high"])],
+        },
         checker=_no_op_checker,
     )
     assert result["state"] == "none-available", result

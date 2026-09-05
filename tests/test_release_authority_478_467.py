@@ -58,7 +58,9 @@ def _release_config(release_block):
 
 
 def test_authority_loop_reads_loop():
-    assert oss_config.release_authority(_release_config({"authority": "loop"})) == "loop"
+    assert (
+        oss_config.release_authority(_release_config({"authority": "loop"})) == "loop"
+    )
 
 
 def test_authority_maintainer_reads_maintainer():
@@ -81,7 +83,10 @@ def test_authority_no_release_block_is_not_declared():
 
 
 def test_authority_null_is_not_declared():
-    assert oss_config.release_authority(_release_config({"authority": None})) == "not-declared"
+    assert (
+        oss_config.release_authority(_release_config({"authority": None}))
+        == "not-declared"
+    )
 
 
 def test_authority_unrecognised_value_is_not_declared_not_autonomy():
@@ -112,13 +117,18 @@ def test_scaffolded_shape_stops_maintainer_default():
         "latest": False,
         "triggers": {"merged_prs": 10, "soak_hours": 48},
     }
-    assert oss_config.release_authority(_release_config(scaffolded_shape)) == "not-declared"
+    assert (
+        oss_config.release_authority(_release_config(scaffolded_shape))
+        == "not-declared"
+    )
 
 
 def test_this_repos_own_config_grants_loop():
     """Must-fire half of the control: this repository's own tracked `.oss.json` has opted
     in, and the accessor must read that grant back out."""
-    config, problems, _origin, _resolved = oss_config.load_from(str(REPO_ROOT / ".oss.json"))
+    config, problems, _origin, _resolved = oss_config.load_from(
+        str(REPO_ROOT / ".oss.json")
+    )
     assert config is not None, problems
     assert oss_config.release_authority(config) == "loop"
 

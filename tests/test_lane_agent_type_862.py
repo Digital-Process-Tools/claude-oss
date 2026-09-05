@@ -27,7 +27,14 @@ def test_known_agent_types_are_the_two_dispatch_definitions():
 
 def test_lane_models_accepts_an_optional_agent_type():
     record = oss_state.lane_models(
-        [{"issue": 1, "model": "sonnet", "choice": "default", "agent_type": "oss:developer"}],
+        [
+            {
+                "issue": 1,
+                "model": "sonnet",
+                "choice": "default",
+                "agent_type": "oss:developer",
+            }
+        ],
         window=WINDOW,
     )
     assert record["lanes"][0]["agent_type"] == "oss:developer"
@@ -102,7 +109,8 @@ def test_lane_agent_type_cli_argument_refuses_missing_equals():
 def _run_cli(tmp_path, argv):
     state_path = tmp_path / "state.json"
     return subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "oss_state.py"), str(state_path)] + argv,
+        [sys.executable, str(REPO_ROOT / "scripts" / "oss_state.py"), str(state_path)]
+        + argv,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -195,7 +203,8 @@ def test_lane_model_trend_does_not_flag_an_ordinary_history():
             "decision": "delegate",
             "detail": {
                 "lanes": oss_state.lane_models(
-                    [{"issue": 1, "model": "sonnet", "choice": "default"}], window=WINDOW
+                    [{"issue": 1, "model": "sonnet", "choice": "default"}],
+                    window=WINDOW,
                 )
             },
         }

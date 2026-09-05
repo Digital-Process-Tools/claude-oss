@@ -65,7 +65,8 @@ def _repo(tmp_path, script_rel_dir, name="repo"):
     (root / ".git").mkdir()
     (root / "changelog.d").mkdir()
     (root / "changelog.d" / FRAGMENT).write_text(
-        "- The fold names its own target (#67).\n", encoding="utf-8")
+        "- The fold names its own target (#67).\n", encoding="utf-8"
+    )
     (root / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
     return root, script_path
 
@@ -73,29 +74,33 @@ def _repo(tmp_path, script_rel_dir, name="repo"):
 def _run(script_path, cwd, *args):
     return subprocess.run(
         [sys.executable, str(script_path), *args],
-        cwd=str(cwd), capture_output=True, text=True,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
     )
 
 
 def _fold(root, script_path, *extra):
-    return _run(script_path, root, "--version", "0.2.0",
-                "--date", "2026-08-14", *extra)
+    return _run(script_path, root, "--version", "0.2.0", "--date", "2026-08-14", *extra)
 
 
 def _untouched(root):
-    return ((root / "CHANGELOG.md").read_text(encoding="utf-8") == CHANGELOG
-            and (root / "changelog.d" / FRAGMENT).exists())
+    return (root / "CHANGELOG.md").read_text(encoding="utf-8") == CHANGELOG and (
+        root / "changelog.d" / FRAGMENT
+    ).exists()
 
 
 def _folded(root):
-    return ("## [0.2.0] - 2026-08-14"
-            in (root / "CHANGELOG.md").read_text(encoding="utf-8")
-            and not (root / "changelog.d" / FRAGMENT).exists())
+    return (
+        "## [0.2.0] - 2026-08-14" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
+        and not (root / "changelog.d" / FRAGMENT).exists()
+    )
 
 
 # --------------------------------------------------------------------------
 # the plugin's own copy: the derivation succeeds, on the wrong repository
 # --------------------------------------------------------------------------
+
 
 def test_a_fold_with_neither_flag_refuses_and_writes_nothing(tmp_path):
     root, script_path = _repo(tmp_path, "scripts")
@@ -109,8 +114,9 @@ def test_the_same_fixture_folds_when_both_flags_are_given(tmp_path):
     the script never ran -- a broken harness, an unspawnable interpreter, a
     fixture that built no fragment."""
     root, script_path = _repo(tmp_path, "scripts")
-    result = _fold(root, script_path,
-                   "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+    result = _fold(
+        root, script_path, "--dir", "changelog.d", "--changelog", "CHANGELOG.md"
+    )
     assert result.returncode == OK, result.stdout + result.stderr
     assert _folded(root), (root / "CHANGELOG.md").read_text(encoding="utf-8")
 
@@ -157,6 +163,7 @@ def test_dry_run_is_still_the_fold_path_and_still_refuses(tmp_path):
 # the vendored copy: the population the decision is actually about
 # --------------------------------------------------------------------------
 
+
 def test_the_vendored_copy_refuses_the_same_way(tmp_path):
     """`.oss/assemble_changelog.py` sits inside the repo it operates on, so its
     derived root is right -- and it is right by a coincidence of storage, which
@@ -170,8 +177,9 @@ def test_the_vendored_copy_refuses_the_same_way(tmp_path):
 
 def test_the_vendored_copy_folds_when_both_flags_are_given(tmp_path):
     root, script_path = _repo(tmp_path, ".oss")
-    result = _fold(root, script_path,
-                   "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+    result = _fold(
+        root, script_path, "--dir", "changelog.d", "--changelog", "CHANGELOG.md"
+    )
     assert result.returncode == OK, result.stdout + result.stderr
     assert _folded(root)
 
@@ -183,6 +191,7 @@ def test_the_vendored_copy_folds_when_both_flags_are_given(tmp_path):
 # no flags (.github/workflows/changelog.yml), as does every scaffolded repo's
 # maintainer on the command line. Requiring the flags there would break the
 # gate in every managed repo at once.
+
 
 def test_bare_check_still_uses_the_derived_root(tmp_path):
     root, script_path = _repo(tmp_path, "scripts")

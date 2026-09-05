@@ -61,7 +61,8 @@ def _cli(tmp_path, issue, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), str(issue), "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [sys.executable, str(SCRIPT), str(issue), "--repo", str(tmp_path), "--json"]
+        + list(extra_args),
         subject="lane_setup.py --release",
         capture_output=True,
         text=True,
@@ -130,7 +131,9 @@ def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
     outcome instead of the old "no registry" sentence.
     """
     (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
-    (tmp_path / ".oss.local.json").write_text(json.dumps({"clone": "/tmp/does-not-matter"}))
+    (tmp_path / ".oss.local.json").write_text(
+        json.dumps({"clone": "/tmp/does-not-matter"})
+    )
 
     payload = _release(tmp_path)
 
@@ -138,7 +141,9 @@ def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
     assert "could not" not in payload["detail"]
 
 
-def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_release(tmp_path):
+def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_release(
+    tmp_path,
+):
     """Must-not-fire control found in review: a fully-parseable, fully-known
     .oss.local.json (worktree_root genuinely present and known) must let a real
     release proceed even when the tracked .oss.json independently carries an
@@ -150,7 +155,9 @@ def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_releas
     would have blocked a release that has everything it needs."""
     registry_dir = tmp_path / "registry"
     project = dict(PROJECT_CONFIG)
-    project["test_command"] = 123  # triggers test_command_problem's "could not tell" text
+    project["test_command"] = (
+        123  # triggers test_command_problem's "could not tell" text
+    )
     (tmp_path / ".oss.json").write_text(json.dumps(project))
     (tmp_path / ".oss.local.json").write_text(
         json.dumps(

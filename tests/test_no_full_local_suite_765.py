@@ -55,7 +55,7 @@ def test_the_brief_does_not_offer_the_full_suite_as_an_option():
     hit = _OPTIONAL_RE.search(text)
     assert hit is None, (
         "agents/developer.md still presents the full test_command as optional: "
-        "{!r}".format(text[max(0, hit.start() - 60):hit.end() + 60] if hit else "")
+        "{!r}".format(text[max(0, hit.start() - 60) : hit.end() + 60] if hit else "")
     )
 
 

@@ -130,7 +130,11 @@ def test_cli_reports_cited(tmp_path):
 
 def test_cli_reports_uncited():
     result = _piped(
-        ["/nonexistent/state.json", "--check-decline-reason", "belongs to an external maintainer"]
+        [
+            "/nonexistent/state.json",
+            "--check-decline-reason",
+            "belongs to an external maintainer",
+        ]
     )
     assert result.returncode == 0, result.stdout
     assert '"state": "uncited"' in result.stdout, result.stdout

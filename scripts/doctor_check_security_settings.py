@@ -66,8 +66,16 @@ def _gh_api(path, run):
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "", "", exc
-    stdout = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
-    stderr = done.stderr.decode("utf-8", "replace") if isinstance(done.stderr, bytes) else (done.stderr or "")
+    stdout = (
+        done.stdout.decode("utf-8", "replace")
+        if isinstance(done.stdout, bytes)
+        else (done.stdout or "")
+    )
+    stderr = (
+        done.stderr.decode("utf-8", "replace")
+        if isinstance(done.stderr, bytes)
+        else (done.stderr or "")
+    )
     return done.returncode, stdout, stderr, None
 
 
@@ -138,7 +146,10 @@ def _repo_json(project_dir, config, run):
         return "could-not-tell", "gh api repos/{} did not run ({})".format(slug, exc)
     status = _classify_gh_api_status(rc, out, err)
     if status == "forbidden":
-        return "could-not-tell", "reading repos/{} returned a permission error (HTTP 403)".format(slug)
+        return (
+            "could-not-tell",
+            "reading repos/{} returned a permission error (HTTP 403)".format(slug),
+        )
     if status != "ok":
         return (
             "could-not-tell",
@@ -202,14 +213,21 @@ def security_and_analysis_feature_state(project_dir, feature, config=None, run=N
     if not isinstance(entry, dict) or "status" not in entry:
         return (
             "could-not-tell",
-            "security_and_analysis.{} was missing or malformed in the repo response".format(feature),
+            "security_and_analysis.{} was missing or malformed in the repo response".format(
+                feature
+            ),
         )
     value = entry.get("status")
     if value == "enabled":
         return "enabled", "{} is enabled".format(feature)
     if value == "disabled":
         return "disabled", "{} is disabled".format(feature)
-    return "could-not-tell", "security_and_analysis.{} had an unrecognised status ({!r})".format(feature, value)
+    return (
+        "could-not-tell",
+        "security_and_analysis.{} had an unrecognised status ({!r})".format(
+            feature, value
+        ),
+    )
 
 
 def _toggle_endpoint_state(project_dir, path_suffix, parse_body, config=None, run=None):
@@ -244,12 +262,16 @@ def _toggle_endpoint_state(project_dir, path_suffix, parse_body, config=None, ru
         return "could-not-tell", repo_body_or_reason
     rc, out, err, exc = _gh_api("repos/{}/{}".format(slug, path_suffix), run_)
     if exc is not None:
-        return "could-not-tell", "gh api .../{} did not run ({})".format(path_suffix, exc)
+        return "could-not-tell", "gh api .../{} did not run ({})".format(
+            path_suffix, exc
+        )
     status = _classify_gh_api_status(rc, out, err)
     if status == "forbidden":
         return (
             "could-not-tell",
-            "reading {} for {} returned a permission error (HTTP 403)".format(path_suffix, slug),
+            "reading {} for {} returned a permission error (HTTP 403)".format(
+                path_suffix, slug
+            ),
         )
     if status == "unclassified":
         return (
@@ -267,7 +289,9 @@ def _toggle_endpoint_state(project_dir, path_suffix, parse_body, config=None, ru
     if parsed is None:
         return (
             "could-not-tell",
-            "{} for {} returned a 2xx response that did not parse as expected".format(path_suffix, slug),
+            "{} for {} returned a 2xx response that did not parse as expected".format(
+                path_suffix, slug
+            ),
         )
     return parsed
 
@@ -288,8 +312,11 @@ def _parse_automated_security_fixes_body(out):
 
 def automated_security_fixes_state(project_dir, config=None, run=None):
     return _toggle_endpoint_state(
-        project_dir, "automated-security-fixes", _parse_automated_security_fixes_body,
-        config=config, run=run,
+        project_dir,
+        "automated-security-fixes",
+        _parse_automated_security_fixes_body,
+        config=config,
+        run=run,
     )
 
 
@@ -299,7 +326,9 @@ def vulnerability_alerts_state(project_dir, config=None, run=None):
     all, distinct from #760's `security_alert_state("dependabot", ...)`,
     which asks whether the alerts LIST endpoint has ever returned findings.
     """
-    return _toggle_endpoint_state(project_dir, "vulnerability-alerts", None, config=config, run=run)
+    return _toggle_endpoint_state(
+        project_dir, "vulnerability-alerts", None, config=config, run=run
+    )
 
 
 def _report_setting_check(project_dir, label, state_fn, config=None, run=None):
@@ -310,7 +339,11 @@ def _report_setting_check(project_dir, label, state_fn, config=None, run=None):
     if state == "disabled":
         run_ = subprocess.run if run is None else run
         slug, _reason = _resolve_slug(project_dir, config, run_)
-        url = SECURITY_SETTINGS_URL.format(slug) if isinstance(slug, str) and slug else None
+        url = (
+            SECURITY_SETTINGS_URL.format(slug)
+            if isinstance(slug, str) and slug
+            else None
+        )
         # #1065: a settings-page URL only a human can act on is not the whole
         # remedy when `gh` reaches the same toggle directly -- one call
         # cleared this WARN in the issue's own worked example. The command
@@ -322,10 +355,8 @@ def _report_setting_check(project_dir, label, state_fn, config=None, run=None):
                 command.format(slug), url
             )
         else:
-            remedy = (
-                "Enable it from the repo's Settings > Code security and analysis page{}.".format(
-                    " ({})".format(url) if url else ""
-                )
+            remedy = "Enable it from the repo's Settings > Code security and analysis page{}.".format(
+                " ({})".format(url) if url else ""
             )
         doctor.report("WARN", "{}: {} -- {}".format(label, detail, remedy))
         return
@@ -342,27 +373,43 @@ def check_secret_scanning(project_dir, config=None, run=None):
     independent of what it returns; a lambda has no name to match).
     """
     _report_setting_check(
-        project_dir, "secret scanning",
+        project_dir,
+        "secret scanning",
         lambda p, config=None, run=None: security_and_analysis_feature_state(
             p, "secret_scanning", config=config, run=run
         ),
-        config=config, run=run,
+        config=config,
+        run=run,
     )
 
 
 def check_secret_scanning_push_protection(project_dir, config=None, run=None):
     _report_setting_check(
-        project_dir, "secret scanning push protection",
+        project_dir,
+        "secret scanning push protection",
         lambda p, config=None, run=None: security_and_analysis_feature_state(
             p, "secret_scanning_push_protection", config=config, run=run
         ),
-        config=config, run=run,
+        config=config,
+        run=run,
     )
 
 
 def check_automated_security_fixes(project_dir, config=None, run=None):
-    _report_setting_check(project_dir, "automated security fixes", automated_security_fixes_state, config=config, run=run)
+    _report_setting_check(
+        project_dir,
+        "automated security fixes",
+        automated_security_fixes_state,
+        config=config,
+        run=run,
+    )
 
 
 def check_vulnerability_alerts(project_dir, config=None, run=None):
-    _report_setting_check(project_dir, "Dependabot alerts (vulnerability alerts)", vulnerability_alerts_state, config=config, run=run)
+    _report_setting_check(
+        project_dir,
+        "Dependabot alerts (vulnerability alerts)",
+        vulnerability_alerts_state,
+        config=config,
+        run=run,
+    )

@@ -44,10 +44,14 @@ def _record_wait(path):
     result = _piped(
         [
             str(path),
-            "--decision", "blocked on gate 3 audit",
-            "--at", RECORDED_AT,
-            "--wait-dispatch", DISPATCH,
-            "--wait-observable", OBSERVABLE,
+            "--decision",
+            "blocked on gate 3 audit",
+            "--at",
+            RECORDED_AT,
+            "--wait-dispatch",
+            DISPATCH,
+            "--wait-observable",
+            OBSERVABLE,
         ]
     )
     assert result.returncode == 0, result.stdout
@@ -60,11 +64,16 @@ def _record_cohort_freeze(path):
     result = _piped(
         [
             str(path),
-            "--decision", "froze cohort-6 at 12",
-            "--at", "2026-08-16T23:45:00Z",
-            "--cohort", "cohort-6",
-            "--cohort-count", "filtered_query=12",
-            "--cohort-count", "per_issue_read=12",
+            "--decision",
+            "froze cohort-6 at 12",
+            "--at",
+            "2026-08-16T23:45:00Z",
+            "--cohort",
+            "cohort-6",
+            "--cohort-count",
+            "filtered_query=12",
+            "--cohort-count",
+            "per_issue_read=12",
         ]
     )
     assert result.returncode == 0, result.stdout
@@ -92,7 +101,9 @@ def test_pending_wait_still_reports_none_when_none_was_ever_recorded(tmp_path):
     would also pass the case above.
     """
     path = tmp_path / "state.json"
-    _piped([str(path), "--decision", "first tick, nothing pending", "--at", RECORDED_AT])
+    _piped(
+        [str(path), "--decision", "first tick, nothing pending", "--at", RECORDED_AT]
+    )
     _record_cohort_freeze(path)
 
     result = _piped([str(path), "--pending-wait"])
@@ -100,7 +111,9 @@ def test_pending_wait_still_reports_none_when_none_was_ever_recorded(tmp_path):
     assert "no pending wait" in result.stdout.lower()
 
 
-def test_pending_wait_reports_none_once_cleared_even_behind_an_unrelated_entry(tmp_path):
+def test_pending_wait_reports_none_once_cleared_even_behind_an_unrelated_entry(
+    tmp_path,
+):
     """A cleared wait must not resurface as pending just because the scan now looks
     past the entry that cleared it -- the clearing entry itself carries the record, so
     it is what the scan finds first.
@@ -110,8 +123,14 @@ def test_pending_wait_reports_none_once_cleared_even_behind_an_unrelated_entry(t
     _piped(
         [
             str(path),
-            "--decision", "cleared", "--at", "2026-08-17T01:15:00Z",
-            "--check-wait", "cleared", "--wait-cleared-by", "issues filed",
+            "--decision",
+            "cleared",
+            "--at",
+            "2026-08-17T01:15:00Z",
+            "--check-wait",
+            "cleared",
+            "--wait-cleared-by",
+            "issues filed",
         ]
     )
     _record_cohort_freeze(path)
@@ -132,10 +151,14 @@ def test_check_wait_finds_a_holding_wait_behind_an_unrelated_entry(tmp_path):
     result = _piped(
         [
             str(path),
-            "--decision", "wait cleared, resuming",
-            "--at", "2026-08-17T01:15:00Z",
-            "--check-wait", "cleared",
-            "--wait-cleared-by", "four issues filed at 23:30Z",
+            "--decision",
+            "wait cleared, resuming",
+            "--at",
+            "2026-08-17T01:15:00Z",
+            "--check-wait",
+            "cleared",
+            "--wait-cleared-by",
+            "four issues filed at 23:30Z",
         ]
     )
     assert result.returncode == 0, result.stdout
@@ -144,21 +167,29 @@ def test_check_wait_finds_a_holding_wait_behind_an_unrelated_entry(tmp_path):
     assert entry["detail"]["wait"]["dispatch"] == DISPATCH
 
 
-def test_check_wait_still_refuses_when_none_was_ever_recorded_behind_an_unrelated_entry(tmp_path):
+def test_check_wait_still_refuses_when_none_was_ever_recorded_behind_an_unrelated_entry(
+    tmp_path,
+):
     """Positive control for the case above: an unrelated entry must not manufacture a
     wait to re-derive where none was ever recorded.
     """
     path = tmp_path / "state.json"
-    _piped([str(path), "--decision", "first tick, nothing pending", "--at", RECORDED_AT])
+    _piped(
+        [str(path), "--decision", "first tick, nothing pending", "--at", RECORDED_AT]
+    )
     _record_cohort_freeze(path)
 
     result = _piped(
         [
             str(path),
-            "--decision", "second tick",
-            "--at", "2026-08-17T01:15:00Z",
-            "--check-wait", "cleared",
-            "--wait-cleared-by", "nothing to clear",
+            "--decision",
+            "second tick",
+            "--at",
+            "2026-08-17T01:15:00Z",
+            "--check-wait",
+            "cleared",
+            "--wait-cleared-by",
+            "nothing to clear",
         ]
     )
     assert result.returncode != 0
@@ -168,7 +199,9 @@ def test_check_wait_still_refuses_when_none_was_ever_recorded_behind_an_unrelate
 # ------------------------------------------- an explicit null does not read as absent
 
 
-def test_pending_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_none(tmp_path):
+def test_pending_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_none(
+    tmp_path,
+):
     """Found by audit: `_last_wait` distinguishes "no entry ever carried a `wait`
     key" from "the most recent one carrying it holds a `None`/malformed value" by
     returning the entry itself as the sentinel, not the record. Checking the record
@@ -191,7 +224,9 @@ def test_pending_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_no
     assert "no pending wait" not in result.stdout.lower()
 
 
-def test_check_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_absent(tmp_path):
+def test_check_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_absent(
+    tmp_path,
+):
     path = tmp_path / "state.json"
     _record_wait(path)
     oss_state.append(
@@ -204,10 +239,14 @@ def test_check_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_abse
     result = _piped(
         [
             str(path),
-            "--decision", "re-check anyway",
-            "--at", "2026-08-17T02:00:00Z",
-            "--check-wait", "cleared",
-            "--wait-cleared-by", "nothing to clear",
+            "--decision",
+            "re-check anyway",
+            "--at",
+            "2026-08-17T02:00:00Z",
+            "--check-wait",
+            "cleared",
+            "--wait-cleared-by",
+            "nothing to clear",
         ]
     )
     assert result.returncode != 0
@@ -218,7 +257,9 @@ def test_check_wait_refuses_a_hand_authored_null_wait_rather_than_reporting_abse
     assert "no entry has ever recorded a wait" not in result.stdout.lower()
 
 
-def test_check_wait_refusal_names_the_state_it_actually_found_not_always_holds(tmp_path):
+def test_check_wait_refusal_names_the_state_it_actually_found_not_always_holds(
+    tmp_path,
+):
     """Second defect in the same issue: the refusal used to fill its `{}` slot with
     `WAIT_HOLDS` -- the *required* constant -- so a last entry carrying no `wait` key
     at all was reported as "state holds", in a position every reader takes as the
@@ -230,18 +271,28 @@ def test_check_wait_refusal_names_the_state_it_actually_found_not_always_holds(t
     _piped(
         [
             str(path),
-            "--decision", "cleared", "--at", "2026-08-17T01:15:00Z",
-            "--check-wait", "cleared", "--wait-cleared-by", "issues filed",
+            "--decision",
+            "cleared",
+            "--at",
+            "2026-08-17T01:15:00Z",
+            "--check-wait",
+            "cleared",
+            "--wait-cleared-by",
+            "issues filed",
         ]
     )
 
     result = _piped(
         [
             str(path),
-            "--decision", "re-check anyway",
-            "--at", "2026-08-17T02:00:00Z",
-            "--check-wait", "cleared",
-            "--wait-cleared-by", "nothing left to clear",
+            "--decision",
+            "re-check anyway",
+            "--at",
+            "2026-08-17T02:00:00Z",
+            "--check-wait",
+            "cleared",
+            "--wait-cleared-by",
+            "nothing left to clear",
         ]
     )
     assert result.returncode != 0

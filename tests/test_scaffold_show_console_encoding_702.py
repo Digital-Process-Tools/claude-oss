@@ -177,16 +177,20 @@ def test_scaffold_show_survives_a_console_that_cannot_encode_the_body(tmp_path, 
     established, why = _fixture_bites()
     if not established:
         pytest.skip(
-            why + " -- so whether --show survives such a console went unmeasured "
+            why
+            + " -- so whether --show survives such a console went unmeasured "
             "for {0}".format(target)
         )
     root = _repo(tmp_path)
     done = _child(
         [
             str(SCAFFOLD),
-            "--root", str(root),
-            "--config", str(root / ".oss.json"),
-            "--show", target,
+            "--root",
+            str(root),
+            "--config",
+            str(root / ".oss.json"),
+            "--show",
+            target,
         ],
         CP1252_ENV,
         subject="whether --show survives a cp1252 console for {0}".format(target),
@@ -196,5 +200,9 @@ def test_scaffold_show_survives_a_console_that_cannot_encode_the_body(tmp_path, 
             target, (done.stderr or "")[-400:]
         )
     )
-    assert done.returncode == 0, (done.returncode, done.stdout[-400:], done.stderr[-400:])
+    assert done.returncode == 0, (
+        done.returncode,
+        done.stdout[-400:],
+        done.stderr[-400:],
+    )
     assert done.stdout.strip(), "printed nothing, so surviving proves nothing"

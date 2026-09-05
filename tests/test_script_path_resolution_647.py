@@ -105,7 +105,9 @@ def test_positive_control_would_catch_a_repo_relative_command():
 
 
 def test_prefixed_command_is_not_flagged():
-    text = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN'
+    text = (
+        'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN'
+    )
     hits = command_shaped_unprefixed(text)
     assert not hits, f"prefixed command wrongly flagged: {hits!r}"
 

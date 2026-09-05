@@ -195,7 +195,7 @@ def test_no_route_finding_prints_the_whole_corrected_document_not_a_fragment(tmp
     detail = findings[0]["detail"]
     marker = "The whole file, corrected: "
     assert marker in detail, detail
-    document = json.loads(detail[detail.index(marker) + len(marker):])
+    document = json.loads(detail[detail.index(marker) + len(marker) :])
     assert sorted(document["presets"]) == sorted(["git", scaffold.WATCH_PRESET])
     assert document["ops"]["radar"]["radar_tiers"] == {"gh-prs": {}}
     # Applying the printed document verbatim must satisfy both checkers -- the same
@@ -218,7 +218,7 @@ def test_no_tiers_finding_prints_the_whole_corrected_document_when_presets_is_re
     detail = findings[0]["detail"]
     marker = "The whole file, corrected: "
     assert marker in detail, detail
-    document = json.loads(detail[detail.index(marker) + len(marker):])
+    document = json.loads(detail[detail.index(marker) + len(marker) :])
     assert sorted(document["presets"]) == sorted(["watch", "git"])
     assert document["ops"]["radar"]["radar_tiers"]
 
@@ -293,7 +293,9 @@ def test_the_radar_row_reaches_the_printed_receipt(tmp_path):
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         scaffold._print_findings(tmp_path, _config(repo=""))
-    rows = [line for line in buffer.getvalue().splitlines() if line.startswith("radar ")]
+    rows = [
+        line for line in buffer.getvalue().splitlines() if line.startswith("radar ")
+    ]
     assert len(rows) == 1, buffer.getvalue()
     assert scaffold.RADAR_TIERS_KEY in rows[0]
 
@@ -385,7 +387,9 @@ def test_an_existing_supertool_config_is_never_replaced(tmp_path):
 
 
 def test_claude_md_names_this_repo_not_another(tmp_path):
-    body = scaffold.render("CLAUDE.md", _config(repo="acme/widget", default_branch="trunk"))
+    body = scaffold.render(
+        "CLAUDE.md", _config(repo="acme/widget", default_branch="trunk")
+    )
     assert "acme/widget" in body
     assert "trunk" in body
 
@@ -411,7 +415,11 @@ def test_no_template_hardcodes_a_sibling_repo():
     """The whole point of extracting this was that the copies named their own repo."""
     for name in scaffold.templates_for(_config()):
         body = scaffold.render(name, _config())
-        for spelling in ("Digital-Process-Tools/claude-", "claude-supertool", "claude-remember"):
+        for spelling in (
+            "Digital-Process-Tools/claude-",
+            "claude-supertool",
+            "claude-remember",
+        ):
             assert spelling not in body, "{} hardcodes {}".format(name, spelling)
 
 
@@ -445,7 +453,9 @@ def test_every_template_renders_without_a_leftover_placeholder():
         if name == ".supertool.json":
             body = supertool_placeholders.sub("", body)
         found = leftover.search(body)
-        assert found is None, "{} still contains {}".format(name, found and found.group(0))
+        assert found is None, "{} still contains {}".format(
+            name, found and found.group(0)
+        )
 
 
 def test_a_null_config_value_never_reaches_a_rendered_file_as_None():
@@ -476,7 +486,8 @@ def test_show_covers_every_file_that_would_be_created(tmp_path):
     """
     shown = scaffold.show(tmp_path, _config())
     created = {
-        path for path, action, _ in shown
+        path
+        for path, action, _ in shown
         if action == "create" and path != scaffold.SETTINGS_PATH
     }
     assert created == set(scaffold.templates_for(_config()))
@@ -549,7 +560,13 @@ def test_show_of_an_unknown_path_is_an_error_not_an_empty_list():
 
 def test_show_can_render_an_owned_file_by_path(tmp_path):
     shown = scaffold.show(tmp_path, _config(), path=".oss/README.md")
-    assert shown == [(".oss/README.md", "replace", scaffold.render_owned(".oss/README.md", _config()))]
+    assert shown == [
+        (
+            ".oss/README.md",
+            "replace",
+            scaffold.render_owned(".oss/README.md", _config()),
+        )
+    ]
 
 
 def test_show_renders_the_fragments_readme_by_path(tmp_path):
@@ -560,7 +577,11 @@ def test_show_renders_the_fragments_readme_by_path(tmp_path):
     config = _config()
     shown = scaffold.show(tmp_path, config, path="changelog.d/README.md")
     assert shown == [
-        ("changelog.d/README.md", "create", scaffold.render("changelog.d/README.md", config))
+        (
+            "changelog.d/README.md",
+            "create",
+            scaffold.render("changelog.d/README.md", config),
+        )
     ]
 
 
@@ -654,7 +675,9 @@ def test_the_scaffolded_repo_passes_its_own_fragment_check(tmp_path):
     assert result.returncode == 0, result.stdout
 
 
-def test_a_repo_with_no_fragment_practice_gets_the_directory_the_workflow_names(tmp_path):
+def test_a_repo_with_no_fragment_practice_gets_the_directory_the_workflow_names(
+    tmp_path,
+):
     """`changelog_dir` null still yields a workflow naming changelog.d, so that is
     the directory that has to exist.
     """
@@ -676,7 +699,9 @@ def test_an_existing_fragment_readme_is_never_overwritten(tmp_path):
     (tmp_path / "changelog.d").mkdir()
     (tmp_path / "changelog.d" / "README.md").write_text("ours\n", encoding="utf-8")
     scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
-    assert (tmp_path / "changelog.d" / "README.md").read_text(encoding="utf-8") == "ours\n"
+    assert (tmp_path / "changelog.d" / "README.md").read_text(
+        encoding="utf-8"
+    ) == "ours\n"
 
 
 # ---------------------------------------------------------------- escape hatch
@@ -719,8 +744,12 @@ def _cli_findings(tmp_path, monkeypatch, seam, **overrides):
     """Run the scaffold CLI with the forge read pinned, return everything it printed."""
     config = _config(**overrides)
     project, local = oss_config.split(config)
-    (tmp_path / oss_config.CONFIG_NAME).write_text(json.dumps(project), encoding="utf-8")
-    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (tmp_path / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
     monkeypatch.setattr(scaffold, "_forge_label_names", seam)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -760,7 +789,9 @@ def test_the_cli_says_nothing_about_a_label_the_forge_reports_present(
     out = _cli_findings(
         tmp_path, monkeypatch, lambda root, config: (["bug", "no-changelog"], "")
     )
-    assert "runs it" in out, "findings did not print at all -- the silence is the harness"
+    assert "runs it" in out, (
+        "findings did not print at all -- the silence is the harness"
+    )
     assert "label    " not in out
     assert "gh label create" not in out
 
@@ -778,7 +809,9 @@ def test_the_cli_names_why_it_could_not_look_rather_than_passing(tmp_path, monke
 # ------------------------------------------------------------------- the forge seam
 
 
-def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(tmp_path, monkeypatch):
+def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(
+    tmp_path, monkeypatch
+):
     """The read is gated on the checkout in front of us actually being that repo.
 
     Without the gate, scaffolding any directory fires a network call about whatever
@@ -795,7 +828,9 @@ def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(tmp_path, monk
     assert "owner/name" in reason
 
 
-def test_the_forge_read_is_skipped_with_a_reason_when_gh_is_absent(tmp_path, monkeypatch):
+def test_the_forge_read_is_skipped_with_a_reason_when_gh_is_absent(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(scaffold.shutil, "which", lambda name: None)
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
@@ -874,7 +909,9 @@ def test_a_mismatched_origin_does_not_carry_its_credential_into_the_report(
 
 def test_a_token_standing_alone_as_the_userinfo_is_redacted_too(tmp_path, monkeypatch):
     """GitHub accepts the token as the whole username, with no password field at all."""
-    _pin_forge(monkeypatch, "https://ghp_SECRETVALUE@github.com/other/thing", (True, "[]", ""))
+    _pin_forge(
+        monkeypatch, "https://ghp_SECRETVALUE@github.com/other/thing", (True, "[]", "")
+    )
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
     assert "ghp_SECRETVALUE" not in reason
@@ -901,7 +938,9 @@ def test_a_query_string_is_dropped_from_a_quoted_origin(tmp_path, monkeypatch):
     reading is shorter than the one on disk.
     """
     _pin_forge(
-        monkeypatch, "https://github.com/other/thing.git?token=ghp_SECRETVALUE", (True, "[]", "")
+        monkeypatch,
+        "https://github.com/other/thing.git?token=ghp_SECRETVALUE",
+        (True, "[]", ""),
     )
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
@@ -981,7 +1020,9 @@ def test_the_unreadable_origin_arm_does_not_echo_a_credential_from_git_stderr(
     assert "owner/name" in reason
 
 
-def test_the_stderr_arm_redacts_a_userinfo_holding_a_literal_at_sign(tmp_path, monkeypatch):
+def test_the_stderr_arm_redacts_a_userinfo_holding_a_literal_at_sign(
+    tmp_path, monkeypatch
+):
     """This arm has no `not shown` fallback, so its redaction must be right on its own.
 
     `_safe_origin` knows it holds one whole URL and can refuse to quote a spelling it
@@ -1027,7 +1068,9 @@ def test_gh_output_that_is_not_json_is_unknown_rather_than_empty(tmp_path, monke
 
 
 def test_gh_json_that_is_not_a_list_is_unknown(tmp_path, monkeypatch):
-    _pin_forge(monkeypatch, "https://github.com/owner/name", (True, '{"name": "bug"}', ""))
+    _pin_forge(
+        monkeypatch, "https://github.com/owner/name", (True, '{"name": "bug"}', "")
+    )
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
     assert "not a list" in reason
@@ -1076,7 +1119,9 @@ def test_a_full_page_of_labels_is_unknown_rather_than_a_verdict(tmp_path, monkey
 
 def test_one_short_of_a_full_page_is_a_real_answer(tmp_path, monkeypatch):
     """The positive control: the truncation guard must not swallow every read."""
-    page = json.dumps([{"name": "l{}".format(n)} for n in range(scaffold._LABEL_PAGE - 1)])
+    page = json.dumps(
+        [{"name": "l{}".format(n)} for n in range(scaffold._LABEL_PAGE - 1)]
+    )
     _pin_forge(monkeypatch, "https://github.com/owner/name", (True, page, ""))
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is not None and reason == ""
@@ -1088,7 +1133,9 @@ def test_a_measured_absence_does_not_tell_you_to_go_and_check():
     detail = scaffold.check_changelog_label(["bug"])[0]["detail"]
     assert "gh label create" in detail
     assert "gh label list" not in detail
-    unknown = scaffold.check_changelog_label(None, reason="gh is not on PATH")[0]["detail"]
+    unknown = scaffold.check_changelog_label(None, reason="gh is not on PATH")[0][
+        "detail"
+    ]
     assert "gh label list" in unknown
 
 
@@ -1126,7 +1173,9 @@ def test_scaffold_writes_no_ci_block_of_its_own(tmp_path):
 
 
 def test_a_verified_test_command_that_no_workflow_runs_is_reported(tmp_path):
-    _with_workflow(tmp_path, "name: changelog\njobs:\n  fragment:\n    runs-on: ubuntu-latest\n")
+    _with_workflow(
+        tmp_path, "name: changelog\njobs:\n  fragment:\n    runs-on: ubuntu-latest\n"
+    )
     findings = scaffold.check_test_ci(tmp_path, _config(test_command="pytest"))
     assert findings and findings[0]["state"] == "unenforced"
     assert "pytest" in findings[0]["detail"]
@@ -1148,7 +1197,6 @@ def test_a_workflow_that_mentions_the_runner_but_not_the_command_is_unclear(tmp_
         tmp_path, _config(test_command="python3 -m unittest discover -s tests")
     )
     assert findings and findings[0]["state"] == "unclear"
-
 
 
 @pytest.mark.parametrize(
@@ -1192,7 +1240,8 @@ def test_check_test_ci_no_longer_false_alarms_on_the_681_reproduction(tmp_path):
     because the check went looking for 'dev' instead of 'pytest'.
     """
     _with_workflow(
-        tmp_path, "jobs:\n  test:\n    steps:\n      - run: python -m pytest tests/ -q -rs\n"
+        tmp_path,
+        "jobs:\n  test:\n    steps:\n      - run: python -m pytest tests/ -q -rs\n",
     )
     findings = scaffold.check_test_ci(
         tmp_path, _config(test_command="uv run --extra dev pytest -q")
@@ -1385,12 +1434,32 @@ _FORGED_RULE_NAME = "stale.md\n" + _FORGED_WROTE + "\nremoved  everything.md"
 _FLAT_RULE_NAME = " ".join(_FORGED_RULE_NAME.split())
 
 _PLAN_LABELS = {
-    "create", "replace", "remove", "declined", "present",
-    "layer", "tests", "label", "radar", "changelog", "PLAN:", "NOTE",
+    "create",
+    "replace",
+    "remove",
+    "declined",
+    "present",
+    "layer",
+    "tests",
+    "label",
+    "radar",
+    "changelog",
+    "PLAN:",
+    "NOTE",
 }
 _APPLY_LABELS = {
-    "created", "ours", "declined", "removed", "replaced",
-    "layer", "tests", "label", "radar", "changelog", "WROTE:", "NOTE",
+    "created",
+    "ours",
+    "declined",
+    "removed",
+    "replaced",
+    "layer",
+    "tests",
+    "label",
+    "radar",
+    "changelog",
+    "WROTE:",
+    "NOTE",
 }
 
 
@@ -1430,7 +1499,9 @@ def _rule_layer_file_named(root, name):
 def _receipt(tmp_path, monkeypatch, *extra):
     """Everything the CLI printed, with the one network seam pinned."""
     project, local = oss_config.split(_config())
-    (tmp_path / oss_config.CONFIG_NAME).write_text(json.dumps(project), encoding="utf-8")
+    (tmp_path / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project), encoding="utf-8"
+    )
     (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
         json.dumps(local), encoding="utf-8"
     )
@@ -1544,7 +1615,9 @@ def test_an_assembler_file_under_a_different_name_is_also_detected(tmp_path):
     assert findings and findings[0]["state"] == "found"
 
 
-def test_the_no_changelog_label_reference_in_another_workflow_is_also_detected(tmp_path):
+def test_the_no_changelog_label_reference_in_another_workflow_is_also_detected(
+    tmp_path,
+):
     """Third signal: a workflow that already gates on the same escape-hatch label."""
     _with_workflow(
         tmp_path,
@@ -1603,7 +1676,9 @@ def test_apply_does_not_write_the_owned_trio_when_a_gate_already_exists(tmp_path
     result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT)
     # The gated files are declined; the ungated ones are still written, which is the
     # split #479 introduced and the reason this is not `replaced == []` any more.
-    assert result["replaced"] == sorted(set(scaffold.OWNED) - set(scaffold.CHANGELOG_OWNED))
+    assert result["replaced"] == sorted(
+        set(scaffold.OWNED) - set(scaffold.CHANGELOG_OWNED)
+    )
     assert result["declined"] == sorted(scaffold.CHANGELOG_OWNED)
     assert not (tmp_path / ".oss" / "assemble_changelog.py").exists()
     assert not (tmp_path / ".github" / "workflows" / "oss-changelog.yml").exists()
@@ -1643,7 +1718,9 @@ def test_force_owned_writes_the_trio_anyway(tmp_path):
         ".github/scripts/assemble_changelog.py --check\n",
         name="changelog.yml",
     )
-    result = scaffold.apply(tmp_path, _config(), plugin_root=REPO_ROOT, force_owned=True)
+    result = scaffold.apply(
+        tmp_path, _config(), plugin_root=REPO_ROOT, force_owned=True
+    )
     assert result["replaced"] == sorted(scaffold.OWNED)
     assert result["declined"] == []
 
@@ -1861,7 +1938,9 @@ def test_a_subtree_that_could_not_be_walked_is_unknown_not_none(tmp_path):
 
     with _denied(private):
         state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
-        assert state == "unknown", "an unwalkable subtree reported as {!r}".format(state)
+        assert state == "unknown", "an unwalkable subtree reported as {!r}".format(
+            state
+        )
         assert "private" in detail
 
     assert scaffold._detect_changelog_gate(tmp_path, _config()) == ("none", "")
@@ -1935,7 +2014,9 @@ def test_a_bytecode_cache_is_not_evidence_that_a_gate_runs(tmp_path):
 
     # Positive control: the source beside it is still a signal, so the assertion above
     # is not passing because nothing under scripts/ is scanned at all.
-    (tmp_path / "scripts" / "assemble_changelog.py").write_text("# theirs\n", encoding="utf-8")
+    (tmp_path / "scripts" / "assemble_changelog.py").write_text(
+        "# theirs\n", encoding="utf-8"
+    )
     state, detail = scaffold._detect_changelog_gate(tmp_path, _config())
     assert state == "found"
     assert detail.count("assemble_changelog") == 1, detail
@@ -2004,7 +2085,8 @@ def test_the_plan_honours_force_owned_and_still_declines_without_it(tmp_path):
     _with_readable_gate(tmp_path)
 
     forced = {
-        e["path"]: e["action"] for e in scaffold.plan(tmp_path, _config(), force_owned=True)
+        e["path"]: e["action"]
+        for e in scaffold.plan(tmp_path, _config(), force_owned=True)
     }
     for name in scaffold.OWNED:
         assert forced[name] == "replace"
@@ -2029,7 +2111,9 @@ def test_the_preview_shows_the_three_files_force_owned_is_about_to_overwrite(tmp
     for name in scaffold.OWNED:
         assert forced.get(name) == "replace"
 
-    unforced = {path for path, _, _ in scaffold.show(tmp_path, _config(), plugin_root=REPO_ROOT)}
+    unforced = {
+        path for path, _, _ in scaffold.show(tmp_path, _config(), plugin_root=REPO_ROOT)
+    }
     for name in scaffold.CHANGELOG_OWNED:
         assert name not in unforced
 
@@ -2044,7 +2128,8 @@ def test_forcing_past_a_gate_and_forcing_past_an_unreadable_tree_differ(tmp_path
     _with_readable_gate(tmp_path)
     first = sorted(scaffold.OWNED)[0]
     found_reason = {
-        e["path"]: e["reason"] for e in scaffold.plan(tmp_path, _config(), force_owned=True)
+        e["path"]: e["reason"]
+        for e in scaffold.plan(tmp_path, _config(), force_owned=True)
     }[first]
 
     other = tmp_path / "private"
@@ -2052,7 +2137,8 @@ def test_forcing_past_a_gate_and_forcing_past_an_unreadable_tree_differ(tmp_path
     (other / "notes.txt").write_text("nothing to see\n", encoding="utf-8")
     with _denied(other):
         unknown_reason = {
-            e["path"]: e["reason"] for e in scaffold.plan(tmp_path, _config(), force_owned=True)
+            e["path"]: e["reason"]
+            for e in scaffold.plan(tmp_path, _config(), force_owned=True)
         }[first]
 
     assert found_reason != unknown_reason
@@ -2099,7 +2185,12 @@ def test_doctor_keeps_its_verdict_line_over_an_unreadable_workflow_directory(tmp
 
     with _denied(tmp_path / ".github" / "workflows"):
         done = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "scripts" / "doctor.py"), "--root", str(tmp_path)],
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "doctor.py"),
+                "--root",
+                str(tmp_path),
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
@@ -2145,8 +2236,12 @@ def _clone_with_worktree(tmp_path):
 
 def _write_config(directory, **overrides):
     project, local = oss_config.split(_config(**overrides))
-    (directory / oss_config.CONFIG_NAME).write_text(json.dumps(project), encoding="utf-8")
-    (directory / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (directory / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    (directory / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
 
 
 def test_a_worktree_reads_the_clones_config_instead_of_reporting_none(
@@ -2185,10 +2280,14 @@ def test_no_config_anywhere_does_not_read_like_one_found_in_the_clone(
     assert scaffold._main(["--root", ".", "--config", ".oss.json"]) == 1
     out = capsys.readouterr().out
     assert "Run /oss:setup" in out, "here the remedy really is to write one"
-    assert str(clone) in out, "a search naming no clone reads as a search that did not run"
+    assert str(clone) in out, (
+        "a search naming no clone reads as a search that did not run"
+    )
 
 
-def test_a_directory_in_no_repository_says_it_could_not_look(tmp_path, monkeypatch, capsys):
+def test_a_directory_in_no_repository_says_it_could_not_look(
+    tmp_path, monkeypatch, capsys
+):
     """The state this repo is named after: git could not answer, so the message must
     not claim there is no enclosing clone."""
     loose = tmp_path / "loose"
@@ -2198,7 +2297,9 @@ def test_a_directory_in_no_repository_says_it_could_not_look(tmp_path, monkeypat
     assert scaffold._main(["--root", ".", "--config", ".oss.json"]) == 1
     out = capsys.readouterr().out
     assert "Run /oss:setup" in out
-    assert "No enclosing clone could be checked" in out, "an unanswerable search must say so"
+    assert "No enclosing clone could be checked" in out, (
+        "an unanswerable search must say so"
+    )
     assert "Not in the enclosing clone" not in out, (
         "a search that could not run must not render as a search that came back empty"
     )
@@ -2251,7 +2352,10 @@ def test_a_config_under_a_directory_absent_here_is_still_found_in_the_clone(
 
     resolved, origin, detail = oss_config.resolve_config_path("configs/.oss.json")
     assert origin == "clone", detail
-    assert Path(resolved).resolve() == (clone / "configs" / oss_config.CONFIG_NAME).resolve()
+    assert (
+        Path(resolved).resolve()
+        == (clone / "configs" / oss_config.CONFIG_NAME).resolve()
+    )
 
 
 def test_one_line_defuses_an_ansi_escape_that_would_repaint_the_terminal():
@@ -2321,6 +2425,7 @@ def test_an_absolute_config_path_is_never_widened(tmp_path, monkeypatch):
     resolved, origin, detail = oss_config.resolve_config_path(worktree / ".oss.json")
     assert (resolved, origin) == (None, "missing")
     assert str(clone) not in detail
+
 
 def test_the_owned_file_count_in_the_doc_matches_scaffold_owned():
     """#487's second, smaller instance: `commands/scaffold.md` said "the last three"

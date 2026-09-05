@@ -26,7 +26,9 @@ import issue_claim  # noqa: E402
 VIEWER = ["gh", "api", "user", "--jq", ".login"]
 
 
-def _fake(view=None, edit_ok=True, login="maintainer", login_ok=True, edit_detail="boom"):
+def _fake(
+    view=None, edit_ok=True, login="maintainer", login_ok=True, edit_detail="boom"
+):
     """A `run` stand-in. `view` maps issue number -> the JSON `gh issue view`
     would print, or an exception-ish `(False, detail)` pair for a failed read.
 

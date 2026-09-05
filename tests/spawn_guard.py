@@ -137,7 +137,7 @@ def _handler_names(handler):
     if node is None:
         return ["<bare except>"]
     names = []
-    for part in (node.elts if isinstance(node, ast.Tuple) else [node]):
+    for part in node.elts if isinstance(node, ast.Tuple) else [node]:
         if isinstance(part, ast.Attribute):
             names.append(part.attr)
         elif isinstance(part, ast.Name):
@@ -256,9 +256,8 @@ def scan_source(source, path):
                 if _try_catches_timeout(parent):
                     guarded = True
                     break
-            if (
-                func_name is None
-                and isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef))
+            if func_name is None and isinstance(
+                parent, (ast.FunctionDef, ast.AsyncFunctionDef)
             ):
                 func_name = parent.name
             cursor = parent
@@ -292,7 +291,9 @@ def scan_tree(directory):
 
     def _onerror(exc):
         unscannable.append(
-            Unscannable(str(getattr(exc, "filename", directory)), "walk failed: {}".format(exc))
+            Unscannable(
+                str(getattr(exc, "filename", directory)), "walk failed: {}".format(exc)
+            )
         )
 
     for dirpath, _dirnames, filenames in os.walk(str(directory), onerror=_onerror):
@@ -304,11 +305,15 @@ def scan_tree(directory):
                 with open(full, "rb") as handle:
                     source = handle.read().decode("utf-8")
             except (OSError, UnicodeDecodeError) as exc:
-                unscannable.append(Unscannable(full, "could not be read: {}".format(exc)))
+                unscannable.append(
+                    Unscannable(full, "could not be read: {}".format(exc))
+                )
                 continue
             # Reported relative to the scanned directory's parent, so a finding
             # reads `tests/test_x.py:41` rather than one machine's absolute path.
-            shown = os.path.relpath(full, os.path.dirname(os.path.abspath(str(directory))))
+            shown = os.path.relpath(
+                full, os.path.dirname(os.path.abspath(str(directory)))
+            )
             scan = scan_source(source, shown)
             spawns.extend(scan.spawns)
             unguarded.extend(scan.unguarded)

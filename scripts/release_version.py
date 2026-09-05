@@ -156,7 +156,9 @@ TRIPLE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 # claim about something outside this module, so the two are measured against each
 # other in tests/test_release_version_fragment_names_297.py rather than asserted here.
 # `\Z` and not `$`: a POSIX filename may end in a newline and `$` matches before one.
-FRAGMENT_NAME = re.compile(r"\A(\d+)\.([a-z]+)(?:\.([A-Za-z0-9][A-Za-z0-9._-]*))?\.md\Z")
+FRAGMENT_NAME = re.compile(
+    r"\A(\d+)\.([a-z]+)(?:\.([A-Za-z0-9][A-Za-z0-9._-]*))?\.md\Z"
+)
 
 COMPAT_LINE = re.compile(r"^\s*-\s+compatibility\s*:\s*(.*)$", re.IGNORECASE)
 
@@ -208,7 +210,7 @@ def compatibility(text):
             return None, (
                 "the compatibility line does not read as breaking or compatible"
             )
-        if not _has_reason(rest[len(head):]):
+        if not _has_reason(rest[len(head) :]):
             return None, (
                 "the compatibility verdict carries no reason, which is the same "
                 "unsourced verdict one field further along"
@@ -309,7 +311,9 @@ def _read_config(path):
     except FileNotFoundError:
         return None, "no {0} was found beside the repository".format(CONFIG_NAME)
     except (OSError, UnicodeDecodeError) as exc:
-        return None, "{0} could not be read: {1}".format(CONFIG_NAME, type(exc).__name__)
+        return None, "{0} could not be read: {1}".format(
+            CONFIG_NAME, type(exc).__name__
+        )
     try:
         data = json.loads(raw)
     except ValueError:
@@ -599,19 +603,27 @@ def _baseline(repo, given, config, config_path):
 
     delta = release_delta.compute(repo, None, config_path)
     if delta["state"] != release_delta.STATE_DELTA or not delta["tag"]:
-        return None, None, (
-            "no previous tag was found, so there is no version to bump from ({0})"
-        ).format(_one_line(delta["reason"], 120))
+        return (
+            None,
+            None,
+            (
+                "no previous tag was found, so there is no version to bump from ({0})"
+            ).format(_one_line(delta["reason"], 120)),
+        )
 
     prefix, suffix = pattern.split(VERSION_PLACEHOLDER, 1)
     tag = delta["tag"]
     if not tag.startswith(prefix) or not tag.endswith(suffix):
-        return None, None, (
-            "the last tag does not fit release.tag_pattern, so no version can be "
-            "read out of it"
+        return (
+            None,
+            None,
+            (
+                "the last tag does not fit release.tag_pattern, so no version can be "
+                "read out of it"
+            ),
         )
     end = len(tag) - len(suffix) if suffix else len(tag)
-    inner = tag[len(prefix):end]
+    inner = tag[len(prefix) : end]
     if not TRIPLE.match(inner):
         return None, None, "the last tag " + NOT_A_TRIPLE
     return inner, "tag", None
@@ -765,7 +777,9 @@ def receipt(payload):
         ", ".join(
             "{0} ({1})".format(
                 name,
-                known.get(cause, "a cause this rule cannot describe ({0})".format(cause)),
+                known.get(
+                    cause, "a cause this rule cannot describe ({0})".format(cause)
+                ),
             )
             for name, cause in payload["unreadable_causes"]
         ),

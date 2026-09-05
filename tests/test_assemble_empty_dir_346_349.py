@@ -47,7 +47,8 @@ def _repo(tmp_path):
     fragments = root / "changelog.d"
     fragments.mkdir()
     (fragments / "1.fixed.md").write_text(
-        "- Closes #1.\n", encoding="utf-8",
+        "- Closes #1.\n",
+        encoding="utf-8",
     )
     (root / "CHANGELOG.md").write_text(
         "# Changelog\n\n## [Unreleased]\n\n"
@@ -73,11 +74,20 @@ def test_empty_dir_on_the_fold_refuses_rather_than_scanning_cwd(tmp_path):
     root, script_path = _repo(tmp_path)
     # A file at cwd that would parse as a fragment if the fold ever scanned
     # cwd instead of refusing -- the positive control for the harm.
-    (root / "1.added.md").write_text("- would be a false catch (#1).\n", encoding="utf-8")
+    (root / "1.added.md").write_text(
+        "- would be a false catch (#1).\n", encoding="utf-8"
+    )
     result = _run(
-        script_path, root,
-        "--version", "0.2.0", "--date", "2026-08-20",
-        "--dir", "", "--changelog", "CHANGELOG.md",
+        script_path,
+        root,
+        "--version",
+        "0.2.0",
+        "--date",
+        "2026-08-20",
+        "--dir",
+        "",
+        "--changelog",
+        "CHANGELOG.md",
     )
     assert result.returncode == REFUSED, (result.stdout, result.stderr)
     # Pinned to the `_fold_target` refusal text specifically, not merely to
@@ -85,18 +95,29 @@ def test_empty_dir_on_the_fold_refuses_rather_than_scanning_cwd(tmp_path):
     # unrelated file in cwd that fails to parse as a fragment would also
     # print `refused` and would be the wrong reason: it would mean the fold
     # DID scan cwd, and only happened to trip over something else there.
-    assert "--dir" in result.stdout and "required and not given" in result.stdout, result.stdout
+    assert "--dir" in result.stdout and "required and not given" in result.stdout, (
+        result.stdout
+    )
     assert (root / "1.added.md").exists(), "cwd must not have been scanned or consumed"
-    assert (root / "changelog.d" / "1.fixed.md").exists(), "the real fragment dir must be untouched"
+    assert (root / "changelog.d" / "1.fixed.md").exists(), (
+        "the real fragment dir must be untouched"
+    )
     assert "## [0.2.0]" not in (root / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
 def test_empty_changelog_on_the_fold_also_refuses(tmp_path):
     root, script_path = _repo(tmp_path)
     result = _run(
-        script_path, root,
-        "--version", "0.2.0", "--date", "2026-08-20",
-        "--dir", "changelog.d", "--changelog", "",
+        script_path,
+        root,
+        "--version",
+        "0.2.0",
+        "--date",
+        "2026-08-20",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "",
     )
     assert result.returncode == REFUSED, (result.stdout, result.stderr)
     assert (root / "changelog.d" / "1.fixed.md").exists()
@@ -107,9 +128,16 @@ def test_a_legitimate_in_tree_fold_still_works(tmp_path):
     named exactly as `commands/changelog.md` names them, must still fold."""
     root, script_path = _repo(tmp_path)
     result = _run(
-        script_path, root,
-        "--version", "0.2.0", "--date", "2026-08-20",
-        "--dir", "changelog.d", "--changelog", "CHANGELOG.md",
+        script_path,
+        root,
+        "--version",
+        "0.2.0",
+        "--date",
+        "2026-08-20",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "CHANGELOG.md",
     )
     assert result.returncode == OK, (result.stdout, result.stderr)
     assert "## [0.2.0]" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -138,10 +166,13 @@ def test_empty_dir_fallback_names_itself_on_stderr(tmp_path):
     anything."""
     root, script_path = _repo(tmp_path)
     explicit_empty = _run(script_path, root, "--check", "--dir", "")
-    assert explicit_empty.returncode == OK, (explicit_empty.stdout, explicit_empty.stderr)
-    assert "--dir" in explicit_empty.stderr and "changelog.d" in explicit_empty.stderr, (
-        explicit_empty.stderr
+    assert explicit_empty.returncode == OK, (
+        explicit_empty.stdout,
+        explicit_empty.stderr,
     )
+    assert (
+        "--dir" in explicit_empty.stderr and "changelog.d" in explicit_empty.stderr
+    ), explicit_empty.stderr
 
     absent = _run(script_path, root, "--check")
     assert absent.returncode == OK, (absent.stdout, absent.stderr)

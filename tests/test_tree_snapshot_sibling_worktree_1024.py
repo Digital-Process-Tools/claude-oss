@@ -44,8 +44,12 @@ def _git_env():
 
 def _run(args, cwd, check=True, env=None):
     result = subprocess.run(
-        args, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        universal_newlines=True, env=env or _git_env(),
+        args,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        env=env or _git_env(),
     )
     if check and result.returncode != 0:
         raise AssertionError(
@@ -57,8 +61,11 @@ def _run(args, cwd, check=True, env=None):
 def _run_cli(args, cwd=None, stdin=None):
     return subprocess.run(
         [sys.executable, str(SCRIPT)] + args,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-        cwd=cwd, input=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        cwd=cwd,
+        input=stdin,
     )
 
 
@@ -81,7 +88,8 @@ def sibling_worktrees(tmp_path):
     sibling = tmp_path / "sibling"
     _run(
         ["git", "worktree", "add", "-b", "sibling-branch", str(sibling)],
-        cwd=main, env=env,
+        cwd=main,
+        env=env,
     )
     return main, sibling
 

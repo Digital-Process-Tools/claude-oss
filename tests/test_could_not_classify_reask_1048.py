@@ -31,9 +31,7 @@ def _text(path):
 
 
 def _without_lines_matching(text, pattern):
-    return "\n".join(
-        line for line in text.splitlines() if not re.search(pattern, line)
-    )
+    return "\n".join(line for line in text.splitlines() if not re.search(pattern, line))
 
 
 def test_sub_manager_validates_its_own_draft_before_sending():

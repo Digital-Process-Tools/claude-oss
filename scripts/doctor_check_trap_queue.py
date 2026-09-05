@@ -25,7 +25,10 @@ def check_trap_queue(project_dir):
     from `could-not-read`, which is the state this whole repository exists to keep nameable.
     """
     if trap_curate is None:
-        doctor.report("WARN", "trap queue: not checked (scripts/trap_curate.py could not be imported)")
+        doctor.report(
+            "WARN",
+            "trap queue: not checked (scripts/trap_curate.py could not be imported)",
+        )
         return
     result = trap_curate.waiting(project_dir)
     if result["state"] == "could-not-read":

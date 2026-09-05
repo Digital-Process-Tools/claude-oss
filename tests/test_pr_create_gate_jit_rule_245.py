@@ -81,8 +81,8 @@ def test_the_pr_create_gate_rule_is_a_reminder_not_a_block():
     what #245 asks for."""
     body = _rule_body()
     mode = oss_rules._field(body, "mode") or "remind"
-    assert mode == "remind", "the pr-create-gate rule is mode: {!r}, expected remind".format(
-        mode
+    assert mode == "remind", (
+        "the pr-create-gate rule is mode: {!r}, expected remind".format(mode)
     )
 
 
@@ -107,7 +107,14 @@ def test_the_pr_create_gate_rule_gets_an_index_row(tmp_path):
 
 
 def test_the_tracked_copy_in_this_repo_matches_the_generator():
-    tracked = REPO_ROOT / ".claude" / "jit-context" / "tools" / oss_rules.LAYER / PR_CREATE_GATE
+    tracked = (
+        REPO_ROOT
+        / ".claude"
+        / "jit-context"
+        / "tools"
+        / oss_rules.LAYER
+        / PR_CREATE_GATE
+    )
     assert tracked.is_file(), (
         "{} does not exist -- the generator ships the rule but this repository's own "
         "layer, which is what a session actually reads, does not carry it (#702's own "
@@ -121,7 +128,14 @@ def test_the_tracked_copy_in_this_repo_matches_the_generator():
 
 
 def test_the_tracked_index_carries_the_new_row():
-    index = REPO_ROOT / ".claude" / "jit-context" / "tools" / oss_rules.LAYER / oss_rules.INDEX
+    index = (
+        REPO_ROOT
+        / ".claude"
+        / "jit-context"
+        / "tools"
+        / oss_rules.LAYER
+        / oss_rules.INDEX
+    )
     rows = index.read_text(encoding="utf-8").splitlines()
     named = {row.split("\t")[2] for row in rows if row.strip()}
     assert PR_CREATE_GATE in named, "the tracked 00-index.tsv has no row for {}".format(

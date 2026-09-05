@@ -36,8 +36,10 @@ import statusline  # noqa: E402
 #: both versions carry, and computing the rollup here is also what makes the mapping below
 #: this repository's decision rather than the forge's.
 def _legs(*conclusions):
-    return [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": value}
-            for value in conclusions]
+    return [
+        {"__typename": "CheckRun", "status": "COMPLETED", "conclusion": value}
+        for value in conclusions
+    ]
 
 
 def _rows(*states):
@@ -57,19 +59,38 @@ def test_each_conclusion_lands_in_its_own_group():
 
 
 def test_a_leg_that_has_not_finished_is_running():
-    rows = [{"number": 1, "statusCheckRollup": [
-        {"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": None}]}]
+    rows = [
+        {
+            "number": 1,
+            "statusCheckRollup": [
+                {"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": None}
+            ],
+        }
+    ]
     assert statusline.check_rollup_counts(rows, 1)["running"] == 1
 
 
 def test_a_failure_outranks_a_leg_still_running():
     """A red pull request is red while the rest of the matrix finishes. The rollup this
     replaces made that call upstream; making it here is what puts it under test."""
-    rows = [{"number": 1, "statusCheckRollup": [
-        {"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE"},
-        {"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": None}]}]
+    rows = [
+        {
+            "number": 1,
+            "statusCheckRollup": [
+                {
+                    "__typename": "CheckRun",
+                    "status": "COMPLETED",
+                    "conclusion": "FAILURE",
+                },
+                {"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": None},
+            ],
+        }
+    ]
     assert statusline.check_rollup_counts(rows, 1) == {
-        "green": 0, "red": 1, "running": 0, "unknown": 0
+        "green": 0,
+        "red": 1,
+        "running": 0,
+        "unknown": 0,
     }
 
 
@@ -93,20 +114,38 @@ def test_a_non_result_beside_a_pass_does_not_make_the_pull_request_green():
 def test_a_commit_status_leg_is_read_the_same_way():
     """Not every leg is a CheckRun: an external service posts a StatusContext, which
     carries `state` and no `conclusion`."""
-    rows = [{"number": 1, "statusCheckRollup": [
-        {"__typename": "StatusContext", "state": "FAILURE"}]}]
+    rows = [
+        {
+            "number": 1,
+            "statusCheckRollup": [{"__typename": "StatusContext", "state": "FAILURE"}],
+        }
+    ]
     assert statusline.check_rollup_counts(rows, 1)["red"] == 1
-    rows = [{"number": 1, "statusCheckRollup": [
-        {"__typename": "StatusContext", "state": "PENDING"}]}]
+    rows = [
+        {
+            "number": 1,
+            "statusCheckRollup": [{"__typename": "StatusContext", "state": "PENDING"}],
+        }
+    ]
     assert statusline.check_rollup_counts(rows, 1)["running"] == 1
 
 
 def test_the_must_fire_control_for_that_one():
     assert statusline.check_rollup_counts(_rows("SUCCESS"), 1)["green"] == 1
-    assert statusline.check_rollup_counts(
-        [{"number": 1, "statusCheckRollup": [
-            {"__typename": "StatusContext", "state": "SUCCESS"}]}], 1
-    )["green"] == 1
+    assert (
+        statusline.check_rollup_counts(
+            [
+                {
+                    "number": 1,
+                    "statusCheckRollup": [
+                        {"__typename": "StatusContext", "state": "SUCCESS"}
+                    ],
+                }
+            ],
+            1,
+        )["green"]
+        == 1
+    )
 
 
 def test_a_pull_request_past_the_page_lands_in_unknown_not_out_of_the_field():
@@ -134,7 +173,10 @@ def test_rows_that_are_not_a_list_are_no_reading_at_all():
 
 def test_no_open_pull_requests_is_a_measurement_and_renders_as_zeros():
     assert statusline.check_rollup_counts([], 0) == {
-        "green": 0, "red": 0, "running": 0, "unknown": 0
+        "green": 0,
+        "red": 0,
+        "running": 0,
+        "unknown": 0,
     }
 
 
@@ -143,11 +185,18 @@ def test_no_open_pull_requests_is_a_measurement_and_renders_as_zeros():
 
 def test_the_cache_carries_the_groups_back_and_a_cache_without_them_says_so():
     board = statusline.board_from_cache(
-        {"prs": 2, "issues": 3, "fetched_at": 0,
-         "pr_checks": {"green": 1, "red": 1, "running": 0, "unknown": 0}}
+        {
+            "prs": 2,
+            "issues": 3,
+            "fetched_at": 0,
+            "pr_checks": {"green": 1, "red": 1, "running": 0, "unknown": 0},
+        }
     )
     assert board["checks"] == {"green": 1, "red": 1, "running": 0, "unknown": 0}
-    assert statusline.board_from_cache({"prs": 2, "issues": 3, "fetched_at": 0})["checks"] is None
+    assert (
+        statusline.board_from_cache({"prs": 2, "issues": 3, "fetched_at": 0})["checks"]
+        is None
+    )
 
 
 def test_a_cache_whose_groups_are_not_whole_numbers_is_not_a_reading():
@@ -166,8 +215,11 @@ def _symbols(ascii_only=True):
 
 def test_the_labels_are_lowercase():
     field = statusline._board_field(
-        {"prs": 4, "issues": 23,
-         "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0}},
+        {
+            "prs": 4,
+            "issues": 23,
+            "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0},
+        },
         _symbols(),
     )
     assert "pr" in field and "is" in field
@@ -176,8 +228,11 @@ def test_the_labels_are_lowercase():
 
 def test_every_group_renders_including_the_ones_at_zero():
     field = statusline._board_field(
-        {"prs": 4, "issues": 23,
-         "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0}},
+        {
+            "prs": 4,
+            "issues": 23,
+            "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0},
+        },
         _symbols(),
     )
     assert field == "4pr 2ok 1x 1... 0? . 23is / ?eis"
@@ -185,21 +240,28 @@ def test_every_group_renders_including_the_ones_at_zero():
 
 def test_the_glyphs_are_used_where_the_console_encodes_them():
     field = statusline._board_field(
-        {"prs": 4, "issues": 23,
-         "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0}},
+        {
+            "prs": 4,
+            "issues": 23,
+            "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0},
+        },
         _symbols(ascii_only=False),
     )
     assert field == "4pr 2✓ 1✗ 1⋯ 0? · 23is / ?eis"
 
 
 def test_rollups_nobody_read_render_as_one_unknown_not_as_four_zeros():
-    field = statusline._board_field({"prs": 4, "issues": 23, "checks": None}, _symbols())
+    field = statusline._board_field(
+        {"prs": 4, "issues": 23, "checks": None}, _symbols()
+    )
     assert field == "4pr ? . 23is / ?eis"
     assert "0ok" not in field
 
 
 def test_a_count_nobody_took_is_unknown_on_the_count_itself():
-    field = statusline._board_field({"prs": None, "issues": None, "checks": None}, _symbols())
+    field = statusline._board_field(
+        {"prs": None, "issues": None, "checks": None}, _symbols()
+    )
     assert field == "?pr ? . ?is / ?eis"
 
 
@@ -209,8 +271,11 @@ def test_the_whole_line_carries_the_groups():
         "percent": 10,
         "repo_name": "oss",
         "branch": "main",
-        "board": {"prs": 4, "issues": 23,
-                  "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0}},
+        "board": {
+            "prs": 4,
+            "issues": 23,
+            "checks": {"green": 2, "red": 1, "running": 1, "unknown": 0},
+        },
         "release": {"state": "measured", "since": 4, "typical": 17},
     }
     assert "4pr 2ok 1x 1... 0?" in statusline.render(facts, ascii_only=True)

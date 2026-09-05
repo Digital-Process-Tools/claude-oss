@@ -49,7 +49,12 @@ DOCTOR_SOURCE = (SCRIPTS_DIR / "doctor.py").read_text(encoding="utf-8")
 def test_the_module_set_is_read_off_disk_not_listed(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("doctor.py", "doctor_check_alpha.py", "doctor_check_beta.py", "other.py"):
+    for name in (
+        "doctor.py",
+        "doctor_check_alpha.py",
+        "doctor_check_beta.py",
+        "other.py",
+    ):
         (scripts / name).write_text("", encoding="utf-8")
     modules, unreadable = doctor_modules.check_modules(scripts)
     assert modules == ["doctor_check_alpha", "doctor_check_beta"], modules
@@ -256,7 +261,9 @@ def test_the_stale_count_this_replaces_would_still_be_caught():
 def test_the_detector_does_not_fire_on_an_ordinary_issue_reference():
     """A block naming `#497` and `#630` is full of digits and none of them is a
     tally. A detector that fires on those would be edited away within a week."""
-    assert doctor_modules.counted_claims("# #497 and #630, python 3.9 compatible\n") == []
+    assert (
+        doctor_modules.counted_claims("# #497 and #630, python 3.9 compatible\n") == []
+    )
 
 
 # --- every module on disk is one object, not two copies ----------------------

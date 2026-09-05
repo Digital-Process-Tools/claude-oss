@@ -55,13 +55,22 @@ def _configured_repo(tmp_path, worktree_root):
 
 def _patch_reads(monkeypatch, worktree_root):
     monkeypatch.setattr(
-        lane_setup, "resolve_base", lambda *a, **k: {
-            "state": "resolved", "remote": "origin", "ref": "origin/main",
-            "sha": "a" * 40, "detail": "",
-        }
+        lane_setup,
+        "resolve_base",
+        lambda *a, **k: {
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "a" * 40,
+            "detail": "",
+        },
     )
     monkeypatch.setattr(lane_setup, "branch_occupancy", lambda *a, **k: (False, False))
-    monkeypatch.setattr(lane_setup, "read_board", lambda repo: {"state": "ok", "lines": [], "detail": ""})
+    monkeypatch.setattr(
+        lane_setup,
+        "read_board",
+        lambda repo: {"state": "ok", "lines": [], "detail": ""},
+    )
 
     real_load = lane_setup.oss_config.load
 
@@ -99,8 +108,15 @@ def test_derive_held_probe_without_claim_also_writes_nothing(tmp_path, monkeypat
     repo = _configured_repo(tmp_path, worktree_root)
     _patch_reads(monkeypatch, worktree_root)
     monkeypatch.setattr(
-        lane_setup, "derive_held_set",
-        lambda *a, **k: {"state": "unknown", "held": {}, "prs": {}, "lanes": {}, "detail": ""},
+        lane_setup,
+        "derive_held_set",
+        lambda *a, **k: {
+            "state": "unknown",
+            "held": {},
+            "prs": {},
+            "lanes": {},
+            "detail": "",
+        },
     )
 
     payload = lane_setup.compute(str(repo), 222, "origin", derive_held=True)
@@ -125,7 +141,9 @@ def test_claim_true_still_writes_exactly_as_before(tmp_path, monkeypatch):
     assert os.path.exists(os.path.join(registry_dir, "705.json"))
 
 
-def test_probing_three_candidates_leaves_no_phantom_records_for_a_real_lane(tmp_path, monkeypatch):
+def test_probing_three_candidates_leaves_no_phantom_records_for_a_real_lane(
+    tmp_path, monkeypatch
+):
     """End-to-end reproduction of the issue's own scenario: probe three candidate
     lanes (none claimed), dispatch a fourth. `held_from_live_lanes` must see zero
     live records left by the probes -- not the #558 could-not-derive refusal a
@@ -148,7 +166,9 @@ def test_probing_three_candidates_leaves_no_phantom_records_for_a_real_lane(tmp_
     assert result["held"] == {}
 
 
-def test_a_genuine_claim_with_no_lane_files_still_blocks_derive_held_as_designed(tmp_path, monkeypatch):
+def test_a_genuine_claim_with_no_lane_files_still_blocks_derive_held_as_designed(
+    tmp_path, monkeypatch
+):
     """#558 must still hold once a lane genuinely claims itself without --lane:
     that live record legitimately carries files=None, and a sibling's
     --derive-held call must still refuse to trust the held set as complete.

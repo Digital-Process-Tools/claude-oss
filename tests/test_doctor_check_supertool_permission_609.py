@@ -41,7 +41,9 @@ def _isolated_home(tmp_path):
 
 def test_supertool_permission_state_absent_when_no_settings_exist(tmp_path):
     """Negative control: nothing to read, nothing that names supertool."""
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "absent"
 
 
@@ -52,7 +54,9 @@ def test_supertool_permission_state_present_for_bare_spelling(tmp_path):
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(supertool:*)"],
     )
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
@@ -61,7 +65,9 @@ def test_supertool_permission_state_present_for_relative_spelling(tmp_path):
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(./supertool:*)"],
     )
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
@@ -70,11 +76,15 @@ def test_supertool_permission_state_present_for_absolute_path_spelling(tmp_path)
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(/Users/floriandavid/Documents/claude-oss/supertool:*)"],
     )
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
-def test_supertool_permission_state_present_for_a_windows_absolute_path_spelling(tmp_path):
+def test_supertool_permission_state_present_for_a_windows_absolute_path_spelling(
+    tmp_path,
+):
     """#609 audit finding: the absolute-path spelling has to match a Windows-native
     path (backslash separators, drive letter) too, not only a POSIX one -- a
     Windows contributor's own settings.local.json is written with backslashes,
@@ -83,7 +93,9 @@ def test_supertool_permission_state_present_for_a_windows_absolute_path_spelling
         tmp_path / ".claude" / "settings.local.json",
         allow=[r"Bash(C:\Users\name\claude-oss\supertool:*)"],
     )
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
@@ -95,7 +107,9 @@ def test_supertool_permission_state_present_for_an_absolute_path_with_a_space(tm
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(/Users/flor ian/claude-oss/supertool:*)"],
     )
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
@@ -105,9 +119,13 @@ def test_supertool_permission_state_absent_for_a_one_off_test_file_entry(tmp_pat
     invocation, not invoking supertool at all."""
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(python3 -m pytest tests/test_supertool_entry_point_unreadable_341.py -q)"],
+        allow=[
+            "Bash(python3 -m pytest tests/test_supertool_entry_point_unreadable_341.py -q)"
+        ],
     )
-    state, _detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "absent"
 
 
@@ -117,7 +135,9 @@ def test_supertool_permission_state_denied_wins_over_an_allow(tmp_path):
         allow=["Bash(supertool:*)"],
         deny=["Bash(./supertool:*)"],
     )
-    state, detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "denied"
     assert "deny" in detail
 
@@ -126,12 +146,16 @@ def test_supertool_permission_state_unknown_when_settings_are_malformed(tmp_path
     path = tmp_path / ".claude" / "settings.local.json"
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
-    state, detail = doctor.supertool_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "unknown"
     assert str(path) in detail
 
 
-def test_check_supertool_permission_ok_does_not_promise_the_call_is_permitted(tmp_path, capsys):
+def test_check_supertool_permission_ok_does_not_promise_the_call_is_permitted(
+    tmp_path, capsys
+):
     _settings(
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(./supertool:*)"],

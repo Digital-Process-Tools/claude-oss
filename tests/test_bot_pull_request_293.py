@@ -144,7 +144,9 @@ def test_an_unset_author_is_refused_rather_than_crashing_the_block(tmp_path):
 # entry from the next release, silently, which is the #87 defect wearing a bot's name.
 
 
-def test_a_dependabot_pull_request_that_deletes_a_pending_fragment_is_still_refused(tmp_path):
+def test_a_dependabot_pull_request_that_deletes_a_pending_fragment_is_still_refused(
+    tmp_path,
+):
     repo = _pull_request(
         tmp_path, {"changelog.d/906.added.md": None, "src.py": "value = 2\n"}
     )
@@ -153,7 +155,9 @@ def test_a_dependabot_pull_request_that_deletes_a_pending_fragment_is_still_refu
     assert "deleted without being assembled" in done.stdout
 
 
-def test_a_dependabot_pull_request_that_carries_a_fragment_reports_it_normally(tmp_path):
+def test_a_dependabot_pull_request_that_carries_a_fragment_reports_it_normally(
+    tmp_path,
+):
     repo = _pull_request(tmp_path, {"changelog.d/1.fixed.md": "- a thing (#1).\n"})
     done = _run_gate(repo, author=BOT)
     assert done.returncode == 0, done.stdout
@@ -216,7 +220,7 @@ def _concurrency(text):
         if line.rstrip() != "concurrency:":
             continue
         block = {}
-        for follow in lines[i + 1:]:
+        for follow in lines[i + 1 :]:
             if not follow.strip():
                 continue
             if not follow.startswith("  ") or follow.startswith("   "):
@@ -239,7 +243,9 @@ def test_the_concurrency_reader_says_absent_when_it_is_absent():
 
 def test_the_workflow_groups_its_runs_per_pull_request_and_supersedes_them():
     block = _concurrency(scaffold.render_owned(GENERATED_WORKFLOW, _config()))
-    assert block is not None, "the workflow declares no workflow-level concurrency group"
+    assert block is not None, (
+        "the workflow declares no workflow-level concurrency group"
+    )
     assert block.get("cancel-in-progress") == "true", block
     group = block.get("group", "")
     # Per pull request. A constant group would serialise unrelated pull requests against

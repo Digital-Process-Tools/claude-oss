@@ -69,4 +69,6 @@ def test_render_still_distinguishes_unknown_from_measured_without_state():
     )
     assert unknown_field != measured_field
     assert "?pr" in unknown_field and "?is" in unknown_field and "?eis" in unknown_field
-    assert "0pr" in measured_field and "0is" in measured_field and "0eis" in measured_field
+    assert (
+        "0pr" in measured_field and "0is" in measured_field and "0eis" in measured_field
+    )

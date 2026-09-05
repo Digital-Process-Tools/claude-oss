@@ -34,7 +34,9 @@ def test_sub_manager_frontmatter_grants_sendmessage():
     tools = _frontmatter_tools(SUB_MANAGER)
     assert "SendMessage" in tools, (
         "agents/sub-manager.md tools: line does not grant SendMessage -- the "
-        "resume mechanism #880 mandates in prose is unusable without it: {0}".format(tools)
+        "resume mechanism #880 mandates in prose is unusable without it: {0}".format(
+            tools
+        )
     )
 
 
@@ -43,4 +45,6 @@ def test_sub_manager_still_grants_its_prior_tools():
     dropped anything the sub-manager already relied on."""
     tools = _frontmatter_tools(SUB_MANAGER)
     for expected in ("Bash", "TodoWrite", "Skill", "Agent"):
-        assert expected in tools, "agents/sub-manager.md lost its {0} grant".format(expected)
+        assert expected in tools, "agents/sub-manager.md lost its {0} grant".format(
+            expected
+        )

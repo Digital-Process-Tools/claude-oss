@@ -33,7 +33,10 @@ def _install_record(tmp_path, version):
             {
                 "plugins": {
                     "supertool@dpt-plugins": [
-                        {"version": version, "installPath": str(tmp_path / "active" / version)}
+                        {
+                            "version": version,
+                            "installPath": str(tmp_path / "active" / version),
+                        }
                     ]
                 }
             }
@@ -181,7 +184,8 @@ def test_check_reports_warn_never_ok_on_skew(tmp_path):
     consumer = _plugin_tree(pinned_root, "0.51.0")
     record = _install_record(tmp_path, "0.52.0")
     doctor.check_channel_consumer_pin(
-        precomputed=("registered", str(consumer)), record=record,
+        precomputed=("registered", str(consumer)),
+        record=record,
         cache_root=tmp_path / "cache",
     )
     level, message = doctor.FINDINGS[-1]
@@ -202,6 +206,8 @@ def test_check_asks_for_itself_when_nothing_precomputed_is_given(tmp_path):
     """Standalone callers (every other test in this file) get the same
     real-or-injected read `mcp_channel_registration_state` always did."""
     doctor.check_channel_consumer_pin(
-        which=lambda name: None,  # claude not on PATH -> could-not-ask -> not registered path -> silent
+        which=lambda name: (
+            None
+        ),  # claude not on PATH -> could-not-ask -> not registered path -> silent
     )
     assert doctor.FINDINGS == []

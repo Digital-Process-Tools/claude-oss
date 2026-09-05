@@ -155,7 +155,7 @@ def memory_layout(project_dir, home=None):
         return (
             config_dir,
             data_dir,
-            "{} sets data_dir to \"{}\", which the plugin expands with a "
+            '{} sets data_dir to "{}", which the plugin expands with a '
             "per-project slug it computes at save time (session_dir_slug in "
             "lib-slug.sh). This check does not reimplement that algorithm, so the "
             "external store's exact location cannot be confirmed here".format(
@@ -187,7 +187,9 @@ def _read_config_layer(project_dir, cfg_path):
             _display(project_dir, cfg_path), exc.strerror or exc.__class__.__name__
         )
     except ValueError as exc:
-        return None, "{} is not valid JSON ({})".format(_display(project_dir, cfg_path), exc)
+        return None, "{} is not valid JSON ({})".format(
+            _display(project_dir, cfg_path), exc
+        )
 
 
 def _display(project_dir, path):
@@ -226,7 +228,9 @@ def _listdir(directory):
     except NotADirectoryError:
         return [], "is a file, not a directory"
     except OSError as exc:
-        return [], "could not be read ({})".format(exc.strerror or exc.__class__.__name__)
+        return [], "could not be read ({})".format(
+            exc.strerror or exc.__class__.__name__
+        )
 
 
 def _identity_names(entries):
@@ -468,8 +472,9 @@ def check_core_memories(project_dir, home=None):
     if layout_problem:
         doctor.report(
             "WARN",
-            "{} -- so whether any core memories exist is unknown, not "
-            "absent.".format(layout_problem),
+            "{} -- so whether any core memories exist is unknown, not absent.".format(
+                layout_problem
+            ),
         )
         return
     entries, problem = _listdir(store)

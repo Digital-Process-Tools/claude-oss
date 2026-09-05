@@ -80,7 +80,9 @@ def _config(root, **overrides):
     }
     config.update(overrides)
     project, local = oss_config.split(config)
-    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
+    (root / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project, indent=2), encoding="utf-8"
+    )
     (root / oss_config.LOCAL_CONFIG_NAME).write_text(
         json.dumps(local, indent=2), encoding="utf-8"
     )
@@ -247,7 +249,9 @@ def test_check_ci_enforcement_says_unmeasured_when_the_config_was_not_found(tmp_
     assert not any("not checked" in m for _, m in doctor.FINDINGS)
 
 
-def test_check_ci_enforcement_distinguishes_an_unimportable_scaffold(tmp_path, monkeypatch):
+def test_check_ci_enforcement_distinguishes_an_unimportable_scaffold(
+    tmp_path, monkeypatch
+):
     """Two different reasons a check could not run, and they are not the same sentence."""
     config = _config(tmp_path)
     monkeypatch.setattr(doctor, "scaffold", None)
@@ -271,7 +275,13 @@ def test_check_freshness_says_the_owned_half_was_unmeasured(tmp_path, monkeypatc
     assert not any("not checked" in m for _, m in doctor.FINDINGS)
 
 
-UNMEASURED_LABELS = ("clone", "worktree_root", "state_file", "CI enforcement", "owned files")
+UNMEASURED_LABELS = (
+    "clone",
+    "worktree_root",
+    "state_file",
+    "CI enforcement",
+    "owned files",
+)
 
 
 def _quiet_main(monkeypatch):
@@ -328,7 +338,9 @@ def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_
         assert [ln for ln in found.splitlines() if label + ":" in ln], label
 
 
-def test_a_root_that_does_not_exist_never_widens_to_the_cwds_clone(tmp_path, monkeypatch):
+def test_a_root_that_does_not_exist_never_widens_to_the_cwds_clone(
+    tmp_path, monkeypatch
+):
     """Found by running it, not by reading it.
 
     `resolve_config_path` widens a relative path to the enclosing clone, and it starts
@@ -358,7 +370,9 @@ def test_a_root_that_does_not_exist_never_widens_to_the_cwds_clone(tmp_path, mon
     assert any("enclosing clone" in m for _, m in doctor.FINDINGS), doctor.FINDINGS
 
 
-def test_the_clone_is_only_searched_with_a_path_the_clone_can_answer(tmp_path, monkeypatch):
+def test_the_clone_is_only_searched_with_a_path_the_clone_can_answer(
+    tmp_path, monkeypatch
+):
     """`resolve_config_path` appends the relative path AS GIVEN to the clone.
 
     So only a bare `.oss.json` asks the clone for `<clone>/.oss.json`. Any relative path
@@ -427,13 +441,17 @@ def test_help_exits_zero_and_is_not_a_diagnostic_run(tmp_path):
 def test_root_flag_wins_over_the_environment(tmp_path):
     other = tmp_path / "env"
     other.mkdir()
-    chosen, findings = doctor.resolve_project_dir(str(tmp_path), str(other), str(tmp_path))
+    chosen, findings = doctor.resolve_project_dir(
+        str(tmp_path), str(other), str(tmp_path)
+    )
     assert chosen == tmp_path
     assert any(state == "WARN" and "CLAUDE_PROJECT_DIR" in m for state, m in findings)
 
 
 def test_root_flag_agreeing_with_the_environment_is_not_a_disagreement(tmp_path):
-    _, findings = doctor.resolve_project_dir(str(tmp_path), str(tmp_path), str(tmp_path))
+    _, findings = doctor.resolve_project_dir(
+        str(tmp_path), str(tmp_path), str(tmp_path)
+    )
     assert not any("disagree" in m for _, m in findings)
 
 
@@ -456,7 +474,9 @@ def test_two_spellings_of_the_same_directory_do_not_disagree(tmp_path, monkeypat
 
 
 def test_the_environment_is_used_when_no_root_is_given(tmp_path):
-    chosen, findings = doctor.resolve_project_dir(None, str(tmp_path), str(tmp_path / "cwd"))
+    chosen, findings = doctor.resolve_project_dir(
+        None, str(tmp_path), str(tmp_path / "cwd")
+    )
     assert chosen == tmp_path
     assert findings and findings[0][0] == "OK"
 
@@ -510,7 +530,9 @@ def test_check_tool_warns_when_the_probe_cannot_spawn(monkeypatch):
     """An unspawnable binary must reach the tool-failed arm, not raise. This is the
     cross-platform shape: Windows raises where POSIX would have run something.
     """
-    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: "/definitely/not/here")
+    monkeypatch.setattr(
+        doctor.shutil, "which", lambda name, **kwargs: "/definitely/not/here"
+    )
     doctor.check_tool("git", ["/definitely/not/here", "--version"])
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -571,7 +593,9 @@ def test_check_tool_survives_a_banner_this_locale_cannot_decode(monkeypatch, tmp
     emit_bad = [
         sys.executable,
         "-c",
-        "import sys; sys.stdout.buffer.write(bytes([{}])); sys.stdout.flush()".format(bad),
+        "import sys; sys.stdout.buffer.write(bytes([{}])); sys.stdout.flush()".format(
+            bad
+        ),
     ]
 
     # Control: the fixture really does put that byte on the pipe. Read in bytes mode,
@@ -641,9 +665,13 @@ def _fully_configured(root):
     # whose identity never loads.
     memory_config = root / ".claude" / "remember"
     memory_config.mkdir(parents=True, exist_ok=True)
-    (memory_config / "config.json").write_text('{"data_dir": ".remember"}', encoding="utf-8")
+    (memory_config / "config.json").write_text(
+        '{"data_dir": ".remember"}', encoding="utf-8"
+    )
     (root / ".remember").mkdir(exist_ok=True)
-    (root / ".remember" / "identity.md").write_text("who the agent is\n", encoding="utf-8")
+    (root / ".remember" / "identity.md").write_text(
+        "who the agent is\n", encoding="utf-8"
+    )
     # A project-scope allow rule naming the merge op. Written in the project rather
     # than left to the real home directory: a check whose OK depends on whose laptop
     # the suite runs on is not a check.
@@ -687,9 +715,13 @@ def _dependencies_current(monkeypatch):
     the verdict.
     """
     names = doctor.declared_dependencies()
-    monkeypatch.setattr(doctor, "active_versions", lambda n: {name: "1.0.0" for name in names})
+    monkeypatch.setattr(
+        doctor, "active_versions", lambda n: {name: "1.0.0" for name in names}
+    )
     monkeypatch.setattr(doctor, "dependency_repositories", lambda n: {})
-    monkeypatch.setattr(doctor, "published_versions", lambda repos: {n: "1.0.0" for n in names})
+    monkeypatch.setattr(
+        doctor, "published_versions", lambda repos: {n: "1.0.0" for n in names}
+    )
 
 
 def _entry_point_linked(monkeypatch):
@@ -749,7 +781,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {}".format(done.stderr.strip() or done.returncode)
+        )
     # #932: the attestation is a maintainer act, so a *fully configured* repo is one
     # whose maintainer has made it -- and `absent` is correctly a finding, which is
     # why it belongs in the fixture rather than being softened in the check. The
@@ -766,7 +800,7 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     )
     _fully_configured(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
-        "[tool.pytest.ini_options]\naddopts = \"--durations=25 --cov\"\n",
+        '[tool.pytest.ini_options]\naddopts = "--durations=25 --cov"\n',
         encoding="utf-8",
     )
     scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
@@ -798,15 +832,21 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(
         doctor.shutil,
         "which",
-        lambda name, **kwargs: real_which(name, **kwargs) if name == "sh" else sys.executable,
+        lambda name, **kwargs: (
+            real_which(name, **kwargs) if name == "sh" else sys.executable
+        ),
     )
-    monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
+    monkeypatch.setattr(
+        doctor, "check_tool", lambda name, probe: doctor.report("OK", name)
+    )
     # #386: `check_gh_binary` probes THIS machine's real `gh`, independent of the
     # `check_tool` stub above -- and this repo's own dev machine is exactly the
     # Rosetta-gh case #386 was filed from, which would turn a "fully configured,
     # everything clean" fixture into a real WARN about a fact this test is not
     # about. Stubbed the same way `check_tool` is.
-    monkeypatch.setattr(doctor, "check_gh_binary", lambda: doctor.report("OK", "gh binary"))
+    monkeypatch.setattr(
+        doctor, "check_gh_binary", lambda: doctor.report("OK", "gh binary")
+    )
     # #551: reads the status line's real cache directory and makes a real `gh` call
     # to compare against it -- neither of which this fixture's "fully configured"
     # tree can fake, and both are already covered on their own terms by
@@ -814,7 +854,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # check_gh_binary are: the message selection for THIS check is not what this
     # test is about, only whether its OK reaches the aggregated verdict.
     monkeypatch.setattr(
-        doctor, "check_latest_skew", lambda project_dir, config: doctor.report("OK", "latest skew")
+        doctor,
+        "check_latest_skew",
+        lambda project_dir, config: doctor.report("OK", "latest skew"),
     )
     # #621: a real subprocess call to `claude mcp get oss-channel`, which answers
     # about THIS machine's MCP registrations -- not about this fixture's tree --
@@ -861,7 +903,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # otherwise need. Its own three states are covered by
     # tests/test_doctor_supertool_ops_582.py.
     monkeypatch.setattr(
-        doctor, "check_supertool_ops", lambda **kw: doctor.report("OK", "supertool op inventory")
+        doctor,
+        "check_supertool_ops",
+        lambda **kw: doctor.report("OK", "supertool op inventory"),
     )
     # #638: real subprocess calls to each declared dependency's own diagnostic
     # (a supertool op, two versioned bash scripts) -- answers about what is
@@ -885,13 +929,17 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # `check_auto_update` gap (the no-`sh` no-receipt WARN on a machine with
     # no POSIX shell); this stub removes the real-receipt one so this test's
     # only remaining machine-dependence is the one it already measures.
-    monkeypatch.setattr(doctor, "check_auto_update", lambda *a, **kw: doctor.report("OK", "auto-update"))
+    monkeypatch.setattr(
+        doctor, "check_auto_update", lambda *a, **kw: doctor.report("OK", "auto-update")
+    )
     # #759: a real `gh api` call against `owner/name` (this fixture's `_config`
     # repo), which answers about GitHub's own state for a repo that does not
     # exist, not about this fixture's tree -- stubbed the same way check_gh_binary
     # and check_latest_skew are, for the identical reason.
     monkeypatch.setattr(
-        doctor, "check_branch_protection", lambda *a, **kw: doctor.report("OK", "branch protection")
+        doctor,
+        "check_branch_protection",
+        lambda *a, **kw: doctor.report("OK", "branch protection"),
     )
     # #760: `check_code_scanning_alerts` / `check_dependabot_alerts` /
     # `check_secret_scanning_alerts` each make their own real `gh api` call
@@ -903,13 +951,19 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # everything clean" fixture's own invariant over a fact this test is not
     # about.
     monkeypatch.setattr(
-        doctor, "check_code_scanning_alerts", lambda *a, **kw: doctor.report("OK", "code-scanning alerts")
+        doctor,
+        "check_code_scanning_alerts",
+        lambda *a, **kw: doctor.report("OK", "code-scanning alerts"),
     )
     monkeypatch.setattr(
-        doctor, "check_dependabot_alerts", lambda *a, **kw: doctor.report("OK", "dependabot alerts")
+        doctor,
+        "check_dependabot_alerts",
+        lambda *a, **kw: doctor.report("OK", "dependabot alerts"),
     )
     monkeypatch.setattr(
-        doctor, "check_secret_scanning_alerts", lambda *a, **kw: doctor.report("OK", "secret-scanning alerts")
+        doctor,
+        "check_secret_scanning_alerts",
+        lambda *a, **kw: doctor.report("OK", "secret-scanning alerts"),
     )
     # #761: `check_secret_scanning` / `check_secret_scanning_push_protection` /
     # `check_vulnerability_alerts` / `check_automated_security_fixes` each make
@@ -923,7 +977,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # everything clean" fixture's own invariant over a fact this test is not
     # about.
     monkeypatch.setattr(
-        doctor, "check_secret_scanning", lambda *a, **kw: doctor.report("OK", "secret scanning")
+        doctor,
+        "check_secret_scanning",
+        lambda *a, **kw: doctor.report("OK", "secret scanning"),
     )
     monkeypatch.setattr(
         doctor,
@@ -931,7 +987,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         lambda *a, **kw: doctor.report("OK", "secret scanning push protection"),
     )
     monkeypatch.setattr(
-        doctor, "check_vulnerability_alerts", lambda *a, **kw: doctor.report("OK", "vulnerability alerts")
+        doctor,
+        "check_vulnerability_alerts",
+        lambda *a, **kw: doctor.report("OK", "vulnerability alerts"),
     )
     monkeypatch.setattr(
         doctor,
@@ -939,7 +997,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         lambda *a, **kw: doctor.report("OK", "automated security fixes"),
     )
     monkeypatch.setattr(
-        doctor, "check_codeql_scan", lambda *a, **kw: doctor.report("OK", "CodeQL coverage")
+        doctor,
+        "check_codeql_scan",
+        lambda *a, **kw: doctor.report("OK", "CodeQL coverage"),
     )
     doctor.main()
     out = capsys.readouterr().out
@@ -955,7 +1015,9 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     if os.name == "nt" and not sh_here:
         expected.append("WARN statusline:")
     if expected:
-        assert "VERDICT: usable with gaps -- {} warning(s)".format(len(expected)) in out, out
+        assert (
+            "VERDICT: usable with gaps -- {} warning(s)".format(len(expected)) in out
+        ), out
         for prefix in expected:
             assert prefix in out, out
         if "WARN statusline:" in expected:
@@ -972,7 +1034,9 @@ def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys)
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
-    monkeypatch.setattr(doctor, "check_tool", lambda name, probe: doctor.report("OK", name))
+    monkeypatch.setattr(
+        doctor, "check_tool", lambda name, probe: doctor.report("OK", name)
+    )
     # #582: nothing else in this test stops `shutil.which` answering for real, so
     # without this the new check spawns `supertool ops:roster` on whatever machine
     # runs the suite -- twice, once per `doctor.main()` below. The assertions here
@@ -1025,6 +1089,7 @@ def _isolated_home(tmp_path):
 def test_settings_candidates_survive_an_unresolvable_home(tmp_path, monkeypatch):
     """doctor exits 0 always. A machine with no HOME/USERPROFILE must lose user
     scope, not the whole run."""
+
     def _boom():
         raise RuntimeError("no home directory")
 
@@ -1041,14 +1106,18 @@ def test_merge_permission_state_present(tmp_path):
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(./supertool 'gh-pr-merge:*')"],
     )
-    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
 def test_merge_permission_state_absent_when_no_settings_exist(tmp_path):
     """Absent is not unknown. Nothing to read and unable to read are opposite
     findings with opposite remedies."""
-    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "absent"
 
 
@@ -1057,7 +1126,9 @@ def test_merge_permission_state_absent_when_rules_name_other_ops(tmp_path):
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(./supertool 'gh-pr:*')", "Bash(git status)"],
     )
-    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "absent"
 
 
@@ -1065,7 +1136,9 @@ def test_merge_permission_state_unknown_when_settings_are_malformed(tmp_path):
     path = tmp_path / ".claude" / "settings.local.json"
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
-    state, detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "unknown"
     # str(path), not a POSIX literal: the separator is a backslash on Windows.
     assert str(path) in detail
@@ -1076,7 +1149,9 @@ def test_merge_permission_state_unknown_when_a_settings_file_cannot_be_opened(tm
     expected raises IsADirectoryError on POSIX and PermissionError on Windows;
     both are OSError, which is what the check has to catch."""
     (tmp_path / ".claude" / "settings.local.json").mkdir(parents=True)
-    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "unknown"
 
 
@@ -1089,7 +1164,9 @@ def test_a_readable_rule_beats_an_unreadable_neighbour(tmp_path):
         tmp_path / ".claude" / "settings.local.json",
         allow=["Bash(./supertool 'gh-pr-merge:*')"],
     )
-    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "present"
 
 
@@ -1098,7 +1175,9 @@ def test_a_deny_rule_is_not_read_as_permission(tmp_path):
         tmp_path / ".claude" / "settings.local.json",
         deny=["Bash(./supertool 'gh-pr-merge:*')"],
     )
-    state, detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "denied"
     assert "deny" in detail
 
@@ -1112,7 +1191,9 @@ def test_a_deny_beside_an_allow_is_still_denied(tmp_path):
         allow=["Bash(./supertool 'gh-pr-merge:*')"],
         deny=["Bash(./supertool 'gh-pr-merge:42:squash|force')"],
     )
-    state, _detail = doctor.merge_permission_state(tmp_path, home=_isolated_home(tmp_path))
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
     assert state == "denied"
 
 
@@ -1136,12 +1217,16 @@ def test_a_rule_in_the_home_settings_counts(tmp_path):
     """The rule can live in user scope. Ignoring that would WARN at a maintainer
     who already arranged it -- and the fix they would then apply is a duplicate."""
     home = _isolated_home(tmp_path)
-    _settings(home / ".claude" / "settings.json", allow=["Bash(./supertool 'gh-pr-merge:*')"])
+    _settings(
+        home / ".claude" / "settings.json", allow=["Bash(./supertool 'gh-pr-merge:*')"]
+    )
     state, _detail = doctor.merge_permission_state(tmp_path, home=home)
     assert state == "present"
 
 
-def test_check_merge_permission_ok_does_not_promise_the_merge_will_run(tmp_path, capsys):
+def test_check_merge_permission_ok_does_not_promise_the_merge_will_run(
+    tmp_path, capsys
+):
     """The whole judgment of this check. An OK saying "the merge is permitted"
     is a file read presented as a probe of the harness -- the absence-read-as-fact
     this plugin is named after, one layer out."""
@@ -1543,7 +1628,9 @@ def test_watch_channel_malformed_when_ops_is_present_and_the_wrong_shape(tmp_pat
     `ops` must stay `default`, and an unparseable file must stay `unreadable`."""
     (tmp_path / doctor.WATCH_CONFIG).write_text('{"ops": []}', encoding="utf-8")
     broken = doctor.watch_channel_state(tmp_path, env={})
-    (tmp_path / doctor.WATCH_CONFIG).write_text('{"presets": ["git"]}', encoding="utf-8")
+    (tmp_path / doctor.WATCH_CONFIG).write_text(
+        '{"presets": ["git"]}', encoding="utf-8"
+    )
     absent = doctor.watch_channel_state(tmp_path, env={})[0]
     (tmp_path / doctor.WATCH_CONFIG).write_text("{not json", encoding="utf-8")
     unparseable = doctor.watch_channel_state(tmp_path, env={})[0]
@@ -1565,7 +1652,9 @@ def test_watch_channel_malformed_when_ops_is_present_and_the_wrong_shape(tmp_pat
         ("", "unreadable"),
     ],
 )
-def test_a_document_that_parsed_is_never_reported_as_unreadable(tmp_path, raw, expected):
+def test_a_document_that_parsed_is_never_reported_as_unreadable(
+    tmp_path, raw, expected
+):
     """Asserted against the INPUT SHAPE, not against `scaffold.check_radar`.
 
     #205's lesson: two checkers returning the same string would satisfy an
@@ -1658,12 +1747,18 @@ def test_watch_channel_state_never_prints_a_value_the_repo_chose(tmp_path):
     """merge_permission_state's rule: counts and paths, never the file's text."""
     secret = "zzsentinelzz"
     _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": secret}}})
-    for env in ({}, {"SUPERTOOL_WATCH_NAME": "other"}, {"SUPERTOOL_WATCH_NAME": secret}):
+    for env in (
+        {},
+        {"SUPERTOOL_WATCH_NAME": "other"},
+        {"SUPERTOOL_WATCH_NAME": secret},
+    ):
         _state, detail = doctor.watch_channel_state(tmp_path, env=env)
         assert secret not in detail
 
 
-def test_watch_channel_state_reads_os_environ_when_no_env_is_passed(tmp_path, monkeypatch):
+def test_watch_channel_state_reads_os_environ_when_no_env_is_passed(
+    tmp_path, monkeypatch
+):
     _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
     monkeypatch.setenv("SUPERTOOL_WATCH_NAME", "oss-supertool")
     monkeypatch.delenv("SUPERTOOL_WATCH_SOCK", raising=False)
@@ -1823,8 +1918,7 @@ def test_consumer_watch_name_verdict_reads_the_installed_naming_rule(
     naming_dir = install_dir / "presets" / "watch"
     naming_dir.mkdir(parents=True)
     (naming_dir / "naming.py").write_text(
-        "import re\n"
-        "NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}\\Z')\n",
+        "import re\nNAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}\\Z')\n",
         encoding="utf-8",
     )
     registry = tmp_path / "installed_plugins.json"
@@ -1853,7 +1947,9 @@ def test_consumer_watch_name_verdict_unknown_when_registry_is_absent(
     monkeypatch.setattr(
         doctor.os.path,
         "expanduser",
-        lambda p: str(tmp_path / "nope.json") if p.endswith("installed_plugins.json") else p,
+        lambda p: (
+            str(tmp_path / "nope.json") if p.endswith("installed_plugins.json") else p
+        ),
     )
     verdict, why = _REAL_CONSUMER_WATCH_NAME_VERDICT("oss")
     assert verdict == "unknown"
@@ -2423,9 +2519,12 @@ def test_the_supertool_config_this_plugin_writes_satisfies_its_own_diagnostic(tm
     through the diagnostic instead of restating what the template ought to say, so
     the two cannot agree with each other while both being wrong.
     """
-    (tmp_path / doctor.WATCH_CONFIG).write_text(scaffold.SUPERTOOL_JSON, encoding="utf-8")
+    (tmp_path / doctor.WATCH_CONFIG).write_text(
+        scaffold.SUPERTOOL_JSON, encoding="utf-8"
+    )
     state, detail = doctor.radar_publish_state(tmp_path)
     assert state == "publishes", (state, detail)
+
 
 # --- an export that the repo itself derives is not a copied one (#191) --------
 #
@@ -2626,8 +2725,13 @@ def test_doctor_derives_the_same_name_as_the_launcher_does(tmp_path):
     for repo in repos:
         _oss_config_doc(tmp_path, {"repo": repo})
         run = spawn_guard.run(
-            [sys.executable, str(script), str(target),
-             str(REPO_ROOT / "scripts"), landing],
+            [
+                sys.executable,
+                str(script),
+                str(target),
+                str(REPO_ROOT / "scripts"),
+                landing,
+            ],
             subject="the name the launcher derives for this repo, compared against "
             "oss_config.watch_channel_name",
             capture_output=True,
@@ -2772,7 +2876,10 @@ def test_no_tiers_merged_document_declines_on_a_malformed_presets_shape(tmp_path
     [
         {},
         {"presets": ["git", "github"]},
-        {"presets": ["git", "github"], "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
+        {
+            "presets": ["git", "github"],
+            "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+        },
         {"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}},
         {"presets": [doctor.WATCH_PRESET]},
         {"presets": ["git", 3]},
@@ -2806,7 +2913,8 @@ def _fragments_readme(root, changelog_dir, body):
 
 def test_fragments_readme_ok_when_it_documents_the_compatibility_bullet(tmp_path):
     _fragments_readme(
-        tmp_path, "changelog.d",
+        tmp_path,
+        "changelog.d",
         "# Fragments\n\n- Compatibility: breaking|compatible - <reason>\n",
     )
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
@@ -2818,7 +2926,9 @@ def test_fragments_readme_ok_when_it_documents_the_compatibility_bullet(tmp_path
 def test_fragments_readme_warns_and_names_that_scaffold_will_not_fix_it(tmp_path):
     """The remedy must not name a command that declines to act -- naming one that does
     nothing reads as a fix and performs nothing, which is the `misdirects` row."""
-    _fragments_readme(tmp_path, "changelog.d", "# Fragments\n\nNo compatibility section here.\n")
+    _fragments_readme(
+        tmp_path, "changelog.d", "# Fragments\n\nNo compatibility section here.\n"
+    )
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": "changelog.d"})
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -2826,7 +2936,9 @@ def test_fragments_readme_warns_and_names_that_scaffold_will_not_fix_it(tmp_path
     assert "--show" in message
 
 
-def test_fragments_readme_absent_is_the_ordinary_state_not_a_pass_or_a_finding(tmp_path):
+def test_fragments_readme_absent_is_the_ordinary_state_not_a_pass_or_a_finding(
+    tmp_path,
+):
     """Most repos have no fragment practice at all. That must not render as a
     finding (WARN/FAIL) -- it would warn on nearly every scaffolded repo -- and the
     wording must not read as a verified pass either."""
@@ -2837,7 +2949,9 @@ def test_fragments_readme_absent_is_the_ordinary_state_not_a_pass_or_a_finding(t
     assert "absent" in message
 
 
-def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_name(tmp_path):
+def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_name(
+    tmp_path,
+):
     """#259's second defect on this same line: a hardcoded directory name. A custom
     `changelog_dir` must be the directory actually checked."""
     # Built with Path, not a "notes/fragments" string literal: the point of this
@@ -2849,7 +2963,9 @@ def test_fragments_readme_resolves_changelog_dir_from_config_not_a_hardcoded_nam
     # fact on every platform: the message names THIS directory, joined the way
     # this platform joins it.
     expected_dir = tmp_path / "notes" / "fragments"
-    _fragments_readme(tmp_path, "notes/fragments", "- Compatibility: breaking|compatible - <reason>\n")
+    _fragments_readme(
+        tmp_path, "notes/fragments", "- Compatibility: breaking|compatible - <reason>\n"
+    )
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": "notes/fragments"})
     state, message = doctor.FINDINGS[-1]
     assert state == "OK"
@@ -2916,7 +3032,9 @@ def _scaffolded_gate(root, gated_dir):
     )
 
 
-def test_fragments_readme_follows_a_nulled_changelog_dir_to_the_scaffolded_gate(tmp_path):
+def test_fragments_readme_follows_a_nulled_changelog_dir_to_the_scaffolded_gate(
+    tmp_path,
+):
     """#325: `changelog_dir: null` does not always mean "no fragment practice" -- a
     repo scaffolded with a non-default directory and later nulled still carries a
     gate on disk policing that directory, and `release_version._fragment_dir`
@@ -2940,14 +3058,18 @@ def test_fragments_readme_follows_a_nulled_changelog_dir_to_the_scaffolded_gate(
 
     # Must-fire control: the same gate, with the bullet actually present, grades OK.
     doctor.FINDINGS.clear()
-    _fragments_readme(tmp_path, "docs/frags", "- Compatibility: breaking|compatible - <reason>\n")
+    _fragments_readme(
+        tmp_path, "docs/frags", "- Compatibility: breaking|compatible - <reason>\n"
+    )
     doctor.check_fragments_readme(tmp_path, {"changelog_dir": None})
     state, message = doctor.FINDINGS[-1]
     assert state == "OK", doctor.FINDINGS
     assert str(expected_dir) in message
 
 
-def test_fragments_readme_invalid_changelog_dir_does_not_fall_back_to_the_default(tmp_path):
+def test_fragments_readme_invalid_changelog_dir_does_not_fall_back_to_the_default(
+    tmp_path,
+):
     """A `changelog_dir` that fails validation is a broken value, not an absent one --
     trying the default in its place would check a directory nobody named."""
     (tmp_path / "changelog.d").mkdir()
@@ -2973,7 +3095,9 @@ def test_publish_confirm_needs_force_is_the_default_with_no_config_at_all(tmp_pa
 
 def test_publish_confirm_reports_confirmable_when_the_config_flag_is_set(tmp_path):
     """The must-fire arm for `confirmable`."""
-    _supertool_config(tmp_path, {"presets": ["git", "github"], "no_publish_confirm": True})
+    _supertool_config(
+        tmp_path, {"presets": ["git", "github"], "no_publish_confirm": True}
+    )
     state, detail = doctor.publish_confirm_state(tmp_path, env={})
     assert state == "confirmable"
     assert "gh-pr-merge" in detail

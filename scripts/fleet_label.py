@@ -126,8 +126,9 @@ def _quote_for_call(text):
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def agent_call(primary_issue, issues, phrase, subagent_type, model=None,
-                run_in_background=False):
+def agent_call(
+    primary_issue, issues, phrase, subagent_type, model=None, run_in_background=False
+):
     """Render the whole literal ``Agent(...)`` invocation for one dispatched lane (#989).
 
     A sub-manager tick reported, unprompted, that all three of its ``Agent()`` calls
@@ -246,8 +247,12 @@ def _main(argv=None):
             output = fleet_label(primary_text, issues, phrase)
         else:
             output = agent_call(
-                primary_text, issues, phrase, subagent_type,
-                model=model, run_in_background=background,
+                primary_text,
+                issues,
+                phrase,
+                subagent_type,
+                model=model,
+                run_in_background=background,
             )
     except FleetLabelError as exc:
         sys.stderr.write(str(exc) + "\n")

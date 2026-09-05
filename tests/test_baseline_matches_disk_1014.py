@@ -70,12 +70,17 @@ def _stale_baselines(pairs, root):
 
 
 def _declared_pairs():
-    pairs = {rel: baseline for rel, (baseline, _budget) in agent_budgets.BUDGETS.items()}
+    pairs = {
+        rel: baseline for rel, (baseline, _budget) in agent_budgets.BUDGETS.items()
+    }
     pairs.update(
         {rel: baseline for rel, (baseline, _budget) in command_budgets.BUDGETS.items()}
     )
     pairs.update(
-        {rel: baseline for rel, (baseline, _budget, _governs) in skill_phases.DOCUMENTS.items()}
+        {
+            rel: baseline
+            for rel, (baseline, _budget, _governs) in skill_phases.DOCUMENTS.items()
+        }
     )
     return pairs
 

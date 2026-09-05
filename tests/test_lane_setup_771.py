@@ -72,18 +72,30 @@ def _real_git_repo(tmp_path):
     repo.mkdir()
     done = subprocess.run(
         ["git", "init", "--quiet", str(repo)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {0}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {0}".format(done.stderr.strip() or done.returncode)
+        )
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True
+    )
     (repo / "README.md").write_text("x\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True
+    )
     return repo
 
 
@@ -120,7 +132,9 @@ def test_branch_confirmed_present_is_true_for_a_branch_that_exists(tmp_path):
     assert lane_setup._branch_confirmed_present(repo, "fix/1") is True
 
 
-def test_branch_confirmed_present_is_false_for_a_branch_that_was_never_created(tmp_path):
+def test_branch_confirmed_present_is_false_for_a_branch_that_was_never_created(
+    tmp_path,
+):
     repo = _real_git_repo(tmp_path)
     assert lane_setup._branch_confirmed_present(repo, "fix/never-existed") is False
 
@@ -153,7 +167,9 @@ def test_mark_branch_confirmed_created_persists_the_flag_and_keeps_the_rest(tmp_
 # --- held_from_live_lanes: the reproduction, and the must-fire control ----------
 
 
-def test_held_from_live_lanes_does_not_prune_a_branch_never_yet_observed_created(tmp_path):
+def test_held_from_live_lanes_does_not_prune_a_branch_never_yet_observed_created(
+    tmp_path,
+):
     """The issue's own reproduction, at its simplest: a record whose branch
     has never been created at all -- the ordinary window between --claim and
     git worktree add -- must not be pruned. A bare "not found" from
@@ -161,7 +177,9 @@ def test_held_from_live_lanes_does_not_prune_a_branch_never_yet_observed_created
     and deleted", and this function has never observed this branch alive."""
     repo = _real_git_repo(tmp_path)
     worktree_root = tmp_path / "wt"
-    record_path = _write_record(worktree_root, 771, files=["scripts/lane_setup.py"], branch="fix/771")
+    record_path = _write_record(
+        worktree_root, 771, files=["scripts/lane_setup.py"], branch="fix/771"
+    )
 
     result = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     assert result["state"] == "resolved"
@@ -170,7 +188,9 @@ def test_held_from_live_lanes_does_not_prune_a_branch_never_yet_observed_created
     assert result["stale_pruned"] == []
 
 
-def test_held_from_live_lanes_survives_repeated_probes_before_any_branch_is_cut(tmp_path):
+def test_held_from_live_lanes_survives_repeated_probes_before_any_branch_is_cut(
+    tmp_path,
+):
     """The maintainer's own reproduction, from the issue's comment thread:
     three lanes claim back to back, a sibling's --derive-held read (via
     held_from_live_lanes) in between each claim and its own git worktree
@@ -180,7 +200,9 @@ def test_held_from_live_lanes_survives_repeated_probes_before_any_branch_is_cut(
     worktree_root = tmp_path / "wt"
     issues = (771, 774, 776)
     for n in issues:
-        _write_record(worktree_root, n, files=["f{0}.py".format(n)], branch="fix/{0}".format(n))
+        _write_record(
+            worktree_root, n, files=["f{0}.py".format(n)], branch="fix/{0}".format(n)
+        )
         probe = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
         assert probe["state"] == "resolved"
         assert probe["stale_pruned"] == []
@@ -191,7 +213,9 @@ def test_held_from_live_lanes_survives_repeated_probes_before_any_branch_is_cut(
     assert final["stale_pruned"] == []
 
 
-def test_held_from_live_lanes_still_prunes_a_branch_genuinely_created_then_deleted(tmp_path):
+def test_held_from_live_lanes_still_prunes_a_branch_genuinely_created_then_deleted(
+    tmp_path,
+):
     """Must-fire control: #734's own gain is not undone. A branch that really
     was created (observed alive by an earlier read) and is later genuinely
     deleted must still be pruned promptly, on the corroborating read that
@@ -199,7 +223,9 @@ def test_held_from_live_lanes_still_prunes_a_branch_genuinely_created_then_delet
     repo = _real_git_repo(tmp_path)
     subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
-    record_path = _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    record_path = _write_record(
+        worktree_root, 694, files=["commands/tick.md"], branch="fix/694"
+    )
 
     first = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     assert first["state"] == "resolved"
@@ -234,7 +260,9 @@ def test_held_from_live_lanes_does_not_mark_a_branch_that_does_not_exist(tmp_pat
     must never get the flag written for it."""
     repo = _real_git_repo(tmp_path)
     worktree_root = tmp_path / "wt"
-    record_path = _write_record(worktree_root, 1, files=["a.py"], branch="fix/never-existed")
+    record_path = _write_record(
+        worktree_root, 1, files=["a.py"], branch="fix/never-existed"
+    )
 
     lane_setup.held_from_live_lanes(worktree_root, repo=repo)
 

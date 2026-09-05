@@ -162,7 +162,9 @@ def _mutations():
 
     def pr_body_written_without_path(report):
         report["pr_body"] = {
-            "state": "written", "path": "", "closes": {"state": "closes", "issues": [123]}
+            "state": "written",
+            "path": "",
+            "closes": {"state": "closes", "issues": [123]},
         }
         return report
 
@@ -300,8 +302,10 @@ def test_every_enforced_claim_has_a_mutation_that_proves_it():
     """
     claimed = set(_schema()["x-enforced"])
     proven = set(_mutations())
-    assert claimed == proven, "claimed but unproven: {}; proven but unclaimed: {}".format(
-        sorted(claimed - proven), sorted(proven - claimed)
+    assert claimed == proven, (
+        "claimed but unproven: {}; proven but unclaimed: {}".format(
+            sorted(claimed - proven), sorted(proven - claimed)
+        )
     )
 
 
@@ -413,7 +417,8 @@ def test_returned_nothing_is_refused_for_the_missing_reason_not_for_the_enum():
     assert errors, "a returned-nothing review with no reason was accepted"
     assert any("reason" in error for error in errors), errors
     assert not any("is not one of" in error for error in errors), (
-        "still refused by enum membership, so the state was never added: " + repr(errors)
+        "still refused by enum membership, so the state was never added: "
+        + repr(errors)
     )
 
 
@@ -522,11 +527,15 @@ def test_returned_nothing_is_a_review_state_and_only_a_review_state():
 
     control = _example()
     control["docs"]["state"] = "checked"
-    assert report_schema.validate(control) == [], "the docs control itself does not validate"
+    assert report_schema.validate(control) == [], (
+        "the docs control itself does not validate"
+    )
 
     leaked = _example()
     leaked["docs"] = {"state": "returned-nothing", "reason": "x", "items": []}
-    assert report_schema.validate(leaked), "returned-nothing is spellable on a plain survey"
+    assert report_schema.validate(leaked), (
+        "returned-nothing is spellable on a plain survey"
+    )
 
 
 def test_enforced_and_convention_are_disjoint_and_both_populated():
@@ -593,6 +602,7 @@ def test_cli_on_a_missing_file_is_an_error_not_a_pass(tmp_path):
     done = _run(str(tmp_path / "absent.json"))
     assert done.returncode == 1
 
+
 # --- the one cross-file check worth having ------------------------------------
 
 
@@ -613,7 +623,10 @@ def test_the_developer_brief_points_at_files_that_exist():
         "nothing"
     )
     missing = [t for t in targets if not (REPO_ROOT / t).exists()]
-    assert not missing, "agents/developer.md references files that do not exist: {}".format(missing)
+    assert not missing, (
+        "agents/developer.md references files that do not exist: {}".format(missing)
+    )
+
 
 # --- the same command line, in process ----------------------------------------
 #
@@ -634,7 +647,9 @@ def test_validate_file_on_a_missing_file_reports_rather_than_returning_clean(tmp
     assert errors and "cannot read" in errors[0]
 
 
-def test_validate_file_on_unparseable_json_reports_rather_than_returning_clean(tmp_path):
+def test_validate_file_on_unparseable_json_reports_rather_than_returning_clean(
+    tmp_path,
+):
     path = tmp_path / "report.json"
     path.write_text("{not json", encoding="utf-8")
     errors = report_schema.validate_file(path)
@@ -661,7 +676,9 @@ def test_main_returns_one_and_prints_each_problem(tmp_path, capsys):
 def test_main_on_an_unloadable_schema_fails_loudly(tmp_path, capsys):
     path = tmp_path / "report.json"
     path.write_text(json.dumps(_example()), encoding="utf-8")
-    assert report_schema.main([str(path), "--schema", str(tmp_path / "absent.json")]) == 1
+    assert (
+        report_schema.main([str(path), "--schema", str(tmp_path / "absent.json")]) == 1
+    )
     assert "cannot load the schema" in capsys.readouterr().err
 
 
@@ -675,6 +692,7 @@ def test_a_nonlocal_ref_is_refused_rather_than_skipped():
     """A ref this validator cannot follow must not read as a subtree that passed."""
     with pytest.raises(ValueError):
         report_schema.validate({}, {"$ref": "https://example.invalid/other.json"})
+
 
 # --- what the validator does when the SCHEMA is the broken thing ---------------
 
@@ -713,7 +731,10 @@ def test_a_dangling_ref_is_an_error_rather_than_a_traceback(tmp_path, capsys):
     assert report_schema.main([str(report), "--schema", str(broken_schema)]) == 1
     assert "unusable" in capsys.readouterr().err
 
-def test_output_survives_a_console_that_cannot_represent_the_report(tmp_path, monkeypatch):
+
+def test_output_survives_a_console_that_cannot_represent_the_report(
+    tmp_path, monkeypatch
+):
     """A cp1252 console must not kill the run at the print.
 
     Every line printed can echo the report -- a path, an enum value, a finding's
@@ -742,6 +763,7 @@ def test_the_ascii_control_would_otherwise_have_raised():
     stream = io.TextIOWrapper(io.BytesIO(), encoding="ascii")
     with pytest.raises(UnicodeEncodeError):
         print("naïve", file=stream)
+
 
 # --- the one check that leaves the report and opens a file --------------------
 #
@@ -835,14 +857,18 @@ def test_shape_validation_never_opens_the_file(tmp_path):
     """validate() stays a shape checker. The split is why both can be trusted."""
     report = _report_with_payload(tmp_path, write=False)
     assert report_schema.validate(report) == []
-    assert report_schema.validate_pr_body(
-        report, base_dir=tmp_path
-    ), "the missing file must be caught somewhere"
+    assert report_schema.validate_pr_body(report, base_dir=tmp_path), (
+        "the missing file must be caught somewhere"
+    )
 
 
 def test_a_report_that_wrote_no_body_has_nothing_to_open():
     report = _example()
-    report["pr_body"] = {"state": "not-written", "path": None, "reason": "no code changed"}
+    report["pr_body"] = {
+        "state": "not-written",
+        "path": None,
+        "reason": "no code changed",
+    }
     assert report_schema.validate_pr_body(report) == []
 
 
@@ -862,20 +888,26 @@ def _disk_mutations(tmp_path):
             _report_with_payload(
                 tmp_path,
                 payload={
-                    "title": "t", "body": "b", "head": "fix/123", "base": "main", "titel": "typo"
+                    "title": "t",
+                    "body": "b",
+                    "head": "fix/123",
+                    "base": "main",
+                    "titel": "typo",
                 },
             ),
             tmp_path,
         ),
         "pr-body-title-and-body-are-non-empty": (
             _report_with_payload(
-                tmp_path, payload={"title": "  ", "body": "b", "head": "fix/123", "base": "main"}
+                tmp_path,
+                payload={"title": "  ", "body": "b", "head": "fix/123", "base": "main"},
             ),
             tmp_path,
         ),
         "pr-body-head-matches-the-report-branch": (
             _report_with_payload(
-                tmp_path, payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"}
+                tmp_path,
+                payload={"title": "t", "body": "b", "head": "fix/999", "base": "main"},
             ),
             tmp_path,
         ),
@@ -979,16 +1011,18 @@ def _disk_mutations(tmp_path):
 @pytest.mark.parametrize("name", sorted(_schema()["x-enforced-on-disk"]))
 def test_each_on_disk_property_rejects_a_payload_that_breaks_it(name, tmp_path):
     report, base_dir = _disk_mutations(tmp_path)[name]
-    assert report_schema.validate_pr_body(
-        report, base_dir=base_dir
-    ), "{} accepted a payload that breaks it".format(name)
+    assert report_schema.validate_pr_body(report, base_dir=base_dir), (
+        "{} accepted a payload that breaks it".format(name)
+    )
 
 
 def test_every_on_disk_claim_has_a_case_that_proves_it(tmp_path):
     claimed = set(_schema()["x-enforced-on-disk"])
     proven = set(_disk_mutations(tmp_path))
-    assert claimed == proven, "claimed but unproven: {}; proven but unclaimed: {}".format(
-        sorted(claimed - proven), sorted(proven - claimed)
+    assert claimed == proven, (
+        "claimed but unproven: {}; proven but unclaimed: {}".format(
+            sorted(claimed - proven), sorted(proven - claimed)
+        )
     )
 
 
@@ -1084,7 +1118,9 @@ def _escaping_report(tmp_path, absolute=False, decoy=None):
 
 
 @pytest.mark.parametrize("absolute", [False, True])
-def test_a_payload_outside_the_report_directory_is_never_opened(tmp_path, monkeypatch, absolute):
+def test_a_payload_outside_the_report_directory_is_never_opened(
+    tmp_path, monkeypatch, absolute
+):
     """Both spellings of the same escape: a relative one, and an absolute one.
 
     They are one test because they were two holes in one expression -- the
@@ -1143,9 +1179,10 @@ def test_a_symlink_inside_the_report_directory_pointing_out_is_never_opened(
     if kind == "file":
         named = _symlink_or_skip(reports / "body.pr.json", decoy)
     else:
-        named = _symlink_or_skip(
-            reports / "sub", decoy.parent, target_is_directory=True
-        ) / decoy.name
+        named = (
+            _symlink_or_skip(reports / "sub", decoy.parent, target_is_directory=True)
+            / decoy.name
+        )
     report["pr_body"] = {"state": "written", "path": str(named)}
 
     opened = _read_spy(monkeypatch)
@@ -1153,7 +1190,9 @@ def test_a_symlink_inside_the_report_directory_pointing_out_is_never_opened(
 
     assert _outside(opened, reports) == [], "it opened a file the report does not own"
     assert str(decoy) not in [str(p) for p in opened]
-    assert errors, "a symlink out of the base has to be reported; silence is what nobody reads"
+    assert errors, (
+        "a symlink out of the base has to be reported; silence is what nobody reads"
+    )
 
     # The positive control, in the same fixture and on the same directory. Every
     # assertion above also passes when the link was never created, when nothing
@@ -1163,12 +1202,14 @@ def test_a_symlink_inside_the_report_directory_pointing_out_is_never_opened(
     assert report_schema.validate_pr_body(ordinary, schema, base_dir=reports) == [], (
         "the refusal above proves nothing if an ordinary sibling is refused too"
     )
-    assert any(
-        p.name == "ordinary.pr.json" for p in opened
-    ), "the ordinary sibling went unread, so the harness saw nothing either way"
+    assert any(p.name == "ordinary.pr.json" for p in opened), (
+        "the ordinary sibling went unread, so the harness saw nothing either way"
+    )
 
 
-def test_a_payload_beside_the_report_is_still_opened_and_validated(tmp_path, monkeypatch):
+def test_a_payload_beside_the_report_is_still_opened_and_validated(
+    tmp_path, monkeypatch
+):
     """The positive control. `return []` would satisfy every assertion above."""
     schema = report_schema.load_schema()
     reports = tmp_path / "reports"
@@ -1177,7 +1218,9 @@ def test_a_payload_beside_the_report_is_still_opened_and_validated(tmp_path, mon
     opened = _read_spy(monkeypatch)
 
     assert report_schema.validate_pr_body(report, schema, base_dir=reports) == []
-    assert any(p.name == "body.pr.json" for p in opened), "the sibling payload went unread"
+    assert any(p.name == "body.pr.json" for p in opened), (
+        "the sibling payload went unread"
+    )
 
 
 def test_containment_did_not_replace_the_checks_it_guards(tmp_path):
@@ -1192,7 +1235,9 @@ def test_containment_did_not_replace_the_checks_it_guards(tmp_path):
     assert any("head" in error for error in errors), errors
 
 
-def test_without_a_directory_to_resolve_against_the_payload_is_not_opened(tmp_path, monkeypatch):
+def test_without_a_directory_to_resolve_against_the_payload_is_not_opened(
+    tmp_path, monkeypatch
+):
     """Containment that could not be checked is a third state, not a pass.
 
     base_dir is the anchor. Absent one there is nothing to contain the path
@@ -1204,11 +1249,15 @@ def test_without_a_directory_to_resolve_against_the_payload_is_not_opened(tmp_pa
     opened = _read_spy(monkeypatch)
     errors = report_schema.validate_pr_body(report, schema, base_dir=None)
 
-    assert errors, "no anchor means the check could not run, which is not the same as clean"
+    assert errors, (
+        "no anchor means the check could not run, which is not the same as clean"
+    )
     assert opened == [], "it opened the payload with nothing to contain it against"
 
 
-def test_a_path_that_will_not_resolve_is_refused_rather_than_opened(tmp_path, monkeypatch):
+def test_a_path_that_will_not_resolve_is_refused_rather_than_opened(
+    tmp_path, monkeypatch
+):
     """The other half of the third state: the anchor exists, the answer does not.
 
     Resolving can fail -- an over-long component, a directory the process cannot
@@ -1231,10 +1280,14 @@ def test_a_path_that_will_not_resolve_is_refused_rather_than_opened(tmp_path, mo
 
     errors = report_schema.validate_pr_body(report, schema, base_dir=tmp_path)
     assert errors, "a containment question that could not be answered is not a pass"
-    assert opened == [], "it opened the payload without deciding whether it was contained"
+    assert opened == [], (
+        "it opened the payload without deciding whether it was contained"
+    )
 
 
-def test_a_nul_byte_in_the_path_is_the_report_being_wrong_not_the_schema(tmp_path, capsys):
+def test_a_nul_byte_in_the_path_is_the_report_being_wrong_not_the_schema(
+    tmp_path, capsys
+):
     """A NUL is legal in a JSON string and `resolve()` raises ValueError for one.
 
     Uncaught it reached main()'s `except ValueError`, whose own comment says that
@@ -1317,9 +1370,13 @@ def _payload_only(tmp_path, name="body.pr.json"):
     return target
 
 
-def test_a_forge_payload_handed_to_the_report_validator_is_refused_by_name(tmp_path, capsys):
+def test_a_forge_payload_handed_to_the_report_validator_is_refused_by_name(
+    tmp_path, capsys
+):
     errors = report_schema.validate_file(_payload_only(tmp_path))
-    assert len(errors) == 1, "a payload should get one sentence, not a wall: {}".format(errors)
+    assert len(errors) == 1, "a payload should get one sentence, not a wall: {}".format(
+        errors
+    )
     said = errors[0].lower()
     assert "payload" in said and "report" in said
     assert "missing required key" not in said
@@ -1374,7 +1431,9 @@ def test_a_json_document_that_is_not_an_object_is_not_classified(tmp_path):
     assert errors and all("pull request payload" not in e for e in errors), errors
 
 
-def test_a_schema_that_stopped_defining_the_payload_declines_rather_than_guesses(tmp_path):
+def test_a_schema_that_stopped_defining_the_payload_declines_rather_than_guesses(
+    tmp_path,
+):
     """The third state. Unable to classify is not the same as classified as a report.
 
     Declining leaves the shape pass to answer, which it does loudly. Guessing
@@ -1637,7 +1696,8 @@ def test_a_schema_that_names_no_contract_cannot_certify_a_report(tmp_path):
     also_broken = _report_with_payload(tmp_path, name="broken.pr.json")
     also_broken.pop("docs")
     done = _run(
-        "--schema", str(schema_path),
+        "--schema",
+        str(schema_path),
         str(_write_report(tmp_path, also_broken, "broken.json")),
     )
     assert done.returncode == 2, done.stdout + done.stderr
@@ -1708,9 +1768,7 @@ def test_an_undeclared_step_is_refused_rather_than_assumed_additive():
     """
     older = dict(_example(), schema_version=4)
     for compat in ({}, {"5": "unknown"}, {"5": "widening-ish"}, {"5": True}):
-        state, _ = report_schema.version_verdict(
-            older, _schema_declaring(5, compat)
-        )
+        state, _ = report_schema.version_verdict(older, _schema_declaring(5, compat))
         assert state == report_schema.VERSION_MISMATCH, compat
 
     # The positive control, and it is not decoration: every arm above is a refusal,
@@ -1718,9 +1776,10 @@ def test_an_undeclared_step_is_refused_rather_than_assumed_additive():
     # line the test passes verbatim against a copy with the feature deleted, which
     # review caught. It has to be the same report and the same fixture, so what is
     # being read is the declaration and nothing else.
-    assert report_schema.version_verdict(
-        older, _schema_declaring(5, {"5": "additive"})
-    )[0] == report_schema.VERSION_READABLE
+    assert (
+        report_schema.version_verdict(older, _schema_declaring(5, {"5": "additive"}))[0]
+        == report_schema.VERSION_READABLE
+    )
 
 
 def test_a_chain_is_only_as_readable_as_its_weakest_step():
@@ -1762,14 +1821,16 @@ def test_version_one_is_never_readable_however_the_chain_is_declared():
     """
     schema = _schema_declaring(3, {"3": "additive", "2": "additive"})
     assert report_schema.readable_from(schema) == 2
-    assert report_schema.version_verdict(
-        dict(_example(), schema_version=1), schema
-    )[0] == report_schema.VERSION_MISMATCH
+    assert (
+        report_schema.version_verdict(dict(_example(), schema_version=1), schema)[0]
+        == report_schema.VERSION_MISMATCH
+    )
     # Paired: 2 itself is readable under that same declaration, so the floor is a
     # floor rather than the walk having failed.
-    assert report_schema.version_verdict(
-        dict(_example(), schema_version=2), schema
-    )[0] == report_schema.VERSION_READABLE
+    assert (
+        report_schema.version_verdict(dict(_example(), schema_version=2), schema)[0]
+        == report_schema.VERSION_READABLE
+    )
 
 
 def test_a_newer_report_stays_unvalidatable_whatever_the_older_steps_declared():
@@ -1831,12 +1892,18 @@ def test_the_chain_steps_to_the_previous_RECORDED_contract_not_to_the_number_bel
     schema = _schema_declaring(7, {"7": "additive", "5": "breaking"})
 
     assert report_schema.readable_from(schema, record) == 5
-    assert report_schema.version_verdict(
-        dict(_example(), schema_version=6), schema, record
-    )[0] == report_schema.VERSION_MISMATCH, "a number that was never a contract was read"
-    assert report_schema.version_verdict(
-        dict(_example(), schema_version=5), schema, record
-    )[0] == report_schema.VERSION_READABLE, "the real predecessor was refused"
+    assert (
+        report_schema.version_verdict(
+            dict(_example(), schema_version=6), schema, record
+        )[0]
+        == report_schema.VERSION_MISMATCH
+    ), "a number that was never a contract was read"
+    assert (
+        report_schema.version_verdict(
+            dict(_example(), schema_version=5), schema, record
+        )[0]
+        == report_schema.VERSION_READABLE
+    ), "the real predecessor was refused"
 
 
 def test_a_compatibility_declaration_is_inside_the_contract_fingerprint():
@@ -2002,6 +2069,7 @@ def test_prose_does_not_demand_a_bump_but_the_enforcement_lists_do():
         "changes, change the sentence in x-honesty-versioning with it"
     )
 
+
 # ------------------------- a request rendered as a completed action (#254)
 #
 # `disposition: filed` was a value an agent could write for a review finding it
@@ -2102,8 +2170,9 @@ def test_a_finding_left_for_filing_carries_its_reason():
     }
     errors = report_schema.validate(report)
     assert any("report-for-filing" in error for error in errors), (
-        "a finding handed to the maintainer with no argument was accepted: "
-        "{}".format(errors)
+        "a finding handed to the maintainer with no argument was accepted: {}".format(
+            errors
+        )
     )
 
     # Must-not-fire, same fixture: the reason supplied.

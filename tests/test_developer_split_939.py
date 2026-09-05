@@ -71,7 +71,9 @@ def test_check_reports_over_when_a_budget_is_crossed():
 
 def test_check_reports_missing_rather_than_ok():
     orig = developer_phases.DOCUMENTS
-    developer_phases.DOCUMENTS = {"agents/developer/does-not-exist-939.md": (1, 2, "control")}
+    developer_phases.DOCUMENTS = {
+        "agents/developer/does-not-exist-939.md": (1, 2, "control")
+    }
     try:
         rows = {r["path"]: r for r in developer_phases.check()}
     finally:
@@ -101,7 +103,9 @@ def test_phase_files_carry_no_frontmatter_so_they_are_not_agents():
     # sixth agent. Documentation is what a file with no frontmatter is read as.
     for rel in developer_phases.DOCUMENTS:
         first = (ROOT / rel).read_text(encoding="utf-8").lstrip().splitlines()[0]
-        assert not first.startswith("---"), "{} opens with a frontmatter fence".format(rel)
+        assert not first.startswith("---"), "{} opens with a frontmatter fence".format(
+            rel
+        )
         assert first.startswith("# "), "{} should open with its title".format(rel)
 
 
@@ -115,14 +119,18 @@ def test_spine_shrank_below_the_size_it_was_argued_from():
     # 89,714 B measured 2026-09-03 before the split; a spine back at that size
     # would mean the phase files were duplicated rather than moved.
     size = len(SPINE.read_bytes())
-    assert size < 60000, "agents/developer.md is {}B -- the split did not take".format(size)
+    assert size < 60000, "agents/developer.md is {}B -- the split did not take".format(
+        size
+    )
 
 
 def test_developer_brief_reads_the_whole_set():
     brief = developer_docs.DeveloperBrief()
     paths = brief.paths
     assert paths[0] == SPINE
-    assert {p.relative_to(ROOT).as_posix() for p in paths[1:]} == set(developer_phases.DOCUMENTS)
+    assert {p.relative_to(ROOT).as_posix() for p in paths[1:]} == set(
+        developer_phases.DOCUMENTS
+    )
     text = brief.read_text()
     # One phrase from each phase file, so a narrowed read fails on the file it dropped.
     assert "tree_snapshot.py" in text
@@ -152,10 +160,14 @@ def test_documents_reports_an_unreadable_phases_directory(tmp_path):
         except PermissionError:
             pass
         else:
-            pytest.skip("this platform or user lists a mode-0 directory; the deny could not be established")
+            pytest.skip(
+                "this platform or user lists a mode-0 directory; the deny could not be established"
+            )
         paths, unreadable = developer_docs.documents(tmp_path)
         assert [p.name for p in paths] == ["developer.md"]
-        assert unreadable, "a denied phases directory must be reported, not read as empty"
+        assert unreadable, (
+            "a denied phases directory must be reported, not read as empty"
+        )
         with pytest.raises(RuntimeError):
             developer_docs.text(tmp_path)
     finally:
@@ -196,7 +208,9 @@ def test_claude_md_developer_phase_table_matches_developer_phases():
         path: (baseline, budget)
         for path, (baseline, budget, _governs) in developer_phases.DOCUMENTS.items()
     }
-    assert table == module, "CLAUDE.md table {} != developer_phases.DOCUMENTS {}".format(table, module)
+    assert table == module, (
+        "CLAUDE.md table {} != developer_phases.DOCUMENTS {}".format(table, module)
+    )
 
 
 def test_claude_md_agent_table_carries_the_spine_new_number():

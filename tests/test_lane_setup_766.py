@@ -46,7 +46,9 @@ def _make_tree(root):
 
 
 def test_pipe_in_pattern_is_refused():
-    problem = lane_setup._lane_pattern_problem("scripts/rebuild-tsv.sh|scripts/common.sh")
+    problem = lane_setup._lane_pattern_problem(
+        "scripts/rebuild-tsv.sh|scripts/common.sh"
+    )
     assert problem is not None
     assert "|" in problem
     assert "repeat" in problem.lower() or "--lane" in problem
@@ -61,7 +63,9 @@ def test_ordinary_pattern_with_no_pipe_is_still_accepted():
 # --- resolve_lane: the alternation never renders as a matched, literal file -----
 
 
-def test_resolve_lane_refuses_a_pipe_alternation_rather_than_treating_it_as_literal(tmp_path):
+def test_resolve_lane_refuses_a_pipe_alternation_rather_than_treating_it_as_literal(
+    tmp_path,
+):
     """The issue's own reproduction: a `|`-joined pattern used to resolve as one
     literal path (`entries[0]["state"] == "literal"`) that matched nothing on
     disk and contributed nothing to `files` -- silently, with no signal that the
@@ -136,7 +140,8 @@ def _cli(tmp_path, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), "766", "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [sys.executable, str(SCRIPT), "766", "--repo", str(tmp_path), "--json"]
+        + list(extra_args),
         subject="the JSON payload lane_setup.py emits for a --lane containing '|'",
         capture_output=True,
         text=True,

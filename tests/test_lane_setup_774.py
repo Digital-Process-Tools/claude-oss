@@ -45,7 +45,12 @@ def _make_tree(root):
 
 
 def _derived_held(held):
-    return {"state": "resolved", "held": held, "lanes": {"stale_pruned": []}, "detail": ""}
+    return {
+        "state": "resolved",
+        "held": held,
+        "lanes": {"stale_pruned": []},
+        "detail": "",
+    }
 
 
 # --- _refused_patterns: the primitive #774 is built on ---------------------------
@@ -84,7 +89,9 @@ def test_lane_report_overlap_state_could_not_check_for_a_refused_lane_pattern(tm
     assert "1 of 1 lane pattern(s) refused" in report["overlap_detail"]
 
 
-def test_lane_report_overlap_state_could_not_check_for_a_refused_against_pattern(tmp_path):
+def test_lane_report_overlap_state_could_not_check_for_a_refused_against_pattern(
+    tmp_path,
+):
     """Symmetric: a refused pattern on the --against side is exactly as
     unchecked as one on --lane, and must read the same way."""
     _make_tree(tmp_path)
@@ -132,7 +139,9 @@ def test_lane_report_availability_could_not_check_for_a_refused_lane_pattern(tmp
     hiding behind an unchecked pattern rendering as clear to dispatch on."""
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/a.py": ["PR #9"]})
-    report = lane_setup.lane_report(tmp_path, ["/etc/passwd"], None, derived_held=derived_held)
+    report = lane_setup.lane_report(
+        tmp_path, ["/etc/passwd"], None, derived_held=derived_held
+    )
     assert report["overlap_state"] == "could-not-check"
     assert report["availability"]["state"] == "could-not-check"
     assert report["availability"]["state"] not in ("available", "blocked")
@@ -142,7 +151,9 @@ def test_lane_report_availability_available_for_a_genuinely_disjoint_lane(tmp_pa
     """Control: an ordinary, fully-resolved lane must still read `available`."""
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/b.py": ["PR #9"]})
-    report = lane_setup.lane_report(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/a.py"], None, derived_held=derived_held
+    )
     assert report["overlap_state"] == "resolved"
     assert report["availability"]["state"] == "available"
 
@@ -152,7 +163,9 @@ def test_lane_report_availability_blocked_still_fires_with_a_real_collision(tmp_
     `blocked`, unaffected by #774."""
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/a.py": ["PR #9"]})
-    report = lane_setup.lane_report(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/a.py"], None, derived_held=derived_held
+    )
     assert report["overlap_state"] == "resolved"
     assert report["availability"]["state"] == "blocked"
 
@@ -171,7 +184,9 @@ def test_lane_report_availability_could_not_check_for_a_refused_held_file(tmp_pa
     comparison."""
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/weird|file.py": ["PR #9"]})
-    report = lane_setup.lane_report(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/a.py"], None, derived_held=derived_held
+    )
     assert report["overlap_state"] == "could-not-check"
     assert report["availability"]["state"] == "could-not-check"
     assert report["availability"]["state"] not in ("available", "blocked")
@@ -184,7 +199,9 @@ def test_lane_report_availability_available_when_the_held_set_is_fully_clean(tmp
     side must not turn a genuinely clean derivation into `could-not-check`."""
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/b.py": ["PR #9"]})
-    report = lane_setup.lane_report(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/a.py"], None, derived_held=derived_held
+    )
     assert report["overlap_state"] == "resolved"
     assert report["availability"]["state"] == "available"
 
@@ -192,26 +209,40 @@ def test_lane_report_availability_available_when_the_held_set_is_fully_clean(tmp
 # --- receipt: the answer line itself, the issue's own measurement ----------------
 
 
-def _minimal_payload(repo, lane_patterns, against_patterns=None, derived_held=None, issue=774):
+def _minimal_payload(
+    repo, lane_patterns, against_patterns=None, derived_held=None, issue=774
+):
     return {
         "issue": issue,
         "repo": str(repo),
         "config": {"state": "ok", "problems": []},
         "base": {
-            "state": "resolved", "remote": "origin", "ref": "origin/main",
-            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "detail": "",
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "detail": "",
         },
         "branch": {
-            "state": "resolved", "pattern": "fix/{issue}", "name": "fix/{0}".format(issue),
-            "detail": "", "exists_local": False, "exists_remote": False,
+            "state": "resolved",
+            "pattern": "fix/{issue}",
+            "name": "fix/{0}".format(issue),
+            "detail": "",
+            "exists_local": False,
+            "exists_remote": False,
         },
         "worktree": {
-            "state": "resolved", "root": "/tmp", "path": "/tmp/{0}".format(issue),
-            "detail": "", "exists": False,
+            "state": "resolved",
+            "root": "/tmp",
+            "path": "/tmp/{0}".format(issue),
+            "detail": "",
+            "exists": False,
         },
         "board": {"state": "ok", "lines": []},
         "lanes": None,
-        "lane": lane_setup.lane_report(repo, lane_patterns, against_patterns, derived_held=derived_held),
+        "lane": lane_setup.lane_report(
+            repo, lane_patterns, against_patterns, derived_held=derived_held
+        ),
     }
 
 
@@ -234,10 +265,14 @@ def test_receipt_still_says_none_for_a_genuine_disjoint_pair(tmp_path):
     assert "COULD NOT CHECK" not in text
 
 
-def test_receipt_verdict_says_could_not_check_for_a_refused_lane_pattern_in_derive_held_mode(tmp_path):
+def test_receipt_verdict_says_could_not_check_for_a_refused_lane_pattern_in_derive_held_mode(
+    tmp_path,
+):
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/a.py": ["PR #9"]})
-    payload = _minimal_payload(tmp_path, ["/etc/passwd"], None, derived_held=derived_held)
+    payload = _minimal_payload(
+        tmp_path, ["/etc/passwd"], None, derived_held=derived_held
+    )
     text = lane_setup.receipt(payload)
     assert "verdict : COULD NOT CHECK" in text
     assert "verdict : available" not in text
@@ -247,7 +282,9 @@ def test_receipt_verdict_still_says_available_for_a_genuinely_disjoint_lane(tmp_
     """Control: the ordinary, fully-resolved case must still print `available`."""
     _make_tree(tmp_path)
     derived_held = _derived_held({"scripts/b.py": ["PR #9"]})
-    payload = _minimal_payload(tmp_path, ["scripts/a.py"], None, derived_held=derived_held)
+    payload = _minimal_payload(
+        tmp_path, ["scripts/a.py"], None, derived_held=derived_held
+    )
     text = lane_setup.receipt(payload)
     assert "verdict : available" in text
     assert "COULD NOT CHECK" not in text
@@ -278,7 +315,8 @@ def _cli(tmp_path, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), "774", "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [sys.executable, str(SCRIPT), "774", "--repo", str(tmp_path), "--json"]
+        + list(extra_args),
         subject="the JSON payload lane_setup.py emits for a refused --lane pattern (#774)",
         capture_output=True,
         text=True,

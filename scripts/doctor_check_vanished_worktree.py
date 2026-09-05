@@ -65,7 +65,9 @@ def check_vanished_worktrees(project_dir, config):
         doctor.report(
             "WARN",
             "vanished worktrees: could not be checked -- {}. UNKNOWN, not clean: nothing "
-            "here has been shown to be free of a vanished worktree.".format(result["detail"]),
+            "here has been shown to be free of a vanished worktree.".format(
+                result["detail"]
+            ),
         )
         return
     if result["state"] == "unknown":
@@ -78,7 +80,10 @@ def check_vanished_worktrees(project_dir, config):
         return
     vanished = result["vanished"]
     if not vanished:
-        doctor.report("OK", "vanished worktrees: none -- every live lane record's own directory is present.")
+        doctor.report(
+            "OK",
+            "vanished worktrees: none -- every live lane record's own directory is present.",
+        )
         return
     doctor.report(
         "WARN",

@@ -64,18 +64,37 @@ def _real_git_repo(tmp_path, name="repo"):
     env = _git_env()
     done = subprocess.run(
         ["git", "init", "--quiet", str(repo)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
         env=env,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {0}".format(done.stderr.strip() or done.returncode))
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True)
+        pytest.skip(
+            "git init failed here: {0}".format(done.stderr.strip() or done.returncode)
+        )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True
+    )
     (repo / "tracked.txt").write_text("original content in {0}\n".format(name))
     subprocess.run(["git", "-C", str(repo), "add", "."], env=env, check=True)
     subprocess.run(
-        ["git", "-C", str(repo), "commit", "--quiet", "-m", "initial commit for {0}".format(name)],
-        env=env, check=True,
+        [
+            "git",
+            "-C",
+            str(repo),
+            "commit",
+            "--quiet",
+            "-m",
+            "initial commit for {0}".format(name),
+        ],
+        env=env,
+        check=True,
     )
     return repo
 
@@ -83,8 +102,11 @@ def _real_git_repo(tmp_path, name="repo"):
 def _run_cli(args, cwd=None, stdin=None):
     return subprocess.run(
         [sys.executable, str(SCRIPT)] + args,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-        cwd=cwd, input=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        cwd=cwd,
+        input=stdin,
     )
 
 
@@ -154,7 +176,8 @@ def test_explicit_root_at_compare_time_still_overrides_the_recorded_one(tmp_path
 
     done = _run_cli(
         ["compare", "--before", "-", "--root", str(elsewhere)],
-        cwd=str(worktree), stdin=before,
+        cwd=str(worktree),
+        stdin=before,
     )
     assert done.returncode == 1, done.stdout + done.stderr
     assert "VERDICT: mutated" in done.stdout

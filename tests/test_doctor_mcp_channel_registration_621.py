@@ -56,7 +56,9 @@ def test_could_not_ask_when_claude_is_not_on_path():
     )
     assert state == "could-not-ask", (state, detail)
 
-    doctor.check_mcp_channel_registration(which=lambda name: None, run=_run_answering(""))
+    doctor.check_mcp_channel_registration(
+        which=lambda name: None, run=_run_answering("")
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", (level, message)
     assert "not on PATH" in message, message
@@ -152,7 +154,11 @@ def test_unreadable_entry_no_args_line_could_be_parsed():
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", (level, message)
     assert "unreadable-entry" not in message  # the state name, not the message contract
-    assert "no command" in message.lower() or "no args" in message.lower() or "could not" in message.lower(), message
+    assert (
+        "no command" in message.lower()
+        or "no args" in message.lower()
+        or "could not" in message.lower()
+    ), message
 
 
 def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
@@ -162,8 +168,16 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
     cases = [
         (lambda n: None, _run_answering("")),
         (lambda n: "/usr/bin/claude", _run_answering("", returncode=1)),
-        (lambda n: "/usr/bin/claude", _run_answering("Type: stdio\nCommand: bun\nArgs: {}\n".format(consumer))),
-        (lambda n: "/usr/bin/claude", _run_answering("Type: stdio\nCommand: bun\nArgs: {}\n".format(tmp_path / "gone.ts"))),
+        (
+            lambda n: "/usr/bin/claude",
+            _run_answering("Type: stdio\nCommand: bun\nArgs: {}\n".format(consumer)),
+        ),
+        (
+            lambda n: "/usr/bin/claude",
+            _run_answering(
+                "Type: stdio\nCommand: bun\nArgs: {}\n".format(tmp_path / "gone.ts")
+            ),
+        ),
         (lambda n: "/usr/bin/claude", _run_answering("Type: sse\n")),
     ]
     for which, run in cases:
@@ -239,7 +253,11 @@ def test_a_precomputed_registered_answer_skips_the_second_subprocess_call():
 def test_a_precomputed_not_registered_answer_also_skips_the_call():
     """Must-fire pair for the state above: a nonzero precomputed status reads as
     not-registered without ever shelling out, the same as the live path does."""
-    env = {"OSS_WORKSPACE_MCP_CHECKED": "1", "OSS_WORKSPACE_MCP_STATUS": "1", "OSS_WORKSPACE_MCP_OUTPUT": ""}
+    env = {
+        "OSS_WORKSPACE_MCP_CHECKED": "1",
+        "OSS_WORKSPACE_MCP_STATUS": "1",
+        "OSS_WORKSPACE_MCP_OUTPUT": "",
+    }
     state, detail = doctor.mcp_channel_registration_state(
         which=lambda name: "/usr/bin/claude",
         run=_run_that_must_not_be_called(),

@@ -73,7 +73,9 @@ def test_a_stale_cache_pin_with_identical_bytes_is_not_matched(tmp_path):
     plugin_root = _plugin_root(tmp_path, content=b"same bytes\n", version="9.9.9")
     path_dir, target = _stale_cache_entry(tmp_path, b"same bytes\n", version="0.7.0")
 
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=path_dir)
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=path_dir
+    )
 
     assert state != "matched", (state, detail)
     assert state == "matched-elsewhere", (state, detail)
@@ -83,11 +85,15 @@ def test_the_new_state_names_both_locations_and_the_stale_version(tmp_path):
     plugin_root = _plugin_root(tmp_path, content=b"same bytes\n", version="9.9.9")
     path_dir, target = _stale_cache_entry(tmp_path, b"same bytes\n", version="0.7.0")
 
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=path_dir)
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=path_dir
+    )
 
     resolved, their_version = detail
     assert their_version == "0.7.0", detail
-    assert str(target.resolve()) in resolved or resolved in str(target.resolve()), detail
+    assert str(target.resolve()) in resolved or resolved in str(target.resolve()), (
+        detail
+    )
 
 
 def test_check_oss_workspace_launcher_warns_and_does_not_claim_a_match(tmp_path):
@@ -154,6 +160,8 @@ def test_same_version_segment_different_directory_is_still_just_matched(tmp_path
     plugin_root = _plugin_root(tmp_path, content=b"same bytes\n", version="9.9.9")
     path_dir, _target = _stale_cache_entry(tmp_path, b"same bytes\n", version="9.9.9")
 
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=path_dir)
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=path_dir
+    )
 
     assert state == "matched", (state, detail)

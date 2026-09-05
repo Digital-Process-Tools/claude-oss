@@ -53,7 +53,9 @@ def _require_shell():
 
 def _require_git():
     if GIT is None:
-        pytest.skip("no git on PATH, so no repository can be built to open a session over")
+        pytest.skip(
+            "no git on PATH, so no repository can be built to open a session over"
+        )
 
 
 def _executable(path, text):
@@ -72,7 +74,9 @@ def _doctor(log, body, status=0):
     """
     return (
         "#!/bin/sh\n"
-        + 'for a in "$@"; do echo "$a" >> "' + str(log) + '"; done\n'
+        + 'for a in "$@"; do echo "$a" >> "'
+        + str(log)
+        + '"; done\n'
         + body
         + "exit %d\n" % status
     )
@@ -129,7 +133,9 @@ def run(repo, plugin_root, env_extra=None):
         bindir / "claude",
         "#!/bin/sh\n"
         + 'if [ "${1:-}" = "mcp" ]; then exit 1; fi\n'
-        + 'for a in "$@"; do echo "$a" >> "' + str(argv_log) + '"; done\n'
+        + 'for a in "$@"; do echo "$a" >> "'
+        + str(argv_log)
+        + '"; done\n'
         + "exit 0\n",
     )
     home = Path(repo).parent / "_home"
@@ -155,7 +161,9 @@ def run(repo, plugin_root, env_extra=None):
         stderr=subprocess.PIPE,
         universal_newlines=True,
     )
-    argv = argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    argv = (
+        argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    )
     return done, argv
 
 
@@ -220,7 +228,9 @@ def test_the_resolved_root_is_passed_so_no_warning_is_manufactured(tmp_path):
     done, _ = run(repo, root)
     passed = _doctor_argv(log)
     assert "--root" in passed, done.stderr
-    assert Path(passed[passed.index("--root") + 1]).resolve() == Path(repo).resolve(), passed
+    assert Path(passed[passed.index("--root") + 1]).resolve() == Path(repo).resolve(), (
+        passed
+    )
 
 
 # --- the four verdicts, each told apart ----------------------------------------
@@ -443,10 +453,7 @@ def test_a_real_warning_routes_the_session_into_oss_doctor(tmp_path):
     NOTICE-only runs read `VERDICT: ok` by doctor.py's own arithmetic and never
     reach this arm -- so this is exactly the case #764 says an auto-route is
     readable for."""
-    body = (
-        "echo 'WARN one thing'\n"
-        "echo 'VERDICT: usable with gaps -- 1 warning(s)'\n"
-    )
+    body = "echo 'WARN one thing'\necho 'VERDICT: usable with gaps -- 1 warning(s)'\n"
     root, _ = _plugin(tmp_path, body)
     done, argv = run(_repo(tmp_path / "repo"), root)
     assert argv, done.stderr

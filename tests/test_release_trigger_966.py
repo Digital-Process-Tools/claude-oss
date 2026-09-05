@@ -66,7 +66,9 @@ def _commit(repo, subject, path="file.txt", body="x"):
 
 
 def _config(merged_prs=None, soak_hours=None):
-    return {"release": {"triggers": {"merged_prs": merged_prs, "soak_hours": soak_hours}}}
+    return {
+        "release": {"triggers": {"merged_prs": merged_prs, "soak_hours": soak_hours}}
+    }
 
 
 # ------------------------------------------------------- the counting rule
@@ -91,7 +93,9 @@ def test_a_real_merge_commit_is_counted_too(repo):
     _git(repo, "checkout", "-q", "-b", "side")
     _commit(repo, "side work")
     _git(repo, "checkout", "-q", "main")
-    _git(repo, "merge", "--no-ff", "-q", "side", "-m", "Merge pull request #7 from side")
+    _git(
+        repo, "merge", "--no-ff", "-q", "side", "-m", "Merge pull request #7 from side"
+    )
     row = release_trigger.merged_prs_condition(repo, 1)
     assert row["state"] == release_trigger.MET
     assert row["count"] == 1
@@ -191,7 +195,9 @@ def test_a_fresh_fragment_does_not_fire_and_says_how_long_is_left(repo):
 def test_the_oldest_qualifying_fragment_sets_the_clock(repo):
     """Keying on the newest would reset the clock every time an unrelated fix
     landed, and a repository shipping steadily would never release."""
-    _fragment(repo, "12.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=99))
+    _fragment(
+        repo, "12.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=99)
+    )
     _fragment(repo, "13.added.md")
     row = release_trigger.user_visible_soak_condition(
         repo, 48, Path(repo, "changelog.d")
@@ -238,7 +244,9 @@ def test_an_undatable_fragment_is_named_not_dropped_from_the_receipt_997(repo):
     fragment set rendered identically to a cleanly-read one -- the reader had
     no way to see that one fragment went unread while another still fired the
     condition."""
-    _fragment(repo, "16.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=72))
+    _fragment(
+        repo, "16.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=72)
+    )
     Path(repo, "changelog.d", "17.fixed.md").write_text("- y (#17)\n", encoding="utf-8")
     row = release_trigger.user_visible_soak_condition(
         repo, 48, Path(repo, "changelog.d")
@@ -255,7 +263,9 @@ def test_an_undatable_fragment_is_named_not_dropped_from_the_receipt_997(repo):
 def test_the_receipt_says_nothing_about_undated_when_everything_dated(repo):
     """The must-not-fire half: a cleanly-dated fragment set must not grow an
     `undated=` mention it does not have anything to report."""
-    _fragment(repo, "18.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=72))
+    _fragment(
+        repo, "18.fixed.md", when=datetime.now(timezone.utc) - timedelta(hours=72)
+    )
     payload = release_trigger.compute(
         repo, config=_config(merged_prs=5, soak_hours=48), findings=[]
     )
@@ -266,7 +276,9 @@ def test_the_receipt_says_nothing_about_undated_when_everything_dated(repo):
 def test_a_chore_shaped_fragment_is_not_user_visible(repo):
     """The rule #966 records as a decision: the section name is what says
     whether a change is user-visible."""
-    _fragment(repo, "15.chore.md", when=datetime.now(timezone.utc) - timedelta(hours=99))
+    _fragment(
+        repo, "15.chore.md", when=datetime.now(timezone.utc) - timedelta(hours=99)
+    )
     row = release_trigger.user_visible_soak_condition(
         repo, 48, Path(repo, "changelog.d")
     )
@@ -325,7 +337,9 @@ def test_an_audit_that_found_none_is_not_met():
 
 
 def test_a_blocking_finding_fires():
-    row = release_trigger.blocking_findings_condition(["destroys: rm -rf on an argument"])
+    row = release_trigger.blocking_findings_condition(
+        ["destroys: rm -rf on an argument"]
+    )
     assert row["state"] == release_trigger.MET
 
 
@@ -385,14 +399,19 @@ def test_the_receipt_prints_the_threshold_even_when_it_did_not_fire(repo):
 def test_exit_code_is_non_zero_for_could_not_tell(repo, capsys):
     """A caller reading only the code must not proceed as though the answer
     were "no release today"."""
-    code = release_trigger.main(["--repo", str(repo), "--config", str(repo / "nope.json")])
+    code = release_trigger.main(
+        ["--repo", str(repo), "--config", str(repo / "nope.json")]
+    )
     assert code == 1
     assert "could not tell" in capsys.readouterr().out
 
 
 def test_exit_code_is_zero_for_not_fired(repo, tmp_path, capsys):
     config = tmp_path / "oss.json"
-    config.write_text('{"release": {"triggers": {"merged_prs": 5, "soak_hours": 48}}}', encoding="utf-8")
+    config.write_text(
+        '{"release": {"triggers": {"merged_prs": 5, "soak_hours": 48}}}',
+        encoding="utf-8",
+    )
     Path(repo, "changelog.d").mkdir()
     code = release_trigger.main(
         ["--repo", str(repo), "--config", str(config), "--no-blocking-findings"]
@@ -404,7 +423,10 @@ def test_exit_code_is_zero_for_not_fired(repo, tmp_path, capsys):
 def test_omitting_both_finding_flags_is_not_supplied(repo, tmp_path, capsys):
     """The CLI must not turn "you said nothing" into "an audit found nothing"."""
     config = tmp_path / "oss.json"
-    config.write_text('{"release": {"triggers": {"merged_prs": 5, "soak_hours": 48}}}', encoding="utf-8")
+    config.write_text(
+        '{"release": {"triggers": {"merged_prs": 5, "soak_hours": 48}}}',
+        encoding="utf-8",
+    )
     Path(repo, "changelog.d").mkdir()
     release_trigger.main(["--repo", str(repo), "--config", str(config)])
     assert "not-supplied" in capsys.readouterr().out

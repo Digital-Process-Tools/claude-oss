@@ -79,7 +79,9 @@ def test_an_unreadable_project_dir_is_unreadable_not_absent(monkeypatch, tmp_pat
 
     project_dir = tmp_path / "unreadable-project"
     project_dir.mkdir()
-    _deny_lstat(monkeypatch, project_dir, PermissionError(errno.EACCES, "Permission denied"))
+    _deny_lstat(
+        monkeypatch, project_dir, PermissionError(errno.EACCES, "Permission denied")
+    )
 
     state, detail = doctor.supertool_entry_point(str(project_dir))
     assert state == "unreadable", (state, detail)

@@ -56,7 +56,9 @@ AGENTS_DIR = REPO_ROOT / "agents"
 
 #: The heading that opens the advisory. Keyed on the claim rather than on an exact string
 #: so a definition may word the rest of the heading for its own job.
-ADVISORY_HEADING = re.compile(r"^(?P<hashes>#{2,6})\s+.*\bgrant is total\b", re.IGNORECASE)
+ADVISORY_HEADING = re.compile(
+    r"^(?P<hashes>#{2,6})\s+.*\bgrant is total\b", re.IGNORECASE
+)
 
 #: The label the advisory must carry. `annotates, never blocks` was read as a boundary
 #: because nothing said it was not one; a section that reads as a guarantee while being a
@@ -147,7 +149,9 @@ def missing_advisory(paths):
         if CLASSIFICATION_AUTHORITY not in section:
             findings.append(
                 "{}: the advisory does not cite {!r}, so it asks the agent to work from a "
-                "classification written down here".format(path.name, CLASSIFICATION_AUTHORITY)
+                "classification written down here".format(
+                    path.name, CLASSIFICATION_AUTHORITY
+                )
             )
     return findings
 
@@ -213,9 +217,11 @@ def roster_classes():
             bare = token.rstrip("*!")
             if not re.match(r"\A[A-Za-z][A-Za-z0-9_.-]*\Z", bare):
                 continue
-            classes[bare] = token[len(bare):] or ""
+            classes[bare] = token[len(bare) :] or ""
     if not classes:
-        return None, "supertool ops:roster named no ops (exit {})".format(completed.returncode)
+        return None, "supertool ops:roster named no ops (exit {})".format(
+            completed.returncode
+        )
     return classes, None
 
 
@@ -295,7 +301,9 @@ def test_a_missing_or_hollow_advisory_is_a_finding_and_a_good_one_is_not(tmp_pat
     assert "grants Bash and carries no advisory" in "\n".join(findings)
 
 
-def test_an_advisory_that_lists_acting_ops_is_a_finding_and_one_example_is_not(tmp_path):
+def test_an_advisory_that_lists_acting_ops_is_a_finding_and_one_example_is_not(
+    tmp_path,
+):
     """The enumeration control, both directions, against a fixed acting set.
 
     Prose words are not op names: `edit` and `paste` are acting ops, and the word "edit"
@@ -324,7 +332,9 @@ def test_an_advisory_that_lists_acting_ops_is_a_finding_and_one_example_is_not(t
     findings, scanned = enumerated_acting_ops([listy, example, prose], acting)
     assert scanned == 3, scanned
     assert len(findings) == 1, findings
-    assert findings[0].startswith("listy.md: the advisory names 4 acting ops"), findings[0]
+    assert findings[0].startswith("listy.md: the advisory names 4 acting ops"), (
+        findings[0]
+    )
 
 
 def test_no_copying_found_is_distinguishable_from_nothing_scanned(tmp_path):
@@ -342,7 +352,8 @@ def test_no_copying_found_is_distinguishable_from_nothing_scanned(tmp_path):
     )
     nothing_to_scan = tmp_path / "nothing.md"
     nothing_to_scan.write_text(
-        "---\ntools: TodoWrite\n---\n\n## Elsewhere\n\nnot granted Bash\n", encoding="utf-8"
+        "---\ntools: TodoWrite\n---\n\n## Elsewhere\n\nnot granted Bash\n",
+        encoding="utf-8",
     )
 
     scanned_clean = enumerated_acting_ops([clean], {"radar", "watch"})
@@ -383,7 +394,9 @@ def test_the_shipped_advisories_do_not_copy_the_roster():
             "classification".format(reason)
         )
     acting = {op for op, mark in classes.items() if mark in ("*", "!")}
-    assert acting, "the roster declared no acting ops, so this check saw nothing to copy"
+    assert acting, (
+        "the roster declared no acting ops, so this check saw nothing to copy"
+    )
     findings, scanned = enumerated_acting_ops(agent_paths(), acting)
     assert scanned >= 3, (
         "only {} advisory section(s) were scanned against {} acting ops -- a clean result "
@@ -409,5 +422,7 @@ def test_the_class_marks_the_advisories_name_are_the_ones_supertool_declares():
     assert "" in marks, "the roster declared no read-only ops: {}".format(sorted(marks))
     assert {"*", "!"} & marks, (
         "supertool's roster no longer marks any op `*` or `!`; the marks are now {} -- the "
-        "advisories in agents/*.md name characters that classify nothing".format(sorted(marks))
+        "advisories in agents/*.md name characters that classify nothing".format(
+            sorted(marks)
+        )
     )

@@ -82,8 +82,11 @@ def test_a_mismatched_architecture_is_the_warn_this_issue_exists_for():
 
 def test_a_matching_architecture_is_ok_and_names_the_host():
     lines = doctor.gh_binary_findings(
-        "Darwin", "/opt/homebrew/bin/gh", "gh version 2.60.0 (2024-08-01)",
-        host="arm64", archs=("arm64",),
+        "Darwin",
+        "/opt/homebrew/bin/gh",
+        "gh version 2.60.0 (2024-08-01)",
+        host="arm64",
+        archs=("arm64",),
     )
     assert _levels(lines)[0] == "OK", lines
     assert "arm64" in _text(lines), lines
@@ -97,8 +100,11 @@ def test_a_fat_binary_carrying_the_host_arch_is_a_match():
     the OS runs the native slice, not necessarily the first one `file` names.
     """
     lines = doctor.gh_binary_findings(
-        "Darwin", "/usr/bin/file", "gh version 2.60.0 (2024-08-01)",
-        host="arm64", archs=("x86_64", "arm64", "arm64"),
+        "Darwin",
+        "/usr/bin/file",
+        "gh version 2.60.0 (2024-08-01)",
+        host="arm64",
+        archs=("x86_64", "arm64", "arm64"),
     )
     assert _levels(lines)[0] == "OK", lines
     text = _text(lines)
@@ -111,8 +117,11 @@ def test_a_fat_binary_missing_the_host_arch_is_still_a_mismatch():
     carry the host's own slice is a real mismatch, several architectures or not.
     """
     lines = doctor.gh_binary_findings(
-        "Darwin", "/usr/local/bin/gh", "gh version 2.50.0 (2024-06-01)",
-        host="arm64", archs=("x86_64", "i386"),
+        "Darwin",
+        "/usr/local/bin/gh",
+        "gh version 2.50.0 (2024-06-01)",
+        host="arm64",
+        archs=("x86_64", "i386"),
     )
     assert _levels(lines)[0] == "WARN", lines
     assert "translation" in _text(lines).lower(), lines
@@ -152,12 +161,20 @@ def test_neither_gap_state_ever_claims_a_match():
         ("arm64", None, "the `file` command is not on PATH here"),
     ):
         lines = doctor.gh_binary_findings(
-            "Darwin", "/usr/local/bin/gh", "gh version 2.50.0 (2024-06-01)",
-            host=host, archs=archs, arch_reason=reason,
+            "Darwin",
+            "/usr/local/bin/gh",
+            "gh version 2.50.0 (2024-06-01)",
+            host=host,
+            archs=archs,
+            arch_reason=reason,
         )
         text = _text(lines).lower()
         assert "matches this host" not in text, (host, archs, lines)
-        assert "every gh call runs under binary translation" not in text, (host, archs, lines)
+        assert "every gh call runs under binary translation" not in text, (
+            host,
+            archs,
+            lines,
+        )
 
 
 def test_an_unreadable_version_is_a_warn_rather_than_a_silent_omission():
@@ -170,8 +187,11 @@ def test_an_unreadable_version_is_a_warn_rather_than_a_silent_omission():
 
 def test_a_known_version_points_at_the_documented_workaround():
     lines = doctor.gh_binary_findings(
-        "Darwin", "/usr/local/bin/gh", "gh version 2.50.0 (2024-06-01)",
-        host="arm64", archs=("arm64",),
+        "Darwin",
+        "/usr/local/bin/gh",
+        "gh version 2.50.0 (2024-06-01)",
+        host="arm64",
+        archs=("arm64",),
     )
     text = _text(lines)
     assert "2.50.0" in text, text
@@ -224,6 +244,7 @@ def test_tool_binary_architecture_reads_every_slice_of_a_universal_binary():
     dedup here is exercised with an explicit duplicate `arm64` token instead so
     the ordering and dedup logic is tested without depending on that fold).
     """
+
     def fake_run(cmd, **kwargs):
         return _FakeCompleted(
             b"/usr/bin/file: Mach-O universal binary with 3 architectures: "

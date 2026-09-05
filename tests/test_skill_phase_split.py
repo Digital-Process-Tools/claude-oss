@@ -45,9 +45,7 @@ def test_every_declared_document_is_present():
     ever read, and answering `ok` for it would be the absence-read-as-clean
     this plugin is named after."""
     missing = [r for r in skill_phases.check() if r["state"] == "missing"]
-    assert not missing, "declared but absent: " + ", ".join(
-        r["path"] for r in missing
-    )
+    assert not missing, "declared but absent: " + ", ".join(r["path"] for r in missing)
 
 
 def test_check_reports_missing_rather_than_silently_passing():
@@ -66,17 +64,13 @@ def test_check_reports_missing_rather_than_silently_passing():
     # The real phase files are still on disk and are no longer declared, so
     # they come back as `undeclared` rather than not at all. That is the
     # mirror state and it must not be silent either.
-    assert all(
-        r["state"] == "undeclared" for r in rows if r not in declared
-    ), rows
+    assert all(r["state"] == "undeclared" for r in rows if r not in declared), rows
 
 
 def test_every_document_is_at_or_under_its_budget():
     over = [r for r in skill_phases.check() if r["state"] == "over"]
     assert not over, "over budget, replace-don't-append: " + ", ".join(
-        "{0} is {1}B against a budget of {2}B".format(
-            r["path"], r["size"], r["budget"]
-        )
+        "{0} is {1}B against a budget of {2}B".format(r["path"], r["size"], r["budget"])
         for r in over
     )
 
@@ -151,9 +145,7 @@ def test_the_spine_is_smaller_than_the_prose_it_defers():
     """
     rows = {r["path"]: r for r in skill_phases.check()}
     spine = rows[skill_phases.SPINE]["size"]
-    deferred = sum(
-        r["size"] for path, r in rows.items() if path != skill_phases.SPINE
-    )
+    deferred = sum(r["size"] for path, r in rows.items() if path != skill_phases.SPINE)
     assert spine is not None and deferred, rows
     assert spine < deferred, (
         "the spine is {0}B and the deferred phases total {1}B -- the split has "
@@ -173,9 +165,7 @@ def test_every_phase_file_states_what_it_governs():
         head = (ROOT / path).read_text(encoding="utf-8")[:2000]
         if "Read this when" not in head:
             thin.append(path)
-    assert not thin, (
-        "no 'Read this when' line in the opening of: " + ", ".join(thin)
-    )
+    assert not thin, "no 'Read this when' line in the opening of: " + ", ".join(thin)
 
 
 def test_documents_refuses_an_empty_answer():

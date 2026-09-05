@@ -29,7 +29,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 
-BLOCK_START = "if [ -n \"${SUPERTOOL_WATCH_NAME:-}\" ] && [ -n \"$python_bin\" ]; then"
+BLOCK_START = 'if [ -n "${SUPERTOOL_WATCH_NAME:-}" ] && [ -n "$python_bin" ]; then'
 ASK_CONSUMER_CLOSE = "\nASK_CONSUMER\n"
 #: The block's own closing "fi" doubled up once the fix lands (one "fi" for the
 #: crashed-probe status check the fix adds, one for the outer SUPERTOOL_WATCH_NAME
@@ -95,7 +95,9 @@ def _sh_single_quote(value):
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-name", python_bin=None):
+def _run_ask_consumer_block(
+    tmp_path, registry_content, watch_name="some-watch-name", python_bin=None
+):
     """Run the extracted shell block under `sh`, with a real python and a fake
     HOME carrying the given consumer registry -- the same resolution order
     `bin/oss-workspace` itself uses (`~/.claude/plugins/installed_plugins.json`).
@@ -142,7 +144,11 @@ def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-n
         "SUPERTOOL_WATCH_NAME=%s\n"
         "export SUPERTOOL_WATCH_NAME\n"
         "%s"
-        % (_sh_single_quote(python_bin), _sh_single_quote(watch_name), _extract_ask_consumer_block()),
+        % (
+            _sh_single_quote(python_bin),
+            _sh_single_quote(watch_name),
+            _extract_ask_consumer_block(),
+        ),
         encoding="utf-8",
     )
     env = dict(os.environ)
@@ -151,18 +157,25 @@ def _run_ask_consumer_block(tmp_path, registry_content, watch_name="some-watch-n
     env["HOMEDRIVE"] = ""
     env["HOMEPATH"] = str(home)
     verify = subprocess.run(
-        [sys.executable, "-c", "import os,sys; sys.stdout.write(os.path.expanduser('~'))"],
+        [
+            sys.executable,
+            "-c",
+            "import os,sys; sys.stdout.write(os.path.expanduser('~'))",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
         universal_newlines=True,
     )
     resolved = verify.stdout
-    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(os.path.normpath(str(home))):
+    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(
+        os.path.normpath(str(home))
+    ):
         pytest.skip(
             "os.path.expanduser('~') resolved to %r instead of the fixture's %r on "
             "this platform (python %s) -- the HOME/USERPROFILE redirect did not "
-            "take, so this shape is untested here" % (resolved, str(home), sys.version.split()[0])
+            "take, so this shape is untested here"
+            % (resolved, str(home), sys.version.split()[0])
         )
     return subprocess.run(
         ["sh", str(script)],
@@ -242,9 +255,7 @@ def _oss_workspace_lines(stderr):
     """Lines that CLAIM to be this launcher speaking -- column 0, not anywhere --
     the same convention tests/test_workspace_launcher.py's `_launcher_lines` uses.
     """
-    return [
-        line for line in stderr.splitlines() if line.startswith("oss-workspace:")
-    ]
+    return [line for line in stderr.splitlines() if line.startswith("oss-workspace:")]
 
 
 def test_a_newline_in_the_watch_name_does_not_forge_a_line(tmp_path):
@@ -322,6 +333,7 @@ def test_an_ordinary_watch_name_still_appears_in_the_crash_message(tmp_path):
 # would assert instead of skip for a filesystem that refuses the name for some
 # OTHER reason on some OTHER platform.
 
+
 def _backslash_laden_wrapper(tmp_path):
     """A `python_bin`-style executable at a path whose FINAL COMPONENT carries a
     literal backslash -- the condition the reproduction below needs, measured
@@ -346,7 +358,7 @@ def _backslash_laden_wrapper(tmp_path):
         )
     wrapper = wrapper_dir / "py3"
     wrapper.write_text(
-        "#!/bin/sh\nexec %s \"$@\"\n" % _sh_single_quote(sys.executable),
+        '#!/bin/sh\nexec %s "$@"\n' % _sh_single_quote(sys.executable),
         encoding="utf-8",
     )
     wrapper.chmod(0o755)

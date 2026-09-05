@@ -99,8 +99,10 @@ def test_the_nine_rows_rank_in_the_order_993_states():
         ([LOOP, LOW], None, 10),
         ([LOOP], None, 10),
     ]
-    got = [(labels, dispatch_rank.rank(labels, DECLARED, assoc)["rank"])
-           for labels, assoc, _ in board]
+    got = [
+        (labels, dispatch_rank.rank(labels, DECLARED, assoc)["rank"])
+        for labels, assoc, _ in board
+    ]
     want = [(labels, rank) for labels, _, rank in board]
     assert got == want, got
 
@@ -241,7 +243,9 @@ def test_two_priority_labels_on_one_issue_take_the_stronger():
     priority onto #754 within the same window. An issue carrying two bands is a
     real state, and taking the stronger is the safe direction -- the alternative
     is an issue silently sinking because somebody added a lower label."""
-    assert _rank([HIGH, MEDIUM], MAINTAINER)["rank"] == _rank([HIGH], MAINTAINER)["rank"]
+    assert (
+        _rank([HIGH, MEDIUM], MAINTAINER)["rank"] == _rank([HIGH], MAINTAINER)["rank"]
+    )
 
 
 def test_an_unrecognised_priority_spelling_is_distinguished_from_no_priority():
@@ -373,8 +377,10 @@ def _run_main(issues, capsys, monkeypatch, declared=None):
     issues = [dict(item) for item in issues]
     for item in issues:
         item.setdefault("author_association", "maintainer")
-    payload = {"declared": declared if declared is not None else DECLARED,
-               "issues": issues}
+    payload = {
+        "declared": declared if declared is not None else DECLARED,
+        "issues": issues,
+    }
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
     code = dispatch_rank.main([])
     return code, capsys.readouterr().out
@@ -387,8 +393,9 @@ def test_the_cli_receipt_names_an_unrecognised_priority_label(capsys, monkeypatc
     the signal in `rank()` and printing nothing is this repository's own
     defect class moved one layer out: the typo and the silence render
     identically to the only surface anybody looks at."""
-    code, out = _run_main([{"number": 123, "labels": ["priority-critical"]}],
-                          capsys, monkeypatch)
+    code, out = _run_main(
+        [{"number": 123, "labels": ["priority-critical"]}], capsys, monkeypatch
+    )
     assert code == 0, out
     assert "#123" in out, out
     assert "priority-critical" in out, out
@@ -704,10 +711,12 @@ def test_stdout_survives_an_unencodable_character_834():
     `PYTHONIOENCODING=ascii`, which is what a narrow console codepage looks
     like from Python's point of view, and puts a non-ASCII character in a
     label that lands in the printed 'unrecognised priority' receipt."""
-    payload = json.dumps({
-        "declared": DECLARED,
-        "issues": [{"number": 1, "labels": ["priority-héllo"]}],
-    })
+    payload = json.dumps(
+        {
+            "declared": DECLARED,
+            "issues": [{"number": 1, "labels": ["priority-héllo"]}],
+        }
+    )
     env = dict(os.environ, PYTHONIOENCODING="ascii")
     result = subprocess.run(
         [sys.executable, _dispatch_rank_script()],
@@ -732,26 +741,29 @@ def test_stdout_crashes_without_the_fix_positive_control_834():
     if "backslashreplace" not in original:
         pytest.skip("fix already absent -- nothing to prove a control against")
     broken = original.replace(
-        '    for stream in (sys.stdout, sys.stderr):\n'
-        '        try:\n'
+        "    for stream in (sys.stdout, sys.stderr):\n"
+        "        try:\n"
         '            stream.reconfigure(errors="backslashreplace")\n'
-        '        except (AttributeError, ValueError):  # pragma: no cover - very old Python\n'
-        '            pass\n\n',
-        '',
+        "        except (AttributeError, ValueError):  # pragma: no cover - very old Python\n"
+        "            pass\n\n",
+        "",
         1,
     )
     assert broken != original, "the reconfigure block was not found to remove"
     import tempfile
+
     with tempfile.NamedTemporaryFile(
         "w", suffix=".py", delete=False, encoding="utf-8"
     ) as fh:
         fh.write(broken)
         broken_path = fh.name
     try:
-        payload = json.dumps({
-            "declared": DECLARED,
-            "issues": [{"number": 1, "labels": ["priority-héllo"]}],
-        })
+        payload = json.dumps(
+            {
+                "declared": DECLARED,
+                "issues": [{"number": 1, "labels": ["priority-héllo"]}],
+            }
+        )
         env = dict(os.environ, PYTHONIOENCODING="ascii")
         result = subprocess.run(
             [sys.executable, broken_path],
@@ -781,10 +793,13 @@ def test_stdin_is_decoded_as_utf8_regardless_of_console_codepage_834():
     reliably, which is what makes this a real positive control rather than
     a guess at what might fail. Forcing UTF-8 on stdin regardless of the
     console codepage is the fix; this must decode cleanly under it."""
-    payload = json.dumps({
-        "declared": DECLARED,
-        "issues": [{"number": 1, "labels": ["priority-Á"]}],
-    }, ensure_ascii=False)
+    payload = json.dumps(
+        {
+            "declared": DECLARED,
+            "issues": [{"number": 1, "labels": ["priority-Á"]}],
+        },
+        ensure_ascii=False,
+    )
     env = dict(os.environ, PYTHONIOENCODING="cp1252")
     result = subprocess.run(
         [sys.executable, _dispatch_rank_script()],
@@ -807,40 +822,44 @@ def test_stdin_reads_as_malformed_without_the_fix_positive_control_834():
     script = repo_root() / "scripts" / "dispatch_rank.py"
     original = script.read_text(encoding="utf-8")
     fixed_block = (
-        '    try:\n'
+        "    try:\n"
         '        sys.stdin.reconfigure(encoding="utf-8")\n'
-        '    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper\n'
-        '        pass\n'
-        '\n'
-        '    try:\n'
-        '        payload = json.load(sys.stdin)\n'
-        '    except UnicodeDecodeError as err:\n'
-        '        # UnicodeDecodeError is a ValueError, not a JSON-syntax error -- caught\n'
+        "    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper\n"
+        "        pass\n"
+        "\n"
+        "    try:\n"
+        "        payload = json.load(sys.stdin)\n"
+        "    except UnicodeDecodeError as err:\n"
+        "        # UnicodeDecodeError is a ValueError, not a JSON-syntax error -- caught\n"
         '        # separately so this never renders as "stdin is not JSON" when stdin\n'
-        '        # was JSON and simply could not be decoded (#834).\n'
+        "        # was JSON and simply could not be decoded (#834).\n"
         '        print("COULD NOT READ: stdin could not be decoded as UTF-8 ({})".format(err))\n'
-        '        return 2\n'
-        '    except ValueError as err:\n'
+        "        return 2\n"
+        "    except ValueError as err:\n"
     )
     pre_fix_block = (
-        '    try:\n'
-        '        payload = json.load(sys.stdin)\n'
-        '    except ValueError as err:\n'
+        "    try:\n"
+        "        payload = json.load(sys.stdin)\n"
+        "    except ValueError as err:\n"
     )
     assert fixed_block in original, "the fixed try/except block was not found to remove"
     broken = original.replace(fixed_block, pre_fix_block, 1)
     assert broken != original, "the stdin-reconfigure block was not found to remove"
     import tempfile
+
     with tempfile.NamedTemporaryFile(
         "w", suffix=".py", delete=False, encoding="utf-8"
     ) as fh:
         fh.write(broken)
         broken_path = fh.name
     try:
-        payload = json.dumps({
-            "declared": DECLARED,
-            "issues": [{"number": 1, "labels": ["priority-Á"]}],
-        }, ensure_ascii=False)
+        payload = json.dumps(
+            {
+                "declared": DECLARED,
+                "issues": [{"number": 1, "labels": ["priority-Á"]}],
+            },
+            ensure_ascii=False,
+        )
         env = dict(os.environ, PYTHONIOENCODING="cp1252")
         result = subprocess.run(
             [sys.executable, broken_path],

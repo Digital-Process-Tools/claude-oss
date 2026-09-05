@@ -34,7 +34,11 @@ import spawn_guard  # noqa: E402
 
 MOVED = {
     "doctor_check_auto_update": ["check_auto_update"],
-    "doctor_check_statusline": ["_POSIX_VAR_RE", "_statusline_windows_gap", "check_statusline"],
+    "doctor_check_statusline": [
+        "_POSIX_VAR_RE",
+        "_statusline_windows_gap",
+        "check_statusline",
+    ],
     "doctor_check_fragments_readme": [
         "COMPATIBILITY_BULLET",
         "_fragments_directory",
@@ -109,7 +113,9 @@ def test_moved_modules_are_referenced_by_their_full_path_in_doctor_py():
         )
 
 
-def test_doctor_py_runs_as_the_script_entry_point_and_reaches_every_moved_check(tmp_path):
+def test_doctor_py_runs_as_the_script_entry_point_and_reaches_every_moved_check(
+    tmp_path,
+):
     """The one failure mode this move can introduce that no per-check unit test can
     see: running `python3 scripts/doctor.py` (module name `__main__`, not `doctor`)
     while the moved checks do `import doctor` to reach shared helpers.

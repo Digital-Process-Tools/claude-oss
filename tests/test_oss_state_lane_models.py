@@ -182,12 +182,18 @@ def test_a_lane_that_is_not_a_mapping_is_refused_with_its_own_position():
 
 
 def _entry(record):
-    return {"at": "2026-08-20T00:00:00+00:00", "decision": "d", "detail": {"lanes": record}}
+    return {
+        "at": "2026-08-20T00:00:00+00:00",
+        "decision": "d",
+        "detail": {"lanes": record},
+    }
 
 
 def test_the_trend_re_adds_the_mix_and_counts_the_overrides():
     entries = [
-        _entry(oss_state.lane_models([_lane(1, "opus"), _lane(2, "opus")], window=WINDOW)),
+        _entry(
+            oss_state.lane_models([_lane(1, "opus"), _lane(2, "opus")], window=WINDOW)
+        ),
         _entry(
             oss_state.lane_models(
                 [_lane(3, "sonnet", "override", "mechanical")], window=WINDOW
@@ -222,7 +228,9 @@ def test_one_tick_with_no_record_makes_the_whole_sum_partial():
 
 
 def test_a_history_that_recorded_nothing_has_no_counts_rather_than_empty_counts():
-    trend = oss_state.lane_model_trend([{"at": "t", "decision": "d"}, {"at": "u", "decision": "e"}])
+    trend = oss_state.lane_model_trend(
+        [{"at": "t", "decision": "d"}, {"at": "u", "decision": "e"}]
+    )
     assert trend["state"] == oss_state.LANES_COULD_NOT_ESTABLISH
     assert trend["counts"] is None, "{} here would read as 'no lane ran on any model'"
     assert trend["lanes"] is None
@@ -258,8 +266,12 @@ def test_every_state_renders_as_its_own_sentence():
         [_lane(1, "opus"), _lane(2, "sonnet", "override", "mechanical")], window=WINDOW
     )
     sentences["none"] = oss_state.lane_models([], window=WINDOW)
-    sentences["unknown"] = oss_state.lane_models(None, window=WINDOW, why="no transcripts")
-    rendered = {key: oss_state.lane_models_line(value) for key, value in sentences.items()}
+    sentences["unknown"] = oss_state.lane_models(
+        None, window=WINDOW, why="no transcripts"
+    )
+    rendered = {
+        key: oss_state.lane_models_line(value) for key, value in sentences.items()
+    }
 
     assert len(set(rendered.values())) == 3, rendered
     for line in rendered.values():
@@ -329,8 +341,17 @@ def test_the_cli_records_lanes_and_receipts_them_after_the_write(tmp_path, capsy
 def test_an_override_with_no_reason_is_refused_at_the_cli(tmp_path, capsys):
     path = _state_file(tmp_path)
     code = oss_state._main(
-        [path, "--decision", "d", "--at", "t", "--lane", "312=sonnet:override",
-         "--lane-window", WINDOW]
+        [
+            path,
+            "--decision",
+            "d",
+            "--at",
+            "t",
+            "--lane",
+            "312=sonnet:override",
+            "--lane-window",
+            WINDOW,
+        ]
     )
     assert code == 1
     # FAIL is stdout, matching every other refusal this CLI prints (test_oss_state_cli.py) --
@@ -349,8 +370,17 @@ def test_a_lane_this_run_dropped_says_so_under_the_FAIL(tmp_path):
     """
     (tmp_path / "state.json").write_text("{ not json", encoding="utf-8")
     result = _piped(
-        [str(tmp_path / "state.json"), "--decision", "d", "--at", "t", "--lane",
-         "316=opus:default", "--lane-window", WINDOW]
+        [
+            str(tmp_path / "state.json"),
+            "--decision",
+            "d",
+            "--at",
+            "t",
+            "--lane",
+            "316=opus:default",
+            "--lane-window",
+            WINDOW,
+        ]
     )
     assert result.returncode == 1, result.stdout
     lines = result.stdout.splitlines()
@@ -376,8 +406,17 @@ def test_lane_flags_are_refused_by_the_reading_modes(tmp_path, capsys):
 def test_the_model_trend_mode_prints_the_sentence_and_the_record(tmp_path, capsys):
     path = _state_file(tmp_path)
     oss_state._main(
-        [path, "--decision", "d", "--at", "t", "--lane", "316=opus:default",
-         "--lane-window", WINDOW]
+        [
+            path,
+            "--decision",
+            "d",
+            "--at",
+            "t",
+            "--lane",
+            "316=opus:default",
+            "--lane-window",
+            WINDOW,
+        ]
     )
     capsys.readouterr()
     assert oss_state._main([path, "--model-trend"]) == 0
@@ -390,60 +429,140 @@ def test_a_malformed_lane_argument_is_refused_by_the_parser(tmp_path):
     path = _state_file(tmp_path)
     for bad in ("316", "316=", "=opus:default", "316=opus", "316=opus:maybe"):
         with pytest.raises(SystemExit):
-            oss_state._main([path, "--decision", "d", "--at", "t", "--lane", bad,
-                             "--lane-window", WINDOW])
+            oss_state._main(
+                [
+                    path,
+                    "--decision",
+                    "d",
+                    "--at",
+                    "t",
+                    "--lane",
+                    bad,
+                    "--lane-window",
+                    WINDOW,
+                ]
+            )
 
 
 def test_lanes_none_and_lanes_unknown_are_separate_declarations(tmp_path, capsys):
     none_path = _state_file(tmp_path)
-    assert oss_state._main(
-        [none_path, "--decision", "d", "--at", "t", "--lanes", "none",
-         "--lane-window", WINDOW]
-    ) == 0
+    assert (
+        oss_state._main(
+            [
+                none_path,
+                "--decision",
+                "d",
+                "--at",
+                "t",
+                "--lanes",
+                "none",
+                "--lane-window",
+                WINDOW,
+            ]
+        )
+        == 0
+    )
     assert json.loads(capsys.readouterr().out)["detail"]["lanes"]["state"] == (
         oss_state.LANES_NONE_DISPATCHED
     )
 
     unknown_path = str(tmp_path / "other.json")
-    assert oss_state._main(
-        [unknown_path, "--decision", "d", "--at", "t", "--lanes", "unknown",
-         "--lane-window", WINDOW, "--lane-why", "transcripts were reaped"]
-    ) == 0
+    assert (
+        oss_state._main(
+            [
+                unknown_path,
+                "--decision",
+                "d",
+                "--at",
+                "t",
+                "--lanes",
+                "unknown",
+                "--lane-window",
+                WINDOW,
+                "--lane-why",
+                "transcripts were reaped",
+            ]
+        )
+        == 0
+    )
     assert json.loads(capsys.readouterr().out)["detail"]["lanes"]["state"] == (
         oss_state.LANES_COULD_NOT_ESTABLISH
     )
 
     # `unknown` with no reason is refused; `none` needs none.
     third = str(tmp_path / "third.json")
-    assert oss_state._main(
-        [third, "--decision", "d", "--at", "t", "--lanes", "unknown",
-         "--lane-window", WINDOW]
-    ) == 1
+    assert (
+        oss_state._main(
+            [
+                third,
+                "--decision",
+                "d",
+                "--at",
+                "t",
+                "--lanes",
+                "unknown",
+                "--lane-window",
+                WINDOW,
+            ]
+        )
+        == 1
+    )
 
 
 def test_a_lane_record_needs_its_window_at_the_cli(tmp_path, capsys):
     path = _state_file(tmp_path)
-    assert oss_state._main(
-        [path, "--decision", "d", "--at", "t", "--lane", "316=opus:default"]
-    ) == 1
+    assert (
+        oss_state._main(
+            [path, "--decision", "d", "--at", "t", "--lane", "316=opus:default"]
+        )
+        == 1
+    )
     assert "--lane-window" in capsys.readouterr().out
 
 
 def test_lanes_and_lane_cannot_both_be_given(tmp_path, capsys):
     path = _state_file(tmp_path)
-    assert oss_state._main(
-        [path, "--decision", "d", "--at", "t", "--lanes", "none",
-         "--lane", "316=opus:default", "--lane-window", WINDOW]
-    ) == 1
+    assert (
+        oss_state._main(
+            [
+                path,
+                "--decision",
+                "d",
+                "--at",
+                "t",
+                "--lanes",
+                "none",
+                "--lane",
+                "316=opus:default",
+                "--lane-window",
+                WINDOW,
+            ]
+        )
+        == 1
+    )
     assert "FAIL" in capsys.readouterr().out
 
 
 def test_a_detail_already_carrying_lanes_is_refused(tmp_path, capsys):
     path = _state_file(tmp_path)
-    assert oss_state._main(
-        [path, "--decision", "d", "--at", "t", "--lane", "316=opus:default",
-         "--lane-window", WINDOW, "--detail", '{"lanes": {}}']
-    ) == 1
+    assert (
+        oss_state._main(
+            [
+                path,
+                "--decision",
+                "d",
+                "--at",
+                "t",
+                "--lane",
+                "316=opus:default",
+                "--lane-window",
+                WINDOW,
+                "--detail",
+                '{"lanes": {}}',
+            ]
+        )
+        == 1
+    )
     assert "lanes" in capsys.readouterr().out
 
 
@@ -470,8 +589,19 @@ def test_a_valid_lane_is_not_dropped_by_an_incomplete_intake_flag_set(tmp_path):
     """
     path = _state_file(tmp_path)
     result = _piped(
-        [path, "--decision", "d", "--at", "t", "--filings", "3", "--lane",
-         "316=opus:default", "--lane-window", WINDOW]
+        [
+            path,
+            "--decision",
+            "d",
+            "--at",
+            "t",
+            "--filings",
+            "3",
+            "--lane",
+            "316=opus:default",
+            "--lane-window",
+            WINDOW,
+        ]
     )
     assert result.returncode == 1, result.stdout
     lines = result.stdout.splitlines()
@@ -481,11 +611,28 @@ def test_a_valid_lane_is_not_dropped_by_an_incomplete_intake_flag_set(tmp_path):
 
 def test_intake_and_lanes_travel_in_one_entry_without_colliding(tmp_path, capsys):
     path = _state_file(tmp_path)
-    assert oss_state._main(
-        [path, "--decision", "d", "--at", "t",
-         "--filings", "3", "--merged-prs", "2", "--window", "since the last tick",
-         "--lane", "316=opus:default", "--lane-window", WINDOW]
-    ) == 0
+    assert (
+        oss_state._main(
+            [
+                path,
+                "--decision",
+                "d",
+                "--at",
+                "t",
+                "--filings",
+                "3",
+                "--merged-prs",
+                "2",
+                "--window",
+                "since the last tick",
+                "--lane",
+                "316=opus:default",
+                "--lane-window",
+                WINDOW,
+            ]
+        )
+        == 0
+    )
     out = capsys.readouterr()
     detail = json.loads(out.out)["detail"]
     assert detail["intake"]["state"] == oss_state.INTAKE_MEASURED

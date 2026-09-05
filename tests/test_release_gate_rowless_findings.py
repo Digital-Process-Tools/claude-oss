@@ -325,8 +325,7 @@ def test_the_rowless_arm_check_fires_on_a_gate_that_says_nothing():
     }
     assert unmet == expected, (
         "the rowless-arm check does not fire on the pre-#175 gate text, so it "
-        "would also pass on it. Not firing: "
-        + repr(sorted(expected - unmet))
+        "would also pass on it. Not firing: " + repr(sorted(expected - unmet))
     )
 
 
@@ -358,8 +357,7 @@ def test_the_rowless_arm_check_fires_on_states_named_with_no_disposition():
         "says-what-happens-to-could-not-rank",
     }, (
         "two states named with nothing said about either passes, which is the "
-        "gap #175 describes with the names filled in. Got: "
-        + repr(sorted(unmet))
+        "gap #175 describes with the names filled in. Got: " + repr(sorted(unmet))
     )
 
 
@@ -440,8 +438,7 @@ def test_the_report_format_check_fires_on_a_template_without_the_slot():
     unmet = _report_format_unmet(slot_missing)
     assert unmet == {"the-template-has-a-slot-for-the-checklist-in-effect"}, (
         "a duty stated only above the template passes, which is how the line "
-        "gets dropped by an agent copying the template. Got: "
-        + repr(sorted(unmet))
+        "gets dropped by an agent copying the template. Got: " + repr(sorted(unmet))
     )
 
     has_slot = slot_missing.replace(
@@ -459,11 +456,7 @@ def test_every_registered_state_carries_its_sentence():
     """A registry of bare names decays into boilerplate. The sentence is what
     makes the next person argue with the entry rather than extend it.
     """
-    thin = {
-        term: why
-        for term, why in ROWLESS_STATES.items()
-        if len(why.split()) < 12
-    }
+    thin = {term: why for term, why in ROWLESS_STATES.items() if len(why.split()) < 12}
     assert not thin, (
         "these states are registered with no argument for why they are "
         "separate, which is the one thing this registry exists to carry: "
@@ -472,6 +465,7 @@ def test_every_registered_state_carries_its_sentence():
 
 
 # --------------------------------------- #321, the same join one PR later
+
 
 def test_the_manager_skill_has_an_arm_for_the_unmeasured_clean_vocabulary():
     """#321. PR #320 gave gate 3 a grade split (`clean (read)` vs.

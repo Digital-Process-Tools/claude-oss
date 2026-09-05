@@ -85,8 +85,7 @@ def test_commands_tick_md_now_spawns_the_releaser():
     contain a real spawn, not just prose saying spawning is an option.
     """
     assert _spawns_releaser(_tick_md_text()), (
-        "commands/tick.md does not spawn oss:releaser -- #696's own gap is "
-        "still open"
+        "commands/tick.md does not spawn oss:releaser -- #696's own gap is still open"
     )
 
 
@@ -184,7 +183,7 @@ def _spawn_block(text):
     if fence_start == -1 or fence_end == -1:
         line_start = text.rfind("\n", 0, match.start()) + 1
         line_end = text.find("\n", match.end())
-        return text[line_start:line_end if line_end != -1 else len(text)]
+        return text[line_start : line_end if line_end != -1 else len(text)]
     return text[fence_start:fence_end]
 
 
