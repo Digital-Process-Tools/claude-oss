@@ -1,0 +1,99 @@
+scripts/board_touch.py	F401	`pathlib.Path` imported but unused
+scripts/doctor.py	F401	`doctor_check_branch_protection.SETTINGS_PAGE_URL` imported but unused
+scripts/doctor.py	F401	`doctor_check_branch_protection.branch_protection_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_channel_health_agreement.channel_health_agreement_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_channel_health_agreement.resolve_channel_health_reading` imported but unused
+scripts/doctor.py	F401	`doctor_check_clone_head.clone_head_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_codeql_scan.codeql_scan_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_fragments_readme.COMPATIBILITY_BULLET` imported but unused
+scripts/doctor.py	F401	`doctor_check_fragments_readme._fragments_directory` imported but unused
+scripts/doctor.py	F401	`doctor_check_mcp_channel_registration._MCP_ARGS_RE` imported but unused
+scripts/doctor.py	F401	`doctor_check_mcp_channel_registration.channel_consumer_census_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_mcp_channel_registration.channel_consumer_names` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory.CORE_MEMORIES_NAME` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory.MEMORY_CONFIG_DIR` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory.MEMORY_DIR` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory._core_memory_summary` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory._identity_names` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory._listdir` imported but unused
+scripts/doctor.py	F401	`doctor_check_memory.memory_layout` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission.MERGE_RULE_FILE` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission.SUPERTOOL_OP` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission.SUPERTOOL_RULE_FILE` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission._entry_count` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission._permission_entries` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission.merge_permission_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission.settings_candidates` imported but unused
+scripts/doctor.py	F401	`doctor_check_merge_permission.supertool_permission_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_security_alerts.SCANNERS` imported but unused
+scripts/doctor.py	F401	`doctor_check_security_alerts.SECURITY_SETTINGS_URL` imported but unused
+scripts/doctor.py	F401	`doctor_check_security_alerts.security_alert_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_security_settings.automated_security_fixes_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_security_settings.security_and_analysis_feature_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_security_settings.vulnerability_alerts_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_statusline._POSIX_VAR_RE` imported but unused
+scripts/doctor.py	F401	`doctor_check_statusline._statusline_windows_gap` imported but unused
+scripts/doctor.py	F401	`doctor_check_supertool_ops.supertool_op_inventory` imported but unused
+scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.BRANCH_DELETE_OP` imported but unused
+scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.REAP_RULE_FILE` imported but unused
+scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.WORKTREE_REMOVE_OP` imported but unused
+scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.branch_delete_permission_state` imported but unused
+scripts/doctor.py	F401	`doctor_check_worktree_reap_permission.worktree_remove_permission_state` imported but unused
+scripts/doctor.py	F401	`time` imported but unused
+scripts/preflight_check.py	F841	Local variable `exc` is assigned to but never used
+scripts/release_trigger.py	F401	`datetime.timedelta` imported but unused
+tests/test_ask_consumer_546.py	F401	`json` imported but unused
+tests/test_batch_hint_537.py	F401	`json` imported but unused
+tests/test_borrowed_authority_544.py	F401	`pytest` imported but unused
+tests/test_borrowed_authority_544.py	F841	Local variable `joined` is assigned to but never used
+tests/test_checklist_skew.py	F401	`pytest` imported but unused
+tests/test_checklist_skew_derivation_547.py	F401	`pytest` imported but unused
+tests/test_cohort_freeze_917.py	F401	`pytest` imported but unused
+tests/test_cohort_freeze_917.py	F401	`subprocess` imported but unused
+tests/test_dependency_setup.py	F401	`time` imported but unused
+tests/test_doctor_check_relocation_497.py	F401	`json` imported but unused
+tests/test_doctor_install_audit_287.py	F401	`scaffold` imported but unused
+tests/test_doctor_mcp_channel_registration_621.py	F401	`subprocess` imported but unused
+tests/test_doctor_security_alerts_760.py	F841	Local variable `out` is assigned to but never used
+tests/test_lane_setup_267.py	F401	`pytest` imported but unused
+tests/test_lane_setup_788.py	F401	`lane_setup` imported but unused
+tests/test_lane_setup_788.py	F401	`spawn_guard` imported but unused
+tests/test_lane_setup_791.py	F401	`pytest` imported but unused
+tests/test_lane_setup_792.py	F401	`stat` imported but unused
+tests/test_lane_setup_803.py	F401	`pytest` imported but unused
+tests/test_lane_setup_804.py	F401	`pytest` imported but unused
+tests/test_lane_setup_809.py	F841	Local variable `against` is assigned to but never used
+tests/test_lane_setup_809.py	F841	Local variable `st` is assigned to but never used
+tests/test_lane_setup_845.py	F401	`stat` imported but unused
+tests/test_lane_setup_845.py	F401	`subprocess` imported but unused
+tests/test_lane_setup_claim_worktree_865.py	F401	`os` imported but unused
+tests/test_lane_setup_claim_worktree_865.py	F401	`pathlib.Path` imported but unused
+tests/test_lane_setup_swallow_383.py	F401	`stat` imported but unused
+tests/test_launcher_path_measurement_526.py	F401	`sys` imported but unused
+tests/test_launcher_receipt_isolation_853.py	F401	`os` imported but unused
+tests/test_launcher_symlink_repoint_753.py	F401	`pytest` imported but unused
+tests/test_line_ending_pin_675.py	F401	`sys` imported but unused
+tests/test_manager_docs_unreadable_571.py	F401	`stat` imported but unused
+tests/test_merge_gate_jit_rule_245.py	F401	`doctor` imported but unused
+tests/test_merge_gate_jit_rule_245.py	F401	`os` imported but unused
+tests/test_merge_gate_jit_rule_245.py	F841	Local variable `body` is assigned to but never used
+tests/test_must_assert_on_430.py	F401	`sys` imported but unused
+tests/test_oss_state_lane_fill_852.py	F401	`json` imported but unused
+tests/test_oss_state_pending_wait_renders_443.py	F401	`pytest` imported but unused
+tests/test_oss_state_tick_cost_694.py	F401	`json` imported but unused
+tests/test_plugin_update_debounce_753.py	F401	`pytest` imported but unused
+tests/test_pr_create_gate_jit_rule_245.py	F841	Local variable `body` is assigned to but never used
+tests/test_pyyaml_claim_312.py	F401	`sys` imported but unused
+tests/test_readme_statusline_fields_650.py	F401	`statusline` imported but unused
+tests/test_release_publish_exit_codes_708.py	F401	`pytest` imported but unused
+tests/test_release_publish_role_gate_695.py	F401	`pytest` imported but unused
+tests/test_review_findings_478_519.py	F841	Local variable `config` is assigned to but never used
+tests/test_scaffold_settings_preview_494.py	F401	`pytest` imported but unused
+tests/test_settings_preview_second_read_536.py	F401	`pytest` imported but unused
+tests/test_skill_phases_undeclared_bypass_589.py	F401	`pytest` imported but unused
+tests/test_statusline_board_external_595.py	F401	`json` imported but unused
+tests/test_supertool_glob_anchor_656.py	F401	`sys` imported but unused
+tests/test_tick_plugin_copy_942.py	F841	Local variable `installed` is assigned to but never used
+tests/test_transcript_refusals.py	F401	`stat` imported but unused
+tests/test_windows_defender_exclusion_938.py	F401	`sys` imported but unused
+tests/test_workspace_auto_update_753.py	F401	`test_workspace_launcher._require_git` imported but unused
