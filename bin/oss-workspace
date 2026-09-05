@@ -1745,8 +1745,136 @@ else
                 # Self-review finding (#764): the first cut of this route
                 # clobbered `/oss:setup` unconditionally.
                 if [ "$prompt" = "/oss:tick" ]; then
-                    echo "oss-workspace: routing this session into /oss:doctor at its first turn, so the agent that is about to act on $repo_root starts with what the diagnostic found rather than re-deriving it by hand." >&2
-                    prompt="/oss:doctor"
+                    # #1064: this route had no memory at all -- it re-fired on
+                    # EVERY launch for as long as any WARN/FAIL survived, and a
+                    # WARN nothing can clear (#1062 is the worked example)
+                    # therefore converted into a permanent route: every
+                    # session opened on the diagnostic, re-read the same
+                    # report, spent a turn, and never reached /oss:tick.
+                    #
+                    # A receipt fixes that: verdict word plus the plugin
+                    # version this launch ran against, recorded via
+                    # `scripts/oss_state.py` (it already owns per-repo state).
+                    # The route arms only when there is no receipt, or when
+                    # the verdict or the plugin version has moved since the
+                    # one recorded -- an unchanged WARN on an unchanged
+                    # plugin is a state the maintainer has already seen.
+                    #
+                    # This is entirely a decision about which PROMPT to open
+                    # with -- the stderr relay above already printed the
+                    # whole report, unconditionally and unchanged by any of
+                    # this. Any failure below (no working python, the state
+                    # file cannot be resolved, the history cannot be read)
+                    # fails OPEN -- armed, as though no receipt exists -- the
+                    # same direction every other unknown in this launcher
+                    # fails, because a route that stays silent on a WARN it
+                    # could not compare is worse than one that re-shows a
+                    # report the maintainer has already cleared.
+                    if [ -z "$python_bin" ]; then
+                        doctor_route_check="armed"
+                        echo "oss-workspace: no working python was found, so whether the /oss:doctor route already fired for this exact state could not be told; routing as though it has not." >&2
+                    else
+                        doctor_route_check=$("$python_bin" - "$plugin_root" "$repo_root" "$doctor_verdict" <<'DOCTOR_ROUTE_CHECK'
+import os
+import sys
+
+plugin_root, repo_root, verdict = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, os.path.join(plugin_root, "scripts"))
+
+
+def fail_open(reason):
+    sys.stderr.write(
+        "oss-workspace: whether the /oss:doctor route already fired for this "
+        "exact state could not be told (%s), so it is routing as though it has "
+        "not.\n" % reason
+    )
+    print("armed")
+    raise SystemExit(0)
+
+
+try:
+    import doctor
+except Exception as err:
+    fail_open("doctor.py could not be imported (%s)" % type(err).__name__)
+
+try:
+    plugin_identity = doctor.plugin_identity(plugin_root)
+except Exception as err:
+    fail_open("the plugin identity could not be read (%s)" % type(err).__name__)
+
+try:
+    import oss_config
+except Exception as err:
+    fail_open("oss_config.py could not be imported (%s)" % type(err).__name__)
+
+config, problems = oss_config.load(os.path.join(repo_root, ".oss.json"))
+state_file = (config or {}).get("state_file")
+if not state_file:
+    fail_open(
+        "this repo's state_file could not be resolved (%s)"
+        % ("; ".join(problems) if problems else "no state_file in config")
+    )
+state_path = os.path.join(repo_root, state_file)
+
+try:
+    import oss_state
+except Exception as err:
+    fail_open("oss_state.py could not be imported (%s)" % type(err).__name__)
+
+try:
+    _entry, prior_verdict, prior_identity = oss_state._last_doctor_route(state_path)
+except Exception as err:
+    fail_open("%s could not be read (%s)" % (state_path, type(err).__name__))
+
+try:
+    record = oss_state.doctor_route_check(verdict, plugin_identity, prior_verdict, prior_identity)
+except Exception as err:
+    fail_open("the receipt comparison failed (%s)" % type(err).__name__)
+
+if record["armed"]:
+    sys.stderr.write(
+        "oss-workspace: /oss:doctor route: %s (prior verdict %r on plugin %r; "
+        "this launch is verdict %r on plugin %r).\n"
+        % (record["state"], prior_verdict, prior_identity, verdict, plugin_identity)
+    )
+else:
+    sys.stderr.write(
+        "oss-workspace: /oss:doctor route: unchanged since the receipt already "
+        "recorded for this verdict and plugin version -- not routing again.\n"
+    )
+
+# Recorded regardless of `armed` -- a receipt only helps the NEXT launch, and a
+# failed write here is a gap in that comparison, never in this one's, so it is
+# announced rather than raised.
+try:
+    import time
+
+    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    oss_state.append(
+        state_path,
+        at,
+        "oss-workspace: recorded a #764 doctor-route receipt",
+        detail={
+            "doctor_route_verdict": verdict,
+            "doctor_route_plugin_identity": plugin_identity,
+        },
+    )
+except Exception as err:
+    sys.stderr.write(
+        "oss-workspace: the doctor-route receipt could not be recorded (%s), so "
+        "the next launch will not see this one.\n" % type(err).__name__
+    )
+
+print("armed" if record["armed"] else "not-armed")
+DOCTOR_ROUTE_CHECK
+) || doctor_route_check="armed"
+                    fi
+                    if [ "$doctor_route_check" = "not-armed" ]; then
+                        echo "oss-workspace: not routing into /oss:doctor -- the receipt already recorded for this verdict and plugin version means the maintainer has already seen it." >&2
+                    else
+                        echo "oss-workspace: routing this session into /oss:doctor at its first turn, so the agent that is about to act on $repo_root starts with what the diagnostic found rather than re-deriving it by hand." >&2
+                        prompt="/oss:doctor"
+                    fi
                 else
                     echo "oss-workspace: not routing into /oss:doctor -- this session was already opening with $prompt, chosen for a more specific reason (e.g. no .oss.json yet), and a WARN/FAIL diagnostic does not override that." >&2
                 fi

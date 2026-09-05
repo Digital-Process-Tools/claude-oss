@@ -253,3 +253,67 @@ def test_check_vulnerability_alerts_reports_could_not_tell_distinctly(tmp_path, 
     assert doctor.FINDINGS[-1][0] == "WARN"
     assert "could not tell" in out
     assert not out.startswith("OK ")
+
+
+# --- #1065: a runnable command, not only a URL a human has to click ------------
+
+
+def test_check_automated_security_fixes_warn_carries_a_runnable_gh_command(tmp_path, capsys):
+    """The issue's own worked example: `gh api -X PUT
+    repos/OWNER/REPO/automated-security-fixes` cleared this exact WARN in one
+    call, so the WARN must say so rather than only naming the settings page."""
+    run = _run_dispatch(repo_response=(0, "{}", ""), endpoint_response=(1, "", "gh: Not Found (HTTP 404)"))
+    doctor.check_automated_security_fixes(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "gh api -X PUT repos/owner/name/automated-security-fixes" in out
+    # The URL is not dropped either -- a human reading this still gets it.
+    assert "github.com/owner/name/settings/security_analysis" in out
+
+
+def test_check_vulnerability_alerts_warn_carries_a_runnable_gh_command(tmp_path, capsys):
+    run = _run_dispatch(repo_response=(0, "{}", ""), endpoint_response=(1, "", "gh: Not Found (HTTP 404)"))
+    doctor.check_vulnerability_alerts(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "gh api -X PUT repos/owner/name/vulnerability-alerts" in out
+
+
+def test_check_secret_scanning_warn_carries_a_runnable_gh_command(tmp_path, capsys):
+    run = _run_once(0, _sec_analysis_body(secret_scanning="disabled"), "")
+    doctor.check_secret_scanning(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "security_and_analysis[secret_scanning][status]=enabled" in out
+    assert "repos/owner/name" in out
+
+
+def test_check_secret_scanning_push_protection_warn_carries_a_runnable_gh_command(tmp_path, capsys):
+    run = _run_once(0, _sec_analysis_body(push_protection="disabled"), "")
+    doctor.check_secret_scanning_push_protection(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "security_and_analysis[secret_scanning_push_protection][status]=enabled" in out
+
+
+def test_disabled_warn_without_a_resolvable_slug_falls_back_to_url_only(tmp_path, capsys):
+    """MUST NOT FIRE: no slug means no command can be built (nothing to fill
+    `{}` with) -- the remedy must fall back to exactly the prior URL-only
+    wording rather than emit a command naming no repository.
+
+    Drives `_report_setting_check` directly rather than through
+    `check_secret_scanning`: an unresolvable slug already turns the STATE
+    itself into `could-not-tell` before this branch is ever reached through
+    the public API (`_resolve_slug` is consulted twice, once to fetch the
+    setting and once for the remedy), so this is the only way to exercise
+    the fallback in isolation."""
+    import doctor_check_security_settings as dcss
+
+    def state_fn(project_dir, config=None, run=None):
+        return "disabled", "secret scanning is disabled"
+
+    dcss._report_setting_check(tmp_path, "secret scanning", state_fn, config={}, run=_run_once(0, "{}", ""))
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "gh api" not in out
+    assert "Enable it from the repo's Settings" in out

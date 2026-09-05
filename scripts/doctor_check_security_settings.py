@@ -102,6 +102,23 @@ def _resolve_slug(project_dir, config, run):
 
 SECURITY_SETTINGS_URL = "https://github.com/{}/settings/security_analysis"
 
+#: #1065: the runnable `gh` command for each of the four toggles this module
+#: checks, keyed the same way `_report_setting_check`'s own `label` argument
+#: is -- one lookup, no per-check special-casing at the call site. `secret
+#: scanning` / `secret scanning push protection` PATCH the nested
+#: `security_and_analysis` object GitHub's own REST docs give for updating a
+#: repository (bracket syntax `-f security_and_analysis[x][status]=enabled`);
+#: `automated security fixes` / `Dependabot alerts (vulnerability alerts)` are
+#: each a dedicated toggle endpoint, PUT-to-enable. Every remedy below is
+#: paste-ready once `{}` is filled with the resolved slug -- never generated
+#: without one, see `_report_setting_check` below.
+_REMEDY_COMMANDS = {
+    "secret scanning": "gh api -X PATCH repos/{} -f security_and_analysis[secret_scanning][status]=enabled",
+    "secret scanning push protection": "gh api -X PATCH repos/{} -f security_and_analysis[secret_scanning_push_protection][status]=enabled",
+    "automated security fixes": "gh api -X PUT repos/{}/automated-security-fixes",
+    "Dependabot alerts (vulnerability alerts)": "gh api -X PUT repos/{}/vulnerability-alerts",
+}
+
 
 def _repo_json(project_dir, config, run):
     """``(status, body_or_reason)`` for ``GET /repos/{owner}/{repo}``.
@@ -294,11 +311,22 @@ def _report_setting_check(project_dir, label, state_fn, config=None, run=None):
         run_ = subprocess.run if run is None else run
         slug, _reason = _resolve_slug(project_dir, config, run_)
         url = SECURITY_SETTINGS_URL.format(slug) if isinstance(slug, str) and slug else None
-        remedy = (
-            "Enable it from the repo's Settings > Code security and analysis page{}.".format(
-                " ({})".format(url) if url else ""
+        # #1065: a settings-page URL only a human can act on is not the whole
+        # remedy when `gh` reaches the same toggle directly -- one call
+        # cleared this WARN in the issue's own worked example. The command
+        # is offered only once a real slug is in hand; with none, the
+        # sentence falls back to the URL-only wording exactly as before.
+        command = _REMEDY_COMMANDS.get(label)
+        if command and isinstance(slug, str) and slug:
+            remedy = "Run `{}`, or enable it from the repo's Settings > Code security and analysis page ({}).".format(
+                command.format(slug), url
             )
-        )
+        else:
+            remedy = (
+                "Enable it from the repo's Settings > Code security and analysis page{}.".format(
+                    " ({})".format(url) if url else ""
+                )
+            )
         doctor.report("WARN", "{}: {} -- {}".format(label, detail, remedy))
         return
     doctor.report("WARN", "{}: could not tell -- {}".format(label, detail))

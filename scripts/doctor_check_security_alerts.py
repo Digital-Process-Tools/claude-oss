@@ -119,6 +119,23 @@ SCANNERS = {
 
 SECURITY_SETTINGS_URL = "https://github.com/{}/settings/security_analysis"
 
+#: #1065: the runnable `gh` command for each scanner, where one exists. The
+#: `dependabot`/`secret-scanning` toggles are the SAME underlying settings
+#: `doctor_check_security_settings.py` already offers commands for
+#: (`vulnerability-alerts` and the nested `security_and_analysis` object
+#: respectively) -- this module asks a different question (has it ever run?
+#: see the module docstring), but the remedy that turns the toggle on is the
+#: same call either way. `code-scanning` has no equivalent dedicated toggle
+#: endpoint: enabling it means turning on a scanner, and `default-setup`
+#: (PATCH `state=configured`) is the one call that does that without also
+#: requiring a workflow file -- the same endpoint #1062 names for reading the
+#: state this module's own `code-scanning` scanner cannot see.
+_REMEDY_COMMANDS = {
+    "code-scanning": "gh api -X PATCH repos/{}/code-scanning/default-setup -f state=configured",
+    "dependabot": "gh api -X PUT repos/{}/vulnerability-alerts",
+    "secret-scanning": "gh api -X PATCH repos/{} -f security_and_analysis[secret_scanning][status]=enabled",
+}
+
 
 def _resolve_slug(project_dir, config, run):
     """``(slug, reason)`` -- ``.oss.json``'s ``repo`` key, else the ``origin``
@@ -207,11 +224,21 @@ def _report_security_alert_check(project_dir, scanner, config=None, run=None):
         run_ = subprocess.run if run is None else run
         slug, _reason = _resolve_slug(project_dir, config, run_)
         url = SECURITY_SETTINGS_URL.format(slug) if isinstance(slug, str) and slug else None
-        remedy = (
-            "Enable it from the repo's Settings > Code security and analysis page{}.".format(
-                " ({})".format(url) if url else ""
+        # #1065: offer the runnable command where one exists, falling back to
+        # the settings-page URL only when no slug is in hand to build it
+        # from -- same shape as `doctor_check_security_settings.py`'s own
+        # `_report_setting_check`.
+        command = _REMEDY_COMMANDS.get(scanner)
+        if command and isinstance(slug, str) and slug:
+            remedy = "Run `{}`, or enable it from the repo's Settings > Code security and analysis page ({}).".format(
+                command.format(slug), url
             )
-        )
+        else:
+            remedy = (
+                "Enable it from the repo's Settings > Code security and analysis page{}.".format(
+                    " ({})".format(url) if url else ""
+                )
+            )
         doctor.report("WARN", "{}: {} -- {}".format(scanner, detail, remedy))
         return
     doctor.report("WARN", "{}: could not tell -- {}".format(scanner, detail))

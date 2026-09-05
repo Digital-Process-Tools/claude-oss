@@ -5382,13 +5382,20 @@ def owned_drift_summary(findings):
     grouped ones afterwards would have moved every clean file ahead of a gap listed
     before it, which is a reordering nobody asked for.
 
-    What this deliberately does NOT do is name the next command when there is nothing
-    to report. A line printed regardless of state carries no information, and the rest
-    of this file holds to the opposite rule: a line appears only when a check has
-    something to say, so its absence means clean. The advice belongs on the surface
-    that instructs the work -- `commands/setup.md` names `/oss:scaffold` at its close
-    whatever doctor said, and `commands/scaffold.md` names `/oss:tick` at its own --
-    not in a diagnostic that also runs mid-tick and before a release.
+    What this deliberately does NOT do is print a footer line naming the next command
+    when there is nothing to report. A line printed regardless of state carries no
+    information, and the rest of this file holds to the opposite rule: a line appears
+    only when a check has something to say, so its absence means clean.
+
+    #1065 narrowed this: the rule is not "this diagnostic never names a next command"
+    -- `report_with_remedy()` and every `WARN` line built from it already carry a
+    paste-ready, per-finding remedy, and that is deliberate, not an exception to
+    police out. The rule that actually holds is where each KIND of advice belongs: a
+    per-line remedy for a per-line finding belongs in `doctor.py`, beside the finding
+    it clears; the overall NEXT STEP once the run is done -- `/oss:scaffold`,
+    `/oss:tick` -- belongs on the surface that instructs the whole session,
+    `commands/setup.md` and `commands/scaffold.md`, never in a diagnostic that also
+    runs mid-tick and before a release and has no standing to say what happens after.
     """
     groups = []  # (state, shared text, [paths]), in first-appearance order
     for finding in findings:
