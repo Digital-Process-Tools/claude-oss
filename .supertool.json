@@ -74,6 +74,13 @@
       "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
       "rollback_on_fail": true,
       "timeout": 20
+    },
+    "ruff": {
+      "cmd": "{python} {supertool_dir}/validators/ruff/ruff.py {file}",
+      "match": "*.py",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": false,
+      "timeout": 30
     }
   },
   "ops": {
