@@ -996,20 +996,65 @@ def changelog_untagged_problem(value):
     return None
 
 
+# GNU grep's documented `RE_DUP_MAX` (#1058; revised in self-review). This
+# value is spliced only into the generated changelog-gate workflow's
+# `grep -Eq` guard, and that workflow's job is hardcoded to
+# `runs-on: ubuntu-latest` (`scripts/scaffold.py`'s own template, confirmed
+# in this repository's own generated `.github/workflows/changelog.yml`) --
+# never BSD grep, regardless of what OS the validating maintainer's own
+# machine happens to be. So the limit that actually binds is GNU's, not
+# BSD grep's much lower measured `RE_DUP_MAX` (255 on BSD grep
+# 2.6.0-FreeBSD, macOS) -- the original version of this constant used 255
+# reasoning from "whichever grep the release runner happens to carry",
+# which does not hold: the release runner's grep is not a variable here.
+# 32767 is GNU's own documented limit, reasoned rather than observed on
+# this machine (no GNU grep available to measure directly), and is cited
+# by grep's own manual and by POSIX's `_POSIX2_RE_DUP_MAX` discussion.
+_GREP_INTERVAL_MAGNITUDE_LIMIT = 32767
+
+
 def _brace_interval_problem(pattern):
     """None, or why a `{...}` in `pattern` is a POSIX ERE interval bound
     `grep -E` reads as malformed, rather than a genuine no-match.
 
     `re.compile` gives no signal here: `a{1,2,3}` is not a valid Python
     interval either, so Python reads it as eight literal characters and
-    never raises. Measured directly against both BSD grep (what
-    `/usr/bin/grep` is on macOS) and ugrep: `a{1,2,3}` (three counts, ERE
-    allows at most two) and an unbalanced `a{` (no closing `}`) both exit 2,
-    SYNTAX ERROR -- indistinguishable, in the generated
+    never raises. Measured directly against BSD grep 2.6.0-FreeBSD (what
+    `/usr/bin/grep` is on macOS): `a{1,2,3}` (three counts, ERE allows at
+    most two) exits 2, SYNTAX ERROR -- indistinguishable, in the generated
     `if ! grep -Eq PATTERN; then skip; fi` guard, from a genuine no-match
-    (#1015, found by review). `{`, `}`, digits and `,` are all otherwise
-    safe, allow-listed characters, so this is checked separately from
-    `USER_VISIBLE_PATH_CHAR_RE` above: only the *arrangement* is at fault.
+    (#1015, found by review). An unbalanced `a{` (no closing `}`) is
+    refused too, but re-measurement on that same BSD grep build found it
+    exits 1, not 2 -- an ordinary no-match rather than a syntax error
+    (#1060, found by review; the original docstring claimed both arms
+    exit 2 and was wrong for this one). Refusing a bare `a{` is still the
+    right call: `grep -E`'s own manual documents no interval semantics for
+    an unclosed brace, so treating it as malformed here is a defensible
+    conservative reading even though this particular BSD grep build
+    happens not to error on it -- another grep build, or another version,
+    may. `{`, `}`, digits and `,` are all otherwise safe, allow-listed
+    characters, so this is checked separately from
+    `USER_VISIBLE_PATH_CHAR_RE` above: only the *arrangement* was checked
+    there -- this function also checks the *magnitude*: `a{99999}` is a
+    well-formed interval bound Python's own grammar has no opinion on, but
+    it exceeds GNU grep's documented `RE_DUP_MAX` (32767) -- the grep that
+    actually runs the generated guard, on `ubuntu-latest` -- so `grep -Eq`
+    exits 2, SYNTAX ERROR, on it too (#1058, found by review) -- the
+    identical silent-disable failure #1015 closed at the arrangement
+    boundary, reopened at the magnitude boundary instead.
+
+    Bracket expressions (`[...]`) are skipped while scanning: a `{` inside
+    one can never be a POSIX ERE interval opener, so it is not interval
+    syntax at all and must not be misread as an unbalanced or malformed one
+    (#1059, found by review). The skip also has to track the three POSIX
+    bracket sub-expression forms -- a named character class (`[:alpha:]`),
+    a collating symbol (`[.sym.]`) or an equivalence class (`[=eq=]`) --
+    each of which carries its own `]` before the outer bracket's real
+    close; stopping at the first `]` misreads bracket content that follows
+    one of these as though it sat outside the bracket entirely, the same
+    defect #1059 fixed, recurring for a sub-grammar its scan did not
+    consider (found in self-review by both spawned reviewers independently
+    against this same diff).
     """
     index = 0
     length = len(pattern)
@@ -1017,6 +1062,35 @@ def _brace_interval_problem(pattern):
         char = pattern[index]
         if char == "\\":
             index += 2
+            continue
+        if char == "[":
+            content_start = index + 1
+            if content_start < length and pattern[content_start] == "^":
+                content_start += 1
+            if content_start < length and pattern[content_start] == "]":
+                content_start += 1
+            pos = content_start
+            close = -1
+            while pos < length:
+                if (
+                    pattern[pos] == "["
+                    and pos + 1 < length
+                    and pattern[pos + 1] in (":", ".", "=")
+                ):
+                    delim = pattern[pos + 1]
+                    sub_close = pattern.find(delim + "]", pos + 2)
+                    if sub_close == -1:
+                        break
+                    pos = sub_close + 2
+                    continue
+                if pattern[pos] == "]":
+                    close = pos
+                    break
+                pos += 1
+            if close == -1:
+                index += 1
+                continue
+            index = close + 1
             continue
         if char == "{":
             close = pattern.find("}", index + 1)
@@ -1037,6 +1111,19 @@ def _brace_interval_problem(pattern):
                         "has `{{{}}}`, whose lower bound is greater than its "
                         "upper bound".format(content)
                     )
+            bounds = [low] + ([int(high)] if high else [])
+            over_limit = [b for b in bounds if b > _GREP_INTERVAL_MAGNITUDE_LIMIT]
+            if over_limit:
+                return (
+                    "has `{{{}}}`, whose bound {} exceeds {}, GNU grep's "
+                    "documented `RE_DUP_MAX` -- the grep that actually runs "
+                    "the generated guard, on `ubuntu-latest` -- so "
+                    "`grep -Eq` exits 2, SYNTAX ERROR, on a magnitude this "
+                    "large, the same silent-disable failure as an "
+                    "unbalanced or malformed interval".format(
+                        content, max(over_limit), _GREP_INTERVAL_MAGNITUDE_LIMIT
+                    )
+                )
             index = close + 1
             continue
         index += 1
@@ -1116,6 +1203,19 @@ def user_visible_paths_problem(value):
         try:
             re.compile(pattern)
         except re.error as exc:
+            return (
+                "user_visible_paths[{}]: {!r} is not a valid regular expression "
+                "({}).".format(index, pattern, exc)
+            )
+        except OverflowError as exc:
+            # Found in self-review while testing #1058's magnitude limit:
+            # Python's own `re` module raises `OverflowError`, not `re.error`,
+            # once a `{...}` repetition count exceeds ITS internal limit
+            # (CPython's `MAXREPEAT`, 2**32 - 1) -- an uncaught crash here,
+            # rather than the stated refusal every other malformed value
+            # gets, for a value so large it was never going to reach
+            # `_brace_interval_problem`'s own, much smaller, grep-family
+            # magnitude check below.
             return (
                 "user_visible_paths[{}]: {!r} is not a valid regular expression "
                 "({}).".format(index, pattern, exc)
