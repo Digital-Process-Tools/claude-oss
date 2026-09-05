@@ -6,9 +6,12 @@ match: ~gh-run|gh-branch|gh-pr:[0-9]+:status
 mode: remind
 ---
 
-Three incidents, one shape: **a green reading was taken from a commit that did not contain the
-change it was being offered as evidence for.** Green renders identically either way; the tell is
-never in the result, it is in which sha the reading came from.
+**The first two below are one shape: a green reading was taken from a commit that did not contain
+the change it was being offered as evidence for.** Green renders identically either way, and the
+tell is never in the result — it is in which sha the reading came from. The third is the adjacent
+case, and it is here because it is answered by the same habit: a reading that was never taken at
+all, in a window where you would have to have been looking to notice. Naming the sha catches the
+first two; noticing that no sha was ever cleared catches the third.
 
 - **Evidence about a tree without the change (#761/PR #1038).** A handback called `main`'s clean
   CodeQL leg on `387d8cc` "independent confirmation that lane 761's fix resolved the false

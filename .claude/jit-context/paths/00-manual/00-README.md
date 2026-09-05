@@ -28,7 +28,13 @@ decision rather than an absence and does not refile it. The rule builder skips t
 - `973.submanager-has-no-sendmessage-so-the-documented-resume-path-does-not-exist` — closed by
   #987; sub-managers now hold `SendMessage` and resume lanes per #880 rather than re-dispatching.
 - `939.jit-rules-silent-in-subagents-once-the-session-consumed-them` — already promoted, to
-  `vocabulary/00-manual/jit-rules-and-subagents.md`. The fragment was the working note.
+  `vocabulary/00-manual/jit-rules-and-subagents.md`, **by #939 in commit `77b0da6`, before this
+  pass ran**. The fragment was the working note for a rule that already existed. Note this pass
+  also *modifies* that same file, for a different fragment entirely
+  (`905.jit-probe-payload-form`, counted under the six merges) — the two are unrelated, and an
+  audit of this diff read the `+12` there as 939's promotion happening here, which would make the
+  bucket counts sum to 31 rather than 30. They sum to 30: six fragments feed the four promoted
+  rules, six are merged, eighteen are declined.
 - `970.select-issues-unwired` — filed as #1036. A wiring defect on the tracker, not a rule.
 
 **One incident, not a rule.**
