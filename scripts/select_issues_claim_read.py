@@ -82,6 +82,7 @@ Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
 import json
+import shutil
 import subprocess
 
 STATE_UNASSIGNED = "unassigned"
@@ -126,9 +127,26 @@ def _run(args, timeout=_TIMEOUT):
     "it failed" cannot tell an unauthenticated session from an absent tool, and
     would report the same `could-not-read` for both.
     """
+    # #1069/PR #1107: resolve the executable via `shutil.which` before
+    # spawning it, the same precedent `lane_setup.py.read_board` already
+    # sets for `supertool` (#317). `subprocess.run(["gh", ...])` on POSIX
+    # hands the bare name to `execvp`, which searches `PATH` for a match of
+    # any extension -- but on Windows it reaches `CreateProcess`, which only
+    # auto-appends `.exe` for an extensionless name and never `.cmd`/`.bat`.
+    # A `gh` on PATH that is actually a `.cmd`/`.bat` launcher (this
+    # repository's own CI fixtures, or a real `gh` install via certain
+    # package managers) was therefore invisible to every call this function
+    # makes, read as an absent binary. `shutil.which` performs the full
+    # PATHEXT-aware search on Windows and returns a fully-qualified path
+    # `subprocess.run` can spawn directly; when it cannot resolve anything
+    # (the binary is genuinely absent), the bare name is kept so the
+    # existing `FileNotFoundError` -> "is not on PATH" detail below still
+    # fires exactly as before.
+    resolved = shutil.which(args[0])
+    argv = [resolved] + list(args[1:]) if resolved else args
     try:
         proc = subprocess.run(
-            args,
+            argv,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,

@@ -252,3 +252,67 @@ def test_a_missing_gh_binary_is_could_not_read_with_a_reason_naming_it():
     an unauthenticated session from an absent tool."""
     detail = issue_claim._run(["definitely-not-a-real-binary-964"])[2]
     assert "not on PATH" in detail
+
+
+# ---------------------------------------------------- PATH resolution (#1069)
+
+
+def test_run_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
+    """PR #1107, Windows-only CI failure: `_run` passed the literal string
+    ``"gh"`` straight to `subprocess.run`. On POSIX, `subprocess` hands an
+    extensionless name to `execvp`, which itself walks `PATH` and finds any
+    executable regardless of extension -- so a fake `gh` shebang script (or,
+    after #1069's own fix, a fake `gh.cmd`) is found either way. On Windows,
+    `subprocess.run(["gh", ...])` reaches `CreateProcess` with no directory
+    and no extension, and `CreateProcess` only auto-appends `.exe` -- never
+    `.cmd`/`.bat` -- so the CI fixture's `gh.cmd` was never spawned at all,
+    read as an absent `gh`, and turned the whole assignee-write half of
+    `--claim` into `could-not-claim-assignee` (exit code 3, observed on
+    windows-latest 3.9/3.11/3.12; reasoned, not observed, that this fires
+    identically on any `.cmd`/`.bat` launcher, since it is `CreateProcess`'s
+    own documented search rule and not particular to this one fixture).
+
+    `lane_setup.py.read_board` already resolves `supertool` via
+    `shutil.which` before spawning it, for the identical PATHEXT gap (#317).
+    This pins `_run` doing the same for `gh`: given a `shutil.which` that
+    resolves to some other, fully-qualified path, `subprocess.run` must be
+    called with *that* path, not the bare name.
+    """
+    calls = []
+
+    class _FakeCompleted:
+        returncode = 0
+        stdout = b"tester\n"
+        stderr = b""
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return _FakeCompleted()
+
+    monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        issue_claim.shutil, "which", lambda name: r"C:\fake\bin\gh.cmd"
+    )
+    ok, out, detail = issue_claim._run(["gh", "api", "user", "--jq", ".login"])
+    assert ok, detail
+    assert calls == [
+        [r"C:\fake\bin\gh.cmd", "api", "user", "--jq", ".login"]
+    ], calls
+
+
+def test_run_still_attempts_the_bare_name_when_which_finds_nothing(monkeypatch):
+    """Positive-control pairing for the test above: when the binary is
+    genuinely absent, `_run` must not resolve to `None` (which would crash
+    `subprocess.run` with a `TypeError` rather than reporting `could-not-*`)
+    -- it falls back to the bare name, so `subprocess`'s own
+    `FileNotFoundError` still reaches the existing "is not on PATH" detail."""
+
+    def fake_run(args, **kwargs):
+        assert args[0] == "gh", args
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
+    monkeypatch.setattr(issue_claim.shutil, "which", lambda name: None)
+    ok, out, detail = issue_claim._run(["gh", "api", "user", "--jq", ".login"])
+    assert not ok
+    assert "not on PATH" in detail
