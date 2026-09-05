@@ -90,9 +90,9 @@ REQUIRED_SUBCOMMAND_GRANTS = {
 # branch stay narrower than the rest of the table above.
 REQUIRED_OP_GRANTS = {
     "git worktree add": "agents/developer.md:59, commands/tick.md:512",
-    "git worktree remove": "skills/manager/phases/merge.md:114; doctor's own WORKTREE_REMOVE_OP",
+    "git worktree remove": "skills/manager/phases/merge.md:142; doctor's own WORKTREE_REMOVE_OP",
     "git branch -D": "commands/doctor.md:486; doctor's own BRANCH_DELETE_OP",
-    "git branch -r": "skills/manager/phases/merge.md:125 (git branch -r --merged)",
+    "git branch -r": "skills/manager/phases/merge.md:196 (git branch -r --merged)",
 }
 
 # Never invoked by the loop's own briefs anywhere, and each one materially more
@@ -117,11 +117,19 @@ MUST_NOT_BE_GRANTED = [
 # `-C`-prefixed shape: `Bash(git -C:*)` would match `git -C <any path> <any
 # subcommand at all>`, reopening exactly the "one flag away from anything" gap
 # #982 narrowed the blanket `Bash(git *)` grant to close, for every subcommand
-# in MUST_NOT_BE_GRANTED above included. merge.md instead leads its safety
-# check with `git-worktrees:PATH`, already reachable through the granted
-# `Bash(supertool:*)` entry -- see test_merge_md_worktree_reap_head_check_
-# leads_with_a_covered_op below. This entry documents the rejected shape as a
-# negative control on that decision, not as something anyone asked to grant.
+# in MUST_NOT_BE_GRANTED above included. #1017's own mitigation -- lead the
+# safety check with `git-worktrees:PATH`, already reachable through the
+# granted `Bash(supertool:*)` entry, and name the raw `git -C` form only as a
+# documented fallback -- turned out not to work (#1056): `git-worktrees`
+# never emits a commit SHA, so it always "answers" without ever answering the
+# question this check needs, and the fallback written to fire "only if the op
+# cannot answer" could therefore never fire. merge.md now runs the raw form
+# unconditionally instead, accepting the interactive-grant cost on every
+# force-remove decision rather than only when git-worktrees could not answer
+# -- see test_merge_md_worktree_reap_head_check_runs_the_raw_form_
+# unconditionally below. This entry documents the rejected `-C`-wildcard
+# shape as a negative control on the #982 narrowing decision, not as
+# something anyone asked to grant; it is unaffected by #1056.
 UNSAFE_C_FLAG_WILDCARD = "git -C"
 
 
@@ -243,20 +251,19 @@ def test_unsafe_c_flag_wildcard_stays_ungranted():
     assert "Bash(git -C *)" not in entries
 
 
-def test_merge_md_worktree_reap_head_check_leads_with_a_covered_op():
-    """#1017: composed with #982's narrowed allow-list, `git -C <worktree>
-    rev-parse HEAD` does not necessarily start with any grant in
-    REQUIRED_SUBCOMMAND_GRANTS -- `Bash(git rev-parse:*)` matches a literal
-    STRING PREFIX and `-C <path>` sits before the subcommand, so (reasoned, not
-    observed: nothing in this suite can drive Claude Code's own permission UI
-    to confirm whether its matcher normalizes git's global options ahead of
-    prefix matching) the raw form may trigger a permission prompt the #1007
-    safety check was written to run unattended. Rather than widen the
-    allow-list (see test_unsafe_c_flag_wildcard_stays_ungranted above for why
-    that shape is refused), the brief itself is required to lead with
-    `git-worktrees:PATH`, already reachable through the granted
-    `Bash(supertool:*)` entry, and name the raw `git -C` form only as a
-    documented fallback."""
+def test_merge_md_worktree_reap_head_check_runs_the_raw_form_unconditionally():
+    """#1056: #1017's own mitigation -- lead the #1007 HEAD-comparison guard
+    with `git-worktrees:PATH` and name the raw `git -C <worktree> rev-parse
+    HEAD` form only as a fallback "only if the op cannot answer" -- left the
+    guard nominally on and effectively off, because `git-worktrees` never
+    emits a commit SHA and therefore always answers (with a merged/occupancy
+    verdict), so the fallback that could actually perform the SHA comparison
+    could never fire. The fix drops the conditional framing entirely: the raw
+    form now runs unconditionally before a force-remove, and
+    `git-worktrees:PATH` is named only for the merged/occupancy read, a
+    separate purpose this test does not touch. Confirms the raw form is
+    present and unconditional, and that the HEAD re-check sentence itself no
+    longer leans on `git-worktrees:PATH` to perform it."""
     text = (REPO_ROOT / "skills" / "manager" / "phases" / "merge.md").read_text(
         encoding="utf-8"
     )
@@ -270,10 +277,12 @@ def test_merge_md_worktree_reap_head_check_leads_with_a_covered_op():
     start = collapsed.index(anchor)
     end = collapsed.index(".", start)
     sentence = collapsed[start:end]
-    op_index = sentence.index("git-worktrees:PATH")
-    raw_index = sentence.index("git -C <worktree> rev-parse HEAD")
-    assert op_index < raw_index, (
-        "the raw `git -C` form must not lead the worktree-reap HEAD re-check; "
-        "git-worktrees:PATH, already covered by Bash(supertool:*), must be "
-        "recommended first"
+    assert "git -C <worktree> rev-parse HEAD" in sentence
+    assert "unconditionally" in sentence, (
+        "the HEAD re-check must be stated as unconditional, not as a fallback (#1056)"
+    )
+    assert "git-worktrees:PATH" not in sentence, (
+        "the HEAD re-check sentence must not lean on git-worktrees:PATH -- "
+        "that op never emits a commit SHA (#1056), so it cannot perform "
+        "this comparison at all"
     )

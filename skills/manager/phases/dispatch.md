@@ -139,8 +139,8 @@ grounds, or skipped altogether under `merge.md`'s own #1085 policy, the default 
 run is the *only* backstop for the combined content, so a tick that merges on green and dies before
 that run concludes has removed the pre-merge check without keeping the post-merge one.
 `skills/manager/phases/tick-order.md`'s *What ends a tick* is where this is enforced -- a tick does
-not close while the board says something is unwatched, and the default branch is a board member
-there, not a sixth case pasted in beside these five.
+not close while radar's board says something is unwatched, and the default branch is carried there
+as a member row, per that same file's own step 4 -- not a sixth case pasted in beside these five.
 
 ### Run a fleet, not a queue
 

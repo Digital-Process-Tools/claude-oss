@@ -180,8 +180,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # instruction. Too small an overage to be worth trimming something else
     # to absorb, so the ceiling moved with ~10% headroom over the new size
     # rather than cutting anything.
+    # Re-baselined for #1084's own self-review round: 58344 B became 58392 B
+    # after two small precision fixes to the new subsection's cross-reference
+    # wording (radar's board-member row is established at tick-order.md's
+    # step 4, not inside "What ends a tick" itself). Budget unchanged.
     "skills/manager/phases/dispatch.md": (
-        58344,
+        58392,
         64200,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -220,8 +224,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # policy, the other closes a data-loss guard that was silently off --
     # so the ceiling moved with ~10% headroom over the new size rather than
     # trimming either down.
+    # Re-baselined for #1085/#1056's own self-review round: 16671 B became
+    # 17234 B after fixing a wrong issue citation (the rerun rule "just
+    # below" is #389's, not #1004's -- #1004 is an unrelated release-marker
+    # edit) and a hardcoded, repo-specific CI fact (the new policy bullet
+    # named this repo's own tests.yml trigger shape as though it held for
+    # every managed repo; now stated as a per-repo fact to check, with the
+    # repo's own file named as one instance rather than a name to expect
+    # elsewhere) surfaced by self-review. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        16671,
+        17234,
         18300,
         "merging: the gates, the call itself, and what is still owed after green",
     ),

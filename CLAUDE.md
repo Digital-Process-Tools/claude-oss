@@ -334,14 +334,14 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 44,679 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 58,344 B | 64,200 B |
+| `skills/manager/phases/dispatch.md` | 58,392 B | 64,200 B |
 | `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,779 B | 24,500 B |
 | `skills/manager/phases/tick-order.md` | 39,329 B | 43,100 B |
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
-| `skills/manager/phases/merge.md` | 16,671 B | 18,300 B |
+| `skills/manager/phases/merge.md` | 17,234 B | 18,300 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -372,6 +372,9 @@ The new subsection states the four (really five) cases for whether a pending vs 
 should block dispatch, merge or release — a rule this repository was following by habit rather than
 by instruction. Too small an overage to be worth trimming something else in the same file to absorb,
 so the ceiling moved to 64,200 B, ~10% headroom over the new size, rather than cutting anything.
+Re-baselined again in the same lane's own self-review round: 58,344 B became 58,392 B after two
+precision fixes to the new subsection's cross-reference wording (radar's board-member row is
+established at `tick-order.md`'s step 4, not inside *What ends a tick* itself). Budget unchanged.
 
 **`accounting.md`'s budget was raised for #694 and #762, landed together because both touch the same
 intake paragraph and the same `--decision` call.** #762 gives the intake numerator a mechanism
@@ -408,7 +411,11 @@ guard, whose `git-worktrees`-first fallback could never fire because that op nev
 SHA, so the guard was nominally on and effectively off. Neither could be trimmed to make room for
 the other -- one is a new policy statement with its own safety argument, the other closes a
 data-loss guard silently left open -- so the ceiling moved to 18,300 B, ~10% headroom over the new
-size, rather than cutting either down.
+size, rather than cutting either down. Re-baselined again in the same lane's own self-review round:
+16,671 B became 17,234 B after fixing a wrong issue citation (the rerun rule "just below" is #389's,
+not #1004's) and a hardcoded, repo-specific CI fact (the policy bullet named this repo's own
+`tests.yml` trigger shape as though it held for every managed repo; now stated as a per-repo fact to
+check). Budget unchanged.
 
 **The total grew: 122,423 B became 189,517 B, +54.8%** — re-derived by summing the table's own
 "measured (baseline)" column above, not by editing the prior figure (186,769 B / +52.6%, itself a

@@ -72,26 +72,32 @@ is not on this list is just a way of not fixing things.
 - **"Not failing" is not "green" — count the checks.** The state counts must sum to the number of
   legs, and any leg not `SUCCESS` gets named before merging.
 - **Green and mergeable means merge -- no pre-merge rebase, `git merge origin/main`, force-push, or
-  fresh matrix run, unless something other than staleness demands one (#1085).** `tests.yml`
-  triggers on both `pull_request` and `push: branches: [main]`. A `pull_request` run checks out a
-  merge-ref computed when the run started, so where the base has not moved since, a green PR has
-  already tested the post-merge content and a rebase would re-test byte-identical content -- a full
-  matrix for nothing. Where the base *has* moved, the squash's own `push` run on the default branch
-  tests the real combined content regardless of whether anyone rebased first, so a pre-merge rebase
-  does not add coverage there either -- it duplicates a run already being paid for. That `push` run
-  is the backstop, which is why step 3 below (reading `gh-branch` after the squash) matters more,
-  not less.
+  fresh matrix run, unless something other than staleness demands one (#1085).** This holds where
+  the managed repo's CI has this shape, and it is a fact to check per repo rather than assume: a
+  `pull_request`-triggered workflow paired with its own `push: branches: [<default_branch>]` run on
+  the same file (this repo's own `.github/workflows/tests.yml` is one instance, not a name to expect
+  elsewhere). A `pull_request` run checks out a merge-ref computed when the run started, so where the
+  base has not moved since, a green PR has already tested the post-merge content and a rebase would
+  re-test byte-identical content -- a full matrix for nothing. Where the base *has* moved, the
+  squash's own `push` run on the default branch tests the real combined content regardless of
+  whether anyone rebased first, so a pre-merge rebase does not add coverage there either -- it
+  duplicates a run already being paid for. That `push` run is the backstop, which is why step 3
+  below (reading `gh-branch` after the squash) matters more, not less. **Where a managed repo's CI
+  lacks that `push`-on-default-branch half, there is no backstop and this policy does not carry over
+  without re-deriving the argument for that repo's own trigger shape.**
 
   The residual cost, stated rather than smoothed over: a semantic conflict -- one branch adds a
   test, another renames what it calls -- is green *and* mergeable and can still land red on the
   default branch, and the remedy then is a revert. That cost is accepted deliberately; it is smaller
   than a rebase on every merge, nearly all of which would be re-testing content that did not change.
   **This policy holds only paired with watching the tick's last merge to conclusion before the tick
-  closes** (`skills/manager/phases/tick-order.md`'s *What ends a tick*, and its default-branch
-  board-member row) -- merging on green and dying before that run concludes removes the pre-merge
-  check without keeping the post-merge one. A rebase or `git merge origin/main` stays correct where
-  the PR is *not* mergeable, or its failure is understood to come from a stale base -- #1004's rule
-  just below still applies there, and a merge is preferred over a rebase because it does not rewrite
+  closes** (`skills/manager/phases/tick-order.md`'s *What ends a tick*, which refuses to close while
+  radar's board -- carrying the default branch as a member row, per that file's own step 4 --
+  reports anything unwatched) -- merging on green and dying before that run concludes removes the
+  pre-merge check without keeping the post-merge one. A rebase or `git merge origin/main` stays
+  correct where the PR is *not* mergeable, or its failure is understood to come from a stale base --
+  #389's rule just below still applies there, and a merge is preferred over a rebase because it does
+  not rewrite
   history.
 - **A rerun does not re-resolve a moved base, so it replays the same red.** `gh run rerun <id>
   --failed` re-runs the check suite against the merge ref it already had; it does not re-resolve
