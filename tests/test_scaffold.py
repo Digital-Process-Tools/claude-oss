@@ -1668,6 +1668,71 @@ def test_apply_still_removes_a_stale_owned_rule_layer_file(tmp_path, monkeypatch
     ), output
 
 
+def test_apply_cli_fails_cleanly_on_a_symlinked_layer_instead_of_a_traceback(
+    tmp_path, monkeypatch
+):
+    """#1110, end to end through the CLI: `install()` raising `RulesError` and
+    `_layer_scan()` reporting `layer-symlinked` are each covered at the library level
+    by their own tests, but neither proves `scripts/scaffold.py --apply`'s own
+    `try/except oss_rules.RulesError` wiring (around the `oss_rules.install()` call in
+    `_main`) actually catches it rather than letting it propagate as an uncaught
+    traceback -- that wiring has no test of its own without this one.
+
+    The decoy target must survive `--apply` exactly as the library-level test already
+    proves for `install()` directly; what this test adds is the CLI's own exit code and
+    `FAIL` line, which nothing else exercises.
+    """
+    decoy = tmp_path.parent / "decoy-for-cli-test"
+    decoy.mkdir()
+    victim = decoy / "something.md"
+    victim.write_text("decoy content, not this plugin's\n", encoding="utf-8")
+
+    link = tmp_path / ".claude" / "jit-context" / "paths" / scaffold.oss_rules.LAYER
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether `scaffold --apply`'s CLI wiring catches a "
+            "symlinked-layer RulesError rather than letting it propagate".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    project, local = oss_config.split(_config())
+    (tmp_path / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        scaffold, "_forge_label_names", lambda root, config: ([], "pinned by the test")
+    )
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        # No `pytest.raises` here: an uncaught `RulesError` propagating out of
+        # `_main` (the pre-fix behaviour) would fail this test on its own by raising
+        # through this call, which is exactly the "traceback instead of FAIL" defect
+        # this test exists to rule out.
+        code = scaffold._main(
+            [
+                "--root",
+                str(tmp_path),
+                "--config",
+                str(tmp_path / oss_config.CONFIG_NAME),
+                "--apply",
+            ]
+        )
+    output = out.getvalue()
+
+    assert code == 1, output
+    assert any(line.startswith("FAIL") for line in output.splitlines()), output
+    assert victim.read_text(encoding="utf-8") == "decoy content, not this plugin's\n"
+    assert sorted(p.name for p in decoy.iterdir()) == ["something.md"]
+
+
 # ------------------------------------------- collision with an existing changelog gate
 #
 # #86 / #105: `present` used to be computed per path, not per function. A repo that
