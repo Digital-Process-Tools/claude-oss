@@ -37,10 +37,14 @@ from pathlib import Path
 #: request and three still-open issues that had just been closed (#515).
 REFRESH_AFTER = 60
 
-#: The same, for the version each installed plugin's source repository publishes. Four of a
-#: refresh's seven forge calls are these, and they answer a question that changes on the
-#: order of weeks -- so they are carried forward between long intervals rather than making
-#: the board wait on them.
+#: The same, for the version each installed plugin's source repository publishes. One of
+#: these per distinct installed-plugin repository (four, on this loop's own install, but
+#: that count is a fact about the loop's plugins rather than about any managed repo and is
+#: not pinned here as an exact total of a refresh's forge calls -- a growing list, most
+#: recently by #1079's own added call, is exactly the drift that made the number wrong
+#: before it was noticed). They answer a question that changes on the order of weeks -- so
+#: they are carried forward between long intervals rather than making the board wait on
+#: them.
 LATEST_REFRESH_AFTER = 3600
 
 #: A third clock (#613), beside the two above, for the one field that answers a
@@ -2094,11 +2098,15 @@ def refresh(root, now=None):
     """Fill the cache for one managed repository. Runs detached, never on the render path.
 
     Two clocks (#515), soon three (#613). The board -- open pull requests, open issues,
-    who filed each, their check rollups -- is re-read every time; the version each
-    plugin's source repository publishes is re-read only when its own longer interval
-    has passed, and carried forward from the previous cache in between. Four of the
-    eight forge calls are the second kind (#595 added a fourth board call), which is
-    why the board's own interval could not be shortened while they shared one.
+    who filed each, their check rollups, the unlabelled-issue counts (#1079) -- is
+    re-read every time; the version each plugin's source repository publishes is
+    re-read only when its own longer interval has passed, and carried forward from
+    the previous cache in between. The board clock now covers six of these calls
+    (#595 added a fourth, #1079 a sixth), which is why the board's own interval
+    could not be shortened while the two kinds shared one. Not pinned as a fraction
+    of a fixed total forge-call count -- the previous "four of eight" phrasing
+    already drifted (#1079's own review), and a list that grows should not keep
+    restating a total that only ever describes the moment it was written.
 
     A carried-forward value carries its own stamp with it. Stamping it `now` would make an
     hour-old reading indistinguishable from one just taken, which is the same defect this
