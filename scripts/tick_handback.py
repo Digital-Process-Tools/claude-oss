@@ -146,7 +146,7 @@ _KNOWN_TICK_STATES = ("completed", "blocked", "could-not-run", "paused")
 _RESUME_PROMISE = re.compile(
     r"\b(?:"
     r"pick(?:ing)?\s+(?:this|it|that)\s+(?:tick\s+)?back\s+up"
-    r"|will\s+(?:resume|continue|pick\s+(?:this|it|that)?\s*back\s+up|act)"
+    r"|will\s+(?:resume|continue|pick\s+(?:this|it|that)?\s*back\s+up)"
     r"|once\s+(?:ci|the\s+ci|a\s+poller|the\s+poller)\b"
     r"|when\s+(?:ci|the\s+ci|a\s+poller|the\s+poller)"
     r"\s+(?:resolves|reports|finishes|completes|clears)"

@@ -38,6 +38,14 @@ from test_content_invariants import _collapse  # noqa: E402
 
 SUB_MANAGER_MD = REPO_ROOT / "agents" / "sub-manager.md"
 TICK_MD = REPO_ROOT / "commands" / "tick.md"
+#: #1037: the #867 lane-fill facts (never-four ceiling, three-as-default,
+#: the three short-lane reasons) moved out of commands/tick.md's step 5 into
+#: this phase file, read by a sub-manager rather than injected into the
+#: scheduler on every tick. The #828 spawn-token mechanism did not move --
+#: minting and stating the token is the scheduler's own step, still in
+#: commands/tick.md -- so the two parity checks below now compare against
+#: two different files rather than the same one.
+TICK_ORDER_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 #: The short-lane reasons, read from `dispatch_rank.SHORT_REASONS` rather than
 #: retyped (#918, found by review on PR #921). This tuple used to be a hardcoded
@@ -98,12 +106,12 @@ def test_sub_manager_states_the_lane_fill_facts_itself():
 
 def test_lane_fill_facts_agree_between_the_two_documents():
     sub = _collapse(SUB_MANAGER_MD.read_text(encoding="utf-8"))
-    tick = _collapse(TICK_MD.read_text(encoding="utf-8"))
+    tick = _collapse(TICK_ORDER_MD.read_text(encoding="utf-8"))
     sub_facts = _has_fill_facts(sub)
     tick_facts = _has_fill_facts(tick)
     assert sub_facts == tick_facts, (
         "lane-fill facts disagree between agents/sub-manager.md ({}) and "
-        "commands/tick.md ({})".format(sub_facts, tick_facts)
+        "skills/manager/phases/tick-order.md ({})".format(sub_facts, tick_facts)
     )
 
 

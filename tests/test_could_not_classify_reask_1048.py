@@ -77,3 +77,29 @@ def test_a_silent_file_fails_both_predicates():
     silent = "This document discusses tick dispatch and nothing else."
     assert not re.search(r"validate\w* your own draft", silent, re.IGNORECASE)
     assert not re.search(r"re-ask", silent, re.IGNORECASE)
+
+
+def test_tick_md_does_not_point_below_at_content_that_moved_out():
+    """Found in self-review of #1037: `commands/tick.md` referred to "step 1
+    below", "*What ends a tick* below" and "the three states below" -- all
+    true when this file held all seven steps, false once #1037 moved steps
+    1-6 and "What ends a tick" out to skills/manager/phases/tick-order.md.
+    A reader following any "below" pointer into this file now finds
+    nothing. Found in two passes: the first two by this lane's own
+    self-review auditor spawn, the third ("three states below") by the
+    Explore reviewer spawned alongside it, on the same commit."""
+    text = _text(TICK_MD)
+    assert "step 1 below" not in text
+    assert "below names" not in text
+    assert "three states below" not in text
+
+
+def test_dispatch_md_points_at_the_file_the_call_actually_moved_to():
+    """Found by the Explore reviewer: dispatch.md's own pointer to "the
+    same call and its three states in full" named commands/tick.md, which
+    was true before #1037 moved that content to
+    skills/manager/phases/tick-order.md and false after."""
+    dispatch_md = REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md"
+    text = _text(dispatch_md)
+    assert "tick-order.md` names the same call and its three" in text
+    assert "`commands/tick.md` names the same call and its three" not in text

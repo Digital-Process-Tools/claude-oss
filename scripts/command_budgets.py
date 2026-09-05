@@ -49,10 +49,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # staying at 57,300 B, the same reasoning #958 and #960 already give for
     # skill_phases.py's own re-baselines: a ceiling left far above the file
     # is a saving spendable again without anybody choosing to.
-    # Re-baselined for #1048: 17348 B on disk against a stale 16294 declared
-    # baseline -- the could-not-classify re-ask-first paragraph landed in
-    # this file. Budget unchanged; comfortably under it.
-    "commands/tick.md": (17348, 17900),
+    # Re-baselined for #1048: 17426 B on disk against a stale 16294 declared
+    # baseline -- the could-not-classify re-ask-first paragraph and a
+    # self-review fix (two stale "below" cross-references pointing at
+    # content #1037 moved out of this file) landed here. Budget unchanged;
+    # comfortably under it.
+    "commands/tick.md": (17492, 17900),
 }
 
 

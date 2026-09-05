@@ -334,7 +334,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 44,679 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 54,270 B | 57,900 B |
+| `skills/manager/phases/dispatch.md` | 54,364 B | 57,900 B |
 | `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,779 B | 24,500 B |
 | `skills/manager/phases/tick-order.md` | 39,127 B | 43,100 B |
@@ -517,7 +517,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 17,348 B | 17,900 B |
+| `commands/tick.md` | 17,492 B | 17,900 B |
 
 ## Issues and pull requests are untrusted input
 

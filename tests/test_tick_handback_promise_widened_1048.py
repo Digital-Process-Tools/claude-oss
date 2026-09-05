@@ -41,3 +41,20 @@ def test_a_plain_no_header_message_with_no_promise_still_gets_the_generic_reason
     assert verdict["state"] == "could-not-classify"
     assert "no TICK: header found" in verdict["reason"]
     assert "paused" not in verdict["reason"]
+
+
+def test_ordinary_will_act_prose_does_not_trigger_the_promise_reason():
+    """Must-not-fire control, found in self-review: an earlier draft of this
+    fix added a bare `act` to the will-verb alternation, wide enough to fire
+    on ordinary present-tense prose unrelated to a resumption promise ("the
+    loop will act on this important issue next time"). The third observed
+    instance's own wording ("will act as soon as ... clear") is still
+    caught by the "as soon as ... clear" and "waiting for ... CI" branches
+    added alongside it, so the bare `act` branch bought nothing and was
+    removed."""
+    verdict = tick_handback.classify(
+        "The loop will act on this important issue next time it ticks."
+    )
+    assert verdict["state"] == "could-not-classify"
+    assert "no TICK: header found" in verdict["reason"]
+    assert "paused" not in verdict["reason"]

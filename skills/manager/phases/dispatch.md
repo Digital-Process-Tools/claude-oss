@@ -459,7 +459,8 @@ worktree list has already flattened `cannot tell` to `idle` once, which is how `
 `fix/341` were each briefed onto `README.md` forty minutes apart (#317, #360). The script hands back
 the resolved base, the derived branch and worktree, and the condensed board in one call, freshly
 re-derived rather than pasted — paste its board output straight into the brief so every agent knows
-who else is out there. `commands/tick.md` names the same call and its three states in full; this is
+who else is out there. `skills/manager/phases/tick-order.md` names the same call and its three
+states in full (#1037: this content moved out of `commands/tick.md` into that phase file); this is
 the pointer, not a second copy of that explanation.
 
 **`--claim` belongs only here, never on a probe above** (#705): every call used to record this

@@ -169,7 +169,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # declared baseline -- the #1036 select_issues.py directive and the #1037
     # step-5 pointer update both landed in this file. Budget unchanged;
     # comfortably under it.
-    "skills/manager/phases/dispatch.md": (54270, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
+    "skills/manager/phases/dispatch.md": (54364, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
     "skills/manager/phases/handback.md": (19369, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
