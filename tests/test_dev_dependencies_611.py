@@ -55,13 +55,26 @@ def _declared_packages():
 
 
 def _workflow_installed_packages():
-    """What `.github/workflows/tests.yml`'s own install step names -- ground truth for what
-    a green CI run actually required, independent of anything this repo says about itself."""
+    """What `.github/workflows/tests.yml`'s own install steps name -- ground truth for what
+    a green CI run actually required, independent of anything this repo says about itself.
+
+    #1040: this workflow has more than one job, and more than one of them runs
+    its own `pip install` line -- `lint`'s came after `pytest`'s the one time it
+    mattered (#635). (`shell` runs no `pip install` line at all, deliberately --
+    see that job's own #303 comment.)
+    A dependency declared only on a later job's line is exactly as real a
+    requirement as one declared on the first line CI happens to run, so every
+    matching line is read and unioned rather than trusting whichever one is found
+    first. There is no "the job that matters" to special-case toward: the
+    sufficiency check's whole point is verifying against everything CI actually
+    installs, and a job added after this one is written inherits the same
+    guarantee for free only because nothing here assumes which line is first."""
     text = WORKFLOW.read_text(encoding="utf-8")
+    packages = set()
     for line in text.splitlines():
         if line.strip().startswith("pip install") and "requirements" not in line:
-            return {tok.lower() for tok in line.strip().split()[2:]}
-    return set()
+            packages.update(tok.lower() for tok in line.strip().split()[2:])
+    return packages
 
 
 # ------------------------------------------------------------------- positive controls
@@ -77,6 +90,43 @@ def test_pyproject_addopts_actually_requires_cov():
 def test_workflow_installs_something():
     """Positive control: an empty extraction would make the sufficiency check vacuous."""
     assert _workflow_installed_packages(), "could not find tests.yml's pip install line"
+
+
+def test_workflow_installed_packages_unions_every_pip_install_line(tmp_path, monkeypatch):
+    """#1040: a dependency declared only on a *later* job's install line must not be
+    invisible to the sufficiency check. Construct a two-job workflow where the first
+    job's pip install line does not carry a package that only the second job's line
+    declares. `_workflow_installed_packages()` used to return on the first match, so
+    it would never reach the second job's line at all.
+
+    Paired in the same fixture with the common case -- a package declared on the
+    *first* line -- so a fix that special-cases "read the last line instead" or
+    "read the lint job's line instead" cannot pass this test by reproducing the
+    identical blind spot one line over.
+    """
+    fixture = tmp_path / "tests.yml"
+    fixture.write_text(
+        "jobs:\n"
+        "  pytest:\n"
+        "    steps:\n"
+        "      - run: |\n"
+        "          pip install pytest pytest-cov\n"
+        "  lint:\n"
+        "    steps:\n"
+        "      - run: |\n"
+        "          pip install ruff\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "WORKFLOW", fixture)
+    found = _workflow_installed_packages()
+    assert "ruff" in found, (
+        "a package declared only on a later job's pip install line is invisible to "
+        "the sufficiency check (#1040)"
+    )
+    assert "pytest-cov" in found, (
+        "the fix must not special-case only the later line -- a package declared on "
+        "the first job's own install line must still be found"
+    )
 
 
 # ------------------------------------------------------------------------ the real checks
