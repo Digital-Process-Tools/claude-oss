@@ -17,7 +17,7 @@
   ],
   "labels": {
     "priority": ["priority-high", "priority-medium", "priority-low"],
-    "lanes": [],
+    "lanes": ["lane-dispatch", "lane-doctor", "lane-prose", "lane-release", "lane-scaffold"],
     "filed_by_loop": "filed-by-loop"
   },
   "milestones": [],
