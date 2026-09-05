@@ -334,10 +334,10 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 44,679 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 54,364 B | 57,900 B |
+| `skills/manager/phases/dispatch.md` | 56,058 B | 57,900 B |
 | `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,779 B | 24,500 B |
-| `skills/manager/phases/tick-order.md` | 39,127 B | 43,100 B |
+| `skills/manager/phases/tick-order.md` | 39,329 B | 43,100 B |
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
@@ -531,26 +531,48 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**Measured at `b45ef51`, the commit `v0.23.0` was cut from — in part, and the part is named.**
-The delta count, gate 3's audit rounds and the cohort freeze were re-derived in the session that cut
-this release: **10** merged pull requests against `v0.22.0..HEAD`; gate 3's audit, **two rounds run
-to the hard cap** — round one, 4 findings, filed as `#1013`, `#1014`, `#1015`, `#1016`; round two, 4
-more findings over the same delta, filed as `#1017`, `#1018`, `#1019`, `#1020` — none in either round
-landed in a ranking-table row marked blocking, so both rounds were filed rather than stopping the tag,
-per gate 3's own stated rule; and the cohort freeze, cohort-19 at **16** open issues against
-cohort-18's 8 — a cohort that grew rather than shrank, stated plainly rather than smoothed over,
-because 8 of the 16 are this release's own round-1 and round-2 findings landing in the same minute as
-the freeze that counts them. **The reach probe was not re-derived this release** — it is still
-`v0.21.0`'s, measured at `c565488`, eleven repositories in the one org it can see and four carrying
-`.oss.json`. The rest of the field readings were not either: the owned-files table, the two installs
-and the `doctor` run are still `v0.17.0`'s, measured at `ad38b93` and now carried through **six** tags
-(`v0.18.0` through `v0.23.0`). `#815` tracks re-deriving them, and a sixth release disclosing the
-identical, unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low
-priority against everything else this loop spends a tick on, or the disclosure is not actually driving
+**The marker below names `v0.24.0` because that is the newest tag this repository has cut** --
+bumped by a developer lane (fix/1067, #1067/#1068) rather than inside the v0.24.0 release commit
+itself, after `tests/test_claude_md_currency.py` caught the gap: two changelog fragments landed on
+this branch, which armed the check, and the section still named `v0.23.0` though `v0.24.0` had
+already shipped -- meaning the release process's own stated exception (update this marker "inside
+the release commit") did not happen for v0.24.0. Filed as its own follow-up rather than patched
+silently; see the note below.
+
+**Only the version citation was re-derived here, not the substantive numbers below it, and that
+distinction matters more than usual this time.** Confirmed `v0.24.0` is commit `ef9a1bc` (`git
+rev-parse v0.24.0`), and that `git rev-list --count v0.23.0..v0.24.0` returns **17** commits (a
+merged-PR-equivalent proxy, not the same measurement the release session itself runs against
+squash-merge history -- treat this as reasoned, not the gate-3-audit-rounds/cohort-freeze figures a
+real release cut would produce). Never piping `git log` through `wc` for a count:
+`tests/test_git_count_proxy_236.py` guards against exactly that shape, because an empty range reads
+as `1` rather than `0` through the maintainer's own shell proxy, and zero is exactly the value a
+delta count needs to be able to say. **Gate 3's audit rounds, the cohort freeze, and the reach probe
+below were NOT re-derived for v0.24.0** -- they still describe `v0.23.0` (measured at `b45ef51`) and
+are left exactly as the v0.23.0 release session wrote them, because fabricating re-derived numbers
+without actually running gate 3's audit or a fresh cohort count would be worse than leaving last
+release's numbers correctly labelled as such. **The delta count, gate 3's audit rounds and the
+cohort freeze, as last actually measured, at `v0.23.0`:** **10** merged pull requests against
+`v0.22.0..HEAD`; gate 3's audit, **two rounds run to the hard cap** — round one, 4 findings, filed as
+`#1013`, `#1014`, `#1015`, `#1016`; round two, 4 more findings over the same delta, filed as `#1017`,
+`#1018`, `#1019`, `#1020` — none in either round landed in a ranking-table row marked blocking, so
+both rounds were filed rather than stopping the tag, per gate 3's own stated rule; and the cohort
+freeze, cohort-19 at **16** open issues against cohort-18's 8 — a cohort that grew rather than
+shrank, stated plainly rather than smoothed over, because 8 of the 16 are that release's own
+round-1 and round-2 findings landing in the same minute as the freeze that counts them. **The reach
+probe was not re-derived at v0.23.0 either** — it is still `v0.21.0`'s, measured at `c565488`,
+eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of the field
+readings were not either: the owned-files table, the two installs and the `doctor` run are still
+`v0.17.0`'s, measured at `ad38b93` and now carried through **seven** tags (`v0.18.0` through
+`v0.24.0`). `#815` tracks re-deriving them, and a seventh release disclosing the identical,
+unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
+against everything else this loop spends a tick on, or the disclosure is not actually driving
 anyone to close it. Both are worth naming and neither is decided here — the honest content of this
-paragraph is the count itself, six releases running, not a conclusion drawn from it. **The readings
-themselves live in `docs/release-currency.md`**; this
-section holds the verdict and the marker. Re-derive at each release rather than editing this.
+paragraph is the count itself, seven releases running, not a conclusion drawn from it. **The
+readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
+marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
+commit, per this section's own stated exception, so a developer lane does not have to catch the gap
+a release later.
 
 **The reach probe, re-derived at `c565488` for `v0.21.0`.** `gh repo list Digital-Process-Tools
 --limit 100` returns eleven repositories **in that one GitHub organisation**, four of which carry

@@ -255,6 +255,16 @@ above — reading who is claimable and writing a claim stay separate calls, the 
 preflight pattern or a lane pattern for an issue that named neither (#267): those stay
 caller-supplied input, exactly as they are for the scripts it composes.
 
+**A `candidates` result also carries `groups` (#1068) — read that, not the flat `candidates` list,
+when deciding what to dispatch.** Each group is a suggested lane, targeting three members (never
+padded to hit that number), with a per-member disposition and a per-group third state
+(`candidates`/`none`/`could-not-tell`) — a group is a suggestion, never a dispatch, so still weigh it
+against topic and judgement above. `ungrouped` names candidates a group could not be built for at all
+(no declared files, per #267, or files that could not be resolved) — distinct from a group that
+stayed short and says why. Pass `board_capped` / `board_cap_detail` in the payload when the board read
+that fed this call was itself capped (#593's `per=` ceiling) — otherwise a short group because the
+read was truncated cannot be told from one because nothing genuinely overlaps.
+
 **Before #1036 this paragraph only described the script; nothing told a session to run it.**
 `commands/tick.md` step 5 named `dispatch_rank.py` and `lane_setup.py --claim` as the commands to
 run, by name, and a tick following that imperative literally got the four-scripts-joined-by-hand
@@ -262,6 +272,16 @@ shape #970 exists to replace — with no refusal step, so a tick that found noth
 claim read failed closed identically as `nothing left`. `skills/manager/phases/tick-order.md` step 5
 now names this script directly for the same reason (that content moved out of `commands/tick.md`
 itself for #1037, into the file a sub-manager's own steps live in).
+
+**`held_files`'s producer, named here because #1067 found nothing in this tree named it anywhere.**
+Feed `select_issues.py`'s top-level `held_files` from `lane_setup.derive_held_set(repo_slug,
+worktree_root, exclude_issue=<the issue being considered>)["held"]` (sorted keys) — the same call the
+lane-collision check above already runs. Its `state` and `detail` carry straight through as
+`lanes_read_ok` (`state == "resolved"`) and `lanes_read_why` (`detail`, when it did not): `lanes_read_ok
+is False` forces `could-not-select` before `held_files` is read at all, so a lane inventory that could
+not be enumerated is never indistinguishable from a tick with no live lanes. A caller that never
+populates the pair (nothing to offer) is read as "not attempted", the same posture `board_read_ok`'s
+own absence already gets.
 
 A contributor without write access cannot self-assign — GitHub restricts assignment to write or
 triage permission — so this mechanism claims for the maintainer's own loop only. What an outside
