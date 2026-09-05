@@ -274,10 +274,10 @@ fix compounds**: a fix that removes a whole class of future defects outranks a b
 removes one instance.
 
 **Read `skills/manager/phases/dispatch.md` before selecting anything.** It carries the pre-flight
-that catches an issue gone stale against shipped code and `preflight_check.py`'s three states, the
-per-part and per-bundle-member rule behind it, why a probe's scope is quoted verbatim rather than
-summarised, and the two-axis dispatch order `dispatch_rank.py` computes -- author before priority,
-with `could-not-rank` as a real answer that must never render as rank 4.
+that catches an issue gone stale against shipped code and `select_issues_preflight.py`'s three
+states, the per-part and per-bundle-member rule behind it, why a probe's scope is quoted verbatim
+rather than summarised, and the two-axis dispatch order `select_issues_rank.py` computes -- author
+before priority, with `could-not-rank` as a real answer that must never render as rank 4.
 
 ## The defect this class of tool keeps having
 

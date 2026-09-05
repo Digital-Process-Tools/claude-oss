@@ -1152,7 +1152,7 @@ def main(argv=None):
         metavar="ISSUE",
         help="the lane-bundling sweep (#851): given this lane's OWN issue "
         "number and its claimed --lane set, read an open board handed in as "
-        "JSON on stdin (the dispatch_rank.py idiom -- this call never "
+        "JSON on stdin (the select_issues_rank.py idiom -- this call never "
         "invokes gh itself) and report every OTHER open issue whose title "
         "or body names a path landing inside the claimed set, in three "
         "states: candidates / none / could-not-tell. Requires at least one "
@@ -1293,7 +1293,7 @@ def main(argv=None):
 
     if args.suggest_companions is not None:
         # JSON is UTF-8 by spec (RFC 8259) -- the identical reasoning
-        # dispatch_rank.py's own `main` gives for the same reconfigure, kept
+        # select_issues_rank.py's own former `main` gave for the same reconfigure, kept
         # local rather than imported for the same reason lane_setup.py's own
         # `_one_line` stays local beside release_delta.py's: this is a setup
         # read, not that module, and neither should have to change because
@@ -1307,7 +1307,7 @@ def main(argv=None):
         # exiting 1 with none of this module's own states. Check for `None`
         # first and answer `COULD NOT READ`, the same class #405 and #846
         # already fixed in `review_return.py`, `tree_snapshot.py`,
-        # `dispatch_rank.py`, `statusline.py` and `batch_hint.py`.
+        # `select_issues_rank.py`, `statusline.py` and `batch_hint.py`.
         if sys.stdin is None:
             print(
                 "COULD NOT READ: stdin is not JSON (no readable stdin: "

@@ -115,7 +115,7 @@ def suggest_companions(repo, own_issue, claimed_files, board):
 
     `board` is `{"capped": bool, "cap_detail": str, "issues": [{"number": N,
     "title": ..., "body": ...}, ...]}` -- the shape `main` reads off stdin as
-    JSON, the identical separation of concerns `dispatch_rank.py` already
+    JSON, the identical separation of concerns `select_issues_rank.py` already
     uses for the same reason: this script does not call `gh` itself, so a
     probe never depends on network access or forge credentials, and the
     caller (a tick, or a human) controls exactly what population was read.

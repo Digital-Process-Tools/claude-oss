@@ -5,8 +5,8 @@
 *claim before you spawn* and give the call: `gh issue edit <N> --add-assignee
 @me`. `skills/manager/phases/handback.md` gives the release half. All three are
 prose, and they are the only dispatch-time judgement in this loop with no
-script behind it -- `lane_setup.py` computes disjointness, `dispatch_rank.py`
-the order, `preflight_check.py` staleness, and each exists because prose
+script behind it -- `lane_setup.py` computes disjointness, `select_issues_rank.py`
+the order, `select_issues_preflight.py` staleness, and each exists because prose
 stating three states does not produce three states.
 
 ## The state this exists for

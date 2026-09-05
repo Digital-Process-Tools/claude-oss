@@ -285,7 +285,7 @@ claimable candidates out, three states (`candidates` / `none-available` / `could
 last never rendering as the second) and a per-issue disposition (`eligible` / `assigned` /
 `assignee-unreadable` / `stale` / `unrankable` / `lane-collision`). It does not replace `--claim`
 above — reading who is claimable and writing a claim stay separate calls, the same separation
-`issue_claim.py` itself already makes between `--read` and `--claim` — and it does not invent a
+`select_issues_claim_read.py` itself already makes between its own `read` and `claim` modes — and it does not invent a
 preflight pattern or a lane pattern for an issue that named neither (#267): those stay
 caller-supplied input, exactly as they are for the scripts it composes.
 
@@ -328,7 +328,7 @@ this" — never "nobody wants it" and never "the maintainer is willing to have i
 made off the tracker — in a session handoff, from memory — is structurally invisible to a sub-manager
 spawned fresh into the repository with nothing (#695): it can only read what is on the tracker.
 `labels.reserved` in `.oss.json` is the fix, the same opt-in shape `labels.filed_by_loop` already is
-(#762) — derivable from the tracker by anyone rather than recalled — and `dispatch_rank.reserved`
+(#762) — derivable from the tracker by anyone rather than recalled — and `select_issues_rank.reserved`
 reads it back, printing `[RESERVED]` beside every issue that carries it when ranking the board. A
 repository that has not declared a spelling reads every issue as unreserved, never as `could-not-tell`
 — there is nothing ambiguous about a label field with no candidate spelling to look for.
@@ -348,7 +348,7 @@ spawns, a full suite run — so three issues in one lane cost 16% less per issue
 and four or more is a cliff at 141 median turns and 68% worse per issue. The number was already
 right and the default was wrong: the loop picked one issue and then went looking for companions, so
 most lanes ended up carrying one. Fill to three. **Cap at three, never four**, and
-`dispatch_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
+`select_issues_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
 spawn the cost is already committed.
 
 **Run the companion search. It is a separate call from the conflict check, pointed the other way.**
@@ -682,7 +682,7 @@ what goes into a lane, the other what comes back out of it.
   brief that wrote *"a pre-flight returned not-matched — nothing does this today"* about a probe
   scoped to one file (`scripts/doctor.py`) sent a lane to build a second mechanism beside one that
   already existed (`tests/test_shipped_op_spellings.py`), because the sentence carried no scope for
-  the lane to catch. `preflight_check.py`'s receipt names `roots`, the paths actually searched, on
+  the lane to catch. `select_issues_preflight.py`'s receipt names `roots`, the paths actually searched, on
   every state including `could-not-search` — paste the whole line, `not-matched over 1 file
   (scripts/doctor.py)`, never a paraphrase of it. This is not a demand to sweep the whole tree on
   every pre-flight; a narrow probe is often the right probe. The defect is a narrow probe's answer
@@ -719,7 +719,7 @@ what goes into a lane, the other what comes back out of it.
   the same day — so a maintainer's ask sat behind the loop's own backlog, and the two maintainers no
   longer knew what the tool was doing.
 
-  **Rank 1 is prose, not a row `dispatch_rank.rank()` ever returns** — nothing here can read an
+  **Rank 1 is prose, not a row `select_issues_rank.rank()` ever returns** — nothing here can read an
   issue against the eleven-row findings table; that classification is a judgment call made when a
   finding is written up. Check the blocking-class exception before consulting the computed table,
   the way the old six-row table's rank 2 encoded it: a blocking defect must not lose to any author's

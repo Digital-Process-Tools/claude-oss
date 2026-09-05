@@ -103,8 +103,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # rewrites (dispatch_rank.py/issue_claim.py/preflight_check.py/
     # fleet_label.py folded into select_issues.py/lane_setup.py) grew this by
     # 367 B. Budget unchanged; comfortably under it.
+    # Re-baselined again for #1069's own self-review round: 45046 B became
+    # 45059 B after two more bare-mention fixes an auditor spawn found
+    # (`preflight_check.py`/`dispatch_rank.py` with no `scripts/` prefix).
+    # Budget unchanged.
     SPINE: (
-        45046,
+        45059,
         46900,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -188,13 +192,24 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # after two small precision fixes to the new subsection's cross-reference
     # wording (radar's board-member row is established at tick-order.md's
     # step 4, not inside "What ends a tick" itself). Budget unchanged.
+    # Re-baselined for #1069: 58392 B became 58947 B -- the six claim/label/
+    # rank/preflight call-site rewrites (the family collapsed to two entry
+    # points, #1069) grew this file by 555 B. Budget unchanged; comfortably
+    # under it. Re-baselined again in the same lane's own self-review round:
+    # 58947 B became 58993 B after four more bare-mention fixes an auditor
+    # spawn found (`issue_claim.py`/`dispatch_rank.py`/`preflight_check.py`
+    # with no `scripts/` prefix, invisible to the prose guard's own Tier 1
+    # regex). Budget unchanged.
     "skills/manager/phases/dispatch.md": (
-        58947,
+        58993,
         64200,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
+    # Re-baselined for #1069: 19369 B became 19598 B -- the release call
+    # (issue_claim.py --release folded into lane_setup.py --release, the
+    # mirror of --claim) grew by 229 B. Budget unchanged; comfortably under it.
     "skills/manager/phases/handback.md": (
         19598,
         20700,
