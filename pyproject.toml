@@ -29,6 +29,35 @@
 name = "claude-oss"
 requires-python = ">=3.9"
 
+# #635 -- 250 tracked .py files had no linter anywhere, write-time or CI.
+#
+# The ruleset is small and deliberate, picked by hand rather than by adopting
+# ruff's defaults: measured against this tree, `ruff check` with no `--select`
+# (ruff's own default set) reports 2863 findings, most of them `UP*` -- style
+# rules that assume a newer interpreter than the `requires-python` floor above
+# and would flag deliberate 3.9-compatibility decisions (`.format()` over an
+# f-string, no `X | Y` annotations) as errors. Selected instead are five rules
+# with teeth and nothing to do with style: F401 (unused import), F841 (unused
+# local), E722 (bare `except:`), B006 (mutable default argument), A001
+# (parameter/variable shadows a builtin). `UP*` and everything else stay off.
+#
+# `target-version` matches `requires-python` above rather than being guessed
+# independently -- a second copy of the floor that could drift from the first.
+#
+# No count-to-zero policy: measured at #635, this selection reports 95
+# findings spread across 51 files, none of them inside that issue's own
+# claimed scope. `scripts/ruff_ratchet.py` freezes that count as a CI-leg
+# ratchet instead -- see its own docstring for why fixing 51 unrelated files
+# in one lane was declined, and .supertool.json for the write-time half
+# (`validators.ruff`), which fires per-file on every write/edit and never
+# blocks -- a lint finding is not a broken file, matching this repo's own
+# `markdownlint`/`shellcheck` convention of report-don't-revert.
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["F401", "F841", "E722", "B006", "A001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # `must_assert_on(platform)` -- #430. A promise, on the test itself, that it

@@ -20,6 +20,12 @@
 #                      tests/test_workflow_dependencies.py).
 #   pyyaml         -- tests/test_shell_leg_budget_303.py and tests/test_python_floor_410.py
 #                      parse a workflow file as real YAML rather than as text.
+#   ruff           -- tests/test_ruff_ratchet_635.py exercises scripts/ruff_ratchet.py
+#                      against real `ruff` output, and the module's own `pytestmark`
+#                      declines every test in the file when `ruff` is not on PATH -- so
+#                      without this, the whole file passes by skipping rather than by
+#                      running (#635). Also lets a contributor reproduce the `lint` CI
+#                      leg locally with `python3 scripts/ruff_ratchet.py`.
 #
 # pytest-xdist is deliberately NOT here. It is optional worker-sizing guidance
 # (scripts/doctor.py's worker_sizing / _xdist_installed), never required by addopts or
@@ -34,3 +40,4 @@ pytest
 pytest-cov
 markdown-it-py
 pyyaml
+ruff
