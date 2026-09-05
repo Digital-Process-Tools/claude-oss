@@ -10,8 +10,9 @@ lane whether or not it touches one of these) and not "guess from the issue text"
 (that is what #431's brief already did, wrong). It is a fact about the repository,
 re-derived rather than pasted, the same rule this whole module exists to serve.
 
-`CROSS_CUTTING_GUARDS` enumerates the class -- five guard tests, keyed to *what a
-diff does* rather than to a module it renames -- and `guards_for_files` maps a
+`CROSS_CUTTING_GUARDS` enumerates the class -- six guard tests as of #1094 (five at
+this issue's own writing), keyed to *what a diff does* rather than to a module it
+renames -- and `guards_for_files` maps a
 lane's resolved files (`resolve_lane`'s own canonical form) onto the guard tests a
 narrowed run must include. Every "must fire" case here has a "must not fire"
 sibling in the same fixture: a lane touching `agents/developer.md` must trip the
@@ -34,15 +35,17 @@ import spawn_guard  # noqa: E402
 # --- sizing: enumerate the class rather than trust the issue's own list ----------
 
 
-def test_known_guards_is_five_distinct_test_files():
-    """#432 asks the sizing question before choosing a mechanism. Five, as of this
-    writing, matching the issue's own list -- and pinned as a count rather than as
-    a hardcoded list of names, so a sixth guard added later fails this assertion
-    instead of silently going unenumerated.
+def test_known_guards_is_six_distinct_test_files():
+    """#432 asks the sizing question before choosing a mechanism. Five at #432's
+    own writing, matching that issue's own list; six as of #1094, which added
+    `tests/test_command_references.py` for `skills/manager/SKILL.md` and
+    `skills/manager/phases/*.md` -- pinned as a count rather than as a hardcoded
+    list of names, so a seventh guard added later fails this assertion instead
+    of silently going unenumerated.
     """
     known = lane_setup.known_guards()
     test_paths = [entry["test"] for entry in known]
-    assert len(test_paths) == 5
+    assert len(test_paths) == 6
     assert test_paths == sorted(set(test_paths)), (
         "guard list must be deduplicated and sorted"
     )

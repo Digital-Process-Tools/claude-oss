@@ -1169,6 +1169,27 @@ CROSS_CUTTING_GUARDS = (
         "tests/test_python_floor_410.py",
         "the Python floor's CI matrix lowest entry",
     ),
+    # #1094: `tests/test_command_references.py`'s own `_enumerates_both_sides_of_
+    # the_boundary` check reads the *concatenated* text of `SKILL.md` plus every
+    # `skills/manager/phases/*.md` file, never one of them alone -- so `SKILL.md`
+    # can be byte-identical between two branches while a phases file alone trips
+    # it (observed live: PR #1091 added a phrase to `phases/merge.md` and opened
+    # 7 of 18 CI legs red on this exact check, with none of the files a narrowed
+    # local run would have named). A guard keyed to *what the check reads*, the
+    # same #432 argument this whole table already makes, rather than to which
+    # single file a diff happened to touch.
+    (
+        "skills/manager/SKILL.md",
+        "tests/test_command_references.py",
+        "SKILL.md + every phases/*.md file, concatenated, is what the "
+        "boundary-enumeration check actually reads",
+    ),
+    (
+        "skills/manager/phases/",
+        "tests/test_command_references.py",
+        "SKILL.md + every phases/*.md file, concatenated, is what the "
+        "boundary-enumeration check actually reads",
+    ),
 )
 
 
