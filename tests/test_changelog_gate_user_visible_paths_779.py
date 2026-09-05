@@ -151,35 +151,61 @@ def test_a_well_formed_brace_interval_still_validates():
 
 @pytest.mark.parametrize("pattern", [
     "a{99999}",   # #1058: well beyond either known grep-family limit
-    "a{1000}",
-    "a{256}",     # #1058: one past BSD grep's measured RE_DUP_MAX (255)
-    "a{1,256}",   # the upper bound of a range can carry the same defect
+    "a{40000}",
+    "a{32768}",   # #1058 (revised, self-review): one past GNU's documented
+                  # RE_DUP_MAX (32767) -- the limit that actually binds,
+                  # since the generated changelog-gate workflow always runs
+                  # on `ubuntu-latest` (GNU grep), confirmed in
+                  # `scripts/scaffold.py`'s own template and this repo's own
+                  # generated `.github/workflows/changelog.yml`, never on
+                  # BSD grep. Found by the auditor spawn in self-review: the
+                  # original 255 (BSD's measured RE_DUP_MAX) refused values
+                  # the actual deployed runner accepts fine.
+    "a{1,32768}",  # the upper bound of a range can carry the same defect
 ])
 def test_a_brace_interval_magnitude_above_the_grep_limit_is_refused(pattern):
     """#1058: `_brace_interval_problem` validated the *arrangement* of a
     `{m,n}` interval but never its *magnitude*. `a{99999}` (and any bound
-    above 255) was ACCEPTED, but `grep -Eq 'a{99999}'` exits 2 (invalid
-    repetition count) on both BSD grep (macOS, RE_DUP_MAX-limited to 255,
-    measured directly: `grep -Eq 'a{255}'` exits 1, ordinary no-match;
-    `grep -Eq 'a{256}'` exits 2, SYNTAX ERROR) and GNU grep (documented
-    limit 32767) -- so an accepted pattern silently and permanently
-    disables the generated changelog gate, the same failure #1015 closed
-    at the arrangement boundary, reopened here at the magnitude boundary.
-    The refusal must name the limit that was exceeded."""
+    above 32767) was ACCEPTED, but `grep -Eq` on GNU grep -- the grep the
+    generated changelog-gate workflow always runs, on `ubuntu-latest` --
+    exits 2 (invalid repetition count) once a bound exceeds its documented
+    `RE_DUP_MAX` of 32767, so an accepted pattern silently and permanently
+    disables the gate, the same failure #1015 closed at the arrangement
+    boundary, reopened here at the magnitude boundary. The refusal must
+    name the limit that was exceeded."""
     problem = oss_config.user_visible_paths_problem([pattern])
     assert problem is not None, pattern
-    assert "255" in problem, problem
+    assert "32767" in problem, problem
 
 
 @pytest.mark.parametrize("pattern", [
-    "a{255}",     # #1058: at BSD grep's measured RE_DUP_MAX -- must still pass
-    "a{1,255}",
-    "a{200}",
+    "a{32767}",   # #1058: at GNU grep's documented RE_DUP_MAX -- must still pass
+    "a{1,32767}",
+    "a{5000}",    # #1058 (revised, self-review): within GNU's limit even
+                  # though it is well past BSD's much lower one -- the
+                  # deployed runner is always GNU grep, so this must not be
+                  # refused just because a different grep family would
+                  # reject it.
+    "a{99999999999999}",  # #1058 (revised, self-review): a value so large
+                           # `int()` still parses it but it dwarfs either
+                           # limit -- not a magnitude-overflow crash, just
+                           # an ordinary refusal.
 ])
 def test_a_brace_interval_magnitude_at_or_below_the_grep_limit_still_validates(pattern):
-    """Positive control for the pair above: a magnitude within the limit
-    (measured directly against BSD grep: `a{255}` exits 1, an ordinary
-    no-match, not a syntax error) must still be accepted."""
+    """Positive control for the pair above: a magnitude within GNU grep's
+    documented `RE_DUP_MAX` (32767) -- the grep that actually runs the
+    generated guard -- must still be accepted, even when it exceeds BSD
+    grep's much lower, but practically irrelevant, limit."""
+    if pattern == "a{99999999999999}":
+        # Found in self-review: Python's own `re.compile` raises
+        # `OverflowError`, not `re.error`, once a repetition count exceeds
+        # CPython's internal `MAXREPEAT` -- a crash this validator must
+        # turn into an ordinary refusal rather than propagate, well before
+        # `_brace_interval_problem`'s own magnitude check is ever reached.
+        problem = oss_config.user_visible_paths_problem([pattern])
+        assert problem is not None, pattern
+        assert "valid regular expression" in problem, problem
+        return
     assert oss_config.user_visible_paths_problem([pattern]) is None, pattern
 
 
@@ -212,6 +238,58 @@ def test_a_genuine_interval_outside_any_bracket_is_still_correctly_validated():
     problem = oss_config.user_visible_paths_problem(["[abc]{"])
     assert problem is not None
     assert "unbalanced" in problem
+
+
+@pytest.mark.parametrize("pattern", [
+    "[[:alpha:]{]",         # a `{` still logically inside the bracket,
+                             # after a named POSIX character class
+    "[[:digit:]{99999}]",   # a would-be over-limit magnitude, but it too
+                             # sits inside the bracket and is just literal
+                             # characters to `grep -E`, not an interval
+    "[a[:digit:]{]",
+    "[[.hyphen.]{]",        # a collating-symbol sub-expression
+    "[[=a=]{]",             # an equivalence-class sub-expression
+])
+def test_a_brace_after_a_posix_bracket_subexpression_is_not_an_interval_opener(pattern):
+    """Found by both self-review spawns (Explore and oss:auditor):
+    #1059's bracket-expression skip closed the bracket at the *first* `]`
+    it found, which is wrong once the bracket contains a POSIX named
+    character class (`[:alpha:]`), collating symbol (`[.sym.]`) or
+    equivalence class (`[=eq=]`) sub-expression -- each of those carries
+    its own `]` before the outer bracket's real close. Closing early left
+    the remaining bracket content (which may contain a literal `{`, digits
+    or `}` with no interval meaning at all) scanned by the top-level loop
+    as though it were outside any bracket, misreading it as a genuine
+    interval opener -- the exact defect class #1059 was filed to close,
+    recurring for a bracket sub-grammar the original fix's scan never
+    considered. Measured directly: `grep -Eq '[[:alpha:]{]'` and
+    `grep -Eq '[[:digit:]{99999}]'` both exit 0 (an ordinary ERE bracket
+    expression, ordinary no-match on this input), not a syntax error."""
+    assert oss_config.user_visible_paths_problem([pattern]) is None, pattern
+
+
+def test_a_genuine_interval_after_a_posix_bracket_subexpression_still_validates():
+    """Positive control for the pair above: once the bracket sub-expression
+    genuinely closes, a real interval bound sitting after it must still be
+    scanned and validated exactly as before."""
+    assert oss_config.user_visible_paths_problem(["[[:alpha:]]{1,3}"]) is None
+    problem = oss_config.user_visible_paths_problem(["[[:alpha:]]{99999}"])
+    assert problem is not None
+    assert "32767" in problem
+
+
+def test_a_repetition_count_beyond_pythons_own_limit_is_refused_not_crashed():
+    """Found in self-review (pre-existing, not introduced by #1058/#1059):
+    `re.compile` raises `OverflowError`, not `re.error`, once a `{...}`
+    repetition count exceeds CPython's own internal `MAXREPEAT`
+    (2**32 - 1) -- and the validator used to catch only `re.error`, so a
+    value this large propagated an unhandled exception out of
+    `user_visible_paths_problem` instead of the stated refusal every other
+    malformed value gets. Confirmed against the pre-fix function: it
+    raises `OverflowError: the repetition number is too large`."""
+    problem = oss_config.user_visible_paths_problem(["a{99999999999999}"])
+    assert problem is not None
+    assert "valid regular expression" in problem
 
 
 @pytest.mark.parametrize("byte", ["\r", "\u2028", "\x0b"])
