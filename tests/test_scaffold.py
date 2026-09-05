@@ -1437,6 +1437,7 @@ _PLAN_LABELS = {
     "create",
     "replace",
     "remove",
+    "keep",
     "declined",
     "present",
     "layer",
@@ -1452,6 +1453,7 @@ _APPLY_LABELS = {
     "ours",
     "declined",
     "removed",
+    "kept",
     "replaced",
     "layer",
     "tests",
@@ -1574,6 +1576,43 @@ def test_every_rule_plan_row_is_one_line_for_a_consumer_that_does_not_print(tmp_
     for row in rows:
         assert len(row["path"].splitlines()) == 1, row
         assert len(row["reason"].splitlines()) == 1, row
+
+
+def test_apply_does_not_delete_a_foreign_rule_layer_file(tmp_path, monkeypatch):
+    """#1042: `_rule_layer_shape()` already classifies `01-paths.tsv` as a file this
+    plugin has never shipped -- another writer's, in `claude-jit-context`'s own case --
+    and the prior version printed exactly that warning and then deleted the file
+    anyway. `--apply` must leave it on disk, and the receipt must say `kept`, not
+    `removed`.
+    """
+    directory = _rule_layer_file_named(tmp_path, "01-paths.tsv")
+    output = _receipt(tmp_path, monkeypatch, "--apply")
+
+    assert (directory / "01-paths.tsv").exists()
+    assert any(
+        line.startswith("kept") and "01-paths.tsv" in line
+        for line in output.splitlines()
+    ), output
+    assert not any(
+        line.startswith("removed") and "01-paths.tsv" in line
+        for line in output.splitlines()
+    ), output
+
+
+def test_apply_still_removes_a_stale_owned_rule_layer_file(tmp_path, monkeypatch):
+    """The positive control for the test above: a file whose name IS a shape this
+    plugin could have shipped (a `.md` rule nobody ships any more) is still deleted by
+    `--apply`, and the receipt still says `removed` -- so the fix above is "leave
+    foreign files alone", not "stop deleting anything ever".
+    """
+    directory = _rule_layer_file_named(tmp_path, "stale-rule.md")
+    output = _receipt(tmp_path, monkeypatch, "--apply")
+
+    assert not (directory / "stale-rule.md").exists()
+    assert any(
+        line.startswith("removed") and "stale-rule.md" in line
+        for line in output.splitlines()
+    ), output
 
 
 # ------------------------------------------- collision with an existing changelog gate

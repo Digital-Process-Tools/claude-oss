@@ -17,11 +17,23 @@ the index is a no-op rather than a diff.
 Python 3.9 compatible.
 """
 
-import shutil
 from pathlib import Path
 
 LAYER = "01-oss"
 INDEX = "00-index.tsv"
+
+
+def owned_shape(name):
+    """True if `name` is a shape `install()` could have written, any version.
+
+    Only two shapes, and they have not changed across a version of this plugin: a `.md`
+    rule file, or the layer's own index filename. Anything else present in the layer was
+    written by something other than this plugin's own `install()` -- see #755, #1042.
+    `scaffold._rule_layer_shape()` used to carry this same check as a private copy for
+    its own preview; it now delegates here so the preview and the write agree on the one
+    fact both are stating.
+    """
+    return name.endswith(".md") or name == INDEX
 
 
 class RulesError(Exception):
@@ -868,8 +880,11 @@ def index_rows(dimension, rules):
 def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
-    The layer is removed first: a rule we stopped shipping would otherwise survive an
-    update and keep firing with nobody maintaining it.
+    Every file the layer currently holds in a shape `install()` could have written --
+    a `.md` rule or the index -- is removed first: a rule we stopped shipping would
+    otherwise survive an update and keep firing with nobody maintaining it. A file in
+    neither shape is not ours to begin with, however it got there, and is left alone
+    (#1042) -- see `owned_shape()`.
 
     The rules are rendered against `repo_root`, not copied from a constant, so the
     changelog rule names the assembler where **this** repository keeps it. `fragments_dir`
@@ -893,8 +908,10 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.exists():
-            shutil.rmtree(layer)
-        layer.mkdir(parents=True)
+            for child in layer.iterdir():
+                if child.is_file() and owned_shape(child.name):
+                    child.unlink()
+        layer.mkdir(parents=True, exist_ok=True)
 
         for name in sorted(layer_rules):
             target = layer / name

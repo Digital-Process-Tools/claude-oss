@@ -2102,20 +2102,22 @@ _RULE_REMOVE_REASON = (
     "in the {} layer today and not shipped by this version; the layer is deleted before "
     "it is rewritten, so this file would go with it"
 )
-#: #755. `install()` writes exactly two shapes into a dimension of this layer: one
-#: `.md` rule file per rule, and one file named `oss_rules.INDEX` holding the index. A
-#: present file matching neither shape is not something a PAST version of this plugin
-#: could have shipped either -- the shape has not changed across a version, only the
-#: set of names in it -- so deleting it is not a retirement, it is taking something that
-#: belongs to a different writer. `Digital-Process-Tools/claude-jit-context`'s own
-#: `rebuild-tsv.sh` writing `01-paths.tsv` into a dimension this scaffold owns is the
-#: observed instance: two writers alternating on one file, silently, because nothing
-#: said the deletion would not hold.
-_RULE_REMOVE_FOREIGN_REASON = (
+#: #755, #1042. `install()` writes exactly two shapes into a dimension of this layer:
+#: one `.md` rule file per rule, and one file named `oss_rules.INDEX` holding the
+#: index. A present file matching neither shape is not something a PAST version of
+#: this plugin could have shipped either -- the shape has not changed across a
+#: version, only the set of names in it -- so it is not a retirement, it is another
+#: writer's file, and `install()` now leaves it alone rather than deleting it.
+#: `Digital-Process-Tools/claude-jit-context`'s own `rebuild-tsv.sh` writing
+#: `01-paths.tsv` into a dimension this scaffold owns is the observed instance: two
+#: writers alternating on one file, and this is what keeps it silent-safe rather than
+#: silent-broken -- #1042 found the prior version print this exact warning and then
+#: delete the file anyway.
+_RULE_KEEP_FOREIGN_REASON = (
     "in the {} layer today, but this plugin has never shipped a file by this name -- "
     "install() writes one .md rule file per rule and one file named {!r} per "
-    "dimension, nothing else, in every version. If something else in this repo "
-    "generates this file, deleting it now only lasts until that generator runs again"
+    "dimension, nothing else, in every version. It is left as is: if something else "
+    "in this repo generates this file, that generator still owns it"
 )
 
 
@@ -2125,8 +2127,14 @@ def _rule_layer_shape(name):
     Only two shapes, and they have not changed across a version of this plugin: a `.md`
     rule file, or the layer's own index filename. Anything else present in the layer
     was written by something other than this plugin's own `install()` -- see #755.
+
+    Delegates to `oss_rules.owned_shape()` rather than repeating the check (#1042):
+    that module's own `install()` now consults the identical rule to decide what it may
+    delete, and two copies of one fact is exactly the shape this repository's own
+    CLAUDE.md forbids -- a preview and a write that could each answer differently for
+    the same file.
     """
-    return name.endswith(".md") or name == oss_rules.INDEX
+    return oss_rules.owned_shape(name)
 
 
 def plan_rules(repo_root, config, force_owned=False, entries=None):
@@ -2150,11 +2158,14 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
         that touches no rules.
     ``entries``
         ``{"path", "action", "reason", "body"}``. ``replace`` for every file the run
-        would write, ``remove`` for every file in the layer today that it would not.
-        One row per file rather than one row for the layer, deliberately: that is the
-        vocabulary the rest of the plan already uses, and the layer's file count is not
-        stable across plugin versions -- which is an argument for showing it, not
-        against. ``body`` is what would be written, and is ``None`` on a ``remove``.
+        would write, ``remove`` for every file in the layer today, in a shape this
+        plugin could have shipped, that it would not, ``keep`` for a file in the
+        layer today that this plugin has never shipped by that name and so is not
+        this run's to delete (#1042). One row per file rather than one row for the
+        layer, deliberately: that is the vocabulary the rest of the plan already
+        uses, and the layer's file count is not stable across plugin versions --
+        which is an argument for showing it, not against. ``body`` is ``None`` on a
+        ``remove`` or a ``keep``; only ``replace`` writes anything.
 
         **Every ``path`` here is a single line, including the ``remove`` rows built
         from filenames in the managed repository** (#223). Callers print these rows
@@ -2319,11 +2330,21 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
                 #
                 # Flattened, not dropped and not refused, for `_one_line`'s own reason:
                 # the name is the evidence a maintainer needs in order to judge a
-                # deletion. What it must not have is a line of its own.
+                # deletion (or, for a foreign file, a "kept" decision -- #1042). What
+                # it must not have is a line of its own.
                 "path": _one_line(path),
-                "action": "remove",
+                # "remove" only for a stale shape this plugin owns -- the layer is
+                # ours and a rule nobody ships any more must not survive. "keep" for
+                # everything else: `_rule_layer_shape()` already computed that the file
+                # is another writer's, and #1042 is exactly the prior version
+                # computing that and deleting the file anyway.
+                "action": (
+                    "keep"
+                    if not _rule_layer_shape(path.rsplit("/", 1)[-1])
+                    else "remove"
+                ),
                 "reason": (
-                    _RULE_REMOVE_FOREIGN_REASON.format(oss_rules.LAYER, oss_rules.INDEX)
+                    _RULE_KEEP_FOREIGN_REASON.format(oss_rules.LAYER, oss_rules.INDEX)
                     if not _rule_layer_shape(path.rsplit("/", 1)[-1])
                     else _RULE_REMOVE_REASON.format(oss_rules.LAYER)
                 ),
@@ -2377,11 +2398,20 @@ def rules_summary_clause(rules_plan):
         return ", rule layer not previewed (see the 'layer' lines above)"
     replaced = sum(1 for entry in rules_plan["entries"] if entry["action"] == "replace")
     removed = sum(1 for entry in rules_plan["entries"] if entry["action"] == "remove")
+    kept = sum(1 for entry in rules_plan["entries"] if entry["action"] == "keep")
     clause = ", {} rule file(s) replaced in the {} layer".format(
         replaced, oss_rules.LAYER
     )
     if removed:
         clause += " and {} removed from it".format(removed)
+    if kept:
+        # #1042: a foreign file in the layer is reported, never silently swept up
+        # with the files this plugin actually owns.
+        clause += (
+            " ({} foreign file(s) left as is -- see the 'layer' lines above)".format(
+                kept
+            )
+        )
     if rules_plan["unreadable"]:
         clause += (
             " (plus an unknown number under {} layer director(ies) that could not be "
@@ -3869,6 +3899,11 @@ def _main(argv=None):
     for entry in rules_plan["entries"]:
         if entry["action"] == "remove":
             print("removed  {}  ({})".format(entry["path"], entry["reason"]))
+        elif entry["action"] == "keep":
+            # #1042: this is what the printed warning above used to precede a
+            # deletion of. install() no longer touches this file, so the receipt
+            # says so rather than promising a removal that did not happen.
+            print("kept     {}  ({})".format(entry["path"], entry["reason"]))
     for line in rules_notes(rules_plan, include_basis=False):
         print("layer    {}".format(line))
 
