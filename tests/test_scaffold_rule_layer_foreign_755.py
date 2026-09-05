@@ -1,31 +1,38 @@
 """#755: a foreign file in the 01-oss layer is a different claim than a retired one.
 
-`plan_rules()` deletes the whole `01-oss` layer before rewriting it (`install()`'s own
-contract), so a `remove` row fires on ANY file present in the layer today that this
-version does not ship -- including a file this plugin has never written and never will,
-because something else in the managed repo generates it into the same directory.
+`plan_rules()` originally deleted the whole `01-oss` layer before rewriting it, so a
+`remove` row fired on ANY file present in the layer today that this version does not
+ship -- including a file this plugin has never written and never will, because
+something else in the managed repo generates it into the same directory.
 
 Observed in `Digital-Process-Tools/claude-jit-context`: that repo's own
 `scripts/rebuild-tsv.sh` writes `01-paths.tsv` into `vocabulary/01-oss/`, a directory the
-scaffold owns. `--apply` deletes it, the repo's own tooling writes it straight back, and
-the changelog fragment from the run that "removed" it claims a deletion that never held.
+scaffold owns. `--apply` deleted it, the repo's own tooling wrote it straight back, and
+the changelog fragment from the run that "removed" it claimed a deletion that never held.
 
-The fix is report-only (the issue's own first suggested direction, weighed as safer than
-scoping the delete): keep deleting everything in the layer -- narrowing what gets deleted
-is the second, riskier direction the issue offers and is not taken here -- but say, per
-row, which of two different claims is being made:
+#755's own fix here was report-only, on the reasoning that scoping the delete was the
+riskier of the two directions the issue offered: keep deleting everything in the layer,
+but say, per row, which of two different claims is being made (`retired` vs `foreign`,
+below). **#1042 revisited that call and took the direction #755 declined**: a scaffold
+that prints "this file belongs to a different writer" and deletes it anyway is not a
+report, it is a warning that does not hold, and #1042 found exactly that in the wild.
+`install()` no longer deletes a foreign-named file at all -- see `oss_rules.owned_shape()`
+and `scaffold._rule_layer_shape()`, which now delegates to it. The row this test file
+still calls `foreign` therefore reports `action == "keep"`, not `"remove"`: the claim
+being distinguished is no longer "which reason is this deletion for" but "is this row a
+deletion at all".
 
 * **retired** -- the name is one this plugin's `install()` could have written (a `.md`
   rule file, or the layer's own index filename) and a previous version did; deleting it
-  is exactly the ownership guarantee the layer exists for.
+  is exactly the ownership guarantee the layer exists for. `action == "remove"`.
 * **foreign** -- the name is not a shape `install()` has ever produced or ever will (see
   `oss_rules.install()`: it writes one `.md` file per rule and one file named
-  `oss_rules.INDEX` per dimension, nothing else). Deleting it holds only until whatever
-  wrote it runs again, so the reason has to say so rather than reading like a retirement.
+  `oss_rules.INDEX` per dimension, nothing else). `install()` leaves it alone, and
+  `action == "keep"`.
 
 `could-not-list-directory` is the third state the issue asks to stay separable from
 these two, and it already exists (`plan_rules()["unreadable"]`) -- this is only the split
-of the `remove` rows into the other two.
+of the layer's non-`replace` rows into the other two.
 """
 
 import sys
@@ -90,8 +97,9 @@ def test_a_file_no_plugin_version_could_have_written_is_reported_as_foreign(tmp_
     row = _row(result["entries"], "vocabulary/01-oss/01-paths.tsv")
 
     # Must fire: a name outside anything install() has ever produced says so, rather
-    # than reading like an ordinary retirement.
-    assert row["action"] == "remove"
+    # than reading like an ordinary retirement -- and #1042 changed WHAT it says:
+    # not a deletion with a foreign-sounding reason, but no deletion at all.
+    assert row["action"] == "keep"
     assert "never" in row["reason"] and "shipped" in row["reason"], row
 
     # Positive control, same fixture: the plugin's own index filename in that same

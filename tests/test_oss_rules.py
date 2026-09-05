@@ -883,3 +883,74 @@ def test_the_gate_detail_cannot_break_out_of_its_code_span(tmp_path):
 
     assert "odd" in body, body
     assert "`odd`" not in body, body
+
+
+def test_install_preserves_a_foreign_file_in_the_layer(tmp_path):
+    """#1042: a file `install()` never shipped in any version is another writer's, not
+    ours to delete. `claude-jit-context`'s own `rebuild-tsv.sh` writes `01-paths.tsv`
+    into the `01-oss` vocabulary layer alongside the index this plugin writes; a
+    reinstall must leave it alone rather than sweeping it away with the rest of the
+    layer.
+    """
+    oss_rules.install(tmp_path)
+    layer = _layer(tmp_path, "vocabulary")
+    foreign = layer / "01-paths.tsv"
+    foreign.write_text("keyword\tfile\t\n", encoding="utf-8")
+
+    oss_rules.install(tmp_path)
+
+    assert foreign.exists()
+    assert foreign.read_text(encoding="utf-8") == "keyword\tfile\t\n"
+
+
+def test_reinstall_still_removes_a_stale_shape_we_own(tmp_path):
+    """The positive control for the foreign-file test above: a file whose name IS a
+    shape `install()` could have written (a `.md` rule) is still swept on reinstall,
+    same as `test_reinstall_replaces_our_layer_wholesale` already covers -- this one
+    just pins it against the new selective-removal path so the two never diverge.
+    """
+    oss_rules.install(tmp_path)
+    layer = _layer(tmp_path, "vocabulary")
+    stale = layer / "removed-in-a-later-version.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(tmp_path)
+
+    assert not stale.exists()
+
+
+def test_owned_shape_matches_only_md_and_index(tmp_path):
+    assert oss_rules.owned_shape("some-rule.md")
+    assert oss_rules.owned_shape(oss_rules.INDEX)
+    assert not oss_rules.owned_shape("01-paths.tsv")
+    assert not oss_rules.owned_shape("00-README.txt")
+
+
+def test_reinstall_removes_a_stale_owned_name_even_if_it_is_a_dangling_symlink(
+    tmp_path,
+):
+    """The selective-delete loop in `install()` swept only regular files at first
+    pass (#1042 self-review, `oss:auditor`): `Path.is_file()` is `False` for a
+    dangling symlink, so a broken symlink whose NAME matches an owned shape (a stale
+    `.md` rule someone linked in) used to survive a reinstall that the old
+    `shutil.rmtree()` would have swept without caring whether the link resolved.
+    """
+    layer = _layer(tmp_path, "paths")
+    layer.mkdir(parents=True, exist_ok=True)
+    oss_rules.install(tmp_path)
+    stale_link = layer / "stale-link.md"
+    try:
+        stale_link.symlink_to(layer / "nowhere.md")
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a symlink here (errno {}, {}): "
+            "untested here is whether a dangling symlink with an owned-shape name "
+            "survives a reinstall".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+    assert not (layer / "nowhere.md").exists()  # the fixture is genuinely dangling
+
+    oss_rules.install(tmp_path)
+
+    assert not stale_link.is_symlink() and not stale_link.exists()
