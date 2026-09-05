@@ -3629,7 +3629,10 @@ def test_a_table_under_a_heading_that_claims_nothing_is_clean():
 #: carried the same sentence, so fixing one would have reached half the callers.
 TICK_ENDING_DOCUMENTS = (
     (MANAGER_SKILL, r"loop mechanics"),
-    (REPO_ROOT / "commands" / "tick.md", r"what ends a tick"),
+    # #1037: "What ends a tick" moved out of commands/tick.md into its own
+    # phase file, read by a sub-manager rather than injected into the
+    # scheduler on every tick.
+    (REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md", r"what ends a tick"),
 )
 
 #: Each key is a way the ending can render as an absence. The naming and

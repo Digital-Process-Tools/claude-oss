@@ -163,7 +163,8 @@ DISPATCH_STATES = (DISPATCH_STATE_DISPATCHED, DISPATCH_STATE_RESUMED, DISPATCH_S
 # A dispatched lane's own fill (#852): how many issues it carried, and -- when that is
 # fewer than dispatch_rank.MAX_LANE -- why, from the same closed vocabulary
 # dispatch_rank.SHORT_REASONS declares and dispatch_rank.check_lane already enforces
-# for the dispatch decision itself. Recorded here so the rule commands/tick.md step 5
+# for the dispatch decision itself. Recorded here so the rule
+# skills/manager/phases/tick-order.md step 5
 # states in prose -- "a lane dispatched with fewer says why" -- has something that can
 # actually detect its own violation, rather than surviving only in free `--decision`
 # prose (#337's own failure, one field over). Same four states as `lanes` above, for
@@ -1305,7 +1306,7 @@ def lane_models(lanes, window, why=None):
         )
 
     # #880: a tick performs exactly one dispatch. The whole of a tick's lane mix is
-    # recorded in one call (commands/tick.md step 6), so a genuine re-dispatch of an
+    # recorded in one call (skills/manager/phases/tick-order.md step 6), so a genuine re-dispatch of an
     # issue this same tick already dispatched shows up here as the same issue number
     # appearing more than once with dispatch_state DISPATCHED -- `resumed` and
     # `agent-unreachable` are not fresh dispatches (a resume needs no new --lane entry
@@ -2393,7 +2394,7 @@ def plugin_identity_check(current, prior, current_route=None, prior_route=None):
 
     ``current_route``/``prior_route`` are each a short label for HOW that identity was
     obtained (e.g. ``"resolved-install"`` vs the version-pinned ``"pinned-root"`` --
-    see ``commands/tick.md`` step 1) -- or ``None`` when the caller does not track
+    see ``skills/manager/phases/tick-order.md`` step 1) -- or ``None`` when the caller does not track
     routes at all. A missing route is treated as its own value (#677's comment: two
     readings taken by different routes are not the same measurement, and that
     includes "nobody recorded a route" versus "this one was routed"), so a caller
@@ -2539,7 +2540,7 @@ def _plugin_root_snapshot_path(path):
 def record_plugin_root(path, root):
     """Snapshot `root` for later comparison in THIS SAME tick (#565).
 
-    Called once, early in a tick -- see `commands/tick.md` step 1. Overwrites
+    Called once, early in a tick -- see `skills/manager/phases/tick-order.md` step 1. Overwrites
     whatever snapshot (if any) was left over from an earlier, presumably
     incomplete tick; a snapshot is only ever meant to answer for the tick that
     wrote it.
@@ -3045,7 +3046,7 @@ def _main(argv=None):
         metavar="ROOT",
         help="snapshot this tick's own resolved ${CLAUDE_PLUGIN_ROOT} for later "
         "comparison, within THIS SAME tick (#565); call once, early -- see "
-        "commands/tick.md step 1. Pair with --check-plugin-root later in the "
+        "skills/manager/phases/tick-order.md step 1. Pair with --check-plugin-root later in the "
         "same tick",
     )
     group.add_argument(

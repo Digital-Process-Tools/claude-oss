@@ -28,7 +28,8 @@ from test_content_invariants import _collapse  # noqa: E402
 import tick_handback  # noqa: E402
 
 SUB_MANAGER_MD = REPO_ROOT / "agents" / "sub-manager.md"
-TICK_MD = REPO_ROOT / "commands" / "tick.md"
+# #1037: "What ends a tick" moved out of commands/tick.md into its own phase file.
+TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 #: The TICK-ENDS vocabulary, measured from `tick_handback.py`'s own
 #: _KNOWN_TICK_ENDS tuple rather than retyped -- the issue explicitly asks

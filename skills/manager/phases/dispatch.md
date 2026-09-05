@@ -244,15 +244,24 @@ whose claim state is unknown is this repository's own defect class, one layer up
 argument, including what a `claimed` row does *not* promise, is in the script's own docstring rather
 than here (#964).
 
-**`scripts/select_issues.py` composes the ranking, staleness and lane-collision checks above plus
-this claim read into one call (#970) — board in, ranked claimable candidates out, three states
-(`candidates` / `none-available` / `could-not-select`, the last never rendering as the second) and a
-per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` /
-`lane-collision`).** It does not replace `--claim` above — reading who is claimable and writing a
-claim stay separate calls, the same separation `issue_claim.py` itself already makes between
-`--read` and `--claim` — and it does not invent a preflight pattern or a lane pattern for an issue
-that named neither (#267): those stay caller-supplied input, exactly as they are for the scripts it
-composes.
+**Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself — this
+is the directive, not only a description of what the script does.** It composes the ranking,
+staleness and lane-collision checks above plus this claim read into one call, board in, ranked
+claimable candidates out, three states (`candidates` / `none-available` / `could-not-select`, the
+last never rendering as the second) and a per-issue disposition (`eligible` / `assigned` /
+`assignee-unreadable` / `stale` / `unrankable` / `lane-collision`). It does not replace `--claim`
+above — reading who is claimable and writing a claim stay separate calls, the same separation
+`issue_claim.py` itself already makes between `--read` and `--claim` — and it does not invent a
+preflight pattern or a lane pattern for an issue that named neither (#267): those stay
+caller-supplied input, exactly as they are for the scripts it composes.
+
+**Before #1036 this paragraph only described the script; nothing told a session to run it.**
+`commands/tick.md` step 5 named `dispatch_rank.py` and `lane_setup.py --claim` as the commands to
+run, by name, and a tick following that imperative literally got the four-scripts-joined-by-hand
+shape #970 exists to replace — with no refusal step, so a tick that found nothing and a tick whose
+claim read failed closed identically as `nothing left`. `skills/manager/phases/tick-order.md` step 5
+now names this script directly for the same reason (that content moved out of `commands/tick.md`
+itself for #1037, into the file a sub-manager's own steps live in).
 
 A contributor without write access cannot self-assign — GitHub restricts assignment to write or
 triage permission — so this mechanism claims for the maintainer's own loop only. What an outside

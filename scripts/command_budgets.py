@@ -42,7 +42,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # never against `baseline` -- a real gap #985's own review round found
     # and named as `misreports`, not a defect this commit's diff introduced).
     # Re-measured rather than left stale, with ~10% headroom restored.
-    "commands/tick.md": (52090, 57300),
+    # Re-baselined for #1037: steps 1-6 and "What ends a tick" moved out to
+    # `skills/manager/phases/tick-order.md` (see skill_phases.py), because
+    # only a sub-manager's own context ever executed them -- 52,090 B fell to
+    # 16,294 B. The budget comes down with the measurement rather than
+    # staying at 57,300 B, the same reasoning #958 and #960 already give for
+    # skill_phases.py's own re-baselines: a ceiling left far above the file
+    # is a saving spendable again without anybody choosing to.
+    # Re-baselined for #1048: 17348 B on disk against a stale 16294 declared
+    # baseline -- the could-not-classify re-ask-first paragraph landed in
+    # this file. Budget unchanged; comfortably under it.
+    "commands/tick.md": (17348, 17900),
 }
 
 

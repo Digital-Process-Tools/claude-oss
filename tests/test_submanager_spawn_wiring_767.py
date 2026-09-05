@@ -287,5 +287,13 @@ def test_what_ends_a_tick_heading_still_resolves():
     """Same vacuity guard, for the other stop-doctrine/tick-ending anchor
     region -- tests/test_content_invariants.py locates it by this exact
     heading text.
+
+    #1037: "What ends a tick" moved out of commands/tick.md into its own
+    phase file, read by a sub-manager rather than injected into the
+    scheduler on every tick.
     """
-    assert re.search(r"(?m)^## What ends a tick", _tick_md_text())
+    tick_order = (
+        Path(__file__).resolve().parent.parent
+        / "skills" / "manager" / "phases" / "tick-order.md"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"(?m)^## What ends a tick", tick_order)

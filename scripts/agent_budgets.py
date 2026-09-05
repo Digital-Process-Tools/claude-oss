@@ -92,7 +92,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # convention (see #818's entry above); budget set with ~10% headroom.
     # Re-baselined for #1014 (see the sentence beside the four-row block
     # above): 16341 B on disk against a stale 15501 declared baseline.
-    "agents/sub-manager.md": (16341, 17000),
+    # Re-baselined for #1037: 16871 B on disk against a stale 16341 declared
+    # baseline -- this lane's own pointer-update to `skills/manager/phases/
+    # tick-order.md` grew the file. Budget unchanged; comfortably under it.
+    # Raised for #1048: measured 17894 B against the prior 17000 B budget.
+    # A reminder paragraph had already failed twice on this exact defect (a
+    # sub-manager promising its own resumption instead of using `TICK:
+    # paused`), so the fix is a self-validation step -- run the draft
+    # handback through `tick_handback.py` before sending it -- rather than
+    # another sentence restating the rule. Trimmed once already to fit as
+    # much of the addition as possible; nothing else in this file was safe
+    # to cut without losing a still-live rule, so the ceiling moves instead.
+    "agents/sub-manager.md": (17894, 18700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

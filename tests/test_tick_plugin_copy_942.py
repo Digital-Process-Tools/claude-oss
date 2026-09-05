@@ -21,7 +21,8 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
 
-TICK = REPO_ROOT / "commands" / "tick.md"
+# #1037: this content moved out of commands/tick.md into its own phase file.
+TICK = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 
 def _text():

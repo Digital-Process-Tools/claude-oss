@@ -294,7 +294,8 @@ call record the claim; `--pending-wait` at the top of the *next* tick reads it b
 {holds,cleared,could-not-evaluate}` re-derives it once the observable has actually been tested. Three
 states, not two, for the same reason `intake` and `cohort_freeze` have three: `holds` is a
 measurement that came back negative, `could-not-evaluate` is no measurement at all, and rendering the
-two alike is exactly the bug this closes. `commands/tick.md` step 1 is where the call is wired.
+two alike is exactly the bug this closes. `skills/manager/phases/tick-order.md` step 1 is where the
+call is wired.
 
 **#477 is the same shape one fact over: a tick's own plugin identity is a prior nothing recorded, so
 "has the version changed since last tick" was not a question this system could answer.**
@@ -307,7 +308,8 @@ identity` at the top of the *next* tick compares against it: `changed`, `unchang
 version-pinned `${CLAUDE_PLUGIN_ROOT}` never sees its own version move, so step 1 now resolves the
 actually-installed copy instead and tags each reading with which route produced it — a prior
 recorded by the old route is not the same measurement as a new one, so comparing them is its own
-state rather than a guessed `changed`/`unchanged`). `commands/tick.md` step 1 is where the call is
+state rather than a guessed `changed`/`unchanged`). `skills/manager/phases/tick-order.md` step 1 is
+where the call is
 wired.
 
 **#565 is a narrower, same-tick question one clock over: does `${CLAUDE_PLUGIN_ROOT}` itself move

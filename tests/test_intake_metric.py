@@ -624,8 +624,13 @@ def test_the_manager_skill_carries_the_per_page_aggregation_trap():
 
 
 def test_the_tick_command_names_the_flags_that_record_it():
+    # #1037: step 6 (the --decision call these flags belong to) moved out of
+    # commands/tick.md into its own phase file.
     missing = _missing(
-        _read("commands/tick.md"), ["--filings", "--merged-prs", "--window", "--trend"]
+        _read("skills/manager/phases/tick-order.md"),
+        ["--filings", "--merged-prs", "--window", "--trend"],
     )
-    assert missing == [], "commands/tick.md does not say: {}".format(missing)
+    assert missing == [], (
+        "skills/manager/phases/tick-order.md does not say: {}".format(missing)
+    )
 

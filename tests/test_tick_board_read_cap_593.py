@@ -21,7 +21,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-TICK_MD = REPO_ROOT / "commands" / "tick.md"
+# #1037: this content moved out of commands/tick.md into its own phase file.
+TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 #: The board-read code block itself -- the literal a reader copies. Each op's
 #: filter suffix is its own capture group, including gh-prs and gh-branch, so a

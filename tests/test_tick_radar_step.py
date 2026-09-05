@@ -30,7 +30,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
 
-TICK_MD = REPO_ROOT / "commands" / "tick.md"
+# #1037: this content moved out of commands/tick.md into its own phase file,
+# read by a sub-manager rather than injected into the scheduler on every tick.
+TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 #: The sentence in the radar step that attributes the missing-preset case to a
 #: doctor state. Anchored on the fact, not on a heading, so a reordering of the

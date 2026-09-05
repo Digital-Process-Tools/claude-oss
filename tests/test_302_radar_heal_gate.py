@@ -16,13 +16,18 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TICK_MD = REPO_ROOT / "commands" / "tick.md"
+# #1037: this content moved out of commands/tick.md into its own phase file.
+TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 REQUIRED_PHRASES = [
     "#302",
     "radar:--state",
     "not resolved here, that would be",
-    "claude-supertool",
+    # #1037/content-invariants: a phase file is prose the loop executes, so
+    # a hardcoded sibling-repo slug in it carries the same authority a
+    # re-derived one would (CLAUDE.md's own rule) -- reworded to name the
+    # dependency's tracker without spelling out its repo slug.
+    "against supertool's own tracker",
 ]
 
 

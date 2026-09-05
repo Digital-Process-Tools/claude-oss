@@ -28,7 +28,9 @@ from manager_docs import ManagerLoop  # noqa: E402
 #: X"; pinned to the spine alone they would have gone quietly narrower than
 #: their own subject the moment a paragraph moved into a phase file.
 SKILL = ManagerLoop(REPO_ROOT)
-TICK = REPO_ROOT / "commands" / "tick.md"
+# #1037: this content (the merge step) moved out of commands/tick.md into its
+# own phase file.
+TICK = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 
 def _skill_text():
