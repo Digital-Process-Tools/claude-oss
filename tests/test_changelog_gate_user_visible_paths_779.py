@@ -149,6 +149,40 @@ def test_a_well_formed_brace_interval_still_validates():
     ) is None
 
 
+@pytest.mark.parametrize("pattern", [
+    "a{99999}",   # #1058: well beyond either known grep-family limit
+    "a{1000}",
+    "a{256}",     # #1058: one past BSD grep's measured RE_DUP_MAX (255)
+    "a{1,256}",   # the upper bound of a range can carry the same defect
+])
+def test_a_brace_interval_magnitude_above_the_grep_limit_is_refused(pattern):
+    """#1058: `_brace_interval_problem` validated the *arrangement* of a
+    `{m,n}` interval but never its *magnitude*. `a{99999}` (and any bound
+    above 255) was ACCEPTED, but `grep -Eq 'a{99999}'` exits 2 (invalid
+    repetition count) on both BSD grep (macOS, RE_DUP_MAX-limited to 255,
+    measured directly: `grep -Eq 'a{255}'` exits 1, ordinary no-match;
+    `grep -Eq 'a{256}'` exits 2, SYNTAX ERROR) and GNU grep (documented
+    limit 32767) -- so an accepted pattern silently and permanently
+    disables the generated changelog gate, the same failure #1015 closed
+    at the arrangement boundary, reopened here at the magnitude boundary.
+    The refusal must name the limit that was exceeded."""
+    problem = oss_config.user_visible_paths_problem([pattern])
+    assert problem is not None, pattern
+    assert "255" in problem, problem
+
+
+@pytest.mark.parametrize("pattern", [
+    "a{255}",     # #1058: at BSD grep's measured RE_DUP_MAX -- must still pass
+    "a{1,255}",
+    "a{200}",
+])
+def test_a_brace_interval_magnitude_at_or_below_the_grep_limit_still_validates(pattern):
+    """Positive control for the pair above: a magnitude within the limit
+    (measured directly against BSD grep: `a{255}` exits 1, an ordinary
+    no-match, not a syntax error) must still be accepted."""
+    assert oss_config.user_visible_paths_problem([pattern]) is None, pattern
+
+
 @pytest.mark.parametrize("byte", ["\r", "\u2028", "\x0b"])
 def test_a_yaml_line_break_character_is_refused(byte):
     """#1018: the previous validator denylisted `'` and `\\n` individually and

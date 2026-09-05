@@ -996,6 +996,17 @@ def changelog_untagged_problem(value):
     return None
 
 
+# The lower of the two known grep-family interval limits (#1058). BSD grep
+# (what `/usr/bin/grep` is on macOS) enforces `RE_DUP_MAX`, measured directly
+# on BSD grep 2.6.0-FreeBSD: `grep -Eq 'a{255}'` exits 1 (an ordinary
+# no-match) and `grep -Eq 'a{256}'` exits 2 (SYNTAX ERROR, "invalid
+# repetition count(s)"). GNU grep documents a higher limit (32767), so 255 is
+# the binding constraint across both grep families this validator can name --
+# a bound above it is refused regardless of which grep the release runner
+# happens to carry.
+_GREP_INTERVAL_MAGNITUDE_LIMIT = 255
+
+
 def _brace_interval_problem(pattern):
     """None, or why a `{...}` in `pattern` is a POSIX ERE interval bound
     `grep -E` reads as malformed, rather than a genuine no-match.
@@ -1009,7 +1020,18 @@ def _brace_interval_problem(pattern):
     `if ! grep -Eq PATTERN; then skip; fi` guard, from a genuine no-match
     (#1015, found by review). `{`, `}`, digits and `,` are all otherwise
     safe, allow-listed characters, so this is checked separately from
-    `USER_VISIBLE_PATH_CHAR_RE` above: only the *arrangement* is at fault.
+    `USER_VISIBLE_PATH_CHAR_RE` above: only the *arrangement* was checked
+    there -- this function also checks the *magnitude*: `a{99999}` is a
+    well-formed interval bound Python's own grammar has no opinion on, but
+    it exceeds `RE_DUP_MAX` on BSD grep and the documented limit on GNU
+    grep alike, so `grep -Eq` exits 2, SYNTAX ERROR, on it too (#1058, found
+    by review) -- the identical silent-disable failure #1015 closed at the
+    arrangement boundary, reopened at the magnitude boundary instead.
+
+    Bracket expressions (`[...]`) are skipped while scanning: a `{` inside
+    one can never be a POSIX ERE interval opener, so it is not interval
+    syntax at all and must not be misread as an unbalanced or malformed one
+    (#1059, found by review).
     """
     index = 0
     length = len(pattern)
@@ -1017,6 +1039,18 @@ def _brace_interval_problem(pattern):
         char = pattern[index]
         if char == "\\":
             index += 2
+            continue
+        if char == "[":
+            content_start = index + 1
+            if content_start < length and pattern[content_start] == "^":
+                content_start += 1
+            if content_start < length and pattern[content_start] == "]":
+                content_start += 1
+            close = pattern.find("]", content_start)
+            if close == -1:
+                index += 1
+                continue
+            index = close + 1
             continue
         if char == "{":
             close = pattern.find("}", index + 1)
@@ -1037,6 +1071,19 @@ def _brace_interval_problem(pattern):
                         "has `{{{}}}`, whose lower bound is greater than its "
                         "upper bound".format(content)
                     )
+            bounds = [low] + ([int(high)] if high else [])
+            over_limit = [b for b in bounds if b > _GREP_INTERVAL_MAGNITUDE_LIMIT]
+            if over_limit:
+                return (
+                    "has `{{{}}}`, whose bound {} exceeds {}, the lower of "
+                    "the known grep-family interval limits (BSD grep's "
+                    "measured RE_DUP_MAX; GNU grep documents a higher one) "
+                    "-- `grep -Eq` exits 2, SYNTAX ERROR, on a magnitude "
+                    "this large, the same silent-disable failure as an "
+                    "unbalanced or malformed interval".format(
+                        content, max(over_limit), _GREP_INTERVAL_MAGNITUDE_LIMIT
+                    )
+                )
             index = close + 1
             continue
         index += 1
