@@ -1,3 +1,9 @@
+oss doctor	doctor-warning-lifecycle.md	
+doctor warning	doctor-warning-lifecycle.md	
+doctor verdict	doctor-warning-lifecycle.md	
+usable with gaps	doctor-warning-lifecycle.md	
+clear the warnings	doctor-warning-lifecycle.md	
+remove all warnings	doctor-warning-lifecycle.md	
 subagent	jit-rules-and-subagents.md	
 sub-agent	jit-rules-and-subagents.md	
 spawned agent	jit-rules-and-subagents.md	
@@ -9,6 +15,12 @@ oss-workspace launcher	launcher-path-reach.md
 launcher symlink	launcher-path-reach.md	
 login shell path	launcher-path-reach.md	
 dpt-plugins path	launcher-path-reach.md	
+phase file	loop-document-structure.md	
+manager spine	loop-document-structure.md	
+byte budget	loop-document-structure.md	
+document budget	loop-document-structure.md	
+split a document	loop-document-structure.md	
+loop prose	loop-document-structure.md	
 vendored	vendored-and-unwired.md	
 vendoring	vendored-and-unwired.md	
 unwired script	vendored-and-unwired.md	

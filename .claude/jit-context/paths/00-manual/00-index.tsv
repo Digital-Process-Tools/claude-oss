@@ -1,12 +1,17 @@
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)scripts/(oss_config|scaffold)\.py$	config-value-validation.md
+(^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
+(^|/)scripts/(select_issues|dispatch_rank|lane_setup|issue_claim|preflight_check)\.py$	issue-selection-goal.md
+(^|/)bin/oss-workspace$	launcher-prompt-selection.md
 (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
 (^|/)scripts/oss_rules\.py$	rules-layer-symlinks.md
+(^|/)scripts/[^/]+\.py$	script-boundaries.md
 (^|/)(bin/[^/]+|scripts/shell_sources\.py|tests/test_unwired_scripts_253\.py)$	shell-sources-survey.md
 (^|/)scripts/statusline\.py$	statusline-cache-staleness.md
+(^|/)(agents/sub-manager\.md|commands/tick\.md|skills/manager/phases/tick-order\.md)$	sub-manager-goal.md
 (^|/)tests/	test-fixture-pitfalls.md
 (^|/)trap\.d/	trap-fragments.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md
