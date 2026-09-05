@@ -537,9 +537,6 @@ def test_gather_reads_a_fresh_green_reading_through(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(
-        statusline, "_scan_transcript", lambda path, n: ([], False, None)
-    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "green"
 
@@ -564,9 +561,6 @@ def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(
-        statusline, "_scan_transcript", lambda path, n: ([], False, None)
-    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "unknown"
 
@@ -593,9 +587,6 @@ def test_gather_folds_to_unknown_when_stale_after_says_so_even_inside_the_interv
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(
-        statusline, "_scan_transcript", lambda path, n: ([], False, None)
-    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "unknown"
 
@@ -612,8 +603,5 @@ def test_gather_is_none_when_no_default_branch_is_configured(tmp_path, monkeypat
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(
-        statusline, "_scan_transcript", lambda path, n: ([], False, None)
-    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] is None

@@ -3,7 +3,7 @@
 A status line renders on every message, so every fact in it is either cached, cheap, or
 absent. The defect this repository is named after is exactly what a status line invites:
 a count nobody took renders as `0`, a version comparison nobody could make renders as
-`ok`, and a tick nobody armed renders the same as a transcript nobody could read.
+`ok`, and a directory this render could not list renders the same as a real zero.
 
 Every assertion below pairs a must-not-fire with a must-fire, because an assertion that
 `?` does not appear also passes against a renderer that produces nothing at all.
@@ -16,8 +16,6 @@ import os
 import sys
 import time
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -49,97 +47,171 @@ def test_a_cache_missing_a_count_is_unknown_for_that_count_alone():
     assert board["issues"] is None
 
 
-# ----------------------------------------------------------------------- next tick
+# ------------------------------------------------------------- unlabelled issues
 
 
-def _transcript(tmp_path, lines):
-    path = tmp_path / "transcript.jsonl"
-    path.write_text(
-        "".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8"
+def test_gh_unlabelled_issue_counts_reads_declared_spellings(monkeypatch):
+    """Two axes, counted independently off the same page of open issues (#1079)."""
+    calls = []
+
+    def fake_run(command, timeout=5):
+        calls.append(command)
+        return "L:priority-high,lane-doctor\nL:\nL:lane-prose"
+
+    monkeypatch.setattr(statusline, "_run", fake_run)
+    counts = statusline._gh_unlabelled_issue_counts(
+        "owner/repo",
+        3,
+        ["priority-high", "priority-low"],
+        ["lane-doctor", "lane-prose"],
     )
-    return path
+    # Row 1 carries both a priority and a lane label; row 2 carries neither; row 3
+    # carries a lane label but no priority label.
+    assert counts == {"no_priority": 2, "no_lane": 1}
+    assert calls, "the paginated REST call must actually run"
 
 
-def _wakeup(timestamp, delay, stop=False):
-    payload = {"stop": True} if stop else {"delaySeconds": delay, "reason": "ci"}
-    return {
-        "timestamp": timestamp,
-        "message": {
-            "content": [
-                {"type": "tool_use", "name": "ScheduleWakeup", "input": payload}
-            ]
-        },
-    }
-
-
-def test_no_transcript_is_unknown_not_none():
-    tick = statusline.next_tick(None, now=0.0)
-    assert tick["state"] == "unknown"
-
-
-def test_scanned_transcript_without_a_wakeup_reports_none(tmp_path):
-    """The must-fire control for the arm above: a file that was read and held nothing."""
-    path = _transcript(
-        tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}]
+def test_gh_unlabelled_issue_counts_never_sums_the_two_axes(monkeypatch):
+    """The issue's own instruction, asserted directly: an issue missing both a
+    priority and a lane label must show up in both counts, not be double-counted
+    into one -- there is no shared 'unlabelled' number to add them into."""
+    monkeypatch.setattr(statusline, "_run", lambda command, timeout=5: "L:")
+    counts = statusline._gh_unlabelled_issue_counts(
+        "owner/repo", 1, ["priority-high"], ["lane-doctor"]
     )
-    tick = statusline.next_tick(str(path), now=0.0)
-    assert tick["state"] == "none"
+    assert counts == {"no_priority": 1, "no_lane": 1}
 
 
-def test_an_armed_wakeup_reports_the_seconds_left(tmp_path):
-    path = _transcript(tmp_path, [_wakeup("2026-08-22T10:00:00.000Z", 600)])
-    now = statusline.parse_timestamp("2026-08-22T10:05:00.000Z")
-    tick = statusline.next_tick(str(path), now=now)
-    assert tick["state"] == "armed"
-    assert tick["seconds"] == pytest.approx(300, abs=1)
-
-
-def test_a_wakeup_whose_time_has_passed_is_due_not_armed(tmp_path):
-    path = _transcript(tmp_path, [_wakeup("2026-08-22T10:00:00.000Z", 600)])
-    now = statusline.parse_timestamp("2026-08-22T10:20:00.000Z")
-    tick = statusline.next_tick(str(path), now=now)
-    assert tick["state"] == "due"
-
-
-def test_a_stop_is_not_an_armed_tick(tmp_path):
-    path = _transcript(
-        tmp_path,
-        [
-            _wakeup("2026-08-22T10:00:00.000Z", 600),
-            _wakeup("2026-08-22T10:01:00.000Z", None, stop=True),
-        ],
+def test_gh_unlabelled_issue_counts_survives_a_trailing_unlabelled_issue(monkeypatch):
+    """The must-fire control for the `L:` prefix itself. `_run` strips trailing
+    whitespace off the whole blob, so a naive bare-comma-list line for the LAST
+    open issue in the page being genuinely label-less would vanish along with the
+    trailing newline, undercounting `lines` against `total` and folding a page
+    that was read completely into `None`. Prefixing every line makes none of them
+    empty, so the trailing one survives the strip."""
+    monkeypatch.setattr(
+        statusline, "_run", lambda command, timeout=5: "L:priority-high\nL:"
     )
-    now = statusline.parse_timestamp("2026-08-22T10:02:00.000Z")
-    tick = statusline.next_tick(str(path), now=now)
-    assert tick["state"] == "stopped"
-
-
-def test_the_last_wakeup_wins(tmp_path):
-    path = _transcript(
-        tmp_path,
-        [
-            _wakeup("2026-08-22T10:00:00.000Z", 60),
-            _wakeup("2026-08-22T10:01:00.000Z", 3600),
-        ],
+    counts = statusline._gh_unlabelled_issue_counts(
+        "owner/repo", 2, ["priority-high"], []
     )
-    now = statusline.parse_timestamp("2026-08-22T10:02:00.000Z")
-    tick = statusline.next_tick(str(path), now=now)
-    assert tick["state"] == "armed"
-    assert tick["seconds"] == pytest.approx(3540, abs=1)
+    assert counts == {"no_priority": 1, "no_lane": None}
 
 
-def test_a_truncated_scan_reports_unknown_rather_than_none(tmp_path):
-    """A tail-scan that did not reach the top of the file cannot say `none`.
-
-    This is the whole reason the scan carries a `truncated` flag: a wakeup armed at the
-    start of a long session is below the window, and "I did not look there" must not
-    render as "nothing is armed".
-    """
-    path = _transcript(
-        tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}] * 40
+def test_gh_unlabelled_issue_counts_is_none_when_the_page_disagrees_with_the_total(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        statusline, "_run", lambda command, timeout=5: "L:priority-high"
     )
-    tick = statusline.next_tick(str(path), now=0.0, max_bytes=200)
-    assert tick["state"] == "unknown"
+    counts = statusline._gh_unlabelled_issue_counts(
+        "owner/repo", 5, ["priority-high"], ["lane-doctor"]
+    )
+    assert counts is None
+
+
+def test_gh_unlabelled_issue_counts_is_none_when_neither_axis_is_declared(monkeypatch):
+    """A repository declaring no priority spellings and no lane spellings has
+    nothing this call could answer -- refused before it ever calls `gh` (the
+    must-fire control is the fixture right above, which does have spellings)."""
+    called = []
+    monkeypatch.setattr(
+        statusline, "_run", lambda command, timeout=5: called.append(1) or ""
+    )
+    counts = statusline._gh_unlabelled_issue_counts("owner/repo", 0, [], [])
+    assert counts is None
+    assert not called
+
+
+def test_gh_unlabelled_issue_counts_leaves_an_undeclared_axis_none(monkeypatch):
+    """A repo with only priority spellings declared cannot answer the lane half --
+    that half is `None`, not `0`, because nothing was measured for it."""
+    monkeypatch.setattr(
+        statusline, "_run", lambda command, timeout=5: "L:priority-high"
+    )
+    counts = statusline._gh_unlabelled_issue_counts(
+        "owner/repo", 1, ["priority-high"], []
+    )
+    assert counts == {"no_priority": 0, "no_lane": None}
+
+
+def test_absent_unlabelled_cache_renders_unknown_and_never_zero():
+    """The must-not-fire half: a count nobody took is not a count that came back
+    zero -- asserted through the same `board_from_cache`/`_unlabelled_field` path
+    the render actually takes."""
+    board = statusline.board_from_cache({"prs": 0, "issues": 0, "fetched_at": 0})
+    assert board["issues_no_priority"] is None
+    assert board["issues_no_lane"] is None
+    field = statusline._unlabelled_field(board)
+    assert field == "?np ?nl"
+
+
+def test_a_cache_that_answered_zero_unlabelled_is_a_measurement():
+    """The must-fire control: zero unlabelled issues is a real answer, distinct
+    from `?`, for both axes independently."""
+    board = statusline.board_from_cache(
+        {
+            "prs": 0,
+            "issues": 4,
+            "issues_no_priority": 0,
+            "issues_no_lane": 2,
+            "fetched_at": 0,
+        }
+    )
+    assert board["issues_no_priority"] == 0
+    assert board["issues_no_lane"] == 2
+    field = statusline._unlabelled_field(board)
+    assert field == "0np 2nl"
+    assert field != statusline._unlabelled_field(
+        statusline.board_from_cache({"prs": 0, "issues": 4, "fetched_at": 0})
+    )
+
+
+# ---------------------------------------------------------------------- trap.d
+
+
+def test_trap_count_excludes_the_gitkeep_placeholder(tmp_path):
+    trap_dir = tmp_path / "trap.d"
+    trap_dir.mkdir()
+    (trap_dir / ".gitkeep").write_text("", encoding="utf-8")
+    (trap_dir / "123.example.md").write_text("prose", encoding="utf-8")
+    (trap_dir / "456.other.md").write_text("prose", encoding="utf-8")
+    assert statusline._trap_count(tmp_path) == 2
+
+
+def test_trap_count_is_a_real_zero_when_only_gitkeep_is_present(tmp_path):
+    """The must-fire control for the case below: a directory that could not be
+    listed and a directory holding nothing but `.gitkeep` must not render alike."""
+    trap_dir = tmp_path / "trap.d"
+    trap_dir.mkdir()
+    (trap_dir / ".gitkeep").write_text("", encoding="utf-8")
+    assert statusline._trap_count(tmp_path) == 0
+    assert statusline._trap_field(statusline._trap_count(tmp_path)) == "trap 0"
+
+
+def test_trap_count_is_a_real_zero_when_the_directory_is_missing(tmp_path):
+    """Same split `trap_curate.waiting()` already makes one script over: nobody has
+    ever logged a trap here, which is a real, measured `0` -- not the same absence
+    as a directory that exists but could not be listed (the must-fire control
+    right below)."""
+    assert statusline._trap_count(tmp_path) == 0
+    assert statusline._trap_field(statusline._trap_count(tmp_path)) == "trap 0"
+
+
+def test_trap_field_never_renders_zero_for_an_unreadable_directory(tmp_path):
+    """The must-not-fire half, asserted directly against the rendered field: a
+    directory that could not be listed prints `?`, never the digit `0` -- distinct
+    from a directory that is simply absent (real zero, tested above)."""
+    unreadable = tmp_path / "trap.d"
+    # A file where a directory is expected -- `os.listdir` raises `NotADirectoryError`
+    # (an `OSError` subclass, not `FileNotFoundError`) rather than returning an
+    # empty listing.
+    unreadable.write_text("not a directory", encoding="utf-8")
+    count = statusline._trap_count(tmp_path)
+    assert count is None
+    field = statusline._trap_field(count)
+    assert field == "trap ?"
+    assert "trap 0" not in field
 
 
 # ------------------------------------------------------------------ plugin currency
@@ -315,9 +387,9 @@ def test_normalized_path_folds_case_on_windows_521():
 # --------------------------------------------------------------------- gather
 
 
-def test_gather_populates_the_render_stamp_and_last_user_age(tmp_path, monkeypatch):
-    """End to end: `gather()` is what turns a transcript path and a clock into the
-    two facts `render()` merely formats (#504).
+def test_gather_populates_the_render_stamp_and_the_trap_count(tmp_path, monkeypatch):
+    """End to end: `gather()` is what turns a project root and a clock into the
+    facts `render()` merely formats (#504, #1079).
     """
     # Not what this test is about, and a real fork here would launch a detached
     # `gh`-calling subprocess per test run.
@@ -325,16 +397,17 @@ def test_gather_populates_the_render_stamp_and_last_user_age(tmp_path, monkeypat
     (tmp_path / ".oss.json").write_text(
         json.dumps({"repo": "owner/name"}), encoding="utf-8"
     )
-    transcript = _transcript(tmp_path, [_wakeup("2026-08-22T10:00:00.000Z", 600)])
+    (tmp_path / "trap.d").mkdir()
+    (tmp_path / "trap.d" / ".gitkeep").write_text("", encoding="utf-8")
+    (tmp_path / "trap.d" / "1.example.md").write_text("prose", encoding="utf-8")
     now = statusline.parse_timestamp("2026-08-22T10:04:00.000Z")
-    payload = {"transcript_path": str(transcript)}
-    facts = statusline.gather(payload, str(tmp_path), now=now)
+    facts = statusline.gather({}, str(tmp_path), now=now)
     # The local reading of that instant, not "10:04" (#511): the stamp is compared by
     # the reader against their own clock, so it is rendered in their own zone. Asserted
     # against the platform's own answer rather than a fixed string, which would pin this
     # test to the runner that happened to write it.
     assert facts["last"] == time.strftime("%H:%M", time.localtime(now))
-    assert facts["tick"]["state"] == "armed"
+    assert facts["traps"] == 1
 
 
 def test_gather_reports_the_render_stamp_in_the_local_zone():
@@ -370,11 +443,13 @@ def _facts(**overrides):
         "board": {
             "prs": 2,
             "issues": 18,
+            "issues_no_priority": 3,
+            "issues_no_lane": 1,
             "age": 30,
             "checks": {"green": 1, "red": 0, "running": 0, "unknown": 0},
         },
         "release": {"since": 4, "typical": 17},
-        "tick": {"state": "armed", "seconds": 480},
+        "traps": 2,
         "last": "23:47",
         "plugins": [
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),
@@ -478,11 +553,12 @@ def test_render_names_the_version_a_behind_plugin_is_behind():
     assert "0.49.0" in line
 
 
-def test_render_marks_an_unknown_tick_apart_from_no_tick():
-    unknown = statusline.render(_facts(tick={"state": "unknown"}), ascii_only=True)
-    none = statusline.render(_facts(tick={"state": "none"}), ascii_only=True)
-    assert unknown != none
-    assert "?" in unknown
+def test_render_marks_an_unreadable_trap_count_apart_from_a_real_zero():
+    unknown = statusline.render(_facts(traps=None), ascii_only=True)
+    zero = statusline.render(_facts(traps=0), ascii_only=True)
+    assert unknown != zero
+    assert "trap ?" in unknown
+    assert "trap 0" in zero
 
 
 def test_render_shows_the_wall_clock_stamp_of_this_render():
@@ -632,14 +708,14 @@ def test_no_hostile_leaf_anywhere_in_facts_reaches_the_line_unfolded():
     """A property over every leaf `_facts()` carries, nested or not (#535).
 
     The previous version of this test walked only the top level and `continue`d
-    on anything that was not already a string, so `board`, `tick`, `release` and
+    on anything that was not already a string, so `board`, `release` and
     `plugins` -- every fact that is itself a dict or a list -- was never hostiled
     at all: the set covered was exactly the set already folded. This walks every
     leaf `_leaf_paths` finds, string-valued or not, and drops the hostile string
     in its place regardless of what was there before -- the crash this test
-    exists to catch (`_tick_field`'s `abs()` on a hostile `seconds`) was a *type*
-    confusion, a string landing where an int was expected, not only a string
-    carrying control characters.
+    exists to catch was a *type* confusion (a hostile string landing where an
+    int was expected, in a field that formats a number directly into the line),
+    not only a string carrying control characters.
 
     `branch` is excluded -- not because the fold protects it, but because git
     itself refuses a ref name containing these characters, confirmed by the

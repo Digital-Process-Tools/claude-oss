@@ -211,11 +211,10 @@ def check_statusline(project_dir):
     if source is None:
         doctor.report(
             "WARN",
-            "statusline: neither {} nor {} sets a statusLine -- the loop's board, next "
-            "tick and plugin currency are not on screen. /oss:scaffold writes this key "
-            "into {} when the file has none: {}".format(
-                tracked_path, local_path, tracked_path, block
-            ),
+            "statusline: neither {} nor {} sets a statusLine -- the loop's board, "
+            "unlabelled-issue and trap.d counts, and plugin currency are not on "
+            "screen. /oss:scaffold writes this key into {} when the file has "
+            "none: {}".format(tracked_path, local_path, tracked_path, block),
         )
         return
 
