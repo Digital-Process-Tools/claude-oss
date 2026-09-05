@@ -290,6 +290,12 @@ def select(
     `lane_setup.suggest_companions` -- injectable so a caller (or a test)
     never needs a live `gh` session or a real tree to drive this function.
 
+    #1078: an optional top-level `lane_label` narrows candidate GENERATION to
+    one GitHub label (a LABEL lane, e.g. `lane-dispatch`) before ranking
+    runs; see the guard just above `held_files` below for the full contract.
+    Never confuse it with a developer LANE, the worktree/branch sense this
+    module uses everywhere else.
+
     #1067: `held_files` gets the same could-not-read treatment `board_read_ok`
     already has, via a top-level `lanes_read_ok` / `lanes_read_why` pair --
     `lanes_read_ok is False` forces `could-not-select` before `held_files` is
@@ -326,6 +332,22 @@ def select(
         return _could_not_select(
             "board: 'issues' is missing or not a list -- the board could not be read"
         )
+
+    # #1078: an optional top-level `lane_label` narrows candidate GENERATION
+    # to issues carrying that one GitHub LABEL (e.g. `lane-dispatch`) before
+    # ranking ever runs. This is a LABEL lane -- never to be confused with a
+    # developer LANE (a worktree on `fix/N`, what `lane_setup.py` and
+    # `held_files` above are about); this module never uses the bare word
+    # "lane" for the label, only "lane label". Admission is unchanged: the
+    # existing declared-file disjointness sweep (`_group_candidates`, below)
+    # still decides which of the label-filtered issues actually ride
+    # together in one developer lane -- the label only narrows what gets
+    # checked, per #1078's own framing ("a heuristic for legibility, not a
+    # guarantee"). Absent or empty, nothing is filtered -- the historical,
+    # whole-board behaviour every caller before #1078 still gets.
+    lane_label = payload.get("lane_label")
+    if lane_label:
+        issues = [row for row in issues if lane_label in (row.get("labels") or [])]
 
     # #1067: `held_files` used to have no unreadable state at all -- "the live
     # lanes could not be enumerated" and "there are no live lanes" arrived as

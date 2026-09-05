@@ -349,6 +349,13 @@ def test_owned_files_are_not_checked_without_a_config(tmp_path, monkeypatch):
     monkeypatch.setattr(
         doctor, "label_vocabulary_state", lambda *a, **k: ("could-not-tell", "no gh")
     )
+    # #1075 review round: `check_label_vocabulary` now also calls
+    # `lane_label_state`, its own independent `gh label list` fetch -- left
+    # unpatched, this test's own "isolated, no live git/gh" guarantee stops
+    # holding for the new call, silently, with no assertion here to catch it.
+    monkeypatch.setattr(
+        doctor, "lane_label_state", lambda *a, **k: ("could-not-tell", "no gh")
+    )
     doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT)
     assert any(
         state == "WARN" and "owned files: not checked" in msg
@@ -360,6 +367,9 @@ def test_owned_files_report_when_a_config_is_present(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
     monkeypatch.setattr(
         doctor, "label_vocabulary_state", lambda *a, **k: ("could-not-tell", "no gh")
+    )
+    monkeypatch.setattr(
+        doctor, "lane_label_state", lambda *a, **k: ("could-not-tell", "no gh")
     )
     (tmp_path / ".oss.json").write_text(json.dumps(_config()), encoding="utf-8")
     doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT)
@@ -379,6 +389,9 @@ def test_run_install_audit_exits_zero_always(tmp_path, monkeypatch):
     monkeypatch.setattr(
         doctor, "label_vocabulary_state", lambda *a, **k: ("could-not-tell", "no gh")
     )
+    monkeypatch.setattr(
+        doctor, "lane_label_state", lambda *a, **k: ("could-not-tell", "no gh")
+    )
     assert doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT) == 0
 
 
@@ -386,6 +399,9 @@ def test_run_install_audit_prints_one_verdict_line(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
     monkeypatch.setattr(
         doctor, "label_vocabulary_state", lambda *a, **k: ("could-not-tell", "no gh")
+    )
+    monkeypatch.setattr(
+        doctor, "lane_label_state", lambda *a, **k: ("could-not-tell", "no gh")
     )
     doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT)
     out = capsys.readouterr().out
@@ -402,6 +418,9 @@ def test_a_fresh_install_with_nothing_configured_is_gaps_not_broken(
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
     monkeypatch.setattr(
         doctor, "label_vocabulary_state", lambda *a, **k: ("could-not-tell", "no gh")
+    )
+    monkeypatch.setattr(
+        doctor, "lane_label_state", lambda *a, **k: ("could-not-tell", "no gh")
     )
     doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT)
     out = capsys.readouterr().out
