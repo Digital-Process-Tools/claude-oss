@@ -1,6 +1,8 @@
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)scripts/(oss_config|scaffold)\.py$	config-value-validation.md
+(^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
+(^|/)bin/oss-workspace$	launcher-prompt-selection.md
 (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
